@@ -1,0 +1,15 @@
+{
+  "short_name": "Data Formulator",
+  "name": "Data Formulator",
+  "icons": [
+    {
+      "src": "data-formulator-logo-128.png",
+      "type": "image/png",
+      "sizes": "128x128"
+    }
+  ],
+  "start_url": ".",
+  "display": "standalone",
+  "theme_color": "#000000",
+  "background_color": "#ffffff"
+}

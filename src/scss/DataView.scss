@@ -1,0 +1,234 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT License.
+
+/* or write CSS selectors to make customisations beyond what the parameters support */
+
+.table-container {
+    height: 100%;
+    position: relative;
+    //background-color: #fff;
+    display: -webkit-box;
+    display: -ms-flexbox;
+    display: flex;
+    -webkit-box-orient: vertical;
+    -webkit-box-direction: normal;
+    -ms-flex-direction: column;
+    flex-direction: column;
+    overflow: hidden;
+    will-change: transform;
+}
+
+.table-header-container {
+    display: flex;
+    height: 100%;
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    align-items: center;
+    background-color: #fafafa;
+}
+
+.table-header-icon {
+    padding: 0 6px 0 0;
+    margin-top: 4px;
+    display: inline-block;
+    font-size: 18px;
+    color: #777;
+}
+
+.table-container-small {
+
+    .ag-cell,
+    .ag-header-cell {
+        line-height: 18px;
+        padding-left: 4px;
+        padding-right: 4px;
+    }
+
+    .derived-column-header {
+        background-color: rgba(255, 215, 0, 0.1);
+    }
+
+    .highlighted-column-header {
+        background-color:rgba(88, 24, 69, 0.05);
+    }
+
+    .ag-row,
+    .ag-header-row {
+        height: 18px;
+    }
+
+    .data-view-header-label {
+        font-size: 10px;
+    }
+}
+
+.table-box {
+    height: 100%;
+    margin: 0px;
+    background: white;
+}
+
+.table-footer-container {
+
+    .table-search-input {
+        font-size: small;
+
+        input.MuiOutlinedInput-input.MuiInputBase-input {
+            height: 1.2em;
+            font-size: small;
+        }
+    }
+
+    .table-footer-number {
+        font-size: small;
+        line-height: 1.5;
+        color: rgba(0, 0, 0, 0.54);
+    }
+}
+
+table .item.selected {
+    background: rgba(0, 116, 255, 0.07) !important;
+}
+
+span.bold {
+    font-weight: 700;
+}
+
+table .item.derived {
+    background: rgba(255, 215, 0, 0.05);
+}
+
+table .item.custom {
+    background: rgb(255, 160, 122, 0.08);
+}
+
+
+table .item.selecting {
+    background: rgba(0, 116, 255, 0.1) !important;
+}
+
+// .MuiTableRow-root.MuiTableRow-hover:nth-child(odd),
+// .MuiTableRow-root.MuiTableRow-hover:nth-child(odd):hover {
+//     background-color: #F7F7F7;
+// }
+
+// .MuiTableRow-root.MuiTableRow-hover:nth-child(even),
+// .MuiTableRow-root.MuiTableRow-hover:nth-child(even):hover {
+//     background-color: #FFFFFF;
+// }
+
+.selectable-selectbox {
+    background: none;
+    border: 1px dashed grey;
+}
+
+.ag-theme-material {
+    .ag-header {
+        font-style: italic;
+    }
+
+    .ag-cell,
+    .ag-header-cell {
+        line-height: 30px;
+        padding-left: 6px;
+        padding-right: 6px;
+    }
+
+    .derived-column-header {
+        background-color: rgba(255, 215, 0, 0.1);
+    }
+
+    .ag-row,
+    .ag-header-row {
+        height: 30px;
+    }
+
+    .ag-paging-panel {
+        justify-content: flex-start;
+        height: 24px;
+    }
+
+    .ag-header-group-cell-label,
+    .ag-header-cell-label {
+        display: block;
+    }
+}
+
+.data-view-header-cell.MuiTableCell-root {
+    flex: 1 1 auto;
+    overflow: clip;
+    //border-bottom: none;
+    border-bottom-width: 2px;
+    padding: 0;
+
+    &:last-child {
+        .data-view-header-container {
+            margin-right: 0px;
+        }
+    }
+
+    &.original {
+        .data-view-header-container {
+            border-bottom: 2px solid #0288d1;
+        }
+    }
+
+    &.derived {
+        .data-view-header-container {
+            background-color: #fffef1;
+            border-bottom: 2px solid #ffd700;
+        }
+    }
+
+    &.custom {
+        .data-view-header-container {
+            background-color: #fff9f8;
+            border-bottom: 2px solid #ffb395;
+        }
+    }
+
+    &.selected {
+        background-color: #e6f1ff;
+
+        .data-view-header-container {
+            background-color: #e6f1ff;
+        }
+    }
+
+    .data-view-header-container {
+        display: flex;
+        flex-direction: row;
+        margin: 0 2px 0 0;
+        padding: 4px 6px;
+
+        height: 36px;
+
+        .data-view-header-title {
+            flex: 1 1 auto;
+            display: flex;
+            overflow: clip;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            color: #333;
+            font-size: 14px;
+            text-align: left;
+            margin-left: 0px;
+
+            .data-view-header-name {
+                font-size: inherit;
+                margin-left: 2px;
+                font-size: 12px;
+                font-weight: 700;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                flex-shrink: 1;
+                color: #333;
+
+
+                text-wrap: wrap;
+                max-height: 36px;
+            }
+        }
+    }
+}

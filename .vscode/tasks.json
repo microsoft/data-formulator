@@ -1,0 +1,19 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Activate Virtual Environment",
+            "type": "shell",
+            "command": "source /workspaces/data-formulator/venv/bin/activate",
+            "problemMatcher": [],
+            "group": {
+                "kind": "test",
+                "isDefault": true
+            },
+            "presentation": {
+                "reveal": "always",
+                "panel": "new"
+            }
+        }
+    ]
+}

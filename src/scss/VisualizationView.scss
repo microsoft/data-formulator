@@ -1,0 +1,349 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT License.
+
+.visualization-gallery {
+    padding: 0; //0px 10px 10px 10px;
+    overflow: hidden;
+    flex-grow: 1;
+    display: flex;
+
+    .vega-container {
+        display: flex;
+        flex-wrap: wrap;
+        padding-top: 30px;
+        padding-left: 20px;
+        //margin: 5px;
+        overflow-y: auto;
+        align-content: flex-start;
+        width: 100%;
+    }
+
+    .vega-thumbnail-box {
+        
+        display: flex;
+        //color: #fff;
+        border-radius: 3px;
+        //margin: auto;
+        padding: 6px;
+        cursor: pointer !important;
+    }
+
+    .vega-thumbnail-box-animation {
+        transform-origin: bottom left;
+        animation: appear 0.5s ease-out;
+
+        
+    }
+
+    .vega-thumbnail {
+        display: flex;
+        padding: 0px 10px;
+        
+        canvas {
+            margin: 6px auto;
+        }
+    }
+
+    .vega-thumbnail canvas{
+        cursor: pointer !important;
+    }
+
+    .vega-thumbnail-box:hover {
+        transform: translateY(1px) translateX(-1px);
+        box-shadow: 0 0 10px rgba(33,33,33,.4);
+    }
+}
+
+
+// vega action menu
+.vega-embed .vega-actions a  {
+    padding: 8px 16px !important;
+    font-family: Arial,Roboto,Helvetica Neue,sans-serif !important;
+    font-size: 14px !important;
+    font-weight: 100 !important;
+    white-space: nowrap !important;
+    color: #434a56 !important;
+    text-decoration: none !important;
+} ;
+
+$standard-ease: cubic-bezier(0.4, 0.0, 0.2, 1);
+$decelerate-ease: cubic-bezier(0.0, 0.0, 0.2, 1);
+$accelerate-ease: cubic-bezier(0.4, 0.0, 1, 1);
+
+@keyframes bump {
+    0% {
+      background-color: #fff;
+    }
+    50% {
+      background-color: rgba( 2, 136, 209, 0.2);
+    }
+    100% {
+      background-color: #fff;
+    }
+}
+
+@keyframes appear {
+    0% {
+      opacity: 0;
+    }
+    100% {
+      //background-color: #fff;
+    }
+}
+
+@keyframes spin {
+    0%,
+    to {
+        transform: rotate(0)
+    }
+    10% {
+        transform: scale(1.1)
+    }
+    20% {
+        transform: rotate(4deg) translateY(-12px)
+    }
+    40% {
+        transform: rotate(2deg) translateY(0)
+    }
+    60% {
+        transform: rotate(-2deg) translateY(-8px)
+    }
+    80% {
+        transform: rotate(-1deg) translateY(0)
+    }
+}
+
+.vega-container-carousel {
+    width: 200px;
+    min-width: 200px;
+    display: flex;
+    flex-direction: column;
+    overflow-y: scroll;
+    border-right: 1px lightgray solid;
+    align-content: flex-start;
+    padding-top: 0px;
+    direction: rtl;
+    padding-bottom: 6px;
+    height: calc(100vh - 50px);
+
+    .vega-thumbnail {
+        //border-bottom: 0.5px dashed lightgray;
+        //width: calc(100% - 16px);
+        //margin: 0 8px 0 12px;
+        display: flex;
+        cursor: pointer !important;
+        border: lightgray solid 0.5px;
+
+        canvas {
+            margin: 10px auto;
+        }
+    }
+
+    .vega-thumbnail-box {
+        //width: calc(100% - 16px);
+        display: block;
+        //color: #fff;
+        border-radius: 3px;
+    }
+
+    .vega-thumbnail-box-animation {
+        transform-origin: bottom left;
+        animation: appear 0.5s ease-out;
+    }
+
+    .focused-vega-thumbnail {
+        //background-color: blue;
+        box-shadow: 0 0 5px rgba(33,33,33,.3);
+        z-index: 1;
+    }
+
+    .vega-thumbnail:hover {
+        transform: translateY(1px);
+        box-shadow: 0 0 3px rgba(33,33,33,.2);
+        z-index: 1;
+    }
+}
+
+.visualization-carousel {
+    display: flex;
+    flex-grow: 1;
+    height: calc(100%);
+
+    .vega-focused {
+        flex: 1;
+        height: 100%;
+        display: flex;
+        overflow: auto;
+        
+        .chart-box {
+            display: flex;
+            color: #fff;
+            padding: 5px;
+            border-radius: 3px;
+            margin: auto;
+        }
+      
+        .chart-box-animation {
+            transform-origin: bottom left;
+            animation: appear 0.5s ease-out
+        }
+    }
+
+    .vega-container {
+        width: 200px;
+        min-width: 200px;
+        display: flex;
+        flex-wrap: wrap;
+        overflow-y: scroll;
+        border-right: 1px lightgray solid;
+        align-content: flex-start;
+        padding-top: 0px;
+        direction: rtl;
+        padding-bottom: 6px;
+    }
+
+    
+
+}
+
+.vis-split-pane {
+    position: relative !important;
+}
+
+.data-thread {
+    width: 201px;
+    min-width: 181px;
+    display: flex;
+    flex-direction: column;
+    overflow-y: scroll;
+    border-right: 1px lightgray solid;
+    align-content: flex-start;
+    padding: 0px 10px;
+    height: calc(100vh - 50px);
+    direction: rtl;
+
+    .thread-view-animation {
+        transform-origin: bottom left;
+        animation: appear 0.5s ease-out
+    }
+
+    .selected-card {
+        //box-shadow: 2px 2px 4px lightslategray;
+        border: 2px solid rgb(25, 118, 210);
+    }
+
+    .vega-thumbnail {
+        //border-bottom: 0.5px dashed lightgray;
+        //width: calc(100% - 16px);
+        //margin: 0 8px 0 12px;
+        display: flex;
+        cursor: pointer !important;
+        //border: lightgray solid 0.5px;
+
+        canvas {
+            margin: 10px auto;
+        }
+    }
+
+    .vega-thumbnail-box {
+        //width: calc(100% - 16px);
+        display: block;
+        //color: #fff;
+        border-radius: 3px;
+
+        & .data-thread-chart-card-action-button {
+            visibility: hidden;
+            opacity: 0;
+            transition: visibility 0s, opacity 0.3s linear;
+        }
+        
+        &:hover .data-thread-chart-card-action-button {
+            visibility: visible;
+            opacity: 1;
+        }
+    }
+
+    .vega-thumbnail-box-animation {
+        transform-origin: bottom left;
+        animation: appear 0.5s ease-out;
+    }
+
+    // .focused-vega-thumbnail {
+    //     //background-color: blue;
+    //     box-shadow: 0 0 5px rgba(33,33,33,.3);
+    //     z-index: 1;
+    // }
+
+    // .vega-thumbnail:hover {
+    //     transform: translateY(1px);
+    //     box-shadow: 0 0 3px rgba(33,33,33,.2);
+    //     z-index: 1;
+    // }
+
+    
+}
+
+
+.data-thread-card {
+    cursor: pointer;
+}
+
+.data-thread-card:hover {
+    transform: translateY(1px);
+    box-shadow: 0 0 3px rgba(33,33,33,.2);
+    z-index: 1;
+}
+
+.hover-card {
+    cursor: pointer;
+    canvas {
+        cursor: pointer;
+    }
+}
+
+.hover-card:hover {
+    transform: translateY(1px);
+    box-shadow: 0 0 3px rgba(33,33,33,.2);
+}
+
+.visualization-carousel {
+    display: flex;
+    flex-grow: 1;
+    height: calc(100%);
+
+    .vega-focused {
+        flex: 1;
+        height: 100%;
+        display: flex;
+        overflow: auto;
+        
+        .chart-box {
+            display: flex;
+            color: #fff;
+            padding: 5px;
+            border-radius: 3px;
+            margin: auto;
+        }
+      
+        .chart-box-animation {
+            transform-origin: bottom left;
+            animation: appear 0.5s ease-out
+        }
+    }
+
+    .vega-container {
+        width: 200px;
+        min-width: 200px;
+        display: flex;
+        flex-wrap: wrap;
+        overflow-y: scroll;
+        border-right: 1px lightgray solid;
+        align-content: flex-start;
+        padding-top: 0px;
+        direction: rtl;
+        padding-bottom: 6px;
+    }
+
+    
+
+}
