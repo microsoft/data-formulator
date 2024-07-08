@@ -1,0 +1,294 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT License.
+
+.concept-shelf {
+    //min-height: 400px;
+    //max-height: 600px;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    overflow-y: hidden;
+    margin: 10px;
+
+    .data-fields-group {
+        //height: calc(100% - 30px);
+        flex-grow: 1;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        font-size: small;
+
+        .data-fields-list {
+            flex: 1 1 auto;
+            display: block;
+            flex-direction: column;
+            flex-wrap: wrap;
+
+            .data-field-list-item {
+                justify-content: flex-start;
+
+                //width: 98%;
+                .MuiChip-deleteIcon {
+                    margin: 0 5px 0 auto !important;
+                }
+
+                //min-height: 120px;
+                margin: 3px;
+            }
+
+            // .concept-card-original {
+            //     background-color: rgb(2 136 209);
+            // }
+
+            // .concept-card-custom {
+            //     background-color: lightsalmon;
+            // }
+
+            // .concept-card-derived {
+            //     background-color: gold;
+            //     margin-left: 10px;
+            // }
+        }
+    }
+
+    // .data-fields-group {
+    //     -ms-overflow-style: none;  /* Internet Explorer 10+ */
+    //     scrollbar-width: none;  /* Firefox */
+    // }
+    // .data-fields-group::-webkit-scrollbar { 
+    //     display: none;  /* Safari and Chrome */
+    // }
+}
+
+.concept-examples-option-container {
+    margin: 6px;
+    padding: 4px;
+    border-radius: 6px;
+    cursor: pointer;
+    background-color: rgba(249, 105, 14, 0.05);
+
+    &:hover {
+        background-color: rgba(249, 105, 14, 0.2);
+
+        .concept-examples-option-chip {
+            background-color: rgb(202, 202, 202);
+        }
+    }
+
+    .concept-examples-option-chip {
+        height: 100%;
+        background-color: rgb(235, 235, 235);
+        margin: 2px;
+        cursor: pointer;
+        font-size: 12px;
+
+        .MuiChip-label {
+            padding: 4px 8px;
+            white-space: normal;
+        }
+    }
+}
+
+
+
+
+.draggable-card {
+
+    .draggable-card-header {
+        display: flex;
+        flex-direction: row;
+        justify-content: space-between;
+        height: auto;
+        padding: 1px 8px 1px 0px;
+        margin-left: 8px;
+        background-color: rgba(255, 255, 255, 0.93);
+        position: relative;
+
+        .draggable-card-title {
+            margin: auto;
+            margin-left: 3px;
+            display: flex;
+            align-items: center;
+        }
+    }
+
+    .draggable-card-header.uninstantiated {
+        font-style: italic;
+        color: rgab(80, 80, 80);
+    }
+
+    .draggable-card-header.uninstantiated.custom {
+        border: 0.5px dashed lightsalmon;
+        border-left: none;
+    }
+
+    .draggable-card-header.uninstantiated.derived {
+        border: 0.5px dashed gold;
+        border-left: none;
+    }
+
+    & .draggable-card-action-button {
+        visibility: hidden;
+        opacity: 0;
+        transition: visibility 0s, opacity 0.3s linear;
+    }
+
+    &:hover .draggable-card-action-button {
+        visibility: visible;
+        opacity: 1;
+    }
+
+    .draggable-card-body {
+        padding: 0px 8px 8px 4px !important;
+        margin-left: 8px;
+        background-color: rgba(255, 255, 255, 0.93);
+    }
+
+    .draggable-card-body-edit-mode {
+        background-color: rgba(255, 255, 255, 0.98);
+        padding: 8px 8px 8px 4px !important;
+        margin-left: 8px;
+    }
+
+    .draggable-card-example-values {
+        display: block;
+        text-overflow: ellipsis;
+        margin-left: 8px;
+        max-width: calc(100% - 96px);
+        font-size: smaller;
+        font-style: italic;
+        //white-space: nowrap;
+        color: rebeccapurple;
+
+        .draggable-card-example-values-chip {
+            height: auto;
+            max-width: 120px;
+            margin: 3px;
+            border-radius: 0px;
+        }
+    }
+}
+
+
+
+.concept-creator {
+
+    font-size: small;
+
+    .concept-creator-title {
+        min-height: 0px;
+    }
+
+    .concept-creator-title.Mui-expanded {
+        min-height: 0px;
+        background-color: rgb(0 0 0 / 5%);
+    }
+
+    .concept-creator-title>.MuiAccordionSummary-content {
+        margin: 6px;
+    }
+
+    .concept-creator-field-chip {
+        font-size: smaller;
+        padding: 0px 4px;
+        margin: 2px;
+        height: auto;
+    }
+
+    .MuiAccordionDetails-root {
+        margin: 4px 8px;
+        padding: 0px 0px;
+    }
+}
+
+.concept-creator.Mui-expanded {
+    margin: 0px !important;
+}
+
+.concept-form {
+
+    .MuiInputBase-root,
+    .MuiButton-root,
+    .MuiInputLabel-root {
+        font-size: inherit;
+    }
+}
+
+.info-panel-table {
+    .info-panel-table-cell {
+        padding: 0px 1px 0px 1px;
+        .example-textfield {
+            display: flex;
+        }
+    }
+
+    .info-panel-table-index-column {
+        width: fit-content;
+        padding: 0px;
+        color: darkgray;
+        font-size: smaller;
+        font-style: italic;
+
+    }
+
+    .info-panel-table-header {
+        
+        .info-panel-table-header-cell {
+            padding: 0px 1px 0px 1px;
+            max-width: 240px;
+
+            .info-panel-table-header-container {
+                display: flex;
+                flex-direction: row;
+                justify-content: space-between;
+                height: auto;
+                padding: 2px 4px;
+                position: relative;
+
+            }
+
+            .info-panel-table-header-container.row-index {
+                background-color: white;
+                border-bottom: 2px solid lightgray;
+            }
+            .info-panel-table-header-container.custom {
+                background-color: #fff9f8;
+                border-bottom: 2px solid #ffb395;
+            }
+            .info-panel-table-header-container.original {
+                background-color: rgb(237, 247, 252);
+                border-bottom: 2px solid #0288d1;
+            }
+
+            .info-panel-table-header-title {
+                margin: auto;
+                margin-left: 3px;
+                display: flex;
+                align-items: center;
+            }
+
+            .info-panel-table-header-name {
+                font-size: inherit;
+                margin-left: 3px;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                flex-shrink: 1;
+                font-style: italic;
+                color: #333;
+            }
+        }
+
+        
+    }
+}
+
+@keyframes color {
+    0%   { background: white; }
+    50% { background: rgb(237, 247, 252); }
+    100%   { background: white; }
+  }
+
+.background-highlight {
+    animation: color 2s infinite linear;
+}

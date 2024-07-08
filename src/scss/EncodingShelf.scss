@@ -1,0 +1,225 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT License.
+
+.encoding-shelf {
+    padding: 10px;
+    //width: 100%;
+    width: 220px;
+    overflow-y: auto;
+    transition: height 300ms cubic-bezier(0.4, 0, 0.2, 1) 0ms;
+    //overflow: hidden;
+    align-items: flex-start;
+    border-left: 1px dashed rgba(0,0,0,0.1);
+
+    .example-panel {
+        display: flex;
+        //border: 1px grey dashed;
+        flex-direction: column;
+        justify-content: center
+    }
+
+    
+}
+
+.encoding-shelf-trigger-card {
+    margin: 6px 2px;
+    min-width: 160px;
+}
+
+.encoding-shelf-compact {
+    //padding: 10px;
+    //width: 100%;
+    width: 236px;
+    overflow-y: auto;
+    transition: height 300ms cubic-bezier(0.4, 0, 0.2, 1) 0ms;
+    //overflow: hidden;
+    align-items: flex-start;
+    padding-right: 8px;
+
+    .example-panel {
+        display: flex;
+        //border: 1px grey dashed;
+        flex-direction: column;
+        justify-content: center
+    }
+}
+
+
+.auto-sort-option-label {
+    width: calc(100% - 24px);
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 1;
+    -webkit-box-orient: vertical;
+    background: #fff;
+    text-align: left;
+    font-size: smaller;
+    white-space: normal;
+    font-size: smaller !important;
+    font-style: italic;
+}
+
+.channel-shelf-box {
+    width: auto !important;
+    justify-content: space-between;
+    white-space: nowrap;
+}
+
+.channel-encoded-field {
+    width: 100%;
+    //max-width: 144px;
+    //min-width: 200px;
+    min-height: 24px;
+    display: flex;
+    justify-content: space-between;
+
+    & .encoding-shelf-action-button {
+        visibility: hidden;
+        opacity: 0;
+        transition: visibility 0s, opacity 0.3s linear;
+    }
+    
+    &:hover .encoding-shelf-action-button {
+        visibility: visible;
+        opacity: 1;
+    }
+}
+
+.channel-encoded-field-compact {
+    width: 100%;
+    //max-width: 144px;
+    min-width: 0px;
+    min-height: 24px;
+    display: flex;
+    justify-content: space-between;
+
+    & .encoding-shelf-action-button {
+        visibility: hidden;
+        opacity: 0;
+        transition: visibility 0s, opacity 0.3s linear;
+    }
+    
+    &:hover .encoding-shelf-action-button {
+        visibility: visible;
+        opacity: 1;
+    }
+}
+
+.collapse-channel-label {
+    //width: 60px !important;
+    overflow: initial !important;
+    text-align: left;
+    padding-right: 2px !important;
+    vertical-align: 'middle';
+    display: 'inline-flex';
+    font-size: "0.875em";
+    svg {
+        vertical-align: bottom;
+    }
+}
+.encoding-list {
+    padding: 0;
+    margin: 6px 3px;
+    display: block;
+    //flex-direction: column;
+    //justify-content: space-evenly;
+}
+
+.encoding-item {
+    display: block;
+    margin-bottom: 4px;
+    
+
+    .encoding-button-container {
+        position: relative;
+        outline: 0;
+        margin: auto;
+        display: -webkit-box;
+        display: -webkit-flex;
+        display: -ms-flexbox;
+        display: flex;
+        -webkit-box-pack: center;
+        -ms-flex-pack: center;
+        -webkit-justify-content: center;
+        justify-content: center;
+        padding: 6px;
+
+        .MuiButton-root {
+            flex-grow: 1;
+        }
+    }
+
+    .encoding-active-item {
+        //width: calc(100% - 24px) !important;
+        //width: auto;
+        //min-width: 120px;
+        flex-grow: 1;
+        flex-shrink: 1;
+        border-radius: 0;
+        display: flex;
+        justify-content: space-between;
+        //background-color: rgb(2 136 209 / 0.07);
+        .MuiChip-root {
+            justify-content: flex-start;
+            .MuiChip-deleteIcon {
+                margin: 0 2px 0 auto !important;
+            }
+        }
+    }
+
+    // .encoding-active-item-original {
+    //     background-color: rgb(2 136 209 / 0.07);
+    // }
+    // .encoding-active-item-custom {
+    //     background-color: rgb(249 105 14 / 0.07);
+    // }
+    // .encoding-active-item-derived {
+    //     background-color: rgb(255 215 0 / 0.07); // gold
+    // }
+    // .encoding-active-item-custom {
+    //     //width: calc(100% - 24px) !important;
+    //     width: auto;
+    //     flex-grow: 1;
+    //     min-width: 120px;
+    //     border-radius: 0;
+    //     display: flex;
+    //     justify-content: space-between;
+    //     background-color: rgb(249 105 14 / 0.07);
+    //     .MuiChip-root {
+    //         justify-content: flex-start;
+    //         .MuiChip-deleteIcon {
+    //             margin: 0 2px 0 auto !important;
+    //         }
+    //     }
+    // }
+
+    .encoding-prop-chip {
+        border-radius: 0px;
+        font-size: 12px;
+        font-style: italic;
+        border-right: lightgray 1px solid;
+        min-width: 42px;
+        flex: 0;
+
+        //height: 14px;
+        .MuiChip-label {
+            padding-left: 2px;
+            padding-right: 2px;
+        }
+        .MuiChip-deleteIcon {
+            margin-left: 0;
+            margin: 0 2px 0 auto !important;
+            font-size: inherit;
+        }
+    }
+
+    .encoding-prop-chip:last-child {
+        flex: 1;
+        border-right: 0;
+    }
+}
+
+.chart-wrapper canvas {
+    max-width: 100%;
+    height: auto !important;
+}

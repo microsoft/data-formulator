@@ -1,28 +1,66 @@
-# Project
+# Data Formulator
 
-> This repo has been populated by an initial template to help get you started. Please
-> make sure to update the content to build a great experience for community-building.
+Data Formulator --- transforming data and create rich visualizations iteratively with an AI agent.
 
-As the maintainer of this project, please make a few updates:
+## Get Started
 
-- Improving this README.MD file to provide a great experience
-- Updating SUPPORT.MD with content about this project's support experience
-- Understanding the security reporting process in SECURITY.MD
-- Remove this section from the README
+To run Data Formulator locally, you need to (1) set up the python server and (2) build the front-end web client.
 
-## Contributing
+### Install
 
-This project welcomes contributions and suggestions.  Most contributions require you to agree to a
-Contributor License Agreement (CLA) declaring that you have the right to, and actually do, grant us
-the rights to use your contribution. For details, visit https://cla.opensource.microsoft.com.
+1. setup python server:
 
-When you submit a pull request, a CLA bot will automatically determine whether you need to provide
-a CLA and decorate the PR appropriately (e.g., status check, comment). Simply follow the instructions
-provided by the bot. You will only need to do this once across all repos using our CLA.
+```
+python -m venv venv
+.\venv\Scripts\activate
+pip install -r requirements.txt
+```
 
-This project has adopted the [Microsoft Open Source Code of Conduct](https://opensource.microsoft.com/codeofconduct/).
-For more information see the [Code of Conduct FAQ](https://opensource.microsoft.com/codeofconduct/faq/) or
-contact [opencode@microsoft.com](mailto:opencode@microsoft.com) with any additional questions or comments.
+2. setup web client
+
+```
+yarn install
+yarn build
+```
+
+Install dependencies and build the front-end web app for production to the `build` folder.
+
+### Run Data Formulator
+
+Start the python server with one of the following scripts:
+
+Windows:
+```
+.\local_server.bat
+```
+
+Unix-based:
+```
+.\local_server.sh
+```
+
+Open [http://localhost:5000](http://localhost:5000) to view it in the browser.
+
+
+### Front-end development
+
+If you want to work with Data Formulator front-end, you can run the app in the development with
+
+```yarn start```
+
+Runs the app in the development mode.\
+Open [http://localhost:3000](http://localhost:3000) to view it in the browser.
+
+The page will reload if you make edits.\
+You will also see any lint errors in the console.
+
+If you want to deploy your updated front-end, run ```yarn build```.
+
+This builds the app for production to the `build` folder.\
+It correctly bundles React in production mode and optimizes the build for the best performance.
+
+Follow steps from `Run Data Formulator` to play with your built.
+
 
 ## Trademarks
 
