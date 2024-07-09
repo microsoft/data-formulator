@@ -62,7 +62,6 @@
         "react-virtuoso": "^4.3.10",
         "redux": "^4.2.0",
         "redux-persist": "^6.0.0",
-        "safe-eval": "^0.4.1",
         "sass": "^1.70.0",
         "seedrandom": "^3.0.5",
         "source-map-loader": "^4.0.1",
