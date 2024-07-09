@@ -3,13 +3,9 @@
     "version": "0.1.0",
     "private": true,
     "dependencies": {
-        "@azure/msal-browser": "2.32.0",
-        "@azure/msal-common": "9.0.1",
-        "@azure/msal-react": "1.5.0",
         "@emotion/react": "^11.9.0",
         "@emotion/styled": "^11.8.1",
         "@fontsource/roboto": "^4.5.5",
-        "@microsoft/applicationinsights-web": "^3.0.2",
         "@mui/icons-material": "^5.14.0",
         "@mui/material": "^5.6.0",
         "@reduxjs/toolkit": "^1.8.6",
