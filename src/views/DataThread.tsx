@@ -59,6 +59,7 @@ let buildChartCard = (chartElement: {tableId: string, chartId: string, element: 
             sx={{
                     marginLeft: 1,
                     width: '100%',
+                    display: 'flex'
                 }}>
         {chartElement.element}
     </Card>
@@ -500,6 +501,7 @@ export const DataThread: FC<{}> = function ({ }) {
 
     return <Box sx={{display: 'flex', flexDirection: 'row'}}>
         {carousel}
+        {/* <Box sx={{width: "10px", }}><Button fullWidth sx={{height: '100%', width: '10px'}} color='primary'></Button></Box> */}
     </Box>;
 }
 

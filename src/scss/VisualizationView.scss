@@ -36,8 +36,9 @@
     }
 
     .vega-thumbnail {
-        display: flex;
+
         padding: 0px 10px;
+        margin: auto;
         
         canvas {
             margin: 6px auto;
@@ -247,7 +248,7 @@ $accelerate-ease: cubic-bezier(0.4, 0.0, 1, 1);
 
     .vega-thumbnail-box {
         //width: calc(100% - 16px);
-        display: block;
+        //display: block;
         //color: #fff;
         border-radius: 3px;
 
