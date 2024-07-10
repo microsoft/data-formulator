@@ -36,6 +36,7 @@ function TabPanel(props: TabPanelProps) {
             hidden={value !== index}
             id={`vertical-tabpanel-${index}`}
             aria-labelledby={`vertical-tab-${index}`}
+            style={{maxWidth: 'calc(100% - 120px)'}}
             {...other}
         >
             {value === index && (
@@ -82,26 +83,26 @@ export const TableSelectionView: React.FC<TableSelectionViewProps> = function Ta
     }
 
     return (
-        <Box sx={{ flexGrow: 1, bgcolor: 'background.paper', display: 'flex', maxHeight: 385 }} >
+        <Box sx={{ flexGrow: 1, bgcolor: 'background.paper', display: 'flex', maxHeight: 400 }} >
         <Tabs
             orientation="vertical"
             variant="scrollable"
             value={value}
             onChange={handleChange}
             aria-label="Vertical tabs example"
-            sx={{ borderRight: 1, borderColor: 'divider' }}
+            sx={{ borderRight: 1, borderColor: 'divider', minWidth: 120 }}
         >
-            {tabTitiles.map((title, i) => <Tab wrapped key={i} label={title} sx={{textTransform: "none"}} {...a11yProps(0)} />)}
+            {tabTitiles.map((title, i) => <Tab wrapped key={i} label={title} sx={{textTransform: "none", width: 120}} {...a11yProps(0)} />)}
         </Tabs>
         {tables.map((t, i) => {
             let sampleRows = [...t.rows.slice(0,9), Object.fromEntries(t.names.map(n => [n, "..."]))];
             let colDefs = t.names.map(name => { return {
                 id: name, label: name, minWidth: 60, align: undefined, format: (v: any) => v,
             }})
-            let content = <Paper variant="outlined" key={t.names.join("-")} sx={{width: 800, padding: "0px", marginBottom: "8px"}}>
+            let content = <Paper variant="outlined" key={t.names.join("-")} sx={{width: 800, maxWidth: '100%', padding: "0px", marginBottom: "8px"}}>
                 <CustomReactTable rows={sampleRows} columnDefs={colDefs} rowsPerPageNum={-1} compact={false} />
             </Paper>
-            return  <TabPanel value={value} index={i}>
+            return  <TabPanel value={value} index={i} >
                         {content}
                         <Box width="100%" sx={{display: "flex"}}>
                             <Typography sx={{fontSize: 10, color: "gray"}}>{Object.keys(t.rows[0]).length} columns{hideRowNum ? "" : ` ⨉ ${t.rows.length} rows`}</Typography>
@@ -140,7 +141,7 @@ export const TableSelectionDialog: React.FC<{ buttonElement: any }> = function T
             .then((response) => response.json())
             .then((result) => {
                 let tables : DictTable[] = result.map((info: any) => {
-                    let table = createTableFromFromObjectArray(info["name"], info["snapshot"])
+                    let table = createTableFromFromObjectArray(info["name"], JSON.parse(info["snapshot"]))
                     return table
                 }).filter((t : DictTable | undefined) => t != undefined);
                 setDatasetPreviews(tables);
@@ -158,7 +159,7 @@ export const TableSelectionDialog: React.FC<{ buttonElement: any }> = function T
         </Button>
         <Dialog key="sample-dataset-selection-dialog" onClose={() => {setTableDialogOpen(false)}} 
                 open={tableDialogOpen}
-                sx={{ '& .MuiDialog-paper': { maxWidth: '80%', maxHeight: 800, minWidth: 800 } }}
+                sx={{ '& .MuiDialog-paper': { maxWidth: '100%', maxHeight: 840, minWidth: 800 } }}
             >
                 <DialogTitle sx={{display: "flex"}}>Explore Sample Datasets
                     <IconButton
@@ -194,6 +195,7 @@ export const TableSelectionDialog: React.FC<{ buttonElement: any }> = function T
                                 setTableDialogOpen(false); 
                             })
                             .catch((error) => {
+                                console.log(error)
                                 dispatch(dfActions.addMessages({
                                     "timestamp": Date.now(),
                                     "type": "error",

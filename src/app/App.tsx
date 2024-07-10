@@ -189,12 +189,13 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
                     userId: authInfo['user_id']
                 }
                 setUserInfo(userInfo);
-                console.log("logging info")
-                console.log(userInfo);
+                // console.log("logging info")
+                // console.log(userInfo);
             }
             
         }).catch(err => {
-            console.error(err)
+            //console.error(err)
+            console.error('no auth necessary.')
         });
     }, [])
 
