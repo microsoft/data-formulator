@@ -456,7 +456,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                                     newChart.intermediate = undefined;
                                 }
                                 
-                                newChart = resolveChartFields(newChart, currentConcepts, refinedGoal)
+                                newChart = resolveChartFields(newChart, currentConcepts, refinedGoal, candidateTable);
 
                                 dispatch(dfActions.addChart(newChart));
                                 dispatch(dfActions.setFocusedChart(newChart.id));                                
