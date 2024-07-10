@@ -8,6 +8,7 @@ import flask
 from flask import Flask, request, send_from_directory, redirect, url_for
 from flask import stream_with_context, Response
 import html
+import pandas as pd
 
 from flask_cors import CORS
 
@@ -15,7 +16,7 @@ import json
 import time
 from pathlib import Path
 
-from vega_datasets import local_data
+from vega_datasets import data as vega_data
 
 APP_ROOT = Path(os.path.join(Path(__file__).parent, 'server')).absolute()
 sys.path.append(os.path.abspath(APP_ROOT))
@@ -46,17 +47,18 @@ import os
 app = Flask(__name__, static_url_path='', static_folder=os.path.join(APP_ROOT, "..", "dist"))
 CORS(app)
 
-
 @app.route('/vega-datasets')
 def get_example_dataset_list():
-    dataset_names = local_data.list_datasets()
+    dataset_names = vega_data.list_datasets()
+    example_datasets = ['co2-concentration', 'movies', 'seattle-weather', 'disasters', 'unemployment-across-industries']
     dataset_info = []
-    for name in dataset_names:
+    print(dataset_names)
+    for name in example_datasets:
         try:
-            info_obj = {'name': name, 'snapshot': local_data.__getattr__(name)().to_dict("records")[:10]} 
+            info_obj = {'name': name, 'snapshot': vega_data(name).to_json(orient='records')} 
+            dataset_info.append(info_obj)
         except:
             pass
-        dataset_info.append(info_obj)
     
     response = flask.jsonify(dataset_info)
     response.headers.add('Access-Control-Allow-Origin', '*')
@@ -65,9 +67,12 @@ def get_example_dataset_list():
 @app.route('/vega-dataset/<path:path>')
 def get_datasets(path):
     try:
-        df = local_data.__getattr__(path)()
-        data_object = json.dumps(df.to_dict("records"))
-    except:
+        df = vega_data(path)
+        # to_json is necessary for handle NaN issues
+        data_object = df.to_json(None, 'records')
+    except Exception as err:
+        print(path)
+        print(err)
         data_object = "[]"
     response = data_object
     return response
@@ -148,11 +153,6 @@ def test_model():
         {'status': 'error'}
     
     return json.dumps(result)
-
-@app.route('/about', defaults={'path': ''})
-def catch_all(path):
-  return send_from_directory(app.static_folder, "index.html")
-
 
 @app.route("/", defaults={"path": ""})
 def index_alt(path):
