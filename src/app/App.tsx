@@ -194,7 +194,8 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
             }
             
         }).catch(err => {
-            console.error(err)
+            //user is not logged in, do not show logout button
+            //console.error(err)
         });
     }, [])
 
