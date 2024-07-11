@@ -82,7 +82,7 @@ export function runCodeOnInputListsInVM(
                 vm.runInNewContext(`let func = ${jsCode}; outputs = inputTupleList.map(args => func(...args));`, context);
                 ioPairs = inputTupleList.map((args, i) => [args, context.outputs[i]]);
                 return ioPairs;
-            } 
+            }
         } catch(err) {
             console.warn(err);
         }
