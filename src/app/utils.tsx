@@ -79,7 +79,7 @@ export function runCodeOnInputListsInVM(
                 //console.log(`let func = ${code}; func(arg)`)
                 let context = { inputTupleList : inputTupleList, outputs: inputTupleList.map(args => undefined) };
                 //console.log(`let func = ${jsCode}; let outputs = inputList.map(arg => func(arg));`);
-                vm.runInNewContext(`let func = ${jsCode}; outputs = inputTupleList.map(args => func(...arg));`, context);
+                vm.runInNewContext(`let func = ${jsCode}; outputs = inputTupleList.map(args => func(...args));`, context);
                 ioPairs = inputTupleList.map((args, i) => [args, context.outputs[i]]);
                 return ioPairs;
             } 
