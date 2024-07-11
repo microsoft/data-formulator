@@ -50,7 +50,8 @@ CORS(app)
 @app.route('/vega-datasets')
 def get_example_dataset_list():
     dataset_names = vega_data.list_datasets()
-    example_datasets = ['co2-concentration', 'movies', 'seattle-weather', 'disasters', 'unemployment-across-industries']
+    example_datasets = ['co2-concentration', 'movies', 'seattle-weather', 
+                        'disasters', 'unemployment-across-industries']
     dataset_info = []
     print(dataset_names)
     for name in example_datasets:
@@ -80,11 +81,15 @@ def get_datasets(path):
 @app.route('/check-available-models', methods=['GET', 'POST'])
 def check_available_models():
 
+    results = []
+
+    # dont need to check if it's empty
+    if os.getenv("ENDPOINT") is None:
+        return json.dumps(results)
+
     client = get_client(os.getenv("ENDPOINT"), "")
     models = [model.strip() for model in os.getenv("MODELS").split(',')]
 
-    results = []
-    
     for model in models:
         try:
             response = client.chat.completions.create(
@@ -106,6 +111,7 @@ def check_available_models():
                 })
         except:
             pass
+
     return json.dumps(results)
 
 @app.route('/test-model', methods=['GET', 'POST'])
