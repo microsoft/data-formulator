@@ -228,7 +228,7 @@ const BaseChartCreationMenu: FC<{tableId: string; buttonElement: any}> = functio
     </>;
 }
 
-export const ChartCreationMenu = styled(BaseChartCreationMenu)();
+export const ChartCreationMenu = styled(BaseChartCreationMenu)({});
 
 
 export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],

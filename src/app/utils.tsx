@@ -52,7 +52,7 @@ export function getUrls() {
     };
 }
 
-var vm = require('vm-browserify');
+import * as vm from 'vm-browserify';
 
 export function usePrevious<T>(value: T): T | undefined {
     const ref = useRef<T>();
