@@ -40,6 +40,7 @@ export function getUrls() {
         SERVER_DERIVE_DATA_URL: `${appConfig.serverUrl}/derive-data`,
         SERVER_DERIVE_DATA_V2_URL: `${appConfig.serverUrl}/dispatch-and-derive-data`,
         SERVER_REFINE_DATA_URL: `${appConfig.serverUrl}/refine-data`,
+        CODE_EXPL_URL: `${appConfig.serverUrl}/code-expl`,
         SERVER_PROCESS_DATA_ON_LOAD: `${appConfig.serverUrl}/process-data-on-load`,
 
         DATASET_INFO_URL: `${appConfig.serverUrl}/datasets-info`,

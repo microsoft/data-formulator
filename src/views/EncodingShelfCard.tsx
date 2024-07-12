@@ -3,7 +3,7 @@
 
 import { FC, useState } from 'react'
 import { useSelector, useDispatch } from 'react-redux'
-import { DataFormulatorState, dfActions, dfSelectors, fetchFieldSemanticType, generateFreshChart } from '../app/dfSlice';
+import { DataFormulatorState, dfActions, dfSelectors, fetchCodeExpl, fetchFieldSemanticType, generateFreshChart } from '../app/dfSlice';
 
 import {
     Box,
@@ -380,14 +380,11 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                             // PART 2: create new table (or override table)
                             let candidate = candidates[0];
 
-                            console.log("-_-:")
-                            console.log(candidate)
-
                             let candidateTable = createDictTable(
                                 candidateTableId, 
                                 candidate["content"], 
                                 { code: candidate["code"], 
-                                    codeExpl: candidate["codeExpl"],
+                                    codeExpl: "",
                                     source: baseTables.map(t => t.id), 
                                     dialog: candidate["dialog"], 
                                     trigger: currentTrigger }
@@ -410,6 +407,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                             dispatch(dfActions.addConceptItems(conceptsToAdd));
 
                             dispatch(fetchFieldSemanticType(candidateTable));
+                            dispatch(fetchCodeExpl(candidateTable));
 
                             // concepts from the current table
                             let currentConcepts = [...conceptShelfItems.filter(c => names.includes(c.name)), ...conceptsToAdd];

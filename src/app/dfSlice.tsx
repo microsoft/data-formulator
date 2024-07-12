@@ -155,6 +155,36 @@ export const fetchFieldSemanticType = createAsyncThunk(
     }
 );
 
+export const fetchCodeExpl = createAsyncThunk(
+    "dataFormulatorSlice/fetchCodeExpl",
+    async (derivedTable: DictTable, { getState }) => {
+        console.log(">>> call agent to obtain code explanations <<<")
+
+        let state = getState() as DataFormulatorState;
+
+        let message = {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', },
+            body: JSON.stringify({
+                token: Date.now(),
+                input_tables: derivedTable.derive?.source
+                                    .map(tId => state.tables.find(t => t.id == tId) as DictTable)
+                                    .map(t => {return {name: t.id, rows: t.rows}}),
+                code: derivedTable.derive?.code,
+                model: dfSelectors.getActiveModel(state)
+            }),
+        };
+
+        // timeout the request after 20 seconds
+        const controller = new AbortController()
+        const timeoutId = setTimeout(() => controller.abort(), 20000)
+
+        let response = await fetch(getUrls().CODE_EXPL_URL, {...message, signal: controller.signal })
+
+        return response.text();
+    }
+);
+
 export const fetchAvailableModels = createAsyncThunk(
     "dataFormulatorSlice/fetchAvailableModels",
     async () => {
@@ -485,7 +515,7 @@ export const dataFormulatorSlice = createSlice({
         },
         overrideDerivedTables: (state, action: PayloadAction<DictTable>) => {
             let table = action.payload;
-            state.tables = [...state.tables.filter(t => t.id != table.id), table]
+            state.tables = [...state.tables.filter(t => t.id != table.id), table];
         },
         deleteDerivedTableById: (state, action: PayloadAction<string>) => {
             // delete a synthesis output based on index
@@ -603,6 +633,16 @@ export const dataFormulatorSlice = createSlice({
             }
             
             console.log("fetched models");
+            console.log(action.payload);
+        })
+        .addCase(fetchCodeExpl.fulfilled, (state, action) => {
+            let codeExpl = action.payload;
+            let derivedTableId = action.meta.arg.id;
+            let derivedTable = state.tables.find(t => t.id == derivedTableId)
+            if (derivedTable?.derive) {
+                derivedTable.derive.codeExpl = codeExpl;
+            }
+            console.log("fetched codeExpl");
             console.log(action.payload);
         })
     },

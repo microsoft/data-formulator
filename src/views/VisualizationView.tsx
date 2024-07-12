@@ -442,7 +442,7 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
                     onClick={() => { setCodeViewOpen(!codeViewOpen) }}><TerminalIcon />
             </IconButton>
         </Tooltip>,
-        <Tooltip title={`${codeExplViewOpen ? 'hide' : 'view'} transformation explanation`} key="code-view-btn-tooltip">
+        <Tooltip title={`${codeExplViewOpen ? 'hide' : 'view'} transformation explanation`} key="code-expl-view-btn-tooltip">
             <IconButton color="primary" size="small" sx={{ textTransform: "none",  
                                                             backgroundColor: !codeExplViewOpen ? "" : "rgba(2, 136, 209, 0.3)", 
                                                             "&:hover": { backgroundColor: !codeExplViewOpen ? "default" : "rgba(2, 136, 209, 0.3)" }}} 
@@ -468,7 +468,7 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
             </Typography>
         </Box>,
         ...derivedTableItems,
-        <Divider key="dv3" orientation="vertical" variant="middle" flexItem sx={{ marginLeft: "8px", marginRight: "4px" }} />,
+        <Divider key="dv4" orientation="vertical" variant="middle" flexItem sx={{ marginLeft: "8px", marginRight: "4px" }} />,
         focusedChart.chartType == "Table" && focusedChart.intermediate == undefined ? createNewChartButton : saveButton,
         duplicateButton,
         deleteButton,
