@@ -3,7 +3,7 @@
 
 import { FC, useState } from 'react'
 import { useSelector, useDispatch } from 'react-redux'
-import { DataFormulatorState, dfActions, dfSelectors, fetchFieldSemanticType, generateFreshChart } from '../app/dfSlice';
+import { DataFormulatorState, dfActions, dfSelectors, fetchCodeExpl, fetchFieldSemanticType, generateFreshChart } from '../app/dfSlice';
 
 import {
     Box,
@@ -305,8 +305,12 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
                             let candidateTable = createDictTable(
                                 candidateTableId, 
                                 candidate["content"],
-                                { code: candidate["code"], codeExpl: candidate["codeExpl"],
-                                  source: baseTables.map(t => t.id), dialog: candidate["dialog"], trigger: trigger }
+                                {   code: candidate["code"], 
+                                    codeExpl: "",
+                                    source: baseTables.map(t => t.id), 
+                                    dialog: candidate["dialog"], 
+                                    trigger: trigger 
+                                }
                             )
 
                             let names = candidateTable.names;
@@ -325,6 +329,7 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
                             dispatch(dfActions.addConceptItems(conceptsToAdd));
                             dispatch(dfActions.overrideDerivedTables(candidateTable));
                             dispatch(fetchFieldSemanticType(candidateTable));
+                            dispatch(fetchCodeExpl(candidateTable));
 
                             if (triggerChart.chartType != "Auto" && charts.find(c => c.tableRef == overrideTableId)) { 
                                 let cId = [...charts.filter(c => c.intermediate == undefined), ...charts].find(c => c.tableRef == overrideTableId)?.id;

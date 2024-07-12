@@ -22,6 +22,7 @@ import {
 
 import embed from 'vega-embed';
 import AnimateOnChange from 'react-animate-on-change'
+import { VegaLite } from 'react-vega'
 
 
 import '../scss/VisualizationView.scss';
@@ -52,7 +53,8 @@ import { TriggerCard } from './EncodingShelfCard';
 import ExpandLess from '@mui/icons-material/ExpandLess';
 import ExpandMore from '@mui/icons-material/ExpandMore';
 
-let buildChartCard = (chartElement: {tableId: string, chartId: string, element: any}, focusedChartId?: string) => {
+let buildChartCard = (chartElement: {tableId: string, chartId: string, element: any}, 
+                      focusedChartId?: string) => {
     let selectedClassName = focusedChartId == chartElement.chartId ? 'selected-card' : '';
     return <Card className={`data-thread-card ${selectedClassName}`} variant="outlined" 
             sx={{
@@ -138,11 +140,11 @@ let SingleThreadView: FC<{
 
         let selectedClassName = tableId == focusedTableId ? 'selected-card' : '';
 
-        let collapsedProps = collapsed ? {width: '80px', height: '70px', "& canvas": {transformOrigin: 'top left', transform: 'scale(0.6)'} } : {}
+        let collapsedProps = collapsed ? { width: '50%', "& canvas": {width: 60, maxHeight: 50} } : {width: '100%'}
 
         let releventChartElements = relevantCharts.map((ce, j) => 
                 <Box key={`relevant-chart-${ce.chartId}`} 
-                    sx={{display: 'flex', padding: '4px 0px', paddingBottom: j == relevantCharts.length - 1 ? 1 : 0.5,
+                    sx={{display: 'flex', padding: 0, paddingBottom: j == relevantCharts.length - 1 ? 1 : 0.5,
                          ...collapsedProps  }}>
                     {buildChartCard(ce, focusedChartId)}
                 </Box>)
@@ -271,11 +273,12 @@ export const DataThread: FC<{}> = function ({ }) {
     let tables = useSelector((state: DataFormulatorState) => state.tables);
     let charts = useSelector((state: DataFormulatorState) => state.charts);
     let focusedChartId = useSelector((state: DataFormulatorState) => state.focusedChartId);
-    let focusedTableId = useSelector((state: DataFormulatorState) => state.focusedTableId);
 
     let chartSynthesisInProgress = useSelector((state: DataFormulatorState) => state.chartSynthesisInProgress);
         
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
+
+    let [drawerOpen, setDrawerOpen] = useState<boolean>(true);
 
     const dispatch = useDispatch();
 
@@ -323,7 +326,7 @@ export const DataThread: FC<{}> = function ({ }) {
             //let elementBody = renderTableChart(chart, conceptShelfItems, extTable);
 
             let element = <Box key={`unavailable-${id}`} width={"100%"} 
-                        className={"vega-thumbnail vega-thumbnail-box"} //+ (focusedChartId == chart.id ? " focused-vega-thumbnail" : "")} 
+                        className={"vega-thumbnail vega-thumbnail-box"} 
                         onClick={setIndexFunc} 
                         sx={{ display: "flex", backgroundColor: "rgba(0,0,0,0.01)", position: 'relative',
                             //border: "0.5px dashed lightgray", 
@@ -354,51 +357,8 @@ export const DataThread: FC<{}> = function ({ }) {
         }
 
         // prepare the chart to be rendered
-        //let vgSpec: any = instantiateVegaTemplate(chart.chartType, chart.encodingMap, conceptShelfItems, extTable)[0];
         let assembledChart = assembleChart(chart, conceptShelfItems, extTable);
         assembledChart["background"] = "transparent";
-        // chart["autosize"] = {
-        //     "type": "fit",
-        //     "contains": "padding"
-        // };
-
-        const element =
-            <Box
-                key={`animateOnChange-carousel-${index}`}
-                onClick={setIndexFunc}
-                className="vega-thumbnail-box"
-                // baseClassName="vega-thumbnail-box"
-                // animationClassName="vega-thumbnail-box-animation"
-                // animate={chartUpdated == chart.id}
-                style={{ width: "100%", position: "relative", cursor: "pointer !important" }}
-                //onAnimationEnd={() => { setChartUpdated(undefined); }}
-            >
-                <Box sx={{margin: "auto"}}>
-                    {chart.saved ? <Typography sx={{ position: "absolute", margin: "5px", zIndex: 2 }}>
-                                        <StarIcon sx={{ color: "gold" }} fontSize="small" />
-                                    </Typography> : ""}
-                    {chartSynthesisInProgress.includes(chart.id) ? <Box sx={{
-                        position: "absolute", height: "100%", width: "100%", zIndex: 20, 
-                        backgroundColor: "rgba(243, 243, 243, 0.8)", display: "flex", alignItems: "center", cursor: "pointer"
-                    }}>
-                        <LinearProgress sx={{ width: "100%", height: "100%", opacity: 0.05 }} />
-                    </Box> : ''}
-                    <Box className='data-thread-chart-card-action-button' 
-                         sx={{ zIndex: 10, color: 'blue', position: "absolute", right: 1, background: 'rgba(255, 255, 255, 0.95)' }}>
-                        <Tooltip title="delete chart">
-                            <IconButton size="small" color="warning" onClick={(event) => {
-                                event.stopPropagation();
-                                dispatch(dfActions.deleteChartById(chart.id));
-                            }}><DeleteIcon fontSize="small" /></IconButton>
-                        </Tooltip>
-                    </Box>
-                    <Box className={"vega-thumbnail" + (focusedChartId == chart.id ? " focused-vega-thumbnail" : "")}
-                        id={id} key={`chart-thumbnail-${index}`} sx={{ margin: "auto", backgroundColor: chart.saved ? "rgba(255,215,0,0.05)" : "white" }}
-                    >
-                    </Box>
-                    
-                </Box>
-            </Box>;
 
         // Temporary fix, down sample the dataset
         if (assembledChart["data"]["values"].length > 5000) {
@@ -426,45 +386,46 @@ export const DataThread: FC<{}> = function ({ }) {
             "axis": {"labelLimit": 30}
         }
 
-        embed('#' + id, assembledChart, { actions: false, renderer: "canvas" }).then(function (result) {
-            // Access the Vega view instance (https://vega.github.io/vega/docs/api/view/) as result.view
-            if (result.view.container()?.getElementsByTagName("canvas")) {
-                let comp = result.view.container()?.getElementsByTagName("canvas")[0];
-
-                // Doesn't seem like width & height are actual numbers here on Edge bug
-                // let width = parseInt(comp?.style.width as string);
-                // let height = parseInt(comp?.style.height as string);
-                if (comp) {
-                    const { width, height } = comp.getBoundingClientRect();
-                    //console.log(`THUMB: width = ${width} height = ${height}`);
-
-                    let WIDTH = 120;
-                    let HEIGHT = 80;
-
-                    if (width > WIDTH || height > HEIGHT) {
-                        let ratio = width / height;
-                        let fixedWidth = width;
-                        if (ratio * HEIGHT < width) {
-                            fixedWidth = ratio * HEIGHT;
-                        }
-                        if (fixedWidth > WIDTH) {
-                            fixedWidth = WIDTH;
-                        }
-                        //console.log("THUMB: width or height are oversized");
-                        //console.log(`THUMB: new width = ${fixedWidth}px height = ${fixedWidth / ratio}px`)
-                        comp?.setAttribute("style", 
-                            `max-width: ${WIDTH}px; max-height: ${HEIGHT}px; 
-                             width: ${Math.round(fixedWidth)}px; height: ${Math.round(fixedWidth / ratio)}px; `);
-                    }
-
-                } else {
-                    console.log("THUMB: Could not get Canvas HTML5 element")
-                }
-            }
-        }).catch((reason) => {
-            // console.log(reason)
-            // console.error(reason)
-        });
+        const element =
+            <Box
+                key={`animateOnChange-carousel-${index}`}
+                onClick={setIndexFunc}
+                className="vega-thumbnail-box"
+                style={{ width: "100%", position: "relative", cursor: "pointer !important" }}
+            >
+                <Box sx={{margin: "auto"}}>
+                    {chart.saved ? <Typography sx={{ position: "absolute", margin: "5px", zIndex: 2 }}>
+                                        <StarIcon sx={{ color: "gold" }} fontSize="small" />
+                                    </Typography> : ""}
+                    {chartSynthesisInProgress.includes(chart.id) ? <Box sx={{
+                        position: "absolute", height: "100%", width: "100%", zIndex: 20, 
+                        backgroundColor: "rgba(243, 243, 243, 0.8)", display: "flex", alignItems: "center", cursor: "pointer"
+                    }}>
+                        <LinearProgress sx={{ width: "100%", height: "100%", opacity: 0.05 }} />
+                    </Box> : ''}
+                    <Box className='data-thread-chart-card-action-button' 
+                         sx={{ zIndex: 10, color: 'blue', position: "absolute", right: 1, background: 'rgba(255, 255, 255, 0.95)' }}>
+                        <Tooltip title="delete chart">
+                            <IconButton size="small" color="warning" onClick={(event) => {
+                                event.stopPropagation();
+                                dispatch(dfActions.deleteChartById(chart.id));
+                            }}><DeleteIcon fontSize="small" /></IconButton>
+                        </Tooltip>
+                    </Box>
+                    <Box className={"vega-thumbnail" + (focusedChartId == chart.id ? " focused-vega-thumbnail" : "")}
+                        id={id} key={`chart-thumbnail-${index}`} 
+                        sx={{ 
+                            display: "flex", 
+                            backgroundColor: chart.saved ? "rgba(255,215,0,0.05)" : "white",
+                            '& .vega-embed': {margin: 'auto'},
+                            '& canvas': {  width: 'auto !important', height: 'auto !important', maxWidth: 120, maxHeight: 100}
+                        }}
+                    >
+                        <VegaLite spec={assembledChart} actions={false} />
+                    </Box>
+                    
+                </Box>
+            </Box>;
 
         return {chartId: chart.id, tableId: table.id, element};
     })
@@ -500,7 +461,6 @@ export const DataThread: FC<{}> = function ({ }) {
 
     return <Box sx={{display: 'flex', flexDirection: 'row'}}>
         {carousel}
-        {/* <Box sx={{width: "10px", }}><Button fullWidth sx={{height: '100%', width: '10px'}} color='primary'></Button></Box> */}
     </Box>;
 }
 

@@ -234,23 +234,24 @@ $accelerate-ease: cubic-bezier(0.4, 0.0, 1, 1);
     }
 
     .vega-thumbnail {
-        //border-bottom: 0.5px dashed lightgray;
-        //width: calc(100% - 16px);
-        //margin: 0 8px 0 12px;
+
         display: flex;
         cursor: pointer !important;
-        //border: lightgray solid 0.5px;
+
+        .vega-embed {
+            display: flex;
+            cursor: pointer !important;
+        }
 
         canvas {
-            margin: 10px auto;
+            margin: 4px auto;
         }
     }
 
     .vega-thumbnail-box {
-        //width: calc(100% - 16px);
-        //display: block;
-        //color: #fff;
+
         border-radius: 3px;
+        cursor: pointer !important;
 
         & .data-thread-chart-card-action-button {
             visibility: hidden;
@@ -268,19 +269,6 @@ $accelerate-ease: cubic-bezier(0.4, 0.0, 1, 1);
         transform-origin: bottom left;
         animation: appear 0.5s ease-out;
     }
-
-    // .focused-vega-thumbnail {
-    //     //background-color: blue;
-    //     box-shadow: 0 0 5px rgba(33,33,33,.3);
-    //     z-index: 1;
-    // }
-
-    // .vega-thumbnail:hover {
-    //     transform: translateY(1px);
-    //     box-shadow: 0 0 3px rgba(33,33,33,.2);
-    //     z-index: 1;
-    // }
-
     
 }
 

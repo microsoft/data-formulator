@@ -290,7 +290,7 @@ def sort_data_request():
 
         #candidates, dialog = limbo_concept.call_codex_sort(content["items"], content["field"])
         candidates = candidates if candidates != None else []
-        response = flask.jsonify({ "status": "ok", "token": token, "result": candidates })            
+        response = flask.jsonify({ "status": "ok", "token": token, "result": candidates })
     else:
         response = flask.jsonify({ "token": -1, "status": "error", "result": [] })
 
@@ -341,15 +341,6 @@ def derive_data():
 
             repair_attempts += 1
         
-        for result in results:
-            if result['status'] != 'no transformation':
-                code_expl_agent = CodeExplanationAgent(client=client, model=model)
-                expl = code_expl_agent.run(input_tables, result['code'])
-                result['codeExpl'] = expl
-                print(expl)
-            else:
-                result['codeExpl'] = 'no transformation is necessary'
-
         response = flask.jsonify({ "status": "ok", "token": token, "results": results })
     else:
         response = flask.jsonify({ "token": "", "status": "error", "results": [] })
@@ -358,6 +349,26 @@ def derive_data():
     return response
 
 
+@app.route('/code-expl', methods=['GET', 'POST'])
+def request_code_expl():
+    if request.is_json:
+        app.logger.info("# request data: ")
+        content = request.get_json()        
+        token = content["token"]
+
+        client = get_client(content['model']['endpoint'], content['model']['key'])
+        model = content['model']['model']
+        app.logger.info(f" model: {content['model']}")
+
+        # each table is a dict with {"name": xxx, "rows": [...]}
+        input_tables = content["input_tables"]
+        code = content["code"]
+        
+        code_expl_agent = CodeExplanationAgent(client=client, model=model)
+        expl = code_expl_agent.run(input_tables, code)
+    else:
+        expl = ""
+    return expl
 
 @app.route('/refine-data', methods=['GET', 'POST'])
 def refine_data():
@@ -402,12 +413,6 @@ def refine_data():
 
                 results = agent.followup(input_tables, prev_dialog, [field['name'] for field in output_fields], new_instruction)
                 repair_attempts += 1
-            
-        for result in results:
-            code_expl_agent = CodeExplanationAgent(client=client, model=model)
-            expl = code_expl_agent.run(input_tables, result['code'])
-            result['codeExpl'] = expl
-            print(expl)
 
         response = flask.jsonify({ "status": "ok", "token": token, "results": results})
     else:
