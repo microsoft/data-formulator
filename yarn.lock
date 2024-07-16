@@ -1348,15 +1348,43 @@ abbrev@1:
   resolved "https://registry.yarnpkg.com/abbrev/-/abbrev-1.1.1.tgz#f8f2c887ad10bf67f634f005b6987fed3179aac8"
   integrity sha512-nne9/IiQ/hzIhY6pdDnbBtz7DjPTKrY00P/zvPSm5pOFkl6xuGrGnXn/VtTNNfNtAfZ9/1RtehkszU9qcTii0Q==
 
+ag-charts-community@10.0.1:
+  version "10.0.1"
+  resolved "https://registry.yarnpkg.com/ag-charts-community/-/ag-charts-community-10.0.1.tgz#c6e2bc75c32256fef5e80208f2f2be35aa0f0800"
+  integrity sha512-cTEdGT1C6RsNLNlbF18F0X/khjwokiVi6ZqFnPq2d56vGmb4dM1z85wAR0jMNjLSAe5EgRFhrH6gE/dTHTulQQ==
+  dependencies:
+    ag-charts-locale "10.0.1"
+    ag-charts-types "10.0.1"
+
+ag-charts-locale@10.0.1:
+  version "10.0.1"
+  resolved "https://registry.yarnpkg.com/ag-charts-locale/-/ag-charts-locale-10.0.1.tgz#ec0606e5ad7b87d95ecafed6dd4c7a5cbb3c7977"
+  integrity sha512-Idor92N97yxZaSTC0TSUDLihQVBiZL3jRoYrl5B1CGiKJsv60K3+UhPd8ctj9+q+CpmkdKAO4/spDIC79hAaQw==
+
+ag-charts-types@10.0.1:
+  version "10.0.1"
+  resolved "https://registry.yarnpkg.com/ag-charts-types/-/ag-charts-types-10.0.1.tgz#8b65ec22dc8d2e4d7f4dba5f8aba0a788215652d"
+  integrity sha512-o8aXJfO5lsLGu4jE/2MiTogLCfdJ8UCmrWNPb+AWU0YutCrBHO0uWbSuqzabZxZ4WHxwwRtTllZMT6WqTdz+qg==
+
+ag-grid-community@32.0.1:
+  version "32.0.1"
+  resolved "https://registry.yarnpkg.com/ag-grid-community/-/ag-grid-community-32.0.1.tgz#3cec7cb49eb7d0fb15ab3f1586475228e1a5bd34"
+  integrity sha512-/eimCgJqMeyFxpJMTQuCtedKzk+BIInqhRdKdoQG8MD3yjrs/AWQFAcT6MP0T64CuNd85mxwB2t+3Ggb+S8hdA==
+  dependencies:
+    ag-charts-types "10.0.1"
+
 ag-grid-community@^27.1.0:
   version "27.1.0"
   resolved "https://registry.npmjs.org/ag-grid-community/-/ag-grid-community-27.1.0.tgz"
   integrity sha512-SWzIJTNa7C6Vinizelcoc1FAJQRt1pDn+A8XHQDO2GTQT+VjBnPL8fg94fLJy0EEvqaN5IhDybNS0nD07SKIQw==
 
-ag-grid-enterprise@^27.1.0:
-  version "27.1.0"
-  resolved "https://registry.npmjs.org/ag-grid-enterprise/-/ag-grid-enterprise-27.1.0.tgz"
-  integrity sha512-yvMiReqwDBb9xkLI9ArktDNVfaidfYNk7YP7avTzTV1WSMM/HmP7DgUi509P3FSk9yxfxU0f9+z/yTubLSqCCQ==
+ag-grid-enterprise@^32.0.1:
+  version "32.0.1"
+  resolved "https://registry.yarnpkg.com/ag-grid-enterprise/-/ag-grid-enterprise-32.0.1.tgz#0b82b7ea0fa6c49f7939184af8a336c98fa6a0ea"
+  integrity sha512-XZqxxFbM+TTovo9FTXhUe/oeKudjFawvxviw0pTkBCXWxWsPuSOoKt4XeyuXNRD+6oFHYtmoqCuEU16fRDA3Gg==
+  dependencies:
+    ag-charts-community "10.0.1"
+    ag-grid-community "32.0.1"
 
 ag-grid-react@^27.1.0:
   version "27.1.0"
