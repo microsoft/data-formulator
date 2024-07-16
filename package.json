@@ -25,7 +25,7 @@
         "@types/react-virtualized": "^9.21.21",
         "@types/seedrandom": "^3.0.4",
         "@vitejs/plugin-react": "^4.3.1",
-        "ag-grid-community": "^27.1.0",
+        "ag-grid-community": "^32.0.1",
         "ag-grid-enterprise": "^27.1.0",
         "ag-grid-react": "^27.1.0",
         "bootstrap-icons": "^1.10.5",
