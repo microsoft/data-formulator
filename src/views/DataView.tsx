@@ -9,8 +9,8 @@ import { Typography, Box, Link, Breadcrumbs } from '@mui/material';
 
 import 'ag-grid-enterprise';
 
-import 'ag-grid-community/dist/styles/ag-grid.css';
-import 'ag-grid-community/dist/styles/ag-theme-material.css';
+import 'ag-grid-community/styles/ag-grid.css';
+import 'ag-grid-community/styles/ag-theme-material.css';
 import '../scss/DataView.scss';
 
 import { DictTable } from '../components/ComponentType';
@@ -30,8 +30,6 @@ export interface FreeDataViewProps {
 }
 
 export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView({  $tableRef }) {
-
-    //let $agGrid = React.createRef<AgGridReact>();
 
     const dispatch = useDispatch();
     const tables = useSelector((state: DataFormulatorState) => state.tables);
