@@ -1208,11 +1208,12 @@ ag-grid-enterprise@^32.0.2:
     ag-charts-community "10.0.2"
     ag-grid-community "32.0.2"
 
-ag-grid-react@^27.1.0:
-  version "27.1.0"
-  resolved "https://registry.npmjs.org/ag-grid-react/-/ag-grid-react-27.1.0.tgz"
-  integrity sha512-AfRwH6BL/LribvLJ2594Fq0/MfZf/17WebjGj927bM3vABDr2OBX3qgMIaQE+kpV9mABPb51rlWLMmbCvltv2g==
+ag-grid-react@^32.0.2:
+  version "32.0.2"
+  resolved "https://registry.yarnpkg.com/ag-grid-react/-/ag-grid-react-32.0.2.tgz#675b477f23f1f1338af0c15f174f9da3c68baec9"
+  integrity sha512-IWYsoyJ/Z763rWbE5/9SaT1n5xwIKrm/QzOG14l7i8z5J6JdJwfV0aQFATmEE8Xws2H48vlLcLdW1cv4hwV3eg==
   dependencies:
+    ag-grid-community "32.0.2"
     prop-types "^15.8.1"
 
 ansi-regex@^5.0.1:

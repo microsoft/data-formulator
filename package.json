@@ -12,7 +12,7 @@
         "@reduxjs/toolkit": "^1.8.6",
         "ag-grid-community": "^32.0.2",
         "ag-grid-enterprise": "^32.0.2",
-        "ag-grid-react": "^27.1.0",
+        "ag-grid-react": "^32.0.2",
         "d3": "^7.3.0",
         "localforage": "^1.10.0",
         "lodash": "^4.17.21",
