@@ -36,7 +36,7 @@ import { TableCopyDialog, TableUploadDialog } from './TableSelectionView';
 import { toolName } from '../app/App';
 import { DataThread } from './DataThread';
 
-import dfLogo from '../assets/df-logo-small.jpeg';
+import dfLogo from '../assets/df-logo.png';
 import { ModelSelectionButton } from './ModelSelectionDialog';
 
 const MainSplitPane = styled(SplitPane)(({ theme }) => ({
