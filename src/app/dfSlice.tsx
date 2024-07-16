@@ -40,7 +40,6 @@ export interface DataFormulatorState {
     displayPanelSize: number;
     visPaneSize: number;
     conceptShelfPaneSize: number;
-    //synthesizerRunning: boolean;
 
     // controls logs and message index
     messages: Message[];
@@ -51,6 +50,7 @@ export interface DataFormulatorState {
     focusedTableId: string | undefined;
     focusedChartId: string | undefined;
     activeThreadChartId: string | undefined; // specifying which chartThread is actively viewed
+    threadDrawerOpen: boolean; // decides whether the thread drawer is open
 
     chartSynthesisInProgress: string[];
 
@@ -82,6 +82,7 @@ const initialState: DataFormulatorState = {
     focusedTableId: undefined,
     focusedChartId: undefined,
     activeThreadChartId: undefined,
+    threadDrawerOpen: false,
 
     chartSynthesisInProgress: [],
 
@@ -230,6 +231,7 @@ export const dataFormulatorSlice = createSlice({
             state.focusedTableId = undefined;
             state.focusedChartId = undefined;
             state.activeThreadChartId = undefined;
+            state.threadDrawerOpen = false;
 
             state.chartSynthesisInProgress = [];
 
@@ -255,6 +257,7 @@ export const dataFormulatorSlice = createSlice({
             state.focusedTableId = savedState.focusedTableId || undefined;
             state.focusedChartId = savedState.focusedChartId || undefined;
             state.activeThreadChartId = savedState.activeThreadChartId || undefined;
+            state.threadDrawerOpen = false;
 
             state.chartSynthesisInProgress = [];
 
@@ -541,15 +544,15 @@ export const dataFormulatorSlice = createSlice({
         setVisPaneSize: (state, action: PayloadAction<number>) => {
             state.visPaneSize = action.payload;
         },
+        setThreadDrawerOpen: (state, action: PayloadAction<boolean>) => {
+            state.threadDrawerOpen = action.payload;
+        },
         setDisplayPanelSize: (state, action: PayloadAction<number>) => {
             state.displayPanelSize = action.payload;
         },
         setConceptShelfPaneSize: (state, action: PayloadAction<number>) => {
             state.conceptShelfPaneSize = action.payload;
         },
-        // setSynthesizerRunning: (state, action: PayloadAction<boolean>) => {
-        //     state.synthesizerRunning = action.payload;
-        // },
         addMessages: (state, action: PayloadAction<Message>) => {
             state.messages = [...state.messages, action.payload];
         },
@@ -603,9 +606,6 @@ export const dataFormulatorSlice = createSlice({
 
             if (data["status"] == "ok" && data["result"].length > 0) {
                 let typeMap = data['result'][0]['fields'];
-
-                console.log(data)
-
                 state.conceptShelfItems = state.conceptShelfItems.map(field => {
                     if (((field.source == "original" && field.tableRef == tableId ) || field.source == "custom") && Object.keys(typeMap).includes(field.name)) {
                         field.semanticType = typeMap[field.name]['semantic_type'];

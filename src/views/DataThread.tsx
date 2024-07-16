@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-import React, { FC, useState } from 'react';
+import React, { FC, useRef, useState } from 'react';
 
 import {
     Box,
@@ -18,6 +18,11 @@ import {
     Tooltip,
     ButtonGroup,
     useTheme,
+    Drawer,
+    ListItemButton,
+    ListItemText,
+    Collapse,
+    Grow,
 } from '@mui/material';
 
 import embed from 'vega-embed';
@@ -52,6 +57,8 @@ import { chartAvailabilityCheck, generateChartSkeleton, getDataTable } from './V
 import { TriggerCard } from './EncodingShelfCard';
 import ExpandLess from '@mui/icons-material/ExpandLess';
 import ExpandMore from '@mui/icons-material/ExpandMore';
+import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
+import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 
 let buildChartCard = (chartElement: {tableId: string, chartId: string, element: any}, 
                       focusedChartId?: string) => {
@@ -273,24 +280,19 @@ export const DataThread: FC<{}> = function ({ }) {
     let tables = useSelector((state: DataFormulatorState) => state.tables);
     let charts = useSelector((state: DataFormulatorState) => state.charts);
     let focusedChartId = useSelector((state: DataFormulatorState) => state.focusedChartId);
+    let threadDrawerOpen = useSelector((state: DataFormulatorState) => state.threadDrawerOpen);
 
     let chartSynthesisInProgress = useSelector((state: DataFormulatorState) => state.chartSynthesisInProgress);
         
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
 
-    let [drawerOpen, setDrawerOpen] = useState<boolean>(true);
+    // run this function from an event handler or an effect to execute scroll 
 
     const dispatch = useDispatch();
 
+    let setThreadDrawerOpen = (flag: boolean) => { dispatch(dfActions.setThreadDrawerOpen(flag)); }
+
     // excluding base tables or tables from saved charts
-    //let draftTables = tables.filter(t => t.derive && !charts.some(chart => chart. chart.tableRef == t.id));
-
-    //console.log(tables);
-
-    //let vegaSpec: any = createVegaObj(markType, encodingMap, conceptShelfItems)[0];
-    // if (tables.length > 0) {
-    //     vegaSpec = createVegaObj(markType, encodingMap, conceptShelfItems)[0];
-    // }
     let derivedFields = conceptShelfItems.filter(f => f.source == "derived");
 
     // when there is no result and synthesis is running, just show the waiting panel
@@ -351,7 +353,6 @@ export const DataThread: FC<{}> = function ({ }) {
                         </Tooltip>
                     </Box>
                 </Box>
-                {/* <TriggerCard chartId={chart.id} noBorder={true} /> */}
             </Box>;
             return {chartId: chart.id, tableId: table.id, element}
         }
@@ -434,28 +435,43 @@ export const DataThread: FC<{}> = function ({ }) {
     let refTables = tables; //[...new Set(chartElements.map(ce => tables.find(t => t.id == ce.tableId) as DictTable))];
     let leafTables = refTables.filter(t => !refTables.some(t2 => t2.derive?.trigger.tableId == t.id));
 
-    let threadView =  <Box sx={{margin: "0px 0px 8px 0px"}}>
+    let threadView =  <Box sx={{margin: "0px 0px 8px 0px", paddingBottom: 10}}>
             {[
                 ...leafTables.map((lt, i) => {
                     let usedTableIds = leafTables.slice(0, i).map(x => [x.id, ...getTriggers(x, tables).map(y => y.tableId) || []]).flat();
-                    return <SingleThreadView threadIdx={i} leafTable={lt} chartElements={chartElements} usedTableIds={usedTableIds} />
+                    return <SingleThreadView  threadIdx={i} leafTable={lt} chartElements={chartElements} usedTableIds={usedTableIds} />
                 }),
             ]}
         </Box>
 
+    let panelView = <Box sx={{margin: "0px 0px 8px 0px", display: 'flex', flexDirection: 'row-reverse', paddingBottom: 2}}>   
+        {leafTables.map((lt, i) => {
+            let usedTableIds = leafTables.slice(0, i)
+                .map(x => [x.id, ...getTriggers(x, tables).map(y => y.tableId) || []]).flat();
+            return <Box>
+                <SingleThreadView threadIdx={i} leafTable={lt} chartElements={chartElements} usedTableIds={usedTableIds} />
+            </Box>
+        })}
+    </Box>
+
+    let threadDrawerWidth = Math.min(600, leafTables.length * 200)
+
     let carousel = (
-        <Box className="data-thread" >
-            <Box sx={{ direction: 'ltr', display: 'flex', marginTop: "10px", alignItems: 'center', justifyContent: 'space-between'}}>
+        <Box className="data-thread" sx={{ overflow: 'hidden',}}>
+            <Box sx={{ direction: 'ltr', display: 'flex',
+                        paddingTop: "10px", paddingLeft: '12px', alignItems: 'center', justifyContent: 'space-between'}}>
                 <Typography className="view-title" component="h2" sx={{marginTop: "6px"}}>
                     Data Threads
                 </Typography>
+                <IconButton size={'small'} color="primary" onClick={() => { setThreadDrawerOpen(!threadDrawerOpen) }}>
+                    {threadDrawerOpen ? <ChevronLeftIcon /> : <ChevronRightIcon />}
+                </IconButton>
             </Box>
-            <AnimateOnChange
-                baseClassName="thread-view-mode"
-                animationClassName="thread-view-animation">
-                {threadView}
-                <Box sx={{height: 100}}> </Box>
-            </AnimateOnChange>
+            <Box sx={{transition: 'width 0.1s', overflow: 'auto', 
+                      direction: 'rtl', padding: '0px 8px', display: 'flex'}}  
+                width={threadDrawerOpen ? threadDrawerWidth + 2 : 210} className="thread-view-mode">
+                {threadDrawerOpen ? panelView : threadView} 
+            </Box>
         </Box>
     );
 
