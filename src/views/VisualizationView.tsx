@@ -67,6 +67,8 @@ import { ChatDialog } from './ChatDialog';
 import { EncodingShelfThread } from './EncodingShelfThread';
 import { CustomReactTable } from './ReactTable';
 import InsightsIcon from '@mui/icons-material/Insights';
+import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
+import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 
 import { MuiMarkdown, getOverrides } from 'mui-markdown';
 
@@ -239,7 +241,8 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
     let charts = useSelector((state: DataFormulatorState) => state.charts);
     let focusedChartId = useSelector((state: DataFormulatorState) => state.focusedChartId);
     let chartSynthesisInProgress = useSelector((state: DataFormulatorState) => state.chartSynthesisInProgress);
-    
+    let threadDrawerOpen = useSelector((state: DataFormulatorState) => state.threadDrawerOpen);
+
     let synthesisRunning = focusedChartId ? chartSynthesisInProgress.includes(focusedChartId) : false;
     let handleDeleteChart = () => { focusedChartId && dispatch(dfActions.deleteChartById(focusedChartId)) }
 
@@ -262,11 +265,17 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
     const [summaryInProgress, setSummaryInProgress] = useState<boolean>(false);
     const [chartSummary, setChartSummary] = useState<undefined | any>(undefined);
 
+    let [collaspseEditor, setCollapseEditor] = useState<boolean>(false);
+
     let scaleFactor = focusedChart.scaleFactor || 1;
 
     useEffect(() => {
         setFocusUpdated(true);
     }, [focusedChartId])
+
+    useEffect(() => {
+        setCollapseEditor(threadDrawerOpen);
+    }, [threadDrawerOpen])
 
     let chartUnavailable = true;
     
@@ -647,16 +656,27 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
             </Box>
         ]
     }
-
+    //sticky for encodingshelfthread: sx={{position: 'absolute', right: 0, zIndex: 1000, paddingTop: 1}}
+    
     let content = [
         <Box key='focused-box' className="vega-focused" sx={{ display: "flex", overflow: 'auto', flexDirection: 'column', position: 'relative' }}>
             {focusedComponent}
         </Box>,
         // <EncodingShelf key='encoding-shelf' synthesisRunning={synthesisRunning} chartId={chart.id} 
         //                handleUpdateCandidates={handleUpdateCandidates} handleSetSynthesisStatus={handleSetSynthesisStatus} />
-        <Box >
-            <EncodingShelfThread key='encoding-shelf' chartId={focusedChart.id} />
-        </Box>
+        <Collapse collapsedSize={48} in={!collaspseEditor} orientation='horizontal' 
+            sx={{position: 'relative'}}>
+            <Box sx={{display: 'flex', flexDirection: 'row', height: '100%'}}>
+                <Tooltip title={collaspseEditor ? "open editing panel" : "hide editing panel"}>
+                    <Button color="primary"
+                            sx={{width: 24, minWidth: 24}}
+                        onClick={()=>{setCollapseEditor(!collaspseEditor)}}
+                    >{collaspseEditor ? <ChevronLeftIcon /> : <ChevronRightIcon />}</Button>
+                </Tooltip>
+                <EncodingShelfThread key='encoding-shelf' chartId={focusedChart.id} />
+            </Box>
+        </Collapse>,
+        
     ]
 
     let [scaleMin, scaleMax] = [0.2, 2.4]

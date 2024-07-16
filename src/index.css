@@ -4,6 +4,7 @@ body,
     height: 100%;
     margin: 0;
     transform: translateZ(0);
+    overflow: hidden;
 }
 
 @import '@fontsource/roboto/300.css';
