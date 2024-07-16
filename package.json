@@ -68,7 +68,7 @@
     },
     "scripts": {
         "start": "vite",
-        "build": "react-scripts build && npm run bundle"
+        "build": "vite build"
     },
     "eslintConfig": {
         "extends": [
