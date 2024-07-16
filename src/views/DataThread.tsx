@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-import React, { FC, useRef, useState } from 'react';
+import React, { FC, useEffect, useRef, useState } from 'react';
 
 import {
     Box,
@@ -75,11 +75,13 @@ let buildChartCard = (chartElement: {tableId: string, chartId: string, element: 
 }
 
 let SingleThreadView: FC<{
+    scrollRef: any,
     threadIdx: number,
     leafTable: DictTable;
     chartElements: {tableId: string, chartId: string, element: any}[];
     usedTableIds: string[]
 }> = function ({
+        scrollRef,
         threadIdx,
         leafTable, 
         chartElements,
@@ -171,7 +173,7 @@ let SingleThreadView: FC<{
             </Box>
         </ListItem>;
 
-        let regularTableBox = <ListItem sx={{padding: '0px'}}>
+        let regularTableBox = <ListItem ref={relevantCharts.some(c => c.chartId == focusedChartId) ? scrollRef : null} sx={{padding: '0px'}}>
             <Card className={`data-thread-card ${selectedClassName}`} variant="outlined" 
                     sx={{ width: '100%', background: 'aliceblue' }} 
                     onClick={() => { 
@@ -246,9 +248,9 @@ let SingleThreadView: FC<{
 
     content = w(tableList, triggerCards, "")
 
-    return <>
-        <Tooltip title={collapsed ? 'expand' : 'collapse'}>
-            <Button fullWidth sx={{display: 'flex',  direction: 'ltr'}} color="primary" onClick={() => setCollapsed(!collapsed)}>
+    return <Box sx={{backgroundColor: threadIdx % 2 == 1 ? "rgba(0, 0, 0, 0.02)" : 'white', padding: '8px 8px'}}>
+         {/* <Tooltip title={collapsed ? 'expand' : 'collapse'}>
+           <Button fullWidth sx={{display: 'flex',  direction: 'ltr'}} color="primary" onClick={() => setCollapsed(!collapsed)}>
                 <Divider flexItem sx={{
                             "& .MuiDivider-wrapper": {
                                 display: 'flex', flexDirection: 'row',
@@ -267,13 +269,23 @@ let SingleThreadView: FC<{
                     </Typography>
                     {!collapsed ? <ExpandLess sx={{fontSize: 14}}/> : <ExpandMore sx={{fontSize: 14}}/>}
                 </Divider>
-            </Button>
-        </Tooltip>
-        
+            </Button> 
+        </Tooltip>*/}
+        <Box sx={{display: 'flex',  direction: 'ltr', margin: 1}}>
+            <Divider flexItem sx={{
+                margin: 'auto',
+                "& .MuiDivider-wrapper": { display: 'flex', flexDirection: 'row' },
+                "&::before, &::after": {  borderColor: 'darkgray',  borderWidth: '2px', width: 50 },
+            }}>
+                <Typography sx={{fontSize: "10px", fontWeight: 'bold', color:'rgba(100, 100, 100, 0.8)', textTransform: 'none'}}>
+                    {`thread - ${threadIdx + 1}`}
+                </Typography>
+            </Divider>
+        </Box>
         <List sx={{padding: '2px 4px 2px 4px', marginTop: 0, marginBottom: '8px', direction: 'ltr'}}>
             {content}
         </List>
-    </>    
+    </Box>    
 }
 
 export const DataThread: FC<{}> = function ({ }) {
@@ -287,11 +299,19 @@ export const DataThread: FC<{}> = function ({ }) {
         
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
 
+    const scrollRef = useRef<null | HTMLDivElement>(null)
+
+    const executeScroll = () => {if (scrollRef.current != null) scrollRef.current.scrollIntoView()}    
     // run this function from an event handler or an effect to execute scroll 
+
 
     const dispatch = useDispatch();
 
     let setThreadDrawerOpen = (flag: boolean) => { dispatch(dfActions.setThreadDrawerOpen(flag)); }
+
+    useEffect(() => {
+        executeScroll();
+    }, [threadDrawerOpen])
 
     // excluding base tables or tables from saved charts
     let derivedFields = conceptShelfItems.filter(f => f.source == "derived");
@@ -433,29 +453,20 @@ export const DataThread: FC<{}> = function ({ }) {
     })
  
 
-    let refTables = tables; //[...new Set(chartElements.map(ce => tables.find(t => t.id == ce.tableId) as DictTable))];
+    let refTables = tables; 
     let leafTables = refTables.filter(t => !refTables.some(t2 => t2.derive?.trigger.tableId == t.id));
 
-    let threadView =  <Box sx={{margin: "0px 0px 8px 0px", paddingBottom: 10}}>
-            {[
-                ...leafTables.map((lt, i) => {
-                    let usedTableIds = leafTables.slice(0, i).map(x => [x.id, ...getTriggers(x, tables).map(y => y.tableId) || []]).flat();
-                    return <SingleThreadView  threadIdx={i} leafTable={lt} chartElements={chartElements} usedTableIds={usedTableIds} />
-                }),
-            ]}
-        </Box>
 
-    let panelView = <Box sx={{margin: "0px 0px 8px 0px", display: 'flex', flexDirection: 'row-reverse', paddingBottom: 2}}>   
+
+    let view = <Box sx={{margin: "0px 0px 8px 0px", display: 'flex', flexDirection: threadDrawerOpen ? 'row-reverse' : 'column', paddingBottom: 2}}>   
         {leafTables.map((lt, i) => {
             let usedTableIds = leafTables.slice(0, i)
                 .map(x => [x.id, ...getTriggers(x, tables).map(y => y.tableId) || []]).flat();
-            return <Box>
-                <SingleThreadView threadIdx={i} leafTable={lt} chartElements={chartElements} usedTableIds={usedTableIds} />
-            </Box>
+            return <SingleThreadView  scrollRef={scrollRef} threadIdx={i} leafTable={lt} chartElements={chartElements} usedTableIds={usedTableIds} />
         })}
     </Box>
 
-    let threadDrawerWidth = Math.min(600, leafTables.length * 200)
+    let threadDrawerWidth = Math.min(Math.max(600, window.innerWidth * 0.8), leafTables.length * 200)
 
     let carousel = (
         <Box className="data-thread" sx={{ overflow: 'hidden',}}>
@@ -464,15 +475,16 @@ export const DataThread: FC<{}> = function ({ }) {
                 <Typography className="view-title" component="h2" sx={{marginTop: "6px"}}>
                     Data Threads
                 </Typography>
-                <IconButton size={'small'} color="primary" onClick={() => { setThreadDrawerOpen(!threadDrawerOpen) }}>
+                <IconButton size={'small'} color="primary" onClick={() => {  setThreadDrawerOpen(!threadDrawerOpen); }}>
                     {threadDrawerOpen ? <ChevronLeftIcon /> : <ChevronRightIcon />}
                 </IconButton>
             </Box>
-            <Box sx={{transition: 'width 0.1s', overflow: 'auto', 
-                      direction: 'rtl', padding: '0px 8px', display: 'flex'}}  
-                width={threadDrawerOpen ? threadDrawerWidth + 2 : 210} className="thread-view-mode">
-                {threadDrawerOpen ? panelView : threadView} 
+            <Box sx={{transition: 'width 200ms cubic-bezier(0.4, 0, 0.2, 1) 0ms', overflow: 'auto', 
+                      direction: 'rtl', display: 'flex', flex: 1}}  
+                width={threadDrawerOpen ? threadDrawerWidth + 2 : 212} className="thread-view-mode">
+                {view}
             </Box>
+            
         </Box>
     );
 
