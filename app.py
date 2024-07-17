@@ -8,6 +8,7 @@ import flask
 from flask import Flask, request, send_from_directory, redirect, url_for
 from flask import stream_with_context, Response
 import html
+import pandas as pd
 
 from flask_cors import CORS
 
@@ -15,7 +16,7 @@ import json
 import time
 from pathlib import Path
 
-from vega_datasets import local_data
+from vega_datasets import data as vega_data
 
 APP_ROOT = Path(os.path.join(Path(__file__).parent, 'server')).absolute()
 sys.path.append(os.path.abspath(APP_ROOT))
@@ -46,17 +47,19 @@ import os
 app = Flask(__name__, static_url_path='', static_folder=os.path.join(APP_ROOT, "..", "dist"))
 CORS(app)
 
-
 @app.route('/vega-datasets')
 def get_example_dataset_list():
-    dataset_names = local_data.list_datasets()
+    dataset_names = vega_data.list_datasets()
+    example_datasets = ['co2-concentration', 'movies', 'seattle-weather', 
+                        'disasters', 'unemployment-across-industries']
     dataset_info = []
-    for name in dataset_names:
+    print(dataset_names)
+    for name in example_datasets:
         try:
-            info_obj = {'name': name, 'snapshot': local_data.__getattr__(name)().to_dict("records")[:10]} 
+            info_obj = {'name': name, 'snapshot': vega_data(name).to_json(orient='records')} 
+            dataset_info.append(info_obj)
         except:
             pass
-        dataset_info.append(info_obj)
     
     response = flask.jsonify(dataset_info)
     response.headers.add('Access-Control-Allow-Origin', '*')
@@ -65,9 +68,12 @@ def get_example_dataset_list():
 @app.route('/vega-dataset/<path:path>')
 def get_datasets(path):
     try:
-        df = local_data.__getattr__(path)()
-        data_object = json.dumps(df.to_dict("records"))
-    except:
+        df = vega_data(path)
+        # to_json is necessary for handle NaN issues
+        data_object = df.to_json(None, 'records')
+    except Exception as err:
+        print(path)
+        print(err)
         data_object = "[]"
     response = data_object
     return response
@@ -75,11 +81,15 @@ def get_datasets(path):
 @app.route('/check-available-models', methods=['GET', 'POST'])
 def check_available_models():
 
+    results = []
+
+    # dont need to check if it's empty
+    if os.getenv("ENDPOINT") is None:
+        return json.dumps(results)
+
     client = get_client(os.getenv("ENDPOINT"), "")
     models = [model.strip() for model in os.getenv("MODELS").split(',')]
 
-    results = []
-    
     for model in models:
         try:
             response = client.chat.completions.create(
@@ -101,6 +111,7 @@ def check_available_models():
                 })
         except:
             pass
+
     return json.dumps(results)
 
 @app.route('/test-model', methods=['GET', 'POST'])
@@ -148,11 +159,6 @@ def test_model():
         {'status': 'error'}
     
     return json.dumps(result)
-
-@app.route('/about', defaults={'path': ''})
-def catch_all(path):
-  return send_from_directory(app.static_folder, "index.html")
-
 
 @app.route("/", defaults={"path": ""})
 def index_alt(path):
@@ -284,7 +290,7 @@ def sort_data_request():
 
         #candidates, dialog = limbo_concept.call_codex_sort(content["items"], content["field"])
         candidates = candidates if candidates != None else []
-        response = flask.jsonify({ "status": "ok", "token": token, "result": candidates })            
+        response = flask.jsonify({ "status": "ok", "token": token, "result": candidates })
     else:
         response = flask.jsonify({ "token": -1, "status": "error", "result": [] })
 
@@ -308,6 +314,10 @@ def derive_data():
         input_tables = content["input_tables"]
         new_fields = content["new_fields"]
         instruction = content["extra_prompt"]
+
+        print("spec------------------------------")
+        print(new_fields)
+        print(instruction)
 
         mode = "transform"
         if len(new_fields) == 0:
@@ -335,15 +345,6 @@ def derive_data():
 
             repair_attempts += 1
         
-        for result in results:
-            if result['status'] != 'no transformation':
-                code_expl_agent = CodeExplanationAgent(client=client, model=model)
-                expl = code_expl_agent.run(input_tables, result['code'])
-                result['codeExpl'] = expl
-                print(expl)
-            else:
-                result['codeExpl'] = 'no transformation is necessary'
-
         response = flask.jsonify({ "status": "ok", "token": token, "results": results })
     else:
         response = flask.jsonify({ "token": "", "status": "error", "results": [] })
@@ -352,6 +353,26 @@ def derive_data():
     return response
 
 
+@app.route('/code-expl', methods=['GET', 'POST'])
+def request_code_expl():
+    if request.is_json:
+        app.logger.info("# request data: ")
+        content = request.get_json()        
+        token = content["token"]
+
+        client = get_client(content['model']['endpoint'], content['model']['key'])
+        model = content['model']['model']
+        app.logger.info(f" model: {content['model']}")
+
+        # each table is a dict with {"name": xxx, "rows": [...]}
+        input_tables = content["input_tables"]
+        code = content["code"]
+        
+        code_expl_agent = CodeExplanationAgent(client=client, model=model)
+        expl = code_expl_agent.run(input_tables, code)
+    else:
+        expl = ""
+    return expl
 
 @app.route('/refine-data', methods=['GET', 'POST'])
 def refine_data():
@@ -396,12 +417,6 @@ def refine_data():
 
                 results = agent.followup(input_tables, prev_dialog, [field['name'] for field in output_fields], new_instruction)
                 repair_attempts += 1
-            
-        for result in results:
-            code_expl_agent = CodeExplanationAgent(client=client, model=model)
-            expl = code_expl_agent.run(input_tables, result['code'])
-            result['codeExpl'] = expl
-            print(expl)
 
         response = flask.jsonify({ "status": "ok", "token": token, "results": results})
     else:

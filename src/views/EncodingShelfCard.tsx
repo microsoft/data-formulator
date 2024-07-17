@@ -3,7 +3,7 @@
 
 import { FC, useState } from 'react'
 import { useSelector, useDispatch } from 'react-redux'
-import { DataFormulatorState, dfActions, dfSelectors, fetchFieldSemanticType, generateFreshChart } from '../app/dfSlice';
+import { DataFormulatorState, dfActions, dfSelectors, fetchCodeExpl, fetchFieldSemanticType, generateFreshChart } from '../app/dfSlice';
 
 import {
     Box,
@@ -87,12 +87,7 @@ export const TriggerCard: FC<{className?: string, trigger: Trigger, hideFields?:
     let encodingComp : any = ''
     let prompt = trigger.instruction ? `"${trigger.instruction}"` : "";
 
-    // console.log(trigger)
-
     if (trigger.chartRef && charts.find(c => c.id == trigger.chartRef)) {
-
-        // console.log('chartRef')
-        // console.log(trigger.chartRef)
 
         let chart = charts.find(c => c.id == trigger.chartRef) as Chart;
         let encodingMap = chart?.encodingMap;
@@ -146,19 +141,11 @@ export const MiniTriggerCard: FC<{className?: string, trigger: Trigger, hideFiel
 
     const charts = useSelector((state: DataFormulatorState) => state.charts);
     let fieldItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
-    const focusedChartId = useSelector((state: DataFormulatorState) => state.focusedChartId);
-
-    const dispatch = useDispatch<AppDispatch>();
 
     let encodingComp : any = ''
     let prompt = trigger.instruction ? `"${trigger.instruction}"` : "";
 
-    // console.log(trigger)
-
     if (trigger.chartRef && charts.find(c => c.id == trigger.chartRef)) {
-
-        // console.log('chartRef')
-        // console.log(trigger.chartRef)
 
         let chart = charts.find(c => c.id == trigger.chartRef) as Chart;
         let encodingMap = chart?.encodingMap;
@@ -199,15 +186,9 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
     const tables = useSelector((state: DataFormulatorState) => state.tables);
     const charts = useSelector((state: DataFormulatorState) => state.charts);
     const betaMode = useSelector((state: DataFormulatorState) => state.betaMode);
-    const chartSynthesisInProgress = useSelector((state: DataFormulatorState) => state.chartSynthesisInProgress);
     let activeModel = useSelector(dfSelectors.getActiveModel);
 
-    let synthesisRunning = chartSynthesisInProgress.includes(chartId)
-
     let [prompt, setPrompt] = useState<string>(trigger?.instruction || "");
-    let [promptBoxOpen, setPromptBoxOpen] = useState<boolean>(true);
-
-    let [fieldComponentsOpen, setFieldComponentsOpen] = useState<boolean>(false);
 
     let chart = charts.find(chart => chart.id == chartId) as Chart;
     let encodingMap = chart?.encodingMap;
@@ -215,10 +196,6 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
     let handleUpdateChartType = (newChartType: string)=>{
         dispatch(dfActions.updateChartType({chartId, chartType: newChartType}));
     }
-
-    // let handleSetSynthesisStatus = (status: boolean) => {
-    //     dispatch(dfActions.changeChartRunningStatus({chartId, status}))
-    // }
 
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
 
@@ -235,17 +212,16 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                 {channelList.filter(channel => Object.keys(encodingMap).includes(channel))
                     .map(channel => <EncodingBox key={`shelf-${channel}`} channel={channel as Channel} chartId={chartId} />)}
             </Box>
-
             return component;
         });
 
-    let activeFields = conceptShelfItems.filter((field) => Array.from(Object.values(encodingMap))
-                                        .map((enc: EncodingItem) => enc.fieldID).includes(field.id));
-    let activeBaseFields = conceptShelfItems.filter((field) => {
-        return activeFields.map(f => f.source == "derived" ? (f.transform as ConceptTransformation).parentIDs : [f.id]).flat().includes(field.id);
-    });
+    // derive active fields from encoding map so that we can keep the order of which fields will be visualized
+    let activeFields = Object.values(encodingMap).map(enc => enc.fieldID).filter(fieldId => fieldId && conceptShelfItems.map(f => f.id)
+                                .includes(fieldId)).map(fieldId => conceptShelfItems.find(f => f.id == fieldId) as FieldItem);
+    let activeBaseFields = activeFields.map(f => f.source == 'derived' ? (f.transform as ConceptTransformation).parentIDs : [f.id])
+                                .flat().map(fieldId => conceptShelfItems.find(f => f.id == fieldId) as FieldItem)
+    
     let activeCustomFields = activeBaseFields.filter(field => field.source == "custom");
-
 
     // check if the current table contains all fields already exists a table that fullfills the user's specification
     let existsWorkingTable = activeBaseFields.length == 0 || activeBaseFields.every(f => currentTable.names.includes(f.name));
@@ -297,9 +273,6 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
         }) 
         let engine = betaMode ? getUrls().SERVER_DERIVE_DATA_V2_URL : getUrls().SERVER_DERIVE_DATA_URL;
 
-        // console.log("current log")
-        // console.log(currentTable.derive?.dialog)
-
         if (mode == "formulate" && currentTable.derive?.dialog) {
             messageBody = JSON.stringify({
                 token: token,
@@ -312,10 +285,6 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
             })
             engine = getUrls().SERVER_REFINE_DATA_URL;
         }
-
-        // console.log("--> let's check message body")
-        // console.log(messageBody);
-        // console.log(engine)
 
         let message = {
             method: 'POST',
@@ -380,14 +349,11 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                             // PART 2: create new table (or override table)
                             let candidate = candidates[0];
 
-                            console.log("-_-:")
-                            console.log(candidate)
-
                             let candidateTable = createDictTable(
                                 candidateTableId, 
                                 candidate["content"], 
                                 { code: candidate["code"], 
-                                    codeExpl: candidate["codeExpl"],
+                                    codeExpl: "",
                                     source: baseTables.map(t => t.id), 
                                     dialog: candidate["dialog"], 
                                     trigger: currentTrigger }
@@ -410,6 +376,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                             dispatch(dfActions.addConceptItems(conceptsToAdd));
 
                             dispatch(fetchFieldSemanticType(candidateTable));
+                            dispatch(fetchCodeExpl(candidateTable));
 
                             // concepts from the current table
                             let currentConcepts = [...conceptShelfItems.filter(c => names.includes(c.name)), ...conceptsToAdd];
@@ -456,7 +423,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                                     newChart.intermediate = undefined;
                                 }
                                 
-                                newChart = resolveChartFields(newChart, currentConcepts, refinedGoal)
+                                newChart = resolveChartFields(newChart, currentConcepts, refinedGoal, candidateTable);
 
                                 dispatch(dfActions.addChart(newChart));
                                 dispatch(dfActions.setFocusedChart(newChart.id));                                
@@ -497,112 +464,9 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
     }
     let defaultInstruction = chart.chartType == "Auto" ? "" : "" // `the output data should contain fields ${activeBaseFields.map(f => `${f.name}`).join(', ')}`
 
-    //let createDisabled = !existsWorkingTable && (baseTables.length == 0 || Array.from(Object.values(encodingMap)).filter(encoding => { return encoding.fieldID != null }).length == 0);
-    let createDisabled = false; //!existsWorkingTable;
+    let createDisabled = false;
 
-    // let synthesisButton = synthesisRunning ?
-    //     <Button sx={{ marginLeft: "0", marginTop: 1 }} variant={"outlined"} endIcon={<CircularProgress size={20} />}
-    //         color={"primary"} onClick={() => { deriveNewData("rerun") }}>
-    //         Formulating...
-    //     </Button>
-    //     : (currentTable.derive ?
-    //         [
-    //             <ButtonGroup sx={{marginTop: 1}} color={"warning"} fullWidth disabled={createDisabled}>
-    //                 {/* <Tooltip title="change refinement mode">
-    //                     <Button size="small" sx={{width: 8}} onClick={() => {setRefineMode(refineMode == "data" ? "chart" : "data")}}>{refineMode == "data" ? <BackupTableIcon /> : <AutoGraphIcon />}</Button>
-    //                 </Tooltip> */}
-    //                 <Tooltip title={`Run formulate instructions on top of the current result`}>
-    //                     <Button sx={{ marginLeft: "0"}}  variant={"contained"} endIcon={<AirlineStopsIcon />}
-    //                         disabled={createDisabled} disableElevation color={"primary"} onClick={() => { deriveNewData("formulate") }}>
-    //                         Formulate Ontop
-    //                     </Button>
-    //                 </Tooltip>
-    //             </ButtonGroup>,
-    //             // <Tooltip title={`Rerun the last formulation step`}>
-    //             //     <Button sx={{ marginLeft: "0", marginTop: 1 }}  variant={"contained"} endIcon={<RefreshIcon />}
-    //             //         disabled={createDisabled} disableElevation color="warning" onClick={() => { deriveNewData("generate") }}>
-    //             //         Re-formulate
-    //             //     </Button>
-    //             // </Tooltip>
-    //         ]
-    //         // <Button sx={{ marginLeft: "0" }} variant={"contained"} endIcon={<RefreshIcon />}
-    //         //     disabled={createDisabled} disableElevation color={"primary"} onClick={() => { deriveNewData() }}>
-    //         //     RE-Formulate
-    //         // </Button>
-    //         : <Button sx={{ marginLeft: "0", marginTop: 1 }} variant={"contained"}
-    //             disabled={createDisabled} color={"primary"} onClick={() => { deriveNewData("formulate") }}>
-    //             Formulate
-    //         </Button>
-    //     )
-
-    // let controllButtons = 
-    //     <Box key='control-bottons' sx={{marginLeft: 'auto', display: 'flex'}} >
-    //         {/* <Tooltip title="change refinement mode">
-    //             <Button size="small" sx={{width: 8}} onClick={() => {setRefineMode(refineMode == "data" ? "chart" : "data")}}>{refineMode == "data" ? <BackupTableIcon /> : <AutoGraphIcon />}</Button>
-    //         </Tooltip> */}
-    //         <Tooltip key='fork-new-thread' title={`Fork a new thread from this`}>
-    //             <IconButton //sx={{ marginLeft: "0"}}  
-    //                 disabled={createDisabled}  color={"primary"} onClick={() => { 
-    //                     let newChart = JSON.parse(JSON.stringify(chart)) as Chart;
-    //                     newChart.id = `chart-${Date.now()- Math.floor(Math.random() * 10000)}`;
-    //                     newChart.saved = false;
-
-    //                     console.log('-- about to fork new thread --')
-    //                     let refTable : DictTable = getDataTable(newChart, tables, charts, conceptShelfItems);
-    //                     console.log(refTable)
-
-    //                     if (refTable.derive) {
-    //                         // if the currentTable 
-    //                         // create a new fresh table out of it
-    //                         let tableSuffix = Number.parseInt((Date.now() - Math.floor(Math.random() * 10000)).toString().slice(-2));
-    //                         let tableId = `table-${tableSuffix}`
-    //                         while (tables.find(t => t.id == tableId) != undefined) {
-    //                             tableSuffix = tableSuffix + 1;
-    //                             tableId = `table-${tableSuffix}`
-    //                         } 
-                            
-    //                         let newTable = JSON.parse(JSON.stringify(refTable)) as DictTable
-    //                         newTable.id = tableId;
-    //                         newTable.derive = undefined;
-
-    //                         newChart.tableRef = newTable.id;
-    //                         dispatch(dfActions.addTable(newTable));
-    //                         dispatch(fetchFieldSemanticType(newTable));
-    //                     }
-
-    //                     dispatch(dfActions.addChart(newChart));
-    //                     dispatch(dfActions.setFocusedChart(newChart.id));
-    //                 }}>
-    //                 <ForkLeftIcon sx={{transform: 'rotate(180deg)'}} fontSize="small" />
-    //             </IconButton>
-    //         </Tooltip>
-    //         <Tooltip key='duplicate-chart' title={`Duplicate the chart`}>
-    //             <IconButton sx={{ marginLeft: "-8px"}}
-    //                 disabled={createDisabled}  color={"primary"} onClick={() => {
-    //                     let newChart = JSON.parse(JSON.stringify(chart)) as Chart;
-    //                     newChart.id = `chart-${Date.now()- Math.floor(Math.random() * 10000)}`;
-    //                     newChart.saved = false;
-    //                     dispatch(dfActions.addChart(newChart));
-    //                     dispatch(dfActions.setFocusedChart(newChart.id));
-    //                 }}>
-    //                 <ContentCopyIcon fontSize="small" />
-    //             </IconButton>
-    //         </Tooltip>
-    //         <Divider key="dv" flexItem orientation="vertical" variant="middle" />
-    //         <Tooltip key='rerun-btn' title={`Rerun the last data formulation step`}>
-    //             <IconButton 
-    //                 disabled={currentTable.derive == undefined}  color="warning" onClick={() => { deriveNewData("rerun") }}>
-    //                 <RefreshIcon fontSize="small"/>
-    //             </IconButton>
-    //         </Tooltip>
-    //         <Tooltip key='delete-btn' title={`Delete this chart`}>
-    //             <IconButton  sx={{ marginLeft: "-8px"}}
-    //                 disabled={createDisabled}  color="warning" onClick={() => { dispatch(dfActions.deleteChartById(chart.id)) }}>
-    //                 <DeleteIcon fontSize="small"/>
-    //             </IconButton>
-    //         </Tooltip>
-    //     </Box>
-
+    // zip multiple components together
     const w: any = (a: any[], b: any[]) => a.length ? [a[0], ...w(b, a.slice(1))] : b;
 
     let formulateInputBox = <Box key='text-input-boxes' sx={{display: 'flex', flexDirection: 'row', flex: 1, padding: '0px 4px'}}>
@@ -645,12 +509,6 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                         <ChangeCircleOutlinedIcon fontSize="small" />
                     </IconButton>
                 </Tooltip>
-                {/* <Tooltip title={`formulate new`}>
-                    <IconButton sx={{ marginLeft: "0"}} size="small"
-                    disabled={createDisabled} color={"primary"} onClick={() => { deriveNewData() }}>
-                        <PrecisionManufacturing fontSize="small" />
-                    </IconButton>
-                </Tooltip> */}
             </Box>
          : 
              <Tooltip title={`Formulate`}>
@@ -706,38 +564,8 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
             <Box key='encoding-groups' sx={{ flex: '1 1 auto' }} style={{ height: "calc(100% - 100px)" }} className="encoding-list">
                 {encodingBoxGroups}
             </Box>
-            {/* <InputLabel key='input-label' shrink={true} sx={{fontSize: 12, display: 'flex'}}>
-                <Typography fontSize="inherit" sx={{margin: 'auto 0'}}>Data Formulation Process</Typography>
-                <Button sx={{marginLeft: '4px', textTransform: 'none', padding: 0, fontSize: 12}}
-                    //endIcon={<ExpandMoreIcon sx={{transform: promptBoxOpen ? 'rotate(180deg)' : ''}} />} 
-                    onClick={() => { setPromptBoxOpen(!promptBoxOpen)}}>
-                    {previousInstructions ? (promptBoxOpen ? "(collapse)" : "(expand)") : ""} 
-                </Button>
-            </InputLabel> */}
-            {/* {previousInstructions} */}
-            {!existsWorkingTable ? [
-                // <InputLabel key='input-label' shrink={true} sx={{fontSize: 12, display: 'flex'}}>
-                //     <Typography fontSize="inherit" sx={{margin: 'auto 0'}}>Data Formulation Process</Typography>
-                //     <Button sx={{marginLeft: '4px', textTransform: 'none', padding: 0, fontSize: 12}}
-                //         //endIcon={<ExpandMoreIcon sx={{transform: promptBoxOpen ? 'rotate(180deg)' : ''}} />} 
-                //         onClick={() => { setPromptBoxOpen(!promptBoxOpen)}}>
-                //         {previousInstructions ? (promptBoxOpen ? "(collapse)" : "(expand)") : ""} 
-                //     </Button>
-                // </InputLabel>,
-                // formulateInputBox,
-                // <ListItem sx={{padding: '2px 0 2px 0'}}>
-                //     <ListItemIcon sx={{minWidth: 0, marginRight: '4px', }}>
-                //         <SouthIcon sx={{fontSize: "inherit"}} />
-                //     </ListItemIcon>
-                //     {followupInputBox}
-                // </ListItem>,
-                formulateInputBox
-            ] : formulateInputBox}
-            {/* {synthesisButton} */}
-            {/* {controllButtons} */}
+            {formulateInputBox}
         </Box>);
-
-    // console.log(JSON.stringify(visSpec));
 
     const encodingShelfCard = (
         <Card variant='outlined'  key='channel-components' 

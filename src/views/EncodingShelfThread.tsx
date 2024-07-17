@@ -3,7 +3,7 @@
 
 import { FC, useState } from 'react'
 import { useSelector, useDispatch } from 'react-redux'
-import { DataFormulatorState, dfActions, dfSelectors, fetchFieldSemanticType, generateFreshChart } from '../app/dfSlice';
+import { DataFormulatorState, dfActions, dfSelectors, fetchCodeExpl, fetchFieldSemanticType, generateFreshChart } from '../app/dfSlice';
 
 import {
     Box,
@@ -218,15 +218,14 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
         let triggerChart = charts.find(c => c.id == trigger.chartRef) as Chart;
         let prompt = trigger.instruction;
 
-        let activeFields = conceptShelfItems.filter((field) => Array.from(Object.values(triggerChart.encodingMap))
-                                        .map((enc: EncodingItem) => enc.fieldID).includes(field.id));
-        let activeBaseFields = conceptShelfItems.filter((field) => {
-            return activeFields.map(f => f.source == "derived" ? (f.transform as ConceptTransformation).parentIDs : [f.id]).flat().includes(field.id);
-        });
+        // derive active fields from encoding map so that we can keep the order of which fields will be visualized
+        let activeFields = Object.values(triggerChart.encodingMap).map(enc => enc.fieldID).filter(fieldId => fieldId && conceptShelfItems.map(f => f.id)
+                .includes(fieldId)).map(fieldId => conceptShelfItems.find(f => f.id == fieldId) as FieldItem);
+        let activeBaseFields = activeFields.map(f => f.source == 'derived' ? (f.transform as ConceptTransformation).parentIDs : [f.id])
+                .flat().map(fieldId => conceptShelfItems.find(f => f.id == fieldId) as FieldItem)
 
         dispatch(dfActions.clearUnReferencedTables());
         dispatch(dfActions.setVisPaneSize(640));
-        //handleRunSynthesisStream(example);
 
         let fieldNamesStr = activeFields.map(f => f.name).reduce(
             (a: string, b: string, i, array) => a + (i < array.length - 1 ? ', ' : ' and ') + b, "")
@@ -305,8 +304,12 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
                             let candidateTable = createDictTable(
                                 candidateTableId, 
                                 candidate["content"],
-                                { code: candidate["code"], codeExpl: candidate["codeExpl"],
-                                  source: baseTables.map(t => t.id), dialog: candidate["dialog"], trigger: trigger }
+                                {   code: candidate["code"], 
+                                    codeExpl: "",
+                                    source: baseTables.map(t => t.id), 
+                                    dialog: candidate["dialog"], 
+                                    trigger: trigger 
+                                }
                             )
 
                             let names = candidateTable.names;
@@ -325,6 +328,7 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
                             dispatch(dfActions.addConceptItems(conceptsToAdd));
                             dispatch(dfActions.overrideDerivedTables(candidateTable));
                             dispatch(fetchFieldSemanticType(candidateTable));
+                            dispatch(fetchCodeExpl(candidateTable));
 
                             if (triggerChart.chartType != "Auto" && charts.find(c => c.tableRef == overrideTableId)) { 
                                 let cId = [...charts.filter(c => c.intermediate == undefined), ...charts].find(c => c.tableRef == overrideTableId)?.id;
@@ -352,7 +356,7 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
                                     newChart.intermediate = undefined;
                                 }
 
-                                newChart = resolveChartFields(newChart, currentConcepts, refinedGoal)
+                                newChart = resolveChartFields(newChart, currentConcepts, refinedGoal, candidateTable)
                                 
                                 dispatch(dfActions.addChart(newChart));
                                 dispatch(dfActions.setFocusedChart(newChart.id));                                
@@ -514,56 +518,6 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
             </Collapse>
     }
 
-    // let followupInputBox = <Box key='text-input-boxes' sx={{display: 'flex', flexDirection: 'row', flex: 1, padding: '0px 4px'}}>
-    //     <TextField
-    //         InputLabelProps={{ shrink: true }}
-    //         id="outlined-multiline-flexible"
-    //         onKeyDown={(event: any) => {
-    //             if (event.key === "Enter" || event.key === "Tab") {
-    //                 // write your functionality here
-    //                 let target = event.target as HTMLInputElement;
-    //                 if (target.value == "" && target.placeholder != "") {
-    //                     target.value = defaultInstruction;
-    //                     setPrompt(target.value);
-    //                     event.preventDefault();
-    //                 }
-    //             }
-    //         }}
-    //         sx={{
-    //             "& .MuiInputLabel-root": { fontSize: '12px' },
-    //             "& .MuiInput-input": { fontSize: '12px' }
-    //         }}
-    //         onChange={(event) => { setPrompt(event.target.value) }}
-    //         value={prompt}
-    //         label=""
-    //         placeholder={"formulate data"}
-    //         fullWidth
-    //         multiline
-    //         variant="standard"
-    //         size="small"
-    //         maxRows={4} 
-    //         minRows={1}
-    //     />
-    //     {/* {currentTable.derive?.log ? <FormControlLabel
-    //         value={formulateMode == "reformulate"}
-    //         control={<Switch color="primary" size="small" onChange={
-    //             (event: React.ChangeEvent<HTMLInputElement>) => {
-    //                 setFormulateModeMode(event.target.checked ? "refine" : "reformulate"); 
-    //             }
-    //         }/>}
-    //         label={<Typography variant="body2" sx={{fontSize: 10}} color="textSecondary">formulate from the current result</Typography>}
-    //         sx={{fontSize: '12px', marginRight: '6px'}}
-    //         labelPlacement="start"
-    //     /> : ""} */}
-    //     <Tooltip title={(currentTable.derive ? 'Re-' : "") + `Run formulate`}>
-    //         <IconButton sx={{ marginLeft: "0"}} 
-    //             disabled={createDisabled} color={"primary"} onClick={() => { deriveNewData("formulate") }}>
-    //              <PrecisionManufacturing />
-    //         </IconButton>
-    //     </Tooltip>
-    // </Box>
-
-
     // console.log(JSON.stringify(visSpec));
 
     const encodingShelf = (
@@ -586,32 +540,6 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
                         </Box>
             <EncodingShelfCard chartId={chartId} trigger={chart.intermediate} />
             {postInstruction}
-            {/* {currentTable.derive && existsWorkingTable  ?  [   
-                <Box sx={{padding: '4px 0px', background: 'aliceblue', margin: 'auto', width: '200px', height: '6px', paddingBottom: 0.5}}></Box>,
-                <Card variant='outlined' sx={{padding: 1}}> 
-                    <ListItem sx={{padding: '2px 0 2px 0'}}>
-                        <Button variant="text" sx={{textTransform: 'none', padding: 0, minWidth: 0}} onClick={() => { dispatch(dfActions.setFocusedTable(currentTable.id)) }}>
-                            <Stack direction="row" sx={{fontSize: '12px'}} alignItems="center" gap={"2px"}>
-                                <TableRowsIcon fontSize="inherit" />
-                                <Typography sx={{fontSize: '12px'}} >
-                                    {currentTable.id} 
-                                </Typography>
-                            </Stack>
-                        </Button>
-                    </ListItem>
-                </Card>,
-            ] : ""} */}
-            {/* {[   <Box sx={{padding: '4px 0px', margin: 'auto', width: '1px', height: '32px',
-                                        borderLeft: '1px dashed darkgray', 
-                                        paddingBottom: 0.5
-                    }}>
-                         <IconButton color='primary' size='small' 
-                                     sx={{borderRadius: 50, marginLeft: 1, padding: '7px', minWidth: 0}}><AddchartIcon fontSize={'small'} /></IconButton>
-                    </Box>,
-                <Card variant='outlined' sx={{padding: 1}}> 
-                    {followupInputBox}
-                </Card>,
-            ]} */}
             <Box sx={{height: '12px'}}></Box>
         </Box>
     )

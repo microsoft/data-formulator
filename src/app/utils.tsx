@@ -40,6 +40,7 @@ export function getUrls() {
         SERVER_DERIVE_DATA_URL: `${appConfig.serverUrl}/derive-data`,
         SERVER_DERIVE_DATA_V2_URL: `${appConfig.serverUrl}/dispatch-and-derive-data`,
         SERVER_REFINE_DATA_URL: `${appConfig.serverUrl}/refine-data`,
+        CODE_EXPL_URL: `${appConfig.serverUrl}/code-expl`,
         SERVER_PROCESS_DATA_ON_LOAD: `${appConfig.serverUrl}/process-data-on-load`,
 
         DATASET_INFO_URL: `${appConfig.serverUrl}/datasets-info`,
@@ -82,7 +83,7 @@ export function runCodeOnInputListsInVM(
                 vm.runInNewContext(`let func = ${jsCode}; outputs = inputTupleList.map(args => func(...args));`, context);
                 ioPairs = inputTupleList.map((args, i) => [args, context.outputs[i]]);
                 return ioPairs;
-            } 
+            }
         } catch(err) {
             console.warn(err);
         }
@@ -287,7 +288,11 @@ export const instantiateVegaTemplate = (chartType: string, encodingMap: { [key i
             encodingObj["field"] = field.name;
             encodingObj["type"] = getDType(field.type, workingTable.map(r => r[field.name]));
             if (field.semanticType == "Year") {
-                encodingObj["type"] = "temporal";
+                if (['color', 'size', 'column', 'row'].includes(channel)) {
+                    encodingObj["type"] = "nominal";
+                } else {
+                    encodingObj["type"] = "temporal";
+                }
             }
 
             if (encoding.bin) {
@@ -468,13 +473,18 @@ export const adaptChart = (chart: Chart, targetTemplate: ChartTemplate) => {
 
 // these two functions are used to handle recommendations/corrections from the AI agents
 
-export const resolveChartFields = (chart: Chart, currentConcepts: FieldItem[], refinedGoal: any) => {
+export const resolveChartFields = (chart: Chart, currentConcepts: FieldItem[], refinedGoal: any, table: DictTable) => {
+    // resolve and update chart fields based on refined visualization goal
+
     let targetFieldNames : string[] = refinedGoal['visualization_fields'];
     let targetFieldIds : string[] = targetFieldNames.map(name => currentConcepts.find(c => c.name == name)?.id).filter(fid => fid != undefined) as string[];
 
     let chartChannels = getChartChannels(chart.chartType);
 
-    let ocupiedChannels = chartChannels.filter(ch => chart.encodingMap[ch as keyof EncodingMap].fieldID != undefined);
+    let ocupiedChannels = chartChannels.filter(ch => {
+        let fieldId = chart.encodingMap[ch as keyof EncodingMap].fieldID;
+        return  fieldId != undefined && table.names.includes(currentConcepts.find(c => c.id == fieldId)?.name || "")
+    });
     let ocupiedFieldIds = ocupiedChannels.map(ch => chart.encodingMap[ch as keyof EncodingMap].fieldID);
 
     let newAdditionFieldIds = targetFieldIds.filter(fid => !ocupiedFieldIds.includes(fid))

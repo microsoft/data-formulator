@@ -51,6 +51,9 @@ def transform_data(df):
 ```
 
     3. The [OUTPUT] must only contain a json object representing the refined goal (including "detailed_instruction", "output_fields", "visualization_fields" and "reason") and a python code block representing the transformation code, do not add any extra text explanation.
+'''
+
+EXAMPLE='''
 
 For example:
 

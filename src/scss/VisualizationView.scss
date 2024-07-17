@@ -36,8 +36,9 @@
     }
 
     .vega-thumbnail {
-        display: flex;
+
         padding: 0px 10px;
+        margin: auto;
         
         canvas {
             margin: 6px auto;
@@ -211,16 +212,13 @@ $accelerate-ease: cubic-bezier(0.4, 0.0, 1, 1);
 }
 
 .data-thread {
-    width: 201px;
-    min-width: 181px;
+    min-width: 201px;
     display: flex;
     flex-direction: column;
     overflow-y: scroll;
     border-right: 1px lightgray solid;
     align-content: flex-start;
-    padding: 0px 10px;
     height: calc(100vh - 50px);
-    direction: rtl;
 
     .thread-view-animation {
         transform-origin: bottom left;
@@ -233,23 +231,24 @@ $accelerate-ease: cubic-bezier(0.4, 0.0, 1, 1);
     }
 
     .vega-thumbnail {
-        //border-bottom: 0.5px dashed lightgray;
-        //width: calc(100% - 16px);
-        //margin: 0 8px 0 12px;
+
         display: flex;
         cursor: pointer !important;
-        //border: lightgray solid 0.5px;
+
+        .vega-embed {
+            display: flex;
+            cursor: pointer !important;
+        }
 
         canvas {
-            margin: 10px auto;
+            margin: 4px auto;
         }
     }
 
     .vega-thumbnail-box {
-        //width: calc(100% - 16px);
-        display: block;
-        //color: #fff;
+
         border-radius: 3px;
+        cursor: pointer !important;
 
         & .data-thread-chart-card-action-button {
             visibility: hidden;
@@ -267,19 +266,6 @@ $accelerate-ease: cubic-bezier(0.4, 0.0, 1, 1);
         transform-origin: bottom left;
         animation: appear 0.5s ease-out;
     }
-
-    // .focused-vega-thumbnail {
-    //     //background-color: blue;
-    //     box-shadow: 0 0 5px rgba(33,33,33,.3);
-    //     z-index: 1;
-    // }
-
-    // .vega-thumbnail:hover {
-    //     transform: translateY(1px);
-    //     box-shadow: 0 0 3px rgba(33,33,33,.2);
-    //     z-index: 1;
-    // }
-
     
 }
 

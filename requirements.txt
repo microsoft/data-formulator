@@ -1,7 +1,6 @@
 autopep8
 jupyter
 pandas
-vega
 docker
 namedlist
 matplotlib

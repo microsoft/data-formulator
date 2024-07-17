@@ -56,7 +56,7 @@ def run_transform_in_sandbox2020(code, table_list):
     exec_str = '''
 output_df = transform_data(*[pd.DataFrame.from_records(data) for data in table_list])
 #print(output_df)
-output = json.dumps(output_df.to_dict("records"))
+output = output_df.to_json(None, "records")
 #print(output)
     '''
 
@@ -103,7 +103,7 @@ def run_derive_data_in_sandbox2020(code, field_names, output_field_name, table_r
 df = pd.DataFrame.from_records(table_rows)
 app_func = lambda r: derive({arg_list})
 df["{output_field_name}"] = df.apply(app_func, axis = 1)
-output = json.dumps(df.to_dict("records"))
+output = df.to_json(None, "records")
 #print(output)
     '''
 
@@ -118,7 +118,7 @@ def run_generic_derive_data_in_sandbox2020(code, field_names, output_field_name,
 df = pd.DataFrame.from_records(table_rows)
 app_func = lambda r: derive(r, df)
 df["{output_field_name}"] = df.apply(app_func, axis = 1)
-output = json.dumps(df.to_dict("records"))
+output = df.to_json(None, "records")
 #print(output)
     '''
 
@@ -136,7 +136,7 @@ filter_boolean = df.apply(filter_fn, axis=1)
 
 df_out = df[filter_boolean]
 
-output = json.dumps(df_out.to_dict("records"))
+output = df_out.to_json(None, "records")
 #print(output)
     '''
 

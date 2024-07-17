@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-import React, { FC, useState } from 'react';
+import React, { FC, useEffect, useRef, useState } from 'react';
 
 import {
     Box,
@@ -18,10 +18,17 @@ import {
     Tooltip,
     ButtonGroup,
     useTheme,
+    Drawer,
+    ListItemButton,
+    ListItemText,
+    Collapse,
+    Grow,
+    alpha,
 } from '@mui/material';
 
 import embed from 'vega-embed';
 import AnimateOnChange from 'react-animate-on-change'
+import { VegaLite } from 'react-vega'
 
 
 import '../scss/VisualizationView.scss';
@@ -49,26 +56,31 @@ import 'prismjs/themes/prism.css'; //Example style, you can use another
 
 import { chartAvailabilityCheck, generateChartSkeleton, getDataTable } from './VisualizationView';
 import { TriggerCard } from './EncodingShelfCard';
-import ExpandLess from '@mui/icons-material/ExpandLess';
-import ExpandMore from '@mui/icons-material/ExpandMore';
 
-let buildChartCard = (chartElement: {tableId: string, chartId: string, element: any}, focusedChartId?: string) => {
+import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
+import ChevronRightIcon from '@mui/icons-material/ChevronRight';
+
+let buildChartCard = (chartElement: {tableId: string, chartId: string, element: any}, 
+                      focusedChartId?: string) => {
     let selectedClassName = focusedChartId == chartElement.chartId ? 'selected-card' : '';
     return <Card className={`data-thread-card ${selectedClassName}`} variant="outlined" 
             sx={{
                     marginLeft: 1,
                     width: '100%',
+                    display: 'flex'
                 }}>
         {chartElement.element}
     </Card>
 }
 
 let SingleThreadView: FC<{
+    scrollRef: any,
     threadIdx: number,
     leafTable: DictTable;
     chartElements: {tableId: string, chartId: string, element: any}[];
     usedTableIds: string[]
 }> = function ({
+        scrollRef,
         threadIdx,
         leafTable, 
         chartElements,
@@ -82,6 +94,7 @@ let SingleThreadView: FC<{
     let focusedTableId = useSelector((state: DataFormulatorState) => state.focusedTableId);
 
     let focusedChart = charts.find(c => c.id == focusedChartId);
+    
         
     const dispatch = useDispatch();
 
@@ -128,7 +141,10 @@ let SingleThreadView: FC<{
                 </ListItemIcon>
             </Box>;
         });
-    } 
+    }
+
+    // the thread is focused if the focused chart is in this table
+    let threadIsFocused = focusedChart && tableIdList.includes(focusedChart.tableRef) && !usedTableIds.includes(focusedChart.tableRef);
     
     let tableList = tableIdList.map((tableId, i) => {
         // filter charts relavent to this
@@ -137,11 +153,11 @@ let SingleThreadView: FC<{
 
         let selectedClassName = tableId == focusedTableId ? 'selected-card' : '';
 
-        let collapsedProps = collapsed ? {width: '80px', height: '70px', "& canvas": {transformOrigin: 'top left', transform: 'scale(0.6)'} } : {}
+        let collapsedProps = collapsed ? { width: '50%', "& canvas": {width: 60, maxHeight: 50} } : {width: '100%'}
 
         let releventChartElements = relevantCharts.map((ce, j) => 
                 <Box key={`relevant-chart-${ce.chartId}`} 
-                    sx={{display: 'flex', padding: '4px 0px', paddingBottom: j == relevantCharts.length - 1 ? 1 : 0.5,
+                    sx={{display: 'flex', padding: 0, paddingBottom: j == relevantCharts.length - 1 ? 1 : 0.5,
                          ...collapsedProps  }}>
                     {buildChartCard(ce, focusedChartId)}
                 </Box>)
@@ -160,7 +176,7 @@ let SingleThreadView: FC<{
             </Box>
         </ListItem>;
 
-        let regularTableBox = <ListItem sx={{padding: '0px'}}>
+        let regularTableBox = <ListItem ref={relevantCharts.some(c => c.chartId == focusedChartId) ? scrollRef : null} sx={{padding: '0px'}}>
             <Card className={`data-thread-card ${selectedClassName}`} variant="outlined" 
                     sx={{ width: '100%', background: 'aliceblue' }} 
                     onClick={() => { 
@@ -235,9 +251,10 @@ let SingleThreadView: FC<{
 
     content = w(tableList, triggerCards, "")
 
-    return <>
-        <Tooltip title={collapsed ? 'expand' : 'collapse'}>
-            <Button fullWidth sx={{display: 'flex',  direction: 'ltr'}} color="primary" onClick={() => setCollapsed(!collapsed)}>
+    return <Box sx={{backgroundColor:  (threadIdx % 2 == 1 ? "rgba(0, 0, 0, 0.02)" : 'white'), //threadIsFocused ? alpha(theme.palette.primary.main, 0.05) : 
+                    padding: '8px 8px'}}>
+        {/* <Tooltip title={collapsed ? 'expand' : 'collapse'}>
+           <Button fullWidth sx={{display: 'flex',  direction: 'ltr'}} color="primary" onClick={() => setCollapsed(!collapsed)}>
                 <Divider flexItem sx={{
                             "& .MuiDivider-wrapper": {
                                 display: 'flex', flexDirection: 'row',
@@ -257,12 +274,22 @@ let SingleThreadView: FC<{
                     {!collapsed ? <ExpandLess sx={{fontSize: 14}}/> : <ExpandMore sx={{fontSize: 14}}/>}
                 </Divider>
             </Button>
-        </Tooltip>
-        
+        </Tooltip>*/}
+        <Box sx={{display: 'flex',  direction: 'ltr', margin: 1}}>
+            <Divider flexItem sx={{
+                margin: 'auto',
+                "& .MuiDivider-wrapper": { display: 'flex', flexDirection: 'row' },
+                "&::before, &::after": {  borderColor: 'darkgray',  borderWidth: '2px', width: 50 },
+            }}>
+                <Typography sx={{fontSize: "10px", fontWeight: 'bold', color:'rgba(100, 100, 100, 0.8)', textTransform: 'none'}}>
+                    {`thread - ${threadIdx + 1}`}
+                </Typography>
+            </Divider>
+        </Box>
         <List sx={{padding: '2px 4px 2px 4px', marginTop: 0, marginBottom: '8px', direction: 'ltr'}}>
             {content}
         </List>
-    </>    
+    </Box>    
 }
 
 export const DataThread: FC<{}> = function ({ }) {
@@ -270,23 +297,27 @@ export const DataThread: FC<{}> = function ({ }) {
     let tables = useSelector((state: DataFormulatorState) => state.tables);
     let charts = useSelector((state: DataFormulatorState) => state.charts);
     let focusedChartId = useSelector((state: DataFormulatorState) => state.focusedChartId);
-    let focusedTableId = useSelector((state: DataFormulatorState) => state.focusedTableId);
+    let threadDrawerOpen = useSelector((state: DataFormulatorState) => state.threadDrawerOpen);
 
     let chartSynthesisInProgress = useSelector((state: DataFormulatorState) => state.chartSynthesisInProgress);
         
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
 
+    const scrollRef = useRef<null | HTMLDivElement>(null)
+
+    const executeScroll = () => {if (scrollRef.current != null) scrollRef.current.scrollIntoView()}    
+    // run this function from an event handler or an effect to execute scroll 
+
+
     const dispatch = useDispatch();
 
+    let setThreadDrawerOpen = (flag: boolean) => { dispatch(dfActions.setThreadDrawerOpen(flag)); }
+
+    useEffect(() => {
+        executeScroll();
+    }, [threadDrawerOpen])
+
     // excluding base tables or tables from saved charts
-    //let draftTables = tables.filter(t => t.derive && !charts.some(chart => chart. chart.tableRef == t.id));
-
-    //console.log(tables);
-
-    //let vegaSpec: any = createVegaObj(markType, encodingMap, conceptShelfItems)[0];
-    // if (tables.length > 0) {
-    //     vegaSpec = createVegaObj(markType, encodingMap, conceptShelfItems)[0];
-    // }
     let derivedFields = conceptShelfItems.filter(f => f.source == "derived");
 
     // when there is no result and synthesis is running, just show the waiting panel
@@ -322,7 +353,7 @@ export const DataThread: FC<{}> = function ({ }) {
             //let elementBody = renderTableChart(chart, conceptShelfItems, extTable);
 
             let element = <Box key={`unavailable-${id}`} width={"100%"} 
-                        className={"vega-thumbnail vega-thumbnail-box"} //+ (focusedChartId == chart.id ? " focused-vega-thumbnail" : "")} 
+                        className={"vega-thumbnail vega-thumbnail-box"} 
                         onClick={setIndexFunc} 
                         sx={{ display: "flex", backgroundColor: "rgba(0,0,0,0.01)", position: 'relative',
                             //border: "0.5px dashed lightgray", 
@@ -347,57 +378,13 @@ export const DataThread: FC<{}> = function ({ }) {
                         </Tooltip>
                     </Box>
                 </Box>
-                {/* <TriggerCard chartId={chart.id} noBorder={true} /> */}
             </Box>;
             return {chartId: chart.id, tableId: table.id, element}
         }
 
         // prepare the chart to be rendered
-        //let vgSpec: any = instantiateVegaTemplate(chart.chartType, chart.encodingMap, conceptShelfItems, extTable)[0];
         let assembledChart = assembleChart(chart, conceptShelfItems, extTable);
         assembledChart["background"] = "transparent";
-        // chart["autosize"] = {
-        //     "type": "fit",
-        //     "contains": "padding"
-        // };
-
-        const element =
-            <Box
-                key={`animateOnChange-carousel-${index}`}
-                onClick={setIndexFunc}
-                className="vega-thumbnail-box"
-                // baseClassName="vega-thumbnail-box"
-                // animationClassName="vega-thumbnail-box-animation"
-                // animate={chartUpdated == chart.id}
-                style={{ width: "100%", position: "relative", cursor: "pointer !important" }}
-                //onAnimationEnd={() => { setChartUpdated(undefined); }}
-            >
-                <Box sx={{margin: "auto"}}>
-                    {chart.saved ? <Typography sx={{ position: "absolute", margin: "5px", zIndex: 2 }}>
-                                        <StarIcon sx={{ color: "gold" }} fontSize="small" />
-                                    </Typography> : ""}
-                    {chartSynthesisInProgress.includes(chart.id) ? <Box sx={{
-                        position: "absolute", height: "100%", width: "100%", zIndex: 20, 
-                        backgroundColor: "rgba(243, 243, 243, 0.8)", display: "flex", alignItems: "center", cursor: "pointer"
-                    }}>
-                        <LinearProgress sx={{ width: "100%", height: "100%", opacity: 0.05 }} />
-                    </Box> : ''}
-                    <Box className='data-thread-chart-card-action-button' 
-                         sx={{ zIndex: 10, color: 'blue', position: "absolute", right: 1, background: 'rgba(255, 255, 255, 0.95)' }}>
-                        <Tooltip title="delete chart">
-                            <IconButton size="small" color="warning" onClick={(event) => {
-                                event.stopPropagation();
-                                dispatch(dfActions.deleteChartById(chart.id));
-                            }}><DeleteIcon fontSize="small" /></IconButton>
-                        </Tooltip>
-                    </Box>
-                    <Box className={"vega-thumbnail" + (focusedChartId == chart.id ? " focused-vega-thumbnail" : "")}
-                        id={id} key={`chart-thumbnail-${index}`} sx={{ margin: "auto", backgroundColor: chart.saved ? "rgba(255,215,0,0.05)" : "white" }}
-                    >
-                    </Box>
-                    
-                </Box>
-            </Box>;
 
         // Temporary fix, down sample the dataset
         if (assembledChart["data"]["values"].length > 5000) {
@@ -425,75 +412,83 @@ export const DataThread: FC<{}> = function ({ }) {
             "axis": {"labelLimit": 30}
         }
 
-        embed('#' + id, assembledChart, { actions: false, renderer: "canvas" }).then(function (result) {
-            // Access the Vega view instance (https://vega.github.io/vega/docs/api/view/) as result.view
-            if (result.view.container()?.getElementsByTagName("canvas")) {
-                let comp = result.view.container()?.getElementsByTagName("canvas")[0];
-
-                // Doesn't seem like width & height are actual numbers here on Edge bug
-                // let width = parseInt(comp?.style.width as string);
-                // let height = parseInt(comp?.style.height as string);
-                if (comp) {
-                    const { width, height } = comp.getBoundingClientRect();
-                    //console.log(`THUMB: width = ${width} height = ${height}`);
-
-                    let WIDTH = 120;
-                    let HEIGHT = 80;
-
-                    if (width > WIDTH || height > HEIGHT) {
-                        let ratio = width / height;
-                        let fixedWidth = width;
-                        if (ratio * HEIGHT < width) {
-                            fixedWidth = ratio * HEIGHT;
-                        }
-                        if (fixedWidth > WIDTH) {
-                            fixedWidth = WIDTH;
-                        }
-                        //console.log("THUMB: width or height are oversized");
-                        //console.log(`THUMB: new width = ${fixedWidth}px height = ${fixedWidth / ratio}px`)
-                        comp?.setAttribute("style", 
-                            `max-width: ${WIDTH}px; max-height: ${HEIGHT}px; 
-                             width: ${Math.round(fixedWidth)}px; height: ${Math.round(fixedWidth / ratio)}px; `);
-                    }
-
-                } else {
-                    console.log("THUMB: Could not get Canvas HTML5 element")
-                }
-            }
-        }).catch((reason) => {
-            // console.log(reason)
-            // console.error(reason)
-        });
+        const element =
+            <Box
+                key={`animateOnChange-carousel-${index}`}
+                onClick={setIndexFunc}
+                className="vega-thumbnail-box"
+                style={{ width: "100%", position: "relative", cursor: "pointer !important" }}
+            >
+                <Box sx={{margin: "auto"}}>
+                    {chart.saved ? <Typography sx={{ position: "absolute", margin: "5px", zIndex: 2 }}>
+                                        <StarIcon sx={{ color: "gold" }} fontSize="small" />
+                                    </Typography> : ""}
+                    {chartSynthesisInProgress.includes(chart.id) ? <Box sx={{
+                        position: "absolute", height: "100%", width: "100%", zIndex: 20, 
+                        backgroundColor: "rgba(243, 243, 243, 0.8)", display: "flex", alignItems: "center", cursor: "pointer"
+                    }}>
+                        <LinearProgress sx={{ width: "100%", height: "100%", opacity: 0.05 }} />
+                    </Box> : ''}
+                    <Box className='data-thread-chart-card-action-button' 
+                         sx={{ zIndex: 10, color: 'blue', position: "absolute", right: 1, background: 'rgba(255, 255, 255, 0.95)' }}>
+                        <Tooltip title="delete chart">
+                            <IconButton size="small" color="warning" onClick={(event) => {
+                                event.stopPropagation();
+                                dispatch(dfActions.deleteChartById(chart.id));
+                            }}><DeleteIcon fontSize="small" /></IconButton>
+                        </Tooltip>
+                    </Box>
+                    <Box className={"vega-thumbnail" + (focusedChartId == chart.id ? " focused-vega-thumbnail" : "")}
+                        id={id} key={`chart-thumbnail-${index}`} 
+                        sx={{ 
+                            display: "flex", 
+                            backgroundColor: chart.saved ? "rgba(255,215,0,0.05)" : "white",
+                            '& .vega-embed': {margin: 'auto'},
+                            '& canvas': {  width: 'auto !important', height: 'auto !important', maxWidth: 120, maxHeight: 100}
+                        }}
+                    >
+                        <VegaLite spec={assembledChart} actions={false} />
+                    </Box>
+                    
+                </Box>
+            </Box>;
 
         return {chartId: chart.id, tableId: table.id, element};
     })
  
 
-    let refTables = tables; //[...new Set(chartElements.map(ce => tables.find(t => t.id == ce.tableId) as DictTable))];
+    let refTables = tables; 
     let leafTables = refTables.filter(t => !refTables.some(t2 => t2.derive?.trigger.tableId == t.id));
 
-    let threadView =  <Box sx={{margin: "0px 0px 8px 0px"}}>
-            {[
-                ...leafTables.map((lt, i) => {
-                    let usedTableIds = leafTables.slice(0, i).map(x => [x.id, ...getTriggers(x, tables).map(y => y.tableId) || []]).flat();
-                    return <SingleThreadView threadIdx={i} leafTable={lt} chartElements={chartElements} usedTableIds={usedTableIds} />
-                }),
-            ]}
-        </Box>
+
+    let drawerOpen = leafTables.length > 1 && threadDrawerOpen;
+
+    let view = <Box sx={{margin: "0px 0px 8px 0px", display: 'flex', flexDirection: drawerOpen ? 'row-reverse' : 'column', paddingBottom: 2}}>   
+        {leafTables.map((lt, i) => {
+            let usedTableIds = leafTables.slice(0, i)
+                .map(x => [x.id, ...getTriggers(x, tables).map(y => y.tableId) || []]).flat();
+            return <SingleThreadView  scrollRef={scrollRef} threadIdx={i} leafTable={lt} chartElements={chartElements} usedTableIds={usedTableIds} />
+        })}
+    </Box>
+
+    let threadDrawerWidth = Math.max(Math.min(Math.max(600, window.innerWidth * 0.8), leafTables.length * 200), 212)
 
     let carousel = (
-        <Box className="data-thread" >
-            <Box sx={{ direction: 'ltr', display: 'flex', marginTop: "10px", alignItems: 'center', justifyContent: 'space-between'}}>
+        <Box className="data-thread" sx={{ overflow: 'hidden',}}>
+            <Box sx={{ direction: 'ltr', display: 'flex',
+                        paddingTop: "10px", paddingLeft: '12px', alignItems: 'center', justifyContent: 'space-between'}}>
                 <Typography className="view-title" component="h2" sx={{marginTop: "6px"}}>
                     Data Threads
                 </Typography>
+                <IconButton size={'small'} color="primary" disabled={leafTables.length <= 1} onClick={() => { setThreadDrawerOpen(!threadDrawerOpen); }}>
+                    {drawerOpen ? <ChevronLeftIcon /> : <ChevronRightIcon />}
+                </IconButton>
             </Box>
-            <AnimateOnChange
-                baseClassName="thread-view-mode"
-                animationClassName="thread-view-animation">
-                {threadView}
-                <Box sx={{height: 100}}> </Box>
-            </AnimateOnChange>
+            <Box sx={{transition: 'width 200ms cubic-bezier(0.4, 0, 0.2, 1) 0ms', overflow: 'auto', 
+                      direction: 'rtl', display: 'flex', flex: 1}}  
+                width={drawerOpen ? threadDrawerWidth + 2 : 212} className="thread-view-mode">
+                {view}
+            </Box>
         </Box>
     );
 

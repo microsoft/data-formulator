@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-import React, { FC, useEffect, useState } from 'react';
+import React, { FC, useEffect, useRef, useState } from 'react';
 
 import {
     Box,
@@ -66,6 +66,8 @@ import { ChatDialog } from './ChatDialog';
 import { EncodingShelfThread } from './EncodingShelfThread';
 import { CustomReactTable } from './ReactTable';
 import InsightsIcon from '@mui/icons-material/Insights';
+import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
+import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 
 import { MuiMarkdown, getOverrides } from 'mui-markdown';
 
@@ -234,11 +236,14 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
             handleUpdateCandidates: (chartId: string, tables: DictTable[]) => void,
     }> = function ChartEditorFC({ cachedCandidates, handleUpdateCandidates }) {
 
+    const componentRef = useRef<HTMLHeadingElement>(null);
+
     let tables = useSelector((state: DataFormulatorState) => state.tables);
     let charts = useSelector((state: DataFormulatorState) => state.charts);
     let focusedChartId = useSelector((state: DataFormulatorState) => state.focusedChartId);
     let chartSynthesisInProgress = useSelector((state: DataFormulatorState) => state.chartSynthesisInProgress);
-    
+    let threadDrawerOpen = useSelector((state: DataFormulatorState) => state.threadDrawerOpen);
+
     let synthesisRunning = focusedChartId ? chartSynthesisInProgress.includes(focusedChartId) : false;
     let handleDeleteChart = () => { focusedChartId && dispatch(dfActions.deleteChartById(focusedChartId)) }
 
@@ -258,14 +263,20 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
     const [chatDialogOpen, setChatDialogOpen] = useState<boolean>(false);
     const [focusUpdated, setFocusUpdated] = useState<boolean>(true);
 
-    const [summaryInProgress, setSummaryInProgress] = useState<boolean>(false);
-    const [chartSummary, setChartSummary] = useState<undefined | any>(undefined);
+    let [collapseEditor, setCollapseEditor] = useState<boolean>(false);
 
     let scaleFactor = focusedChart.scaleFactor || 1;
 
     useEffect(() => {
         setFocusUpdated(true);
     }, [focusedChartId])
+
+    useEffect(() => {
+        let width = componentRef.current ? componentRef.current.offsetWidth : 0
+        if (width < 640 && threadDrawerOpen == true) {
+            setCollapseEditor(threadDrawerOpen);
+        }
+    }, [threadDrawerOpen])
 
     let chartUnavailable = true;
     
@@ -281,17 +292,11 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
         }
     }, [candidates])
 
-    useEffect(() => {
-        setChartSummary(undefined);
-        setSummaryInProgress(false);
-    }, [focusedChart])
-
-    let code = table.derive?.code || "";
     let codeExpl = table.derive?.codeExpl || "";
 
     let toDeriveFields = derivedFields.filter(f => f.name != "").filter(f => findBaseFields(f, conceptShelfItems).every(f2 => table.names.includes(f2.name)))
     let focusedExtTable = baseTableToExtTable(JSON.parse(JSON.stringify(table.rows)), toDeriveFields, conceptShelfItems);
-    
+
     let createChartElement = (chart: Chart, extTable: any[], id: string) => {
         let chartTemplate = getChartTemplate(chart.chartType);
  
@@ -304,22 +309,18 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
         if (chart.chartType == "Table") {
             return renderTableChart(chart, conceptShelfItems, extTable);
         }
-        
+
         let element = <></>;
         if (!chart || !chartAvailabilityCheck(chart.encodingMap, conceptShelfItems, extTable)[0]) {
             return generateChartSkeleton(chartTemplate?.icon);
         }  
-        
+
         chartUnavailable = false;
-        
+
         element = <Box id={id} key={`focused-chart`} ></Box>    
-        
+
         let assembledChart = assembleChart(chart, conceptShelfItems, extTable);
         assembledChart['resize'] = true;
-
-        if (chartSummary) {
-            assembledChart['title'] = {'text': chartSummary.title, 'fontSize': 12, 'subtitle': chartSummary.subtitle, 'offset': 20};
-        }
 
         embed('#' + id, { ...assembledChart }, { actions: true, renderer: "svg" }).then(function (result) {
             // Access the Vega view instance (https://vega.github.io/vega/docs/api/view/) as result.view
@@ -441,7 +442,7 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
                     onClick={() => { setCodeViewOpen(!codeViewOpen) }}><TerminalIcon />
             </IconButton>
         </Tooltip>,
-        <Tooltip title={`${codeExplViewOpen ? 'hide' : 'view'} transformation explanation`} key="code-view-btn-tooltip">
+        <Tooltip title={`${codeExplViewOpen ? 'hide' : 'view'} transformation explanation`} key="code-expl-view-btn-tooltip">
             <IconButton color="primary" size="small" sx={{ textTransform: "none",  
                                                             backgroundColor: !codeExplViewOpen ? "" : "rgba(2, 136, 209, 0.3)", 
                                                             "&:hover": { backgroundColor: !codeExplViewOpen ? "default" : "rgba(2, 136, 209, 0.3)" }}} 
@@ -467,7 +468,7 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
             </Typography>
         </Box>,
         ...derivedTableItems,
-        <Divider key="dv3" orientation="vertical" variant="middle" flexItem sx={{ marginLeft: "8px", marginRight: "4px" }} />,
+        <Divider key="dv4" orientation="vertical" variant="middle" flexItem sx={{ marginLeft: "8px", marginRight: "4px" }} />,
         focusedChart.chartType == "Table" && focusedChart.intermediate == undefined ? createNewChartButton : saveButton,
         duplicateButton,
         deleteButton,
@@ -503,7 +504,7 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
                         padding: "2px 4px",
                         color: 'darkblue'
                     }
-                  }  
+                  }
                 },
                 p: {
                     props: {
@@ -641,21 +642,31 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
                         </Collapse>
                     </Box>
                 </AnimateOnChange>
-                {<Typography sx={{fontSize: 10, color: 'rgba(0,0,0,0.8)', width: 600}}>{chartSummary?.summary}</Typography>}
                 {chartActionItems}
             </Box>
         ]
     }
-
+    //sticky for encodingshelfthread: sx={{position: 'absolute', right: 0, zIndex: 1000, paddingTop: 1}}
+    
     let content = [
         <Box key='focused-box' className="vega-focused" sx={{ display: "flex", overflow: 'auto', flexDirection: 'column', position: 'relative' }}>
             {focusedComponent}
         </Box>,
         // <EncodingShelf key='encoding-shelf' synthesisRunning={synthesisRunning} chartId={chart.id} 
         //                handleUpdateCandidates={handleUpdateCandidates} handleSetSynthesisStatus={handleSetSynthesisStatus} />
-        <Box >
-            <EncodingShelfThread key='encoding-shelf' chartId={focusedChart.id} />
-        </Box>
+        <Collapse collapsedSize={48} in={!collapseEditor} orientation='horizontal' 
+            sx={{position: 'relative'}}>
+            <Box sx={{display: 'flex', flexDirection: 'row', height: '100%'}}>
+                <Tooltip placement="left" title={collapseEditor ? "open editor" : "hide editor"}>
+                    <Button color="primary"
+                            sx={{width: 24, minWidth: 24}}
+                        onClick={()=>{setCollapseEditor(!collapseEditor)}}
+                    >{collapseEditor ? <ChevronLeftIcon /> : <ChevronRightIcon />}</Button>
+                </Tooltip>
+                <EncodingShelfThread key='encoding-shelf' chartId={focusedChart.id} />
+            </Box>
+        </Collapse>,
+        
     ]
 
     let [scaleMin, scaleMax] = [0.2, 2.4]
@@ -675,7 +686,7 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
         }}><ZoomInIcon fontSize="small" /></IconButton>
     </Stack>
 
-    return <Box sx={{overflow: "hidden", display: 'flex', flex: 1}}>
+    return <Box ref={componentRef} sx={{overflow: "hidden", display: 'flex', flex: 1}}>
         {synthesisRunning ? <Box sx={{
                     position: "absolute", height: "calc(100%)", width: "calc(100%)", zIndex: 1001, 
                     backgroundColor: "rgba(243, 243, 243, 0.8)", display: "flex", alignItems: "center"
