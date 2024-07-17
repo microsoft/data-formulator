@@ -87,12 +87,7 @@ export const TriggerCard: FC<{className?: string, trigger: Trigger, hideFields?:
     let encodingComp : any = ''
     let prompt = trigger.instruction ? `"${trigger.instruction}"` : "";
 
-    // console.log(trigger)
-
     if (trigger.chartRef && charts.find(c => c.id == trigger.chartRef)) {
-
-        // console.log('chartRef')
-        // console.log(trigger.chartRef)
 
         let chart = charts.find(c => c.id == trigger.chartRef) as Chart;
         let encodingMap = chart?.encodingMap;
@@ -146,19 +141,11 @@ export const MiniTriggerCard: FC<{className?: string, trigger: Trigger, hideFiel
 
     const charts = useSelector((state: DataFormulatorState) => state.charts);
     let fieldItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
-    const focusedChartId = useSelector((state: DataFormulatorState) => state.focusedChartId);
-
-    const dispatch = useDispatch<AppDispatch>();
 
     let encodingComp : any = ''
     let prompt = trigger.instruction ? `"${trigger.instruction}"` : "";
 
-    // console.log(trigger)
-
     if (trigger.chartRef && charts.find(c => c.id == trigger.chartRef)) {
-
-        // console.log('chartRef')
-        // console.log(trigger.chartRef)
 
         let chart = charts.find(c => c.id == trigger.chartRef) as Chart;
         let encodingMap = chart?.encodingMap;
@@ -199,15 +186,9 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
     const tables = useSelector((state: DataFormulatorState) => state.tables);
     const charts = useSelector((state: DataFormulatorState) => state.charts);
     const betaMode = useSelector((state: DataFormulatorState) => state.betaMode);
-    const chartSynthesisInProgress = useSelector((state: DataFormulatorState) => state.chartSynthesisInProgress);
     let activeModel = useSelector(dfSelectors.getActiveModel);
 
-    let synthesisRunning = chartSynthesisInProgress.includes(chartId)
-
     let [prompt, setPrompt] = useState<string>(trigger?.instruction || "");
-    let [promptBoxOpen, setPromptBoxOpen] = useState<boolean>(true);
-
-    let [fieldComponentsOpen, setFieldComponentsOpen] = useState<boolean>(false);
 
     let chart = charts.find(chart => chart.id == chartId) as Chart;
     let encodingMap = chart?.encodingMap;
@@ -231,16 +212,10 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                 {channelList.filter(channel => Object.keys(encodingMap).includes(channel))
                     .map(channel => <EncodingBox key={`shelf-${channel}`} channel={channel as Channel} chartId={chartId} />)}
             </Box>
-
             return component;
         });
 
-    // let activeFields = conceptShelfItems.filter((field) => Array.from(Object.values(encodingMap))
-    //                                     .map((enc: EncodingItem) => enc.fieldID).includes(field.id));
-    //let activeBaseFields = conceptShelfItems.filter((field) => {
-    //     return activeFields.map(f => f.source == "derived" ? (f.transform as ConceptTransformation).parentIDs : [f.id]).flat().includes(field.id);
-    // });
-
+    // derive active fields from encoding map so that we can keep the order of which fields will be visualized
     let activeFields = Object.values(encodingMap).map(enc => enc.fieldID).filter(fieldId => fieldId && conceptShelfItems.map(f => f.id)
                                 .includes(fieldId)).map(fieldId => conceptShelfItems.find(f => f.id == fieldId) as FieldItem);
     let activeBaseFields = activeFields.map(f => f.source == 'derived' ? (f.transform as ConceptTransformation).parentIDs : [f.id])
@@ -298,9 +273,6 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
         }) 
         let engine = betaMode ? getUrls().SERVER_DERIVE_DATA_V2_URL : getUrls().SERVER_DERIVE_DATA_URL;
 
-        // console.log("current log")
-        // console.log(currentTable.derive?.dialog)
-
         if (mode == "formulate" && currentTable.derive?.dialog) {
             messageBody = JSON.stringify({
                 token: token,
@@ -313,10 +285,6 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
             })
             engine = getUrls().SERVER_REFINE_DATA_URL;
         }
-
-        // console.log("--> let's check message body")
-        // console.log(messageBody);
-        // console.log(engine)
 
         let message = {
             method: 'POST',
@@ -496,9 +464,9 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
     }
     let defaultInstruction = chart.chartType == "Auto" ? "" : "" // `the output data should contain fields ${activeBaseFields.map(f => `${f.name}`).join(', ')}`
 
-    //let createDisabled = !existsWorkingTable && (baseTables.length == 0 || Array.from(Object.values(encodingMap)).filter(encoding => { return encoding.fieldID != null }).length == 0);
-    let createDisabled = false; //!existsWorkingTable;
+    let createDisabled = false;
 
+    // zip multiple components together
     const w: any = (a: any[], b: any[]) => a.length ? [a[0], ...w(b, a.slice(1))] : b;
 
     let formulateInputBox = <Box key='text-input-boxes' sx={{display: 'flex', flexDirection: 'row', flex: 1, padding: '0px 4px'}}>
@@ -541,12 +509,6 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                         <ChangeCircleOutlinedIcon fontSize="small" />
                     </IconButton>
                 </Tooltip>
-                {/* <Tooltip title={`formulate new`}>
-                    <IconButton sx={{ marginLeft: "0"}} size="small"
-                    disabled={createDisabled} color={"primary"} onClick={() => { deriveNewData() }}>
-                        <PrecisionManufacturing fontSize="small" />
-                    </IconButton>
-                </Tooltip> */}
             </Box>
          : 
              <Tooltip title={`Formulate`}>
@@ -602,38 +564,8 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
             <Box key='encoding-groups' sx={{ flex: '1 1 auto' }} style={{ height: "calc(100% - 100px)" }} className="encoding-list">
                 {encodingBoxGroups}
             </Box>
-            {/* <InputLabel key='input-label' shrink={true} sx={{fontSize: 12, display: 'flex'}}>
-                <Typography fontSize="inherit" sx={{margin: 'auto 0'}}>Data Formulation Process</Typography>
-                <Button sx={{marginLeft: '4px', textTransform: 'none', padding: 0, fontSize: 12}}
-                    //endIcon={<ExpandMoreIcon sx={{transform: promptBoxOpen ? 'rotate(180deg)' : ''}} />} 
-                    onClick={() => { setPromptBoxOpen(!promptBoxOpen)}}>
-                    {previousInstructions ? (promptBoxOpen ? "(collapse)" : "(expand)") : ""} 
-                </Button>
-            </InputLabel> */}
-            {/* {previousInstructions} */}
-            {!existsWorkingTable ? [
-                // <InputLabel key='input-label' shrink={true} sx={{fontSize: 12, display: 'flex'}}>
-                //     <Typography fontSize="inherit" sx={{margin: 'auto 0'}}>Data Formulation Process</Typography>
-                //     <Button sx={{marginLeft: '4px', textTransform: 'none', padding: 0, fontSize: 12}}
-                //         //endIcon={<ExpandMoreIcon sx={{transform: promptBoxOpen ? 'rotate(180deg)' : ''}} />} 
-                //         onClick={() => { setPromptBoxOpen(!promptBoxOpen)}}>
-                //         {previousInstructions ? (promptBoxOpen ? "(collapse)" : "(expand)") : ""} 
-                //     </Button>
-                // </InputLabel>,
-                // formulateInputBox,
-                // <ListItem sx={{padding: '2px 0 2px 0'}}>
-                //     <ListItemIcon sx={{minWidth: 0, marginRight: '4px', }}>
-                //         <SouthIcon sx={{fontSize: "inherit"}} />
-                //     </ListItemIcon>
-                //     {followupInputBox}
-                // </ListItem>,
-                formulateInputBox
-            ] : formulateInputBox}
-            {/* {synthesisButton} */}
-            {/* {controllButtons} */}
+            {formulateInputBox}
         </Box>);
-
-    // console.log(JSON.stringify(visSpec));
 
     const encodingShelfCard = (
         <Card variant='outlined'  key='channel-components' 
