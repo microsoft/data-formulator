@@ -1895,7 +1895,7 @@ react-transition-group@^4.4.5:
 
 react-vega@^7.6.0:
   version "7.6.0"
-  resolved "https://registry.yarnpkg.com/react-vega/-/react-vega-7.6.0.tgz#b791c944046b20e02d366c7d0f8dcc21bdb4a6bb"
+  resolved "https://registry.npmjs.org/react-vega/-/react-vega-7.6.0.tgz#b791c944046b20e02d366c7d0f8dcc21bdb4a6bb"
   integrity sha512-2oMML4wH9qWLnZPRxJm06ozwrVN/K+nkjqdI5/ofWWsrBnnH4iB9rRKrsV8px0nlWgZrwfdCH4g5RUiyyJHWSA==
   dependencies:
     "@types/react" "*"
