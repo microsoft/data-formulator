@@ -288,7 +288,11 @@ export const instantiateVegaTemplate = (chartType: string, encodingMap: { [key i
             encodingObj["field"] = field.name;
             encodingObj["type"] = getDType(field.type, workingTable.map(r => r[field.name]));
             if (field.semanticType == "Year") {
-                encodingObj["type"] = "temporal";
+                if (['color', 'size', 'column', 'row'].includes(channel)) {
+                    encodingObj["type"] = "nominal";
+                } else {
+                    encodingObj["type"] = "temporal";
+                }
             }
 
             if (encoding.bin) {
