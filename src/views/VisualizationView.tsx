@@ -657,7 +657,7 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
         <Collapse collapsedSize={48} in={!collapseEditor} orientation='horizontal' 
             sx={{position: 'relative'}}>
             <Box sx={{display: 'flex', flexDirection: 'row', height: '100%'}}>
-                <Tooltip title={collapseEditor ? "open editing panel" : "hide editing panel"}>
+                <Tooltip placement="left" title={collapseEditor ? "open editor" : "hide editor"}>
                     <Button color="primary"
                             sx={{width: 24, minWidth: 24}}
                         onClick={()=>{setCollapseEditor(!collapseEditor)}}
