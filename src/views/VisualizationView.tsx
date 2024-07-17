@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-import React, { FC, useEffect, useState } from 'react';
+import React, { FC, useEffect, useRef, useState } from 'react';
 
 import {
     Box,
@@ -236,6 +236,8 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
             handleUpdateCandidates: (chartId: string, tables: DictTable[]) => void,
     }> = function ChartEditorFC({ cachedCandidates, handleUpdateCandidates }) {
 
+    const componentRef = useRef<HTMLHeadingElement>(null);
+
     let tables = useSelector((state: DataFormulatorState) => state.tables);
     let charts = useSelector((state: DataFormulatorState) => state.charts);
     let focusedChartId = useSelector((state: DataFormulatorState) => state.focusedChartId);
@@ -261,10 +263,7 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
     const [chatDialogOpen, setChatDialogOpen] = useState<boolean>(false);
     const [focusUpdated, setFocusUpdated] = useState<boolean>(true);
 
-    const [summaryInProgress, setSummaryInProgress] = useState<boolean>(false);
-    const [chartSummary, setChartSummary] = useState<undefined | any>(undefined);
-
-    let [collaspseEditor, setCollapseEditor] = useState<boolean>(false);
+    let [collapseEditor, setCollapseEditor] = useState<boolean>(false);
 
     let scaleFactor = focusedChart.scaleFactor || 1;
 
@@ -273,7 +272,10 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
     }, [focusedChartId])
 
     useEffect(() => {
-        setCollapseEditor(threadDrawerOpen);
+        let width = componentRef.current ? componentRef.current.offsetWidth : 0
+        if (width < 640 && threadDrawerOpen == true) {
+            setCollapseEditor(threadDrawerOpen);
+        }
     }, [threadDrawerOpen])
 
     let chartUnavailable = true;
@@ -290,17 +292,11 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
         }
     }, [candidates])
 
-    useEffect(() => {
-        setChartSummary(undefined);
-        setSummaryInProgress(false);
-    }, [focusedChart])
-
-    let code = table.derive?.code || "";
     let codeExpl = table.derive?.codeExpl || "";
 
     let toDeriveFields = derivedFields.filter(f => f.name != "").filter(f => findBaseFields(f, conceptShelfItems).every(f2 => table.names.includes(f2.name)))
     let focusedExtTable = baseTableToExtTable(JSON.parse(JSON.stringify(table.rows)), toDeriveFields, conceptShelfItems);
-    
+
     let createChartElement = (chart: Chart, extTable: any[], id: string) => {
         let chartTemplate = getChartTemplate(chart.chartType);
  
@@ -313,22 +309,18 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
         if (chart.chartType == "Table") {
             return renderTableChart(chart, conceptShelfItems, extTable);
         }
-        
+
         let element = <></>;
         if (!chart || !chartAvailabilityCheck(chart.encodingMap, conceptShelfItems, extTable)[0]) {
             return generateChartSkeleton(chartTemplate?.icon);
         }  
-        
+
         chartUnavailable = false;
-        
+
         element = <Box id={id} key={`focused-chart`} ></Box>    
-        
+
         let assembledChart = assembleChart(chart, conceptShelfItems, extTable);
         assembledChart['resize'] = true;
-
-        if (chartSummary) {
-            assembledChart['title'] = {'text': chartSummary.title, 'fontSize': 12, 'subtitle': chartSummary.subtitle, 'offset': 20};
-        }
 
         embed('#' + id, { ...assembledChart }, { actions: true, renderer: "svg" }).then(function (result) {
             // Access the Vega view instance (https://vega.github.io/vega/docs/api/view/) as result.view
@@ -512,7 +504,7 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
                         padding: "2px 4px",
                         color: 'darkblue'
                     }
-                  }  
+                  }
                 },
                 p: {
                     props: {
@@ -650,7 +642,6 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
                         </Collapse>
                     </Box>
                 </AnimateOnChange>
-                {<Typography sx={{fontSize: 10, color: 'rgba(0,0,0,0.8)', width: 600}}>{chartSummary?.summary}</Typography>}
                 {chartActionItems}
             </Box>
         ]
@@ -663,14 +654,14 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
         </Box>,
         // <EncodingShelf key='encoding-shelf' synthesisRunning={synthesisRunning} chartId={chart.id} 
         //                handleUpdateCandidates={handleUpdateCandidates} handleSetSynthesisStatus={handleSetSynthesisStatus} />
-        <Collapse collapsedSize={48} in={!collaspseEditor} orientation='horizontal' 
+        <Collapse collapsedSize={48} in={!collapseEditor} orientation='horizontal' 
             sx={{position: 'relative'}}>
             <Box sx={{display: 'flex', flexDirection: 'row', height: '100%'}}>
-                <Tooltip title={collaspseEditor ? "open editing panel" : "hide editing panel"}>
+                <Tooltip title={collapseEditor ? "open editing panel" : "hide editing panel"}>
                     <Button color="primary"
                             sx={{width: 24, minWidth: 24}}
-                        onClick={()=>{setCollapseEditor(!collaspseEditor)}}
-                    >{collaspseEditor ? <ChevronLeftIcon /> : <ChevronRightIcon />}</Button>
+                        onClick={()=>{setCollapseEditor(!collapseEditor)}}
+                    >{collapseEditor ? <ChevronLeftIcon /> : <ChevronRightIcon />}</Button>
                 </Tooltip>
                 <EncodingShelfThread key='encoding-shelf' chartId={focusedChart.id} />
             </Box>
@@ -695,7 +686,7 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
         }}><ZoomInIcon fontSize="small" /></IconButton>
     </Stack>
 
-    return <Box sx={{overflow: "hidden", display: 'flex', flex: 1}}>
+    return <Box ref={componentRef} sx={{overflow: "hidden", display: 'flex', flex: 1}}>
         {synthesisRunning ? <Box sx={{
                     position: "absolute", height: "calc(100%)", width: "calc(100%)", zIndex: 1001, 
                     backgroundColor: "rgba(243, 243, 243, 0.8)", display: "flex", alignItems: "center"
