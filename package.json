@@ -32,6 +32,7 @@
         "react-selectable-fast": "^3.4.0",
         "react-simple-code-editor": "^0.13.1",
         "react-split-pane": "^0.1.92",
+        "react-vega": "^7.6.0",
         "react-virtuoso": "^4.3.10",
         "redux": "^4.2.0",
         "redux-persist": "^6.0.0",
