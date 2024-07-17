@@ -315,6 +315,10 @@ def derive_data():
         new_fields = content["new_fields"]
         instruction = content["extra_prompt"]
 
+        print("spec------------------------------")
+        print(new_fields)
+        print(instruction)
+
         mode = "transform"
         if len(new_fields) == 0:
             mode = "recommendation"

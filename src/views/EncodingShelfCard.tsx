@@ -216,10 +216,6 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
         dispatch(dfActions.updateChartType({chartId, chartType: newChartType}));
     }
 
-    // let handleSetSynthesisStatus = (status: boolean) => {
-    //     dispatch(dfActions.changeChartRunningStatus({chartId, status}))
-    // }
-
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
 
     let currentTable = getDataTable(chart, tables, charts, conceptShelfItems);
@@ -239,13 +235,18 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
             return component;
         });
 
-    let activeFields = conceptShelfItems.filter((field) => Array.from(Object.values(encodingMap))
-                                        .map((enc: EncodingItem) => enc.fieldID).includes(field.id));
-    let activeBaseFields = conceptShelfItems.filter((field) => {
-        return activeFields.map(f => f.source == "derived" ? (f.transform as ConceptTransformation).parentIDs : [f.id]).flat().includes(field.id);
-    });
-    let activeCustomFields = activeBaseFields.filter(field => field.source == "custom");
+    // let activeFields = conceptShelfItems.filter((field) => Array.from(Object.values(encodingMap))
+    //                                     .map((enc: EncodingItem) => enc.fieldID).includes(field.id));
+    //let activeBaseFields = conceptShelfItems.filter((field) => {
+    //     return activeFields.map(f => f.source == "derived" ? (f.transform as ConceptTransformation).parentIDs : [f.id]).flat().includes(field.id);
+    // });
 
+    let activeFields = Object.values(encodingMap).map(enc => enc.fieldID).filter(fieldId => fieldId && conceptShelfItems.map(f => f.id)
+                                .includes(fieldId)).map(fieldId => conceptShelfItems.find(f => f.id == fieldId) as FieldItem);
+    let activeBaseFields = activeFields.map(f => f.source == 'derived' ? (f.transform as ConceptTransformation).parentIDs : [f.id])
+                                .flat().map(fieldId => conceptShelfItems.find(f => f.id == fieldId) as FieldItem)
+    
+    let activeCustomFields = activeBaseFields.filter(field => field.source == "custom");
 
     // check if the current table contains all fields already exists a table that fullfills the user's specification
     let existsWorkingTable = activeBaseFields.length == 0 || activeBaseFields.every(f => currentTable.names.includes(f.name));
@@ -497,109 +498,6 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
 
     //let createDisabled = !existsWorkingTable && (baseTables.length == 0 || Array.from(Object.values(encodingMap)).filter(encoding => { return encoding.fieldID != null }).length == 0);
     let createDisabled = false; //!existsWorkingTable;
-
-    // let synthesisButton = synthesisRunning ?
-    //     <Button sx={{ marginLeft: "0", marginTop: 1 }} variant={"outlined"} endIcon={<CircularProgress size={20} />}
-    //         color={"primary"} onClick={() => { deriveNewData("rerun") }}>
-    //         Formulating...
-    //     </Button>
-    //     : (currentTable.derive ?
-    //         [
-    //             <ButtonGroup sx={{marginTop: 1}} color={"warning"} fullWidth disabled={createDisabled}>
-    //                 {/* <Tooltip title="change refinement mode">
-    //                     <Button size="small" sx={{width: 8}} onClick={() => {setRefineMode(refineMode == "data" ? "chart" : "data")}}>{refineMode == "data" ? <BackupTableIcon /> : <AutoGraphIcon />}</Button>
-    //                 </Tooltip> */}
-    //                 <Tooltip title={`Run formulate instructions on top of the current result`}>
-    //                     <Button sx={{ marginLeft: "0"}}  variant={"contained"} endIcon={<AirlineStopsIcon />}
-    //                         disabled={createDisabled} disableElevation color={"primary"} onClick={() => { deriveNewData("formulate") }}>
-    //                         Formulate Ontop
-    //                     </Button>
-    //                 </Tooltip>
-    //             </ButtonGroup>,
-    //             // <Tooltip title={`Rerun the last formulation step`}>
-    //             //     <Button sx={{ marginLeft: "0", marginTop: 1 }}  variant={"contained"} endIcon={<RefreshIcon />}
-    //             //         disabled={createDisabled} disableElevation color="warning" onClick={() => { deriveNewData("generate") }}>
-    //             //         Re-formulate
-    //             //     </Button>
-    //             // </Tooltip>
-    //         ]
-    //         // <Button sx={{ marginLeft: "0" }} variant={"contained"} endIcon={<RefreshIcon />}
-    //         //     disabled={createDisabled} disableElevation color={"primary"} onClick={() => { deriveNewData() }}>
-    //         //     RE-Formulate
-    //         // </Button>
-    //         : <Button sx={{ marginLeft: "0", marginTop: 1 }} variant={"contained"}
-    //             disabled={createDisabled} color={"primary"} onClick={() => { deriveNewData("formulate") }}>
-    //             Formulate
-    //         </Button>
-    //     )
-
-    // let controllButtons = 
-    //     <Box key='control-bottons' sx={{marginLeft: 'auto', display: 'flex'}} >
-    //         {/* <Tooltip title="change refinement mode">
-    //             <Button size="small" sx={{width: 8}} onClick={() => {setRefineMode(refineMode == "data" ? "chart" : "data")}}>{refineMode == "data" ? <BackupTableIcon /> : <AutoGraphIcon />}</Button>
-    //         </Tooltip> */}
-    //         <Tooltip key='fork-new-thread' title={`Fork a new thread from this`}>
-    //             <IconButton //sx={{ marginLeft: "0"}}  
-    //                 disabled={createDisabled}  color={"primary"} onClick={() => { 
-    //                     let newChart = JSON.parse(JSON.stringify(chart)) as Chart;
-    //                     newChart.id = `chart-${Date.now()- Math.floor(Math.random() * 10000)}`;
-    //                     newChart.saved = false;
-
-    //                     console.log('-- about to fork new thread --')
-    //                     let refTable : DictTable = getDataTable(newChart, tables, charts, conceptShelfItems);
-    //                     console.log(refTable)
-
-    //                     if (refTable.derive) {
-    //                         // if the currentTable 
-    //                         // create a new fresh table out of it
-    //                         let tableSuffix = Number.parseInt((Date.now() - Math.floor(Math.random() * 10000)).toString().slice(-2));
-    //                         let tableId = `table-${tableSuffix}`
-    //                         while (tables.find(t => t.id == tableId) != undefined) {
-    //                             tableSuffix = tableSuffix + 1;
-    //                             tableId = `table-${tableSuffix}`
-    //                         } 
-                            
-    //                         let newTable = JSON.parse(JSON.stringify(refTable)) as DictTable
-    //                         newTable.id = tableId;
-    //                         newTable.derive = undefined;
-
-    //                         newChart.tableRef = newTable.id;
-    //                         dispatch(dfActions.addTable(newTable));
-    //                         dispatch(fetchFieldSemanticType(newTable));
-    //                     }
-
-    //                     dispatch(dfActions.addChart(newChart));
-    //                     dispatch(dfActions.setFocusedChart(newChart.id));
-    //                 }}>
-    //                 <ForkLeftIcon sx={{transform: 'rotate(180deg)'}} fontSize="small" />
-    //             </IconButton>
-    //         </Tooltip>
-    //         <Tooltip key='duplicate-chart' title={`Duplicate the chart`}>
-    //             <IconButton sx={{ marginLeft: "-8px"}}
-    //                 disabled={createDisabled}  color={"primary"} onClick={() => {
-    //                     let newChart = JSON.parse(JSON.stringify(chart)) as Chart;
-    //                     newChart.id = `chart-${Date.now()- Math.floor(Math.random() * 10000)}`;
-    //                     newChart.saved = false;
-    //                     dispatch(dfActions.addChart(newChart));
-    //                     dispatch(dfActions.setFocusedChart(newChart.id));
-    //                 }}>
-    //                 <ContentCopyIcon fontSize="small" />
-    //             </IconButton>
-    //         </Tooltip>
-    //         <Divider key="dv" flexItem orientation="vertical" variant="middle" />
-    //         <Tooltip key='rerun-btn' title={`Rerun the last data formulation step`}>
-    //             <IconButton 
-    //                 disabled={currentTable.derive == undefined}  color="warning" onClick={() => { deriveNewData("rerun") }}>
-    //                 <RefreshIcon fontSize="small"/>
-    //             </IconButton>
-    //         </Tooltip>
-    //         <Tooltip key='delete-btn' title={`Delete this chart`}>
-    //             <IconButton  sx={{ marginLeft: "-8px"}}
-    //                 disabled={createDisabled}  color="warning" onClick={() => { dispatch(dfActions.deleteChartById(chart.id)) }}>
-    //                 <DeleteIcon fontSize="small"/>
-    //             </IconButton>
-    //         </Tooltip>
-    //     </Box>
 
     const w: any = (a: any[], b: any[]) => a.length ? [a[0], ...w(b, a.slice(1))] : b;
 

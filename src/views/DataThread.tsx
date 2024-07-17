@@ -56,8 +56,7 @@ import 'prismjs/themes/prism.css'; //Example style, you can use another
 
 import { chartAvailabilityCheck, generateChartSkeleton, getDataTable } from './VisualizationView';
 import { TriggerCard } from './EncodingShelfCard';
-import ExpandLess from '@mui/icons-material/ExpandLess';
-import ExpandMore from '@mui/icons-material/ExpandMore';
+
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 
@@ -249,7 +248,7 @@ let SingleThreadView: FC<{
     content = w(tableList, triggerCards, "")
 
     return <Box sx={{backgroundColor: threadIdx % 2 == 1 ? "rgba(0, 0, 0, 0.02)" : 'white', padding: '8px 8px'}}>
-         {/* <Tooltip title={collapsed ? 'expand' : 'collapse'}>
+        {/* <Tooltip title={collapsed ? 'expand' : 'collapse'}>
            <Button fullWidth sx={{display: 'flex',  direction: 'ltr'}} color="primary" onClick={() => setCollapsed(!collapsed)}>
                 <Divider flexItem sx={{
                             "& .MuiDivider-wrapper": {
@@ -269,7 +268,7 @@ let SingleThreadView: FC<{
                     </Typography>
                     {!collapsed ? <ExpandLess sx={{fontSize: 14}}/> : <ExpandMore sx={{fontSize: 14}}/>}
                 </Divider>
-            </Button> 
+            </Button>
         </Tooltip>*/}
         <Box sx={{display: 'flex',  direction: 'ltr', margin: 1}}>
             <Divider flexItem sx={{
@@ -457,8 +456,9 @@ export const DataThread: FC<{}> = function ({ }) {
     let leafTables = refTables.filter(t => !refTables.some(t2 => t2.derive?.trigger.tableId == t.id));
 
 
+    let drawerOpen = leafTables.length > 1 && threadDrawerOpen;
 
-    let view = <Box sx={{margin: "0px 0px 8px 0px", display: 'flex', flexDirection: threadDrawerOpen ? 'row-reverse' : 'column', paddingBottom: 2}}>   
+    let view = <Box sx={{margin: "0px 0px 8px 0px", display: 'flex', flexDirection: drawerOpen ? 'row-reverse' : 'column', paddingBottom: 2}}>   
         {leafTables.map((lt, i) => {
             let usedTableIds = leafTables.slice(0, i)
                 .map(x => [x.id, ...getTriggers(x, tables).map(y => y.tableId) || []]).flat();
@@ -466,7 +466,7 @@ export const DataThread: FC<{}> = function ({ }) {
         })}
     </Box>
 
-    let threadDrawerWidth = Math.min(Math.max(600, window.innerWidth * 0.8), leafTables.length * 200)
+    let threadDrawerWidth = Math.max(Math.min(Math.max(600, window.innerWidth * 0.8), leafTables.length * 200), 212)
 
     let carousel = (
         <Box className="data-thread" sx={{ overflow: 'hidden',}}>
@@ -475,16 +475,15 @@ export const DataThread: FC<{}> = function ({ }) {
                 <Typography className="view-title" component="h2" sx={{marginTop: "6px"}}>
                     Data Threads
                 </Typography>
-                <IconButton size={'small'} color="primary" onClick={() => {  setThreadDrawerOpen(!threadDrawerOpen); }}>
-                    {threadDrawerOpen ? <ChevronLeftIcon /> : <ChevronRightIcon />}
+                <IconButton size={'small'} color="primary" disabled={leafTables.length <= 1} onClick={() => { setThreadDrawerOpen(!threadDrawerOpen); }}>
+                    {drawerOpen ? <ChevronLeftIcon /> : <ChevronRightIcon />}
                 </IconButton>
             </Box>
             <Box sx={{transition: 'width 200ms cubic-bezier(0.4, 0, 0.2, 1) 0ms', overflow: 'auto', 
                       direction: 'rtl', display: 'flex', flex: 1}}  
-                width={threadDrawerOpen ? threadDrawerWidth + 2 : 212} className="thread-view-mode">
+                width={drawerOpen ? threadDrawerWidth + 2 : 212} className="thread-view-mode">
                 {view}
             </Box>
-            
         </Box>
     );
 
