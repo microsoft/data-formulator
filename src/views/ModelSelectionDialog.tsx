@@ -105,11 +105,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
         fetch(getUrls().TEST_MODEL, {...message })
             .then((response) => response.json())
             .then((data) => {
-                console.log("---model output")
-                console.log(data);
-
                 let status = data["status"] || 'error';
-
                 updateModelStatus(model, endpoint, status)
             }).catch((error) => {
                 updateModelStatus(model, endpoint, 'error')

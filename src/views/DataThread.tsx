@@ -23,6 +23,7 @@ import {
     ListItemText,
     Collapse,
     Grow,
+    alpha,
 } from '@mui/material';
 
 import embed from 'vega-embed';
@@ -93,6 +94,7 @@ let SingleThreadView: FC<{
     let focusedTableId = useSelector((state: DataFormulatorState) => state.focusedTableId);
 
     let focusedChart = charts.find(c => c.id == focusedChartId);
+    
         
     const dispatch = useDispatch();
 
@@ -139,7 +141,10 @@ let SingleThreadView: FC<{
                 </ListItemIcon>
             </Box>;
         });
-    } 
+    }
+
+    // the thread is focused if the focused chart is in this table
+    let threadIsFocused = focusedChart && tableIdList.includes(focusedChart.tableRef) && !usedTableIds.includes(focusedChart.tableRef);
     
     let tableList = tableIdList.map((tableId, i) => {
         // filter charts relavent to this
@@ -246,7 +251,8 @@ let SingleThreadView: FC<{
 
     content = w(tableList, triggerCards, "")
 
-    return <Box sx={{backgroundColor: threadIdx % 2 == 1 ? "rgba(0, 0, 0, 0.02)" : 'white', padding: '8px 8px'}}>
+    return <Box sx={{backgroundColor:  (threadIdx % 2 == 1 ? "rgba(0, 0, 0, 0.02)" : 'white'), //threadIsFocused ? alpha(theme.palette.primary.main, 0.05) : 
+                    padding: '8px 8px'}}>
         {/* <Tooltip title={collapsed ? 'expand' : 'collapse'}>
            <Button fullWidth sx={{display: 'flex',  direction: 'ltr'}} color="primary" onClick={() => setCollapsed(!collapsed)}>
                 <Divider flexItem sx={{

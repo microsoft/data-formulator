@@ -177,7 +177,13 @@ const scatterPlots: ChartTemplate[] = [
             "encoding": { }
         },
         "channels": ["x", "y", "color", "opacity", "column", "row"],
-        "paths": Object.fromEntries(["x", "y", "color", "opacity", "column", "row"].map(channel => [channel, ["encoding", channel]]))
+        "paths": Object.fromEntries(["x", "y", "color", "opacity", "column", "row"].map(channel => [channel, ["encoding", channel]])),
+        "postProcessor": (vgSpec: any) => {
+            if (vgSpec.encoding.x && vgSpec.encoding.x.type != "nominal") {
+                vgSpec.encoding.x.type = "nominal";
+            } 
+            return vgSpec;
+        }
     }
 ]
 
@@ -347,10 +353,19 @@ let tableCharts : ChartTemplate[] = [
         "icon": chartIconHeatMap,
         "template": {
             "mark": "rect",
-            "encoding": { }
+            "encoding": {  }
         },
         "channels": ["x", "y", "color", "column", "row"],
-        "paths": Object.fromEntries(["x", "y", "color", "column", "row"].map(channel => [channel, ["encoding", channel]]))
+        "paths": Object.fromEntries(["x", "y", "color", "column", "row"].map(channel => [channel, ["encoding", channel]])),
+        "postProcessor": (vgSpec: any) => {
+            if (vgSpec.encoding.y && vgSpec.encoding.y.type != "nominal") {
+                vgSpec.encoding.y.type = "nominal";
+            } 
+            if (vgSpec.encoding.x && vgSpec.encoding.x.type != "nominal") {
+                vgSpec.encoding.x.type = "nominal";
+            } 
+            return vgSpec;
+        }
     },
 ]
 

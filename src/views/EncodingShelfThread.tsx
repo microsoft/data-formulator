@@ -218,20 +218,14 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
         let triggerChart = charts.find(c => c.id == trigger.chartRef) as Chart;
         let prompt = trigger.instruction;
 
-        // let activeFields = conceptShelfItems.filter((field) => Array.from(Object.values(triggerChart.encodingMap))
-        //                                 .map((enc: EncodingItem) => enc.fieldID).includes(field.id));
-        // let activeBaseFields = conceptShelfItems.filter((field) => {
-        //     return activeFields.map(f => f.source == "derived" ? (f.transform as ConceptTransformation).parentIDs : [f.id]).flat().includes(field.id);
-        // });
+        // derive active fields from encoding map so that we can keep the order of which fields will be visualized
         let activeFields = Object.values(triggerChart.encodingMap).map(enc => enc.fieldID).filter(fieldId => fieldId && conceptShelfItems.map(f => f.id)
                 .includes(fieldId)).map(fieldId => conceptShelfItems.find(f => f.id == fieldId) as FieldItem);
         let activeBaseFields = activeFields.map(f => f.source == 'derived' ? (f.transform as ConceptTransformation).parentIDs : [f.id])
                 .flat().map(fieldId => conceptShelfItems.find(f => f.id == fieldId) as FieldItem)
 
-
         dispatch(dfActions.clearUnReferencedTables());
         dispatch(dfActions.setVisPaneSize(640));
-        //handleRunSynthesisStream(example);
 
         let fieldNamesStr = activeFields.map(f => f.name).reduce(
             (a: string, b: string, i, array) => a + (i < array.length - 1 ? ', ' : ' and ') + b, "")
