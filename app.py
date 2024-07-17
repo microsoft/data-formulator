@@ -44,7 +44,7 @@ load_dotenv(os.path.join(APP_DIR, 'openai-keys.env'))
 
 import os
 
-app = Flask(__name__, static_url_path='', static_folder=os.path.join(APP_ROOT, "..", "build"))
+app = Flask(__name__, static_url_path='', static_folder=os.path.join(APP_ROOT, "..", "dist"))
 CORS(app)
 
 @app.route('/vega-datasets')

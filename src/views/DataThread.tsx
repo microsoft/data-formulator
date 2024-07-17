@@ -27,7 +27,6 @@ import {
 } from '@mui/material';
 
 import embed from 'vega-embed';
-//import { powerbi } from 'vega-themes';
 import AnimateOnChange from 'react-animate-on-change'
 import { VegaLite } from 'react-vega'
 

@@ -13,16 +13,16 @@ import SubdirectoryArrowRightIcon from '@mui/icons-material/SubdirectoryArrowRig
 
 import { AgGridReact } from 'ag-grid-react';
 
-import 'ag-grid-community/dist/styles/ag-grid.css';
-import 'ag-grid-community/dist/styles/ag-theme-material.css';
+import 'ag-grid-community/styles/ag-grid.css';
+import 'ag-grid-community/styles/ag-theme-material.css';
 import '../scss/DataView.scss';
 
 import { DictTable } from '../components/ComponentType';
-import { Column } from 'ag-grid-community';
+import { ColDef, Column } from 'ag-grid-community';
 
 import { useDispatch } from 'react-redux';
 
-const DEFAULT_COL_DEF = {
+const DEFAULT_COL_DEF: ColDef = {
     editable: false,
     sortable: false,
     flex: 1,

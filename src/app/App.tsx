@@ -55,8 +55,7 @@ import { appConfig, assignAppConfig, getUrls, PopupConfig } from './utils';
 import { DictTable } from '../components/ComponentType';
 import { AppDispatch } from './store';
 import { ActionSubscription, subscribe, unsubscribe } from './embed';
-//import dfLogo from '../assets/df-logo.png';
-import dfLogo from '../assets/df-logo-small.jpeg';
+import dfLogo from '../assets/df-logo.png';
 import { Popup } from '../components/Popup';
 import { ModelSelectionButton } from '../views/ModelSelectionDialog';
 
@@ -194,8 +193,8 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
             }
             
         }).catch(err => {
+            //user is not logged in, do not show logout button
             //console.error(err)
-            console.error('no auth necessary.')
         });
     }, [])
 

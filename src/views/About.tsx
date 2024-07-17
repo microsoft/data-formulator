@@ -4,7 +4,7 @@
 import { Box, Typography, Button } from "@mui/material";
 import React, { FC } from "react";
 
-import dfLogo from '../assets/df-logo-small.jpeg';
+import dfLogo from '../assets/df-logo.png';
 import { toolName } from "../app/App";
 
 export const About: FC<{}> = function About({ }) {

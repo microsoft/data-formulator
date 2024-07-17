@@ -10,8 +10,6 @@ import {
     IconButton,
 } from '@mui/material';
 
-//import { powerbi } from 'vega-themes';
-
 import UnfoldMoreIcon from '@mui/icons-material/UnfoldMore';
 import UnfoldLessIcon from '@mui/icons-material/UnfoldLess';
 

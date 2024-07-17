@@ -30,7 +30,6 @@ import ButtonGroup from '@mui/material/ButtonGroup';
 import { styled } from "@mui/material/styles";
 
 import embed from 'vega-embed';
-//import { powerbi } from 'vega-themes';
 import AnimateOnChange from 'react-animate-on-change'
 
 
@@ -230,7 +229,7 @@ const BaseChartCreationMenu: FC<{tableId: string; buttonElement: any}> = functio
     </>;
 }
 
-export const ChartCreationMenu = styled(BaseChartCreationMenu)();
+export const ChartCreationMenu = styled(BaseChartCreationMenu)({});
 
 
 export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
