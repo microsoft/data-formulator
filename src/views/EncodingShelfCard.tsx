@@ -84,7 +84,7 @@ export const TriggerCard: FC<{className?: string, trigger: Trigger, hideFields?:
 
     const dispatch = useDispatch<AppDispatch>();
 
-    let encodingComp : any = ''
+    let encodingComp : any = '';
     let prompt = trigger.instruction ? `"${trigger.instruction}"` : "";
 
     if (trigger.chartRef && charts.find(c => c.id == trigger.chartRef)) {
@@ -106,7 +106,7 @@ export const TriggerCard: FC<{className?: string, trigger: Trigger, hideFields?:
             })
     }
 
-    return <Box sx={{  }}>
+    return <Box sx={{ }}>
             <InputLabel sx={{
                 position: "absolute",
                 background: "white",
@@ -231,12 +231,16 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
         let mode = 'formulate';
         let baseTables = selectBaseTables(activeFields, conceptShelfItems, tables);
 
+        let instruction = (chart.chartType == 'Auto' && prompt == "") ? "let's get started" : prompt;
+
         if (baseTables.length == 0) {
             return;
         }
 
-        if (currentTable.derive == undefined && prompt == "" && activeCustomFields.length == 0 && 
-                tables.some(t => t.derive == undefined && activeBaseFields.every(f => t.names.includes(f.name)))) {
+        if (currentTable.derive == undefined && instruction == "" && 
+                (activeFields.length > 0 && activeCustomFields.length == 0) && 
+                tables.some(t => t.derive == undefined && 
+                activeBaseFields.every(f => t.names.includes(f.name)))) {
 
             // if there is no additional fields, directly generate
             let tempTable = getDataTable(chart, tables, charts, conceptShelfItems, true);
@@ -268,7 +272,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
             mode,
             input_tables: baseTables.map(t => {return { name: t.id.replace(/\.[^/.]+$/ , ""), rows: t.rows }}),
             new_fields: activeBaseFields.map(f => { return {name: f.name} }),
-            extra_prompt: prompt,
+            extra_prompt: instruction,
             model: activeModel
         }) 
         let engine = betaMode ? getUrls().SERVER_DERIVE_DATA_V2_URL : getUrls().SERVER_DERIVE_DATA_URL;
@@ -280,7 +284,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                 input_tables: baseTables.map(t => {return { name: t.id.replace(/\.[^/.]+$/ , ""), rows: t.rows }}),
                 output_fields: activeBaseFields.map(f => { return {name: f.name} }),
                 dialog: currentTable.derive?.dialog,
-                new_instruction: prompt,
+                new_instruction: instruction,
                 model: activeModel
             })
             engine = getUrls().SERVER_REFINE_DATA_URL;
@@ -338,7 +342,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                             let triggerChartSpec = duplicateChart(chart);
                             let currentTrigger: Trigger =  { 
                                 tableId: currentTable.id, 
-                                instruction: prompt, 
+                                instruction: instruction, 
                                 chartRef: triggerChartSpec.id,
                                 resultTableId: candidateTableId
                             }
@@ -491,7 +495,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
             onChange={(event) => { setPrompt(event.target.value) }}
             value={prompt}
             label=""
-            placeholder={chart.chartType == "Auto" ? "describe visualization goal" : "formulate data"}
+            placeholder={chart.chartType == "Auto" ? "what do you want to visualize?" : "formulate data"}
             fullWidth
             multiline
             variant="standard"
@@ -513,7 +517,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
          : 
              <Tooltip title={`Formulate`}>
                 <IconButton sx={{ marginLeft: "0"}} 
-                disabled={createDisabled} color={"primary"} onClick={() => { deriveNewData() }}>
+                disabled={createDisabled} color={"primary"} onClick={() => { deriveNewData(); }}>
                     <PrecisionManufacturing />
                 </IconButton>
             </Tooltip>
