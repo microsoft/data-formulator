@@ -16,7 +16,7 @@
 	// "forwardPorts": [],
 
 	// Use 'postCreateCommand' to run commands after the container is created.
-	"postCreateCommand": "python3 -m venv /workspaces/data-formulator/venv && . /workspaces/data-formulator/venv/bin/activate && pip install -r /workspaces/data-formulator/requirements.txt --verbose && yarn install && yarn build"
+	"postCreateCommand": "python3 -m venv /workspaces/data-formulator/venv && . /workspaces/data-formulator/venv/bin/activate && pip install -r /workspaces/data-formulator/requirements.txt --verbose && yarn install && yarn build && code --folder-uri /workspaces/data-formulator --command workbench.action.debug.start"
 
 	// Configure tool-specific properties.
 	// "customizations": {},
