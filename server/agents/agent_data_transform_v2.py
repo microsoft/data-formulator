@@ -169,6 +169,17 @@ def transform_data(df):
 ```
 '''
 
+def completion_response_wrapper(client, model, messages, n):
+    ### wrapper for completion response, especially handling errors
+    try:
+        response = client.chat.completions.create(
+                model=model, messages=messages, temperature=0.7, max_tokens=1200,
+                top_p=0.95, n=n, frequency_penalty=0, presence_penalty=0, stop=None)
+    except Exception as e:
+        response = e
+
+    return response
+
 
 class DataTransformationAgentV2(object):
 
@@ -181,6 +192,12 @@ class DataTransformationAgentV2(object):
         """process gpt response to handle execution"""
 
         #log = {'messages': messages, 'response': response.model_dump(mode='json')}
+        # print("-FDSOIFSDOFHSDIHFSHOS-------------")
+        # print(response.to_json())
+
+        if isinstance(response, Exception):
+            result = {'status': 'other error', 'content': response.body}
+            return [result]
 
         candidates = []
         for choice in response.choices:
@@ -240,10 +257,12 @@ class DataTransformationAgentV2(object):
                     {"role":"user","content": user_query}]
         
         ###### the part that calls open_ai
-        response = self.client.chat.completions.create(
-            model=self.model, messages = messages, temperature=0.7, max_tokens=1200,
-            top_p=0.95, n=n, frequency_penalty=0, presence_penalty=0, stop=None)
-        
+        # response = self.client.chat.completions.create(
+        #     model=self.model, messages = messages, temperature=0.7, max_tokens=1200,
+        #     top_p=0.95, n=n, frequency_penalty=0, presence_penalty=0, stop=None)
+
+        response = completion_response_wrapper(self.client, self.model, messages, n)
+
         return self.process_gpt_response(input_tables, messages, response)
         
 
@@ -264,10 +283,6 @@ class DataTransformationAgentV2(object):
         messages = [*updated_dialog, {"role":"user", 
                               "content": f"Update the code above based on the following instruction:\n\n{json.dumps(goal, indent=4)}"}]
 
-        ##### the part that calls open_ai
-        response = self.client.chat.completions.create(
-            model=self.model, messages=messages, temperature=0.7, max_tokens=1200,
-            top_p=0.95, n=n, frequency_penalty=0, presence_penalty=0, stop=None)
-        
-        
+        response = completion_response_wrapper(self.client, self.model, messages, n)
+
         return self.process_gpt_response(input_tables, messages, response)

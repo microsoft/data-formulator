@@ -534,10 +534,10 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
                 // <Box sx={{padding: '4px 0px', background: 'aliceblue', margin: 'auto', width: '200px', height: '6px', paddingBottom: 0.5}}></Box>
             ]}
             <Box sx={{width: '17px', height: '12px'}}>
-                            <Box sx={{padding:0, width: '1px', margin:'auto', height: '100%',
-                                                    backgroundImage: 'linear-gradient(180deg, darkgray, darkgray 75%, transparent 75%, transparent 100%)',
-                                                    backgroundSize: '1px 6px, 3px 100%'}}></Box>
-                        </Box>
+                <Box sx={{padding:0, width: '1px', margin:'auto', height: '100%',
+                                        backgroundImage: 'linear-gradient(180deg, darkgray, darkgray 75%, transparent 75%, transparent 100%)',
+                                        backgroundSize: '1px 6px, 3px 100%'}}></Box>
+            </Box>
             <EncodingShelfCard chartId={chartId} trigger={chart.intermediate} />
             {postInstruction}
             <Box sx={{height: '12px'}}></Box>

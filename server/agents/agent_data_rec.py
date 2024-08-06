@@ -7,6 +7,8 @@ from agents.agent_utils import extract_json_objects, generate_data_summary, extr
 import py_sandbox
 import traceback
 
+from agents.agent_data_transform_v2 import completion_response_wrapper
+
 
 SYSTEM_PROMPT = '''You are a data scientist to help user to recommend data that will be used for visualization.
 The user will provide you information about what visualization they would like to create, and your job is to recommend a transformed data that can be used to create the visualization and write a python function to transform the data.
@@ -123,6 +125,10 @@ class DataRecAgent(object):
 
         #log = {'messages': messages, 'response': response.model_dump(mode='json')}
 
+        if isinstance(response, Exception):
+            result = {'status': 'other error', 'content': response.body}
+            return [result]
+        
         candidates = []
         for choice in response.choices:
             
@@ -175,10 +181,7 @@ class DataRecAgent(object):
         messages = [{"role":"system", "content": self.system_prompt},
                     {"role":"user","content": user_query}]
         
-        ###### the part that calls open_ai
-        response = self.client.chat.completions.create(
-            model=self.model, messages = messages, temperature=0.7, max_tokens=1200,
-            top_p=0.95, n=n, frequency_penalty=0, presence_penalty=0, stop=None)
+        response = completion_response_wrapper(self.client, self.model, messages, n)
         
         return self.process_gpt_response(input_tables, messages, response)
         
@@ -191,8 +194,6 @@ class DataRecAgent(object):
         messages = [*dialog, {"role":"user", "content": f"Update: \n\n{new_instruction}"}]
 
         ##### the part that calls open_ai
-        response = self.client.chat.completions.create(
-            model=self.model, messages=messages, temperature=0.7, max_tokens=1200,
-            top_p=0.95, n=n, frequency_penalty=0, presence_penalty=0, stop=None)
-        
+        response = completion_response_wrapper(self.client, self.model, messages, n)
+
         return self.process_gpt_response(input_tables, messages, response)
