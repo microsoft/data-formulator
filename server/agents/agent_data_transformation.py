@@ -133,7 +133,7 @@ class DataTransformationAgent(object):
         candidates = []
         for choice in response.choices:
             
-            logger.info("=== Data transformation agent ===>\n")
+            logger.info("\n=== Data transformation agent ===>\n")
             logger.info(choice.message.content + "\n")
             
             code_blocks = extract_code_from_gpt_response(choice.message.content + "\n", "python")
