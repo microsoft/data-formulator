@@ -4,6 +4,11 @@
 import json
 from agents.agent_utils import extract_json_objects
 
+import logging
+
+logger = logging.getLogger(__name__)
+
+
 SYSTEM_PROMPT = '''You are a data scientist to help user to sort data.
 The user will provide list of items in the form of a json object, and your goal is to sort the data in its natural order based on your knowledge.
 Create an output json object with sorted data based off the [INPUT].
@@ -73,7 +78,7 @@ class SortDataAgent(object):
 
         user_query = f"[INPUT]\n\n{json.dumps(input_obj)}\n\n[OUTPUT]"
 
-        print(user_query)
+        logger.info(user_query)
 
         messages = [{"role":"system", "content": SYSTEM_PROMPT},
                     {"role":"user","content": user_query}]
@@ -88,8 +93,8 @@ class SortDataAgent(object):
         candidates = []
         for choice in response.choices:
             
-            print(">>> Sort data agent <<<\n")
-            print(choice.message.content + "\n")
+            logger.info("\n=== Sort data agent ===>\n")
+            logger.info(choice.message.content + "\n")
             
             json_blocks = extract_json_objects(choice.message.content + "\n", "json")
             

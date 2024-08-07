@@ -8,6 +8,11 @@ from agents.agent_utils import generate_data_summary, extract_code_from_gpt_resp
 import py_sandbox
 import traceback
 
+import logging
+
+logger = logging.getLogger(__name__)
+
+
 SYSTEM_PROMPT = '''You are a data scientist to help user to derive new column based on existing columns in a dataset.
 Your job is to write a python function based on input data summary, instruction and output column name.
 Complete a python function based off the [CONTEXT], [TEMPLATE] and [GOAL] provided, the function's input arguments are values from input columns, and the output is a value for the output column.
@@ -151,7 +156,7 @@ def derive({arg_string}):
 
         user_query = f"[CONTEXT]\n\n{data_summary}\n\n[GOAL]\n\n{description}\n\n[TEMPLATE]\n\n{code_template}\n\n[OUTPUT]\n"
 
-        print(user_query)
+        logger.info(user_query)
 
         messages = [{"role":"system", "content": SYSTEM_PROMPT},
                     {"role":"user","content": user_query}]
@@ -166,8 +171,8 @@ def derive({arg_string}):
         candidates = []
         for choice in response.choices:
             
-            print(">>> Python Data Derive Agent <<<\n")
-            print(choice.message.content + "\n")
+            logger.info("\n=== Python Data Derive Agent ===>\n")
+            logger.info(choice.message.content + "\n")
 
             code_blocks = extract_code_from_gpt_response(choice.message.content + "\n", "python")
 

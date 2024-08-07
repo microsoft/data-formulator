@@ -4,6 +4,10 @@
 import json
 
 from agents.agent_utils import extract_json_objects, generate_data_summary
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 SYSTEM_PROMPT = '''You are a data scientist to help user infer data types based off the table provided by the user.
 Given a dataset provided by the user, identify their type and semantic type, and provide a very short summary of the dataset.
@@ -86,7 +90,7 @@ class DataLoadAgent(object):
 
         user_query = f"[DATA]\n\n{data_summary}\n\n[OUTPUT]"
 
-        print(user_query)
+        logger.info(user_query)
 
         messages = [{"role":"system", "content": SYSTEM_PROMPT},
                     {"role":"user","content": user_query}]
@@ -101,11 +105,11 @@ class DataLoadAgent(object):
         candidates = []
         for choice in response.choices:
             
-            print(">>> Data load agent <<<\n")
-            print(choice.message.content + "\n")
+            logger.info("\n=== Data load result ===>\n")
+            logger.info(choice.message.content + "\n")
             
             json_blocks = extract_json_objects(choice.message.content + "\n")
-            print(json_blocks)
+            logger.info(json_blocks)
             
             if len(json_blocks) > 0:
                 result = {'status': 'ok', 'content': json_blocks[0]}

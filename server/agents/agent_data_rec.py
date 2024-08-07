@@ -9,6 +9,10 @@ import traceback
 
 from agents.agent_data_transform_v2 import completion_response_wrapper
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 SYSTEM_PROMPT = '''You are a data scientist to help user to recommend data that will be used for visualization.
 The user will provide you information about what visualization they would like to create, and your job is to recommend a transformed data that can be used to create the visualization and write a python function to transform the data.
@@ -132,8 +136,8 @@ class DataRecAgent(object):
         candidates = []
         for choice in response.choices:
             
-            print(">>> Data recommendation agent <<<\n")
-            print(choice.message.content + "\n")
+            logger.info("\n=== Data recommendation result ===>\n")
+            logger.info(choice.message.content + "\n")
             
             json_blocks = extract_json_objects(choice.message.content + "\n")
             if len(json_blocks) > 0:
@@ -152,12 +156,12 @@ class DataRecAgent(object):
                         new_data = json.loads(result['content'])
                         result['content'] = new_data
                     else:
-                        print(result['content'])
+                        logger.info(result['content'])
                     result['code'] = code_str
                 except Exception as e:
-                    print('other error:')
+                    logger.warning('other error:')
                     error_message = traceback.format_exc()
-                    print(error_message)
+                    logger.warning(error_message)
                     result = {'status': 'other error', 'content': error_message}
             else:
                 result = {'status': 'no transformation', 'content': input_tables[0]['rows']}
@@ -176,7 +180,7 @@ class DataRecAgent(object):
 
         user_query = f"[CONTEXT]\n\n{data_summary}\n\n[GOAL]\n\n{description}\n\n[OUTPUT]\n"
 
-        print(user_query)
+        logger.info(user_query)
 
         messages = [{"role":"system", "content": self.system_prompt},
                     {"role":"user","content": user_query}]
@@ -189,7 +193,7 @@ class DataRecAgent(object):
     def followup(self, input_tables, dialog, new_instruction: str, n=1):
         """extend the input data (in json records format) to include new fields"""
 
-        print(f"GOAL: \n\n{new_instruction}")
+        logger.info(f"GOAL: \n\n{new_instruction}")
 
         messages = [*dialog, {"role":"user", "content": f"Update: \n\n{new_instruction}"}]
 

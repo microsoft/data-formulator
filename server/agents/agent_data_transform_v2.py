@@ -7,6 +7,9 @@ from agents.agent_utils import extract_json_objects, generate_data_summary, extr
 import py_sandbox
 import traceback
 
+import logging
+
+logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = '''You are a data scientist to help user to transform data that will be used for visualization.
 The user will provide you information about what data would be needed, and your job is to create a python function based on the input data summary, transformation instruction and expected fields.
@@ -202,8 +205,8 @@ class DataTransformationAgentV2(object):
         candidates = []
         for choice in response.choices:
             
-            print(">>> Data transformation agent <<<\n")
-            print(choice.message.content + "\n")
+            logger.info("\n=== Data transformation result ===>\n")
+            logger.info(choice.message.content + "\n")
             
             json_blocks = extract_json_objects(choice.message.content + "\n")
             if len(json_blocks) > 0:
@@ -222,12 +225,12 @@ class DataTransformationAgentV2(object):
                         new_data = json.loads(result['content'])
                         result['content'] = new_data
                     else:
-                        print(result['content'])
+                        logger.info(result['content'])
                     result['code'] = code_str
                 except Exception as e:
-                    print('other error:')
+                    logger.warning('other error:')
                     error_message = traceback.format_exc()
-                    print(error_message)
+                    logger.warning(error_message)
                     result = {'status': 'other error', 'content': error_message}
             else:
                 result = {'status': 'no transformation', 'content': input_tables[0]['rows']}
@@ -251,7 +254,7 @@ class DataTransformationAgentV2(object):
 
         user_query = f"[CONTEXT]\n\n{data_summary}\n\n[GOAL]\n\n{json.dumps(goal, indent=4)}\n\n[OUTPUT]\n"
 
-        print(user_query)
+        logger.info(user_query)
 
         messages = [{"role":"system", "content": self.system_prompt},
                     {"role":"user","content": user_query}]
@@ -274,9 +277,9 @@ class DataTransformationAgentV2(object):
             "visualization_fields": output_fields
         }
 
-        print(f"GOAL: \n\n{goal}")
+        logger.info(f"GOAL: \n\n{goal}")
 
-        print(dialog)
+        #logger.info(dialog)
 
         updated_dialog = [{"role":"system", "content": self.system_prompt}, *dialog[1:]]
 
