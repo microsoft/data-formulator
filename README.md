@@ -25,50 +25,15 @@ With Data Formulator, authors first define data concepts they plan to visualize 
 Choose one of the following options to set up Data Formulator:
 
 - **Option 1: Codespaces**
-  - **Open Codespaces**  
-    Lorem ipsum dolor sit amet, consectetur adipiscing elit. Vivamus nec lacinia nisi.
-  - **Create a New Codespace**  
-    Nulla facilisi. Cras at ligula vel sapien venenatis scelerisque.
-  - **Clone the Repository**  
-    Donec ut metus finibus, venenatis eros sed, fringilla turpis.
-  - **Launch the Application**  
-    Fusce quis sapien ut purus dapibus tempor. Integer euismod metus in eros ultricies.
+  
+  Use Codespaces for an easy setup experience, as everything is preconfigured to get you up and running quickly. For more details, see [CODESPACES.md](CODESPACES.md).
 
 - **Option 2: Local Installation**
+  
+  Opt for a local installation if you prefer full control over your development environment and the ability to customize the setup to your specific needs. For detailed instructions, refer to [DEV.md](DEV.md).
 
-  - **Install Python Server:**
-    - Setup a virtual environment:
-      ```bash
-      python -m venv venv
-      .\venv\Scripts\activate
-      pip install -r requirements.txt
-      ```
 
-  - **Install Web Client:**
-    - Install dependencies and build the front-end web app:
-      ```bash
-      yarn install
-      yarn build
-      ```
-
-      This will build the web app for production into the `build` folder.
-
-  - **Run Data Formulator:**
-    - Start the Python server with one of the following scripts:
-
-      - **Windows:**
-        ```bash
-        .\local_server.bat
-        ```
-
-      - **Unix-based:**
-        ```bash
-        .\local_server.sh
-        ```
-
-    - Open [http://localhost:5000](http://localhost:5000) to view it in the browser.
-
-## Follow-Up Steps
+## Usage
 
 Once you’ve completed the setup using either option, follow these steps to start using Data Formulator:
 
@@ -76,30 +41,8 @@ Once you’ve completed the setup using either option, follow these steps to sta
 - **Step 2:** Vivamus nec lacinia nisi. Cras at ligula vel sapien.
 - **Step 3:** Fusce quis sapien ut purus dapibus tempor.
 
-## Development
 
-If you want to work on the Data Formulator front-end, you can run the app in development mode with:
 
-```bash
-yarn start
-```
-
-This will run the app in development mode.  
-Open [http://localhost:3000](http://localhost:3000) to view it in the browser.
-
-The page will reload if you make edits.  
-You will also see any lint errors in the console.
-
-If you want to deploy your updated front-end, run:
-
-```bash
-yarn build
-```
-
-This builds the app for production to the `build` folder.  
-It correctly bundles React in production mode and optimizes the build for the best performance.
-
-Follow the steps from **Run Data Formulator** to work with your built version.
 
 ## Credits
 Data Formulator was developed at Microsoft Research by these team members:
