@@ -9,7 +9,7 @@ Click the green **Code** button on the [Data Formulator repo](https://github.com
 
 ![image](https://github.com/user-attachments/assets/67869677-0b10-4751-b8f2-a7f3f22f860f)
 
-Feel free to get a cup of coffee ☕, this will take about 15 minutes.
+Feel free to get a cup of coffee ☕, this will take a few minutes.
 A new tab will open and your codespace will begin building:
 
 ![image](https://github.com/user-attachments/assets/d61f1dcb-a2a1-49f5-82d0-8b4373fe0224)
