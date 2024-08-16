@@ -30,7 +30,7 @@ Choose one of the following options to set up Data Formulator:
 
 - **Option 2: Local Installation**
   
-  Opt for a local installation if you prefer full control over your development environment and the ability to customize the setup to your specific needs. For detailed instructions, refer to [DEV.md](DEV.md).
+  Opt for a local installation if you prefer full control over your development environment and the ability to customize the setup to your specific needs. For detailed instructions, refer to [DEVELOPMENT.md](DEVELOPMENT.md).
 
 
 ## Usage
