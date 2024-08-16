@@ -35,9 +35,17 @@ Choose one of the following options to set up Data Formulator:
 
 Once you’ve completed the setup using either option, follow these steps to start using Data Formulator:
 
-- **Step 1:** Lorem ipsum dolor sit amet, consectetur adipiscing elit.
-- **Step 2:** Vivamus nec lacinia nisi. Cras at ligula vel sapien.
-- **Step 3:** Fusce quis sapien ut purus dapibus tempor.
+### The basics of data visualization
+* Choose a dataset
+* Choose a visualization
+* Add data fields to your visualization
+
+### Add the special sauce 
+* Create new concepts and click the **Formulate** button
+* Inspect the code behind the concept
+* Add the new concept fields to your visualization
+
+Repeat this process as needed to explore and understand your data. Your explorations are trackable in the **Data Threads** panel. 
 
 ## Credits
 Data Formulator was developed at Microsoft Research by these team members:
