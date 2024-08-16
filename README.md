@@ -18,8 +18,6 @@ With Data Formulator, authors first define data concepts they plan to visualize 
 * [Data Formulator Microsoft Research publication](https://www.microsoft.com/en-us/research/publication/data-formulator-ai-powered-concept-driven-visualization-authoring/)
 * [ArXiv paper](https://arxiv.org/abs/2309.10094) - presented at [VIS 2023](https://ieeevis.org/year/2023/welcome) and winner of the [Best Paper Honorable Mention](https://ieeevis.org/year/2023/info/awards/best-paper-awards) award
 
-
-
 ## Get Started
 
 Choose one of the following options to set up Data Formulator:
@@ -40,9 +38,6 @@ Once you’ve completed the setup using either option, follow these steps to sta
 - **Step 1:** Lorem ipsum dolor sit amet, consectetur adipiscing elit.
 - **Step 2:** Vivamus nec lacinia nisi. Cras at ligula vel sapien.
 - **Step 3:** Fusce quis sapien ut purus dapibus tempor.
-
-
-
 
 ## Credits
 Data Formulator was developed at Microsoft Research by these team members:
