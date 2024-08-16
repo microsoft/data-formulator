@@ -33,3 +33,5 @@ Welcome to Data Formulator!
 
 ![image](https://github.com/user-attachments/assets/03ff607e-0d97-4f53-b4bf-2a876455388e)
 
+## Usage
+See the [Usage section on the README.md page](README.md#usage).
