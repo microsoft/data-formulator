@@ -7,7 +7,7 @@ Transform data and create rich visualizations iteratively with an AI agent.
 
 ## Overview
 
-**Data Formulator** is a charting application from Microsoft Research that uses large language models to tidy up data, expediting the practice of data visualization.
+**Data Formulator** is an application from Microsoft Research that uses large language models to transform data, expediting the practice of data visualization.
 
 With most modern visualization tools, authors need to transform their data into tidy formats to create visualizations they want. Because this requires experience with programming or separate data processing tools, data transformation remains a barrier in visualization authoring. To address this challenge, we present a new visualization paradigm, concept binding, that separates high-level visualization intents and low-level data transformation steps, leveraging an AI agent. 
 
