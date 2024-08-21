@@ -2,6 +2,7 @@
 
 Transform data and create rich visualizations iteratively with an AI agent.
 
+[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/microsoft/data-formulator?quickstart=1)
   
 ![Hero image](https://github.com/user-attachments/assets/18069024-f721-463a-b6a1-bd6ec0a3857c)
 
@@ -25,6 +26,8 @@ Choose one of the following options to set up Data Formulator:
 - **Option 1: Codespaces**
   
   Use Codespaces for an easy setup experience, as everything is preconfigured to get you up and running quickly. For more details, see [CODESPACES.md](CODESPACES.md).
+  
+  [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/microsoft/data-formulator?quickstart=1)
 
 - **Option 2: Local Installation**
   
