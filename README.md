@@ -1,4 +1,6 @@
-# Data Formulator
+<h1>
+    <img src="./public/favicon.ico" alt="Data Formulator Image" width="28"> <b>Data Formulator</b>
+</h1>
 
 Transform data and create rich visualizations iteratively with an AI agent.
 
