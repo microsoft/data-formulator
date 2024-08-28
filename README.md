@@ -14,9 +14,9 @@ Transform data and create rich visualizations iteratively with AI 🪄.
 
 **Data Formulator** is an application from Microsoft Research that uses large language models to transform data, expediting the practice of data visualization.
 
-To create rich visualizations, data analysts often need to iterate back and forth among data processing and chart specification to achieve their goals. To achieve this, analysts need  proficiency in data transformation and visualization tools, and they also need spending efforts managing the iteration history. This can be challenging!
+To create rich visualizations, data analysts often need to iterate back and forth among data processing and chart specification to achieve their goals. To achieve this, analysts need proficiency in data transformation and visualization tools, and they also spend effort managing the iteration history. This can be challenging!
 
-Data Formualtor is an AI-powered tool for analysts to iteratively create rich visualiztaions. Different from most chat-based AI tools where users need to describe everything in natural language, Data Formulator combines user interface interactions (UI) with natural language (NL) inputs. This blended approach makes it easier for users to describe their chart designs while delegating data transformation to AI. 
+Data Formulator is an AI-powered tool for analysts to iteratively create rich visualiztaions. Different from most chat-based AI tools where users need to describe everything in natural language, Data Formulator combines user interface interactions (UI) with natural language (NL) inputs. This blended approach makes it easier for users to describe their chart designs while delegating data transformation to AI. 
 
 Check out these cool Data Formulator features that can help you create impressive visualizations!
 * Using the **blended UI and NL inputs** to describe the chart. 
