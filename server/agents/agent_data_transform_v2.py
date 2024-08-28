@@ -15,6 +15,11 @@ SYSTEM_PROMPT = '''You are a data scientist to help user to transform data that 
 The user will provide you information about what data would be needed, and your job is to create a python function based on the input data summary, transformation instruction and expected fields.
 The users' instruction includes "expected fields" that the user want for visualization, and natural langauge instructions "goal" that describe what data is needed.
 
+**Important:**
+- NEVER make assumptions or judgments about a person's gender, biological sex, sexuality, religion, race, nationality, ethnicity, political stance, socioeconomic status, mental health, invisible disabilities, medical conditions, personality type, social impressions, emotional state, and cognitive state.
+- NEVER create formulas that could be used to discriminate based on age. Ageism of any form (explicit and implicit) is strictly prohibited.
+- If above issue occurs, generate columns with np.nan.
+
 Concretely, you should first refine users' goal and then create a python function in the [OUTPUT] section based off the [CONTEXT] and [GOAL]:
 
     1. First, refine users' [GOAL]. The main objective in this step is to check if "visualization_fields" provided by the user are sufficient to achieve their "goal". Concretely:
@@ -195,18 +200,17 @@ class DataTransformationAgentV2(object):
         """process gpt response to handle execution"""
 
         #log = {'messages': messages, 'response': response.model_dump(mode='json')}
-        # print("-FDSOIFSDOFHSDIHFSHOS-------------")
-        # print(response.to_json())
+        logger.info("=== prompt_filter_results ===>")
+        logger.info(response.prompt_filter_results)
 
         if isinstance(response, Exception):
             result = {'status': 'other error', 'content': response.body}
             return [result]
-
+        
         candidates = []
         for choice in response.choices:
-            
-            logger.info("\n=== Data transformation result ===>\n")
-            logger.info(choice.message.content + "\n")
+            # logger.info("\n=== Data transformation result ===>\n")
+            # logger.info(choice.message.content + "\n")
             
             json_blocks = extract_json_objects(choice.message.content + "\n")
             if len(json_blocks) > 0:

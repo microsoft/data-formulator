@@ -478,22 +478,30 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
         <Box key="chart-unavailable-box" sx={{ display: 'flex', flexDirection: "column", textAlign: 'center', paddingTop: 1 }} component="div" color="text.secondary">
             {synthesisRunning || Boolean(candidatesViewAnchorEl) ? "" : <Typography component="div" fontSize="small" sx={{ maxWidth: 640, margin: 'auto' }}>
                 {Object.entries(focusedChart.encodingMap).filter(entry => entry[1].fieldID != undefined).length == 0  ?
-                    <Typography component="span" fontSize="inherit" fontStyle="italic" sx={{color: 'darkgray'}}>
+                    <Typography component="span" fontSize="inherit" >
                         {focusedChart.chartType == "Table" ? 
                             "Provide a data transformation prompt to create a new data" 
                             : (focusedChart.chartType == "Auto" ? "Say something to get chart recommendations!" 
-                                    : "To create a chart, drag data concepts to chart builder.")}
+                                    : "To create a chart, put data fields to chart builder.")}
                     </Typography> :
                     <Typography component="span" fontSize="inherit">
                         Once you provided all fields, "formulate" to create the visualization.</Typography>}
+                    <Typography fontSize="inherit">
+                        The AI agent will help you transform data along the way.
+                    </Typography>
             </Typography>}
             <Box sx={{ display: 'flex', flexDirection: "row", margin: "auto" }}>
                 {chartActionButtons}
             </Box>
         </Box> :
-        <Box key='chart=action-buttons' sx={{ display: 'flex', flexDirection: "row", margin: "auto", paddingTop: 1 }}>
-            {chartActionButtons}
-        </Box>
+        <>
+            {table.derive ? <Typography component="span" fontSize="small" color="text.secondary" sx={{textAlign:'center'}}>
+                AI generated results can be inaccurate, inspect it!
+            </Typography> : ""}
+            <Box key='chart=action-buttons' sx={{ display: 'flex', flexDirection: "row", margin: "auto", paddingTop: 1 }}>
+                {chartActionButtons}
+            </Box>
+        </>
     
     let codeExplComp = <MuiMarkdown
             overrides={{
