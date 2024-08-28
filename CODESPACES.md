@@ -9,7 +9,7 @@ You will need a GitHub account and to be logged in to use Codespaces.
 [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/microsoft/data-formulator?quickstart=1)
 
 <kbd>
-  <a target="target="_blank"" href="https://github.com/codespaces/badge.svg)](https://codespaces.new/microsoft/data-formulator?quickstart=1"><img width="528" alt="image" src="https://github.com/user-attachments/assets/868d104f-c6e8-4b17-9963-f0d3e9270ea6"></a>
+  <img width="400" alt="image" src="https://github.com/user-attachments/assets/868d104f-c6e8-4b17-9963-f0d3e9270ea6">
 </kbd>
 
 ### Step 2: Run the app
