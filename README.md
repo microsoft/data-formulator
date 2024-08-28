@@ -2,7 +2,7 @@
     <img src="./public/favicon.ico" alt="Data Formulator icon" width="28"> <b>Data Formulator</b>
 </h1>
 
-Transform data and create rich visualizations iteratively with an AI agent.
+Transform data and create rich visualizations iteratively with AI 🪄.
 
 [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/microsoft/data-formulator?quickstart=1)
 
