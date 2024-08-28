@@ -42,15 +42,18 @@ Choose one of the following options to set up Data Formulator:
   Opt for a local installation if you prefer full control over your development environment and the ability to customize the setup to your specific needs. For detailed instructions, refer to [DEVELOPMENT.md](DEVELOPMENT.md).
 
 
-## Usage
+## Using Data Formulator
 
 Once you’ve completed the setup using either option, follow these steps to start using Data Formulator:
 
 ### The basics of data visualization
-* Provide OpenAI keys and select a model (GPT-4o suggested)
-* Choose a dataset
+* Provide OpenAI keys and select a model (GPT-4o suggested) and choose a dataset  
 * Choose a visualization type
 * Drag and drop data fields to the encoding shelf to create visualization
+
+
+https://github.com/user-attachments/assets/0fbea012-1d2d-46c3-a923-b1fc5eb5e5b8
+
 
 ### Create visualization beyond the initial dataset (powered by 🤖)
 * Add new field names in the encoding shelf, describe the chart intent
@@ -58,7 +61,15 @@ Once you’ve completed the setup using either option, follow these steps to sta
 * Inspect the code behind the concept
 * Follow up the chart to create new ones
 
+https://github.com/user-attachments/assets/160c69d2-f42d-435c-9ff3-b1229b5bddba
+
+https://github.com/user-attachments/assets/c93b3e84-8ca8-49ae-80ea-f91ceef34acb
+
 Repeat this process as needed to explore and understand your data. Your explorations are trackable in the **Data Threads** panel. 
+
+## Developers
+
+Follow the [developers' instructions](DEVELOPMENT.md) to build your new data analysis tools on top of Data Formulator.
 
 ## Credits
 Data Formulator was developed at Microsoft Research by these team members:
@@ -68,6 +79,7 @@ Data Formulator was developed at Microsoft Research by these team members:
 * [Steven Drucker](https://www.microsoft.com/en-us/research/people/sdrucker/)
 * [Jianfeng Gao](https://www.microsoft.com/en-us/research/people/jfgao/)
 * [Dan Marshall](https://www.microsoft.com/en-us/research/people/danmar/)
+
 
 ## Contributing
 
