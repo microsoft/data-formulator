@@ -47,6 +47,7 @@ Choose one of the following options to set up Data Formulator:
 Once you’ve completed the setup using either option, follow these steps to start using Data Formulator:
 
 ### The basics of data visualization
+* Provide OpenAI keys and select a model (GPT-4o suggested)
 * Choose a dataset
 * Choose a visualization type
 * Drag and drop data fields to the encoding shelf to create visualization
