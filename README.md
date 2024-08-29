@@ -22,10 +22,9 @@ Check out these cool Data Formulator features that can help you create impressiv
 * Using the **blended UI and NL inputs** to describe the chart. 
 * Utilizing **data threads** to navigate the history and reuse previous results to create new ones instead of starting from scratch every time.
 
-## References
-* [Data Formulator on Microsoft Research Blog]()
-* [Data Formulator v2 paper]()
-* [Data Formulator v1 paper](https://arxiv.org/abs/2309.10094)
+## Research Papers
+* [Data Formulator 2: Iteratively Creating Rich Visualizations with AI](https://www.microsoft.com/en-us/research/publication/data-formulator-2-iteratively-creating-rich-visualizations-with-ai/)
+* [Data Formulator: AI-powered Concept-driven Visualization Authoring](https://arxiv.org/abs/2309.10094)
 
 ## Get Started
 
