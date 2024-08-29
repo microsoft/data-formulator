@@ -125,6 +125,7 @@ export const DataFormulatorFC = ({ }) => {
             <Typography variant="h3" sx={{marginTop: "20px"}}>
                 {toolName}
             </Typography>
+            
             <Typography variant="h4">
                 Load data from
                 <TableSelectionDialog  buttonElement={"Examples"} />, <TableURLDialog buttonElement={"URL"} disabled={false} />, <TableUploadDialog buttonElement={"file"} disabled={false} />, or <TableCopyDialog buttonElement={"clipboard"} disabled={false} /> 

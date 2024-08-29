@@ -7,6 +7,9 @@ from agents.agent_utils import generate_data_summary, extract_code_from_gpt_resp
 import py_sandbox
 import traceback
 
+import logging
+
+logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = '''You are a data scientist to help user to transform data that will be used for visualization.
 Your job is to create a python function based on the input data summary, transformation instruction and expected fields.
@@ -130,8 +133,8 @@ class DataTransformationAgent(object):
         candidates = []
         for choice in response.choices:
             
-            print(">>> Data transformation agent <<<\n")
-            print(choice.message.content + "\n")
+            logger.info("\n=== Data transformation agent ===>\n")
+            logger.info(choice.message.content + "\n")
             
             code_blocks = extract_code_from_gpt_response(choice.message.content + "\n", "python")
 
@@ -145,12 +148,12 @@ class DataTransformationAgent(object):
                         new_data = json.loads(result['content'])
                         result['content'] = new_data
                     else:
-                        print(result['content'])
+                        logger.info(result['content'])
                     result['code'] = code_str
                 except Exception as e:
-                    print('other error:')
+                    logger.warning('other error:')
                     error_message = traceback.format_exc()
-                    print(error_message)
+                    logger.warning(error_message)
                     result = {'status': 'other error', 'content': error_message}
             else:
                 result = {'status': 'other error', 'content': 'unable to extract code from response'}
@@ -175,7 +178,7 @@ class DataTransformationAgent(object):
 
         user_query = f"[CONTEXT]\n\n{data_summary}\n\n[GOAL]\n\ndescription: {description}\nexpectedFields: {str(expected_fields)}\n\n[OUTPUT]\n"
 
-        print(user_query)
+        logger.info(user_query)
 
         messages = [{"role":"system", "content": SYSTEM_PROMPT},
                     {"role":"user","content": user_query}]
@@ -207,7 +210,7 @@ class DataTransformationAgent(object):
             model=self.model, messages=messages, temperature=0.7, max_tokens=1200,
             top_p=0.95, n=n, frequency_penalty=0, presence_penalty=0, stop=None)
         
-        print(response)
+        logger.info(response)
         
         # if enrich_attempt:
         #     return self.try_enrich_output(input_tables, output_fields, candidates, log)

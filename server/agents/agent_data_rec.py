@@ -7,11 +7,22 @@ from agents.agent_utils import extract_json_objects, generate_data_summary, extr
 import py_sandbox
 import traceback
 
+from agents.agent_data_transform_v2 import completion_response_wrapper
+
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 SYSTEM_PROMPT = '''You are a data scientist to help user to recommend data that will be used for visualization.
 The user will provide you information about what visualization they would like to create, and your job is to recommend a transformed data that can be used to create the visualization and write a python function to transform the data.
 The recommendation and transformation function should be based on the [CONTEXT] and [GOAL] provided by the user. 
 The [CONTEXT] shows what the current dataset is, and the [GOAL] describes what the user wants the data for.
+
+**Important:**
+- NEVER make assumptions or judgments about a person's gender, biological sex, sexuality, religion, race, nationality, ethnicity, political stance, socioeconomic status, mental health, invisible disabilities, medical conditions, personality type, social impressions, emotional state, and cognitive state.
+- NEVER create formulas that could be used to discriminate based on age. Ageism of any form (explicit and implicit) is strictly prohibited.
+- If above issue occurs, generate columns with np.nan.
 
 Concretely, you should infer the appropriate data and create a python function in the [OUTPUT] section based off the [CONTEXT] and [GOAL] in two steps:
 
@@ -123,11 +134,15 @@ class DataRecAgent(object):
 
         #log = {'messages': messages, 'response': response.model_dump(mode='json')}
 
+        if isinstance(response, Exception):
+            result = {'status': 'other error', 'content': response.body}
+            return [result]
+        
         candidates = []
         for choice in response.choices:
             
-            print(">>> Data recommendation agent <<<\n")
-            print(choice.message.content + "\n")
+            logger.info("\n=== Data recommendation result ===>\n")
+            logger.info(choice.message.content + "\n")
             
             json_blocks = extract_json_objects(choice.message.content + "\n")
             if len(json_blocks) > 0:
@@ -146,12 +161,12 @@ class DataRecAgent(object):
                         new_data = json.loads(result['content'])
                         result['content'] = new_data
                     else:
-                        print(result['content'])
+                        logger.info(result['content'])
                     result['code'] = code_str
                 except Exception as e:
-                    print('other error:')
+                    logger.warning('other error:')
                     error_message = traceback.format_exc()
-                    print(error_message)
+                    logger.warning(error_message)
                     result = {'status': 'other error', 'content': error_message}
             else:
                 result = {'status': 'no transformation', 'content': input_tables[0]['rows']}
@@ -170,15 +185,12 @@ class DataRecAgent(object):
 
         user_query = f"[CONTEXT]\n\n{data_summary}\n\n[GOAL]\n\n{description}\n\n[OUTPUT]\n"
 
-        print(user_query)
+        logger.info(user_query)
 
         messages = [{"role":"system", "content": self.system_prompt},
                     {"role":"user","content": user_query}]
         
-        ###### the part that calls open_ai
-        response = self.client.chat.completions.create(
-            model=self.model, messages = messages, temperature=0.7, max_tokens=1200,
-            top_p=0.95, n=n, frequency_penalty=0, presence_penalty=0, stop=None)
+        response = completion_response_wrapper(self.client, self.model, messages, n)
         
         return self.process_gpt_response(input_tables, messages, response)
         
@@ -186,13 +198,11 @@ class DataRecAgent(object):
     def followup(self, input_tables, dialog, new_instruction: str, n=1):
         """extend the input data (in json records format) to include new fields"""
 
-        print(f"GOAL: \n\n{new_instruction}")
+        logger.info(f"GOAL: \n\n{new_instruction}")
 
         messages = [*dialog, {"role":"user", "content": f"Update: \n\n{new_instruction}"}]
 
         ##### the part that calls open_ai
-        response = self.client.chat.completions.create(
-            model=self.model, messages=messages, temperature=0.7, max_tokens=1200,
-            top_p=0.95, n=n, frequency_penalty=0, presence_penalty=0, stop=None)
-        
+        response = completion_response_wrapper(self.client, self.model, messages, n)
+
         return self.process_gpt_response(input_tables, messages, response)

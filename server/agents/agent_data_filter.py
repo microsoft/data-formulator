@@ -6,6 +6,11 @@ import json
 from agents.agent_utils import generate_data_summary, extract_code_from_gpt_response
 import py_sandbox
 
+import logging
+
+logger = logging.getLogger(__name__)
+
+
 SYSTEM_PROMPT = '''You are a data scientist to help user to filter data based on user description.
 Your job is to write a python function that will be applied to filter the input data, based on on input data summary, instruction and output column name.
 Complete a python function based off [TEMPLATE], and [CONTEXT], [GOAL] provided for each task, 
@@ -130,8 +135,8 @@ class DataFilterAgent(object):
         candidates = []
         for choice in response.choices:
             
-            print(">>> Python Data Filter Agent <<<\n")
-            print(choice.message.content + "\n")
+            logger.info("\n=== python data filter results ===>\n")
+            logger.info(choice.message.content + "\n")
 
             code_blocks = extract_code_from_gpt_response(choice.message.content + "\n", "python")
 
@@ -144,11 +149,11 @@ class DataFilterAgent(object):
                         new_data = json.loads(result['content'])
                         result['content'] = new_data
                     else:
-                        print(result['content'])
+                        logger.info(result['content'])
                     result['code'] = code_str
                 except Exception as e:
-                    print('other error:')
-                    print(str(e)[-1000:])
+                    logger.warning('other error:')
+                    logger.warning(str(e)[-1000:])
             else:
                 result = {'status': 'other error', 'content': 'unable to extract code from response'}
 
@@ -166,7 +171,7 @@ class DataFilterAgent(object):
 
         user_query = f"[CONTEXT]\n\n{data_summary}\n\n[GOAL]\n\n{description}\n\n[OUTPUT]\n"
 
-        print(user_query)
+        logger.info(user_query)
 
         messages = [{"role":"system", "content": SYSTEM_PROMPT},
                     {"role":"user","content": user_query}]

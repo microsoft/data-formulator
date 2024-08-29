@@ -4,6 +4,11 @@
 import pandas as pd
 from agents.agent_utils import generate_data_summary, extract_code_from_gpt_response
 
+import logging
+
+logger = logging.getLogger(__name__)
+
+
 SYSTEM_PROMPT = '''You are a data scientist to help user explain code, 
 so that a non-code can clearly understand what the code is doing, you are provided with a summary of the input data, and the transformation code.
 You should generate a good itemized explanation of the code so that the reader can understand high-level steps of what the data transformation is doing.
@@ -71,7 +76,7 @@ class CodeExplanationAgent(object):
 
         user_query = f"[CONTEXT]\n\n{data_summary}\n\n[CODE]\n\here is the transformation code: {code}\n\n[EXPLANATION]\n"
 
-        print(user_query)
+        logger.info(user_query)
 
         messages = [{"role":"system", "content": SYSTEM_PROMPT},
                     {"role":"user","content": user_query}]
@@ -80,5 +85,8 @@ class CodeExplanationAgent(object):
         response = self.client.chat.completions.create(
             model=self.model, messages = messages, temperature=0.7, max_tokens=1200,
             top_p=0.95, n=1, frequency_penalty=0, presence_penalty=0, stop=None)
+        
+        logger.info('\n=== explanation output ===>\n')
+        logger.info(response.choices[0].message.content)
         
         return response.choices[0].message.content

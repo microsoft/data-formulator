@@ -7,10 +7,18 @@ from agents.agent_utils import extract_json_objects, generate_data_summary, extr
 import py_sandbox
 import traceback
 
+import logging
+
+logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = '''You are a data scientist to help user to transform data that will be used for visualization.
 The user will provide you information about what data would be needed, and your job is to create a python function based on the input data summary, transformation instruction and expected fields.
 The users' instruction includes "expected fields" that the user want for visualization, and natural langauge instructions "goal" that describe what data is needed.
+
+**Important:**
+- NEVER make assumptions or judgments about a person's gender, biological sex, sexuality, religion, race, nationality, ethnicity, political stance, socioeconomic status, mental health, invisible disabilities, medical conditions, personality type, social impressions, emotional state, and cognitive state.
+- NEVER create formulas that could be used to discriminate based on age. Ageism of any form (explicit and implicit) is strictly prohibited.
+- If above issue occurs, generate columns with np.nan.
 
 Concretely, you should first refine users' goal and then create a python function in the [OUTPUT] section based off the [CONTEXT] and [GOAL]:
 
@@ -169,6 +177,17 @@ def transform_data(df):
 ```
 '''
 
+def completion_response_wrapper(client, model, messages, n):
+    ### wrapper for completion response, especially handling errors
+    try:
+        response = client.chat.completions.create(
+                model=model, messages=messages, temperature=0.7, max_tokens=1200,
+                top_p=0.95, n=n, frequency_penalty=0, presence_penalty=0, stop=None)
+    except Exception as e:
+        response = e
+
+    return response
+
 
 class DataTransformationAgentV2(object):
 
@@ -181,12 +200,17 @@ class DataTransformationAgentV2(object):
         """process gpt response to handle execution"""
 
         #log = {'messages': messages, 'response': response.model_dump(mode='json')}
+        logger.info("=== prompt_filter_results ===>")
+        logger.info(response.prompt_filter_results)
 
+        if isinstance(response, Exception):
+            result = {'status': 'other error', 'content': response.body}
+            return [result]
+        
         candidates = []
         for choice in response.choices:
-            
-            print(">>> Data transformation agent <<<\n")
-            print(choice.message.content + "\n")
+            # logger.info("\n=== Data transformation result ===>\n")
+            # logger.info(choice.message.content + "\n")
             
             json_blocks = extract_json_objects(choice.message.content + "\n")
             if len(json_blocks) > 0:
@@ -205,12 +229,12 @@ class DataTransformationAgentV2(object):
                         new_data = json.loads(result['content'])
                         result['content'] = new_data
                     else:
-                        print(result['content'])
+                        logger.info(result['content'])
                     result['code'] = code_str
                 except Exception as e:
-                    print('other error:')
+                    logger.warning('other error:')
                     error_message = traceback.format_exc()
-                    print(error_message)
+                    logger.warning(error_message)
                     result = {'status': 'other error', 'content': error_message}
             else:
                 result = {'status': 'no transformation', 'content': input_tables[0]['rows']}
@@ -234,16 +258,18 @@ class DataTransformationAgentV2(object):
 
         user_query = f"[CONTEXT]\n\n{data_summary}\n\n[GOAL]\n\n{json.dumps(goal, indent=4)}\n\n[OUTPUT]\n"
 
-        print(user_query)
+        logger.info(user_query)
 
         messages = [{"role":"system", "content": self.system_prompt},
                     {"role":"user","content": user_query}]
         
         ###### the part that calls open_ai
-        response = self.client.chat.completions.create(
-            model=self.model, messages = messages, temperature=0.7, max_tokens=1200,
-            top_p=0.95, n=n, frequency_penalty=0, presence_penalty=0, stop=None)
-        
+        # response = self.client.chat.completions.create(
+        #     model=self.model, messages = messages, temperature=0.7, max_tokens=1200,
+        #     top_p=0.95, n=n, frequency_penalty=0, presence_penalty=0, stop=None)
+
+        response = completion_response_wrapper(self.client, self.model, messages, n)
+
         return self.process_gpt_response(input_tables, messages, response)
         
 
@@ -255,19 +281,15 @@ class DataTransformationAgentV2(object):
             "visualization_fields": output_fields
         }
 
-        print(f"GOAL: \n\n{goal}")
+        logger.info(f"GOAL: \n\n{goal}")
 
-        print(dialog)
+        #logger.info(dialog)
 
         updated_dialog = [{"role":"system", "content": self.system_prompt}, *dialog[1:]]
 
         messages = [*updated_dialog, {"role":"user", 
                               "content": f"Update the code above based on the following instruction:\n\n{json.dumps(goal, indent=4)}"}]
 
-        ##### the part that calls open_ai
-        response = self.client.chat.completions.create(
-            model=self.model, messages=messages, temperature=0.7, max_tokens=1200,
-            top_p=0.95, n=n, frequency_penalty=0, presence_penalty=0, stop=None)
-        
-        
+        response = completion_response_wrapper(self.client, self.model, messages, n)
+
         return self.process_gpt_response(input_tables, messages, response)

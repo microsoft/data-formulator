@@ -8,6 +8,11 @@ import py_sandbox
 
 import traceback
 
+import logging
+
+logger = logging.getLogger(__name__)
+
+
 SYSTEM_PROMPT = '''You are a data scientist to help user to derive new column based on existing columns in a dataset.
 Your job is to write a python function based on input data summary, instruction and output column name.
 Complete a python function based off [TEMPLATE] and [CONTEXT], [GOAL] provided by the user, the function's input arguments is row (the current row) and df (the input data frame, it only has fields provided in [CONTEXT]), and the output is a value for the new column for the output column.
@@ -162,8 +167,8 @@ class GenericPyConceptDeriveAgent(object):
         candidates = []
         for choice in response.choices:
             
-            print(">>> Generic Python Data Derive Agent <<<\n")
-            print(choice.message.content + "\n")
+            logger.info("\n=== Generic Python Data Derive Agent ===>\n")
+            logger.info(choice.message.content + "\n")
 
             code_blocks = extract_code_from_gpt_response(choice.message.content + "\n", "python")
 
@@ -185,12 +190,12 @@ output = json.dumps(df.to_dict("records"))
                         new_data = json.loads(result['content'])
                         result['content'] = new_data
                     else:
-                        print(result['content'])
+                        logger.info(result['content'])
                     result['code'] = code_str
                 except Exception as e:
-                    print('other error:')
+                    logger.warning('other error:')
                     error_message = traceback.format_exc()
-                    print(error_message)
+                    logger.warning(error_message)
                     result = {'status': 'other error', 'content': error_message}
             else:
                 result = {'status': 'other error', 'content': 'unable to extract code from response'}
@@ -209,7 +214,7 @@ output = json.dumps(df.to_dict("records"))
 
         user_query = f"[CONTEXT]\n\n{data_summary}\n\n[GOAL]\n\n{description}\n\n[OUTPUT]\n"
 
-        print(user_query)
+        logger.info(user_query)
 
         messages = [{"role":"system", "content": SYSTEM_PROMPT},
                     {"role":"user","content": user_query}]

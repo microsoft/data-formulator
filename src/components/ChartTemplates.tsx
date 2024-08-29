@@ -307,10 +307,10 @@ let customCharts = [
             "mark": "line",
             "encoding": {  }
         },
-        "channels": ["x", "y", "color", "opacity", "size", "shape", "detail", "column", "row"],
+        "channels": ["x", "y", "color", "opacity", "detail", "column", "row"],
         "paths": Object.fromEntries(
             [
-                ...["x", "y", "color", "opacity", "size", "shape", "column", "row"].map(channel => [channel, ["encoding", channel]]),
+                ...["x", "y", "color", "opacity", "column", "row"].map(channel => [channel, ["encoding", channel]]),
                 ["detail", ["encoding", "detail"]]
             ]
         )

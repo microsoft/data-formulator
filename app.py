@@ -61,6 +61,14 @@ def get_example_dataset_list():
         except:
             pass
     
+    # this is a dataset we use for demoing the system
+    try:
+        with open('global-energy.json', 'r') as f:
+            info_obj = {'name': 'global-energy.csv', 'snapshot': json.dumps(json.load(f))} 
+            dataset_info.append(info_obj)
+    except:
+        pass
+    
     response = flask.jsonify(dataset_info)
     response.headers.add('Access-Control-Allow-Origin', '*')
     return response
@@ -68,9 +76,14 @@ def get_example_dataset_list():
 @app.route('/vega-dataset/<path:path>')
 def get_datasets(path):
     try:
-        df = vega_data(path)
-        # to_json is necessary for handle NaN issues
-        data_object = df.to_json(None, 'records')
+        # this is a dataset we use for demoing the system
+        if path == "global-energy.csv":
+            with open('global-energy.json', 'r') as f:
+                data_object = json.dumps(json.load(f))
+        else:
+            df = vega_data(path)
+            # to_json is necessary for handle NaN issues
+            data_object = df.to_json(None, 'records')
     except Exception as err:
         print(path)
         print(err)
