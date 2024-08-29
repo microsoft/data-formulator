@@ -71,15 +71,6 @@ Repeat this process as needed to explore and understand your data. Your explorat
 
 Follow the [developers' instructions](DEVELOPMENT.md) to build your new data analysis tools on top of Data Formulator.
 
-## Team
-Data Formulator was developed at Microsoft Research by these team members:
-* [Chenglong Wang](https://www.microsoft.com/en-us/research/people/chenwang/)
-* [Bongshin Lee](https://www.bongshiny.com/)
-* [John Thompson](https://jrthomp.com/)
-* [Steven Drucker](https://www.microsoft.com/en-us/research/people/sdrucker/)
-* [Jianfeng Gao](https://www.microsoft.com/en-us/research/people/jfgao/)
-* [Dan Marshall](https://www.microsoft.com/en-us/research/people/danmar/)
-
 ## Contributing
 
 This project welcomes contributions and suggestions. Most contributions require you to
