@@ -1,13 +1,21 @@
 <h1>
-    <img src="./public/favicon.ico" alt="Data Formulator icon" width="28"> <b>Data Formulator</b>
+    <img src="./public/favicon.ico" alt="Data Formulator icon" width="28"> <b>Data Formulator: Create Rich Visualizations with AI</b>
 </h1>
 
-Transform data and create rich visualizations iteratively with AI 🪄.
+<div>
+    
+[![arxiv](https://img.shields.io/badge/Paper-arXiv:2408.16119-b31b1b.svg)](https://arxiv.org/abs/2408.16119)&ensp;
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)&ensp;
+
+</div>
+
+Transform data and create rich visualizations iteratively with AI 🪄. Try Data Formulator now in GitHub Codespaces!
 
 [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/microsoft/data-formulator?quickstart=1)
 
+
 <kbd>
-  <img src="public/data-formulator-screenshot.png">
+  <a target="_blank" rel="noopener noreferrer" href="https://codespaces.new/microsoft/data-formulator?quickstart=1" title="open Data Formulator in GitHub Codespaces"><img src="public/data-formulator-screenshot.png"></a>
 </kbd>
 
 ## Overview
@@ -21,10 +29,6 @@ Data Formulator is an AI-powered tool for analysts to iteratively create rich vi
 Check out these cool Data Formulator features that can help you create impressive visualizations!
 * Using the **blended UI and NL inputs** to describe the chart. 
 * Utilizing **data threads** to navigate the history and reuse previous results to create new ones instead of starting from scratch every time.
-
-## Research Papers
-* [Data Formulator 2: Iteratively Creating Rich Visualizations with AI](https://www.microsoft.com/en-us/research/publication/data-formulator-2-iteratively-creating-rich-visualizations-with-ai/)
-* [Data Formulator: AI-powered Concept-driven Visualization Authoring](https://arxiv.org/abs/2309.10094)
 
 ## Get Started
 
@@ -69,6 +73,32 @@ Repeat this process as needed to explore and understand your data. Your explorat
 ## Developers
 
 Follow the [developers' instructions](DEVELOPMENT.md) to build your new data analysis tools on top of Data Formulator.
+
+
+## Research Papers
+* [Data Formulator 2: Iteratively Creating Rich Visualizations with AI](https://arxiv.org/abs/2408.16119)
+
+```
+@article{wang2024dataformulator2iteratively,
+      title={Data Formulator 2: Iteratively Creating Rich Visualizations with AI}, 
+      author={Chenglong Wang and Bongshin Lee and Steven Drucker and Dan Marshall and Jianfeng Gao},
+      year={2024},
+      booktitle={ArXiv preprint arXiv:2408.16119},
+}
+```
+
+* [Data Formulator: AI-powered Concept-driven Visualization Authoring](https://arxiv.org/abs/2309.10094)
+
+```
+@article{wang2023data,
+  title={Data Formulator: AI-powered Concept-driven Visualization Authoring},
+  author={Wang, Chenglong and Thompson, John and Lee, Bongshin},
+  journal={IEEE Transactions on Visualization and Computer Graphics},
+  year={2023},
+  publisher={IEEE}
+}
+```
+
 
 ## Contributing
 
