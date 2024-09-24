@@ -61,14 +61,6 @@ def get_example_dataset_list():
         except:
             pass
     
-    # this is a dataset we use for demoing the system
-    try:
-        with open('global-energy.json', 'r') as f:
-            info_obj = {'name': 'global-energy.csv', 'snapshot': json.dumps(json.load(f))} 
-            dataset_info.append(info_obj)
-    except:
-        pass
-    
     response = flask.jsonify(dataset_info)
     response.headers.add('Access-Control-Allow-Origin', '*')
     return response
@@ -76,14 +68,9 @@ def get_example_dataset_list():
 @app.route('/vega-dataset/<path:path>')
 def get_datasets(path):
     try:
-        # this is a dataset we use for demoing the system
-        if path == "global-energy.csv":
-            with open('global-energy.json', 'r') as f:
-                data_object = json.dumps(json.load(f))
-        else:
-            df = vega_data(path)
-            # to_json is necessary for handle NaN issues
-            data_object = df.to_json(None, 'records')
+        df = vega_data(path)
+        # to_json is necessary for handle NaN issues
+        data_object = df.to_json(None, 'records')
     except Exception as err:
         print(path)
         print(err)
@@ -407,29 +394,21 @@ def refine_data():
         
         print("previous dialog")
         print(dialog[0]['content'])
-        prev_system_prompt = dialog[0]['content']
 
-        if prev_system_prompt.startswith("You are a data scientist to help user to filter data based on user description."):
-            agent = DataFilterAgent(client, model=model)
-            results = agent.followup(input_tables[0], dialog, new_instruction)
-        elif prev_system_prompt.startswith("You are a data scientist to help user to derive new column based on existing columns in a dataset."):
-            agent = GenericPyConceptDeriveAgent(client, model=model)
-            new_field_name = [field['name'] for field in output_fields if field['name'] not in input_tables[0][0].keys()][0]
-            results = agent.followup(input_tables[0], new_field_name, dialog, new_instruction)
-        else:
-            agent = DataTransformationAgentV2(client, model=model)
-            results = agent.followup(input_tables, dialog, [field['name'] for field in output_fields], new_instruction)
+        # always resort to the data transform agent       
+        agent = DataTransformationAgentV2(client, model=model)
+        results = agent.followup(input_tables, dialog, [field['name'] for field in output_fields], new_instruction)
 
-            repair_attempts = 0
-            while results[0]['status'] == 'error' and repair_attempts < 2:
-                error_message = results[0]['content']
-                new_instruction = f"We run into the following problem executing the code, please fix it:\n\n{error_message}\n\nPlease think step by step, reflect why the error happens and fix the code so that no more errors would occur."
+        repair_attempts = 0
+        while results[0]['status'] == 'error' and repair_attempts < 2:
+            error_message = results[0]['content']
+            new_instruction = f"We run into the following problem executing the code, please fix it:\n\n{error_message}\n\nPlease think step by step, reflect why the error happens and fix the code so that no more errors would occur."
 
-                response_message = dialog['response']['choices'][0]['message']
-                prev_dialog = [*dialog['messages'], {"role": response_message['role'], 'content': response_message['content']}]
+            response_message = dialog['response']['choices'][0]['message']
+            prev_dialog = [*dialog['messages'], {"role": response_message['role'], 'content': response_message['content']}]
 
-                results = agent.followup(input_tables, prev_dialog, [field['name'] for field in output_fields], new_instruction)
-                repair_attempts += 1
+            results = agent.followup(input_tables, prev_dialog, [field['name'] for field in output_fields], new_instruction)
+            repair_attempts += 1
 
         response = flask.jsonify({ "status": "ok", "token": token, "results": results})
     else:

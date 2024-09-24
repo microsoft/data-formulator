@@ -96,7 +96,7 @@ class SortDataAgent(object):
             logger.info("\n=== Sort data agent ===>\n")
             logger.info(choice.message.content + "\n")
             
-            json_blocks = extract_json_objects(choice.message.content + "\n", "json")
+            json_blocks = extract_json_objects(choice.message.content + "\n")
             
             if len(json_blocks) > 0:
                 result = {'status': 'ok', 'content': json_blocks[0]}

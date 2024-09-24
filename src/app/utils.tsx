@@ -423,7 +423,7 @@ export const instantiateVegaTemplate = (chartType: string, encodingMap: { [key i
 
     // use post processor to handle smart chart instantiation
     if (chartTemplate.postProcessor) {
-        vgObj = chartTemplate.postProcessor(vgObj);
+        vgObj = chartTemplate.postProcessor(vgObj, workingTable);
     }
 
     // console.log(JSON.stringify(vgObj))

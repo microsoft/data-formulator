@@ -128,7 +128,7 @@ export type ChartTemplate = {
     template: any,
     channels: string[],
     paths: { [key: string]: (string | number)[] | (string | number)[][]; },
-    postProcessor?: (vgSpec: any) => any
+    postProcessor?: (vgSpec: any, table: any[]) => any
 }
 
 export const AGGR_OP_LIST = ["count", "sum", "average"] as const

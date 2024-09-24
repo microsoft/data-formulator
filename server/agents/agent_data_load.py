@@ -13,38 +13,67 @@ SYSTEM_PROMPT = '''You are a data scientist to help user infer data types based 
 Given a dataset provided by the user, identify their type and semantic type, and provide a very short summary of the dataset.
 
 Types to consider include: string, number, date
-Semantic types to consider include: Location, Year, Month, Day, Date, Time, DateTime, Duration, Name, Percentage, String, Number
+Semantic types to consider include: Location, Year, Month, Day, Date, Time, DateTime, Range, Duration, Name, Percentage, String, Number
+
+Furthermore, if the field is string type and is ordinal (especially for english month name, week name, range), provide the natural sort order of the fields here.
+Otherwise, put sort_order as null (for example, Name should not be sorted).
 
 Create a json object function based off the [DATA] provided.
 
+output should be in the format of:
+
+```json
+{
+    "fields": {
+        "field1": {"type": ..., "semantic_type": ..., "sort_order": [...]}, // replace field1 field2 with actual field names, if the field is string type and is ordinal, provide the natural sort order of the fields here 
+        "field2": {"type": ..., "semantic_type": ..., "sort_order": null}, 
+        ...
+    },
+    "data summary": ... // a short summary of the data
+}
+```
+'''
+
+EXAMPLES = '''
 [DATA]
 
 Here are our datasets, here are their field summaries and samples:
 
-table_0 (us_covid_cases) fields:
-	Date -- type: object, values: 1/1/2021, 1/1/2022, 1/1/2023, ..., 9/8/2022, 9/9/2020, 9/9/2021, 9/9/2022
-	Cases -- type: int64, values: -23999, -14195, -6940, ..., 1018935, 1032159, 1178403, 1433977
+table_0 (income_json) fields:
+	name -- type: object, values: Alabama, Alaska, Arizona, Arkansas, California, Colorado, Connecticut, Delaware, District of Columbia, Florida, ..., South Dakota, Tennessee, Texas, Utah, Vermont, Virginia, Washington, West Virginia, Wisconsin, Wyoming
+	region -- type: object, values: midwest, northeast, other, south, west
+	state_id -- type: int64, values: 1, 2, 4, 5, 6, 8, 9, 10, 11, 12, ..., 47, 48, 49, 50, 51, 53, 54, 55, 56, 72
+	pct -- type: float64, values: 0.006, 0.008, 0.02, 0.021, 0.022, 0.024, 0.025, 0.026000000000000002, 0.027, 0.028, ..., 0.192, 0.193, 0.194, 0.196, 0.197, 0.199, 0.2, 0.201, 0.213, 0.289
+	total -- type: int64, values: 222679, 250875, 256563, 268015, 291468, 326086, 337245, 405504, 410347, 449296, ..., 3522934, 3721358, 3815532, 4551497, 4763457, 4945140, 7168502, 7214163, 8965352, 12581722
+	group -- type: object, values: 10000 to 14999, 100000 to 149999, 15000 to 24999, 150000 to 199999, 200000+, 25000 to 34999, 35000 to 49999, 50000 to 74999, 75000 to 99999, <10000
 
-table_0 (us_covid_cases) sample:
+table_0 (income_json) sample:
+
 ```
-|Date|Cases
-0|1/21/2020|1
-1|1/22/2020|0
-2|1/23/2020|0
-3|1/24/2020|1
-4|1/25/2020|1
+|name|region|state_id|pct|total|group
+0|Alabama|south|1|0.10200000000000001|1837292|<10000
+1|Alabama|south|1|0.07200000000000001|1837292|10000 to 14999
+2|Alabama|south|1|0.13|1837292|15000 to 24999
+3|Alabama|south|1|0.115|1837292|25000 to 34999
+4|Alabama|south|1|0.14300000000000002|1837292|35000 to 49999
 ......
 ```
 
 [OUTPUT]
 
+```json
 {
     "fields": {
-        "Date": {"type": "date", "semantic_type": "Date"},
-        "Cases": {"type": "number", "semantic_type": "Number"}
+        "name": {"type": "string", "semantic_type": "Location", "sort_order": null},
+        "region": {"type": "string", "semantic_type": "String", "sort_order": ["northeast", "midwest", "south", "west", "other"]},
+        "state_id": {"type": "number", "semantic_type": "Number", "sort_order": null},
+        "pct": {"type": "number", "semantic_type": "Percentage", "sort_order": null},
+        "total": {"type": "number", "semantic_type": "Number", "sort_order": null},
+        "group": {"type": "string", "semantic_type": "Range", "sort_order": ["<10000", "10000 to 14999", "15000 to 24999", "25000 to 34999", "35000 to 49999", "50000 to 74999", "75000 to 99999", "100000 to 149999", "150000 to 199999", "200000+"]}
     },
-    "data summary": "US covid 19 data from 2020 to 2022"
+    "data summary": "The dataset contains information about income distribution across different states in the USA. It includes fields for state names, regions, state IDs, percentage of total income, total income, and income groups."
 }
+```
 
 [DATA]
 
@@ -68,15 +97,27 @@ table_0 (weather_seattle_atlanta) sample:
 
 [OUTPUT]
 
-{
-    "fields": {
-        "Date": {"type": "date", "semantic_type": "Date"},
-        "City": {"type": "string", "semantic_type": "Location"},
-        "Temperature": {"type": "number", "semantic_type": "Number"}
-    },
-    "data summary": "Seattle and Atlanta temperature in 2020"
-}
-'''
+```
+{  
+    "fields": {  
+        "Date": {  
+            "type": "string",  
+            "semantic_type": "Date",  
+            "sort_order": null  
+        },  
+        "City": {  
+            "type": "string",  
+            "semantic_type": "Location",  
+            "sort_order": null  
+        },  
+        "Temperature": {  
+            "type": "number",  
+            "semantic_type": "Number",  
+            "sort_order": null  
+        }  
+    },  
+    "data_summary": "This dataset contains weather information for the cities of Seattle and Atlanta. The fields include the date, city name, and temperature readings. The 'Date' field represents dates in a string format, the 'City' field represents city names, and the 'Temperature' field represents temperature values in integer format."  
+}```'''
 
 class DataLoadAgent(object):
 
@@ -86,7 +127,7 @@ class DataLoadAgent(object):
 
     def run(self, input_data, n=1):
 
-        data_summary = generate_data_summary([input_data], include_data_samples=True)
+        data_summary = generate_data_summary([input_data], include_data_samples=True, field_sample_size=30)
 
         user_query = f"[DATA]\n\n{data_summary}\n\n[OUTPUT]"
 
@@ -97,7 +138,7 @@ class DataLoadAgent(object):
         
         ###### the part that calls open_ai
         response = self.client.chat.completions.create(
-            model=self.model, messages=messages, temperature=0.2, max_tokens=2400,
+            model=self.model, messages=messages, temperature=0.2, max_tokens=4096,
             top_p=0.95, n=n, frequency_penalty=0, presence_penalty=0, stop=None)
 
         #log = {'messages': messages, 'response': response.model_dump(mode='json')}

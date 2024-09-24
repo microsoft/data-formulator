@@ -142,7 +142,7 @@ export const ExportStateButton: React.FC<{}> = ({}) => {
 
 //type AppProps = ConnectedProps<typeof connector>;
 
-export const toolName = "Data Formulator" 
+export const toolName = "Data Anvil" 
 
 export interface AppFCProps {
 }

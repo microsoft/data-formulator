@@ -428,6 +428,12 @@ export const dataFormulatorSlice = createSlice({
                 let encoding = (state.charts.find(chart => chart.id == chartId) as Chart).encodingMap[channel];
                 if (prop == 'fieldID') {
                     encoding.fieldID = value;
+
+                    // automatcially fetch the auto-sort order from the field
+                    let field = state.conceptShelfItems.find(f => f.id == value);
+                    if (field?.levels) {
+                        encoding.sortBy = JSON.stringify(field.levels);
+                    }
                 } else if (prop == 'bin') {
                     encoding.bin = value;
                 } else if (prop == 'aggregate') {
@@ -453,8 +459,8 @@ export const dataFormulatorSlice = createSlice({
                 let enc1 = chart.encodingMap[channel1];
                 let enc2 = chart.encodingMap[channel2];
 
-                chart.encodingMap[channel1] = { fieldID: enc2.fieldID, aggregate: enc2.aggregate, bin: enc2.bin };
-                chart.encodingMap[channel2] = { fieldID: enc1.fieldID, aggregate: enc1.aggregate, bin: enc1.bin };
+                chart.encodingMap[channel1] = { fieldID: enc2.fieldID, aggregate: enc2.aggregate, bin: enc2.bin, sortBy: enc2.sortBy };
+                chart.encodingMap[channel2] = { fieldID: enc1.fieldID, aggregate: enc1.aggregate, bin: enc1.bin, sortBy: enc1.sortBy };
             }
         },
         addConceptItems: (state, action: PayloadAction<FieldItem[]>) => {
@@ -610,6 +616,9 @@ export const dataFormulatorSlice = createSlice({
                     if (((field.source == "original" && field.tableRef == tableId ) || field.source == "custom") && Object.keys(typeMap).includes(field.name)) {
                         field.semanticType = typeMap[field.name]['semantic_type'];
                         field.type = typeMap[field.name]['type'] as Type;
+                        if (typeMap[field.name]['sort_order']) {
+                            field.levels = { "values": typeMap[field.name]['sort_order'], "reason": "natural sort order"}
+                        }
                         return field;
                     } else {
                         return field;

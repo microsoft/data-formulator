@@ -154,8 +154,13 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
         dispatch(dfActions.swapChartEncoding({chartId, channel1, channel2}))
     }
     
-    let handleUpdateEncoding = (channel: Channel, encoding: EncodingItem) => {
-        dispatch(dfActions.updateChartEncoding({chartId, channel, encoding}));
+    let handleResetEncoding = () => {
+        dispatch(dfActions.updateChartEncoding({chartId, channel, encoding: {bin: false}}));
+    }
+
+    // updating a property of the encoding
+    let updateEncProp = (prop: keyof EncodingItem, value: any) => {
+        dispatch(dfActions.updateChartEncodingProp({chartId, channel, prop: prop as string, value}));
     }
 
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
@@ -167,7 +172,12 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
 
     const dispatch = useDispatch();
 
-    useEffect(() => { setAutoSortResult(field?.levels) }, [encoding.fieldID, field])
+    useEffect(() => { 
+        setAutoSortResult(field?.levels);
+        if (field?.levels) {
+            updateEncProp('sortBy', JSON.stringify(field?.levels));
+        }
+    }, [encoding.fieldID, field])
 
     // make this a drop element for concepts
     const [{ canDrop, isOver }, drop] = useDrop(() => ({
@@ -175,7 +185,10 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
         drop: (item: any): EncodingDropResult => {
             if (item.type === "concept-card") {
                 if (item.source === "conceptShelf") {
-                    handleUpdateEncoding(channel, { 'fieldID': item.fieldID, bin: false });
+                    handleResetEncoding();
+                    updateEncProp('fieldID', item.fieldID);
+                    updateEncProp('bin', false);
+                    //handleUpdateEncoding(channel, { 'fieldID': item.fieldID, bin: false });
                 } else if (item.source === "encodingShelf") {
                     handleSwapEncodingField(channel, item.channel);
                 } else {
@@ -204,10 +217,6 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
     // items that control the editor panel popover
     const [editMode, setEditMode] = React.useState<boolean>(false);
 
-    // updating a property of the encoding
-    let updateEncProp = (prop: keyof EncodingItem, value: any) => {
-        dispatch(dfActions.updateChartEncodingProp({chartId, channel, prop: prop as string, value}));
-    }
 
     const isActive = canDrop && isOver;
     let backgroundColor = '';
@@ -219,7 +228,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
 
     let fieldComponent = field === undefined ? "" : (
         <LittleConceptCard channel={channel} key={`${channel}-${field.name}`} field={field} encoding={encoding} handleUnbind={() => {
-            handleUpdateEncoding(channel, { 'bin': false });
+            handleResetEncoding();
         }} />
     )
 
@@ -230,31 +239,6 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
         return <FormControlLabel sx={{ width: width, margin: 0 }} key={key}
                     value={value} control={<Radio size="small" sx={{ padding: "4px" }} />} label={label} />
     }
-
-    let aggrOpt = [
-        <FormLabel key={`enc-box-${channel}-aggr-label`} sx={{ fontSize: "inherit" }} 
-                    id="aggr-option-radio-buttons-group">Aggregate</FormLabel>,
-        <FormControl
-            disabled={encoding.bin}
-            size="small"
-            key={`enc-box-${channel}-aggr-form-control`}
-            sx={{
-                paddingBottom: "2px", '& .MuiTypography-root': { fontSize: "inherit" },
-                '& .MuiFormLabel-root': { fontSize: "inherit" }
-            }}>
-            <RadioGroup
-                row
-                aria-labelledby="aggr-option-radio-buttons-group"
-                name="aggr-option-radio-buttons-group"
-                value={encoding.aggregate || "none"}
-                sx={{ width: 160 }}
-                onChange={(event) => { updateEncProp("aggregate", event.target.value == "none" ? undefined : event.target.value as AggrOp); }}
-            >
-                {radioLabel("none", "none", `aggr--1`)}
-                {AGGR_OP_LIST.map((t, i) => radioLabel(t, t, `aggr-${i}`))}
-            </RadioGroup>
-        </FormControl>
-    ]
 
     let stackOpt = (chart.chartType == "bar" || chart.chartType == "area") && (channel == "x" || channel == "y") ? [
         <FormLabel key={`enc-box-${channel}-stack-label`} sx={{ fontSize: "inherit" }} id="normalized-option-radio-buttons-group" >Stack</FormLabel>,
@@ -279,29 +263,6 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
             </RadioGroup>
         </FormControl>
     ] : [];
-
-    let binOpt = [
-        <FormLabel key={`enc-box-${channel}-bin-label`} sx={{ fontSize: "inherit" }} id="bin-option-radio-buttons-group" >Bin</FormLabel>,
-        <FormControl
-            disabled={encoding.aggregate != undefined}
-            key={`enc-box-${channel}-bin-form-control`}
-            sx={{
-                paddingBottom: "2px", '& .MuiTypography-root': { fontSize: "inherit" }, flexDirection: "row",
-                '& .MuiFormLabel-root': { fontSize: "inherit" }
-            }}>
-            <RadioGroup
-                row
-                aria-labelledby="bin-option-radio-buttons-group"
-                name="bin-option-radio-buttons-group"
-                value={encoding.bin ? "on" : "off"}
-                sx={{ width: 160 }}
-                onChange={(event) => { updateEncProp("bin", event.target.value == "on"); }}
-            >
-                {radioLabel("off", "off", `bin-radio-off`)}
-                {radioLabel("on", "on", `bin-radio-on`)}
-            </RadioGroup>
-        </FormControl>
-    ]
 
     let domainItems = (field?.source == "custom" || field?.source == "original") ? getDomains(field as FieldItem, tables)[0] : [];
     if (field?.source == "derived") {
@@ -374,129 +335,6 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
             });
     }
 
-    let autoSortBtn = <Button size="small" variant="text"
-        sx={{ textTransform: "none", padding: "2px 4px", marginLeft: "0px", minWidth: 0 }}
-        onClick={autoSortFunction}>{autoSortInferRunning ? <LinearProgress color="primary" sx={{ width: "120px", opacity: 0.4 }} /> : 
-                (autoSortResult == undefined ? "try smart sort" : "retry smart sort")}
-        </Button>
-
-    let sortOptions = [radioLabel("↑ asc", "ascending", `sort-ascending`), radioLabel("↓ desc", "descending", `sort-descending`)]
-    let extraSortOptions = [];
-
-    // TODO: check sort options
-    if (channel == "x" && (field?.type == "string" || field?.type == "auto")) {
-        
-        extraSortOptions.push(radioLabel("y↑ asc", "y", `sort-x-y-ascending`, 90));
-        extraSortOptions.push(radioLabel("y↓ desc", "-y", `sort-x-y-descending`, 90))
-    }
-    if (channel == "y" && (field?.type == "string" || field?.type == "auto")) {
-        extraSortOptions.push(radioLabel("x↑", "x", `sort-y-x-ascending`, 90));
-        extraSortOptions.push(radioLabel("x↓", "-x", `sort-y-x-descending`, 90))
-    }
-    if (extraSortOptions.length > 0) {
-        sortOptions = [
-            radioLabel("↑ asc", "ascending", `sort-ascending`, 90), 
-            radioLabel("↓ desc", "descending", `sort-descending`, 90), 
-            ...extraSortOptions];
-    }
-
-    // if (autoSortEnabled) {
-    //     if (autoSortResult != undefined && autoSortResult.length > 0) {
-    //         let autoSortOpt = 
-    //             <Typography sx={{ fontSize: '10px !important', overflow: "hidden", textOverflow: "ellipsis", fontStyle: "italic" }}>
-    //                 {autoSortResult.map(x => x ? x.toString() : 'null').join(", ")}
-    //             </Typography>;
-
-    //         let autoSortOptReversed = 
-    //             <Typography sx={{ overflow: "hidden", fontSize: '10px !important', textOverflow: "ellipsis", fontStyle: "italic" }}>
-    //                 {[...autoSortResult].reverse().map(x =>x ? x.toString() : 'null' ).join(", ")}
-    //             </Typography>;
-
-    //         sortOptions = [
-    //             ...sortOptions,
-    //             <FormControlLabel sx={{ width: 180, margin: 0 }} key={"auto"}
-    //                 disabled={autoSortInferRunning || !autoSortResult}
-    //                 value={JSON.stringify(autoSortResult)} control={<Radio size="small" sx={{ padding: "4px" }} />}
-    //                 label={autoSortOpt} />,
-    //             <FormControlLabel sx={{ width: 180, margin: 0 }} key={"auto-reverse"}
-    //                 disabled={autoSortInferRunning || !autoSortResult}
-    //                 value={JSON.stringify([...autoSortResult].reverse())} control={<Radio size="small" sx={{ padding: "4px" }} />}
-    //                 label={autoSortOptReversed} />,
-    //             <FormControlLabel sx={{ width: 180, margin: 0 }} key={"auto"}
-    //                 disabled={autoSortInferRunning || !autoSortResult}
-    //                 value={JSON.stringify(autoSortResult)} control={<Radio size="small" sx={{ padding: "4px" }} />}
-    //                 label={autoSortBtn} />
-    //         ]
-    //     } else {
-    //         sortOptions = [
-    //             ...sortOptions,
-    //             <FormControlLabel sx={{ width: 180, margin: 0 }} key={"auto"}
-    //                 disabled={autoSortInferRunning || !autoSortResult}
-    //                 value={JSON.stringify(autoSortResult)} control={<Radio size="small" sx={{ padding: "4px" }} />}
-    //                 label={autoSortBtn} />
-    //         ]
-    //     }
-    // }
-
-    let sortByFieldInputBox = <Autocomplete
-            key="sort-by-field-input-box"
-            onChange={(event, value) => {
-                console.log(`change: ${value}`)
-            }}
-            // value={tempValue}
-            filterOptions={(options, params) => {
-                const filtered = filter(options, params);
-                const { inputValue } = params;
-                // Suggest the creation of a new value
-                const isExisting = options.some((option) => inputValue === option);
-                if (inputValue !== '' && !isExisting) {
-                    return [...filtered, `${inputValue}`, ]
-                } else {
-                    return [...filtered];
-                }
-            }}
-            sx={{ flexGrow: 1, flexShrink: 1, width: '120px',  "& .MuiInput-input": { padding: "0px 8px !important"}}}
-            fullWidth
-            selectOnFocus
-            clearOnBlur
-            handleHomeEndKeys
-            autoHighlight
-            id="free-solo-with-text-demo"
-            options={conceptShelfItems.map(f => f.name).filter(name => name != "")}
-            getOptionLabel={(option) => {
-                // Value selected with enter, right from the input
-                return option;
-            }}
-            groupBy={(option) => {
-                let groupItem = conceptGroups.find(item => item.field.name == option);
-                if (groupItem && groupItem.field.name != "") {
-                    return `from ${groupItem.group}`;
-                } else {
-                    return "create a new concept"
-                }         
-            }}
-            renderGroup={(params) => (
-                <li>
-                    <GroupHeader>{params.group}</GroupHeader>
-                    <GroupItems>{params.children}</GroupItems>
-                </li>
-            )}
-            renderOption={(props, option) => {
-                let renderOption = (conceptShelfItems.map(f => f.name).includes(option) || option == "...") ? option : `"${option}"`;
-                let otherStyle = option == `...` ? {color: "darkgray"} : {}
-
-                return <Typography {...props} onClick={()=>{
-                    //handleSelectOption(option);
-                }} sx={{fontSize: "small", ...otherStyle}}>{renderOption}</Typography>
-            }}
-            freeSolo
-            renderInput={(params) => (
-                <TextField {...params} variant="standard" autoComplete='off' 
-                    sx={{height: "24px", "& .MuiInput-root": {height: "24px", fontSize: "small"}}} />
-            )}
-        />
-    let sortByFieldID = encoding.fieldID
-
     let sortByOptions = [
         radioLabel("default", "default", `sort-by-default`)
     ]
@@ -508,14 +346,6 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
         sortByOptions.push(radioLabel("x values", "x", `sort-y-by-x-ascending`, 90));
     }
  
-    // ***** sort by field option *****
-    // sortByOptions = [
-    //     ...sortByOptions,
-    //     <FormControlLabel sx={{ width: 180, margin: 0 }} key={"auto"} 
-    //         value={sortByFieldID} control={<Radio size="small" sx={{ padding: "4px" }} />}
-    //         label={sortByFieldInputBox} />
-    // ]
-
     if (autoSortEnabled) {
         if (autoSortInferRunning) {
             sortByOptions = [
@@ -528,7 +358,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
         } else {
             if (autoSortResult != undefined) {
 
-                let autoSortOptTitle = <Box >
+                let autoSortOptTitle = <Box>
                         <Box>
                             <Typography sx={{fontWeight: 'bold'}} component='span' fontSize='inherit'>Sort Order: </Typography> 
                              {autoSortResult.values.map(x => x ? x.toString() : 'null').join(", ")}
@@ -594,7 +424,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
                 row
                 aria-labelledby="sort-option-radio-buttons-group"
                 name="sort-option-radio-buttons-group"
-                value={encoding.sortBy || 'default'}
+                value={encoding.sortBy ||  'default'}
                 sx={{ width: 180 }}
                 onChange={(event) => { updateEncProp("sortBy", event.target.value) }}
             >
@@ -625,28 +455,6 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
             </RadioGroup>
         </FormControl>
     ]
-
-
-    // let sortOpt = [
-    //     <FormLabel sx={{ fontSize: "inherit" }} key={`enc-box-${channel}-sort-label`} id="sort-option-radio-buttons-group" >Sort By</FormLabel>,
-    //     <FormControl
-    //         key={`enc-box-${channel}-sort-form-control`}
-    //         sx={{
-    //             paddingBottom: "2px", '& .MuiTypography-root': { fontSize: "inherit" }, flexDirection: "row",
-    //             '& .MuiFormLabel-root': { fontSize: "inherit" }
-    //         }}>
-    //         <RadioGroup
-    //             row
-    //             aria-labelledby="sort-option-radio-buttons-group"
-    //             name="sort-option-radio-buttons-group"
-    //             value={encoding.sort || "ascending"}
-    //             sx={{ width: 180 }}
-    //             onChange={(event) => { updateEncProp("sort", event.target.value) }}
-    //         >
-    //             {sortOptions}
-    //         </RadioGroup>
-    //     </FormControl>,
-    // ]
     
     let colorSchemeList = [
         "category10",
@@ -688,48 +496,6 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
             margin: '0px 12px', padding: "6px", fontSize: "12px"
         }} >
             <Box sx={{margin: 'auto', display: "flex",  width: "fit-content", textAlign: "center", flexDirection: "column", alignItems: "flex-start" }}>
-                {/* <Box component="form" className="concept-form"
-                    sx={{ '& > :not(style)': { margin: "0px", }, }}
-                    noValidate
-                    autoComplete="off">
-                    <FormControl sx={{ width: 140 }} size="small">
-                        <InputLabel id="dtype-select-label">Data Field</InputLabel>
-                        <Select
-                            labelId="datafield-select-label"
-                            id="datafield-select"
-                            value={encoding.fieldID}
-                            label="Data Field"
-                            onChange={(event)=>{ updateFieldID(event.target.value); }}
-                        >
-                            <MenuItem value={undefined} key={"field--1"}><em>empty</em></MenuItem>
-                            {conceptShelfItems.map((x: FieldItem) => [x.id, x.name]).map((t, i) => (
-                                <MenuItem value={t[0]} key={`field-${i}`}>{t[1]}</MenuItem>
-                            ))}
-                        </Select>
-                    </FormControl>
-                </Box> */}
-                {/* <Box component="form" className="concept-form"
-                    sx={{ display: "flex", flexWrap: "wrap", '& > :not(style)': { margin: "4px", }, }}
-                    noValidate
-                    autoComplete="off">
-                    <FormControl sx={{ width: 160 }} size="small" disabled={encoding.bin == true}>
-                        <InputLabel sx={{ fontSize: "inherit" }} id="aggr-option-radio-buttons-group">Aggregate</InputLabel>
-                        <Select
-                            labelId="aggr-select-label"
-                            id="aggr-select"
-                            label="Aggregate"
-                            value={encoding.aggregate || "none"}
-                            onChange={(event)=>{ updateAggrOp((event.target.value == "none" ? undefined : event.target.value) as AggrOp); }}
-                        >
-                            <MenuItem value={"none"} key={"aggr--1"}><em>none</em></MenuItem>
-                            {AGGR_OP_LIST.map((t, i) => (
-                                <MenuItem value={t} key={`aggr-${i}`}>{t}</MenuItem>
-                            ))}
-                        </Select>
-                    </FormControl>
-                </Box> */}
-                {/* {aggrOpt}
-                {binOpt} */}
                 {stackOpt}
                 {sortByOpt}
                 {sortOrderOpt}
