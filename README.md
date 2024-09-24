@@ -1,25 +1,34 @@
 <h1>
-    <img src="./public/favicon.ico" alt="Data Formulator icon" width="28"> <b>Data Formulator</b>
+    <img src="./public/favicon.ico" alt="Data Formulator icon" width="28"> <b>Data Formulator: Create Rich Visualizations with AI</b>
 </h1>
 
-Transform data and create rich visualizations iteratively with an AI agent.
+<div>
+    
+[![arxiv](https://img.shields.io/badge/Paper-arXiv:2408.16119-b31b1b.svg)](https://arxiv.org/abs/2408.16119)&ensp;
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)&ensp;
+
+</div>
+
+Transform data and create rich visualizations iteratively with AI 🪄. Try Data Formulator now in GitHub Codespaces!
 
 [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/microsoft/data-formulator?quickstart=1)
-  
-![Hero image](https://github.com/user-attachments/assets/18069024-f721-463a-b6a1-bd6ec0a3857c)
+
+
+<kbd>
+  <a target="_blank" rel="noopener noreferrer" href="https://codespaces.new/microsoft/data-formulator?quickstart=1" title="open Data Formulator in GitHub Codespaces"><img src="public/data-formulator-screenshot.png"></a>
+</kbd>
 
 ## Overview
 
 **Data Formulator** is an application from Microsoft Research that uses large language models to transform data, expediting the practice of data visualization.
 
-With most modern visualization tools, authors need to transform their data into tidy formats to create visualizations they want. Because this requires experience with programming or separate data processing tools, data transformation remains a barrier in visualization authoring. To address this challenge, we present a new visualization paradigm, concept binding, that separates high-level visualization intents and low-level data transformation steps, leveraging an AI agent. 
+To create rich visualizations, data analysts often need to iterate back and forth among data processing and chart specification to achieve their goals. To achieve this, analysts need proficiency in data transformation and visualization tools, and they also spend effort managing the iteration history. This can be challenging!
 
-With Data Formulator, authors first define data concepts they plan to visualize using natural languages or examples, and then bind them to visual channels. Data Formulator then dispatches its AI-agent to automatically transform the input data to surface these concepts and generate desired visualizations. When presenting the results (transformed table and output visualizations) from the AI agent, Data Formulator provides feedback to help authors inspect and understand them. A user study with 10 participants shows that participants could learn and use Data Formulator to create visualizations that involve challenging data transformations, and presents interesting future research directions.
+Data Formulator is an AI-powered tool for analysts to iteratively create rich visualizations. Unlike most chat-based AI tools where users need to describe everything in natural language, Data Formulator combines user interface interactions (UI) with natural language (NL) inputs. This blended approach makes it easier for users to describe their chart designs while delegating data transformation to AI. 
 
-## References
-* [Data Formulator on Microsoft Research Blog](https://www.microsoft.com/en-us/research/blog/data-formulator-a-concept-driven-ai-powered-approach-to-data-visualization/?msockid=0c9345563fe06aec100c54e93e8f6b47)
-* [Data Formulator Microsoft Research publication](https://www.microsoft.com/en-us/research/publication/data-formulator-ai-powered-concept-driven-visualization-authoring/)
-* [ArXiv paper](https://arxiv.org/abs/2309.10094) - presented at [VIS 2023](https://ieeevis.org/year/2023/welcome) and winner of the [Best Paper Honorable Mention](https://ieeevis.org/year/2023/info/awards/best-paper-awards) award
+Check out these cool Data Formulator features that can help you create impressive visualizations!
+* Using the **blended UI and NL inputs** to describe the chart. 
+* Utilizing **data threads** to navigate the history and reuse previous results to create new ones instead of starting from scratch every time.
 
 ## Get Started
 
@@ -36,30 +45,60 @@ Choose one of the following options to set up Data Formulator:
   Opt for a local installation if you prefer full control over your development environment and the ability to customize the setup to your specific needs. For detailed instructions, refer to [DEVELOPMENT.md](DEVELOPMENT.md).
 
 
-## Usage
+## Using Data Formulator
 
 Once you’ve completed the setup using either option, follow these steps to start using Data Formulator:
 
 ### The basics of data visualization
-* Choose a dataset
-* Choose a visualization
-* Add data fields to your visualization
+* Provide OpenAI keys and select a model (GPT-4o suggested) and choose a dataset  
+* Choose a visualization type
+* Drag and drop data fields to the encoding shelf to create visualization
 
-### Add the special sauce 
-* Create new concepts and click the **Formulate** button
+
+https://github.com/user-attachments/assets/0fbea012-1d2d-46c3-a923-b1fc5eb5e5b8
+
+
+### Create visualization beyond the initial dataset (powered by 🤖)
+* Add new field names in the encoding shelf, describe the chart intent
+* Click the **Formulate** button
 * Inspect the code behind the concept
-* Add the new concept fields to your visualization
+* Follow up the chart to create new ones
+
+https://github.com/user-attachments/assets/160c69d2-f42d-435c-9ff3-b1229b5bddba
+
+https://github.com/user-attachments/assets/c93b3e84-8ca8-49ae-80ea-f91ceef34acb
 
 Repeat this process as needed to explore and understand your data. Your explorations are trackable in the **Data Threads** panel. 
 
-## Credits
-Data Formulator was developed at Microsoft Research by these team members:
-* [Chenglong Wang](https://www.microsoft.com/en-us/research/people/chenwang/)
-* [Bongshin Lee](https://www.bongshiny.com/)
-* [John Thompson](https://jrthomp.com/)
-* [Steven Drucker](https://www.microsoft.com/en-us/research/people/sdrucker/)
-* [Jianfeng Gao](https://www.microsoft.com/en-us/research/people/jfgao/)
-* [Dan Marshall](https://www.microsoft.com/en-us/research/people/danmar/)
+## Developers
+
+Follow the [developers' instructions](DEVELOPMENT.md) to build your new data analysis tools on top of Data Formulator.
+
+
+## Research Papers
+* [Data Formulator 2: Iteratively Creating Rich Visualizations with AI](https://arxiv.org/abs/2408.16119)
+
+```
+@article{wang2024dataformulator2iteratively,
+      title={Data Formulator 2: Iteratively Creating Rich Visualizations with AI}, 
+      author={Chenglong Wang and Bongshin Lee and Steven Drucker and Dan Marshall and Jianfeng Gao},
+      year={2024},
+      booktitle={ArXiv preprint arXiv:2408.16119},
+}
+```
+
+* [Data Formulator: AI-powered Concept-driven Visualization Authoring](https://arxiv.org/abs/2309.10094)
+
+```
+@article{wang2023data,
+  title={Data Formulator: AI-powered Concept-driven Visualization Authoring},
+  author={Wang, Chenglong and Thompson, John and Lee, Bongshin},
+  journal={IEEE Transactions on Visualization and Computer Graphics},
+  year={2023},
+  publisher={IEEE}
+}
+```
+
 
 ## Contributing
 
