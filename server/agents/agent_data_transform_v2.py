@@ -200,8 +200,8 @@ class DataTransformationAgentV2(object):
         """process gpt response to handle execution"""
 
         #log = {'messages': messages, 'response': response.model_dump(mode='json')}
-        logger.info("=== prompt_filter_results ===>")
-        logger.info(response.prompt_filter_results)
+        #logger.info("=== prompt_filter_results ===>")
+        #logger.info(response.prompt_filter_results)
 
         if isinstance(response, Exception):
             result = {'status': 'other error', 'content': response.body}
