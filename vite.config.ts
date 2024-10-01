@@ -9,4 +9,13 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        entryFileNames: `DataFormulator.js`,  // specific name for the main JS bundle
+        chunkFileNames: `assets/[name]-[hash].js`, // keep default naming for chunks
+        assetFileNames: `assets/[name]-[hash].[ext]` // keep default naming for other assets
+      }
+    }
+  },
 });
