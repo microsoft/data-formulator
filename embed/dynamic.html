@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Data Formulator embedded dynamically</title>
+</head>
+
+<body>
+    <script>
+        const table = [
+            {
+                "manufacturer": "Toyota",
+                "model": "Corolla",
+                "year": 2019,
+                "price": 20000
+            },
+            {
+                "manufacturer": "Toyota",
+                "model": "Camry",
+                "year": 2019,
+                "price": 25000
+            },
+            {
+                "manufacturer": "Toyota",
+                "model": "RAV4",
+                "year": 2019,
+                "price": 30000
+            },
+            {
+                "manufacturer": "Toyota",
+                "model": "Highlander",
+                "year": 2019,
+                "price": 35000
+            },
+            {
+                "manufacturer": "Toyota",
+                "model": "4Runner",
+                "year": 2019,
+                "price": 40000
+            },
+            {
+                "manufacturer": "Ford",
+                "model": "Fusion",
+                "year": 2019,
+                "price": 20000
+            },
+            {
+                "manufacturer": "Ford",
+                "model": "Focus",
+                "year": 2019,
+                "price": 25000
+            },
+            {
+                "manufacturer": "Ford",
+                "model": "Escape",
+                "year": 2019,
+                "price": 30000
+            },
+            {
+                "manufacturer": "Ford",
+                "model": "Explorer",
+                "year": 2019,
+                "price": 35000
+            },
+            {
+                "manufacturer": "Ford",
+                "model": "Expedition",
+                "year": 2019,
+                "price": 40000
+            }
+        ];
+
+        const embedPromise = new Promise((resolve, reject) => {
+            const embedIframe = document.createElement('iframe');
+            embedIframe.style.height = '700px';
+            embedIframe.style.width = 'calc(100% - 4px)';
+            document.body.appendChild(embedIframe);
+
+            // Prepare the HTML content with the script tag.
+            const closeScriptTag = '</'+'script>';
+            const htmlContent = `
+<!DOCTYPE html>
+<html>
+<body>
+    <div id="root"></div>
+    <script src="../dist/DataFormulator.js" defer onload="console.log('my loc'+document.location);parent.frameLoaded()" onerror="parent.frameError()">${closeScriptTag}
+</body>
+</html>
+`;
+
+            // Define global functions for onload and onerror events of the script
+            window.frameLoaded = () => resolve(embedIframe);
+            window.frameError = () => reject(new Error('Script failed to load'));
+
+            // Write the HTML content to the iframe
+            embedIframe.contentWindow.document.open();
+            embedIframe.contentWindow.document.write(htmlContent);
+            embedIframe.contentWindow.document.close();
+        });
+        embedPromise.then((embedIframe) => {
+            embedIframe.contentWindow.postMessage({ actionName: 'setConfig', actionParams: { serverUrl: 'http://localhost:5000' } }, '*');
+            embedIframe.contentWindow.postMessage({ actionName: 'loadData', actionParams: { tableName: 'FabricTable', table } }, '*');
+        });
+
+    </script>
+</body>
+
+</html>
