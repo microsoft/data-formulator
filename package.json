@@ -24,6 +24,7 @@
         "react": "^18.2.0",
         "react-animate-height": "^3.0.4",
         "react-animate-on-change": "^2.2.0",
+        "react-diff-viewer": "^3.1.1",
         "react-dnd": "^16.0.1",
         "react-dnd-html5-backend": "^16.0.1",
         "react-dom": "^18.2.0",

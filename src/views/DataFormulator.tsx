@@ -31,7 +31,7 @@ import { DndProvider } from 'react-dnd'
 import { HTML5Backend } from 'react-dnd-html5-backend'
 
 import { SelectableGroup } from 'react-selectable-fast';
-import { TableSelectionDialog, TableURLDialog } from './TableSelectionView';
+import { TableCopyDialogV2, TableSelectionDialog, TableURLDialog } from './TableSelectionView';
 import { TableCopyDialog, TableUploadDialog } from './TableSelectionView';
 import { toolName } from '../app/App';
 import { DataThread } from './DataThread';
@@ -128,7 +128,7 @@ export const DataFormulatorFC = ({ }) => {
             
             <Typography variant="h4">
                 Load data from
-                <TableSelectionDialog  buttonElement={"Examples"} />, <TableURLDialog buttonElement={"URL"} disabled={false} />, <TableUploadDialog buttonElement={"file"} disabled={false} />, or <TableCopyDialog buttonElement={"clipboard"} disabled={false} /> 
+                <TableSelectionDialog  buttonElement={"Examples"} />, <TableUploadDialog buttonElement={"file"} disabled={false} />, or <TableCopyDialogV2 buttonElement={"clipboard"} disabled={false} /> 
             </Typography>
             <Typography variant="body1">Select or upload datasets (in csv, tsv or json records format) to get started.</Typography>
         </Box>

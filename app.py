@@ -22,14 +22,12 @@ APP_ROOT = Path(os.path.join(Path(__file__).parent, 'server')).absolute()
 sys.path.append(os.path.abspath(APP_ROOT))
 
 from agents.agent_concept_derive import ConceptDeriveAgent
-from agents.agent_data_transformation import DataTransformationAgent
 from agents.agent_data_transform_v2 import DataTransformationAgentV2
 from agents.agent_data_rec import DataRecAgent
 
 from agents.agent_sort_data import SortDataAgent
 from agents.agent_data_load import DataLoadAgent
-from agents.agent_data_filter import DataFilterAgent
-from agents.agent_generic_py_concept import GenericPyConceptDeriveAgent
+from agents.agent_data_clean import DataCleanAgent
 from agents.agent_code_explanation import CodeExplanationAgent
 
 from agents.client_utils import get_client
@@ -272,6 +270,34 @@ def derive_concept_request():
 
     response.headers.add('Access-Control-Allow-Origin', '*')
     return response
+
+
+@app.route('/clean-data', methods=['GET', 'POST'])
+def clean_data_request():
+
+    if request.is_json:
+        app.logger.info("# data clean request")
+        content = request.get_json()
+        token = content["token"]
+
+        client = get_client(content['model']['endpoint'], content['model']['key'])
+        model = content['model']['model']
+
+        app.logger.info(f" model: {content['model']}")
+        
+        agent = DataCleanAgent(client=client, model=model)
+
+        candidates = agent.run(content["raw_data"])
+        
+        candidates = [c for c in candidates if c['status'] == 'ok']
+
+        response = flask.jsonify({ "status": "ok", "token": token, "result": candidates })
+    else:
+        response = flask.jsonify({ "token": -1, "status": "error", "result": [] })
+
+    response.headers.add('Access-Control-Allow-Origin', '*')
+    return response
+
 
 @app.route('/codex-sort-request', methods=['GET', 'POST'])
 def sort_data_request():

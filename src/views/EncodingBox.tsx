@@ -406,7 +406,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
                         value={JSON.stringify(autoSortResult)} control={<Radio size="small" sx={{ padding: "4px" }} />}
                         label={<Button size="small" variant="text"
                                     sx={{ textTransform: "none", padding: "2px 4px", marginLeft: "0px", minWidth: 0 }}
-                                    onClick={autoSortFunction}>try smart sort</Button>} />
+                                    onClick={autoSortFunction}>infer smart sort order</Button>} />
                 ]
             }
         }

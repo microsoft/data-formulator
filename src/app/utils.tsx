@@ -37,8 +37,8 @@ export function getUrls() {
         // these functions involves openai models
         DERIVE_CONCEPT_URL: `${appConfig.serverUrl}/derive-concept-request`,
         SORT_DATA_URL: `${appConfig.serverUrl}/codex-sort-request`,
+        CLEAN_DATA_URL: `${appConfig.serverUrl}/clean-data`,
         SERVER_DERIVE_DATA_URL: `${appConfig.serverUrl}/derive-data`,
-        SERVER_DERIVE_DATA_V2_URL: `${appConfig.serverUrl}/dispatch-and-derive-data`,
         SERVER_REFINE_DATA_URL: `${appConfig.serverUrl}/refine-data`,
         CODE_EXPL_URL: `${appConfig.serverUrl}/code-expl`,
         SERVER_PROCESS_DATA_ON_LOAD: `${appConfig.serverUrl}/process-data-on-load`,
