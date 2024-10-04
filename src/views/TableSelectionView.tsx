@@ -413,6 +413,8 @@ export const TableCopyDialogV2: React.FC<TableCopyDialogProps> = ({ buttonElemen
     const [tableName, setTableName] = useState<string>("");
     const [tableContent, setTableContent] = useState<string>("");
 
+    const [rawImgContent, setRawImgContent] = useState<string>("");
+
 
     const [cleaningInProgress, setCleaningInProgress] = useState<boolean>(false);
     const [cleanTableContent, setCleanTableContent] = useState<{content: string, reason: string, mode: string} | undefined>(undefined);
@@ -593,7 +595,7 @@ export const TableCopyDialogV2: React.FC<TableCopyDialogProps> = ({ buttonElemen
                 </Box>
                 <Box sx={{width: '100%',  display:'flex', position: 'relative', overflow: 'auto'}}>
                     {cleaningInProgress ? <LinearProgress sx={{ width: '100%', height: "calc(100% - 8px)", marginTop: 1, minHeight: 200, opacity: 0.1, position: 'absolute', zIndex: 1 }} /> : ""}
-                    { viewTable  ? 
+                    {viewTable  ? 
                     <>
                         {/* <ReactDiffViewer
                             leftTitle={'source'}
@@ -617,12 +619,31 @@ export const TableCopyDialogV2: React.FC<TableCopyDialogProps> = ({ buttonElemen
                         <TextField disabled={loadFromURL || cleaningInProgress} autoFocus 
                             size="small" sx={{ marginTop: 1, flex: 1, "& .MuiInputBase-input" : {fontSize: 12, lineHeight: 1.2 }}} 
                             id="upload content" value={tableContent} maxRows={30}
-                            onChange={(event) => { setTableContent(event.target.value); }}
+                            onChange={(event) => { 
+                                setTableContent(event.target.value); 
+                            }}
+                            onPasteCapture={(e) => {
+                                console.log(e.clipboardData.files);
+                                if (e.clipboardData.files.length > 0) {
+                                    var file = e.clipboardData.files[0],
+                                        read = new FileReader();
+
+                                    read.readAsDataURL(file);
+
+                                    read.onloadend = function(){
+                                        let res = read.result;
+                                        console.log(res);
+                                        if (res) { setRawImgContent(res as string); }
+                                    }
+                                }
+                            }}
                             autoComplete='off'
                             label="content (csv, tsv, or json format)" variant="outlined" multiline minRows={15} 
                         />
                     }
+                    
                 </Box>
+                <img style={{maxWidth: 320}} src={rawImgContent} alt="Red dot" />
             </ DialogContent>
             <DialogActions>
                 { cleanTableContent != undefined ? 
