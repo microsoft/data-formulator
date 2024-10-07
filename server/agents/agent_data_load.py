@@ -18,6 +18,9 @@ Semantic types to consider include: Location, Year, Month, Day, Date, Time, Date
 Furthermore, if the field is string type and is ordinal (especially for english month name, week name, range), provide the natural sort order of the fields here.
 Otherwise, put sort_order as null (for example, Name should not be sorted).
 
+Special cases: 
+* sometimes, column name is year like "2020", "2021" but its content is not actually year (e.g., sales), in these cases, the semantic type of the column would not be Year!
+
 Create a json object function based off the [DATA] provided.
 
 output should be in the format of:

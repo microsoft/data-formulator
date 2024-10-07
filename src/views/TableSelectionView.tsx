@@ -8,7 +8,8 @@ import Tab from '@mui/material/Tab';
 import Typography from '@mui/material/Typography';
 import Box from '@mui/material/Box';
 import { alpha, Button, Collapse, Dialog, DialogActions, DialogContent, DialogTitle, Divider, 
-         IconButton, Input, CircularProgress, LinearProgress, Paper, TextField, useTheme } from '@mui/material';
+         IconButton, Input, CircularProgress, LinearProgress, Paper, TextField, useTheme, 
+         Card} from '@mui/material';
 import { CustomReactTable } from './ReactTable';
 import { DictTable } from "../components/ComponentType";
 
@@ -411,10 +412,9 @@ export const TableCopyDialogV2: React.FC<TableCopyDialogProps> = ({ buttonElemen
     
     const [dialogOpen, setDialogOpen] = useState<boolean>(false);
     const [tableName, setTableName] = useState<string>("");
+    
     const [tableContent, setTableContent] = useState<string>("");
-
-    const [rawImgContent, setRawImgContent] = useState<string>("");
-
+    const [tableContentType, setTableContentType] = useState<'text' | 'image'>('text');
 
     const [cleaningInProgress, setCleaningInProgress] = useState<boolean>(false);
     const [cleanTableContent, setCleanTableContent] = useState<{content: string, reason: string, mode: string} | undefined>(undefined);
@@ -457,6 +457,7 @@ export const TableCopyDialogV2: React.FC<TableCopyDialogProps> = ({ buttonElemen
         .then(content => {
             setTableName(tableName);
             setTableContent(content); 
+            setTableContentType("text");
         })
     }
 
@@ -470,6 +471,7 @@ export const TableCopyDialogV2: React.FC<TableCopyDialogProps> = ({ buttonElemen
             headers: { 'Content-Type': 'application/json', },
             body: JSON.stringify({
                 token: token,
+                content_type: tableContentType,
                 raw_data: tableContent,
                 model: activeModel
             }),
@@ -612,10 +614,11 @@ export const TableCopyDialogV2: React.FC<TableCopyDialogProps> = ({ buttonElemen
                             rowsPerPageNum={-1} compact={false}
                             columnDefs={viewTable.names.map(name => { 
                                 return { id: name, label: name, minWidth: 60, align: undefined, format: (v: any) => v}
-                            })}  />
+                            })}  
+                        />
                         {/* <Typography>{cleanTableContent.reason}</Typography> */}
                     </>
-                    :
+                    : ( tableContentType == "text" ?
                         <TextField disabled={loadFromURL || cleaningInProgress} autoFocus 
                             size="small" sx={{ marginTop: 1, flex: 1, "& .MuiInputBase-input" : {fontSize: 12, lineHeight: 1.2 }}} 
                             id="upload content" value={tableContent} maxRows={30}
@@ -625,25 +628,39 @@ export const TableCopyDialogV2: React.FC<TableCopyDialogProps> = ({ buttonElemen
                             onPasteCapture={(e) => {
                                 console.log(e.clipboardData.files);
                                 if (e.clipboardData.files.length > 0) {
-                                    var file = e.clipboardData.files[0],
-                                        read = new FileReader();
+                                    let file = e.clipboardData.files[0];
+                                    let read = new FileReader();
 
                                     read.readAsDataURL(file);
 
                                     read.onloadend = function(){
                                         let res = read.result;
                                         console.log(res);
-                                        if (res) { setRawImgContent(res as string); }
+                                        if (res) { 
+                                            setTableContent(res as string); 
+                                            setTableContentType("image");
+                                        }
                                     }
                                 }
                             }}
                             autoComplete='off'
                             label="content (csv, tsv, or json format)" variant="outlined" multiline minRows={15} 
                         />
+                        :
+                        <Box sx={{marginTop: 1, position: 'relative'}}>
+                            <IconButton size="small" color="primary"
+                                        sx={{   width: 16, height: 16, border: '1px solid', boxShadow: 3, position: 'absolute', right: 4, top: 4}}
+                                onClick={() => {
+                                    setTableContent("");
+                                    setTableContentType("text");
+                                }}
+                            >
+                                <CloseIcon sx={{fontSize: 10}} />
+                            </IconButton>
+                            <img style={{border: '1px lightgray solid', borderRadius: 4, maxWidth: 640, maxHeight: 360}} src={tableContent} alt="the image is corrupted, please try again." />
+                        </Box>)
                     }
-                    
-                </Box>
-                <img style={{maxWidth: 320}} src={rawImgContent} alt="Red dot" />
+                    </Box>
             </ DialogContent>
             <DialogActions>
                 { cleanTableContent != undefined ? 
@@ -652,19 +669,23 @@ export const TableCopyDialogV2: React.FC<TableCopyDialogProps> = ({ buttonElemen
                             Revert
                         </Button>
                         <Button sx={{marginLeft: 1}} variant="contained" size="small" 
-                                onClick={()=>{ setTableContent(cleanTableContent?.content || ""); setCleanTableContent(undefined); }} >
+                                onClick={()=>{ 
+                                    setTableContent(cleanTableContent?.content || ""); 
+                                    setTableContentType("text");
+                                    setCleanTableContent(undefined); 
+                                }} >
                             Edit Data
                         </Button>
                     </Box> : <Button disabled={tableContent.trim() == "" || loadFromURL} 
                     variant={cleaningInProgress ? "outlined" : "contained"} color="primary" size="small" sx={{marginRight: 'auto', textTransform: 'none'}} 
                         onClick={handleCleanData} endIcon={cleaningInProgress ? <CircularProgress size={24} /> : <AutoFixNormalIcon/> }>
-                    Clean / Generate Data {cleanTableContent ? "(again)" : ""}
+                    {tableContentType == "text" ? "Clean / Generate Data" : "Extract Data from Image"} {cleanTableContent ? "(again)" : ""}
                 </Button>}
                 {/* <Collapse orientation='horizontal' in={cleanTableContent != undefined}>
                     <Divider sx={{marginLeft: 1}} flexItem orientation='vertical'/>
                 </Collapse> */}
                 <Button disabled={cleanTableContent != undefined} variant="contained" size="small" onClick={()=>{ setDialogOpen(false); }}>cancel</Button>
-                <Button disabled={tableContent.trim() == ""} variant="contained" size="small" 
+                <Button disabled={cleanTableContent?.content == undefined && (tableContentType != "text" || tableContent.trim() == "")} variant="contained" size="small" 
                     onClick={()=>{ 
                         setDialogOpen(false); 
                         handleSubmitContent(cleanTableContent?.content || tableContent); 

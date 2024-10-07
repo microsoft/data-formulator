@@ -56,6 +56,8 @@ The cleaning process must follow instructions below:
     - If the user doesn't indicate how many rows to be generated, plan in generating a dataset with 10-20 rows depending on the content.
 '''
 
+
+
 EXAMPLE = '''
 [RAW DATA]
 
@@ -101,16 +103,45 @@ class DataCleanAgent(object):
         self.model = model
         self.client = client
 
-    def run(self, raw_data):
+    def run(self, content_type, raw_data):
         """derive a new concept based on the raw input data
         """
    
-        user_query = f"[DATA]\n\n{raw_data}\n\n[OUTPUT]\n"
+        if content_type == "text":
+            user_prompt = {
+                "role": "user",
+                "content": [{
+                    'type': 'text',
+                    'text': f"[DATA]\n\n{raw_data}\n\n[OUTPUT]\n"
+                }]
+            }
+        elif content_type == "image":
+            user_prompt = {
+                'role': 'user',
+                'content': [ {
+                    'type': 'text',
+                    'text': '''[RAW_DATA]\n\n'''},
+                    {
+                        'type': 'image_url',
+                        'image_url': {
+                            "url": raw_data,
+                            "detail": "high"
+                        }
+                    },
+                    {
+                        'type': 'text',
+                        'text': '''[OUTPUT]\n\n'''
+                    }, 
+                ]
+            }
 
-        logger.info(user_query)
+        logger.info(user_prompt)
 
-        messages = [{"role":"system", "content": SYSTEM_PROMPT},
-                    {"role":"user","content": user_query}]
+        system_message = {
+            'role': 'system',
+            'content': [ {'type': 'text', 'text': SYSTEM_PROMPT}]}
+
+        messages = [system_message, user_prompt]
         
         ###### the part that calls open_ai
         response = self.client.chat.completions.create(
