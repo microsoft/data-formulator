@@ -49,6 +49,7 @@ The cleaning process must follow instructions below:
     - if the header row misses some columns, add their corresponding column names. E.g., when the header doesn't have an index column, but every row has an index value, add the missing column header.
 * clean up columns with messy information
     - if a column is number but some cells has annotations like "*" "?" or brackets, clean them up.
+    - if a column is number but has units like ($, %, s), convert them to number (make sure unit conversion is correct when multiple units exist like minute and second) and include unit in the header.
     - you don't need to convert format of the cell.
 * if the user asks about generating synthetic data:
     - NEVER generate data that has implicit bias as noted above, if that happens, return a dummy data consisting of dummy columns with 'a, b, c' and numbers.
@@ -61,37 +62,15 @@ The cleaning process must follow instructions below:
 EXAMPLE = '''
 [RAW DATA]
 
-Dates	Samplei	Pollster	Sponsor	Result	Net result
-Polls ending today
-President: general election, 2024Icon indicating this set of polls has an average.
-AVG.
-Sept. 22-26
-1,735	LV	
-Outward Intelligence
-Harris	51%	45%	Trump	More	Harris	+6
-Sept. 22-26
-1,735	LV	
-Outward Intelligence
-Harris	53%	47%	Trump	 	Harris	+6
-Sept. 25, 2024
-Joe Biden ApprovalIcon indicating this set of polls has an average.
-AVG.
-Sept. 23-25
-1,005	LV	
-Echelon Insights
-Approve	43%	55%	Disapprove	 	Disapprove	+12
-Sept. 23-25
-1,524	LV	
-Big Village
-Approve	46%	52%	Disapprove	 	Disapprove	+6
-Sept. 23-25
-1,663	RV	
-Big Village
-Approve	46%	51%	Disapprove	 	Disapprove	+5
-Sept. 23-25
-2,021	A	
-Big Village
-Approve	44%	50%	Disapprove	 	Disapprove	+6
+Rank	NOC	Gold	Silver	Bronze	Total
+1	 South Korea	5	1	1	7
+2	 France*	0	1	1	2
+ United States	0	1	1	2
+4	 China	0	1	0	1
+ Germany	0	1	0	1
+6	 Mexico	0	0	1	1
+ Turkey	0	0	1	1
+Totals (7 entries)	5	5	5	15
 
 [OUTPUT]
 

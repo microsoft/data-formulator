@@ -23,6 +23,7 @@ import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import AutoFixNormalIcon from '@mui/icons-material/AutoFixNormal';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
+import CancelIcon from '@mui/icons-material/Cancel';
 
 import ReactDiffViewer from 'react-diff-viewer'
 
@@ -596,7 +597,7 @@ export const TableCopyDialogV2: React.FC<TableCopyDialogProps> = ({ buttonElemen
                     </Collapse>
                 </Box>
                 <Box sx={{width: '100%',  display:'flex', position: 'relative', overflow: 'auto'}}>
-                    {cleaningInProgress ? <LinearProgress sx={{ width: '100%', height: "calc(100% - 8px)", marginTop: 1, minHeight: 200, opacity: 0.1, position: 'absolute', zIndex: 1 }} /> : ""}
+                    {cleaningInProgress && tableContentType == "text" ? <LinearProgress sx={{ width: '100%', height: "calc(100% - 8px)", marginTop: 1, minHeight: 200, opacity: 0.1, position: 'absolute', zIndex: 1 }} /> : ""}
                     {viewTable  ? 
                     <>
                         {/* <ReactDiffViewer
@@ -609,7 +610,7 @@ export const TableCopyDialogV2: React.FC<TableCopyDialogProps> = ({ buttonElemen
                             splitView={true}
                             renderContent={renderLines}
                         /> */}
-                        <CustomReactTable 
+                        <CustomReactTable
                             rows={viewTable.rows} 
                             rowsPerPageNum={-1} compact={false}
                             columnDefs={viewTable.names.map(name => { 
@@ -620,11 +621,13 @@ export const TableCopyDialogV2: React.FC<TableCopyDialogProps> = ({ buttonElemen
                     </>
                     : ( tableContentType == "text" ?
                         <TextField disabled={loadFromURL || cleaningInProgress} autoFocus 
-                            size="small" sx={{ marginTop: 1, flex: 1, "& .MuiInputBase-input" : {fontSize: 12, lineHeight: 1.2 }}} 
+                            size="small" sx={{ marginTop: 1, flex: 1, "& .MuiInputBase-input" : {fontSize: tableContent.length > 1000 ? 12 : 14, lineHeight: 1.2 }}} 
                             id="upload content" value={tableContent} maxRows={30}
                             onChange={(event) => { 
                                 setTableContent(event.target.value); 
                             }}
+                            InputLabelProps={{ shrink: true }}
+                            placeholder="Paste data (in csv, tsv, or json format), or a text snippet / an image that contains data to get started."
                             onPasteCapture={(e) => {
                                 console.log(e.clipboardData.files);
                                 if (e.clipboardData.files.length > 0) {
@@ -644,20 +647,26 @@ export const TableCopyDialogV2: React.FC<TableCopyDialogProps> = ({ buttonElemen
                                 }
                             }}
                             autoComplete='off'
-                            label="content (csv, tsv, or json format)" variant="outlined" multiline minRows={15} 
+                            label="data content" variant="outlined" multiline minRows={15} 
                         />
                         :
                         <Box sx={{marginTop: 1, position: 'relative'}}>
+                            {cleaningInProgress ? <LinearProgress sx={{ width: '100%', height: "calc(100% - 4px)", opacity: 0.1, position: 'absolute', zIndex: 1 }} /> : ""}
                             <IconButton size="small" color="primary"
-                                        sx={{   width: 16, height: 16, border: '1px solid', boxShadow: 3, position: 'absolute', right: 4, top: 4}}
+                                        sx={{  backgroundColor: 'white', 
+                                               width: 16, height: 16, boxShadow: 3, 
+                                               position: 'absolute', right: 4, top: 4,
+                                               "&:hover": { backgroundColor: "white", boxShadow: 8, transform: "translate(0.5px, -0.5px)"  }
+                                            }}
                                 onClick={() => {
                                     setTableContent("");
                                     setTableContentType("text");
                                 }}
                             >
-                                <CloseIcon sx={{fontSize: 10}} />
+                                <CancelIcon sx={{fontSize: 16}} />
                             </IconButton>
-                            <img style={{border: '1px lightgray solid', borderRadius: 4, maxWidth: 640, maxHeight: 360}} src={tableContent} alt="the image is corrupted, please try again." />
+                            <img style={{border: '1px lightgray solid', borderRadius: 4, maxWidth: 640, maxHeight: 360}} 
+                                 src={tableContent} alt="the image is corrupted, please try again." />
                         </Box>)
                     }
                     </Box>

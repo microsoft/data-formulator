@@ -17,6 +17,7 @@ import {
 
     Typography,
     Box,
+    Tooltip,
 } from '@mui/material';
 
 
@@ -37,6 +38,7 @@ import { toolName } from '../app/App';
 import { DataThread } from './DataThread';
 
 import dfLogo from '../assets/df-logo.png';
+import exampleImageTable from "../assets/example-image-table.png";
 import { ModelSelectionButton } from './ModelSelectionDialog';
 
 const MainSplitPane = styled(SplitPane)(({ theme }) => ({
@@ -119,6 +121,17 @@ export const DataFormulatorFC = ({ }) => {
             </Box>
         </Box>);
 
+    let exampleMessyText=`Rank	NOC	Gold	Silver	Bronze	Total
+1	 South Korea	5	1	1	7
+2	 France*	0	1	1	2
+ United States	0	1	1	2
+4	 China	0	1	0	1
+ Germany	0	1	0	1
+6	 Mexico	0	0	1	1
+ Turkey	0	0	1	1
+Totals (7 entries)	5	5	5	15
+`
+
     let dataUploadRequestBox = <Box sx={{width: '100vw'}}>
         <Box sx={{paddingTop: "8%", display: "flex", flexDirection: "column", textAlign: "center"}}>
             <Box component="img" sx={{  width: 256, margin: "auto" }} alt="" src={dfLogo} />
@@ -130,7 +143,11 @@ export const DataFormulatorFC = ({ }) => {
                 Load data from
                 <TableSelectionDialog  buttonElement={"Examples"} />, <TableUploadDialog buttonElement={"file"} disabled={false} />, or <TableCopyDialogV2 buttonElement={"clipboard"} disabled={false} /> 
             </Typography>
-            <Typography variant="body1">Select or upload datasets (in csv, tsv or json records format) to get started.</Typography>
+            <Typography sx={{  width: 960, margin: "auto" }} variant="body1">
+                Besides formatted data (csv, tsv or json), you can copy-paste&nbsp;
+                <Tooltip title={<Box>Example of a messy text block: <Typography sx={{fontSize: 10, marginTop: '6px'}} component={"pre"}>{exampleMessyText}</Typography></Box>}><Typography color="secondary" display="inline" sx={{cursor: 'help', "&:hover": {textDecoration: 'underline'}}}>a text block</Typography></Tooltip> or&nbsp;
+                <Tooltip title={<Box>Example of a table in image format: <Box component="img" sx={{ width: '100%',  marginTop: '6px' }} alt="" src={exampleImageTable} /></Box>}><Typography color="secondary"  display="inline" sx={{cursor: 'help', "&:hover": {textDecoration: 'underline'}}}>an image</Typography></Tooltip> that contain data into clipboard to get started.
+            </Typography>
         </Box>
     </Box>;
 
