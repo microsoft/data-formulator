@@ -14,33 +14,27 @@ Transform data and create rich visualizations iteratively with AI 🪄. Try Data
 
 [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/microsoft/data-formulator?quickstart=1)
 
+## News 🔥
+
+- [10-09-2024] Data Formulator python package released! 
+  - You can now install Data Formulator using Python and run it locally, easily. [[check it out]](#get-started).
+  - Our Codespace configuration is also updated for fast start up ⚡️. [[try it now!]](https://codespaces.new/microsoft/data-formulator?quickstart=1)
+
+- [10-09-2024] New experimental feature release: 
+  - Loading an image or a messy data snippet into Data Formulator, with AI parsing and cleaning it for you(!).
+  
+- [10-01-2024] Initial release of Data Formulator, check out our [blog](https://www.microsoft.com/en-us/research/blog/data-formulator-exploring-how-ai-can-help-analysts-create-rich-data-visualizations/) and [video](https://youtu.be/3ndlwt0Wi3c)!
+
 
 <kbd>
   <a target="_blank" rel="noopener noreferrer" href="https://codespaces.new/microsoft/data-formulator?quickstart=1" title="open Data Formulator in GitHub Codespaces"><img src="public/data-formulator-screenshot.png"></a>
 </kbd>
 
-## News 🔥
-
-- [10-09-2024] Data Formulator python package released! 
-  - You can now install Data Formulator using Python and run it locally, easily.
-  - Our Codespace configuration is also updated for fast start up ⚡️. [try it now!](https://codespaces.new/microsoft/data-formulator?quickstart=1)
-
-- [10-09-2024] New experimental feature: 
-  - Loading an image or a messy data snippet into Data Formulator, with AI parsing and cleaning it for you(!).
-  
-- [10-01-2024] Initial release of Data Formulator, check out our [blog](https://www.microsoft.com/en-us/research/blog/data-formulator-exploring-how-ai-can-help-analysts-create-rich-data-visualizations/) and [video](https://youtu.be/3ndlwt0Wi3c)!
-
 ## Overview
 
 **Data Formulator** is an application from Microsoft Research that uses large language models to transform data, expediting the practice of data visualization.
 
-To create rich visualizations, data analysts often need to iterate back and forth among data processing and chart specification to achieve their goals. To achieve this, analysts need proficiency in data transformation and visualization tools, and they also spend effort managing the iteration history. This can be challenging!
-
-Data Formulator is an AI-powered tool for analysts to iteratively create rich visualizations. Unlike most chat-based AI tools where users need to describe everything in natural language, Data Formulator combines user interface interactions (UI) with natural language (NL) inputs. This blended approach makes it easier for users to describe their chart designs while delegating data transformation to AI. 
-
-Check out these cool Data Formulator features that can help you create impressive visualizations!
-* Using the **blended UI and NL inputs** to describe the chart. 
-* Utilizing **data threads** to navigate the history and reuse previous results to create new ones instead of starting from scratch every time.
+Data Formulator is an AI-powered tool for analysts to iteratively create rich visualizations. Unlike most chat-based AI tools where users need to describe everything in natural language, Data Formulator combines *user interface interactions (UI)* and *natural language (NL) inputs* for easier interaction. This blended approach makes it easier for users to describe their chart designs while delegating data transformation to AI. 
 
 ## Get Started
 
