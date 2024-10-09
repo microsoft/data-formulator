@@ -37,7 +37,10 @@ from dotenv import load_dotenv
 
 APP_ROOT = Path(os.path.join(Path(__file__).parent)).absolute()
 
-load_dotenv(os.path.join(APP_ROOT,'openai-keys.env'))
+print(APP_ROOT)
+
+# try to look for stored openAI keys information from the ROOT dir
+load_dotenv(os.path.join(APP_ROOT, "..", "..", 'openai-keys.env'))
 
 import os
 

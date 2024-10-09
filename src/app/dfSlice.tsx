@@ -216,7 +216,7 @@ export const dataFormulatorSlice = createSlice({
             //state.table = undefined;
             
             // avoid resetting inputted models
-            //state.oaiModels = [];
+            // state.oaiModels = state.oaiModels.filter((m: any) => m.endpoint != 'default');
             state.selectedModel = state.oaiModels.length > 0 ? state.oaiModels[0] : undefined;
             state.testedModels = [];
 

@@ -21,12 +21,12 @@ Transform data and create rich visualizations iteratively with AI 🪄. Try Data
 
 ## News 🔥
 
-- [??-2024] Data Formulator python package released! 
-  - You can now install Data Formulator using Python PIP and run it locally, easily. [link]()
-  - Our Codespace configuration is also updated for fast start up ⚡️ (5 minutes → 10 seconds), [try it now!](https://codespaces.new/microsoft/data-formulator?quickstart=1)
+- [10-09-2024] Data Formulator python package released! 
+  - You can now install Data Formulator using Python and run it locally, easily.
+  - Our Codespace configuration is also updated for fast start up ⚡️. [try it now!](https://codespaces.new/microsoft/data-formulator?quickstart=1)
 
-- [??-2024] Data Formulator v1.0.1, with new experimental feature: 
-  - Loading image / messy data into Data Formulator, with AI to clean / parse data for you.
+- [10-09-2024] New experimental feature: 
+  - Loading an image or a messy data snippet into Data Formulator, with AI parsing and cleaning it for you(!).
   
 - [10-01-2024] Initial release of Data Formulator, check out our [blog](https://www.microsoft.com/en-us/research/blog/data-formulator-exploring-how-ai-can-help-analysts-create-rich-data-visualizations/) and [video](https://youtu.be/3ndlwt0Wi3c)!
 
@@ -55,7 +55,7 @@ Choose one of the following options to set up Data Formulator:
   >> data_formulator
   ```
 
-  Data Formulator will be opened in a new tab in browser at [http://localhost:5000](http://localhost:5000).
+  Data Formulator will be opened automatically in a new tab in browser at [http://localhost:5000](http://localhost:5000).
 
 - **Option 2: Codespaces**
   
