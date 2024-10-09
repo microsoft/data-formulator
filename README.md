@@ -44,7 +44,7 @@ Check out these cool Data Formulator features that can help you create impressiv
 
 ## Get Started
 
-Choose one of the following options to set up Data Formulator:
+Play with Data Formulator with one of the following options:
 
 - **Option 1: Install via Python PIP**
   
@@ -55,9 +55,9 @@ Choose one of the following options to set up Data Formulator:
   >> data_formulator
   ```
 
-  Data Formulator will be opened automatically in a new tab in browser at [http://localhost:5000](http://localhost:5000).
+  Data Formulator will be automatically opened in the browser at [http://localhost:5000](http://localhost:5000).
 
-- **Option 2: Codespaces**
+- **Option 2: Codespaces (5 minute)**
   
   You can also run Data Formualtor in codespace, we have everything pre-configured. For more details, see [CODESPACES.md](CODESPACES.md).
   
