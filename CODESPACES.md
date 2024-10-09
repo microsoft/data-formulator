@@ -15,7 +15,6 @@ You will need a GitHub account and to be logged in to use Codespaces.
 ### Step 2: Run the app
 The codespace is a VSCode development environment in the cloud. Once the Codespace is created, start Data Formuator with the following steps:
 
-* Press **F5** to run. Or if you prefer, click the **Run and Debug** tab on the left, and the **Start Debugging** button.
 * A toast about port forwarding will appear, click the **Open in Browser** button.
 * You will see the Data Formulator app!
 
