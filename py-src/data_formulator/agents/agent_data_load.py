@@ -3,7 +3,7 @@
 
 import json
 
-from agents.agent_utils import extract_json_objects, generate_data_summary
+from data_formulator.agents.agent_utils import extract_json_objects, generate_data_summary
 import logging
 
 logger = logging.getLogger(__name__)

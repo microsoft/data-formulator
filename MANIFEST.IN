@@ -1,0 +1,3 @@
+include py-src/data_formulator/dist/*
+include py-src/data_formulator/dist/assets/*
+include py-src/data_formulator/openai-keys.env

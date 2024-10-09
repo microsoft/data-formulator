@@ -1,6 +1,7 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
 
+import random
 import sys
 import os
 
@@ -10,6 +11,9 @@ from flask import stream_with_context, Response
 import html
 import pandas as pd
 
+import webbrowser
+import threading
+
 from flask_cors import CORS
 
 import json
@@ -18,31 +22,26 @@ from pathlib import Path
 
 from vega_datasets import data as vega_data
 
-APP_ROOT = Path(os.path.join(Path(__file__).parent, 'server')).absolute()
-sys.path.append(os.path.abspath(APP_ROOT))
+from data_formulator.agents.agent_concept_derive import ConceptDeriveAgent
+from data_formulator.agents.agent_data_transform_v2 import DataTransformationAgentV2
+from data_formulator.agents.agent_data_rec import DataRecAgent
 
-from agents.agent_concept_derive import ConceptDeriveAgent
-from agents.agent_data_transform_v2 import DataTransformationAgentV2
-from agents.agent_data_rec import DataRecAgent
+from data_formulator.agents.agent_sort_data import SortDataAgent
+from data_formulator.agents.agent_data_load import DataLoadAgent
+from data_formulator.agents.agent_data_clean import DataCleanAgent
+from data_formulator.agents.agent_code_explanation import CodeExplanationAgent
 
-from agents.agent_sort_data import SortDataAgent
-from agents.agent_data_load import DataLoadAgent
-from agents.agent_data_clean import DataCleanAgent
-from agents.agent_code_explanation import CodeExplanationAgent
-
-from agents.client_utils import get_client
-
-import pathlib
+from data_formulator.agents.client_utils import get_client
 
 from dotenv import load_dotenv
 
+APP_ROOT = Path(os.path.join(Path(__file__).parent)).absolute()
 
-APP_DIR = pathlib.Path(__file__).parent.resolve()
-load_dotenv(os.path.join(APP_DIR, 'openai-keys.env'))
+load_dotenv(os.path.join(APP_ROOT,'openai-keys.env'))
 
 import os
 
-app = Flask(__name__, static_url_path='', static_folder=os.path.join(APP_ROOT, "..", "dist"))
+app = Flask(__name__, static_url_path='', static_folder=os.path.join(APP_ROOT, "dist"))
 CORS(app)
 
 @app.route('/vega-datasets')
@@ -443,8 +442,15 @@ def refine_data():
     response.headers.add('Access-Control-Allow-Origin', '*')
     return response
 
+def run_app():
+    port = 5000 #+ random.randint(0, 999)
+    url = "http://localhost:{0}".format(port)
 
+    threading.Timer(2, lambda: webbrowser.open(url, new=2) ).start()
+
+    app.run(host='0.0.0.0', port=port, threaded=True)
+    
 if __name__ == '__main__':
     #app.run(debug=True, host='127.0.0.1', port=5000)
     #use 0.0.0.0 for public
-    app.run(host='0.0.0.0', port=5000, threaded=True)
+    run_app()

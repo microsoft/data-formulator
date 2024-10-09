@@ -2,7 +2,7 @@
 # Licensed under the MIT License.
 
 import json
-from agents.agent_utils import extract_json_objects
+from data_formulator.agents.agent_utils import extract_json_objects
 
 import logging
 

@@ -6,6 +6,7 @@
     
 [![arxiv](https://img.shields.io/badge/Paper-arXiv:2408.16119-b31b1b.svg)](https://arxiv.org/abs/2408.16119)&ensp;
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)&ensp;
+[![YouTube](https://img.shields.io/badge/YouTube-white?logo=youtube&logoColor=%23FF0000)](https://youtu.be/3ndlwt0Wi3c)&ensp;
 
 </div>
 
@@ -17,6 +18,17 @@ Transform data and create rich visualizations iteratively with AI 🪄. Try Data
 <kbd>
   <a target="_blank" rel="noopener noreferrer" href="https://codespaces.new/microsoft/data-formulator?quickstart=1" title="open Data Formulator in GitHub Codespaces"><img src="public/data-formulator-screenshot.png"></a>
 </kbd>
+
+## News 🔥
+
+- [??-2024] Data Formulator python package released! 
+  - You can now install Data Formulator using Python PIP and run it locally, easily. [link]()
+  - Our Codespace configuration is also updated for fast start up ⚡️ (5 minutes → 10 seconds), [try it now!](https://codespaces.new/microsoft/data-formulator?quickstart=1)
+
+- [??-2024] Data Formulator v1.0.1, with new experimental feature: 
+  - Loading image / messy data into Data Formulator, with AI to clean / parse data for you.
+  
+- [10-01-2024] Initial release of Data Formulator, check out our [blog](https://www.microsoft.com/en-us/research/blog/data-formulator-exploring-how-ai-can-help-analysts-create-rich-data-visualizations/) and [video](https://youtu.be/3ndlwt0Wi3c)!
 
 ## Overview
 
@@ -34,15 +46,26 @@ Check out these cool Data Formulator features that can help you create impressiv
 
 Choose one of the following options to set up Data Formulator:
 
-- **Option 1: Codespaces**
+- **Option 1: Install via Python PIP**
   
-  Use Codespaces for an easy setup experience, as everything is preconfigured to get you up and running quickly. For more details, see [CODESPACES.md](CODESPACES.md).
+  Use Python PIP for an easy setup experience, running locally.
+  
+  ```
+  >> pip install data_formulator
+  >> data_formulator
+  ```
+
+  Data Formulator will be opened in a new tab in browser at [http://localhost:5000](http://localhost:5000).
+
+- **Option 2: Codespaces**
+  
+  You can also run Data Formualtor in codespace, we have everything pre-configured. For more details, see [CODESPACES.md](CODESPACES.md).
   
   [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/microsoft/data-formulator?quickstart=1)
 
-- **Option 2: Local Installation**
+- **Option 3: Working in the developer mode**
   
-  Opt for a local installation if you prefer full control over your development environment and the ability to customize the setup to your specific needs. For detailed instructions, refer to [DEVELOPMENT.md](DEVELOPMENT.md).
+  You can build Data Formulator locally if you prefer full control over your development environment and the ability to customize the setup to your specific needs. For detailed instructions, refer to [DEVELOPMENT.md](DEVELOPMENT.md).
 
 
 ## Using Data Formulator
