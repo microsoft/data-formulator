@@ -19,7 +19,7 @@ The codespace is a VSCode development environment in the cloud. Once the Codespa
 * You will see the Data Formulator app!
 
 <kbd>
-  <img width="528" alt="image" src="https://github.com/user-attachments/assets/e62bebda-8daf-4587-94d4-fede48de382b">
+  <img width="528" alt="image" src="https://github.com/user-attachments/assets/cb9e2123-4a42-4926-8b59-5bafb9be25fa">
 </kbd>
 
 
