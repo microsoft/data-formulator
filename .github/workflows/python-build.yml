@@ -46,7 +46,7 @@ jobs:
   pypi-publish:
     runs-on: ubuntu-latest
     needs:
-      - release-build
+      - build
     permissions:
       id-token: write
     steps:
