@@ -35,6 +35,7 @@ jobs:
     - name: Build python artifact
       run: |
         yarn build
+        ls py-src/data_formulator
         python -m build
     - name: Archive production artifacts
       uses: actions/upload-artifact@v4
