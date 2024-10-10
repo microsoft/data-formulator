@@ -3,6 +3,7 @@
 
 import * as React from 'react';
 import validator from 'validator';
+import DOMPurify from 'dompurify';
 
 import Tabs from '@mui/material/Tabs';
 import Tab from '@mui/material/Tab';
@@ -668,7 +669,7 @@ export const TableCopyDialogV2: React.FC<TableCopyDialogProps> = ({ buttonElemen
                             </IconButton>
                             {validator.isURL(tableContent) || validator.isDataURI(tableContent) ? (
                                 <img style={{border: '1px lightgray solid', borderRadius: 4, maxWidth: 640, maxHeight: 360}} 
-                                     src={tableContent} alt="the image is corrupted, please try again." />
+                                     src={DOMPurify.sanitize(tableContent)} alt="the image is corrupted, please try again." />
                             ) : (
                                 <Typography color="error">Invalid image data</Typography>
                             )}
