@@ -41,7 +41,7 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: release-dist
-        path: dist/
+        path: dist
 
   pypi-publish:
     runs-on: ubuntu-latest
@@ -53,7 +53,7 @@ jobs:
       - name: Retrieve release distributions
         uses: actions/download-artifact@v4
         with:
-          name: release-dists
+          name: release-dist
           path: dist/
       - name: Publish package distributions to TestPyPI
         uses: pypa/gh-action-pypi-publish@release/v1
