@@ -41,7 +41,7 @@ jobs:
         path: py-src/data_formulator/dist
     - name: Build python artifact
       run: |
-        ls py-src/data_formulator
+        ls -R py-src
         python -m build
     - name: Archive production artifacts
       uses: actions/upload-artifact@v4
