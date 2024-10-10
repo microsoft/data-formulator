@@ -43,9 +43,11 @@ Repository = "https://github.com/microsoft/data-formulator.git"
 
 [tool.setuptools]
 package-dir = {"" = "py-src"}
+include-package-data = false
 
 [tool.setuptools.package-data]
 data_formulator = ["py-src/data_formulator/dist/assets/*", "py-src/data_formulator/dist/*"]
+
 
 [project.scripts]
 data_formulator = "data_formulator:run_app"
