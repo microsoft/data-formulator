@@ -14,6 +14,11 @@ Transform data and create rich visualizations iteratively with AI 🪄. Try Data
 
 [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/microsoft/data-formulator?quickstart=1)
 
+<kbd>
+  <a target="_blank" rel="noopener noreferrer" href="https://codespaces.new/microsoft/data-formulator?quickstart=1" title="open Data Formulator in GitHub Codespaces"><img src="public/data-formulator-screenshot.png"></a>
+</kbd>
+
+
 ## News 🔥
 
 - [10-09-2024] Data Formulator python package released! 
@@ -21,14 +26,11 @@ Transform data and create rich visualizations iteratively with AI 🪄. Try Data
   - Our Codespace configuration is also updated for fast start up ⚡️. [[try it now!]](https://codespaces.new/microsoft/data-formulator?quickstart=1)
 
 - [10-09-2024] New experimental feature release: 
-  - Loading an image or a messy data snippet into Data Formulator, with AI parsing and cleaning it for you(!).
+  - Load an image or a messy text, and ask AI parsing and cleaning it for you(!). [[demo]](https://github.com/microsoft/data-formulator/pull/31#issuecomment-2403652717)
   
-- [10-01-2024] Initial release of Data Formulator, check out our [blog](https://www.microsoft.com/en-us/research/blog/data-formulator-exploring-how-ai-can-help-analysts-create-rich-data-visualizations/) and [video](https://youtu.be/3ndlwt0Wi3c)!
+- [10-01-2024] Initial release of Data Formulator, check out our [[blog]](https://www.microsoft.com/en-us/research/blog/data-formulator-exploring-how-ai-can-help-analysts-create-rich-data-visualizations/) and [[video]](https://youtu.be/3ndlwt0Wi3c)!
 
 
-<kbd>
-  <a target="_blank" rel="noopener noreferrer" href="https://codespaces.new/microsoft/data-formulator?quickstart=1" title="open Data Formulator in GitHub Codespaces"><img src="public/data-formulator-screenshot.png"></a>
-</kbd>
 
 ## Overview
 
