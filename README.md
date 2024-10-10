@@ -53,7 +53,7 @@ Play with Data Formulator with one of the following options:
 
   Data Formulator will be automatically opened in the browser at [http://localhost:5000](http://localhost:5000).
 
-- **Option 2: Codespaces (5 minute)**
+- **Option 2: Codespaces (5 minutes)**
   
   You can also run Data Formualtor in codespace, we have everything pre-configured. For more details, see [CODESPACES.md](CODESPACES.md).
   
