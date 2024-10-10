@@ -2,6 +2,7 @@
 // Licensed under the MIT License.
 
 import * as React from 'react';
+import validator from 'validator';
 
 import Tabs from '@mui/material/Tabs';
 import Tab from '@mui/material/Tab';
@@ -665,8 +666,12 @@ export const TableCopyDialogV2: React.FC<TableCopyDialogProps> = ({ buttonElemen
                             >
                                 <CancelIcon sx={{fontSize: 16}} />
                             </IconButton>
-                            <img style={{border: '1px lightgray solid', borderRadius: 4, maxWidth: 640, maxHeight: 360}} 
-                                 src={tableContent} alt="the image is corrupted, please try again." />
+                            {validator.isURL(tableContent) || validator.isDataURI(tableContent) ? (
+                                <img style={{border: '1px lightgray solid', borderRadius: 4, maxWidth: 640, maxHeight: 360}} 
+                                     src={tableContent} alt="the image is corrupted, please try again." />
+                            ) : (
+                                <Typography color="error">Invalid image data</Typography>
+                            )}
                         </Box>)
                     }
                     </Box>

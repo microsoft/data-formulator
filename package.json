@@ -41,7 +41,8 @@
         "vega": "^5.23.0",
         "vega-embed": "^6.21.0",
         "vega-lite": "^5.5.0",
-        "vm-browserify": "^1.1.2"
+        "vm-browserify": "^1.1.2",
+        "validator": "^13.12.0"
     },
     "scripts": {
         "start": "vite",
