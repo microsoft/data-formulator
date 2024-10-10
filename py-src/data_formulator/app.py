@@ -39,8 +39,10 @@ APP_ROOT = Path(os.path.join(Path(__file__).parent)).absolute()
 
 print(APP_ROOT)
 
-# try to look for stored openAI keys information from the ROOT dir
+# try to look for stored openAI keys information from the ROOT dir, 
+# this file might be in one of the two locations
 load_dotenv(os.path.join(APP_ROOT, "..", "..", 'openai-keys.env'))
+load_dotenv(os.path.join(APP_ROOT, 'openai-keys.env'))
 
 import os
 
