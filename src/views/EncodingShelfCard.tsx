@@ -275,7 +275,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
             extra_prompt: instruction,
             model: activeModel
         }) 
-        let engine = betaMode ? getUrls().SERVER_DERIVE_DATA_V2_URL : getUrls().SERVER_DERIVE_DATA_URL;
+        let engine = getUrls().SERVER_DERIVE_DATA_URL;
 
         if (mode == "formulate" && currentTable.derive?.dialog) {
             messageBody = JSON.stringify({

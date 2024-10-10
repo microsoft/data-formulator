@@ -1,6 +1,7 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
 
+import random
 import sys
 import os
 
@@ -10,6 +11,9 @@ from flask import stream_with_context, Response
 import html
 import pandas as pd
 
+import webbrowser
+import threading
+
 from flask_cors import CORS
 
 import json
@@ -18,33 +22,31 @@ from pathlib import Path
 
 from vega_datasets import data as vega_data
 
-APP_ROOT = Path(os.path.join(Path(__file__).parent, 'server')).absolute()
-sys.path.append(os.path.abspath(APP_ROOT))
+from data_formulator.agents.agent_concept_derive import ConceptDeriveAgent
+from data_formulator.agents.agent_data_transform_v2 import DataTransformationAgentV2
+from data_formulator.agents.agent_data_rec import DataRecAgent
 
-from agents.agent_concept_derive import ConceptDeriveAgent
-from agents.agent_data_transformation import DataTransformationAgent
-from agents.agent_data_transform_v2 import DataTransformationAgentV2
-from agents.agent_data_rec import DataRecAgent
+from data_formulator.agents.agent_sort_data import SortDataAgent
+from data_formulator.agents.agent_data_load import DataLoadAgent
+from data_formulator.agents.agent_data_clean import DataCleanAgent
+from data_formulator.agents.agent_code_explanation import CodeExplanationAgent
 
-from agents.agent_sort_data import SortDataAgent
-from agents.agent_data_load import DataLoadAgent
-from agents.agent_data_filter import DataFilterAgent
-from agents.agent_generic_py_concept import GenericPyConceptDeriveAgent
-from agents.agent_code_explanation import CodeExplanationAgent
-
-from agents.client_utils import get_client
-
-import pathlib
+from data_formulator.agents.client_utils import get_client
 
 from dotenv import load_dotenv
 
+APP_ROOT = Path(os.path.join(Path(__file__).parent)).absolute()
 
-APP_DIR = pathlib.Path(__file__).parent.resolve()
-load_dotenv(os.path.join(APP_DIR, 'openai-keys.env'))
+print(APP_ROOT)
+
+# try to look for stored openAI keys information from the ROOT dir, 
+# this file might be in one of the two locations
+load_dotenv(os.path.join(APP_ROOT, "..", "..", 'openai-keys.env'))
+load_dotenv(os.path.join(APP_ROOT, 'openai-keys.env'))
 
 import os
 
-app = Flask(__name__, static_url_path='', static_folder=os.path.join(APP_ROOT, "..", "dist"))
+app = Flask(__name__, static_url_path='', static_folder=os.path.join(APP_ROOT, "dist"))
 CORS(app)
 
 @app.route('/vega-datasets')
@@ -61,14 +63,6 @@ def get_example_dataset_list():
         except:
             pass
     
-    # this is a dataset we use for demoing the system
-    try:
-        with open('global-energy.json', 'r') as f:
-            info_obj = {'name': 'global-energy.csv', 'snapshot': json.dumps(json.load(f))} 
-            dataset_info.append(info_obj)
-    except:
-        pass
-    
     response = flask.jsonify(dataset_info)
     response.headers.add('Access-Control-Allow-Origin', '*')
     return response
@@ -76,14 +70,9 @@ def get_example_dataset_list():
 @app.route('/vega-dataset/<path:path>')
 def get_datasets(path):
     try:
-        # this is a dataset we use for demoing the system
-        if path == "global-energy.csv":
-            with open('global-energy.json', 'r') as f:
-                data_object = json.dumps(json.load(f))
-        else:
-            df = vega_data(path)
-            # to_json is necessary for handle NaN issues
-            data_object = df.to_json(None, 'records')
+        df = vega_data(path)
+        # to_json is necessary for handle NaN issues
+        data_object = df.to_json(None, 'records')
     except Exception as err:
         print(path)
         print(err)
@@ -286,6 +275,34 @@ def derive_concept_request():
     response.headers.add('Access-Control-Allow-Origin', '*')
     return response
 
+
+@app.route('/clean-data', methods=['GET', 'POST'])
+def clean_data_request():
+
+    if request.is_json:
+        app.logger.info("# data clean request")
+        content = request.get_json()
+        token = content["token"]
+
+        client = get_client(content['model']['endpoint'], content['model']['key'])
+        model = content['model']['model']
+
+        app.logger.info(f" model: {content['model']}")
+        
+        agent = DataCleanAgent(client=client, model=model)
+
+        candidates = agent.run(content['content_type'], content["raw_data"])
+        
+        candidates = [c for c in candidates if c['status'] == 'ok']
+
+        response = flask.jsonify({ "status": "ok", "token": token, "result": candidates })
+    else:
+        response = flask.jsonify({ "token": -1, "status": "error", "result": [] })
+
+    response.headers.add('Access-Control-Allow-Origin', '*')
+    return response
+
+
 @app.route('/codex-sort-request', methods=['GET', 'POST'])
 def sort_data_request():
 
@@ -407,29 +424,21 @@ def refine_data():
         
         print("previous dialog")
         print(dialog[0]['content'])
-        prev_system_prompt = dialog[0]['content']
 
-        if prev_system_prompt.startswith("You are a data scientist to help user to filter data based on user description."):
-            agent = DataFilterAgent(client, model=model)
-            results = agent.followup(input_tables[0], dialog, new_instruction)
-        elif prev_system_prompt.startswith("You are a data scientist to help user to derive new column based on existing columns in a dataset."):
-            agent = GenericPyConceptDeriveAgent(client, model=model)
-            new_field_name = [field['name'] for field in output_fields if field['name'] not in input_tables[0][0].keys()][0]
-            results = agent.followup(input_tables[0], new_field_name, dialog, new_instruction)
-        else:
-            agent = DataTransformationAgentV2(client, model=model)
-            results = agent.followup(input_tables, dialog, [field['name'] for field in output_fields], new_instruction)
+        # always resort to the data transform agent       
+        agent = DataTransformationAgentV2(client, model=model)
+        results = agent.followup(input_tables, dialog, [field['name'] for field in output_fields], new_instruction)
 
-            repair_attempts = 0
-            while results[0]['status'] == 'error' and repair_attempts < 2:
-                error_message = results[0]['content']
-                new_instruction = f"We run into the following problem executing the code, please fix it:\n\n{error_message}\n\nPlease think step by step, reflect why the error happens and fix the code so that no more errors would occur."
+        repair_attempts = 0
+        while results[0]['status'] == 'error' and repair_attempts < 2:
+            error_message = results[0]['content']
+            new_instruction = f"We run into the following problem executing the code, please fix it:\n\n{error_message}\n\nPlease think step by step, reflect why the error happens and fix the code so that no more errors would occur."
 
-                response_message = dialog['response']['choices'][0]['message']
-                prev_dialog = [*dialog['messages'], {"role": response_message['role'], 'content': response_message['content']}]
+            response_message = dialog['response']['choices'][0]['message']
+            prev_dialog = [*dialog['messages'], {"role": response_message['role'], 'content': response_message['content']}]
 
-                results = agent.followup(input_tables, prev_dialog, [field['name'] for field in output_fields], new_instruction)
-                repair_attempts += 1
+            results = agent.followup(input_tables, prev_dialog, [field['name'] for field in output_fields], new_instruction)
+            repair_attempts += 1
 
         response = flask.jsonify({ "status": "ok", "token": token, "results": results})
     else:
@@ -438,8 +447,15 @@ def refine_data():
     response.headers.add('Access-Control-Allow-Origin', '*')
     return response
 
+def run_app():
+    port = 5000 #+ random.randint(0, 999)
+    url = "http://localhost:{0}".format(port)
 
+    threading.Timer(2, lambda: webbrowser.open(url, new=2) ).start()
+
+    app.run(host='0.0.0.0', port=port, threaded=True)
+    
 if __name__ == '__main__':
     #app.run(debug=True, host='127.0.0.1', port=5000)
     #use 0.0.0.0 for public
-    app.run(host='0.0.0.0', port=5000, threaded=True)
+    run_app()

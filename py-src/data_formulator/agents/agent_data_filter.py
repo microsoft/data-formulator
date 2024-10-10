@@ -3,8 +3,8 @@
 
 import json
 
-from agents.agent_utils import generate_data_summary, extract_code_from_gpt_response
-import py_sandbox
+from data_formulator.agents.agent_utils import generate_data_summary, extract_code_from_gpt_response
+import data_formulator.py_sandbox as py_sandbox
 
 import logging
 

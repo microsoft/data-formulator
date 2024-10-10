@@ -158,7 +158,7 @@ const scatterPlots: ChartTemplate[] = [
             "y": ["encoding", "y"], // a object can have multiple destinations
             "color": ["layer", 1, "encoding", "color"]
         },
-        "postProcessor": (vgSpec: any) => {
+        "postProcessor": (vgSpec: any,  table: any[]) => {
             if (vgSpec.encoding.y?.type == "nominal") {
                 vgSpec['layer'][0]['encoding']['detail'] = JSON.parse(JSON.stringify(vgSpec['encoding']['y']))
             } else if (vgSpec.encoding.x?.type == "nominal") {
@@ -178,7 +178,7 @@ const scatterPlots: ChartTemplate[] = [
         },
         "channels": ["x", "y", "color", "opacity", "column", "row"],
         "paths": Object.fromEntries(["x", "y", "color", "opacity", "column", "row"].map(channel => [channel, ["encoding", channel]])),
-        "postProcessor": (vgSpec: any) => {
+        "postProcessor": (vgSpec: any,  table: any[]) => {
             if (vgSpec.encoding.x && vgSpec.encoding.x.type != "nominal") {
                 vgSpec.encoding.x.type = "nominal";
             } 
@@ -202,6 +202,62 @@ const barCharts: ChartTemplate[] = [
             "color": ["encoding", "color"],
             "column": ["encoding", "column"],
             "row": ["encoding", "row"]
+        }
+    },
+    {
+        "chart": "Pyramid Chart",
+        "icon": chartIconColumn,
+        "template": {
+            "spacing": 0,
+            
+            "resolve": {"scale": {"y": "shared"}},
+            "hconcat": [{
+                "mark": "bar",
+                "encoding": {
+                    "y": { },
+                    "x": { "scale": {"reverse": true}, "stack": null},
+                    "color": {  "legend": null },
+                    "opacity": {"value": 0.9}
+                }
+            }, {
+                "mark": "bar",
+                "encoding": {
+                    "y": {"axis": null},
+                    "x": {"stack": null},
+                    "color": { "legend": null},
+                    "opacity": {"value": 0.9},
+                }
+            }],
+            "config": {
+                "view": {"stroke": null},
+                "axis": {"grid": false}
+            },
+        },
+        "channels": ["x", "y", "color"],
+        "paths": {
+            "x": [["hconcat", 0, "encoding", "x"], ["hconcat", 1, "encoding", "x"]],
+            "y": [["hconcat", 0, "encoding", "y"], ["hconcat", 1, "encoding", "y"]],
+            "color": [["hconcat", 0, "encoding", "color"], ["hconcat", 1, "encoding", "color"]],
+        },
+        "postProcessor": (vgSpec: any, table: any[]) => {
+            try {
+                if (table) {
+                    let colorField = vgSpec['hconcat'][0]['encoding']['color']['field'];
+                    let colorValues = [...new Set(table.map(r => r[colorField]))] ;
+                    vgSpec.hconcat[0].transform = [{"filter": `datum[\"${colorField}\"] == \"${colorValues[0]}\"`}]
+                    vgSpec.hconcat[0].title = colorValues[0]
+                    vgSpec.hconcat[1].transform = [{"filter": `datum[\"${colorField}\"] == \"${colorValues[1]}\"`}]
+                    vgSpec.hconcat[1].title = colorValues[1]
+                    let xField = vgSpec['hconcat'][0]['encoding']['x']['field'];
+                    let xValues = [...new Set(table.filter(r => r[colorField] == colorValues[0] || r[colorField] == colorValues[1]).map(r => r[xField]))];
+                    let domain = [Math.min(...xValues, 0), Math.max(...xValues)]
+                    vgSpec.hconcat[0]['encoding']['x']['scale']['domain'] = domain;
+                    vgSpec.hconcat[1]['encoding']['x']['scale'] = {domain: domain};
+                }
+            } catch {
+
+            }
+            return vgSpec;
         }
     },
     {
@@ -357,7 +413,7 @@ let tableCharts : ChartTemplate[] = [
         },
         "channels": ["x", "y", "color", "column", "row"],
         "paths": Object.fromEntries(["x", "y", "color", "column", "row"].map(channel => [channel, ["encoding", channel]])),
-        "postProcessor": (vgSpec: any) => {
+        "postProcessor": (vgSpec: any, table: any[]) => {
             if (vgSpec.encoding.y && vgSpec.encoding.y.type != "nominal") {
                 vgSpec.encoding.y.type = "nominal";
             } 

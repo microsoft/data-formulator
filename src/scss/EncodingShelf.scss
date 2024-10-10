@@ -46,19 +46,17 @@
     }
 }
 
-
 .auto-sort-option-label {
     width: calc(100% - 24px);
     overflow: hidden;
     display: -webkit-box;
-    -webkit-line-clamp: 1;
+    line-clamp: 2;
+    -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
     background: #fff;
     text-align: left;
-    font-size: smaller;
     white-space: normal;
-    font-size: smaller !important;
-    font-style: italic;
+    font-size: xx-small !important;
 }
 
 .channel-shelf-box {
