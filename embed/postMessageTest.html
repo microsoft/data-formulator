@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Data Formulator embedded iframe</title>
+</head>
+
+<body>
+    <iframe id="df" src="./index.html" style="width:1500px;height:1000px"></iframe>
+    <div>
+        <button onclick="postMessageToIframe()">Post Load Data message to iframe</button>
+    </div>
+    <script>
+        function postMessageToIframe() {
+            var iframe = document.getElementById('df');
+
+            //create 10 rows of fake data objects like cars dataset. make sure not every manufacturer od Toyota
+            const data = [
+                {
+                    "manufacturer": "Toyota",
+                    "model": "Corolla",
+                    "year": 2019,
+                    "price": 20000
+                },
+                {
+                    "manufacturer": "Toyota",
+                    "model": "Camry",
+                    "year": 2019,
+                    "price": 25000
+                },
+                {
+                    "manufacturer": "Toyota",
+                    "model": "RAV4",
+                    "year": 2019,
+                    "price": 30000
+                },
+                {
+                    "manufacturer": "Toyota",
+                    "model": "Highlander",
+                    "year": 2019,
+                    "price": 35000
+                },
+                {
+                    "manufacturer": "Toyota",
+                    "model": "4Runner",
+                    "year": 2019,
+                    "price": 40000
+                },
+                {
+                    "manufacturer": "Ford",
+                    "model": "Fusion",
+                    "year": 2019,
+                    "price": 20000
+                },
+                {
+                    "manufacturer": "Ford",
+                    "model": "Focus",
+                    "year": 2019,
+                    "price": 25000
+                },
+                {
+                    "manufacturer": "Ford",
+                    "model": "Escape",
+                    "year": 2019,
+                    "price": 30000
+                },
+                {
+                    "manufacturer": "Ford",
+                    "model": "Explorer",
+                    "year": 2019,
+                    "price": 35000
+                },
+                {
+                    "manufacturer": "Ford",
+                    "model": "Expedition",
+                    "year": 2019,
+                    "price": 40000
+                }
+            ];
+
+            //create a message object to send to the iframe
+            /* schema is:
+            interface LoadDataAction extends Action {
+                actionName: "loadData";
+                actionParams: {
+                    tableName: string;
+                    table: object[];
+                }
+            }
+            */
+
+            const configMessage = {
+                actionName: 'setConfig',
+                actionParams: {
+                    serverUrl: 'http://localhost:5000/',
+                }
+            };
+
+            iframe.contentWindow.postMessage(configMessage, '*');
+
+            const dataMessage = {
+                actionName: 'loadData',
+                actionParams: {
+                    tableName: 'cars',
+                    table: data,
+                }
+            };
+
+            iframe.contentWindow.postMessage(dataMessage, '*');
+        }
+    </script>
+</body>
+
+</html>
