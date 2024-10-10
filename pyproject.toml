@@ -46,7 +46,7 @@ package-dir = {"" = "py-src"}
 include-package-data = true
 
 [tool.setuptools.package-data]
-data_formulator = ['py-src/data_formulator/dist/assets/*', py-src/data_formulator/dist/*]
+data_formulator = ["py-src/data_formulator/dist/assets/*", "py-src/data_formulator/dist/*"]
 
 
 [project.scripts]
