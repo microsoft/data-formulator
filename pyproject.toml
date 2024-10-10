@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools >= 75.0"]
+requires = [ "setuptools >= 75.0" ]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -43,10 +43,7 @@ Repository = "https://github.com/microsoft/data-formulator.git"
 
 [tool.setuptools]
 package-dir = {"" = "py-src"}
-
-[tool.setuptools.package-data]
-"*" = ["py-src/data_formulator/dist/assets/*", "py-src/data_formulator/dist/*"]
-
+include-package-data = true
 
 [project.scripts]
 data_formulator = "data_formulator:run_app"

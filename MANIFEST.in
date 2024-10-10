@@ -1,0 +1,2 @@
+include py-src/data_formulator/dist/*
+include py-src/data_formulator/dist/assets/*
