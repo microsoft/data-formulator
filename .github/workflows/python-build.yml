@@ -32,9 +32,15 @@ jobs:
         python -m pip install --upgrade pip
         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
         python -m pip install build
+    - name: Build frontend
+      run: yarn build
+    - name: Archive production artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: frontend-dist
+        path: py-src/data_formulator/dist
     - name: Build python artifact
       run: |
-        yarn build
         ls py-src/data_formulator
         python -m build
     - name: Archive production artifacts
@@ -43,19 +49,19 @@ jobs:
         name: release-dist
         path: dist
 
-  pypi-publish:
-    runs-on: ubuntu-latest
-    needs:
-      - build
-    permissions:
-      id-token: write
-    steps:
-      - name: Retrieve release distributions
-        uses: actions/download-artifact@v4
-        with:
-          name: release-dist
-          path: dist/
-      - name: Publish package distributions to TestPyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          repository-url: https://test.pypi.org/legacy/
+  # pypi-publish:
+  #   runs-on: ubuntu-latest
+  #   needs:
+  #     - build
+  #   permissions:
+  #     id-token: write
+  #   steps:
+  #     - name: Retrieve release distributions
+  #       uses: actions/download-artifact@v4
+  #       with:
+  #         name: release-dist
+  #         path: dist/
+  #     - name: Publish package distributions to TestPyPI
+  #       uses: pypa/gh-action-pypi-publish@release/v1
+  #       with:
+  #         repository-url: https://test.pypi.org/legacy/
