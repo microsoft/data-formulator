@@ -7,6 +7,7 @@
 [![arxiv](https://img.shields.io/badge/Paper-arXiv:2408.16119-b31b1b.svg)](https://arxiv.org/abs/2408.16119)&ensp;
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)&ensp;
 [![YouTube](https://img.shields.io/badge/YouTube-white?logo=youtube&logoColor=%23FF0000)](https://youtu.be/3ndlwt0Wi3c)&ensp;
+[![build](https://github.com/microsoft/data-formulator/actions/workflows/python-build.yml/badge.svg)](https://github.com/microsoft/data-formulator/actions/workflows/python-build.yml)
 
 </div>
 
@@ -69,19 +70,22 @@ Play with Data Formulator with one of the following options:
 Once you’ve completed the setup using either option, follow these steps to start using Data Formulator:
 
 ### The basics of data visualization
-* Provide OpenAI keys and select a model (GPT-4o suggested) and choose a dataset  
-* Choose a visualization type
-* Drag and drop data fields to the encoding shelf to create visualization
-
+* Provide OpenAI keys and select a model (GPT-4o suggested) and choose a dataset.
+* Choose a chart type, and then drag-and-drop data fields to chart properties (x, y, color, ...) to specify visual encodings.
 
 https://github.com/user-attachments/assets/0fbea012-1d2d-46c3-a923-b1fc5eb5e5b8
 
 
 ### Create visualization beyond the initial dataset (powered by 🤖)
-* Add new field names in the encoding shelf, describe the chart intent
-* Click the **Formulate** button
-* Inspect the code behind the concept
-* Follow up the chart to create new ones
+* You can type names of **fields that do not exist in current data** in the encoding shelf:
+    - this tells Data Formulator that you want to create visualizions that require computation or transformation from existing data,
+    - you can optionally provide a natural language prompt to explain your intent to clarify your intent (not necessary when field names are self-explanatory).
+* Click the **Formulate** button.
+    - Data Formulator will transform data and instantiate the visualization based on the encoding and prompt.
+* Inspect the data, chart and code.
+* To create a new chart based on existing ones, follow up in natural language:
+    - provide a follow up prompt (e.g., *``show only top 5!''*),
+    - you may also update visual encodings for the new chart.
 
 https://github.com/user-attachments/assets/160c69d2-f42d-435c-9ff3-b1229b5bddba
 
@@ -92,7 +96,6 @@ Repeat this process as needed to explore and understand your data. Your explorat
 ## Developers
 
 Follow the [developers' instructions](DEVELOPMENT.md) to build your new data analysis tools on top of Data Formulator.
-
 
 ## Research Papers
 * [Data Formulator 2: Iteratively Creating Rich Visualizations with AI](https://arxiv.org/abs/2408.16119)
