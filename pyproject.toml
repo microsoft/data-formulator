@@ -1,0 +1,49 @@
+[build-system]
+requires = [ "setuptools >= 75.0" ]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "data_formulator"
+version = "0.1.2"
+
+requires-python = ">=3.9"
+authors = [
+  {name = "Chenglong Wang", email = "chenglong.wang@microsoft.com"},
+  {name = "Dan Marshall", email = "danmar@microsoft.com"},
+]
+readme = "README.md"
+license = {file = "LICENSE"}
+description = "Data Formulator is research protoype data visualization tool powered by AI."
+keywords = ["data visualization", "LLM", "AI"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Programming Language :: Python"
+]
+
+dependencies = [  
+    "autopep8",  
+    "jupyter",  
+    "pandas",  
+    "docker",  
+    "namedlist",  
+    "matplotlib",  
+    "flask",  
+    "flask-cors",  
+    "openai",  
+    "azure-identity",  
+    "azure-keyvault-secrets",  
+    "python-dotenv",  
+    "vega_datasets"
+]
+
+[project.urls]
+Homepage = "https://github.com/microsoft/data-formulator"
+Repository = "https://github.com/microsoft/data-formulator.git"
+"Bug Tracker" = "https://github.com/microsoft/data-formulator/issues"
+
+[tool.setuptools]
+package-dir = {"" = "py-src"}
+include-package-data = true
+
+[project.scripts]
+data_formulator = "data_formulator:run_app"
