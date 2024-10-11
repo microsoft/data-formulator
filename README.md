@@ -20,14 +20,12 @@ Transform data and create rich visualizations iteratively with AI 🪄. Try Data
 </kbd>
 
 
-## News 🔥
+## News 🔥🔥🔥
 
-- [10-09-2024] Data Formulator python package released! 
+- [10-11-2024] Data Formulator python package released! 
   - You can now install Data Formulator using Python and run it locally, easily. [[check it out]](#get-started).
   - Our Codespace configuration is also updated for fast start up ⚡️. [[try it now!]](https://codespaces.new/microsoft/data-formulator?quickstart=1)
-
-- [10-09-2024] New experimental feature release: 
-  - Load an image or a messy text, and ask AI parsing and cleaning it for you(!). [[demo]](https://github.com/microsoft/data-formulator/pull/31#issuecomment-2403652717)
+  - New exprimental feature: load an image or a messy text, and ask AI parsing and cleaning it for you(!). [[demo]](https://github.com/microsoft/data-formulator/pull/31#issuecomment-2403652717)
   
 - [10-01-2024] Initial release of Data Formulator, check out our [[blog]](https://www.microsoft.com/en-us/research/blog/data-formulator-exploring-how-ai-can-help-analysts-create-rich-data-visualizations/) and [[video]](https://youtu.be/3ndlwt0Wi3c)!
 
@@ -45,11 +43,17 @@ Play with Data Formulator with one of the following options:
 
 - **Option 1: Install via Python PIP**
   
-  Use Python PIP for an easy setup experience, running locally.
+  Use Python PIP for an easy setup experience, running locally (recommend: install it in a virtual environment).
   
-  ```
-  >> pip install data_formulator
-  >> data_formulator
+  ```bash
+  # install data_formulator
+  pip install data_formulator
+
+  # start data_formulator
+  data_formulator 
+  
+  # alternatively, you can run data formualtor with this command
+  python -m data_formulator
   ```
 
   Data Formulator will be automatically opened in the browser at [http://localhost:5000](http://localhost:5000).
@@ -93,7 +97,7 @@ https://github.com/user-attachments/assets/c93b3e84-8ca8-49ae-80ea-f91ceef34acb
 
 Repeat this process as needed to explore and understand your data. Your explorations are trackable in the **Data Threads** panel. 
 
-## Developers
+## Developers' Guide
 
 Follow the [developers' instructions](DEVELOPMENT.md) to build your new data analysis tools on top of Data Formulator.
 
