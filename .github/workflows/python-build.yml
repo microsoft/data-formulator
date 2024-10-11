@@ -16,10 +16,10 @@ jobs:
       fail-fast: false
     steps:
     - uses: actions/checkout@v4
-    - name: Set Node.js 18.x
+    - name: Set Node.js 20.x
       uses: actions/setup-node@v3
       with:
-        node-version: 18.x
+        node-version: 20.x
         cache: 'yarn'
     - name: Set up Python 3.12
       uses: actions/setup-python@v3
@@ -46,6 +46,7 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - build
+    if: github.event.pull_request.merged
     environment:
       name: pypi
       url: https://pypi.org/p/data-formulator
