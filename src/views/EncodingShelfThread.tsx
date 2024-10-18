@@ -284,16 +284,21 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
                 dispatch(dfActions.changeChartRunningStatus({chartId, status: false}))
                 console.log(data);
                 console.log(token);
-                if (data["status"] == "ok") {
+                if (data.results.length > 0) {
                     if (data["token"] == token) {
-                        let candidates = data["results"].filter((item: any) => {
-                            return item["content"].length > 0 
+                        let candidates = data.results.filter((item: any) => {
+                            return item["status"] == "ok" && item["content"].length > 0 
                         });
+
                         if (candidates.length == 0) {
+                            let errorMessage = data.results[0].content;
+                            let code = data.results[0].code;
                             dispatch(dfActions.addMessages({
                                 "timestamp": Date.now(),
                                 "type": "error",
-                                "value": "Unable to find a data transformation for the chart, please check concepts, encodings and clarification questions."
+                                "value": `Data formulation failed, please retry.`,
+                                "code": code,
+                                "detail": errorMessage
                             }));
                         } else {
 
@@ -374,7 +379,7 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
                             dispatch(dfActions.addMessages({
                                 "timestamp": Date.now(),
                                 "type": "success",
-                                "value": `Data formulation for ${fieldNamesStr} complete, found ${candidates.length} candidates.`
+                                "value": `Data formulation for ${fieldNamesStr} succeeded.`
                             }));
                         }
                     }
@@ -383,7 +388,7 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
                     dispatch(dfActions.addMessages({
                         "timestamp": Date.now(),
                         "type": "error",
-                        "value": "unable to perform data formulation."
+                        "value": "No result is returned from the data formulation agent. Please try again."
                     }));
                 }
             }).catch((error) => {
@@ -393,7 +398,8 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
                 dispatch(dfActions.addMessages({
                     "timestamp": Date.now(),
                     "type": "error",
-                    "value": `Data formulation for ${fieldNamesStr} failed due to network issue.`
+                    "value": `Data formulation failed, please try again.`,
+                    "detail": error.message
                 }));
             });
     }

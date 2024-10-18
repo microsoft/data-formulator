@@ -311,28 +311,23 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                 dispatch(dfActions.changeChartRunningStatus({chartId, status: false}))
                 console.log(data);
                 console.log(token);
-                if (data["status"] == "ok") {
+                if (data.results.length > 0) {
                     if (data["token"] == token) {
                         let candidates = data["results"].filter((item: any) => {
                             return item["status"] == "ok" && item["content"].length > 0 
                         });
-                        console.log(data)
-                        console.log(data.results[0])
+
                         if (candidates.length == 0) {
-                            try {
-                                let errorMessage = data.results[0].content;
-                                dispatch(dfActions.addMessages({
-                                    "timestamp": Date.now(),
-                                    "type": "error",
-                                    "value": `Unable to find a data transformation for the chart, please check concepts, encodings and clarification questions. Details: "${errorMessage}"`
-                                }));
-                            } catch (e) {
-                                dispatch(dfActions.addMessages({
-                                    "timestamp": Date.now(),
-                                    "type": "error",
-                                    "value": `Unable to find a data transformation for the chart, please check concepts, encodings and clarification questions.`
-                                }));
-                            }
+                            let errorMessage = data.results[0].content;
+                            let code = data.results[0].code;
+
+                            dispatch(dfActions.addMessages({
+                                "timestamp": Date.now(),
+                                "type": "error",
+                                "value": `Data formulation failed, please retry.`,
+                                "code": code,
+                                "detail": errorMessage
+                            }));
                         } else {
 
                             // PART 1: handle triggers
@@ -455,7 +450,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                             dispatch(dfActions.addMessages({
                                 "timestamp": Date.now(),
                                 "type": "success",
-                                "value": `Data formulation for ${fieldNamesStr} complete, found ${candidates.length} candidates.`
+                                "value": `Data formulation for ${fieldNamesStr} succeeded.`
                             }));
                         }
                     }
@@ -464,7 +459,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                     dispatch(dfActions.addMessages({
                         "timestamp": Date.now(),
                         "type": "error",
-                        "value": "unable to perform data formulation."
+                        "value": "No result is returned from the data formulation agent. Please try again."
                     }));
                 }
             }).catch((error) => {
@@ -473,7 +468,8 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                 dispatch(dfActions.addMessages({
                     "timestamp": Date.now(),
                     "type": "error",
-                    "value": `Data formulation for ${fieldNamesStr} fails, maybe try something differently? Error: ${error.message}`
+                    "value": `Data formulation failed, please try again.`,
+                    "detail": error.message
                 }));
             });
     }

@@ -232,13 +232,14 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                     let statusIcon = status  == "unknown" ? <HelpOutlineIcon color="warning" /> : ( status == 'testing' ? <CircularProgress size={24} />:
                             (status == "ok" ? <CheckCircleOutlineIcon color="success"/> : <ErrorOutlineIcon color="error"/> ))
                     
+                    let message = status == "unknown" ? "Status unknown, click the status icon to test again." : 
+                        (testedModels.find(m => m.model === oaiModel.model && m.endpoint === oaiModel.endpoint)?.message || "Unknown error");
                     const borderStyle = ['error', 'unknown'].includes(status) ? '1px dashed lightgray' : undefined;
                     const noBorderStyle = ['error', 'unknown'].includes(status) ? 'none' : undefined;
 
                     return (
                         <>
                         <TableRow
-                            
                             role="checkbox"
                             aria-checked={isItemSelected}
                             selected={isItemSelected}
@@ -304,7 +305,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                                 <TableCell colSpan={2} align="right" ></TableCell>
                                 <TableCell colSpan={5}>
                                     <Typography variant="caption" color="error">
-                                        {testedModels.find(m => m.model === oaiModel.model && m.endpoint === oaiModel.endpoint)?.message || "Unknown error"}
+                                        {message}
                                     </Typography>
                                 </TableCell>
                             </TableRow>

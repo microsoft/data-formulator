@@ -156,22 +156,22 @@ class DataRecAgent(object):
 
             if len(code_blocks) > 0:
                 code_str = code_blocks[-1]
+
                 try:
                     result = py_sandbox.run_transform_in_sandbox2020(code_str, [t['rows'] for t in input_tables])
+                    result['code'] = code_str
 
                     if result['status'] == 'ok':
-                        new_data = json.loads(result['content'])
-                        result['content'] = new_data
+                        result['content'] = json.loads(result['content'])
                     else:
                         logger.info(result['content'])
-                    result['code'] = code_str
                 except Exception as e:
                     logger.warning('other error:')
                     error_message = traceback.format_exc()
                     logger.warning(error_message)
-                    result = {'status': 'other error', 'content': error_message}
+                    result = {'status': 'other error', 'code': code_str, 'content': f"Unexpected error: {error_message}"}
             else:
-                result = {'status': 'no transformation', 'content': input_tables[0]['rows']}
+                result = {'status': 'no transformation', 'code': "", 'content': input_tables[0]['rows']}
             
             result['dialog'] = [*messages, {"role": choice.message.role, "content": choice.message.content}]
             result['agent'] = 'DataRecAgent'

@@ -365,7 +365,7 @@ def derive_data():
             results = agent.run(input_tables, instruction, [field['name'] for field in new_fields])
 
         repair_attempts = 0
-        while results[0]['status'] == 'error' and repair_attempts < 2:
+        while results[0]['status'] == 'error' and repair_attempts == 0: # only try once
             error_message = results[0]['content']
             new_instruction = f"We run into the following problem executing the code, please fix it:\n\n{error_message}\n\nPlease think step by step, reflect why the error happens and fix the code so that no more errors would occur."
 
@@ -378,34 +378,12 @@ def derive_data():
 
             repair_attempts += 1
         
-        response = flask.jsonify({ "status": "ok", "token": token, "results": results })
+        response = flask.jsonify({ "token": token, "status": "ok", "results": results })
     else:
         response = flask.jsonify({ "token": "", "status": "error", "results": [] })
 
     response.headers.add('Access-Control-Allow-Origin', '*')
     return response
-
-
-@app.route('/code-expl', methods=['GET', 'POST'])
-def request_code_expl():
-    if request.is_json:
-        app.logger.info("# request data: ")
-        content = request.get_json()        
-        token = content["token"]
-
-        client = get_client(content['model']['endpoint'], content['model']['key'])
-        model = content['model']['model']
-        app.logger.info(f" model: {content['model']}")
-
-        # each table is a dict with {"name": xxx, "rows": [...]}
-        input_tables = content["input_tables"]
-        code = content["code"]
-        
-        code_expl_agent = CodeExplanationAgent(client=client, model=model)
-        expl = code_expl_agent.run(input_tables, code)
-    else:
-        expl = ""
-    return expl
 
 @app.route('/refine-data', methods=['GET', 'POST'])
 def refine_data():
@@ -433,20 +411,41 @@ def refine_data():
         results = agent.followup(input_tables, dialog, [field['name'] for field in output_fields], new_instruction)
 
         repair_attempts = 0
-        while results[0]['status'] == 'error' and repair_attempts < 2:
+        while results[0]['status'] == 'error' and repair_attempts == 0: # only try once
             error_message = results[0]['content']
             new_instruction = f"We run into the following problem executing the code, please fix it:\n\n{error_message}\n\nPlease think step by step, reflect why the error happens and fix the code so that no more errors would occur."
+            prev_dialog = results[0]['dialog']
 
-            results = agent.followup(input_tables, dialog, [field['name'] for field in output_fields], new_instruction)
+            results = agent.followup(input_tables, prev_dialog, [field['name'] for field in output_fields], new_instruction)
             repair_attempts += 1
 
-        response = flask.jsonify({ "status": "ok", "token": token, "results": results})
+        response = flask.jsonify({ "token": token, "status": "ok", "results": results})
     else:
         response = flask.jsonify({ "token": "", "status": "error", "results": []})
 
     response.headers.add('Access-Control-Allow-Origin', '*')
     return response
 
+@app.route('/code-expl', methods=['GET', 'POST'])
+def request_code_expl():
+    if request.is_json:
+        app.logger.info("# request data: ")
+        content = request.get_json()        
+        token = content["token"]
+
+        client = get_client(content['model']['endpoint'], content['model']['key'])
+        model = content['model']['model']
+        app.logger.info(f" model: {content['model']}")
+
+        # each table is a dict with {"name": xxx, "rows": [...]}
+        input_tables = content["input_tables"]
+        code = content["code"]
+        
+        code_expl_agent = CodeExplanationAgent(client=client, model=model)
+        expl = code_expl_agent.run(input_tables, code)
+    else:
+        expl = ""
+    return expl
 def run_app():
     port = 5000 #+ random.randint(0, 999)
     url = "http://localhost:{0}".format(port)
