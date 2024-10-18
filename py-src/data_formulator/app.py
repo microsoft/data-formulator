@@ -147,15 +147,18 @@ def test_model():
                     "endpoint": endpoint,
                     "key": key,
                     "model": model,
-                    "status": 'ok'
+                    "status": 'ok',
+                    "message": ""
                 }
         except Exception as e:
-            print(e)
+            print(f"Error: {e}")
+            error_message = str(e)
             result = {
                 "endpoint": endpoint,
                 "key": key,
                 "model": model,
-                "status": 'error'
+                "status": 'error',
+                "message": error_message,
             }
     else:
         {'status': 'error'}
@@ -423,7 +426,7 @@ def refine_data():
         new_instruction = content["new_instruction"]
         
         print("previous dialog")
-        print(dialog[0]['content'])
+        print(dialog)
 
         # always resort to the data transform agent       
         agent = DataTransformationAgentV2(client, model=model)
@@ -434,10 +437,7 @@ def refine_data():
             error_message = results[0]['content']
             new_instruction = f"We run into the following problem executing the code, please fix it:\n\n{error_message}\n\nPlease think step by step, reflect why the error happens and fix the code so that no more errors would occur."
 
-            response_message = dialog['response']['choices'][0]['message']
-            prev_dialog = [*dialog['messages'], {"role": response_message['role'], 'content': response_message['content']}]
-
-            results = agent.followup(input_tables, prev_dialog, [field['name'] for field in output_fields], new_instruction)
+            results = agent.followup(input_tables, dialog, [field['name'] for field in output_fields], new_instruction)
             repair_attempts += 1
 
         response = flask.jsonify({ "status": "ok", "token": token, "results": results})

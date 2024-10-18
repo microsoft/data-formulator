@@ -30,7 +30,7 @@ export interface DataFormulatorState {
 
     oaiModels: {endpoint: string, key: string, model: string }[];
     selectedModel: {endpoint: string, model: string}  | undefined;
-    testedModels: {endpoint: string, model: string, status: 'ok' | 'error' | 'testing' | 'unknown'}[];
+    testedModels: {endpoint: string, model: string, status: 'ok' | 'error' | 'testing' | 'unknown', message: string}[];
 
     tables : DictTable[];
     charts: Chart[];
@@ -278,12 +278,13 @@ export const dataFormulatorSlice = createSlice({
             state.oaiModels = state.oaiModels.filter(oaiModel => oaiModel.model != model || oaiModel.endpoint != endpoint );
             state.testedModels = state.testedModels.filter(m => !(m.model == model && m.endpoint == endpoint));
         },
-        updateModelStatus: (state, action: PayloadAction<{model: string, endpoint: string, status: 'ok' | 'error' | 'testing' | 'unknown'}>) => {
+        updateModelStatus: (state, action: PayloadAction<{model: string, endpoint: string, status: 'ok' | 'error' | 'testing' | 'unknown', message: string}>) => {
             let model = action.payload.model;
             let endpoint = action.payload.endpoint;
             let status = action.payload.status;
-
-            state.testedModels = [...state.testedModels.filter(t => !(t.model == model && t.endpoint == endpoint)), {model, endpoint, status} ]
+            let message = action.payload.message;
+            
+            state.testedModels = [...state.testedModels.filter(t => !(t.model == model && t.endpoint == endpoint)), {model, endpoint, status, message} ]
         },
         addTable: (state, action: PayloadAction<DictTable>) => {
             let table = action.payload;

@@ -314,14 +314,25 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                 if (data["status"] == "ok") {
                     if (data["token"] == token) {
                         let candidates = data["results"].filter((item: any) => {
-                            return item["content"].length > 0 
+                            return item["status"] == "ok" && item["content"].length > 0 
                         });
+                        console.log(data)
+                        console.log(data.results[0])
                         if (candidates.length == 0) {
-                            dispatch(dfActions.addMessages({
-                                "timestamp": Date.now(),
-                                "type": "error",
-                                "value": "Unable to find a data transformation for the chart, please check concepts, encodings and clarification questions."
-                            }));
+                            try {
+                                let errorMessage = data.results[0].content;
+                                dispatch(dfActions.addMessages({
+                                    "timestamp": Date.now(),
+                                    "type": "error",
+                                    "value": `Unable to find a data transformation for the chart, please check concepts, encodings and clarification questions. Details: "${errorMessage}"`
+                                }));
+                            } catch (e) {
+                                dispatch(dfActions.addMessages({
+                                    "timestamp": Date.now(),
+                                    "type": "error",
+                                    "value": `Unable to find a data transformation for the chart, please check concepts, encodings and clarification questions.`
+                                }));
+                            }
                         } else {
 
                             // PART 1: handle triggers
@@ -462,7 +473,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                 dispatch(dfActions.addMessages({
                     "timestamp": Date.now(),
                     "type": "error",
-                    "value": `Data formulation for ${fieldNamesStr} fails, maybe try something differently?`
+                    "value": `Data formulation for ${fieldNamesStr} fails, maybe try something differently? Error: ${error.message}`
                 }));
             });
     }

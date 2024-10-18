@@ -205,7 +205,7 @@ class DataTransformationAgentV2(object):
         #logger.info(response.prompt_filter_results)
 
         if isinstance(response, Exception):
-            result = {'status': 'other error', 'content': response.body}
+            result = {'status': 'other error', 'content': str(response.body)}
             return [result]
         
         candidates = []
@@ -233,10 +233,11 @@ class DataTransformationAgentV2(object):
                         logger.info(result['content'])
                     result['code'] = code_str
                 except Exception as e:
-                    logger.warning('other error:')
-                    error_message = traceback.format_exc()
+                    logger.warning('Error occurred during code execution:')
+                    error_message = str(e)
                     logger.warning(error_message)
-                    result = {'status': 'other error', 'content': error_message}
+                    print(error_message)
+                    result = {'status': 'other error', 'content': f"An error occurred while executing the transformation: {error_message}"}
             else:
                 result = {'status': 'no transformation', 'content': input_tables[0]['rows']}
             

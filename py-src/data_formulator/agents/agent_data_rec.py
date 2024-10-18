@@ -137,7 +137,7 @@ class DataRecAgent(object):
         #log = {'messages': messages, 'response': response.model_dump(mode='json')}
 
         if isinstance(response, Exception):
-            result = {'status': 'other error', 'content': response.body}
+            result = {'status': 'other error', 'content': str(response.body)}
             return [result]
         
         candidates = []
