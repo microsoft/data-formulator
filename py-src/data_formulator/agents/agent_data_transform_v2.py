@@ -235,9 +235,9 @@ class DataTransformationAgentV2(object):
                         logger.info(result['content'])
                 except Exception as e:
                     logger.warning('Error occurred during code execution:')
-                    error_message = str(e)
+                    error_message = f"An error occurred during code execution. Error type: {type(e).__name__}"
                     logger.warning(error_message)
-                    result = {'status': 'other error', 'code': code_str, 'content': f"Unexpected error: {error_message}"}
+                    result = {'status': 'other error', 'code': code_str, 'content': error_message}
             else:
                 result = {'status': 'no transformation', 'code': "", 'content': input_tables[0]['rows']}
             
