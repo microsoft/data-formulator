@@ -147,15 +147,18 @@ def test_model():
                     "endpoint": endpoint,
                     "key": key,
                     "model": model,
-                    "status": 'ok'
+                    "status": 'ok',
+                    "message": ""
                 }
         except Exception as e:
-            print(e)
+            print(f"Error: {e}")
+            error_message = str(e)
             result = {
                 "endpoint": endpoint,
                 "key": key,
                 "model": model,
-                "status": 'error'
+                "status": 'error',
+                "message": error_message,
             }
     else:
         {'status': 'error'}
@@ -362,7 +365,7 @@ def derive_data():
             results = agent.run(input_tables, instruction, [field['name'] for field in new_fields])
 
         repair_attempts = 0
-        while results[0]['status'] == 'error' and repair_attempts < 2:
+        while results[0]['status'] == 'error' and repair_attempts == 0: # only try once
             error_message = results[0]['content']
             new_instruction = f"We run into the following problem executing the code, please fix it:\n\n{error_message}\n\nPlease think step by step, reflect why the error happens and fix the code so that no more errors would occur."
 
@@ -375,13 +378,53 @@ def derive_data():
 
             repair_attempts += 1
         
-        response = flask.jsonify({ "status": "ok", "token": token, "results": results })
+        response = flask.jsonify({ "token": token, "status": "ok", "results": results })
     else:
         response = flask.jsonify({ "token": "", "status": "error", "results": [] })
 
     response.headers.add('Access-Control-Allow-Origin', '*')
     return response
 
+@app.route('/refine-data', methods=['GET', 'POST'])
+def refine_data():
+
+    if request.is_json:
+        app.logger.info("# request data: ")
+        content = request.get_json()        
+        token = content["token"]
+
+        client = get_client(content['model']['endpoint'], content['model']['key'])
+        model = content['model']['model']
+        app.logger.info(f" model: {content['model']}")
+
+        # each table is a dict with {"name": xxx, "rows": [...]}
+        input_tables = content["input_tables"]
+        output_fields = content["output_fields"]
+        dialog = content["dialog"]
+        new_instruction = content["new_instruction"]
+        
+        print("previous dialog")
+        print(dialog)
+
+        # always resort to the data transform agent       
+        agent = DataTransformationAgentV2(client, model=model)
+        results = agent.followup(input_tables, dialog, [field['name'] for field in output_fields], new_instruction)
+
+        repair_attempts = 0
+        while results[0]['status'] == 'error' and repair_attempts == 0: # only try once
+            error_message = results[0]['content']
+            new_instruction = f"We run into the following problem executing the code, please fix it:\n\n{error_message}\n\nPlease think step by step, reflect why the error happens and fix the code so that no more errors would occur."
+            prev_dialog = results[0]['dialog']
+
+            results = agent.followup(input_tables, prev_dialog, [field['name'] for field in output_fields], new_instruction)
+            repair_attempts += 1
+
+        response = flask.jsonify({ "token": token, "status": "ok", "results": results})
+    else:
+        response = flask.jsonify({ "token": "", "status": "error", "results": []})
+
+    response.headers.add('Access-Control-Allow-Origin', '*')
+    return response
 
 @app.route('/code-expl', methods=['GET', 'POST'])
 def request_code_expl():
@@ -403,50 +446,6 @@ def request_code_expl():
     else:
         expl = ""
     return expl
-
-@app.route('/refine-data', methods=['GET', 'POST'])
-def refine_data():
-
-    if request.is_json:
-        app.logger.info("# request data: ")
-        content = request.get_json()        
-        token = content["token"]
-
-        client = get_client(content['model']['endpoint'], content['model']['key'])
-        model = content['model']['model']
-        app.logger.info(f" model: {content['model']}")
-
-        # each table is a dict with {"name": xxx, "rows": [...]}
-        input_tables = content["input_tables"]
-        output_fields = content["output_fields"]
-        dialog = content["dialog"]
-        new_instruction = content["new_instruction"]
-        
-        print("previous dialog")
-        print(dialog[0]['content'])
-
-        # always resort to the data transform agent       
-        agent = DataTransformationAgentV2(client, model=model)
-        results = agent.followup(input_tables, dialog, [field['name'] for field in output_fields], new_instruction)
-
-        repair_attempts = 0
-        while results[0]['status'] == 'error' and repair_attempts < 2:
-            error_message = results[0]['content']
-            new_instruction = f"We run into the following problem executing the code, please fix it:\n\n{error_message}\n\nPlease think step by step, reflect why the error happens and fix the code so that no more errors would occur."
-
-            response_message = dialog['response']['choices'][0]['message']
-            prev_dialog = [*dialog['messages'], {"role": response_message['role'], 'content': response_message['content']}]
-
-            results = agent.followup(input_tables, prev_dialog, [field['name'] for field in output_fields], new_instruction)
-            repair_attempts += 1
-
-        response = flask.jsonify({ "status": "ok", "token": token, "results": results})
-    else:
-        response = flask.jsonify({ "token": "", "status": "error", "results": []})
-
-    response.headers.add('Access-Control-Allow-Origin', '*')
-    return response
-
 def run_app():
     port = 5000 #+ random.randint(0, 999)
     url = "http://localhost:{0}".format(port)

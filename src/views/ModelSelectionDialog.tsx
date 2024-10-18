@@ -76,8 +76,8 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
     const [showKeys, setShowKeys] = useState<boolean>(false);
     const [tempSelectedModel, setTempSelectedMode] = useState<{model: string, endpoint: string} | undefined >(selectedModel);
 
-    let updateModelStatus = (model: string, endpoint: string, status: 'ok' | 'error' | 'testing' | 'unknown') => {
-        dispatch(dfActions.updateModelStatus({endpoint, model, status}));
+    let updateModelStatus = (model: string, endpoint: string, status: 'ok' | 'error' | 'testing' | 'unknown', message: string) => {
+        dispatch(dfActions.updateModelStatus({endpoint, model, status, message}));
     }
     let getStatus = (model: string, endpoint: string) => {
         return testedModels.find(t => t.model == model && t.endpoint == endpoint)?.status || 'unknown';
@@ -92,7 +92,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
     let modelExists = oaiModels.some(m => m.endpoint == newEndpoint && m.model == newModel);
 
     let testModel = (endpoint: string, key: string, model: string) => {
-        updateModelStatus(model, endpoint, 'testing');
+        updateModelStatus(model, endpoint, 'testing', "");
         let message = {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', },
@@ -106,9 +106,9 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
             .then((response) => response.json())
             .then((data) => {
                 let status = data["status"] || 'error';
-                updateModelStatus(model, endpoint, status)
+                updateModelStatus(model, endpoint, status, data["message"] || "");
             }).catch((error) => {
-                updateModelStatus(model, endpoint, 'error')
+                updateModelStatus(model, endpoint, 'error', error.message)
             });
     }
 
@@ -231,10 +231,15 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                     let status =  getStatus(oaiModel.model, oaiModel.endpoint);
                     let statusIcon = status  == "unknown" ? <HelpOutlineIcon color="warning" /> : ( status == 'testing' ? <CircularProgress size={24} />:
                             (status == "ok" ? <CheckCircleOutlineIcon color="success"/> : <ErrorOutlineIcon color="error"/> ))
+                    
+                    let message = status == "unknown" ? "Status unknown, click the status icon to test again." : 
+                        (testedModels.find(m => m.model === oaiModel.model && m.endpoint === oaiModel.endpoint)?.message || "Unknown error");
+                    const borderStyle = ['error', 'unknown'].includes(status) ? '1px dashed lightgray' : undefined;
+                    const noBorderStyle = ['error', 'unknown'].includes(status) ? 'none' : undefined;
 
                     return (
+                        <>
                         <TableRow
-                            hover
                             role="checkbox"
                             aria-checked={isItemSelected}
                             selected={isItemSelected}
@@ -242,26 +247,30 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                             onClick={() => { setTempSelectedMode({model: oaiModel.model, endpoint: oaiModel.endpoint}) }}
                             sx={{ cursor: 'pointer'}}
                         >
-                            <TableCell align="right">
+                            <TableCell align="right" sx={{ borderBottom: noBorderStyle }}>
                                 <Radio checked={isItemSelected} name="radio-buttons" />
                             </TableCell>
-                            <TableCell align="left">
+                            <TableCell align="left" sx={{ borderBottom: noBorderStyle }}>
                                 {oaiModel.endpoint == 'openai' ? 'openai' : 'azure openai'}
                             </TableCell>
-                            <TableCell component="th" scope="row">
+                            <TableCell component="th" scope="row" sx={{ borderBottom: borderStyle }}>
                                 {oaiModel.endpoint}
                             </TableCell>
-                            <TableCell align="left">
+                            <TableCell align="left" sx={{ borderBottom: borderStyle }}>
                                 {oaiModel.key != "" ? 
                                     (showKeys ? (oaiModel.key || <Typography sx={{color: "lightgray"}} fontSize='inherit'>N/A</Typography>) : "************") :
                                     <Typography sx={{color: "lightgray"}} fontSize='inherit'>N/A</Typography> 
                                 }
                             </TableCell>
-                            <TableCell align="left">{oaiModel.model}</TableCell>
-                            <TableCell sx={{fontWeight: 'bold'}} align="right"><IconButton
-                                onClick ={() => { testModel(oaiModel.endpoint, oaiModel.key, oaiModel.model)  }}
-                            >{statusIcon}</IconButton></TableCell>
-                            <TableCell align="right">
+                            <TableCell align="left" sx={{ borderBottom: borderStyle }}>{oaiModel.model}</TableCell>
+                            <TableCell sx={{fontWeight: 'bold', borderBottom: borderStyle}} align="right">
+                                <IconButton
+                                    onClick ={() => { testModel(oaiModel.endpoint, oaiModel.key, oaiModel.model)  }}
+                                >
+                                    {statusIcon}
+                                </IconButton>
+                            </TableCell>
+                            <TableCell sx={{ borderBottom: borderStyle }} align="right">
                                 <IconButton disabled={oaiModel.endpoint=="default"} 
                                     onClick={()=>{
                                         dispatch(dfActions.removeModel({model: oaiModel.model, endpoint: oaiModel.endpoint}));
@@ -282,11 +291,30 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                                 </IconButton>
                             </TableCell>
                         </TableRow>
+                        {['error', 'unknown'].includes(status) && (
+                            <TableRow 
+                                selected={isItemSelected}
+                                onClick={() => { setTempSelectedMode({model: oaiModel.model, endpoint: oaiModel.endpoint}) }}
+                                sx={{ 
+                                    cursor: 'pointer',
+                                    '&:hover': {
+                                        backgroundColor: 'rgba(0, 0, 0, 0.04)',
+                                    },
+                                }}
+                            >
+                                <TableCell colSpan={2} align="right" ></TableCell>
+                                <TableCell colSpan={5}>
+                                    <Typography variant="caption" color="error">
+                                        {message}
+                                    </Typography>
+                                </TableCell>
+                            </TableRow>
+                        )}
+                        </>
                     )
                 })}
                 {newModelEntry}
             </TableBody>
-            {/* <caption style={{textAlign: 'right', padding: '0 16px'}}><Typography fontSize="small" color="error">{modelExists ? "endpoint and model exists" : ""}</Typography></caption> */}
         </Table>
     </TableContainer>
 

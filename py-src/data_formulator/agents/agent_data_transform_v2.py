@@ -205,7 +205,7 @@ class DataTransformationAgentV2(object):
         #logger.info(response.prompt_filter_results)
 
         if isinstance(response, Exception):
-            result = {'status': 'other error', 'content': response.body}
+            result = {'status': 'other error', 'content': str(response.body)}
             return [result]
         
         candidates = []
@@ -223,22 +223,23 @@ class DataTransformationAgentV2(object):
 
             if len(code_blocks) > 0:
                 code_str = code_blocks[-1]
+
                 try:
                     result = py_sandbox.run_transform_in_sandbox2020(code_str, [t['rows'] for t in input_tables])
+                    result['code'] = code_str
 
                     if result['status'] == 'ok':
-                        new_data = json.loads(result['content'])
-                        result['content'] = new_data
+                        # parse the content
+                        result['content'] = json.loads(result['content'])
                     else:
                         logger.info(result['content'])
-                    result['code'] = code_str
                 except Exception as e:
-                    logger.warning('other error:')
-                    error_message = traceback.format_exc()
+                    logger.warning('Error occurred during code execution:')
+                    error_message = f"An error occurred during code execution. Error type: {type(e).__name__}"
                     logger.warning(error_message)
-                    result = {'status': 'other error', 'content': error_message}
+                    result = {'status': 'other error', 'code': code_str, 'content': error_message}
             else:
-                result = {'status': 'no transformation', 'content': input_tables[0]['rows']}
+                result = {'status': 'no transformation', 'code': "", 'content': input_tables[0]['rows']}
             
             result['dialog'] = [*messages, {"role": choice.message.role, "content": choice.message.content}]
             result['agent'] = 'DataTransformationAgent'
@@ -264,11 +265,6 @@ class DataTransformationAgentV2(object):
         messages = [{"role":"system", "content": self.system_prompt},
                     {"role":"user","content": user_query}]
         
-        ###### the part that calls open_ai
-        # response = self.client.chat.completions.create(
-        #     model=self.model, messages = messages, temperature=0.7, max_tokens=1200,
-        #     top_p=0.95, n=n, frequency_penalty=0, presence_penalty=0, stop=None)
-
         response = completion_response_wrapper(self.client, self.model, messages, n)
 
         return self.process_gpt_response(input_tables, messages, response)

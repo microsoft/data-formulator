@@ -18,6 +18,7 @@ import {
     Typography,
     Box,
     Tooltip,
+    Button,
 } from '@mui/material';
 
 
@@ -149,6 +150,10 @@ Totals (7 entries)	5	5	5	15
                 <Tooltip title={<Box>Example of a table in image format: <Box component="img" sx={{ width: '100%',  marginTop: '6px' }} alt="" src={exampleImageTable} /></Box>}><Typography color="secondary"  display="inline" sx={{cursor: 'help', "&:hover": {textDecoration: 'underline'}}}>an image</Typography></Tooltip> that contain data into clipboard to get started.
             </Typography>
         </Box>
+        <Button size="small" color="inherit" 
+                sx={{position: "absolute", color:'darkgray', bottom: 0, right: 0, textTransform: 'none'}} 
+                target="_blank" rel="noopener noreferrer" 
+                href="https://privacy.microsoft.com/en-US/data-privacy-notice">view data privacy notice</Button>
     </Box>;
 
     let modelSelectionDialogBox = <Box sx={{width: '100vw'}}>
@@ -162,6 +167,10 @@ Totals (7 entries)	5	5	5	15
             </Typography>
             <Typography variant="body1">Specify an OpenAI or Azure OpenAI endpoint to run {toolName}.</Typography>
         </Box>
+        <Button size="small" color="inherit" 
+                sx={{position: "absolute", color:'darkgray', bottom: 0, right: 0, textTransform: 'none'}} 
+                target="_blank" rel="noopener noreferrer" 
+                href="https://privacy.microsoft.com/en-US/data-privacy-notice">view data privacy notice</Button>
     </Box>;
 
     console.log("selected model?")
@@ -172,5 +181,7 @@ Totals (7 entries)	5	5	5	15
             <DndProvider backend={HTML5Backend}>
                 {selectedModel == undefined ? modelSelectionDialogBox : (tables.length > 0 ? fixedSplitPane : dataUploadRequestBox)} 
             </DndProvider>
+            
+
         </Box>);
 }

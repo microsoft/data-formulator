@@ -16,6 +16,8 @@ export interface Message {
     type: "success" | "info" | "error",
     timestamp: number,
     value: string,
+    detail?: string, // error details
+    code?: string // if this message is related to a code error, include code as well
 }
 
 export function MessageSnackbar() {
@@ -65,16 +67,41 @@ export function MessageSnackbar() {
                     setOpen(true);
                     setMessage(messages[messages.length - 1]);
             }}><InfoIcon /></IconButton></Tooltip>
-            <Button size="small" color="inherit" sx={{position: "absolute", color:'darkgray', bottom: 0, right: 0, textTransform: 'none'}} target="_blank" rel="noopener noreferrer" href="https://privacy.microsoft.com/en-US/data-privacy-notice">view data privacy notice</Button>
             {message != undefined ? <Snackbar
                 open={open && message != undefined}
-                autoHideDuration={10000}
+                autoHideDuration={message?.type == "error" ? 15000 : 5000}
                 anchorOrigin={{vertical: 'bottom', horizontal: 'right'}}
                 onClose={handleClose}
                 action={action}
             >
-                <Alert onClose={handleClose} severity={message?.type} sx={{ width: '100%' }}>
-                    <Typography fontSize={10} component="span" sx={{margin: "auto", opacity: 0.7}}>[{timestamp}]</Typography> {message?.value}
+                <Alert onClose={handleClose} severity={message?.type} sx={{ maxWidth: '400px' }}>
+                    <Typography fontSize={10} component="span" sx={{margin: "auto", opacity: 0.7}}>[{timestamp}]</Typography>  &nbsp;
+                    {message?.value} 
+                    {message?.detail ? 
+                        <>
+                            <br />
+                            <Typography fontSize={12} component="span" sx={{marginBottom: 0, fontWeight: 'bold'}}>
+                                [error details]
+                            </Typography>
+                            <br />
+                            <Typography fontSize={12} component="span" sx={{margin: "auto", opacity: 0.7}}>
+                                {message?.detail}   
+                            </Typography>
+                        </>
+                    : ""}
+                    {message?.code ? 
+                        <>
+                            <br />
+                            <Typography fontSize={12} component="span" sx={{marginBottom: 0, fontWeight: 'bold'}}>
+                                [generated code]
+                            </Typography>
+                            <Typography fontSize={10} component="span" sx={{margin: "auto", opacity: 0.7}}>
+                                <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', marginTop: 1 }}>
+                                    {message?.code?.split('\n').filter(line => line.trim() !== '').join('\n')}
+                                </pre>
+                            </Typography>
+                        </>
+                    : ""}
                 </Alert>    
             </Snackbar> : ""}
         </Box>

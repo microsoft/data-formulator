@@ -38,7 +38,7 @@ def ran_in_subprocess(code, allowed_objects, conn, output_var_name):
     try:
         exec(code, allowed_objects)
     except Exception as err:
-        error_message = traceback.format_exc()
+        error_message = f"Error: {type(err).__name__} - {str(err)}"
         conn.send({'status': 'error', 'content': error_message})
         conn.close()
         return allowed_objects
