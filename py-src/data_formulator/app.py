@@ -1,6 +1,7 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
 
+import argparse
 import random
 import sys
 import os
@@ -446,13 +447,21 @@ def request_code_expl():
     else:
         expl = ""
     return expl
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Data Formulator")
+    parser.add_argument("-p", "--port", type=int, default=5000, help="The port number you want to use")
+    return parser.parse_args()
+
+
 def run_app():
-    port = 5000 #+ random.randint(0, 999)
-    url = "http://localhost:{0}".format(port)
+    args = parse_args()
 
-    threading.Timer(2, lambda: webbrowser.open(url, new=2) ).start()
+    url = "http://localhost:{0}".format(args.port)
+    threading.Timer(2, lambda: webbrowser.open(url, new=2)).start()
 
-    app.run(host='0.0.0.0', port=port, threaded=True)
+    app.run(host='0.0.0.0', port=args.port, threaded=True)
     
 if __name__ == '__main__':
     #app.run(debug=True, host='127.0.0.1', port=5000)
