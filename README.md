@@ -24,8 +24,8 @@ Transform data and create rich visualizations iteratively with AI 🪄. Try Data
 
 - [10-11-2024] Data Formulator python package released! 
   - You can now install Data Formulator using Python and run it locally, easily. [[check it out]](#get-started).
-  - Our Codespace configuration is also updated for fast start up ⚡️. [[try it now!]](https://codespaces.new/microsoft/data-formulator?quickstart=1)
-  - New exprimental feature: load an image or a messy text, and ask AI parsing and cleaning it for you(!). [[demo]](https://github.com/microsoft/data-formulator/pull/31#issuecomment-2403652717)
+  - Our Codespaces configuration is also updated for fast start up ⚡️. [[try it now!]](https://codespaces.new/microsoft/data-formulator?quickstart=1)
+  - New experimental feature: load an image or a messy text, and ask AI to parse and clean it for you(!). [[demo]](https://github.com/microsoft/data-formulator/pull/31#issuecomment-2403652717)
   
 - [10-01-2024] Initial release of Data Formulator, check out our [[blog]](https://www.microsoft.com/en-us/research/blog/data-formulator-exploring-how-ai-can-help-analysts-create-rich-data-visualizations/) and [[video]](https://youtu.be/3ndlwt0Wi3c)!
 
@@ -58,11 +58,9 @@ Play with Data Formulator with one of the following options:
 
   Data Formulator will be automatically opened in the browser at [http://localhost:5000](http://localhost:5000).
 
-  *Update: you can specify the port number (e.g., 8080) by `python -m data_formulator --port 8080` if the default port is occupied.*
-
 - **Option 2: Codespaces (5 minutes)**
   
-  You can also run Data Formualtor in codespace, we have everything pre-configured. For more details, see [CODESPACES.md](CODESPACES.md).
+  You can also run Data Formulator in Codespaces; we have everything pre-configured. For more details, see [CODESPACES.md](CODESPACES.md).
   
   [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/microsoft/data-formulator?quickstart=1)
 
@@ -84,8 +82,8 @@ https://github.com/user-attachments/assets/0fbea012-1d2d-46c3-a923-b1fc5eb5e5b8
 
 ### Create visualization beyond the initial dataset (powered by 🤖)
 * You can type names of **fields that do not exist in current data** in the encoding shelf:
-    - this tells Data Formulator that you want to create visualizions that require computation or transformation from existing data,
-    - you can optionally provide a natural language prompt to explain your intent to clarify your intent (not necessary when field names are self-explanatory).
+    - this tells Data Formulator that you want to create visualizations that require computation or transformation from existing data,
+    - you can optionally provide a natural language prompt to explain and clarify your intent (not necessary when field names are self-explanatory).
 * Click the **Formulate** button.
     - Data Formulator will transform data and instantiate the visualization based on the encoding and prompt.
 * Inspect the data, chart and code.
