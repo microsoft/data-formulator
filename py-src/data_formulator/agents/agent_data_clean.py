@@ -45,6 +45,8 @@ The cleaning process must follow instructions below:
     - the csv table should have the same number of cells for each line, according to the title. If there are some rows with missing values, patch them with empty cells.
     - if the raw data has some rows that do not belong to the table, also remove them (e.g., subtitles in between rows) 
     - if the header row misses some columns, add their corresponding column names. E.g., when the header doesn't have an index column, but every row has an index value, add the missing column header.
+* clean up messy column names:
+    - if the column name contains special characters like "*", "?", "#", "." remove them.
 * clean up columns with messy information
     - if a column is number but some cells has annotations like "*" "?" or brackets, clean them up.
     - if a column is number but has units like ($, %, s), convert them to number (make sure unit conversion is correct when multiple units exist like minute and second) and include unit in the header.
@@ -80,7 +82,7 @@ class DataCleanAgent(object):
         self.model = model
         self.client = client
 
-    def run(self, content_type, raw_data):
+    def run(self, content_type, raw_data, image_cleaning_instruction):
         """derive a new concept based on the raw input data
         """
    
@@ -93,6 +95,12 @@ class DataCleanAgent(object):
                 }]
             }
         elif content_type == "image":
+            # add additional cleaning instructions if provided
+            if image_cleaning_instruction:
+                cleaning_prompt = f"\n\n[CLEANING INSTRUCTION]\n\n{image_cleaning_instruction}\n\n"
+            else:
+                cleaning_prompt = ""
+
             user_prompt = {
                 'role': 'user',
                 'content': [ {
@@ -107,7 +115,7 @@ class DataCleanAgent(object):
                     },
                     {
                         'type': 'text',
-                        'text': '''[OUTPUT]\n\n'''
+                        'text': f'''{cleaning_prompt}[OUTPUT]\n\n'''
                     }, 
                 ]
             }

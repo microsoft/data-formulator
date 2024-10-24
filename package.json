@@ -10,6 +10,8 @@
         "@mui/icons-material": "^5.14.0",
         "@mui/material": "^5.6.0",
         "@reduxjs/toolkit": "^1.8.6",
+        "@types/dompurify": "^3.0.5",
+        "@types/validator": "^13.12.2",
         "ag-grid-community": "^32.0.2",
         "ag-grid-enterprise": "^32.0.2",
         "ag-grid-react": "^32.0.2",
