@@ -417,6 +417,7 @@ export const TableCopyDialogV2: React.FC<TableCopyDialogProps> = ({ buttonElemen
     const [tableName, setTableName] = useState<string>("");
     
     const [tableContent, setTableContent] = useState<string>("");
+    const [imageCleaningInstr, setImageCleaningInstr] = useState<string>("");
     const [tableContentType, setTableContentType] = useState<'text' | 'image'>('text');
 
     const [cleaningInProgress, setCleaningInProgress] = useState<boolean>(false);
@@ -476,6 +477,7 @@ export const TableCopyDialogV2: React.FC<TableCopyDialogProps> = ({ buttonElemen
                 token: token,
                 content_type: tableContentType,
                 raw_data: tableContent,
+                image_cleaning_instruction: imageCleaningInstr,
                 model: activeModel
             }),
         };
@@ -652,27 +654,33 @@ export const TableCopyDialogV2: React.FC<TableCopyDialogProps> = ({ buttonElemen
                             label="data content" variant="outlined" multiline minRows={15} 
                         />
                         :
-                        <Box sx={{marginTop: 1, position: 'relative'}}>
-                            {cleaningInProgress ? <LinearProgress sx={{ width: '100%', height: "calc(100% - 4px)", opacity: 0.1, position: 'absolute', zIndex: 1 }} /> : ""}
-                            <IconButton size="small" color="primary"
-                                        sx={{  backgroundColor: 'white', 
-                                               width: 16, height: 16, boxShadow: 3, 
-                                               position: 'absolute', right: 4, top: 4,
-                                               "&:hover": { backgroundColor: "white", boxShadow: 8, transform: "translate(0.5px, -0.5px)"  }
-                                            }}
-                                onClick={() => {
-                                    setTableContent("");
-                                    setTableContentType("text");
-                                }}
-                            >
-                                <CancelIcon sx={{fontSize: 16}} />
-                            </IconButton>
-                            {validator.isURL(tableContent) || validator.isDataURI(tableContent) ? (
-                                <img style={{border: '1px lightgray solid', borderRadius: 4, maxWidth: 640, maxHeight: 360}} 
-                                     src={DOMPurify.sanitize(tableContent)} alt="the image is corrupted, please try again." />
-                            ) : (
-                                <Typography color="error">Invalid image data</Typography>
-                            )}
+                        <Box sx={{display: 'flex', flexDirection: 'column', alignItems: 'center'}}>
+                            <Box sx={{marginTop: 1, position: 'relative'}}>
+                                {cleaningInProgress ? <LinearProgress sx={{ width: '100%', height: "calc(100% - 4px)", opacity: 0.1, position: 'absolute', zIndex: 1 }} /> : ""}
+                                <IconButton size="small" color="primary"
+                                            sx={{  backgroundColor: 'white', 
+                                                width: 16, height: 16, boxShadow: 3, 
+                                                position: 'absolute', right: 4, top: 4,
+                                                "&:hover": { backgroundColor: "white", boxShadow: 8, transform: "translate(0.5px, -0.5px)"  }
+                                                }}
+                                    onClick={() => {
+                                        setTableContent("");
+                                        setTableContentType("text");
+                                        setImageCleaningInstr("");
+                                    }}
+                                >
+                                    <CancelIcon sx={{fontSize: 16}} />
+                                </IconButton>
+                                {validator.isURL(tableContent) || validator.isDataURI(tableContent) ? (
+                                    <img style={{border: '1px lightgray solid', borderRadius: 4, maxWidth: 640, maxHeight: 360}} 
+                                        src={DOMPurify.sanitize(tableContent)} alt="the image is corrupted, please try again." />
+                                ) : (
+                                    <Typography color="error">Invalid image data</Typography>
+                                )}
+                            </Box>
+                            <TextField fullWidth size="small" sx={{ marginTop: 1, "& .MuiInputBase-input" : {fontSize: 14, lineHeight: 1.2 }}} 
+                                value={imageCleaningInstr} onChange={(event) => { setImageCleaningInstr(event.target.value); }} 
+                                variant="standard" placeholder='additional cleaning instructions' />
                         </Box>)
                     }
                     </Box>
@@ -708,6 +716,7 @@ export const TableCopyDialogV2: React.FC<TableCopyDialogProps> = ({ buttonElemen
                     {"upload"}
                 </Button>
             </DialogActions>
+            
         </Dialog>;
 
     return <>

@@ -58,6 +58,8 @@ Play with Data Formulator with one of the following options:
 
   Data Formulator will be automatically opened in the browser at [http://localhost:5000](http://localhost:5000).
 
+  *Update: you can specify the port number (e.g., 8080) by `python -m data_formulator --port 8080` if the default port is occupied.*
+
 - **Option 2: Codespaces (5 minutes)**
   
   You can also run Data Formulator in Codespaces; we have everything pre-configured. For more details, see [CODESPACES.md](CODESPACES.md).

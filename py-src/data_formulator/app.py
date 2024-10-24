@@ -295,7 +295,7 @@ def clean_data_request():
         
         agent = DataCleanAgent(client=client, model=model)
 
-        candidates = agent.run(content['content_type'], content["raw_data"])
+        candidates = agent.run(content['content_type'], content["raw_data"], content["image_cleaning_instruction"])
         
         candidates = [c for c in candidates if c['status'] == 'ok']
 

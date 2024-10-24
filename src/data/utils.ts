@@ -66,6 +66,10 @@ export const createTableFromFromObjectArray = (title: string, values: any[], der
                 } 
                 return newName;
             }
+            // clean up messy column names
+            if (name && name.includes(".")) {
+                return name.replace(".", "_");
+            }
             return name;
         })
 
