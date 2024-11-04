@@ -46,6 +46,8 @@ load_dotenv(os.path.join(APP_ROOT, "..", "..", 'openai-keys.env'))
 load_dotenv(os.path.join(APP_ROOT, 'openai-keys.env'))
 
 import os
+import mimetypes
+mimetypes.add_type('application/javascript', '.js')
 
 app = Flask(__name__, static_url_path='', static_folder=os.path.join(APP_ROOT, "dist"))
 CORS(app)
