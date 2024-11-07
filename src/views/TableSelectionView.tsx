@@ -68,15 +68,23 @@ function a11yProps(index: number) {
   };
 }
 
+
+export interface TableChallenges {
+    name: string;
+    challenges: { text: string; difficulty: 'easy' | 'medium' | 'hard'; }[];
+    table: DictTable;
+}
+
+
 export interface TableSelectionViewProps {
-    tables: DictTable[];
+    tableChallenges: TableChallenges[];
     handleDeleteTable?: (index: number) => void;
-    handleSelectTable: (table: DictTable) => void;
+    handleSelectTable: (tableChallenges: TableChallenges) => void;
     hideRowNum?: boolean;
 }
 
 
-export const TableSelectionView: React.FC<TableSelectionViewProps> = function TableSelectionView({ tables, handleDeleteTable, handleSelectTable, hideRowNum  }) {
+export const TableSelectionView: React.FC<TableSelectionViewProps> = function TableSelectionView({ tableChallenges, handleDeleteTable, handleSelectTable, hideRowNum  }) {
 
     const [value, setValue] = React.useState(0);
 
@@ -85,9 +93,9 @@ export const TableSelectionView: React.FC<TableSelectionViewProps> = function Ta
     };
 
     let tabTitiles : string[] = [];
-    for (let i = 0; i < tables.length; i ++) {
+    for (let i = 0; i < tableChallenges.length; i ++) {
         let k = 0;
-        let title = tables[i].id;
+        let title = tableChallenges[i].name;
         while (tabTitiles.includes(title)) {
             k = k + 1;
             title = `${title}_${k}`;
@@ -96,7 +104,7 @@ export const TableSelectionView: React.FC<TableSelectionViewProps> = function Ta
     }
 
     return (
-        <Box sx={{ flexGrow: 1, bgcolor: 'background.paper', display: 'flex', maxHeight: 400 }} >
+        <Box sx={{ flexGrow: 1, bgcolor: 'background.paper', display: 'flex', maxHeight: 600 }} >
         <Tabs
             orientation="vertical"
             variant="scrollable"
@@ -107,14 +115,32 @@ export const TableSelectionView: React.FC<TableSelectionViewProps> = function Ta
         >
             {tabTitiles.map((title, i) => <Tab wrapped key={i} label={title} sx={{textTransform: "none", width: 120}} {...a11yProps(0)} />)}
         </Tabs>
-        {tables.map((t, i) => {
+        {tableChallenges.map((tc, i) => {
+            let t = tc.table;
             let sampleRows = [...t.rows.slice(0,9), Object.fromEntries(t.names.map(n => [n, "..."]))];
             let colDefs = t.names.map(name => { return {
                 id: name, label: name, minWidth: 60, align: undefined, format: (v: any) => v,
             }})
+            
+            let challengeView = <Box sx={{margin: "6px 0px"}}>
+                <Typography variant="subtitle2" sx={{marginLeft: "6px", fontSize: 12}}>Try these data visualizationchallenges with this dataset:</Typography>
+                {tc.challenges.map((c, j) => <Box key={j} sx={{display: 'flex', alignItems: 'flex-start', pl: 2}}>
+                    <Box component="span" sx={{display: 'inline-block', width: '6px', height: '6px', 
+                                            borderRadius: '50%', mr: 1, mt: 1,
+                                            bgcolor: c.difficulty === 'easy' ? '#2e7d32' : 
+                                                    c.difficulty === 'medium' ? '#f57c00' : 
+                                                    '#d32f2f'}} />
+                    <Typography sx={{fontSize: 11, color: c.difficulty === 'easy' ? '#2e7d32' : 
+                                                        c.difficulty === 'medium' ? '#f57c00' : 
+                                                        '#d32f2f'}}>[{c.difficulty}] {c.text}</Typography>
+                </Box>)}
+            </Box>  
+
             let content = <Paper variant="outlined" key={t.names.join("-")} sx={{width: 800, maxWidth: '100%', padding: "0px", marginBottom: "8px"}}>
                 <CustomReactTable rows={sampleRows} columnDefs={colDefs} rowsPerPageNum={-1} compact={false} />
+                {challengeView}
             </Paper>
+
             return  <TabPanel value={value} index={i} >
                         {content}
                         <Box width="100%" sx={{display: "flex"}}>
@@ -131,7 +157,7 @@ export const TableSelectionView: React.FC<TableSelectionViewProps> = function Ta
                                     </IconButton>}
                                 <Button size="small" variant="contained" 
                                         onClick={(event: React.MouseEvent<HTMLElement>) => {
-                                            handleSelectTable(t);
+                                            handleSelectTable(tc);
                                         }}>
                                     load table
                                 </Button>
@@ -145,7 +171,7 @@ export const TableSelectionView: React.FC<TableSelectionViewProps> = function Ta
 
 export const TableSelectionDialog: React.FC<{ buttonElement: any }> = function TableSelectionDialog({ buttonElement }) {
 
-    const [datasetPreviews, setDatasetPreviews] = React.useState<DictTable[]>([]);
+    const [datasetPreviews, setDatasetPreviews] = React.useState<TableChallenges[]>([]);
     const [tableDialogOpen, setTableDialogOpen] = useState<boolean>(false);
 
     React.useEffect(() => {
@@ -153,11 +179,11 @@ export const TableSelectionDialog: React.FC<{ buttonElement: any }> = function T
         fetch(`${getUrls().VEGA_DATASET_LIST}`)
             .then((response) => response.json())
             .then((result) => {
-                let tables : DictTable[] = result.map((info: any) => {
+                let tableChallenges : TableChallenges[] = result.map((info: any) => {
                     let table = createTableFromFromObjectArray(info["name"], JSON.parse(info["snapshot"]))
-                    return table
-                }).filter((t : DictTable | undefined) => t != undefined);
-                setDatasetPreviews(tables);
+                    return {table: table, challenges: info["challenges"], name: info["name"]}
+                }).filter((t : TableChallenges | undefined) => t != undefined);
+                setDatasetPreviews(tableChallenges);
             });
       // No variable dependencies means this would run only once after the first render
       }, []);
@@ -187,21 +213,25 @@ export const TableSelectionDialog: React.FC<{ buttonElement: any }> = function T
                     </IconButton>
                 </DialogTitle>
                 <DialogContent sx={{overflowX: "hidden", padding: 0}} dividers>
-                    <TableSelectionView tables={datasetPreviews} hideRowNum
+                    <TableSelectionView tableChallenges={datasetPreviews} hideRowNum
                         handleDeleteTable={undefined}
-                        handleSelectTable={(tableInfo) => {
+                        handleSelectTable={(tableChallenges) => {
                             // request public datasets from the server
-                        console.log(tableInfo);
-                        console.log(`${getUrls().VEGA_DATASET_REQUEST_PREFIX}${tableInfo.id}`)
-                        fetch(`${getUrls().VEGA_DATASET_REQUEST_PREFIX}${tableInfo.id}`)
+                        console.log(tableChallenges);
+                        console.log(`${getUrls().VEGA_DATASET_REQUEST_PREFIX}${tableChallenges.table.id}`)
+                        fetch(`${getUrls().VEGA_DATASET_REQUEST_PREFIX}${tableChallenges.table.id}`)
                             .then((response) => {
                                 return response.text()
                             })
                             .then((text) => {         
-                                let fullTable = createTableFromFromObjectArray(tableInfo.id, JSON.parse(text));
+                                let fullTable = createTableFromFromObjectArray(tableChallenges.table.id, JSON.parse(text));
                                 if (fullTable) {
                                     dispatch(dfActions.addTable(fullTable));
                                     dispatch(fetchFieldSemanticType(fullTable));
+                                    dispatch(dfActions.addChallenges({
+                                        tableId: tableChallenges.table.id,
+                                        challenges: tableChallenges.challenges
+                                    }));
                                 } else {
                                     throw "";
                                 }
@@ -212,7 +242,7 @@ export const TableSelectionDialog: React.FC<{ buttonElement: any }> = function T
                                 dispatch(dfActions.addMessages({
                                     "timestamp": Date.now(),
                                     "type": "error",
-                                    "value": `Unable to load the sample dataset ${tableInfo.id}, please try again later or upload your data.`
+                                    "value": `Unable to load the sample dataset ${tableChallenges.table.id}, please try again later or upload your data.`
                                 }));
                             })
                         }}/>

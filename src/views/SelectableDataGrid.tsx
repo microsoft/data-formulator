@@ -274,7 +274,6 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({ rows, ta
                     <DeleteIcon/>
                 </IconButton>
             </Tooltip> */}
-           
             
             <IconButton size="small" color="primary"
                 onClick={() => {

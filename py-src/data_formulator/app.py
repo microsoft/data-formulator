@@ -5,6 +5,9 @@ import argparse
 import random
 import sys
 import os
+import mimetypes
+mimetypes.add_type('application/javascript', '.js')
+mimetypes.add_type('application/javascript', '.mjs')
 
 import flask
 from flask import Flask, request, send_from_directory, redirect, url_for
@@ -53,13 +56,45 @@ CORS(app)
 @app.route('/vega-datasets')
 def get_example_dataset_list():
     dataset_names = vega_data.list_datasets()
-    example_datasets = ['co2-concentration', 'movies', 'seattle-weather', 
-                        'disasters', 'unemployment-across-industries']
+    example_datasets = [
+        {"name": "gapminder", "challenges": [
+            {"text": "Create a line chart to show the life expectancy trend of each country over time.", "difficulty": "easy"},
+            {"text": "What's the 10 countries with highest life expectancy in 2005?", "difficulty": "medium"},
+            {"text": "Find top 10 countries that have the biggest difference of life expectancy in 1955 and 2005.", "difficulty": "hard"},
+            {"text": "Rank countries by their average population per decade. Then only show countries with population over 50 million in 2005.", "difficulty": "hard"}
+        ]},
+        {"name": "income", "challenges": [
+            {"text": "Create a line chart to show the income trend of each state over time.", "difficulty": "easy"},
+            {"text": "Only show washington and california's percentage of population in each income group each year.", "difficulty": "medium"},
+            {"text": "Find the top 5 states with highest percentage of high income group in 2016.", "difficulty": "hard"}
+        ]},
+        {"name": "disasters", "challenges": [
+            {"text": "Create a scatter plot to show the number of death from each disaster type each year.", "difficulty": "easy"},
+            {"text": "Filter the data and show the number of death caused by flood or drought each year.", "difficulty": "easy"},
+            {"text": "Create a heatmap to show the total number of death caused by each disaster type each decade.", "difficulty": "hard"},
+            {"text": "Exclude 'all natural disasters' from the previous chart.", "difficulty": "medium"}
+        ]},
+        {"name": "movies", "challenges": [
+            {"text": "Create a scatter plot to show the relationship between budget and worldwide gross.", "difficulty": "easy"},
+            {"text": "Find the top 10 movies with highest profit after 2000 and visualize them in a bar chart.", "difficulty": "easy"},
+            {"text": "Visualize the median profit ratio of movies in each genre", "difficulty": "medium"},
+            {"text": "Create a scatter plot to show the relationship between profit and IMDB rating.", "difficulty": "medium"},
+            {"text": "Turn the above plot into a heatmap by bucketing IMDB rating and profit, color tiles by the number of movies in each bucket.", "difficulty": "hard"}
+        ]},
+        {"name": "unemployment-across-industries", "challenges": [
+            {"text": "Create a scatter plot to show the relationship between unemployment rate and year.", "difficulty": "easy"},
+            {"text": "Create a line chart to show the average unemployment per year for each industry", "difficulty": "medium"},
+            {"text": "Find the 5 most stable industries (least change in unemployment rate between 2000 and 2010) and visualize their trend over time using line charts.", "difficulty": "medium"},
+            {"text": "Create a bar chart to show the unemployment rate change between 2000 and 2010, and highlight the top 5 most stable industries with least change.", "difficulty": "hard"}
+        ]}
+    ]
     dataset_info = []
     print(dataset_names)
-    for name in example_datasets:
+    for dataset in example_datasets:
+        name = dataset["name"]
+        challenges = dataset["challenges"]
         try:
-            info_obj = {'name': name, 'snapshot': vega_data(name).to_json(orient='records')} 
+            info_obj = {'name': name, 'challenges': challenges, 'snapshot': vega_data(name).to_json(orient='records')}
             dataset_info.append(info_obj)
         except:
             pass
