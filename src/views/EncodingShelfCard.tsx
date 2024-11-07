@@ -433,7 +433,10 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                                     newChart.intermediate = undefined;
                                 }
                                 
-                                newChart = resolveChartFields(newChart, currentConcepts, refinedGoal, candidateTable);
+                                // there is no need to resolve fields for table chart, just display all fields
+                                if (chart.chartType != "Table") {   
+                                    newChart = resolveChartFields(newChart, currentConcepts, refinedGoal, candidateTable);
+                                }
 
                                 dispatch(dfActions.addChart(newChart));
                                 dispatch(dfActions.setFocusedChart(newChart.id));                                

@@ -55,7 +55,7 @@ const tablePlots: ChartTemplate[] = [
         "chart": "Table",
         "icon": chartIconTable,
         "template": { },
-        "channels": ["field 1", "field 2", "field 3", "field 4", "field 5", 'field 6'],
+        "channels": [], //"field 1", "field 2", "field 3", "field 4", "field 5", 'field 6'
         "paths": { }
     },
 ]

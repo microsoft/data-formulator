@@ -11,6 +11,7 @@ import { getDataTable } from '../views/VisualizationView';
 import { findBaseFields } from '../views/ViewUtils';
 import { adaptChart, getTriggers, getUrls } from './utils';
 import { Type } from '../data/types';
+import { TableChallenges } from '../views/TableSelectionView';
 
 enableMapSet();
 
@@ -34,6 +35,8 @@ export interface DataFormulatorState {
 
     tables : DictTable[];
     charts: Chart[];
+    
+    activeChallenges: {tableId: string, challenges: { text: string; difficulty: 'easy' | 'medium' | 'hard'; }[]}[];
 
     conceptShelfItems: FieldItem[];
 
@@ -66,6 +69,8 @@ const initialState: DataFormulatorState = {
 
     tables: [],
     charts: [],
+
+    activeChallenges: [],
     
     conceptShelfItems: [],
 
@@ -222,6 +227,7 @@ export const dataFormulatorSlice = createSlice({
 
             state.tables = [];
             state.charts = [];
+            state.activeChallenges = [];
 
             state.conceptShelfItems = [];
 
@@ -248,6 +254,8 @@ export const dataFormulatorSlice = createSlice({
             //state.table = undefined;
             state.tables = savedState.tables || [];
             state.charts = savedState.charts || [];
+            
+            state.activeChallenges = savedState.activeChallenges || [];
 
             state.conceptShelfItems = savedState.conceptShelfItems || [];
 
@@ -305,6 +313,9 @@ export const dataFormulatorSlice = createSlice({
 
             // separate this, so that we only delete on tier of table a time
             state.charts = state.charts.filter(c => !(c.intermediate && c.intermediate.resultTableId == tableId));
+        },
+        addChallenges: (state, action: PayloadAction<{tableId: string, challenges: { text: string; difficulty: 'easy' | 'medium' | 'hard'; }[]}>) => {
+            state.activeChallenges = [...state.activeChallenges, action.payload];
         },
         createNewChart: (state, action: PayloadAction<{chartType?: string, tableId?: string}>) => {
             let chartType = action.payload.chartType;

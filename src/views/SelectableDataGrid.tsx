@@ -29,6 +29,7 @@ import { FieldSource } from '../components/ComponentType';
 
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import DeleteIcon from '@mui/icons-material/Delete';
+import FileDownloadIcon from '@mui/icons-material/FileDownload';
 import { dfActions, dfSelectors } from '../app/dfSlice';
 import { useDispatch, useSelector } from 'react-redux';
 import { getUrls } from '../app/utils';
@@ -266,13 +267,14 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({ rows, ta
                     {`${rowsToDisplay.length} matches`}   
                 </Typography>: ''}
             </Box>
-            <Tooltip key="delete-action" title={`Delete ${tableName}\n(note: all charts and concepts based on this table will be deleted)`}>
+            {/* <Tooltip key="delete-action" title={`Delete ${tableName}\n(note: all charts and concepts based on this table will be deleted)`}>
                 <IconButton size="small" color="warning" sx={{marginRight: 1}} onClick={() => {
                     dispatch(dfActions.deleteTable(tableName))
                 }}>
                     <DeleteIcon/>
                 </IconButton>
-            </Tooltip>
+            </Tooltip> */}
+            
             <IconButton size="small" color="primary"
                 onClick={() => {
                         console.log(`[fyi] just sent request to process load data`);
@@ -452,6 +454,35 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({ rows, ta
                     {footerActionsItems}
                 </Collapse>
                 <Box sx={{display: 'flex', alignItems: 'center',  marginRight: 1}}>
+                    <Tooltip title={`Download ${tableName} as CSV`}>
+                        <IconButton size="small" color="primary" sx={{marginRight: 1}}
+                            onClick={() => {
+                                // Create CSV content
+                                const csvContent = [
+                                    Object.keys(rows[0]).join(','), // Header row
+                                    ...rows.map(row => Object.values(row).map(value => 
+                                        // Handle values that need quotes (contain commas or quotes)
+                                        typeof value === 'string' && (value.includes(',') || value.includes('"')) 
+                                            ? `"${value.replace(/"/g, '""')}"` 
+                                            : value
+                                    ).join(','))
+                                ].join('\n');
+
+                                // Create and trigger download
+                                const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                                const link = document.createElement('a');
+                                const url = URL.createObjectURL(blob);
+                                link.setAttribute('href', url);
+                                link.setAttribute('download', `${tableName}.csv`);
+                                link.style.visibility = 'hidden';
+                                document.body.appendChild(link);
+                                link.click();
+                                document.body.removeChild(link);
+                            }}
+                        >
+                            <FileDownloadIcon/>
+                        </IconButton>
+                    </Tooltip>
                     <Typography  className="table-footer-number">
                         {`${rows.length} rows`}
                     </Typography>

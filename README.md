@@ -22,6 +22,10 @@ Transform data and create rich visualizations iteratively with AI 🪄. Try Data
 
 ## News 🔥🔥🔥
 
+- [11-07-2024] Minor fun update: data visualization challenges!
+  - We added a few visualization challenges with the sample datasets. Can you complete them all? [[try them out!]](https://github.com/microsoft/data-formulator/issues/53#issue-2641841252)
+  - Comment in the issue when you did, or share your results/questions with others! [[comment here]](https://github.com/microsoft/data-formulator/issues/53)
+
 - [10-11-2024] Data Formulator python package released! 
   - You can now install Data Formulator using Python and run it locally, easily. [[check it out]](#get-started).
   - Our Codespaces configuration is also updated for fast start up ⚡️. [[try it now!]](https://codespaces.new/microsoft/data-formulator?quickstart=1)
