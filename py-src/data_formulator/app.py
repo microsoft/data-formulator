@@ -59,7 +59,7 @@ def get_example_dataset_list():
     example_datasets = [
         {"name": "gapminder", "challenges": [
             {"text": "Create a line chart to show the life expectancy trend of each country over time.", "difficulty": "easy"},
-            {"text": "What's the 10 countries with highest life expectancy in 2005?", "difficulty": "medium"},
+            {"text": "Visualize the top 10 countries with highest life expectancy in 2005.", "difficulty": "medium"},
             {"text": "Find top 10 countries that have the biggest difference of life expectancy in 1955 and 2005.", "difficulty": "hard"},
             {"text": "Rank countries by their average population per decade. Then only show countries with population over 50 million in 2005.", "difficulty": "hard"}
         ]},
@@ -83,7 +83,7 @@ def get_example_dataset_list():
         ]},
         {"name": "unemployment-across-industries", "challenges": [
             {"text": "Create a scatter plot to show the relationship between unemployment rate and year.", "difficulty": "easy"},
-            {"text": "Create a line chart to show the average unemployment per year for each industry", "difficulty": "medium"},
+            {"text": "Create a line chart to show the average unemployment per year for each industry.", "difficulty": "medium"},
             {"text": "Find the 5 most stable industries (least change in unemployment rate between 2000 and 2010) and visualize their trend over time using line charts.", "difficulty": "medium"},
             {"text": "Create a bar chart to show the unemployment rate change between 2000 and 2010, and highlight the top 5 most stable industries with least change.", "difficulty": "hard"}
         ]}

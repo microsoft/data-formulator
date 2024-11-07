@@ -123,16 +123,11 @@ export const TableSelectionView: React.FC<TableSelectionViewProps> = function Ta
             }})
             
             let challengeView = <Box sx={{margin: "6px 0px"}}>
-                <Typography variant="subtitle2" sx={{marginLeft: "6px", fontSize: 12}}>Try these data visualizationchallenges with this dataset:</Typography>
-                {tc.challenges.map((c, j) => <Box key={j} sx={{display: 'flex', alignItems: 'flex-start', pl: 2}}>
-                    <Box component="span" sx={{display: 'inline-block', width: '6px', height: '6px', 
-                                            borderRadius: '50%', mr: 1, mt: 1,
-                                            bgcolor: c.difficulty === 'easy' ? '#2e7d32' : 
-                                                    c.difficulty === 'medium' ? '#f57c00' : 
-                                                    '#d32f2f'}} />
-                    <Typography sx={{fontSize: 11, color: c.difficulty === 'easy' ? '#2e7d32' : 
-                                                        c.difficulty === 'medium' ? '#f57c00' : 
-                                                        '#d32f2f'}}>[{c.difficulty}] {c.text}</Typography>
+                <Typography variant="subtitle2" sx={{marginLeft: "6px", fontSize: 12}}>Try these data visualization challenges with this dataset:</Typography>
+                {tc.challenges.map((c, j) => <Box key={j} sx={{display: 'flex', alignItems: 'flex-start', pl: 1}}>
+                    <Typography sx={{fontSize: 11, color: c.difficulty === 'easy' ? 'success.main' : 
+                                                        c.difficulty === 'medium' ? 'warning.main' : 
+                                                        'error.main'}}>[{c.difficulty}] {c.text}</Typography>
                 </Box>)}
             </Box>  
 

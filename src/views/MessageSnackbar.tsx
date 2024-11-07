@@ -70,18 +70,19 @@ export function MessageSnackbar() {
         <Box>
             <Tooltip placement="right" title="view challenges">
                 <IconButton 
+                    color="warning"
                     disabled={challenges.length === 0}
                     sx={{
                         position: "absolute", 
                         bottom: 56, 
-                        right: 0,
+                        right: 8,
                         animation: challenges.length > 0 ? 'glow 1.5s ease-in-out infinite alternate' : 'none',
                         '@keyframes glow': {
                             from: {
-                                boxShadow: '0 0 5px #fff, 0 0 10px #fff, 0 0 15px #1976d2'
+                                boxShadow: '0 0 5px #fff, 0 0 10px #fff, 0 0 15px #ed6c02'
                             },
                             to: {
-                                boxShadow: '0 0 10px #fff, 0 0 20px #fff, 0 0 30px #1976d2'
+                                boxShadow: '0 0 10px #fff, 0 0 20px #fff, 0 0 30px #ed6c02'
                             }
                         }
                     }}
@@ -90,11 +91,16 @@ export function MessageSnackbar() {
                     <AssignmentIcon />
                 </IconButton>
             </Tooltip>
-            <Tooltip placement="right" title="view last message"><IconButton disabled={messages.length == 0} sx={{position: "absolute", bottom: 16, right: 0}}
-                onClick={()=>{
-                    setOpen(true);
-                    setMessage(messages[messages.length - 1]);
-            }}><InfoIcon /></IconButton></Tooltip>
+            <Tooltip placement="right" title="view last message">
+                <IconButton disabled={messages.length == 0} sx={{position: "absolute", bottom: 16, right: 8}}
+                    onClick={()=>{
+                        setOpen(true);
+                        setMessage(messages[messages.length - 1]);
+                    }}
+                >
+                    <InfoIcon />
+                </IconButton>
+            </Tooltip>
             {challenge != undefined ? <Snackbar
                 open={openChallenge}
                 anchorOrigin={{vertical: 'bottom', horizontal: 'right'}}
@@ -102,17 +108,18 @@ export function MessageSnackbar() {
             >
                 <Paper sx={{
                     width: '100%',
-                    bgcolor: 'rgb(237,244,251)',
+                    bgcolor: 'white',
                     color: 'text.primary',
                     p: 2,
-                    boxShadow: 1,
+                    boxShadow: 2,
                     borderRadius: 1,
+                    border: '1px solid #e0e0e0',
                     display: 'flex',
                     flexDirection: 'column'
                 }}>
                     <Box sx={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1}}>
                         <Typography variant="subtitle1" sx={{fontWeight: 'bold', fontSize: 14}}>
-                            Visualization Challenges for <Box component="span" sx={{fontWeight: 'bold', color: 'primary.main'}}>{challenge.tableId}</Box>
+                            Visualization challenges for dataset <Box component="span" sx={{fontWeight: 'bold', color: 'primary.main'}}>{challenge.tableId}</Box>
                         </Typography>
                         <IconButton
                             size="small"
@@ -130,11 +137,9 @@ export function MessageSnackbar() {
                                 sx={{
                                     fontSize: 12,
                                     marginBottom: 1,
-                                    color: ch.difficulty === 'easy' 
-                                        ? '#2e7d32' 
-                                        : ch.difficulty === 'medium' 
-                                            ? '#f57c00' 
-                                            : '#d32f2f'
+                                    color: ch.difficulty === 'easy' ? 'success.main'
+                                        : ch.difficulty === 'medium' ? 'warning.main' 
+                                        : 'error.main'
                                 }}
                             >
                                 <Box 
