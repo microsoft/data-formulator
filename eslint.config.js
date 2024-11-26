@@ -25,6 +25,7 @@ export default [
       "@typescript-eslint/no-unused-vars": "off",
       "no-empty-pattern": "off",
       "no-empty": "off",
+      "prefer-const": "off",
     }
   }
 ];
