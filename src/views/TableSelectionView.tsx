@@ -139,7 +139,7 @@ export const TableSelectionView: React.FC<TableSelectionViewProps> = function Ta
             return  <TabPanel value={value} index={i} >
                         {content}
                         <Box width="100%" sx={{display: "flex"}}>
-                            <Typography sx={{fontSize: 10, color: "gray"}}>{Object.keys(t.rows[0]).length} columns{hideRowNum ? "" : ` ⨉ ${t.rows.length} rows`}</Typography>
+                            <Typography sx={{fontSize: 10, color: "text.secondary"}}>{Object.keys(t.rows[0]).length} columns{hideRowNum ? "" : ` ⨉ ${t.rows.length} rows`}</Typography>
                             <Box sx={{marginLeft: "auto"}} >
                                 {handleDeleteTable == undefined ? "" : 
                                     <IconButton size="small" color="primary" sx={{marginRight: "12px"}}
