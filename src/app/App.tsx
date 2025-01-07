@@ -245,12 +245,12 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
                 aria-label="View Mode"
                 sx={{ marginRight: "8px", height: 32, padding: "4px 0px", marginTop: "2px", "& .MuiToggleButton-root": { padding: "0px 6px" } }}
             >
-                <ToggleButton value="carousel">
+                <ToggleButton value="carousel" aria-label="view list">
                     <Tooltip title="view list">
                         <ViewSidebarIcon fontSize="small" sx={{ transform: "scaleX(-1)" }} />
                     </Tooltip>
                 </ToggleButton>
-                <ToggleButton value="gallery">
+                <ToggleButton value="gallery" aria-label="view grid">
                     <Tooltip title="view grid">
                         <GridViewIcon fontSize="small" />
                     </Tooltip>
