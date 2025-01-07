@@ -224,6 +224,9 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
             custom: {
                 main: "rgb(255, 160, 122)", //lightsalmon
             },
+            warning: {
+                main: '#bf5600', // New accessible color, original (#ed6c02) has insufficient color contrast of 3.11
+            },
         },
     });
 
