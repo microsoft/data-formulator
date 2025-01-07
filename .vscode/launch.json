@@ -5,7 +5,7 @@
             "name": "Flask",
             "type": "debugpy",
             "request": "launch",
-            "program": "${workspaceFolder}/app.py",
+            "program": "${workspaceFolder}/py-src/data_formulator/app.py",
             "args": ["run", "--no-debugger", "--no-reload"],
             "env": {
                 "FLASK_APP": "app.py",
