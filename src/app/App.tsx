@@ -106,7 +106,7 @@ export const ImportStateButton: React.FC<{}> = ({ }) => {
 
     
     return <Tooltip title="load a saved session">
-                <Button variant="text" color="primary" component="label" 
+                <Button variant="text" color="primary" 
                     //endIcon={<InputIcon />}
                 >
                     <Input inputProps={{ accept: '.dfstate', multiple: false  }} id="upload-data-file"

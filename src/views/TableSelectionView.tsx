@@ -186,7 +186,7 @@ export const TableSelectionDialog: React.FC<{ buttonElement: any }> = function T
     let dispatch = useDispatch<AppDispatch>();
 
     return <>
-        <Button sx={{fontSize: "inherit"}} component="label" onClick={() => {
+        <Button sx={{fontSize: "inherit"}} onClick={() => {
             setTableDialogOpen(true);
         }}>
             {buttonElement}
@@ -274,7 +274,7 @@ export const TableUploadDialog: React.FC<TableUploadDialogProps> = ({ buttonElem
         }
     };
 
-    return <Button sx={{fontSize: "inherit"}} variant="text" color="primary" component="label" 
+    return <Button sx={{fontSize: "inherit"}} variant="text" color="primary" 
                    disabled={disabled}>
                 <Input inputProps={{ accept: '.csv,.tsv,.json', multiple: true  }} id="upload-data-file"
                     type="file"  sx={{ display: 'none' }} aria-hidden={true} 
@@ -346,7 +346,7 @@ export const TableCopyDialog: React.FC<TableCopyDialogProps> = ({ buttonElement,
         </Dialog>;
 
     return <>
-        <Button sx={{fontSize: "inherit"}} variant="text" color="primary" component="label" 
+        <Button sx={{fontSize: "inherit"}} variant="text" color="primary" 
                     disabled={disabled} onClick={()=>{setDialogOpen(true)}}>
                 {buttonElement}
         </Button>
@@ -425,7 +425,7 @@ export const TableURLDialog: React.FC<TableURLDialogProps> = ({ buttonElement, d
         </Dialog>;
 
     return <>
-        <Button sx={{fontSize: "inherit"}} variant="text" color="primary" component="label" 
+        <Button sx={{fontSize: "inherit"}} variant="text" color="primary" 
                     disabled={disabled} onClick={()=>{setDialogOpen(true)}}>
                 {buttonElement}
         </Button>
@@ -745,7 +745,7 @@ export const TableCopyDialogV2: React.FC<TableCopyDialogProps> = ({ buttonElemen
         </Dialog>;
 
     return <>
-        <Button sx={{fontSize: "inherit"}} variant="text" color="primary" component="label" 
+        <Button sx={{fontSize: "inherit"}} variant="text" color="primary" 
                     disabled={disabled} onClick={()=>{setDialogOpen(true)}}>
                 {buttonElement}
         </Button>
