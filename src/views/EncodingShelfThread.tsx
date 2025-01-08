@@ -197,7 +197,7 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
 
     const dispatch = useDispatch<AppDispatch>();
 
-    const w: any = (a: any[], b: any[], spaceElement?: any) => a.length ? [a[0], spaceElement || '',...w(b, a.slice(1), spaceElement)] : b;
+    const interleaveArrays: any = (a: any[], b: any[], spaceElement?: any) => a.length ? [a[0], spaceElement || '',...interleaveArrays(b, a.slice(1), spaceElement)] : b;
 
     let previousInstructions : any = ""
 
@@ -405,7 +405,7 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
     }
 
     //let triggers = currentTable.derive.triggers;
-    let tableList = activeTableThread.map((tableId) => <ListItem sx={{padding: 0}}>
+    let tableList = activeTableThread.map((tableId) => <div className="table-list-item">
         <Button variant="text" sx={{textTransform: 'none', padding: 0, minWidth: 0}} onClick={() => { dispatch(dfActions.setFocusedTable(tableId)) }}>
             <Stack direction="row" sx={{fontSize: '12px'}} alignItems="center" gap={"2px"}>
                 <TableRowsIcon fontSize="inherit" />
@@ -414,7 +414,7 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
                 </Typography>
             </Stack>
         </Button>
-    </ListItem>);
+    </div>);
 
     let tableCards = activeTableThread.map((tableId) => 
         <Card variant='outlined' sx={{padding: '2px 0 2px 0'}}>
@@ -478,7 +478,7 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
     previousInstructions = 
         <Collapse orientation="vertical" in={true} sx={{width: "100%" }}>
             <Box  sx={{padding: '4px 0px', display: 'flex', flexDirection: "column" }}>
-                {w(tableCardsSublist, instructionCardsSublist, spaceElement)}
+                {interleaveArrays(tableCardsSublist, instructionCardsSublist, spaceElement)}
                 {/* {w(tableList.slice(0, tableList.length - 1), instructionList.slice(0, instructionList.length - 1))}  */}
                 {/* <Button sx={{minWidth: '24px'}}><RestartAlt /></Button> */}
             </Box>
@@ -504,7 +504,7 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
         let postInstructEndPoint = activeTableThread.findIndex(s => s == activeThreadChart.tableRef);
         postInstruction = <Collapse orientation="vertical" in={true} sx={{width: "100%"}}>
                 <Box  sx={{padding: '4px 0px', display: 'flex', flexDirection: "column" }}>
-                    {w([<Box sx={{width: '17px', height: '12px'}}>
+                    {interleaveArrays([<Box sx={{width: '17px', height: '12px'}}>
                             <Box sx={{padding:0, width: '1px', margin:'auto', height: '100%',
                                                     backgroundImage: 'linear-gradient(180deg, darkgray, darkgray 75%, transparent 75%, transparent 100%)',
                                                     backgroundSize: '1px 6px, 3px 100%'}}></Box>
