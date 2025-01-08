@@ -480,9 +480,11 @@ export const DataThread: FC<{}> = function ({ }) {
                 <Typography className="view-title" component="h2" sx={{marginTop: "6px"}}>
                     Data Threads
                 </Typography>
-                <IconButton size={'small'} color="primary" disabled={leafTables.length <= 1} onClick={() => { setThreadDrawerOpen(!threadDrawerOpen); }}>
-                    {drawerOpen ? <ChevronLeftIcon /> : <ChevronRightIcon />}
-                </IconButton>
+                <Tooltip title={drawerOpen ? "collapse" : "expand"}>
+                    <IconButton size={'small'} color="primary" disabled={leafTables.length <= 1} onClick={() => { setThreadDrawerOpen(!threadDrawerOpen); }}>
+                        {drawerOpen ? <ChevronLeftIcon /> : <ChevronRightIcon />}
+                    </IconButton>
+                </Tooltip>
             </Box>
             <Box sx={{transition: 'width 200ms cubic-bezier(0.4, 0, 0.2, 1) 0ms', overflow: 'auto', 
                       direction: 'rtl', display: 'flex', flex: 1}}  
