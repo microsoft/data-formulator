@@ -128,11 +128,11 @@ let SingleThreadView: FC<{
             let currentActiveFields = new Set(extractActiveFields(trigger))
             let fieldsIdentical = _.isEqual(previousActiveFields, currentActiveFields)
 
-            let triggerCard = <ListItem key={'thread-card-trigger-box'} sx={{padding: '0'}}>
+            let triggerCard = <div key={'thread-card-trigger-box'}>
                 <Box sx={{flex: 1}} /*sx={{ width: 'calc(100% - 8px)', marginLeft: 1, borderLeft: '1px dashed darkgray' }}*/ >
                     <TriggerCard className={selectedClassName} trigger={trigger} hideFields={fieldsIdentical} />   
                 </Box>
-            </ListItem>;
+            </div>;
 
             return <Box sx={{display: 'flex', flexDirection: 'column'}} key={`trigger-card-${trigger.chartRef}`}>
                 {triggerCard}
@@ -165,7 +165,7 @@ let SingleThreadView: FC<{
         // only charts without dependency can be deleted
         let tableDeleteEnabled = table?.derive && !tables.some(t => t.derive?.trigger.tableId == tableId);
             
-        let colloapsedTableBox = <ListItem sx={{padding: 0}}>
+        let colloapsedTableBox = <div style={{padding: 0}}>
             <Box sx={{textTransform: 'none', padding: 0, minWidth: 0, color: 'gray'}} >
                 <Stack direction="row" sx={{fontSize: '12px', fontWeight: tableId == focusedTableId ? 'bold' : 'normal'}} alignItems="center" gap={"2px"}>
                     <TableRowsIcon fontSize="inherit"  sx={{fontWeight: 'inherit'}}/>
@@ -174,9 +174,9 @@ let SingleThreadView: FC<{
                     </Typography>
                 </Stack>
             </Box>
-        </ListItem>;
+        </div>;
 
-        let regularTableBox = <ListItem ref={relevantCharts.some(c => c.chartId == focusedChartId) ? scrollRef : null} sx={{padding: '0px'}}>
+        let regularTableBox = <div ref={relevantCharts.some(c => c.chartId == focusedChartId) ? scrollRef : null} style={{padding: '0px'}}>
             <Card className={`data-thread-card ${selectedClassName}`} variant="outlined" 
                     sx={{ width: '100%', background: 'aliceblue' }} 
                     onClick={() => { 
@@ -222,7 +222,7 @@ let SingleThreadView: FC<{
                     </ButtonGroup>
                 </Box>
             </Card>
-        </ListItem>
+        </div>
 
         let chartElementProps = collapsed ? {display: 'flex', flexWrap: 'wrap'} : {}
 
@@ -286,9 +286,9 @@ let SingleThreadView: FC<{
                 </Typography>
             </Divider>
         </Box>
-        <List sx={{padding: '2px 4px 2px 4px', marginTop: 0, marginBottom: '8px', direction: 'ltr'}}>
+        <div style={{padding: '2px 4px 2px 4px', marginTop: 0, marginBottom: '8px', direction: 'ltr'}}>
             {content}
-        </List>
+        </div>
     </Box>    
 }
 
