@@ -383,6 +383,7 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
                 </Tooltip>
             </IconButton>
         ) : (
+            <Tooltip title="save a copy">
             <IconButton color="primary" key="unsave-btn" size="small" sx={{ textTransform: "none" }}
                 disabled={chartUnavailable}
                 onClick={() => {
@@ -392,13 +393,13 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
                     // });
                     dispatch(dfActions.saveUnsaveChart(focusedChart.id));
                 }}>
-                <Tooltip title="save a copy">
                     <StarBorderIcon  />
-                </Tooltip>
-            </IconButton>
+                </IconButton>
+            </Tooltip>
         );
 
-    let duplicateButton = <IconButton color="primary" key="duplicate-btn" size="small" sx={{ textTransform: "none" }}
+    let duplicateButton = <Tooltip title="duplicate the chart">
+        <IconButton color="primary" key="duplicate-btn" size="small" sx={{ textTransform: "none" }}
         disabled={focusedChart.intermediate != undefined}
         onClick={() => {
             // trackEvent('save-chart', { 
@@ -407,10 +408,10 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
             // });
             dispatch(dfActions.duplicateChart(focusedChart.id));
         }}>
-        <Tooltip title="duplicate the chart">
+        
             <ContentCopyIcon  />
-        </Tooltip>
-    </IconButton>
+        </IconButton>
+    </Tooltip>
 
     let createNewChartButton =  <ChartCreationMenu tableId={focusedChart.tableRef} buttonElement={
             <Tooltip title="create a new chart">
