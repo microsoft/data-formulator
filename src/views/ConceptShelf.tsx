@@ -129,7 +129,7 @@ export const ConceptShelf: FC<ConceptShelfProps> = function ConceptShelf() {
                 <Box className="data-fields-list">
                     <Box sx={{display: "block", width: "100%"}}>
                         <Divider orientation="horizontal" textAlign="left">
-                            <Typography component="h2" sx={{fontSize: "10px"}} color="darkgray">
+                            <Typography component="h2" sx={{fontSize: "10px"}} color="text.secondary">
                                 field operators
                             </Typography>
                         </Divider>

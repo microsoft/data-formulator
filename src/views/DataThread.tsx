@@ -281,7 +281,7 @@ let SingleThreadView: FC<{
                 "& .MuiDivider-wrapper": { display: 'flex', flexDirection: 'row' },
                 "&::before, &::after": {  borderColor: 'darkgray',  borderWidth: '2px', width: 50 },
             }}>
-                <Typography sx={{fontSize: "10px", fontWeight: 'bold', color:'rgba(100, 100, 100, 0.8)', textTransform: 'none'}}>
+                <Typography sx={{fontSize: "10px", fontWeight: 'bold', color:'text.secondary', textTransform: 'none'}}>
                     {`thread - ${threadIdx + 1}`}
                 </Typography>
             </Divider>
