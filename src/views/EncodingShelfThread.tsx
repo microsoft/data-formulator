@@ -455,9 +455,7 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
                     </Box>
                     <TriggerCard className="encoding-shelf-trigger-card" trigger={trigger} hideFields={fieldsIdentical} />
                     {i == triggers.length - 1 && chart.intermediate == undefined ? 
-                        <Tooltip title={<Typography sx={{fontSize: 11}}>
-                                            reformulate: override <TableRowsIcon sx={{fontSize: 10, marginBottom: '-1px'}}/>{chart.tableRef}
-                                        </Typography>}>
+                        <Tooltip title={`reformulate: override ${chart.tableRef}`}>
                             <IconButton color="warning" size="small"
                                 onClick={() => {
                                     reFormulate(triggers[triggers.length - 1]);
