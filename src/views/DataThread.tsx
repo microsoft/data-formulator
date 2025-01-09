@@ -229,7 +229,7 @@ let SingleThreadView: FC<{
         return [
             regularTableBox,
             <Box sx={{display: 'flex', flexDirection: 'row'}}>
-                <Button sx={{minWidth: '1px', padding: '0px', width: '17px',  flex: 'none', display: 'flex'
+                <div style={{minWidth: '1px', padding: '0px', width: '17px',  flex: 'none', display: 'flex'
                             //borderLeft: '1px dashed darkgray',
                             }}>
                     <Box sx={{padding:0, width: '1px', margin:'auto', height: '100%',
@@ -238,7 +238,7 @@ let SingleThreadView: FC<{
                                 backgroundImage: 'linear-gradient(180deg, darkgray, darkgray 75%, transparent 75%, transparent 100%)',
                                 backgroundSize: '1px 6px, 3px 100%'
                             }}></Box>
-                </Button>
+                </div>
                 <Box sx={{flex: 1, padding: '8px 0px', minHeight: '8px', ...chartElementProps}}>
                     {releventChartElements}
                 </Box>
