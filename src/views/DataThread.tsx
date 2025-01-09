@@ -5,29 +5,18 @@ import React, { FC, useEffect, useRef, useState } from 'react';
 
 import {
     Box,
-    Button,
     Divider,
     Typography,
     LinearProgress,
-    ListItem,
     Stack,
     ListItemIcon,
-    List,
     Card,
     IconButton,
     Tooltip,
     ButtonGroup,
     useTheme,
-    Drawer,
-    ListItemButton,
-    ListItemText,
-    Collapse,
-    Grow,
-    alpha,
 } from '@mui/material';
 
-import embed from 'vega-embed';
-import AnimateOnChange from 'react-animate-on-change'
 import { VegaLite } from 'react-vega'
 
 
