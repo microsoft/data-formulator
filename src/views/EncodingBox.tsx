@@ -594,14 +594,14 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
         }}
         freeSolo
         renderInput={(params) => (
-            <TextField {...params} variant="standard" autoComplete='off' 
+            <TextField {...params} variant="standard" autoComplete='off' placeholder='field or concept'
                 sx={{height: "24px", "& .MuiInput-root": {height: "24px", fontSize: "small"}}} />
         )}
     />
 
     const filter = createFilterOptions<string>();
     // when there is no field added, allow users to directly type concepts here, and it will be created on the fly.
-    let encContent = field == undefined ? 
+    const encContent = field == undefined ? 
         (encoding.aggregate == 'count' ? [ aggregateDisplay ] : [
             normalizedDisplay,
             aggregateDisplay,
