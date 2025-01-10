@@ -433,21 +433,23 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({ rows, ta
             <Paper className="table-footer-container"
                 sx={{ borderTop: '1px solid', borderColor: 'rgba(0, 0, 0, 0.12)', padding: '6px', 
                       display: 'flex', flexDirection: 'row',  position: 'absolute', bottom: 0, right: 15 }}>
-                <ToggleButton
-                    color="primary"
-                    size="small"
-                    value="check"
-                    sx={{ margin: "0px 6px 0px 0px", padding: "0px 2px", border: 'none', color: theme.palette.primary.main }}
-                    selected={footerActionExpand}
-                    onChange={() => {
-                        if (footerActionExpand) {
-                            setSearchText("");
-                        }
-                        setFooterActionExpand(!footerActionExpand);
-                    }}
-                    >
-                    {footerActionExpand ? <ChevronLeftIcon sx={{transform: footerActionExpand ? 'rotate(180deg)' : 'rotate(0)'}} /> : <Tooltip title="Table options"><ChevronLeftIcon /></Tooltip> }
-                </ToggleButton>
+                <Tooltip title="Table options">
+                    <ToggleButton
+                        color="primary"
+                        size="small"
+                        value="check"
+                        sx={{ margin: "0px 6px 0px 0px", padding: "0px 2px", border: 'none', color: theme.palette.primary.main }}
+                        selected={footerActionExpand}
+                        onChange={() => {
+                            if (footerActionExpand) {
+                                setSearchText("");
+                            }
+                            setFooterActionExpand(!footerActionExpand);
+                        }}
+                        >
+                        {footerActionExpand ? <ChevronLeftIcon sx={{transform: footerActionExpand ? 'rotate(180deg)' : 'rotate(0)'}} /> : <ChevronLeftIcon /> }
+                    </ToggleButton>
+                </Tooltip>
                 {/* <Button variant="text" sx={{padding: '0px 4px', margin:'0px 2px', minWidth: 0}} size="small" 
                         onClick={() => { setFooterActionExpand(!footerActionExpand) }}>{"<"}</Button> */}
                 <Collapse orientation="horizontal"  in={footerActionExpand}>
