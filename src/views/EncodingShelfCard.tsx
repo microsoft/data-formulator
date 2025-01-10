@@ -565,19 +565,19 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                             )
                         }}
                         onChange={(event) => { handleUpdateChartType(event.target.value) }}>
-                            {Object.entries(CHART_TEMPLATES).map(([group, templates]) => {
-                                return [
-                                    <ListSubheader sx={{ color: "text.secondary", lineHeight: 2, fontSize: 12 }} key={group}>{group}</ListSubheader>,
-                                    ...templates.map((t, i) => (
-                                        <MenuItem sx={{ fontSize: 12, paddingLeft: 3, paddingRight: 3 }} value={t.chart} key={`${group}-${i}`}>
-                                            <ListItemIcon>
-                                                {typeof t?.icon == 'string' ? <img height="24px" width="24px" src={t?.icon} alt="" role="presentation" /> : t?.icon}
-                                            </ListItemIcon>
-                                            <ListItemText primaryTypographyProps={{fontSize: '12px'}}>{t.chart}</ListItemText>
-                                        </MenuItem>
-                                    ))
-                                ]
-                            })}
+                        {Object.entries(CHART_TEMPLATES).map(([group, templates]) => {
+                            return [
+                                <ListSubheader sx={{ color: "text.secondary", lineHeight: 2, fontSize: 12 }} key={group}>{group}</ListSubheader>,
+                                ...templates.map((t, i) => (
+                                    <MenuItem sx={{ fontSize: 12, paddingLeft: 3, paddingRight: 3 }} value={t.chart} key={`${group}-${i}`}>
+                                        <ListItemIcon>
+                                            {typeof t?.icon == 'string' ? <img height="24px" width="24px" src={t?.icon} alt="" role="presentation" /> : t?.icon}
+                                        </ListItemIcon>
+                                        <ListItemText primaryTypographyProps={{fontSize: '12px'}}>{t.chart}</ListItemText>
+                                    </MenuItem>
+                                ))
+                            ]
+                        })}
                     </Select>
                 </FormControl>
             </Box>
