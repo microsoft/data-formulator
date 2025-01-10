@@ -548,19 +548,15 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                         renderValue={(value: string) => {
                             const t = getChartTemplate(value);
                             return (
-                                <Box>
-                                    {/* <InputLabel shrink id="chart-mark-select-label">Visualization Type</InputLabel> */}
-                                    <MenuItem sx={{padding: "0px 0px 0px 4px"}}>
-                                        <ListItemIcon sx={{minWidth: "24px"}}>
-                                            {typeof t?.icon == 'string' ? <img height="24px" width="24px" src={t?.icon} alt="" role="presentation" /> : t?.icon}
-                                            </ListItemIcon>
-                                        <ListItemText sx={{marginLeft: "2px", whiteSpace: "initial"}} primaryTypographyProps={{fontSize: '12px'}}>{t?.chart}</ListItemText>
-                                    </MenuItem>
-                                </Box>
+                                <div style={{display: 'flex', padding: "0px 0px 0px 4px"}}>
+                                    <ListItemIcon sx={{minWidth: "24px"}}>
+                                        {typeof t?.icon == 'string' ? <img height="24px" width="24px" src={t?.icon} alt="" role="presentation" /> : t?.icon}
+                                        </ListItemIcon>
+                                    <ListItemText sx={{marginLeft: "2px", whiteSpace: "initial"}} primaryTypographyProps={{fontSize: '12px'}}>{t?.chart}</ListItemText>
+                                </div>
                             )
                         }}
                         onChange={(event) => { handleUpdateChartType(event.target.value) }}>
-                        <List>
                             {Object.entries(CHART_TEMPLATES).map(([group, templates]) => {
                                 return [
                                     <ListSubheader sx={{ color: "darkgray", lineHeight: 2, fontSize: 12 }} key={group}>{group}</ListSubheader>,
@@ -574,7 +570,6 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                                     ))
                                 ]
                             })}
-                        </List>
                     </Select>
                 </FormControl>
             </Box>
