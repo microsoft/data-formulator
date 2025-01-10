@@ -275,6 +275,7 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({ rows, ta
                 </IconButton>
             </Tooltip> */}
             
+            <Tooltip title="Auto-fix">
             <IconButton size="small" color="primary"
                 onClick={() => {
                         console.log(`[fyi] just sent request to process load data`);
@@ -312,7 +313,7 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({ rows, ta
                             });
                     }
                 }
-            ><AutoFixNormalIcon /></IconButton>
+            ><AutoFixNormalIcon /></IconButton></Tooltip>
             <Divider flexItem  orientation="vertical" sx={{marginRight: 1}}/>
         </Box>
 
