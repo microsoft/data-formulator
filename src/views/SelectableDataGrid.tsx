@@ -395,9 +395,11 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({ rows, ta
                                                     }}
                                                 >
                                                     <Box component="span" className="data-view-header-title">
-                                                        <IconButton size="small" sx={{ fontSize: "inherit", padding: "2px" }} component="span">
-                                                            {getIconFromType(columnDef.dataType)}
-                                                        </IconButton>
+                                                        <Tooltip title={`${columnDef.dataType} type`} >
+                                                            <span role="img" style={{ fontSize: "inherit", padding: "2px", display: "inline-flex", alignItems: "center" }}>
+                                                                {getIconFromType(columnDef.dataType)}
+                                                            </span>
+                                                        </Tooltip>
                                                         <Typography className="data-view-header-name">{columnDef.label}</Typography>
                                                     </Box>
                                                 </TableSortLabel>
