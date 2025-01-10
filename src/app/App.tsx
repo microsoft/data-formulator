@@ -106,7 +106,7 @@ export const ImportStateButton: React.FC<{}> = ({ }) => {
 
     
     return <Tooltip title="load a saved session">
-                <Button variant="text" color="primary" component="label" 
+                <Button variant="text" color="primary" 
                     //endIcon={<InputIcon />}
                 >
                     <Input inputProps={{ accept: '.dfstate', multiple: false  }} id="upload-data-file"
@@ -224,6 +224,9 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
             custom: {
                 main: "rgb(255, 160, 122)", //lightsalmon
             },
+            warning: {
+                main: '#bf5600', // New accessible color, original (#ed6c02) has insufficient color contrast of 3.11
+            },
         },
     });
 
@@ -245,12 +248,12 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
                 aria-label="View Mode"
                 sx={{ marginRight: "8px", height: 32, padding: "4px 0px", marginTop: "2px", "& .MuiToggleButton-root": { padding: "0px 6px" } }}
             >
-                <ToggleButton value="carousel">
+                <ToggleButton value="carousel" aria-label="view list">
                     <Tooltip title="view list">
                         <ViewSidebarIcon fontSize="small" sx={{ transform: "scaleX(-1)" }} />
                     </Tooltip>
                 </ToggleButton>
-                <ToggleButton value="gallery">
+                <ToggleButton value="gallery" aria-label="view grid">
                     <Tooltip title="view grid">
                         <GridViewIcon fontSize="small" />
                     </Tooltip>

@@ -130,7 +130,7 @@ export const ConceptCard: FC<ConceptCardProps> = function ConceptCard({ field })
     
 
 
-    let opacity = isDragging ? 0.3 :(notInFocusedTable ? 0.4 : 1);
+    let opacity = isDragging ? 0.3 :(notInFocusedTable ? 0.65 : 1);
     let fontStyle = "inherit";
     let border = "hidden";
 
@@ -278,7 +278,7 @@ export const ConceptCard: FC<ConceptCardProps> = function ConceptCard({ field })
                 <Typography className="draggable-card-title" sx={{ fontSize: 13, height: 28, width: "100%" }} component={'span'} gutterBottom>
                     {typeIconMenu}
                     {fieldNameEntry}
-                    {field.semanticType ? <Typography sx={{fontSize: "xx-small", marginLeft: "6px", color: 'darkgray', fontStyle: 'italic'}}>-- {field.semanticType}</Typography> : ""}
+                    {field.semanticType ? <Typography sx={{fontSize: "xx-small", marginLeft: "6px", fontStyle: 'italic'}}>-- {field.semanticType}</Typography> : ""}
                     {/* {field.source == "custom" ? exampleToComponent(field.domain.values, 3) : ""} */}
                 </Typography>
                 <Box className='draggable-card-action-button' sx={{ position: "absolute", right: 1, background: 'rgba(255, 255, 255, 0.95)' }}>{cardHeaderOptions}</Box>

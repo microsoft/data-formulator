@@ -383,6 +383,7 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
                 </Tooltip>
             </IconButton>
         ) : (
+            <Tooltip title="save a copy">
             <IconButton color="primary" key="unsave-btn" size="small" sx={{ textTransform: "none" }}
                 disabled={chartUnavailable}
                 onClick={() => {
@@ -392,13 +393,13 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
                     // });
                     dispatch(dfActions.saveUnsaveChart(focusedChart.id));
                 }}>
-                <Tooltip title="save a copy">
                     <StarBorderIcon  />
-                </Tooltip>
-            </IconButton>
+                </IconButton>
+            </Tooltip>
         );
 
-    let duplicateButton = <IconButton color="primary" key="duplicate-btn" size="small" sx={{ textTransform: "none" }}
+    let duplicateButton = <Tooltip title="duplicate the chart">
+        <IconButton color="primary" key="duplicate-btn" size="small" sx={{ textTransform: "none" }}
         disabled={focusedChart.intermediate != undefined}
         onClick={() => {
             // trackEvent('save-chart', { 
@@ -407,10 +408,10 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
             // });
             dispatch(dfActions.duplicateChart(focusedChart.id));
         }}>
-        <Tooltip title="duplicate the chart">
+        
             <ContentCopyIcon  />
-        </Tooltip>
-    </IconButton>
+        </IconButton>
+    </Tooltip>
 
     let createNewChartButton =  <ChartCreationMenu tableId={focusedChart.tableRef} buttonElement={
             <Tooltip title="create a new chart">
@@ -680,18 +681,24 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
     let [scaleMin, scaleMax] = [0.2, 2.4]
 
     let chartResizer = <Stack spacing={1} direction="row" sx={{ padding: '8px', width: 160, position: "absolute", zIndex: 10, color: 'darkgray' }} alignItems="center">
-        <IconButton color="primary" size='small' disabled={scaleFactor <= scaleMin} onClick={()=>{
-            dispatch(dfActions.updateChartScaleFactor({chartId: focusedChart.id, scaleFactor: scaleFactor - 0.1}))
-        }}>
-            <ZoomOutIcon fontSize="small" />
-        </IconButton>
+        <Tooltip title="zoom out">
+            <IconButton color="primary" size='small' disabled={scaleFactor <= scaleMin} onClick={() => {
+                dispatch(dfActions.updateChartScaleFactor({ chartId: focusedChart.id, scaleFactor: scaleFactor - 0.1 }))
+            }}>
+                <ZoomOutIcon fontSize="small" />
+            </IconButton>
+        </Tooltip>
         <Slider aria-label="chart-resize" defaultValue={1} step={0.1} min={scaleMin} max={scaleMax} 
                 value={scaleFactor} onChange={(event: Event, newValue: number | number[]) => {
             dispatch(dfActions.updateChartScaleFactor({chartId: focusedChart.id, scaleFactor: newValue as number}))
         }} />
-        <IconButton color="primary" size='small' disabled={scaleFactor >= scaleMax} onClick={()=>{
-            dispatch(dfActions.updateChartScaleFactor({chartId: focusedChart.id, scaleFactor: scaleFactor + 0.1}))
-        }}><ZoomInIcon fontSize="small" /></IconButton>
+        <Tooltip title="zoom in">
+            <IconButton color="primary" size='small' disabled={scaleFactor >= scaleMax} onClick={() => {
+                dispatch(dfActions.updateChartScaleFactor({ chartId: focusedChart.id, scaleFactor: scaleFactor + 0.1 }))
+            }}>
+                <ZoomInIcon fontSize="small" />
+            </IconButton>
+        </Tooltip>
     </Stack>
 
     return <Box ref={componentRef} sx={{overflow: "hidden", display: 'flex', flex: 1}}>

@@ -5,29 +5,18 @@ import React, { FC, useEffect, useRef, useState } from 'react';
 
 import {
     Box,
-    Button,
     Divider,
     Typography,
     LinearProgress,
-    ListItem,
     Stack,
     ListItemIcon,
-    List,
     Card,
     IconButton,
     Tooltip,
     ButtonGroup,
     useTheme,
-    Drawer,
-    ListItemButton,
-    ListItemText,
-    Collapse,
-    Grow,
-    alpha,
 } from '@mui/material';
 
-import embed from 'vega-embed';
-import AnimateOnChange from 'react-animate-on-change'
 import { VegaLite } from 'react-vega'
 
 
@@ -128,11 +117,11 @@ let SingleThreadView: FC<{
             let currentActiveFields = new Set(extractActiveFields(trigger))
             let fieldsIdentical = _.isEqual(previousActiveFields, currentActiveFields)
 
-            let triggerCard = <ListItem key={'thread-card-trigger-box'} sx={{padding: '0'}}>
+            let triggerCard = <div key={'thread-card-trigger-box'}>
                 <Box sx={{flex: 1}} /*sx={{ width: 'calc(100% - 8px)', marginLeft: 1, borderLeft: '1px dashed darkgray' }}*/ >
                     <TriggerCard className={selectedClassName} trigger={trigger} hideFields={fieldsIdentical} />   
                 </Box>
-            </ListItem>;
+            </div>;
 
             return <Box sx={{display: 'flex', flexDirection: 'column'}} key={`trigger-card-${trigger.chartRef}`}>
                 {triggerCard}
@@ -165,7 +154,7 @@ let SingleThreadView: FC<{
         // only charts without dependency can be deleted
         let tableDeleteEnabled = table?.derive && !tables.some(t => t.derive?.trigger.tableId == tableId);
             
-        let colloapsedTableBox = <ListItem sx={{padding: 0}}>
+        let colloapsedTableBox = <div style={{padding: 0}}>
             <Box sx={{textTransform: 'none', padding: 0, minWidth: 0, color: 'gray'}} >
                 <Stack direction="row" sx={{fontSize: '12px', fontWeight: tableId == focusedTableId ? 'bold' : 'normal'}} alignItems="center" gap={"2px"}>
                     <TableRowsIcon fontSize="inherit"  sx={{fontWeight: 'inherit'}}/>
@@ -174,9 +163,9 @@ let SingleThreadView: FC<{
                     </Typography>
                 </Stack>
             </Box>
-        </ListItem>;
+        </div>;
 
-        let regularTableBox = <ListItem ref={relevantCharts.some(c => c.chartId == focusedChartId) ? scrollRef : null} sx={{padding: '0px'}}>
+        let regularTableBox = <div ref={relevantCharts.some(c => c.chartId == focusedChartId) ? scrollRef : null} style={{padding: '0px'}}>
             <Card className={`data-thread-card ${selectedClassName}`} variant="outlined" 
                     sx={{ width: '100%', background: 'aliceblue' }} 
                     onClick={() => { 
@@ -222,14 +211,14 @@ let SingleThreadView: FC<{
                     </ButtonGroup>
                 </Box>
             </Card>
-        </ListItem>
+        </div>
 
         let chartElementProps = collapsed ? {display: 'flex', flexWrap: 'wrap'} : {}
 
         return [
             regularTableBox,
             <Box sx={{display: 'flex', flexDirection: 'row'}}>
-                <Button sx={{minWidth: '1px', padding: '0px', width: '17px',  flex: 'none', display: 'flex'
+                <div style={{minWidth: '1px', padding: '0px', width: '17px',  flex: 'none', display: 'flex'
                             //borderLeft: '1px dashed darkgray',
                             }}>
                     <Box sx={{padding:0, width: '1px', margin:'auto', height: '100%',
@@ -238,7 +227,7 @@ let SingleThreadView: FC<{
                                 backgroundImage: 'linear-gradient(180deg, darkgray, darkgray 75%, transparent 75%, transparent 100%)',
                                 backgroundSize: '1px 6px, 3px 100%'
                             }}></Box>
-                </Button>
+                </div>
                 <Box sx={{flex: 1, padding: '8px 0px', minHeight: '8px', ...chartElementProps}}>
                     {releventChartElements}
                 </Box>
@@ -281,14 +270,14 @@ let SingleThreadView: FC<{
                 "& .MuiDivider-wrapper": { display: 'flex', flexDirection: 'row' },
                 "&::before, &::after": {  borderColor: 'darkgray',  borderWidth: '2px', width: 50 },
             }}>
-                <Typography sx={{fontSize: "10px", fontWeight: 'bold', color:'rgba(100, 100, 100, 0.8)', textTransform: 'none'}}>
+                <Typography sx={{fontSize: "10px", fontWeight: 'bold', color:'text.secondary', textTransform: 'none'}}>
                     {`thread - ${threadIdx + 1}`}
                 </Typography>
             </Divider>
         </Box>
-        <List sx={{padding: '2px 4px 2px 4px', marginTop: 0, marginBottom: '8px', direction: 'ltr'}}>
+        <div style={{padding: '2px 4px 2px 4px', marginTop: 0, marginBottom: '8px', direction: 'ltr'}}>
             {content}
-        </List>
+        </div>
     </Box>    
 }
 
@@ -480,9 +469,11 @@ export const DataThread: FC<{}> = function ({ }) {
                 <Typography className="view-title" component="h2" sx={{marginTop: "6px"}}>
                     Data Threads
                 </Typography>
-                <IconButton size={'small'} color="primary" disabled={leafTables.length <= 1} onClick={() => { setThreadDrawerOpen(!threadDrawerOpen); }}>
-                    {drawerOpen ? <ChevronLeftIcon /> : <ChevronRightIcon />}
-                </IconButton>
+                <Tooltip title={drawerOpen ? "collapse" : "expand"}>
+                    <IconButton size={'small'} color="primary" disabled={leafTables.length <= 1} onClick={() => { setThreadDrawerOpen(!threadDrawerOpen); }}>
+                        {drawerOpen ? <ChevronLeftIcon /> : <ChevronRightIcon />}
+                    </IconButton>
+                </Tooltip>
             </Box>
             <Box sx={{transition: 'width 200ms cubic-bezier(0.4, 0, 0.2, 1) 0ms', overflow: 'auto', 
                       direction: 'rtl', display: 'flex', flex: 1}}  
