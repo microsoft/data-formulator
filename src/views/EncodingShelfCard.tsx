@@ -209,7 +209,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
         .map(([group, channelList]) => {
 
             let component = <Box>
-                <Typography key={`encoding-group-${group}`} sx={{ fontSize: 10, color: "darkgray", marginTop: "6px", marginBottom: "2px" }}>{group}</Typography>
+                <Typography key={`encoding-group-${group}`} sx={{ fontSize: 10, color: "text.secondary", marginTop: "6px", marginBottom: "2px" }}>{group}</Typography>
                 {channelList.filter(channel => Object.keys(encodingMap).includes(channel))
                     .map(channel => <EncodingBox key={`shelf-${channel}`} channel={channel as Channel} chartId={chartId} />)}
             </Box>
