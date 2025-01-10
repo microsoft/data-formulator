@@ -21,7 +21,6 @@ import {
     Stack,
     Card,
     Chip,
-    List,
 } from '@mui/material';
 
 import React from 'react';
