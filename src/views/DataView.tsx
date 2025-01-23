@@ -84,7 +84,7 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView({  $table
         if (colDefs) {
             colDefs = [{
                 id: "#rowId", label: "#", minWidth: 10, align: undefined, width: 40,
-                format: (value: any) => <Typography fontSize="inherit" color="rgba(0,0,0,0.5)">{value}</Typography>, 
+                format: (value: any) => <Typography fontSize="inherit" color="rgba(0,0,0,0.65)">{value}</Typography>, 
                 dataType: Type.Number,
                 source: "original", 
             }, ...colDefs]
