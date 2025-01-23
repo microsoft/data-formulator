@@ -546,13 +546,13 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                             fontSize: "10px",
                             margin: "-2px 0px 0px 4px",
                         }}
-                    >Visualization Type</InputLabel>
+                    >Chart Type</InputLabel>
                     <Select
                         variant="standard"
                         labelId="chart-mark-select-label"
                         id="chart-mark-select"
                         value={chart.chartType}
-                        title="Visualization Type"
+                        title="Chart Type"
                         renderValue={(value: string) => {
                             const t = getChartTemplate(value);
                             return (
