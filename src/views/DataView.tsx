@@ -84,7 +84,7 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView({  $table
         if (colDefs) {
             colDefs = [{
                 id: "#rowId", label: "#", minWidth: 10, align: undefined, width: 40,
-                format: (value: any) => <Typography fontSize="inherit" color="rgba(0,0,0,0.5)">{value}</Typography>, 
+                format: (value: any) => <Typography fontSize="inherit" color="rgba(0,0,0,0.65)">{value}</Typography>, 
                 dataType: Type.Number,
                 source: "original", 
             }, ...colDefs]
@@ -110,7 +110,7 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView({  $table
 
     let genTableLink =  (t: DictTable) => 
         <Link underline="hover" key={t.id} sx={{cursor: "pointer"}} 
-            color="primary" onClick={()=>{ dispatch(dfActions.setFocusedTable(t.id)) }}>
+            color="#1770c7" onClick={()=>{ dispatch(dfActions.setFocusedTable(t.id)) }}>
             <Typography sx={{fontWeight: t.id == focusedTableId? "bold" : "inherit", fontSize: 'inherit'}} component='span'>{t.id}</Typography>
         </Link>;
 

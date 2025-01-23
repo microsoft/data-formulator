@@ -208,7 +208,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
         .map(([group, channelList]) => {
 
             let component = <Box>
-                <Typography key={`encoding-group-${group}`} sx={{ fontSize: 10, color: "darkgray", marginTop: "6px", marginBottom: "2px" }}>{group}</Typography>
+                <Typography key={`encoding-group-${group}`} sx={{ fontSize: 10, color: "text.secondary", marginTop: "6px", marginBottom: "2px" }}>{group}</Typography>
                 {channelList.filter(channel => Object.keys(encodingMap).includes(channel))
                     .map(channel => <EncodingBox key={`shelf-${channel}`} channel={channel as Channel} chartId={chartId} />)}
             </Box>
@@ -538,30 +538,36 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
         <Box sx={{ width: "100%", minWidth: "210px", height: '100%', display: "flex", flexDirection: "column" }}>
             <Box key='mark-selector-box' sx={{ flex: '0 0 auto' }}>
                 <FormControl sx={{ m: 1, minWidth: 120, width: "100%", margin: "0px 0"}} size="small">
+                    <InputLabel 
+                        id="chart-mark-select-label"
+                        sx={{
+                            color: "text.secondary",
+                            transform: "none",
+                            fontSize: "10px",
+                            margin: "-2px 0px 0px 4px",
+                        }}
+                    >Chart Type</InputLabel>
                     <Select
                         variant="standard"
                         labelId="chart-mark-select-label"
                         id="chart-mark-select"
                         value={chart.chartType}
-                        label="Visualization Type"
+                        title="Chart Type"
                         renderValue={(value: string) => {
                             const t = getChartTemplate(value);
                             return (
-                                <Box>
-                                    {/* <InputLabel shrink id="chart-mark-select-label">Visualization Type</InputLabel> */}
-                                    <MenuItem sx={{padding: "0px 0px 0px 4px"}}>
-                                        <ListItemIcon sx={{minWidth: "24px"}}>
-                                            {typeof t?.icon == 'string' ? <img height="24px" width="24px" src={t?.icon} alt="" role="presentation" /> : t?.icon}
-                                            </ListItemIcon>
-                                        <ListItemText sx={{marginLeft: "2px", whiteSpace: "initial"}} primaryTypographyProps={{fontSize: '12px'}}>{t?.chart}</ListItemText>
-                                    </MenuItem>
-                                </Box>
+                                <div style={{display: 'flex', padding: "0px 0px 0px 4px"}}>
+                                    <ListItemIcon sx={{minWidth: "24px"}}>
+                                        {typeof t?.icon == 'string' ? <img height="24px" width="24px" src={t?.icon} alt="" role="presentation" /> : t?.icon}
+                                        </ListItemIcon>
+                                    <ListItemText sx={{marginLeft: "2px", whiteSpace: "initial"}} primaryTypographyProps={{fontSize: '12px'}}>{t?.chart}</ListItemText>
+                                </div>
                             )
                         }}
                         onChange={(event) => { handleUpdateChartType(event.target.value) }}>
                         {Object.entries(CHART_TEMPLATES).map(([group, templates]) => {
                             return [
-                                <ListSubheader sx={{ color: "darkgray", lineHeight: 2, fontSize: 12 }} key={group}>{group}</ListSubheader>,
+                                <ListSubheader sx={{ color: "text.secondary", lineHeight: 2, fontSize: 12 }} key={group}>{group}</ListSubheader>,
                                 ...templates.map((t, i) => (
                                     <MenuItem sx={{ fontSize: 12, paddingLeft: 3, paddingRight: 3 }} value={t.chart} key={`${group}-${i}`}>
                                         <ListItemIcon>

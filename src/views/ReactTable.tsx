@@ -87,7 +87,7 @@ export const CustomReactTable: React.FC<CustomReactTableProps> = ({ rows, column
                         {rows.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
                             .map((row, i) => {
                                 return (
-                                    <TableRow hover role="checkbox" tabIndex={-1} key={i} sx={{ background: i % 2 == 0 ? '#F0F0F0' : "none" }}>
+                                    <TableRow hover tabIndex={-1} key={i} sx={{ background: i % 2 == 0 ? '#F0F0F0' : "none" }}>
                                         {columnDefs.map((column, j) => {
                                             const value = row[column.id];
                                             let backgroundColor = "none";

@@ -275,6 +275,7 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({ rows, ta
                 </IconButton>
             </Tooltip> */}
             
+            <Tooltip title="Infer Data Type">
             <IconButton size="small" color="primary"
                 onClick={() => {
                         console.log(`[fyi] just sent request to process load data`);
@@ -312,7 +313,7 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({ rows, ta
                             });
                     }
                 }
-            ><AutoFixNormalIcon /></IconButton>
+            ><AutoFixNormalIcon /></IconButton></Tooltip>
             <Divider flexItem  orientation="vertical" sx={{marginRight: 1}}/>
         </Box>
 
@@ -394,9 +395,11 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({ rows, ta
                                                     }}
                                                 >
                                                     <Box component="span" className="data-view-header-title">
-                                                        <IconButton size="small" sx={{ fontSize: "inherit", padding: "2px" }} component="span">
-                                                            {getIconFromType(columnDef.dataType)}
-                                                        </IconButton>
+                                                        <Tooltip title={`${columnDef.dataType} type`} >
+                                                            <span role="img" style={{ fontSize: "inherit", padding: "2px", display: "inline-flex", alignItems: "center" }}>
+                                                                {getIconFromType(columnDef.dataType)}
+                                                            </span>
+                                                        </Tooltip>
                                                         <Typography className="data-view-header-name">{columnDef.label}</Typography>
                                                     </Box>
                                                 </TableSortLabel>
@@ -433,21 +436,23 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({ rows, ta
             <Paper className="table-footer-container"
                 sx={{ borderTop: '1px solid', borderColor: 'rgba(0, 0, 0, 0.12)', padding: '6px', 
                       display: 'flex', flexDirection: 'row',  position: 'absolute', bottom: 0, right: 15 }}>
-                <ToggleButton
-                    color="primary"
-                    size="small"
-                    value="check"
-                    sx={{ margin: "0px 6px 0px 0px", padding: "0px 2px", border: 'none', color: theme.palette.primary.main }}
-                    selected={footerActionExpand}
-                    onChange={() => {
-                        if (footerActionExpand) {
-                            setSearchText("");
-                        }
-                        setFooterActionExpand(!footerActionExpand);
-                    }}
-                    >
-                    {footerActionExpand ? <ChevronLeftIcon sx={{transform: footerActionExpand ? 'rotate(180deg)' : 'rotate(0)'}} /> : <Tooltip title="Table options"><ChevronLeftIcon /></Tooltip> }
-                </ToggleButton>
+                <Tooltip title="Table options">
+                    <ToggleButton
+                        color="primary"
+                        size="small"
+                        value="check"
+                        sx={{ margin: "0px 6px 0px 0px", padding: "0px 2px", border: 'none', color: theme.palette.primary.main }}
+                        selected={footerActionExpand}
+                        onChange={() => {
+                            if (footerActionExpand) {
+                                setSearchText("");
+                            }
+                            setFooterActionExpand(!footerActionExpand);
+                        }}
+                        >
+                        {footerActionExpand ? <ChevronLeftIcon sx={{transform: footerActionExpand ? 'rotate(180deg)' : 'rotate(0)'}} /> : <ChevronLeftIcon /> }
+                    </ToggleButton>
+                </Tooltip>
                 {/* <Button variant="text" sx={{padding: '0px 4px', margin:'0px 2px', minWidth: 0}} size="small" 
                         onClick={() => { setFooterActionExpand(!footerActionExpand) }}>{"<"}</Button> */}
                 <Collapse orientation="horizontal"  in={footerActionExpand}>
