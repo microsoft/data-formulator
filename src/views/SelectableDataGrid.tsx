@@ -275,7 +275,7 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({ rows, ta
                 </IconButton>
             </Tooltip> */}
             
-            <Tooltip title="Auto-fix">
+            <Tooltip title="Infer Data Type">
             <IconButton size="small" color="primary"
                 onClick={() => {
                         console.log(`[fyi] just sent request to process load data`);
