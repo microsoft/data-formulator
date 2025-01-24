@@ -90,11 +90,11 @@ export let ChartElementFC: FC<{chart: Chart, tableRows: any[], boxWidth?: number
         assembledChart = (({ data, ...o }) => o)(assembledChart);
 
         let getRandom = (seed: number) => {
-            var x = Math.sin(seed++) * 10000;
+            let x = Math.sin(seed++) * 10000;
             return x - Math.floor(x);
         }
         let getRandomSubarray = (arr: any[], size: number) => {
-            var shuffled = arr.slice(0), i = arr.length, temp, index;
+            let shuffled = arr.slice(0), i = arr.length, temp, index;
             while (i--) {
                 index = Math.floor((i + 1) * getRandom(233 * i + 888));
                 temp = shuffled[index];

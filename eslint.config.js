@@ -30,7 +30,6 @@ export default [
       "@typescript-eslint/no-unused-vars": "off",
       "no-empty-pattern": "off",
       "no-empty": "off",
-      "no-var": "off",
       "no-unsafe-optional-chaining": "off",
       "no-useless-escape": "off",
       "prefer-const": "off",
