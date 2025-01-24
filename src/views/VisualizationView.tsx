@@ -546,7 +546,7 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
             }}>{codeExpl}</MuiMarkdown>
 
     let focusedComponent = [];
-    if (Boolean(candidatesViewAnchorEl)) {
+    if (candidatesViewAnchorEl) {
         focusedComponent = [
             //chartActionItems,
             <Box key="derived-dialog" sx={{ margin: "16px", display: "flex", flexDirection: "column", flex: "1", justifyContent: 'flex-start'}}>
