@@ -45,7 +45,7 @@ export interface ConceptShelfProps {
 
 export const ConceptShelf: FC<ConceptShelfProps> = function ConceptShelf() {
 
-    let theme = useTheme();
+    const theme = useTheme();
     // reference to states
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
     const focusedTableId = useSelector((state: DataFormulatorState) => state.focusedTableId);
@@ -53,16 +53,16 @@ export const ConceptShelf: FC<ConceptShelfProps> = function ConceptShelf() {
     const charts = useSelector((state: DataFormulatorState) => state.charts);
 
     const dispatch = useDispatch();
-    let handleDeleteConcept = (conceptID: string) => dispatch(dfActions.deleteConceptItemByID(conceptID));
-    let handleUpdateConcept = (field: FieldItem) => dispatch(dfActions.updateConceptItems(field));
+    const handleDeleteConcept = (conceptID: string) => dispatch(dfActions.deleteConceptItemByID(conceptID));
+    const handleUpdateConcept = (field: FieldItem) => dispatch(dfActions.updateConceptItems(field));
 
     useEffect(() => { 
-        let focusedTable = tables.find(t => t.id == focusedTableId);
+        const focusedTable = tables.find(t => t.id == focusedTableId);
         if (focusedTable) {
-            let names = focusedTable.names;
-            let missingNames = names.filter(name => !conceptShelfItems.some(field => field.name == name));
+            const names = focusedTable.names;
+            const missingNames = names.filter(name => !conceptShelfItems.some(field => field.name == name));
  
-            let conceptsToAdd = missingNames.map((name) => {
+            const conceptsToAdd = missingNames.map((name) => {
                 return {
                     id: `concept-${name}-${Date.now()}`, name: name, type: "auto" as Type, 
                     description: "", source: "custom", temporary: true, domain: [],
@@ -70,7 +70,7 @@ export const ConceptShelf: FC<ConceptShelfProps> = function ConceptShelf() {
             })
             dispatch(dfActions.addConceptItems(conceptsToAdd));
 
-            let conceptIdsToDelete = conceptShelfItems.filter(field => field.temporary == true 
+            const conceptIdsToDelete = conceptShelfItems.filter(field => field.temporary == true 
                                     && !charts.some(c => Object.values(c.encodingMap).some(enc => enc.fieldID == field.id)) 
                                     && !names.includes(field.name)).map(field => field.id);
     
@@ -84,7 +84,7 @@ export const ConceptShelf: FC<ConceptShelfProps> = function ConceptShelf() {
     }, [focusedTableId])
 
 
-    let conceptCreatorBtn = (
+    const conceptCreatorBtn = (
         <Tooltip title="Create a new concept">
             <Button
                 sx={{ fontSize: "14px", color: theme.palette.custom.main, '&:hover': { backgroundColor: alpha(theme.palette.custom.main, 0.1) },
@@ -114,8 +114,8 @@ export const ConceptShelf: FC<ConceptShelfProps> = function ConceptShelf() {
     // const fieldSelectorId = fieldSelectorOpen ? `conceptCreator` : undefined;
 
     // group concepts based on types
-    let conceptItemGroups = groupConceptItems(conceptShelfItems);
-    let groupNames = [...new Set(conceptItemGroups.map(g => g.group))]
+    const conceptItemGroups = groupConceptItems(conceptShelfItems);
+    const groupNames = [...new Set(conceptItemGroups.map(g => g.group))]
 
     return (
         <Box className="concept-shelf">

@@ -31,7 +31,7 @@ interface CustomReactTableProps {
 
 export const CustomReactTable: React.FC<CustomReactTableProps> = ({ rows, columnDefs, rowsPerPageNum, compact, maxCellWidth }) => {
 
-    let theme = useTheme();
+    const theme = useTheme();
 
     const [page, setPage] = React.useState(0);
     const [rowsPerPage, setRowsPerPage] = React.useState(rowsPerPageNum == -1 ? (rows.length > 500 ? 100 : rows.length) : rowsPerPageNum);

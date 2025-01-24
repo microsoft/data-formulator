@@ -52,26 +52,26 @@ export interface EncodingShelfCardProps {
     noBorder?: boolean;
 }
 
-let selectBaseTables = (activeFields: FieldItem[], conceptShelfItems: FieldItem[], tables: DictTable[]) : DictTable[] => {
+const selectBaseTables = (activeFields: FieldItem[], conceptShelfItems: FieldItem[], tables: DictTable[]) : DictTable[] => {
     
     // if there is no active fields at all!!
     if (activeFields.length == 0) {
         return [tables[0]];
     }
 
-    let activeBaseFields = conceptShelfItems.filter((field) => {
+    const activeBaseFields = conceptShelfItems.filter((field) => {
         return activeFields.map(f => f.source == "derived" ? findBaseFields(f, conceptShelfItems).map(f2 => f2.id) : [f.id]).flat().includes(field.id);
     });
 
-    let activeOriginalFields = activeBaseFields.filter(field => field.source == "original");
-    let activeCustomFields = activeBaseFields.filter(field => field.source == "custom");
-    let activeDerivedFields = activeFields.filter(f => f.source == "derived");
+    const activeOriginalFields = activeBaseFields.filter(field => field.source == "original");
+    const activeCustomFields = activeBaseFields.filter(field => field.source == "custom");
+    const activeDerivedFields = activeFields.filter(f => f.source == "derived");
 
     if (activeOriginalFields.length == 0 && activeFields.length > 0 && tables.length > 0) {
         return [tables[0]];
     }
 
-    let baseTables = tables.filter(t => activeOriginalFields.map(f => f.tableRef as string).includes(t.id));
+    const baseTables = tables.filter(t => activeOriginalFields.map(f => f.tableRef as string).includes(t.id));
 
     return baseTables
 }
@@ -79,25 +79,25 @@ let selectBaseTables = (activeFields: FieldItem[], conceptShelfItems: FieldItem[
 export const TriggerCard: FC<{className?: string, trigger: Trigger, hideFields?: boolean, label?: string}> = function ({ label, className, trigger, hideFields }) {
 
     const charts = useSelector((state: DataFormulatorState) => state.charts);
-    let fieldItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
+    const fieldItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
     const focusedChartId = useSelector((state: DataFormulatorState) => state.focusedChartId);
 
     const dispatch = useDispatch<AppDispatch>();
 
     let encodingComp : any = '';
-    let prompt = trigger.instruction ? `"${trigger.instruction}"` : "";
+    const prompt = trigger.instruction ? `"${trigger.instruction}"` : "";
 
     if (trigger.chartRef && charts.find(c => c.id == trigger.chartRef)) {
 
-        let chart = charts.find(c => c.id == trigger.chartRef) as Chart;
-        let encodingMap = chart?.encodingMap;
+        const chart = charts.find(c => c.id == trigger.chartRef) as Chart;
+        const encodingMap = chart?.encodingMap;
 
         encodingComp = Object.entries(encodingMap)
             .filter(([channel, encoding]) => {
                 return encoding.fieldID != undefined;
             })
             .map(([channel, encoding], index) => {
-                let field = fieldItems.find(f => f.id == encoding.fieldID) as FieldItem;
+                const field = fieldItems.find(f => f.id == encoding.fieldID) as FieldItem;
                 return [index > 0 ? '⨉' : '', 
                         <Chip sx={{color:'inherit', maxWidth: '110px', marginLeft: "2px", height: 18, fontSize: 12, borderRadius: '4px', 
                                    border: '1px solid rgb(250 235 215)', background: 'rgb(250 235 215 / 70%)',
@@ -140,22 +140,22 @@ export const TriggerCard: FC<{className?: string, trigger: Trigger, hideFields?:
 export const MiniTriggerCard: FC<{className?: string, trigger: Trigger, hideFields?: boolean, label?: string}> = function ({ label, className, trigger, hideFields }) {
 
     const charts = useSelector((state: DataFormulatorState) => state.charts);
-    let fieldItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
+    const fieldItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
 
     let encodingComp : any = ''
-    let prompt = trigger.instruction ? `"${trigger.instruction}"` : "";
+    const prompt = trigger.instruction ? `"${trigger.instruction}"` : "";
 
     if (trigger.chartRef && charts.find(c => c.id == trigger.chartRef)) {
 
-        let chart = charts.find(c => c.id == trigger.chartRef) as Chart;
-        let encodingMap = chart?.encodingMap;
+        const chart = charts.find(c => c.id == trigger.chartRef) as Chart;
+        const encodingMap = chart?.encodingMap;
 
         encodingComp = Object.entries(encodingMap)
             .filter(([channel, encoding]) => {
                 return encoding.fieldID != undefined;
             })
             .map(([channel, encoding], index) => {
-                let field = fieldItems.find(f => f.id == encoding.fieldID) as FieldItem;
+                const field = fieldItems.find(f => f.id == encoding.fieldID) as FieldItem;
                 return [index > 0 ? '⨉' : '', 
                         <Chip sx={{color:'inherit', maxWidth: '110px', marginLeft: "2px", height: 16, fontSize: 'inherit', borderRadius: '4px', 
                                    border: '1px solid rgb(250 235 215)', background: 'rgb(250 235 215 / 70%)',
@@ -186,28 +186,28 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
     const tables = useSelector((state: DataFormulatorState) => state.tables);
     const charts = useSelector((state: DataFormulatorState) => state.charts);
     const betaMode = useSelector((state: DataFormulatorState) => state.betaMode);
-    let activeModel = useSelector(dfSelectors.getActiveModel);
+    const activeModel = useSelector(dfSelectors.getActiveModel);
 
-    let [prompt, setPrompt] = useState<string>(trigger?.instruction || "");
+    const [prompt, setPrompt] = useState<string>(trigger?.instruction || "");
 
-    let chart = charts.find(chart => chart.id == chartId) as Chart;
-    let encodingMap = chart?.encodingMap;
+    const chart = charts.find(chart => chart.id == chartId) as Chart;
+    const encodingMap = chart?.encodingMap;
 
-    let handleUpdateChartType = (newChartType: string)=>{
+    const handleUpdateChartType = (newChartType: string)=>{
         dispatch(dfActions.updateChartType({chartId, chartType: newChartType}));
     }
 
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
 
-    let currentTable = getDataTable(chart, tables, charts, conceptShelfItems);
+    const currentTable = getDataTable(chart, tables, charts, conceptShelfItems);
 
     const dispatch = useDispatch<AppDispatch>();
 
-    let encodingBoxGroups = Object.entries(ChannelGroups)
+    const encodingBoxGroups = Object.entries(ChannelGroups)
         .filter(([group, channelList]) => channelList.some(ch => Object.keys(encodingMap).includes(ch)))
         .map(([group, channelList]) => {
 
-            let component = <Box>
+            const component = <Box>
                 <Typography key={`encoding-group-${group}`} sx={{ fontSize: 10, color: "text.secondary", marginTop: "6px", marginBottom: "2px" }}>{group}</Typography>
                 {channelList.filter(channel => Object.keys(encodingMap).includes(channel))
                     .map(channel => <EncodingBox key={`shelf-${channel}`} channel={channel as Channel} chartId={chartId} />)}
@@ -216,22 +216,22 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
         });
 
     // derive active fields from encoding map so that we can keep the order of which fields will be visualized
-    let activeFields = Object.values(encodingMap).map(enc => enc.fieldID).filter(fieldId => fieldId && conceptShelfItems.map(f => f.id)
+    const activeFields = Object.values(encodingMap).map(enc => enc.fieldID).filter(fieldId => fieldId && conceptShelfItems.map(f => f.id)
                                 .includes(fieldId)).map(fieldId => conceptShelfItems.find(f => f.id == fieldId) as FieldItem);
-    let activeBaseFields = activeFields.map(f => f.source == 'derived' ? (f.transform as ConceptTransformation).parentIDs : [f.id])
+    const activeBaseFields = activeFields.map(f => f.source == 'derived' ? (f.transform as ConceptTransformation).parentIDs : [f.id])
                                 .flat().map(fieldId => conceptShelfItems.find(f => f.id == fieldId) as FieldItem)
     
-    let activeCustomFields = activeBaseFields.filter(field => field.source == "custom");
+    const activeCustomFields = activeBaseFields.filter(field => field.source == "custom");
 
     // check if the current table contains all fields already exists a table that fullfills the user's specification
-    let existsWorkingTable = activeBaseFields.length == 0 || activeBaseFields.every(f => currentTable.names.includes(f.name));
+    const existsWorkingTable = activeBaseFields.length == 0 || activeBaseFields.every(f => currentTable.names.includes(f.name));
 
-    let deriveNewData = (overrideTableId?: string) => {
+    const deriveNewData = (overrideTableId?: string) => {
 
-        let mode = 'formulate';
-        let baseTables = selectBaseTables(activeFields, conceptShelfItems, tables);
+        const mode = 'formulate';
+        const baseTables = selectBaseTables(activeFields, conceptShelfItems, tables);
 
-        let instruction = (chart.chartType == 'Auto' && prompt == "") ? "let's get started" : prompt;
+        const instruction = (chart.chartType == 'Auto' && prompt == "") ? "let's get started" : prompt;
 
         if (baseTables.length == 0) {
             return;
@@ -243,7 +243,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                 activeBaseFields.every(f => t.names.includes(f.name)))) {
 
             // if there is no additional fields, directly generate
-            let tempTable = getDataTable(chart, tables, charts, conceptShelfItems, true);
+            const tempTable = getDataTable(chart, tables, charts, conceptShelfItems, true);
             dispatch(dfActions.updateTableRef({chartId: chartId, tableRef: tempTable.id}))
 
             //dispatch(dfActions.resetDerivedTables([])); //([{code: "", data: inputData.rows}]));
@@ -261,10 +261,10 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
         dispatch(dfActions.setVisPaneSize(640));
         //handleRunSynthesisStream(example);
 
-        let fieldNamesStr = activeFields.map(f => f.name).reduce(
+        const fieldNamesStr = activeFields.map(f => f.name).reduce(
             (a: string, b: string, i, array) => a + (i == 0 ? "" : (i < array.length - 1 ? ', ' : ' and ')) + b, "")
 
-        let token = String(Date.now());
+        const token = String(Date.now());
 
         // if nothing is specified, just a formulation from the beginning
         let messageBody = JSON.stringify({
@@ -290,7 +290,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
             engine = getUrls().SERVER_REFINE_DATA_URL;
         }
 
-        let message = {
+        const message = {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -313,13 +313,13 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                 console.log(token);
                 if (data.results.length > 0) {
                     if (data["token"] == token) {
-                        let candidates = data["results"].filter((item: any) => {
+                        const candidates = data["results"].filter((item: any) => {
                             return item["status"] == "ok" && item["content"].length > 0 
                         });
 
                         if (candidates.length == 0) {
-                            let errorMessage = data.results[0].content;
-                            let code = data.results[0].code;
+                            const errorMessage = data.results[0].content;
+                            const code = data.results[0].code;
 
                             dispatch(dfActions.addMessages({
                                 "timestamp": Date.now(),
@@ -331,7 +331,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                         } else {
 
                             // PART 1: handle triggers
-                            let genTableId = () => {
+                            const genTableId = () => {
                                 let tableSuffix = Number.parseInt((Date.now() - Math.floor(Math.random() * 10000)).toString().slice(-2));
                                 let tableId = `table-${tableSuffix}`
                                 while (tables.find(t => t.id == tableId) != undefined) {
@@ -341,12 +341,12 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                                 return tableId;
                             }
 
-                            let candidateTableId = overrideTableId || genTableId();
+                            const candidateTableId = overrideTableId || genTableId();
 
                             // add the intermediate chart that will be referred by triggers
 
-                            let triggerChartSpec = duplicateChart(chart);
-                            let currentTrigger: Trigger =  { 
+                            const triggerChartSpec = duplicateChart(chart);
+                            const currentTrigger: Trigger =  { 
                                 tableId: currentTable.id, 
                                 instruction: instruction, 
                                 chartRef: triggerChartSpec.id,
@@ -357,9 +357,9 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                             dispatch(dfActions.addChart(triggerChartSpec));
                         
                             // PART 2: create new table (or override table)
-                            let candidate = candidates[0];
+                            const candidate = candidates[0];
 
-                            let candidateTable = createDictTable(
+                            const candidateTable = createDictTable(
                                 candidateTableId, 
                                 candidate["content"], 
                                 { code: candidate["code"], 
@@ -374,10 +374,10 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                             } else {
                                 dispatch(dfActions.insertDerivedTables(candidateTable));
                             }
-                            let names = candidateTable.names;
-                            let missingNames = names.filter(name => !conceptShelfItems.some(field => field.name == name));
+                            const names = candidateTable.names;
+                            const missingNames = names.filter(name => !conceptShelfItems.some(field => field.name == name));
                 
-                            let conceptsToAdd = missingNames.map((name) => {
+                            const conceptsToAdd = missingNames.map((name) => {
                                 return {
                                     id: `concept-${name}-${Date.now()}`, name: name, type: "auto" as Type, 
                                     description: "", source: "custom", temporary: true, domain: [],
@@ -389,14 +389,14 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                             dispatch(fetchCodeExpl(candidateTable));
 
                             // concepts from the current table
-                            let currentConcepts = [...conceptShelfItems.filter(c => names.includes(c.name)), ...conceptsToAdd];
+                            const currentConcepts = [...conceptShelfItems.filter(c => names.includes(c.name)), ...conceptsToAdd];
 
                             // PART 3: create new charts if necessary
                             let needToCreateNewChart = true;
                             
                             // different override strategy -- only override if there exists a chart that share the exact same encoding fields as the planned new chart.
                             if (chart.chartType != "Auto" &&  overrideTableId != undefined && charts.find(c => c.tableRef == overrideTableId)) {
-                                let chartToOverride = [...charts.filter(c => c.intermediate == undefined), ...charts].find(c => c.tableRef == overrideTableId) as Chart
+                                const chartToOverride = [...charts.filter(c => c.intermediate == undefined), ...charts].find(c => c.tableRef == overrideTableId) as Chart
                                 if (Object.values(chartToOverride.encodingMap)
                                         .map(enc => enc.fieldID)
                                         .filter(fid => fid != undefined &&  conceptShelfItems.find(f => f.id == fid) != undefined)
@@ -404,24 +404,24 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                                         .every(f => candidateTable.names.includes(f.name)))
                                     {
                                         // find the chart to set as focus
-                                        let cId = [...charts.filter(c => c.intermediate == undefined), ...charts].find(c => c.tableRef == overrideTableId)?.id;
+                                        const cId = [...charts.filter(c => c.intermediate == undefined), ...charts].find(c => c.tableRef == overrideTableId)?.id;
                                         dispatch(dfActions.setFocusedChart(cId));
                                         needToCreateNewChart = false;
                                     }
                             }
                             
                             if (needToCreateNewChart) {
-                                let refinedGoal = candidate['refined_goal']
+                                const refinedGoal = candidate['refined_goal']
 
                                 let newChart : Chart; 
                                 if (chart.chartType == "Auto") {
-                                    let chartTypeMap : any = {
+                                    const chartTypeMap : any = {
                                         "line" : "Line Chart",
                                         "bar": "Bar Chart",
                                         "point": "Scatter Plot",
                                         "boxplot": "Boxplot"
                                     }
-                                    let chartType = chartTypeMap[refinedGoal['chart_type']] || 'Scatter Plot';
+                                    const chartType = chartTypeMap[refinedGoal['chart_type']] || 'Scatter Plot';
                                     newChart = generateFreshChart(candidateTable.id, chartType) as Chart;
                                 } else if (chart.chartType == "Table") {
                                     newChart = generateFreshChart(candidateTable.id, 'Table')
@@ -476,21 +476,21 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                 }));
             });
     }
-    let defaultInstruction = chart.chartType == "Auto" ? "" : "" // `the output data should contain fields ${activeBaseFields.map(f => `${f.name}`).join(', ')}`
+    const defaultInstruction = chart.chartType == "Auto" ? "" : "" // `the output data should contain fields ${activeBaseFields.map(f => `${f.name}`).join(', ')}`
 
-    let createDisabled = false;
+    const createDisabled = false;
 
     // zip multiple components together
     const w: any = (a: any[], b: any[]) => a.length ? [a[0], ...w(b, a.slice(1))] : b;
 
-    let formulateInputBox = <Box key='text-input-boxes' sx={{display: 'flex', flexDirection: 'row', flex: 1, padding: '0px 4px'}}>
+    const formulateInputBox = <Box key='text-input-boxes' sx={{display: 'flex', flexDirection: 'row', flex: 1, padding: '0px 4px'}}>
         <TextField
             InputLabelProps={{ shrink: true }}
             id="outlined-multiline-flexible"
             onKeyDown={(event: any) => {
                 if (defaultInstruction && (event.key === "Enter" || event.key === "Tab")) {
                     // write your functionality here
-                    let target = event.target as HTMLInputElement;
+                    const target = event.target as HTMLInputElement;
                     if (target.value == "" && target.placeholder != "") {
                         target.value = defaultInstruction;
                         setPrompt(target.value);
@@ -534,7 +534,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
         }
     </Box>
 
-    let channelComponent = (
+    const channelComponent = (
         <Box sx={{ width: "100%", minWidth: "210px", height: '100%', display: "flex", flexDirection: "column" }}>
             <Box key='mark-selector-box' sx={{ flex: '0 0 auto' }}>
                 <FormControl sx={{ m: 1, minWidth: 120, width: "100%", margin: "0px 0"}} size="small">

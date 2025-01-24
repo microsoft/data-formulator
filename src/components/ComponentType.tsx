@@ -28,7 +28,7 @@ export interface FieldItem {
 }
 
 export const duplicateField = (field: FieldItem) => {
-    let newConcept = {
+    const newConcept = {
         id: field.id,
         name: field.name,
         type: field.type,
@@ -75,7 +75,7 @@ export function createDictTable(
     derive: {code: string, codeExpl: string, source: string[], dialog: any[], 
              trigger: Trigger} | undefined = undefined) : DictTable {
     
-    let names = Object.keys(rows[0])
+    const names = Object.keys(rows[0])
 
     return {
         id,
@@ -96,7 +96,7 @@ export type Chart = {
     intermediate?: Trigger // whether this chart is only an intermediate chart (e.g., only used as a spec for transforming tables)
 }
 
-export let duplicateChart = (chart: Chart) : Chart => {
+export const duplicateChart = (chart: Chart) : Chart => {
     return {
         id: `chart-${Date.now()- Math.floor(Math.random() * 10000)}`,
         chartType: chart.chartType,

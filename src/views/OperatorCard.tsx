@@ -24,7 +24,7 @@ export interface OperatorCardProp {
 export const OperatorCard: FC<OperatorCardProp> = function OperatorCard({ operator }) {
     // concept cards are draggable cards that can be dropped into encoding shelf
     
-    let theme = useTheme();
+    const theme = useTheme();
 
     const [{ isDragging }, drag] = useDrag(() => ({
         type: "operator-card",
@@ -35,15 +35,15 @@ export const OperatorCard: FC<OperatorCardProp> = function OperatorCard({ operat
         }),
     }));
 
-    let opacity = isDragging ? 0.4 : 1;
-    let fontStyle = "inherit";
-    let border = "hidden";
+    const opacity = isDragging ? 0.4 : 1;
+    const fontStyle = "inherit";
+    const border = "hidden";
 
     const cursorStyle = isDragging ? "grabbing" : "grab";
    
-    let backgroundColor = theme.palette.secondary.light;
+    const backgroundColor = theme.palette.secondary.light;
 
-    let cardComponent = (
+    const cardComponent = (
         <Card sx={{ minWidth: 80, backgroundColor, width: 'calc(50% - 6px)' }}
             variant="outlined"
             style={{ opacity, border, fontStyle, marginLeft: '3px' }}

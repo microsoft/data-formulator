@@ -72,7 +72,7 @@ const SimpleDataHeaderFC: FC<SimpleDataHeaderProps> = (props: SimpleDataHeaderPr
         onSortChanged()
     }, []);
 
-    let menu = (
+    const menu = (
         <div ref={refButton}
             className="data-view-header-expand"
             onClick={() => onMenuClicked()}>
@@ -91,7 +91,7 @@ const SimpleDataHeaderFC: FC<SimpleDataHeaderProps> = (props: SimpleDataHeaderPr
             break;
     }
 
-    let sort = (
+    const sort = (
         <div className="data-view-header-sort">
             <Typography>{sortIcon}</Typography>
         </div>

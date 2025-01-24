@@ -92,20 +92,20 @@ export const genFreshDerivedConcept = (parentIDs: string[]) => {
 export const ConceptCard: FC<ConceptCardProps> = function ConceptCard({ field }) {
     // concept cards are draggable cards that can be dropped into encoding shelf
     
-    let theme = useTheme();
+    const theme = useTheme();
 
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
-    let tables = useSelector((state: DataFormulatorState) => state.tables);
-    let charts = useSelector((state: DataFormulatorState) => state.charts);
-    let focusedChartId = useSelector((state: DataFormulatorState) => state.focusedChartId);
-    let focusedChart = charts.find(c => c.id == focusedChartId);
-    let focusedChartRefTable = tables.find(t => t.id == focusedChart?.tableRef);
+    const tables = useSelector((state: DataFormulatorState) => state.tables);
+    const charts = useSelector((state: DataFormulatorState) => state.charts);
+    const focusedChartId = useSelector((state: DataFormulatorState) => state.focusedChartId);
+    const focusedChart = charts.find(c => c.id == focusedChartId);
+    const focusedChartRefTable = tables.find(t => t.id == focusedChart?.tableRef);
 
     const [editMode, setEditMode] = useState(field.name == "" ? true : false);
 
     const dispatch = useDispatch();
-    let handleDeleteConcept = (conceptID: string) => dispatch(dfActions.deleteConceptItemByID(conceptID));
-    let handleUpdateConcept = (concept: FieldItem) => dispatch(dfActions.updateConceptItems(concept));
+    const handleDeleteConcept = (conceptID: string) => dispatch(dfActions.deleteConceptItemByID(conceptID));
+    const handleUpdateConcept = (concept: FieldItem) => dispatch(dfActions.updateConceptItems(concept));
 
     const [{ isDragging }, drag] = useDrag(() => ({
         type: "concept-card",
@@ -116,11 +116,11 @@ export const ConceptCard: FC<ConceptCardProps> = function ConceptCard({ field })
         }),
     }));
 
-    let notInAnyTable = tables.some(t => t.names.includes(field.name));
+    const notInAnyTable = tables.some(t => t.names.includes(field.name));
 
     let notInFocusedTable : boolean;
     if (field.source == "derived") {
-        let parentConceptNames = (field.transform as ConceptTransformation)
+        const parentConceptNames = (field.transform as ConceptTransformation)
                 .parentIDs.map((parentID) => conceptShelfItems.find(c => c.id == parentID) as FieldItem).map(f => f.name);
         console.log(parentConceptNames)
         notInFocusedTable = parentConceptNames.some(name => !focusedChartRefTable?.names.includes(name));
@@ -130,12 +130,12 @@ export const ConceptCard: FC<ConceptCardProps> = function ConceptCard({ field })
     
 
 
-    let opacity = isDragging ? 0.3 :(notInFocusedTable ? 0.65 : 1);
-    let fontStyle = "inherit";
-    let border = "hidden";
+    const opacity = isDragging ? 0.3 :(notInFocusedTable ? 0.65 : 1);
+    const fontStyle = "inherit";
+    const border = "hidden";
 
     const cursorStyle = isDragging ? "grabbing" : "grab";
-    let editOption = field.source === "original" ? undefined : (
+    const editOption = field.source === "original" ? undefined : (
         <Tooltip key="edit-icon-button" title="edit">
             <IconButton size="small" key="edit-icon-button"
                 color="primary" aria-label="Edit" component="span"
@@ -145,7 +145,7 @@ export const ConceptCard: FC<ConceptCardProps> = function ConceptCard({ field })
         </Tooltip>
     );
 
-    let deriveOption = (
+    const deriveOption = (
         <Tooltip key="derive-icon-button" title="derive new concept">
             <IconButton size="small"
                 key="derive-icon-button"
@@ -161,7 +161,7 @@ export const ConceptCard: FC<ConceptCardProps> = function ConceptCard({ field })
         </Tooltip>
     );
 
-    let deleteOption = field.source == "original" ? "" :
+    const deleteOption = field.source == "original" ? "" :
         <IconButton size="small"
             key="delete-icon-button"
             color="primary" aria-label="Delete" component="span"
@@ -170,16 +170,16 @@ export const ConceptCard: FC<ConceptCardProps> = function ConceptCard({ field })
             <DeleteIcon fontSize="inherit" />
         </IconButton>;
 
-    let cardHeaderOptions = [
+    const cardHeaderOptions = [
         deleteOption,
         deriveOption,
         editOption,
         //deleteOption
     ]
 
-    let exampleToComponent = (values: any[], exampleSize: number, label?: string) => {
-        let examples = values.slice(0, values.length > exampleSize ? exampleSize : values.length);
-        let incomplete = examples.length < values.length;
+    const exampleToComponent = (values: any[], exampleSize: number, label?: string) => {
+        const examples = values.slice(0, values.length > exampleSize ? exampleSize : values.length);
+        const incomplete = examples.length < values.length;
 
         return (
             values.length == 0 ? "" : (<Typography className="draggable-card-example-values" key={examples.toString()}
@@ -211,13 +211,13 @@ export const ConceptCard: FC<ConceptCardProps> = function ConceptCard({ field })
         setAnchorEl(null);
     };
     const handleUpdateDtype = (dtype: string) => {
-        let newConcept = duplicateField(field);
+        const newConcept = duplicateField(field);
         newConcept.type = dtype as Type;
         handleUpdateConcept(newConcept);
         handleDTypeClose();
     }
 
-    let typeIconMenu = (
+    const typeIconMenu = (
         <div>
             <Tooltip title={`${field.type} type`} >
                 <IconButton size="small" sx={{ fontSize: "inherit", padding: "2px" }}
@@ -250,7 +250,7 @@ export const ConceptCard: FC<ConceptCardProps> = function ConceptCard({ field })
         </div>
     )
 
-    let fieldNameEntry = field.name != "" ? <Typography sx={{
+    const fieldNameEntry = field.name != "" ? <Typography sx={{
         fontSize: "inherit", marginLeft: "3px", whiteSpace: "nowrap",
         overflow: "hidden", textOverflow: "ellipsis", flexShrink: 1
     }}>{field.name}</Typography>
@@ -265,9 +265,9 @@ export const ConceptCard: FC<ConceptCardProps> = function ConceptCard({ field })
         backgroundColor = theme.palette.derived.main;
     }
 
-    let boxShadow = editMode ? "0 2px 4px 0 rgb(0 0 0 / 20%), 0 2px 4px 0 rgb(0 0 0 / 19%)" : "";
+    const boxShadow = editMode ? "0 2px 4px 0 rgb(0 0 0 / 20%), 0 2px 4px 0 rgb(0 0 0 / 19%)" : "";
 
-    let cardComponent = (
+    const cardComponent = (
         <Card sx={{ minWidth: 60, backgroundColor }}
             variant="outlined"
             style={{ opacity, border, boxShadow, fontStyle, marginLeft: field.source == "derived" ? '10px' : '3px' }}
@@ -296,7 +296,7 @@ export const ConceptCard: FC<ConceptCardProps> = function ConceptCard({ field })
     return cardComponent;
 }
 
-let formatFunc = (jsCode: string) => prettier.format(jsCode, {
+const formatFunc = (jsCode: string) => prettier.format(jsCode, {
     parser: "babel",
     plugins: [parserBabel],
     printWidth: 40
@@ -368,8 +368,8 @@ export const CustomConceptForm: FC<ConceptFormProps> = function CustomConceptFor
     // if these two fields are changed from other places, update their values
     useEffect(() => { setDtype(concept.type) }, [concept.type]);
 
-    let typeList = TypeList
-    let nameField = (
+    const typeList = TypeList
+    const nameField = (
         <TextField key="name-field" id="name" label="concept name" value={name} sx={{ minWidth: 120, maxWidth: 160, flex: 1 }}
             FormHelperTextProps={{
                 style: { fontSize: 8, marginTop: 0, marginLeft: "auto" }
@@ -379,7 +379,7 @@ export const CustomConceptForm: FC<ConceptFormProps> = function CustomConceptFor
             size="small" onChange={handleNameChange} required error={name == "" || conceptShelfItems.some(f => f.name == name && f.id != concept.id)}
         />)
 
-    let typeField = (
+    const typeField = (
         <FormControl key="type-select" sx={{ width: 100, marginLeft: "4px" }} size="small">
             <InputLabel id="dtype-select-label">data type</InputLabel>
             <Select
@@ -402,7 +402,7 @@ export const CustomConceptForm: FC<ConceptFormProps> = function CustomConceptFor
 
     let childrenConceptIDs = [concept.id];
     while (true) {
-        let newChildrens = conceptShelfItems.filter(f => f.source == "derived"
+        const newChildrens = conceptShelfItems.filter(f => f.source == "derived"
                 && !childrenConceptIDs.includes(f.id)
                 && f.transform?.parentIDs.some(pid => childrenConceptIDs.includes(pid)))
             .map(f => f.id);
@@ -455,11 +455,11 @@ export const CustomConceptForm: FC<ConceptFormProps> = function CustomConceptFor
     ]
 
     const checkCustomConceptDiff = () => {
-        let nameTypeNeq = (concept.name != name || concept.type != dtype);
+        const nameTypeNeq = (concept.name != name || concept.type != dtype);
         return (nameTypeNeq );
     }
 
-    let saveDisabledMsg = [];
+    const saveDisabledMsg = [];
     if (name == "" || conceptShelfItems.some(f => f.name == name && f.id != concept.id)) {
         saveDisabledMsg.push("concept name is empty")
     }
@@ -498,7 +498,7 @@ export const CustomConceptForm: FC<ConceptFormProps> = function CustomConceptFor
                     </Button>
                     <Button size="small" variant={checkCustomConceptDiff() ? "contained" : "outlined"} disabled={saveDisabledMsg.length > 0 || checkCustomConceptDiff() == false} onClick={() => {
                         
-                        let tmpConcept = duplicateField(concept);
+                        const tmpConcept = duplicateField(concept);
                         tmpConcept.name = name;
                         tmpConcept.type = dtype as Type;
                         
@@ -519,16 +519,16 @@ export const CustomConceptForm: FC<ConceptFormProps> = function CustomConceptFor
 
 export const DerivedConceptForm: FC<ConceptFormProps> = function DerivedConceptForm({ concept, handleUpdateConcept, handleDeleteConcept, turnOffEditMode }) {
 
-    let theme = useTheme();
+    const theme = useTheme();
 
-    let conceptTransform = concept.transform as ConceptTransformation;
+    const conceptTransform = concept.transform as ConceptTransformation;
 
     useEffect(() => {
         setTransformCode(formatFunc(conceptTransform.code || ""))
         setCodeCandidates([formatFunc(conceptTransform.code || "")])
     }, [conceptTransform.code])
 
-    let formattedCode = formatFunc(conceptTransform.code || "");
+    const formattedCode = formatFunc(conceptTransform.code || "");
 
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
 
@@ -546,7 +546,7 @@ export const DerivedConceptForm: FC<ConceptFormProps> = function DerivedConceptF
     const [transformResult, setTransformResult] = useState<[any[], any][]>([]);
 
     // use tables for infer domains
-    let tables = useSelector((state: DataFormulatorState) => state.tables);
+    const tables = useSelector((state: DataFormulatorState) => state.tables);
 
     //const tables = [(baseTable as DictTable).rows, ...synthOutputs.map(t => t.data), ...savedCharts.map(t => t.data)]
 
@@ -554,19 +554,19 @@ export const DerivedConceptForm: FC<ConceptFormProps> = function DerivedConceptF
     // if these two fields are changed from other places, update their values
     useEffect(() => { setDtype(concept.type) }, [concept.type]);
 
-    let dispatch = useDispatch();
+    const dispatch = useDispatch();
 
     const [collapseCode, setCollapseCode] = useState<boolean>(true);
     const [collapseVisInspector, setCollapseVisInspector] = useState<boolean>(true);
 
-    let [dialogOpen, setDialogOpen] = useState<boolean>(false);
-    let [codeCandidates, setCodeCandidates] = useState<string[]>([]);
+    const [dialogOpen, setDialogOpen] = useState<boolean>(false);
+    const [codeCandidates, setCodeCandidates] = useState<string[]>([]);
 
-    let NUM_SAVED_TRANSFORM_RESULTS = 150;
+    const NUM_SAVED_TRANSFORM_RESULTS = 150;
 
     useEffect(() => {
         if (concept.source == "derived") {
-            let result = deriveTransformExamplesV2(transformCode, transformParentIDs, NUM_SAVED_TRANSFORM_RESULTS, conceptShelfItems, tables);
+            const result = deriveTransformExamplesV2(transformCode, transformParentIDs, NUM_SAVED_TRANSFORM_RESULTS, conceptShelfItems, tables);
             setTransformResult(result);
             // automatically set the data type (the user can still change it)
             setDtype(testType([...result.map(t => t[1])]));
@@ -577,8 +577,8 @@ export const DerivedConceptForm: FC<ConceptFormProps> = function DerivedConceptF
     const [requestTimeStamp, setRequestTimeStamp] = useState<number>(0);
     const [codeGenInProgress, setCodeGenInProgress] = useState<boolean>(false);
 
-    let typeList = TypeList
-    let nameField = (
+    const typeList = TypeList
+    const nameField = (
         <TextField key="name-field" id="name" fullWidth label="concept name" value={name} sx={{ minWidth: 120, flex: 1, paddingBottom: 1 }}
             FormHelperTextProps={{
                 style: { fontSize: 8, marginTop: 0, marginLeft: "auto" }
@@ -593,7 +593,7 @@ export const DerivedConceptForm: FC<ConceptFormProps> = function DerivedConceptF
 
     let childrenConceptIDs = [concept.id];
     while (true) {
-        let newChildrens = conceptShelfItems.filter(f => f.source == "derived"
+        const newChildrens = conceptShelfItems.filter(f => f.source == "derived"
             && !childrenConceptIDs.includes(f.id)
             && f.transform?.parentIDs.some(pid => childrenConceptIDs.includes(pid)))
             .map(f => f.id);
@@ -620,7 +620,7 @@ export const DerivedConceptForm: FC<ConceptFormProps> = function DerivedConceptF
                         {selected.map(conceptID => {
                             console.log(conceptID)
                             console.log(conceptShelfItems.find(f => f.id == conceptID)?.source)
-                            let chipColor = conceptShelfItems.find(f => f.id == conceptID)?.source == "original" ? theme.palette.primary.light : theme.palette.custom.main;
+                            const chipColor = conceptShelfItems.find(f => f.id == conceptID)?.source == "original" ? theme.palette.primary.light : theme.palette.custom.main;
                             return <Chip 
                                 variant="outlined" size="small" 
                                 // color={}
@@ -652,13 +652,13 @@ export const DerivedConceptForm: FC<ConceptFormProps> = function DerivedConceptF
     ]
 
 
-    let parentConcepts = transformParentIDs.map((parentID) => conceptShelfItems.filter(c => c.id == parentID)[0]);
+    const parentConcepts = transformParentIDs.map((parentID) => conceptShelfItems.filter(c => c.id == parentID)[0]);
     let viewExamples: any = "";
 
     //let transformResult = deriveTransformResult(transformCode, parentConcept.domain.values.slice(0, 5));
     if (transformCode && transformResult.length > 0) {
 
-        let colNames: [string[], string] = [parentConcepts.map(f => f.name), name];
+        const colNames: [string[], string] = [parentConcepts.map(f => f.name), name];
 
         viewExamples = (<Box key="viewexample--box" width="100%" sx={{ position: "relative", }}>
             {/* <Tooltip title={collapseCode ? "view / edit transformation code" : "hide transformation code"}>
@@ -680,7 +680,7 @@ export const DerivedConceptForm: FC<ConceptFormProps> = function DerivedConceptF
 
     //let codeArea = codeGenInProgress ? <LinearProgress sx={{ color: 'grey.500' }} color="inherit"/> : [codeEditor, viewExamples];
 
-    let codeArea = (
+    const codeArea = (
         <Box key="code-area-box" sx={{
             display: "flex", flexDirection: "column", justifyContent: "space-between",
             position: "relative", marginTop: "5px", minHeight: codeGenInProgress ? "10px" : "0px"
@@ -695,12 +695,12 @@ export const DerivedConceptForm: FC<ConceptFormProps> = function DerivedConceptF
         </Box>
     )
 
-    let handleProcessResults = (status: string, rawCodeList: string[]) : string[] => {
+    const handleProcessResults = (status: string, rawCodeList: string[]) : string[] => {
         setCodeGenInProgress(false);
         if (status == "ok") {
 
-            let candidates = processCodeCandidates(rawCodeList, transformParentIDs, conceptShelfItems, tables)
-            let candidate = candidates[0];
+            const candidates = processCodeCandidates(rawCodeList, transformParentIDs, conceptShelfItems, tables)
+            const candidate = candidates[0];
 
             setCodeCandidates(candidates); // setCodeCandidates(codeList)
             setTransformCode(candidate);
@@ -732,11 +732,11 @@ export const DerivedConceptForm: FC<ConceptFormProps> = function DerivedConceptF
         }
     }
 
-    let inputFieldsInfo = parentConcepts.map(c => {
+    const inputFieldsInfo = parentConcepts.map(c => {
         let values = [];
         if (c.source == "derived") {
             // run the transformation function to obtain the results
-            let transform = c.transform as ConceptTransformation;
+            const transform = c.transform as ConceptTransformation;
             values = deriveTransformExamplesV2(transform.code, transform.parentIDs, 5, conceptShelfItems, tables).map(t => t[1]);
         } else {
             values = getDomains(c, tables).map(d => d.slice(0, 5)).flat() //c.domain.values.slice(0, 5);
@@ -749,8 +749,8 @@ export const DerivedConceptForm: FC<ConceptFormProps> = function DerivedConceptF
     })
 
     // pick the dataset with the right parents  
-    let inputDataCandidates = tables.filter(t => parentConcepts.every(c => t.names.includes(c.name)));
-    let inputData = inputDataCandidates.length > 0 ? inputDataCandidates[0] : tables[0];
+    const inputDataCandidates = tables.filter(t => parentConcepts.every(c => t.names.includes(c.name)));
+    const inputData = inputDataCandidates.length > 0 ? inputDataCandidates[0] : tables[0];
 
     cardBottomComponents = [
         <CodexDialogBox 
@@ -788,14 +788,14 @@ export const DerivedConceptForm: FC<ConceptFormProps> = function DerivedConceptF
     ]
 
     const checkDerivedConceptDiff = () => {
-        let nameTypeNeq = (concept.name != name || concept.type != dtype);
+        const nameTypeNeq = (concept.name != name || concept.type != dtype);
         return (nameTypeNeq
             || formattedCode != transformCode
             || conceptTransform.description != transformDesc
             || conceptTransform.parentIDs.toString() != transformParentIDs.toString());
     }
 
-    let saveDisabledMsg = [];
+    const saveDisabledMsg = [];
     if (name == "" || conceptShelfItems.some(f => f.name == name && f.id != concept.id)) {
         saveDisabledMsg.push("concept name is empty")
     }
@@ -841,7 +841,7 @@ export const DerivedConceptForm: FC<ConceptFormProps> = function DerivedConceptF
                     <Button size="small" variant={checkDerivedConceptDiff() ? "contained" : "outlined"} 
                             disabled={saveDisabledMsg.length > 0 || checkDerivedConceptDiff() == false} onClick={() => {
                         
-                        let tmpConcept = duplicateField(concept);
+                        const tmpConcept = duplicateField(concept);
                         tmpConcept.name = name;
                         tmpConcept.type = dtype as Type;
                         tmpConcept.transform = concept.transform ? 
@@ -878,14 +878,14 @@ export interface CodexDialogBoxProps {
 export const CodexDialogBox: FC<CodexDialogBoxProps> = function ({ 
     initialDescription, inputFieldsInfo, inputData, outputName, callWhenSubmit, handleProcessResults, size="small" }) {
 
-    let activeModel = useSelector(dfSelectors.getActiveModel);
+    const activeModel = useSelector(dfSelectors.getActiveModel);
 
-    let [description, setDescription] = useState(initialDescription);
-    let [requestTimeStamp, setRequestTimeStamp] = useState<number>(0);
+    const [description, setDescription] = useState(initialDescription);
+    const [requestTimeStamp, setRequestTimeStamp] = useState<number>(0);
 
-    let defaultInstruction = `Derive ${outputName} from ${inputFieldsInfo.map(f => f.name).join(", ")}`;
+    const defaultInstruction = `Derive ${outputName} from ${inputFieldsInfo.map(f => f.name).join(", ")}`;
 
-    let formulateButton = <Tooltip title="Derived the new concept">
+    const formulateButton = <Tooltip title="Derived the new concept">
         <IconButton size={size}
             disabled={description == ""}
             sx={{ borderRadius: "10%", alignItems: "flex-end", position: 'relative' }}
@@ -896,7 +896,7 @@ export const CodexDialogBox: FC<CodexDialogBoxProps> = function ({
 
                 console.log(`[fyi] just sent request "${description}" at ${requestTimeStamp}`);
 
-                let message = {
+                const message = {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', },
                     body: JSON.stringify({
@@ -921,7 +921,7 @@ export const CodexDialogBox: FC<CodexDialogBoxProps> = function ({
                         console.log("---model output")
                         console.log(data);
 
-                        let status = data["status"];
+                        const status = data["status"];
                         let codeList: string[] = [];
 
                         if (data["status"] == "ok" && data["token"] == requestTimeStamp) {
@@ -936,7 +936,7 @@ export const CodexDialogBox: FC<CodexDialogBoxProps> = function ({
         </IconButton>
     </Tooltip>
 
-    let textBox = <Box key="interaction-comp" width='100%' sx={{ display: 'flex' }}>
+    const textBox = <Box key="interaction-comp" width='100%' sx={{ display: 'flex' }}>
         <TextField 
             size="small"
             color="primary"
@@ -950,7 +950,7 @@ export const CodexDialogBox: FC<CodexDialogBoxProps> = function ({
             onKeyDown={(event: any) => {
                 if (event.key === "Enter" || event.key === "Tab") {
                     // write your functionality here
-                    let target = event.target as HTMLInputElement;
+                    const target = event.target as HTMLInputElement;
                     if (target.value == "" && target.placeholder != "") {
                         target.value = target.placeholder;
                         setDescription(defaultInstruction);

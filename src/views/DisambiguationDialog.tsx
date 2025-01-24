@@ -63,10 +63,10 @@ export const DisambiguationDialog: FC<DisambiguationDialogProps> = function Disa
     // use tables for infer domains
     const tables = useSelector((state: DataFormulatorState) => state.tables);
 
-    let [description, setDescription] = React.useState(transformDesc);
-    let [codeList, setCodeList] = React.useState(codeCandidates);
-    let [selectionIdx, setSelectionIdx] = React.useState(0);
-    let [showCode, setShowCode] = React.useState(false);
+    const [description, setDescription] = React.useState(transformDesc);
+    const [codeList, setCodeList] = React.useState(codeCandidates);
+    const [selectionIdx, setSelectionIdx] = React.useState(0);
+    const [showCode, setShowCode] = React.useState(false);
 
     useEffect(()=>{ setCodeList(codeCandidates) }, [codeCandidates]);
     useEffect(()=>{ setDescription(transformDesc) }, [transformDesc]);
@@ -76,25 +76,25 @@ export const DisambiguationDialog: FC<DisambiguationDialogProps> = function Disa
     
     useEffect(() => { setSelectionIdx(0) }, [codeCandidates]);
 
-    let dispatch = useDispatch();
+    const dispatch = useDispatch();
 
-    let parentConcepts = parentIDs.map(id => (conceptShelfItems.find(f => f.id == id) as FieldItem)); 
+    const parentConcepts = parentIDs.map(id => (conceptShelfItems.find(f => f.id == id) as FieldItem)); 
 
     // get outputs from each code candidate, running on each test data point, eval is much faster...
     //let codeOutpus = codeList.map(codeStr => testInputs.map(s => [s, runCodeInVM(codeStr, s)]));
-    let codeOutputs = useMemo(
+    const codeOutputs = useMemo(
         () => codeList.map(codeStr => deriveTransformExamplesV2(codeStr, parentIDs, 150, conceptShelfItems, tables)),
         [codeList]
     );
       
-    let [displayPage, setDisplayPage] = React.useState(0);
-    let displayPageSize = 8;
+    const [displayPage, setDisplayPage] = React.useState(0);
+    const displayPageSize = 8;
 
-    let inputFieldsInfo = parentConcepts.map(c => {
+    const inputFieldsInfo = parentConcepts.map(c => {
         let values = [];
         if (c.source == "derived") {
             // run the transformation function to obtain the results
-            let transform = c.transform as ConceptTransformation;
+            const transform = c.transform as ConceptTransformation;
             values = deriveTransformExamplesV2(transform.code, transform.parentIDs, 5, conceptShelfItems, tables).map(t => t[1]);
         } else {
             values = getDomains(c, tables).map(d => d.slice(0, 5)).flat() //c.domain.values.slice(0, 5);
@@ -106,12 +106,12 @@ export const DisambiguationDialog: FC<DisambiguationDialogProps> = function Disa
         }
     })
 
-    let handleProcessResults = (status: string, rawCodeList: string[]) => {
+    const handleProcessResults = (status: string, rawCodeList: string[]) => {
         setCodeGenInProgress(false);
         if (status == "ok") {
 
-            let candidates = processCodeCandidates(rawCodeList, parentIDs, conceptShelfItems, tables)
-            let candidate = candidates[0];
+            const candidates = processCodeCandidates(rawCodeList, parentIDs, conceptShelfItems, tables)
+            const candidate = candidates[0];
 
             setCodeList(candidates); // setCodeCandidates(codeList)
             handleUpdate(candidate, description, false);
@@ -142,8 +142,8 @@ export const DisambiguationDialog: FC<DisambiguationDialogProps> = function Disa
         }
     }
     
-    let inputDataCandidates = tables.filter(t => parentConcepts.every(c => t.names.includes(c.name)));
-    let inputData = inputDataCandidates.length > 0 ? inputDataCandidates[0] : tables[0];
+    const inputDataCandidates = tables.filter(t => parentConcepts.every(c => t.names.includes(c.name)));
+    const inputData = inputDataCandidates.length > 0 ? inputDataCandidates[0] : tables[0];
 
     return (
         <Dialog
@@ -180,15 +180,15 @@ export const DisambiguationDialog: FC<DisambiguationDialogProps> = function Disa
                             startIdx = Math.max(codeOutputs[idx].length - displayPageSize, 0);
                         }
 
-                        let handlePageInc = codeOutputs[idx].length < displayPageSize || endIdx == codeOutputs[idx].length ? undefined : 
+                        const handlePageInc = codeOutputs[idx].length < displayPageSize || endIdx == codeOutputs[idx].length ? undefined : 
                                                 (() => {setDisplayPage((displayPage + 1) * displayPageSize >= codeOutputs[idx].length ? 0 : displayPage + 1)});
-                        let handlePageDesc = codeOutputs[idx].length < displayPageSize || startIdx == 0 ? undefined : 
+                        const handlePageDesc = codeOutputs[idx].length < displayPageSize || startIdx == 0 ? undefined : 
                                                 (() => {setDisplayPage(displayPage == 0 ? 0 : displayPage - 1)});
 
-                        let codeOutputSamples = codeOutputs[idx].slice(startIdx, endIdx);
-                        let highlightedRows = codeOutputSamples.map((pair, k) => pair[1] != codeOutputs[selectionIdx].slice(startIdx, endIdx)[k][1])
+                        const codeOutputSamples = codeOutputs[idx].slice(startIdx, endIdx);
+                        const highlightedRows = codeOutputSamples.map((pair, k) => pair[1] != codeOutputs[selectionIdx].slice(startIdx, endIdx)[k][1])
 
-                        let colNames : [string[], string] = [parentConcepts.map(f => f.name), conceptName];
+                        const colNames : [string[], string] = [parentConcepts.map(f => f.name), conceptName];
 
                         let formattedCode = code;
                         try {
@@ -268,16 +268,16 @@ export const DisambiguationDialog: FC<DisambiguationDialogProps> = function Disa
     );
 }
 
-export let simpleTableView = (exampleOutputs: [any[], any][], 
+export const simpleTableView = (exampleOutputs: [any[], any][], 
     exampleColNames: [any[], any], 
     conceptShelfItems: FieldItem[],
     rowsPergPage: number = 10) => {
     
-    let exampleTableRows = exampleOutputs.map(sample => {
-    let row : any = {};
+    const exampleTableRows = exampleOutputs.map(sample => {
+    const row : any = {};
     let i = 0;
 
-    for (let srcFieldName of exampleColNames[0]) {
+    for (const srcFieldName of exampleColNames[0]) {
         row[srcFieldName] = sample[0][i];
         i += 1
     }
@@ -285,9 +285,9 @@ export let simpleTableView = (exampleOutputs: [any[], any][],
         return row;
     })
 
-    let exampleTable = createDictTable("temp-1", exampleTableRows)
+    const exampleTable = createDictTable("temp-1", exampleTableRows)
 
-    let colDefs = exampleTable.names.map(name => {
+    const colDefs = exampleTable.names.map(name => {
         return {
             id: name, label: name, minWidth: 30, align: undefined, 
             format: (value: any) => `${value}`, source: exampleColNames[1] == name ? 'derived' : conceptShelfItems.find(f => f.name == name)?.source

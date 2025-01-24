@@ -62,7 +62,7 @@ const GroupHeader = styled('div')(({ theme }) => ({
     padding: 0,
   });
 
-let getChannelDisplay = (channel: Channel) => {
+const getChannelDisplay = (channel: Channel) => {
     if (channel == "x") {
         return "x-axis";
     } else if (channel == "y") {
@@ -81,7 +81,7 @@ export interface LittleConceptCardProps {
 export const LittleConceptCard: FC<LittleConceptCardProps> = function LittleConceptCard({ channel, field, encoding, handleUnbind }) {
     // concept cards are draggable cards that can be dropped into encoding shelf
 
-    let theme = useTheme();
+    const theme = useTheme();
 
     const [{ isDragging }, drag] = useDrag(() => ({
         type: "concept-card",
@@ -95,7 +95,7 @@ export const LittleConceptCard: FC<LittleConceptCardProps> = function LittleConc
     const opacity = isDragging ? 0.4 : 1;
     const cursorStyle = isDragging ? "grabbing" : "grab";
 
-    let fieldClass = "encoding-active-item ";
+    const fieldClass = "encoding-active-item ";
 
     let backgroundColor = alpha(theme.palette.primary.main, 0.05);
 
@@ -139,36 +139,36 @@ export interface EncodingBoxProps {
 
 // the encoding boxes, allows 
 export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel, chartId }) {
-    let theme = useTheme();
+    const theme = useTheme();
 
     // use tables for infer domains
     const tables = useSelector((state: DataFormulatorState) => state.tables);
     const charts = useSelector((state: DataFormulatorState) => state.charts);
-    let activeModel = useSelector(dfSelectors.getActiveModel);
+    const activeModel = useSelector(dfSelectors.getActiveModel);
     
-    let chart = charts.find(c => c.id == chartId) as Chart;
+    const chart = charts.find(c => c.id == chartId) as Chart;
     
-    let encoding = chart.encodingMap[channel]; 
+    const encoding = chart.encodingMap[channel]; 
         
-    let handleSwapEncodingField = (channel1: Channel, channel2: Channel) => {
+    const handleSwapEncodingField = (channel1: Channel, channel2: Channel) => {
         dispatch(dfActions.swapChartEncoding({chartId, channel1, channel2}))
     }
     
-    let handleResetEncoding = () => {
+    const handleResetEncoding = () => {
         dispatch(dfActions.updateChartEncoding({chartId, channel, encoding: {bin: false}}));
     }
 
     // updating a property of the encoding
-    let updateEncProp = (prop: keyof EncodingItem, value: any) => {
+    const updateEncProp = (prop: keyof EncodingItem, value: any) => {
         dispatch(dfActions.updateChartEncodingProp({chartId, channel, prop: prop as string, value}));
     }
 
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
 
-    let field = conceptShelfItems.find((x: FieldItem) => x.id == encoding.fieldID);
+    const field = conceptShelfItems.find((x: FieldItem) => x.id == encoding.fieldID);
 
-    let [autoSortResult, setAutoSortResult] = useState<{values: any[], reason: string} | undefined>(field?.levels);
-    let [autoSortInferRunning, setAutoSortInferRunning] = useState<boolean>(false);
+    const [autoSortResult, setAutoSortResult] = useState<{values: any[], reason: string} | undefined>(field?.levels);
+    const [autoSortInferRunning, setAutoSortInferRunning] = useState<boolean>(false);
 
     const dispatch = useDispatch();
 
@@ -226,21 +226,21 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
         backgroundColor = 'rgba(255, 251, 204, 0.5)';
     }
 
-    let fieldComponent = field === undefined ? "" : (
+    const fieldComponent = field === undefined ? "" : (
         <LittleConceptCard channel={channel} key={`${channel}-${field.name}`} field={field} encoding={encoding} handleUnbind={() => {
             handleResetEncoding();
         }} />
     )
 
     // define anchor open
-    let channelDisplay = getChannelDisplay(channel);
+    const channelDisplay = getChannelDisplay(channel);
 
-    let radioLabel = (label: string, value: any, key: string, width: number = 80) => {
+    const radioLabel = (label: string, value: any, key: string, width: number = 80) => {
         return <FormControlLabel sx={{ width: width, margin: 0 }} key={key}
                     value={value} control={<Radio size="small" sx={{ padding: "4px" }} />} label={label} />
     }
 
-    let stackOpt = (chart.chartType == "bar" || chart.chartType == "area") && (channel == "x" || channel == "y") ? [
+    const stackOpt = (chart.chartType == "bar" || chart.chartType == "area") && (channel == "x" || channel == "y") ? [
         <FormLabel key={`enc-box-${channel}-stack-label`} sx={{ fontSize: "inherit" }} id="normalized-option-radio-buttons-group" >Stack</FormLabel>,
         <FormControl
             key={`enc-box-${channel}-stack-form-control`}
@@ -274,12 +274,12 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
     // deduplicate domain items
     domainItems = [...new Set(domainItems)];
 
-    let autoSortEnabled = field && field?.type == "string" && domainItems.length < 200;
+    const autoSortEnabled = field && field?.type == "string" && domainItems.length < 200;
 
-    let autoSortFunction = () => {
-        let token = domainItems.map(x => String(x)).join("--");
+    const autoSortFunction = () => {
+        const token = domainItems.map(x => String(x)).join("--");
         setAutoSortInferRunning(true);
-        let message = {
+        const message = {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', },
             body: JSON.stringify({
@@ -299,16 +299,16 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
 
                 if (data["status"] == "ok") {
                     if (data["token"] == token) {
-                        let candidate = data["result"][0];
+                        const candidate = data["result"][0];
                         console.log(candidate)
                         console.log(candidate['status'])
                         
                         if (candidate['status'] == 'ok') {
-                            let sortRes = {values: candidate['content']['sorted_values'], reason: candidate['content']['reason']}
+                            const sortRes = {values: candidate['content']['sorted_values'], reason: candidate['content']['reason']}
                             console.log(sortRes)
                             setAutoSortResult(sortRes);
 
-                            let tmpConcept = duplicateField(field as FieldItem);
+                            const tmpConcept = duplicateField(field as FieldItem);
                             tmpConcept.levels = sortRes;
 
                             dispatch(dfActions.updateConceptItems(tmpConcept));
@@ -358,7 +358,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
         } else {
             if (autoSortResult != undefined) {
 
-                let autoSortOptTitle = <Box>
+                const autoSortOptTitle = <Box>
                         <Box>
                             <Typography sx={{fontWeight: 'bold'}} component='span' fontSize='inherit'>Sort Order: </Typography> 
                              {autoSortResult.values.map(x => x ? x.toString() : 'null').join(", ")}
@@ -369,7 +369,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
                         </Box>
                     </Box>
 
-                let autoSortOpt = 
+                const autoSortOpt = 
                     <Tooltip title={autoSortOptTitle} arrow componentsProps={{
                         tooltip: {
                           sx: {
@@ -412,7 +412,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
         }
     }
 
-    let sortByOpt = [
+    const sortByOpt = [
         <FormLabel sx={{ fontSize: "inherit" }} key={`enc-box-${channel}-sort-label`} id="sort-option-radio-buttons-group" >Sort By</FormLabel>,
         <FormControl
             key={`enc-box-${channel}-sort-form-control`}
@@ -433,7 +433,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
         </FormControl>
     ]
 
-    let sortOrderOpt = [
+    const sortOrderOpt = [
         <FormLabel sx={{ fontSize: "inherit" }} key={`enc-box-${channel}-sort-order-label`} 
                    id="sort-option-radio-buttons-group" >Sort Order</FormLabel>,
         <FormControl
@@ -456,7 +456,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
         </FormControl>
     ]
     
-    let colorSchemeList = [
+    const colorSchemeList = [
         "category10",
         "category20",
         "tableau10",
@@ -470,7 +470,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
         "redyellowblue",
         "spectral"
     ]
-    let colorSchemeOpt = channel == "color" ? [
+    const colorSchemeOpt = channel == "color" ? [
             <FormLabel sx={{ fontSize: "inherit" }} key={`enc-box-${channel}-color-scheme-label`} id="scheme-option-radio-buttons-group">Color scheme</FormLabel>,
             <FormControl key="color-sel-form" fullWidth size="small" sx={{textAlign: "initial", fontSize: "12px"}}>
                 <Select
@@ -490,7 +490,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
             </FormControl>
     ] : []
 
-    let encodingConfigCard = (
+    const encodingConfigCard = (
         <CardContent sx={{
             display: "flex", '& svg': { fontSize: "inherit" }, '&:last-child': { pb: "12px", pt: "12px" },
             margin: '0px 12px', padding: "6px", fontSize: "12px"
@@ -504,20 +504,20 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
         </CardContent>
     )
 
-    let optBackgroundColor = alpha(theme.palette.secondary.main, 0.07);
+    const optBackgroundColor = alpha(theme.palette.secondary.main, 0.07);
 
-    let aggregateDisplay = encoding.aggregate ? (<Chip key="aggr-display" className="encoding-prop-chip"  
+    const aggregateDisplay = encoding.aggregate ? (<Chip key="aggr-display" className="encoding-prop-chip"  
         sx={{  backgroundColor: optBackgroundColor, width: field == undefined ? "100%" : "auto" }}
         onDelete={() => updateEncProp("aggregate", undefined)} color="default" //deleteIcon={<RemoveIcon />}
         label={encoding.aggregate == "average" ? "avg" : encoding.aggregate} size="small" />) : "";
-    let binDisplay = encoding.bin ? (<Chip key="bin-display" className="encoding-prop-chip"  color="default" label={"bin"} //deleteIcon={<RemoveIcon />}
+    const binDisplay = encoding.bin ? (<Chip key="bin-display" className="encoding-prop-chip"  color="default" label={"bin"} //deleteIcon={<RemoveIcon />}
         sx={{  backgroundColor: optBackgroundColor }}
         size="small" onDelete={() => updateEncProp("bin", false)} />) : "";
-    let normalizedDisplay = encoding.stack ? (<Chip key="normalized-display" className="encoding-prop-chip" //deleteIcon={<RemoveIcon />} 
+    const normalizedDisplay = encoding.stack ? (<Chip key="normalized-display" className="encoding-prop-chip" //deleteIcon={<RemoveIcon />} 
         color="default" sx={{  backgroundColor: optBackgroundColor }}
         label={"⌸"} size="small" onDelete={() => updateEncProp("stack", undefined)} />) : "";
     
-    let handleSelectOption = (option: string) => {
+    const handleSelectOption = (option: string) => {
         if (conceptShelfItems.map(f => f.name).includes(option)) {
             //console.log(`yah-haha: ${option}`);
             updateEncProp("fieldID", (conceptShelfItems.find(f => f.name == option) as FieldItem).id);
@@ -526,7 +526,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
                 console.log("nothing happens")
             } else {
                 console.log(`about to add ${option}`)
-                let newConept = {
+                const newConept = {
                     id: `concept-${Date.now()}`, name: option, type: "auto" as Type, 
                     description: "", source: "custom", domain: [],
                 } as FieldItem;
@@ -537,8 +537,8 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
         }
     }
 
-    let conceptGroups = groupConceptItems(conceptShelfItems);
-    let createConceptInputBox = <Autocomplete
+    const conceptGroups = groupConceptItems(conceptShelfItems);
+    const createConceptInputBox = <Autocomplete
         key="concept-create-input-box"
         onChange={(event, value) => {
             console.log(`change: ${value}`)
@@ -571,7 +571,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
             return option;
         }}
         groupBy={(option) => {
-            let groupItem = conceptGroups.find(item => item.field.name == option);
+            const groupItem = conceptGroups.find(item => item.field.name == option);
             if (groupItem && groupItem.field.name != "") {
                 return `from ${groupItem.group}`;
             } else {
@@ -585,8 +585,8 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
             </li>
           )}
         renderOption={(props, option) => {
-            let renderOption = (conceptShelfItems.map(f => f.name).includes(option) || option == "...") ? option : `"${option}"`;
-            let otherStyle = option == `...` ? {color: "darkgray"} : {}
+            const renderOption = (conceptShelfItems.map(f => f.name).includes(option) || option == "...") ? option : `"${option}"`;
+            const otherStyle = option == `...` ? {color: "darkgray"} : {}
 
             return <Typography {...props} onClick={()=>{
                 handleSelectOption(option);
@@ -616,7 +616,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
             fieldComponent
         ]
 
-    let encodingComp = (
+    const encodingComp = (
         <ClickAwayListener
             mouseEvent="onMouseUp"
             touchEvent="onTouchStart"

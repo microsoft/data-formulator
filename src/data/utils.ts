@@ -10,7 +10,7 @@ import { ColumnTable } from './table';
 
 export const loadDataWrapper = (title: string, text: string, fileType: string): DictTable | undefined => {
     
-    let tableName = title;
+    const tableName = title;
     //let tableName = title.replace(/\.[^/.]+$/ , "");
 
     let table = undefined;
@@ -84,7 +84,7 @@ export const createTableFromFromObjectArray = (title: string, values: any[], der
         }
     }
 
-    let columnTable = new ColumnTable(columns, cleanNames);
+    const columnTable = new ColumnTable(columns, cleanNames);
 
     return  {
         id: title,
@@ -96,7 +96,7 @@ export const createTableFromFromObjectArray = (title: string, values: any[], der
 };
 
 export const inferTypeFromValueArray = (values: any[]): Type => {
-    let types: Type[] = [Type.Boolean, Type.Integer, Type.Date, Type.Number, Type.String];
+    const types: Type[] = [Type.Boolean, Type.Integer, Type.Date, Type.Number, Type.String];
 
     for (let i = 0; i < values.length; i++) {
         const v = values[i];

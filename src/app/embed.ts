@@ -55,7 +55,7 @@ function sendEventToSubscribers(action: Action) {
         switch (action.actionName) {
             case "loadData": {
                 if (subscription.loadData) {
-                    let loadDataAction = action as LoadDataAction;
+                    const loadDataAction = action as LoadDataAction;
                     let table: undefined | DictTable = undefined;
                     try {
                         table = createTableFromFromObjectArray(loadDataAction.actionParams.tableName || 'dataset', loadDataAction.actionParams.table);
@@ -71,7 +71,7 @@ function sendEventToSubscribers(action: Action) {
             }
             case "setConfig": {
                 if (subscription.setAppConfig) {
-                    let setConfigAction = action as SetConfigAction;
+                    const setConfigAction = action as SetConfigAction;
                     subscription.setAppConfig(setConfigAction.actionParams as AppConfig);
                 }
                 break;

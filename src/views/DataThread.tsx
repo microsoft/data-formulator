@@ -49,9 +49,9 @@ import { TriggerCard } from './EncodingShelfCard';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 
-let buildChartCard = (chartElement: {tableId: string, chartId: string, element: any}, 
+const buildChartCard = (chartElement: {tableId: string, chartId: string, element: any}, 
                       focusedChartId?: string) => {
-    let selectedClassName = focusedChartId == chartElement.chartId ? 'selected-card' : '';
+    const selectedClassName = focusedChartId == chartElement.chartId ? 'selected-card' : '';
     return <Card className={`data-thread-card ${selectedClassName}`} variant="outlined" 
             sx={{
                     marginLeft: 1,
@@ -62,7 +62,7 @@ let buildChartCard = (chartElement: {tableId: string, chartId: string, element: 
     </Card>
 }
 
-let SingleThreadView: FC<{
+const SingleThreadView: FC<{
     scrollRef: any,
     threadIdx: number,
     leafTable: DictTable;
@@ -75,19 +75,19 @@ let SingleThreadView: FC<{
         chartElements,
         usedTableIds, // tables that have been used
 }) {
-    let theme = useTheme();
+    const theme = useTheme();
     
-    let tables = useSelector((state: DataFormulatorState) => state.tables);
-    let charts = useSelector((state: DataFormulatorState) => state.charts);
-    let focusedChartId = useSelector((state: DataFormulatorState) => state.focusedChartId);
-    let focusedTableId = useSelector((state: DataFormulatorState) => state.focusedTableId);
+    const tables = useSelector((state: DataFormulatorState) => state.tables);
+    const charts = useSelector((state: DataFormulatorState) => state.charts);
+    const focusedChartId = useSelector((state: DataFormulatorState) => state.focusedChartId);
+    const focusedTableId = useSelector((state: DataFormulatorState) => state.focusedTableId);
 
-    let focusedChart = charts.find(c => c.id == focusedChartId);
+    const focusedChart = charts.find(c => c.id == focusedChartId);
     
         
     const dispatch = useDispatch();
 
-    let [collapsed, setCollapsed] = useState<boolean>(false);
+    const [collapsed, setCollapsed] = useState<boolean>(false);
 
     const w: any = (a: any[], b: any[], spaceElement?: any) => a.length ? [a[0], b.length == 0 ? "" : (spaceElement || ""), ...w(b, a.slice(1), spaceElement)] : b;
 
@@ -106,18 +106,18 @@ let SingleThreadView: FC<{
 
         triggerCards = triggers.map((trigger, i) => {
 
-            let selectedClassName = trigger.chartRef == focusedChartId ? 'selected-card' : '';
+            const selectedClassName = trigger.chartRef == focusedChartId ? 'selected-card' : '';
 
-            let extractActiveFields = (t: Trigger) => {
-                let encodingMap = (charts.find(c => c.id == t.chartRef) as Chart).encodingMap
+            const extractActiveFields = (t: Trigger) => {
+                const encodingMap = (charts.find(c => c.id == t.chartRef) as Chart).encodingMap
                 return Array.from(Object.values(encodingMap)).map((enc: EncodingItem) => enc.fieldID).filter(x => x != undefined);
             };
 
-            let previousActiveFields = new Set(i == 0 ? [] : extractActiveFields(triggers[i - 1]))
-            let currentActiveFields = new Set(extractActiveFields(trigger))
-            let fieldsIdentical = _.isEqual(previousActiveFields, currentActiveFields)
+            const previousActiveFields = new Set(i == 0 ? [] : extractActiveFields(triggers[i - 1]))
+            const currentActiveFields = new Set(extractActiveFields(trigger))
+            const fieldsIdentical = _.isEqual(previousActiveFields, currentActiveFields)
 
-            let triggerCard = <div key={'thread-card-trigger-box'}>
+            const triggerCard = <div key={'thread-card-trigger-box'}>
                 <Box sx={{flex: 1}} /*sx={{ width: 'calc(100% - 8px)', marginLeft: 1, borderLeft: '1px dashed darkgray' }}*/ >
                     <TriggerCard className={selectedClassName} trigger={trigger} hideFields={fieldsIdentical} />   
                 </Box>
@@ -133,18 +133,18 @@ let SingleThreadView: FC<{
     }
 
     // the thread is focused if the focused chart is in this table
-    let threadIsFocused = focusedChart && tableIdList.includes(focusedChart.tableRef) && !usedTableIds.includes(focusedChart.tableRef);
+    const threadIsFocused = focusedChart && tableIdList.includes(focusedChart.tableRef) && !usedTableIds.includes(focusedChart.tableRef);
     
-    let tableList = tableIdList.map((tableId, i) => {
+    const tableList = tableIdList.map((tableId, i) => {
         // filter charts relavent to this
-        let relevantCharts = chartElements.filter(ce => ce.tableId == tableId && !usedTableIds.includes(tableId));
-        let table = tables.find(t => t.id == tableId);
+        const relevantCharts = chartElements.filter(ce => ce.tableId == tableId && !usedTableIds.includes(tableId));
+        const table = tables.find(t => t.id == tableId);
 
-        let selectedClassName = tableId == focusedTableId ? 'selected-card' : '';
+        const selectedClassName = tableId == focusedTableId ? 'selected-card' : '';
 
-        let collapsedProps = collapsed ? { width: '50%', "& canvas": {width: 60, maxHeight: 50} } : {width: '100%'}
+        const collapsedProps = collapsed ? { width: '50%', "& canvas": {width: 60, maxHeight: 50} } : {width: '100%'}
 
-        let releventChartElements = relevantCharts.map((ce, j) => 
+        const releventChartElements = relevantCharts.map((ce, j) => 
                 <Box key={`relevant-chart-${ce.chartId}`} 
                     sx={{display: 'flex', padding: 0, paddingBottom: j == relevantCharts.length - 1 ? 1 : 0.5,
                          ...collapsedProps  }}>
@@ -152,9 +152,9 @@ let SingleThreadView: FC<{
                 </Box>)
         
         // only charts without dependency can be deleted
-        let tableDeleteEnabled = table?.derive && !tables.some(t => t.derive?.trigger.tableId == tableId);
+        const tableDeleteEnabled = table?.derive && !tables.some(t => t.derive?.trigger.tableId == tableId);
             
-        let colloapsedTableBox = <div style={{padding: 0}}>
+        const colloapsedTableBox = <div style={{padding: 0}}>
             <Box sx={{textTransform: 'none', padding: 0, minWidth: 0, color: 'gray'}} >
                 <Stack direction="row" sx={{fontSize: '12px', fontWeight: tableId == focusedTableId ? 'bold' : 'normal'}} alignItems="center" gap={"2px"}>
                     <TableRowsIcon fontSize="inherit"  sx={{fontWeight: 'inherit'}}/>
@@ -165,13 +165,13 @@ let SingleThreadView: FC<{
             </Box>
         </div>;
 
-        let regularTableBox = <div ref={relevantCharts.some(c => c.chartId == focusedChartId) ? scrollRef : null} style={{padding: '0px'}}>
+        const regularTableBox = <div ref={relevantCharts.some(c => c.chartId == focusedChartId) ? scrollRef : null} style={{padding: '0px'}}>
             <Card className={`data-thread-card ${selectedClassName}`} variant="outlined" 
                     sx={{ width: '100%', background: 'aliceblue' }} 
                     onClick={() => { 
                         dispatch(dfActions.setFocusedTable(tableId)); 
                         if (focusedChart?.tableRef != tableId) {
-                            let firstRelatedChart = charts.find((c: Chart) => c.tableRef == tableId && c.intermediate == undefined) ||  charts.find((c: Chart) => c.tableRef == tableId);
+                            const firstRelatedChart = charts.find((c: Chart) => c.tableRef == tableId && c.intermediate == undefined) ||  charts.find((c: Chart) => c.tableRef == tableId);
                             if (firstRelatedChart) {
                                 if (firstRelatedChart.intermediate == undefined) {
                                     dispatch(dfActions.setFocusedChart(firstRelatedChart.id));
@@ -213,7 +213,7 @@ let SingleThreadView: FC<{
             </Card>
         </div>
 
-        let chartElementProps = collapsed ? {display: 'flex', flexWrap: 'wrap'} : {}
+        const chartElementProps = collapsed ? {display: 'flex', flexWrap: 'wrap'} : {}
 
         return [
             regularTableBox,
@@ -283,12 +283,12 @@ let SingleThreadView: FC<{
 
 export const DataThread: FC<{}> = function ({ }) {
 
-    let tables = useSelector((state: DataFormulatorState) => state.tables);
-    let charts = useSelector((state: DataFormulatorState) => state.charts);
-    let focusedChartId = useSelector((state: DataFormulatorState) => state.focusedChartId);
-    let threadDrawerOpen = useSelector((state: DataFormulatorState) => state.threadDrawerOpen);
+    const tables = useSelector((state: DataFormulatorState) => state.tables);
+    const charts = useSelector((state: DataFormulatorState) => state.charts);
+    const focusedChartId = useSelector((state: DataFormulatorState) => state.focusedChartId);
+    const threadDrawerOpen = useSelector((state: DataFormulatorState) => state.threadDrawerOpen);
 
-    let chartSynthesisInProgress = useSelector((state: DataFormulatorState) => state.chartSynthesisInProgress);
+    const chartSynthesisInProgress = useSelector((state: DataFormulatorState) => state.chartSynthesisInProgress);
         
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
 
@@ -300,29 +300,29 @@ export const DataThread: FC<{}> = function ({ }) {
 
     const dispatch = useDispatch();
 
-    let setThreadDrawerOpen = (flag: boolean) => { dispatch(dfActions.setThreadDrawerOpen(flag)); }
+    const setThreadDrawerOpen = (flag: boolean) => { dispatch(dfActions.setThreadDrawerOpen(flag)); }
 
     useEffect(() => {
         executeScroll();
     }, [threadDrawerOpen])
 
     // excluding base tables or tables from saved charts
-    let derivedFields = conceptShelfItems.filter(f => f.source == "derived");
+    const derivedFields = conceptShelfItems.filter(f => f.source == "derived");
 
     // when there is no result and synthesis is running, just show the waiting panel
 
     // // we don't always render it, so make this a function to enable lazy rendering
-    let chartElements = charts.filter(chart => !chart.intermediate).map((chart, index) => {
+    const chartElements = charts.filter(chart => !chart.intermediate).map((chart, index) => {
         const id = `data-thread-chart-Element-${chart.id}`;
 
-        let table = getDataTable(chart, tables, charts, conceptShelfItems);
+        const table = getDataTable(chart, tables, charts, conceptShelfItems);
 
-        let toDeriveFields = derivedFields.filter(f => f.name != "").filter(f => findBaseFields(f, conceptShelfItems).every(f2 => table.names.includes(f2.name)))
-        let extTable = baseTableToExtTable(JSON.parse(JSON.stringify(table.rows)), toDeriveFields, conceptShelfItems);
+        const toDeriveFields = derivedFields.filter(f => f.name != "").filter(f => findBaseFields(f, conceptShelfItems).every(f2 => table.names.includes(f2.name)))
+        const extTable = baseTableToExtTable(JSON.parse(JSON.stringify(table.rows)), toDeriveFields, conceptShelfItems);
 
-        let chartTemplate = getChartTemplate(chart.chartType);
+        const chartTemplate = getChartTemplate(chart.chartType);
 
-        let setIndexFunc = () => {
+        const setIndexFunc = () => {
             //let focusedIndex = index;
             dispatch(dfActions.setFocusedChart(chart.id));
             dispatch(dfActions.setFocusedTable(table.id));
@@ -330,18 +330,18 @@ export const DataThread: FC<{}> = function ({ }) {
         }
 
         if (chart.chartType == "Auto") {
-            let element =  <Box sx={{ position: "relative", width: "fit-content", display: "flex", flexDirection: "column", margin: 'auto', color: 'darkgray' }}>
+            const element =  <Box sx={{ position: "relative", width: "fit-content", display: "flex", flexDirection: "column", margin: 'auto', color: 'darkgray' }}>
                 <InsightsIcon fontSize="medium"/>
             </Box>
             return {chartId: chart.id, tableId: table.id, element}
         }
 
-        let [available, unfilledFields] = chartAvailabilityCheck(chart.encodingMap, conceptShelfItems, extTable);
+        const [available, unfilledFields] = chartAvailabilityCheck(chart.encodingMap, conceptShelfItems, extTable);
 
         if (!available || chart.chartType == "Table") {
             //let elementBody = renderTableChart(chart, conceptShelfItems, extTable);
 
-            let element = <Box key={`unavailable-${id}`} width={"100%"} 
+            const element = <Box key={`unavailable-${id}`} width={"100%"} 
                         className={"vega-thumbnail vega-thumbnail-box"} 
                         onClick={setIndexFunc} 
                         sx={{ display: "flex", backgroundColor: "rgba(0,0,0,0.01)", position: 'relative',
@@ -377,14 +377,14 @@ export const DataThread: FC<{}> = function ({ }) {
 
         // Temporary fix, down sample the dataset
         if (assembledChart["data"]["values"].length > 5000) {
-            let values = assembledChart["data"]["values"];
+            const values = assembledChart["data"]["values"];
             assembledChart = (({ data, ...o }) => o)(assembledChart);
 
-            let getRandom = (seed: number) => {
-                let x = Math.sin(seed++) * 10000;
+            const getRandom = (seed: number) => {
+                const x = Math.sin(seed++) * 10000;
                 return x - Math.floor(x);
             }
-            let getRandomSubarray = (arr: any[], size: number) => {
+            const getRandomSubarray = (arr: any[], size: number) => {
                 let shuffled = arr.slice(0), i = arr.length, temp, index;
                 while (i--) {
                     index = Math.floor((i + 1) * getRandom(233 * i + 888));
@@ -446,23 +446,23 @@ export const DataThread: FC<{}> = function ({ }) {
     })
  
 
-    let refTables = tables; 
-    let leafTables = refTables.filter(t => !refTables.some(t2 => t2.derive?.trigger.tableId == t.id));
+    const refTables = tables; 
+    const leafTables = refTables.filter(t => !refTables.some(t2 => t2.derive?.trigger.tableId == t.id));
 
 
-    let drawerOpen = leafTables.length > 1 && threadDrawerOpen;
+    const drawerOpen = leafTables.length > 1 && threadDrawerOpen;
 
-    let view = <Box sx={{margin: "0px 0px 8px 0px", display: 'flex', flexDirection: drawerOpen ? 'row-reverse' : 'column', paddingBottom: 2}}>   
+    const view = <Box sx={{margin: "0px 0px 8px 0px", display: 'flex', flexDirection: drawerOpen ? 'row-reverse' : 'column', paddingBottom: 2}}>   
         {leafTables.map((lt, i) => {
-            let usedTableIds = leafTables.slice(0, i)
+            const usedTableIds = leafTables.slice(0, i)
                 .map(x => [x.id, ...getTriggers(x, tables).map(y => y.tableId) || []]).flat();
             return <SingleThreadView  scrollRef={scrollRef} threadIdx={i} leafTable={lt} chartElements={chartElements} usedTableIds={usedTableIds} />
         })}
     </Box>
 
-    let threadDrawerWidth = Math.max(Math.min(Math.max(600, window.innerWidth * 0.8), leafTables.length * 200), 212)
+    const threadDrawerWidth = Math.max(Math.min(Math.max(600, window.innerWidth * 0.8), leafTables.length * 200), 212)
 
-    let carousel = (
+    const carousel = (
         <Box className="data-thread" sx={{ overflow: 'hidden',}}>
             <Box sx={{ direction: 'ltr', display: 'flex',
                         paddingTop: "10px", paddingLeft: '12px', alignItems: 'center', justifyContent: 'space-between'}}>

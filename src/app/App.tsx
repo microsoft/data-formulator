@@ -85,16 +85,16 @@ export const ImportStateButton: React.FC<{}> = ({ }) => {
 
     const dispatch = useDispatch();
 
-    let $uploadStateFile = React.createRef<HTMLInputElement>();
+    const $uploadStateFile = React.createRef<HTMLInputElement>();
 
-    let handleFileUpload = (event: React.FormEvent<HTMLElement>): void => {
+    const handleFileUpload = (event: React.FormEvent<HTMLElement>): void => {
         const target: any = event.target;
         if (target && target.files) {
-            for (let file of target.files) {
+            for (const file of target.files) {
                 //const file: File = target.files[0];
                 (file as File).text().then((text) => {
                     try {
-                        let savedState = JSON.parse(text);
+                        const savedState = JSON.parse(text);
                         dispatch(dfActions.loadState(savedState));
                     } catch {
                         
@@ -124,8 +124,8 @@ export const ExportStateButton: React.FC<{}> = ({}) => {
     return <Tooltip title="save session locally">
         <Button variant="text" onClick={()=>{
             function download(content: string, fileName: string, contentType: string) {
-                    let a = document.createElement("a");
-                    let file = new Blob([content], {type: contentType});
+                    const a = document.createElement("a");
+                    const file = new Blob([content], {type: contentType});
                     a.href = URL.createObjectURL(file);
                     a.download = fileName;
                     a.click();
@@ -182,8 +182,8 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
         .then(function(response) { return response.json(); })
         .then(function(result) {
             if (Array.isArray(result) && result.length > 0) {
-                let authInfo = result[0];
-                let userInfo = {
+                const authInfo = result[0];
+                const userInfo = {
                     name: authInfo['user_claims'].find((item: any) => item.typ == 'name')?.val || '',
                     userId: authInfo['user_id']
                 }
@@ -205,7 +205,7 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
         dispatch(fetchAvailableModels());
     }, []);
 
-    let theme = createTheme({
+    const theme = createTheme({
         typography: {
             fontFamily: [
                 "Arial",
@@ -230,7 +230,7 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
         },
     });
 
-    let switchers = (
+    const switchers = (
         <Box sx={{ display: "flex" }} key="switchers">
             <ToggleButtonGroup
                 color="primary"
@@ -262,7 +262,7 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
         </Box>
     )
 
-    let appBar = [
+    const appBar = [
         <AppBar className="app-bar" position="static" key="app-bar-main">
             <Toolbar variant="dense" sx={{backgroundColor: betaMode ? 'lavender' : ''}}>
                 <Button href={"/"} sx={{display: "flex", flexDirection: "row", textTransform: "none", 
@@ -345,7 +345,7 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
         // </Dialog>
     ];
 
-    let router = createBrowserRouter([
+    const router = createBrowserRouter([
         {
             path: "/about",
             element: <About />,
@@ -358,7 +358,7 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
         }
     ]);
 
-    let app = 
+    const app = 
         <Box sx={{ flexGrow: 1, height: '100%', overflow: "hidden", display: "flex", flexDirection: "column"}}>
             {appBar}
             <RouterProvider router={router} />
@@ -375,7 +375,7 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
 function stringAvatar(name: string) {
     let displayName = ""
     try {
-        let nameSplit = name.split(' ')
+        const nameSplit = name.split(' ')
         displayName = `${nameSplit[0][0]}${nameSplit.length > 1 ? nameSplit[nameSplit.length-1][0] : ''}`
     } catch {
         displayName = name ? name[0] : "?";

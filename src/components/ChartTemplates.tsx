@@ -242,15 +242,15 @@ const barCharts: ChartTemplate[] = [
         "postProcessor": (vgSpec: any, table: any[]) => {
             try {
                 if (table) {
-                    let colorField = vgSpec['hconcat'][0]['encoding']['color']['field'];
-                    let colorValues = [...new Set(table.map(r => r[colorField]))] ;
+                    const colorField = vgSpec['hconcat'][0]['encoding']['color']['field'];
+                    const colorValues = [...new Set(table.map(r => r[colorField]))] ;
                     vgSpec.hconcat[0].transform = [{"filter": `datum[\"${colorField}\"] == \"${colorValues[0]}\"`}]
                     vgSpec.hconcat[0].title = colorValues[0]
                     vgSpec.hconcat[1].transform = [{"filter": `datum[\"${colorField}\"] == \"${colorValues[1]}\"`}]
                     vgSpec.hconcat[1].title = colorValues[1]
-                    let xField = vgSpec['hconcat'][0]['encoding']['x']['field'];
-                    let xValues = [...new Set(table.filter(r => r[colorField] == colorValues[0] || r[colorField] == colorValues[1]).map(r => r[xField]))];
-                    let domain = [Math.min(...xValues, 0), Math.max(...xValues)]
+                    const xField = vgSpec['hconcat'][0]['encoding']['x']['field'];
+                    const xValues = [...new Set(table.filter(r => r[colorField] == colorValues[0] || r[colorField] == colorValues[1]).map(r => r[xField]))];
+                    const domain = [Math.min(...xValues, 0), Math.max(...xValues)]
                     vgSpec.hconcat[0]['encoding']['x']['scale']['domain'] = domain;
                     vgSpec.hconcat[1]['encoding']['x']['scale'] = {domain: domain};
                 }
@@ -310,7 +310,7 @@ const barCharts: ChartTemplate[] = [
     },
 ]
 
-let lineCharts = [
+const lineCharts = [
     {
         "chart": "Line Chart",
         "icon": chartIconLine,
@@ -345,7 +345,7 @@ let lineCharts = [
     },
 ]
 
-let customCharts = [
+const customCharts = [
     {
         "chart": "Custom Point",
         "icon": chartIconCustomPoint,
@@ -403,7 +403,7 @@ let customCharts = [
     }
 ]
 
-let tableCharts : ChartTemplate[] = [
+const tableCharts : ChartTemplate[] = [
     {
         "chart": "Heat Map",
         "icon": chartIconHeatMap,

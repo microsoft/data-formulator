@@ -37,9 +37,9 @@ interface SelectableCellProps {
 }
 
 const SelectableCell = createSelectable<SelectableCellProps>((props: TSelectableItemProps & SelectableCellProps) => {
-    let { selectableRef, isSelected, isSelecting, value, align, indices, selectedBounds, source, onClick } = props;
+    const { selectableRef, isSelected, isSelecting, value, align, indices, selectedBounds, source, onClick } = props;
 
-    let theme = useTheme();
+    const theme = useTheme();
 
     // Kind of a hack to change selected bounds but didn't want to redraw every cell
     const classNames = [
@@ -112,7 +112,7 @@ interface SelectableTableHeaderProps {
 }
 
 export const SelectableTableHeader: React.FC<SelectableTableHeaderProps> = ({ columnDefs, orderBy, order, selectedColumnNames, onChangeOrder }) => {
-    let theme = useTheme();
+    const theme = useTheme();
 
     return (
         <TableHead sx={{ zIndex: 19999, position: "relative" }}>
@@ -306,17 +306,17 @@ export const SelectableTable: React.FC<SelectableTableProps> = ({ rows, columnDe
                     onSelectionFinish={(selected: any[]) => {
                         // console.log($tableRef.current);
                         // Get bounds based on indices
-                        let left = _.min(selected.map(x => x.props.indices[0])),
+                        const left = _.min(selected.map(x => x.props.indices[0])),
                             right = _.max(selected.map(x => x.props.indices[0])),
                             bottom = _.max(selected.map(x => x.props.indices[1])),
                             top = _.min(selected.map(x => x.props.indices[1]));
 
-                        let columns = _.uniq(selected.map(x => x.props.column));
+                        const columns = _.uniq(selected.map(x => x.props.column));
 
                         setSelectedBounds([left, top, right, bottom]);
                         setSelectedColumnNames(columns as string[]);
 
-                        let values = selected.map(x => x.props.value);
+                        const values = selected.map(x => x.props.value);
                         // setSelectedColumns(columns);
                         onSelect(columns, values);
                         // setHighlightCols(columns);

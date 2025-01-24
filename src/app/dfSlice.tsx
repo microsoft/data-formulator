@@ -16,7 +16,7 @@ import { TableChallenges } from '../views/TableSelectionView';
 enableMapSet();
 
 export const generateFreshChart = (tableRef: string, chartType?: string) : Chart => {
-    let realChartType = chartType || "?"
+    const realChartType = chartType || "?"
     return { 
         id: `chart-${Date.now()- Math.floor(Math.random() * 10000)}`, 
         chartType: realChartType, 
@@ -94,28 +94,28 @@ const initialState: DataFormulatorState = {
     betaMode: false,
 }
 
-let getUnrefedDerivedTableIds = (state: DataFormulatorState) => {
+const getUnrefedDerivedTableIds = (state: DataFormulatorState) => {
 
     // find tables directly referred by charts
-    let chartRefedTables = state.charts.map(chart => getDataTable(chart, state.tables, state.charts, state.conceptShelfItems));
+    const chartRefedTables = state.charts.map(chart => getDataTable(chart, state.tables, state.charts, state.conceptShelfItems));
     
     // find tables referred via triggers
-    let triggerRefedTableIds = chartRefedTables.filter(t => t.derive != undefined).map(t => t.derive?.trigger as Trigger);
+    const triggerRefedTableIds = chartRefedTables.filter(t => t.derive != undefined).map(t => t.derive?.trigger as Trigger);
 
-    let allRefedTableIds = [...chartRefedTables.map(t => t.id), ...triggerRefedTableIds];
+    const allRefedTableIds = [...chartRefedTables.map(t => t.id), ...triggerRefedTableIds];
 
     // TODO: also need to consider concept shelf reference??
     
     return state.tables.filter(table => table.derive && !allRefedTableIds.includes(table.id)).map(t => t.id);
 } 
 
-let deleteChartsRoutine = (state: DataFormulatorState, chartIds: string[]) => {
-    let charts = state.charts.filter(c => !chartIds.includes(c.id));
+const deleteChartsRoutine = (state: DataFormulatorState, chartIds: string[]) => {
+    const charts = state.charts.filter(c => !chartIds.includes(c.id));
     let focusedChartId = state.focusedChartId;
     let activeThreadChartId = state.activeThreadChartId;
 
     if (focusedChartId && chartIds.includes(focusedChartId)) {
-        let leafCharts = charts.filter(c => c.intermediate == undefined);
+        const leafCharts = charts.filter(c => c.intermediate == undefined);
         focusedChartId = leafCharts.length > 0 ? leafCharts[0].id : undefined;
         activeThreadChartId = focusedChartId;
 
@@ -128,7 +128,7 @@ let deleteChartsRoutine = (state: DataFormulatorState, chartIds: string[]) => {
     state.focusedChartId = focusedChartId;
     state.activeThreadChartId = activeThreadChartId;
 
-    let unrefedDerivedTableIds = getUnrefedDerivedTableIds(state);
+    const unrefedDerivedTableIds = getUnrefedDerivedTableIds(state);
     state.tables = state.tables.filter(t => !unrefedDerivedTableIds.includes(t.id));
     // remove intermediate charts that lead to this table
     state.charts = state.charts.filter(c => !(c.intermediate && unrefedDerivedTableIds.includes(c.intermediate.resultTableId)));
@@ -139,9 +139,9 @@ export const fetchFieldSemanticType = createAsyncThunk(
     async (table: DictTable, { getState }) => {
         console.log(">>> call agent to infer semantic types <<<")
 
-        let state = getState() as DataFormulatorState;
+        const state = getState() as DataFormulatorState;
 
-        let message = {
+        const message = {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', },
             body: JSON.stringify({
@@ -155,7 +155,7 @@ export const fetchFieldSemanticType = createAsyncThunk(
         const controller = new AbortController()
         const timeoutId = setTimeout(() => controller.abort(), 20000)
 
-        let response = await fetch(getUrls().SERVER_PROCESS_DATA_ON_LOAD, {...message, signal: controller.signal })
+        const response = await fetch(getUrls().SERVER_PROCESS_DATA_ON_LOAD, {...message, signal: controller.signal })
 
         return response.json();
     }
@@ -166,9 +166,9 @@ export const fetchCodeExpl = createAsyncThunk(
     async (derivedTable: DictTable, { getState }) => {
         console.log(">>> call agent to obtain code explanations <<<")
 
-        let state = getState() as DataFormulatorState;
+        const state = getState() as DataFormulatorState;
 
-        let message = {
+        const message = {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', },
             body: JSON.stringify({
@@ -185,7 +185,7 @@ export const fetchCodeExpl = createAsyncThunk(
         const controller = new AbortController()
         const timeoutId = setTimeout(() => controller.abort(), 20000)
 
-        let response = await fetch(getUrls().CODE_EXPL_URL, {...message, signal: controller.signal })
+        const response = await fetch(getUrls().CODE_EXPL_URL, {...message, signal: controller.signal })
 
         return response.text();
     }
@@ -195,7 +195,7 @@ export const fetchAvailableModels = createAsyncThunk(
     "dataFormulatorSlice/fetchAvailableModels",
     async () => {
         console.log(">>> call agent to infer semantic types <<<")
-        let message = {
+        const message = {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', },
             body: JSON.stringify({
@@ -207,7 +207,7 @@ export const fetchAvailableModels = createAsyncThunk(
         const controller = new AbortController()
         const timeoutId = setTimeout(() => controller.abort(), 20000)
 
-        let response = await fetch(getUrls().CHECK_AVAILABLE_MODELS, {...message, signal: controller.signal })
+        const response = await fetch(getUrls().CHECK_AVAILABLE_MODELS, {...message, signal: controller.signal })
 
         return response.json();
     }
@@ -245,7 +245,7 @@ export const dataFormulatorSlice = createSlice({
         },
         loadState: (state, action: PayloadAction<any>) => {
 
-            let savedState = action.payload;
+            const savedState = action.payload;
 
             state.oaiModels = savedState.oaiModels.filter((m: any) => m.endpoint != 'default');
             state.selectedModel = state.oaiModels.length > 0 ? state.oaiModels[0] : undefined;
@@ -281,26 +281,26 @@ export const dataFormulatorSlice = createSlice({
             state.oaiModels = [...state.oaiModels, action.payload];
         },
         removeModel: (state, action: PayloadAction<{model: string, endpoint: string}>) => {
-            let model = action.payload.model;
-            let endpoint = action.payload.endpoint;
+            const model = action.payload.model;
+            const endpoint = action.payload.endpoint;
             state.oaiModels = state.oaiModels.filter(oaiModel => oaiModel.model != model || oaiModel.endpoint != endpoint );
             state.testedModels = state.testedModels.filter(m => !(m.model == model && m.endpoint == endpoint));
         },
         updateModelStatus: (state, action: PayloadAction<{model: string, endpoint: string, status: 'ok' | 'error' | 'testing' | 'unknown', message: string}>) => {
-            let model = action.payload.model;
-            let endpoint = action.payload.endpoint;
-            let status = action.payload.status;
-            let message = action.payload.message;
+            const model = action.payload.model;
+            const endpoint = action.payload.endpoint;
+            const status = action.payload.status;
+            const message = action.payload.message;
             
             state.testedModels = [...state.testedModels.filter(t => !(t.model == model && t.endpoint == endpoint)), {model, endpoint, status, message} ]
         },
         addTable: (state, action: PayloadAction<DictTable>) => {
-            let table = action.payload;
+            const table = action.payload;
             state.tables = [...state.tables, table];
             state.conceptShelfItems = [...state.conceptShelfItems, ...getDataFieldItems(table)];
         },
         deleteTable: (state, action: PayloadAction<string>) => {
-            let tableId = action.payload;
+            const tableId = action.payload;
             state.tables = state.tables.filter(t => t.id != tableId);
 
             // feels problematic???
@@ -308,7 +308,7 @@ export const dataFormulatorSlice = createSlice({
                                                                             findBaseFields(f, state.conceptShelfItems).some(f2 => f2.tableRef == tableId)));
             
             // delete charts that refer to this table and intermediate charts that produce this table
-            let chartIdsToDelete = state.charts.filter(c => c.tableRef == tableId).map(c => c.id);
+            const chartIdsToDelete = state.charts.filter(c => c.tableRef == tableId).map(c => c.id);
             deleteChartsRoutine(state, chartIdsToDelete);
 
             // separate this, so that we only delete on tier of table a time
@@ -318,20 +318,20 @@ export const dataFormulatorSlice = createSlice({
             state.activeChallenges = [...state.activeChallenges, action.payload];
         },
         createNewChart: (state, action: PayloadAction<{chartType?: string, tableId?: string}>) => {
-            let chartType = action.payload.chartType;
-            let tableId = action.payload.tableId || state.tables[0].id;
-            let freshChart = generateFreshChart(tableId, chartType) as Chart;
+            const chartType = action.payload.chartType;
+            const tableId = action.payload.tableId || state.tables[0].id;
+            const freshChart = generateFreshChart(tableId, chartType) as Chart;
             state.charts = [ freshChart , ...state.charts];
             state.focusedTableId = tableId;
             state.focusedChartId = freshChart.id;
             state.activeThreadChartId = freshChart.id;
         },
         addChart: (state, action: PayloadAction<Chart>) => {
-            let chart = action.payload;
+            const chart = action.payload;
             state.charts = [chart, ...state.charts]
         },
         duplicateChart: (state, action: PayloadAction<string>) => {
-            let chartId = action.payload;
+            const chartId = action.payload;
 
             let chartCopy = JSON.parse(JSON.stringify(state.charts.find(chart => chart.id == chartId) as Chart)) as Chart;
             chartCopy = { ...chartCopy, saved: false }
@@ -340,7 +340,7 @@ export const dataFormulatorSlice = createSlice({
             state.focusedChartId = chartCopy.id;
         },
         saveUnsaveChart: (state, action: PayloadAction<string>) => {
-            let chartId = action.payload;
+            const chartId = action.payload;
 
             state.charts = state.charts.map(chart => {
                 if (chart.id == chartId) {
@@ -351,8 +351,8 @@ export const dataFormulatorSlice = createSlice({
             })
         },
         updateChartScaleFactor: (state, action: PayloadAction<{chartId: string, scaleFactor: number}>) => {
-            let chartId = action.payload.chartId;
-            let scaleFactor = action.payload.scaleFactor;
+            const chartId = action.payload.chartId;
+            const scaleFactor = action.payload.scaleFactor;
 
             state.charts = state.charts.map(chart => {
                 if (chart.id == chartId) {
@@ -363,12 +363,12 @@ export const dataFormulatorSlice = createSlice({
             })
         },
         deleteChartById: (state, action: PayloadAction<string>) => {
-            let chartId = action.payload;
+            const chartId = action.payload;
             deleteChartsRoutine(state, [chartId]);
         },
         updateChartType: (state, action: PayloadAction<{chartId: string, chartType: string}>) => {
-            let chartId = action.payload.chartId;
-            let chartType = action.payload.chartType;
+            const chartId = action.payload.chartId;
+            const chartType = action.payload.chartType;
             state.charts = state.charts.map(chart => {
                 if (chart.id == chartId) {
                     return adaptChart(chart, getChartTemplate(chartType) as ChartTemplate);
@@ -378,8 +378,8 @@ export const dataFormulatorSlice = createSlice({
             })
         },
         updateTableRef: (state, action: PayloadAction<{chartId: string, tableRef: string}>) => {
-            let chartId = action.payload.chartId;
-            let tableRef = action.payload.tableRef;
+            const chartId = action.payload.chartId;
+            const tableRef = action.payload.tableRef;
             state.charts = state.charts.map(chart => {
                 if (chart.id == chartId) {
                     return { ...chart, tableRef }
@@ -389,10 +389,10 @@ export const dataFormulatorSlice = createSlice({
             })
         },
         replaceTable: (state, action: PayloadAction<{chartId: string, table: DictTable}>) => {
-            let chartId = action.payload.chartId;
-            let chart = state.charts.find(c => c.id == chartId) as Chart;
-            let table = action.payload.table;
-            let currentTableRef = getDataTable(chart, state.tables, state.charts, state.conceptShelfItems).id;
+            const chartId = action.payload.chartId;
+            const chart = state.charts.find(c => c.id == chartId) as Chart;
+            const table = action.payload.table;
+            const currentTableRef = getDataTable(chart, state.tables, state.charts, state.conceptShelfItems).id;
             state.charts = state.charts.map(c => {
                 if (c.id == chartId) {
                     return { ...c, tableRef: table.id }
@@ -408,8 +408,8 @@ export const dataFormulatorSlice = createSlice({
             }
         },
         updateChartEncodingMap: (state, action: PayloadAction<{chartId: string, encodingMap: EncodingMap}>) => {
-            let chartId = action.payload.chartId;
-            let encodingMap = action.payload.encodingMap;
+            const chartId = action.payload.chartId;
+            const encodingMap = action.payload.encodingMap;
             state.charts = state.charts.map(c => {
                 if (c.id == chartId) {
                     return { ...c, encodingMap: encodingMap }
@@ -419,30 +419,30 @@ export const dataFormulatorSlice = createSlice({
             })
         },
         updateChartEncoding: (state, action: PayloadAction<{chartId: string, channel: Channel, encoding: EncodingItem}>) => {
-            let chartId = action.payload.chartId;
-            let channel = action.payload.channel;
-            let encoding = action.payload.encoding;
-            let chart = state.charts.find(chart => chart.id == chartId);
+            const chartId = action.payload.chartId;
+            const channel = action.payload.channel;
+            const encoding = action.payload.encoding;
+            const chart = state.charts.find(chart => chart.id == chartId);
             if (chart) {
                 //TODO: check this, finding reference and directly update??
                 (state.charts.find(chart => chart.id == chartId) as Chart).encodingMap[channel] = encoding;
             }
         },
         updateChartEncodingProp: (state, action: PayloadAction<{chartId: string, channel: Channel, prop: string, value: any}>) => {
-            let chartId = action.payload.chartId;
-            let channel = action.payload.channel;
-            let prop = action.payload.prop;
-            let value = action.payload.value;
-            let chart = state.charts.find(chart => chart.id == chartId);
+            const chartId = action.payload.chartId;
+            const channel = action.payload.channel;
+            const prop = action.payload.prop;
+            const value = action.payload.value;
+            const chart = state.charts.find(chart => chart.id == chartId);
             
             if (chart) {
                 //TODO: check this, finding reference and directly update??
-                let encoding = (state.charts.find(chart => chart.id == chartId) as Chart).encodingMap[channel];
+                const encoding = (state.charts.find(chart => chart.id == chartId) as Chart).encodingMap[channel];
                 if (prop == 'fieldID') {
                     encoding.fieldID = value;
 
                     // automatcially fetch the auto-sort order from the field
-                    let field = state.conceptShelfItems.find(f => f.id == value);
+                    const field = state.conceptShelfItems.find(f => f.id == value);
                     if (field?.levels) {
                         encoding.sortBy = JSON.stringify(field.levels);
                     }
@@ -462,14 +462,14 @@ export const dataFormulatorSlice = createSlice({
             }
         },
         swapChartEncoding: (state, action: PayloadAction<{chartId: string, channel1: Channel, channel2: Channel}>) => {
-            let chartId = action.payload.chartId;
-            let channel1 = action.payload.channel1;
-            let channel2 = action.payload.channel2;
+            const chartId = action.payload.chartId;
+            const channel1 = action.payload.channel1;
+            const channel2 = action.payload.channel2;
 
-            let chart = state.charts.find(chart => chart.id == chartId)
+            const chart = state.charts.find(chart => chart.id == chartId)
             if (chart) {
-                let enc1 = chart.encodingMap[channel1];
-                let enc2 = chart.encodingMap[channel2];
+                const enc1 = chart.encodingMap[channel1];
+                const enc2 = chart.encodingMap[channel2];
 
                 chart.encodingMap[channel1] = { fieldID: enc2.fieldID, aggregate: enc2.aggregate, bin: enc2.bin, sortBy: enc2.sortBy };
                 chart.encodingMap[channel2] = { fieldID: enc1.fieldID, aggregate: enc1.aggregate, bin: enc1.bin, sortBy: enc1.sortBy };
@@ -479,9 +479,9 @@ export const dataFormulatorSlice = createSlice({
             state.conceptShelfItems = [...action.payload, ...state.conceptShelfItems];
         },
         updateConceptItems: (state, action: PayloadAction<FieldItem>) => {
-            let concept = action.payload;
+            const concept = action.payload;
             let conceptShelfItems = [...state.conceptShelfItems];
-            let index = conceptShelfItems.findIndex(field => field.id === concept.id);
+            const index = conceptShelfItems.findIndex(field => field.id === concept.id);
             if (index != -1) {
                 conceptShelfItems[index] = concept;
             } else {
@@ -495,15 +495,15 @@ export const dataFormulatorSlice = createSlice({
             state.conceptShelfItems = conceptShelfItems;
         },
         deleteConceptItemByID: (state, action: PayloadAction<string>) => {
-            let conceptID = action.payload;
+            const conceptID = action.payload;
             // remove concepts from encoding maps
             if (state.charts.some(chart => chart.saved 
                 && Object.entries(chart.encodingMap).some(([channel, encoding]) => encoding.fieldID && conceptID == encoding.fieldID))) {
                 console.log("cannot delete!")
             } else {
                 state.conceptShelfItems = state.conceptShelfItems.filter(field => field.id != conceptID);
-                for (let chart of state.charts)  {
-                    for (let [channel, encoding] of Object.entries(chart.encodingMap)) {
+                for (const chart of state.charts)  {
+                    for (const [channel, encoding] of Object.entries(chart.encodingMap)) {
                         if (encoding.fieldID && conceptID == encoding.fieldID) {
                             // clear the encoding
                             chart.encodingMap[channel as Channel] = { bin: false }
@@ -513,15 +513,15 @@ export const dataFormulatorSlice = createSlice({
             }
         },
         batchDeleteConceptItemByID: (state, action: PayloadAction<string[]>) => {
-            for (let conceptID of action.payload) {
+            for (const conceptID of action.payload) {
                 // remove concepts from encoding maps
                 if (state.charts.some(chart => chart.saved 
                     && Object.entries(chart.encodingMap).some(([channel, encoding]) => encoding.fieldID && conceptID == encoding.fieldID))) {
                     console.log("cannot delete!")
                 } else {
                     state.conceptShelfItems = state.conceptShelfItems.filter(field => field.id != conceptID);
-                    for (let chart of state.charts)  {
-                        for (let [channel, encoding] of Object.entries(chart.encodingMap)) {
+                    for (const chart of state.charts)  {
+                        for (const [channel, encoding] of Object.entries(chart.encodingMap)) {
                             if (encoding.fieldID && conceptID == encoding.fieldID) {
                                 // clear the encoding
                                 chart.encodingMap[channel as Channel] = { bin: false }
@@ -535,23 +535,23 @@ export const dataFormulatorSlice = createSlice({
             state.tables = [...state.tables, action.payload];
         },
         overrideDerivedTables: (state, action: PayloadAction<DictTable>) => {
-            let table = action.payload;
+            const table = action.payload;
             state.tables = [...state.tables.filter(t => t.id != table.id), table];
         },
         deleteDerivedTableById: (state, action: PayloadAction<string>) => {
             // delete a synthesis output based on index
-            let tableId = action.payload;
+            const tableId = action.payload;
             state.tables = state.tables.filter(t => !(t.derive && t.id == tableId));
         },
         clearUnReferencedTables: (state) => {
             // remove all tables that are not referred
-            let charts = state.charts;
-            let referredTableId = charts.map(chart => getDataTable(chart, state.tables, charts, state.conceptShelfItems).id);
+            const charts = state.charts;
+            const referredTableId = charts.map(chart => getDataTable(chart, state.tables, charts, state.conceptShelfItems).id);
             state.tables = state.tables.filter(t => !(t.derive && !referredTableId.some(tableId => tableId == t.id)));
         },
         clearUnReferencedCustomConcepts: (state) => {
-            let fieldNamesFromTables = state.tables.map(t => t.names).flat();
-            let fieldIdsReferredByCharts = state.charts.map(c => Object.values(c.encodingMap).map(enc => enc.fieldID).filter(fid => fid != undefined) as string[]).flat();
+            const fieldNamesFromTables = state.tables.map(t => t.names).flat();
+            const fieldIdsReferredByCharts = state.charts.map(c => Object.values(c.encodingMap).map(enc => enc.fieldID).filter(fid => fid != undefined) as string[]).flat();
 
             state.conceptShelfItems = state.conceptShelfItems.filter(field => !(field.source == "custom" 
                 && !(fieldNamesFromTables.includes(field.name) || fieldIdsReferredByCharts.includes(field.id))))
@@ -581,23 +581,23 @@ export const dataFormulatorSlice = createSlice({
             state.focusedTableId = action.payload;
         },
         setFocusedChart: (state, action: PayloadAction<string | undefined>) => {
-            let chartId = action.payload;
+            const chartId = action.payload;
             state.focusedChartId = chartId;
             state.visViewMode = "carousel";
 
-            let chart = state.charts.find(c => c.id == chartId)
+            const chart = state.charts.find(c => c.id == chartId)
 
             // update activeThread based on focused chart
             if (chart?.intermediate == undefined) {
                 state.activeThreadChartId = chartId;
             } else {
-                let currentActiveThreadChart = state.charts.find(c => c.id == state.activeThreadChartId);
-                let activeThreadChartTable = state.tables.find(t => t.id == currentActiveThreadChart?.tableRef);
+                const currentActiveThreadChart = state.charts.find(c => c.id == state.activeThreadChartId);
+                const activeThreadChartTable = state.tables.find(t => t.id == currentActiveThreadChart?.tableRef);
 
                 if (activeThreadChartTable) {
-                    let triggers = getTriggers(activeThreadChartTable, state.tables);
+                    const triggers = getTriggers(activeThreadChartTable, state.tables);
                     if (triggers.map(tg => tg.tableId).includes(chart?.intermediate?.resultTableId)) {
-                        let nextChart =  state.charts.find(c => c.intermediate == undefined && c.tableRef == chart?.intermediate?.resultTableId);
+                        const nextChart =  state.charts.find(c => c.intermediate == undefined && c.tableRef == chart?.intermediate?.resultTableId);
                         if (nextChart) {
                             state.activeThreadChartId = nextChart.id;
                         }
@@ -619,11 +619,11 @@ export const dataFormulatorSlice = createSlice({
     extraReducers: (builder) => {
         builder
         .addCase(fetchFieldSemanticType.fulfilled, (state, action) => {
-            let data = action.payload;
-            let tableId = action.meta.arg.id;
+            const data = action.payload;
+            const tableId = action.meta.arg.id;
 
             if (data["status"] == "ok" && data["result"].length > 0) {
-                let typeMap = data['result'][0]['fields'];
+                const typeMap = data['result'][0]['fields'];
                 state.conceptShelfItems = state.conceptShelfItems.map(field => {
                     if (((field.source == "original" && field.tableRef == tableId ) || field.source == "custom") && Object.keys(typeMap).includes(field.name)) {
                         field.semanticType = typeMap[field.name]['semantic_type'];
@@ -639,7 +639,7 @@ export const dataFormulatorSlice = createSlice({
             }
         })
         .addCase(fetchAvailableModels.fulfilled, (state, action) => {
-            let defaultModels = action.payload;
+            const defaultModels = action.payload;
             state.oaiModels = [...defaultModels, ...state.oaiModels.filter(e => !defaultModels.map((m: any) => m.endpoint).includes(e.endpoint))];
             console.log(state.oaiModels)
             
@@ -657,9 +657,9 @@ export const dataFormulatorSlice = createSlice({
             console.log(action.payload);
         })
         .addCase(fetchCodeExpl.fulfilled, (state, action) => {
-            let codeExpl = action.payload;
-            let derivedTableId = action.meta.arg.id;
-            let derivedTable = state.tables.find(t => t.id == derivedTableId)
+            const codeExpl = action.payload;
+            const derivedTableId = action.meta.arg.id;
+            const derivedTable = state.tables.find(t => t.id == derivedTableId)
             if (derivedTable?.derive) {
                 derivedTable.derive.codeExpl = codeExpl;
             }

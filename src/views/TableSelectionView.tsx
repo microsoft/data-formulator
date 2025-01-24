@@ -92,7 +92,7 @@ export const TableSelectionView: React.FC<TableSelectionViewProps> = function Ta
         setValue(newValue);
     };
 
-    let tabTitiles : string[] = [];
+    const tabTitiles : string[] = [];
     for (let i = 0; i < tableChallenges.length; i ++) {
         let k = 0;
         let title = tableChallenges[i].name;
@@ -116,13 +116,13 @@ export const TableSelectionView: React.FC<TableSelectionViewProps> = function Ta
             {tabTitiles.map((title, i) => <Tab wrapped key={i} label={title} sx={{textTransform: "none", width: 120}} {...a11yProps(0)} />)}
         </Tabs>
         {tableChallenges.map((tc, i) => {
-            let t = tc.table;
-            let sampleRows = [...t.rows.slice(0,9), Object.fromEntries(t.names.map(n => [n, "..."]))];
-            let colDefs = t.names.map(name => { return {
+            const t = tc.table;
+            const sampleRows = [...t.rows.slice(0,9), Object.fromEntries(t.names.map(n => [n, "..."]))];
+            const colDefs = t.names.map(name => { return {
                 id: name, label: name, minWidth: 60, align: undefined, format: (v: any) => v,
             }})
             
-            let challengeView = <Box sx={{margin: "6px 0px"}}>
+            const challengeView = <Box sx={{margin: "6px 0px"}}>
                 <Typography variant="subtitle2" sx={{marginLeft: "6px", fontSize: 12}}>Try these data visualization challenges with this dataset:</Typography>
                 {tc.challenges.map((c, j) => <Box key={j} sx={{display: 'flex', alignItems: 'flex-start', pl: 1}}>
                     <Typography sx={{fontSize: 11, color: c.difficulty === 'easy' ? 'success.main' : 
@@ -131,7 +131,7 @@ export const TableSelectionView: React.FC<TableSelectionViewProps> = function Ta
                 </Box>)}
             </Box>  
 
-            let content = <Paper variant="outlined" key={t.names.join("-")} sx={{width: 800, maxWidth: '100%', padding: "0px", marginBottom: "8px"}}>
+            const content = <Paper variant="outlined" key={t.names.join("-")} sx={{width: 800, maxWidth: '100%', padding: "0px", marginBottom: "8px"}}>
                 <CustomReactTable rows={sampleRows} columnDefs={colDefs} rowsPerPageNum={-1} compact={false} />
                 {challengeView}
             </Paper>
@@ -174,8 +174,8 @@ export const TableSelectionDialog: React.FC<{ buttonElement: any }> = function T
         fetch(`${getUrls().VEGA_DATASET_LIST}`)
             .then((response) => response.json())
             .then((result) => {
-                let tableChallenges : TableChallenges[] = result.map((info: any) => {
-                    let table = createTableFromFromObjectArray(info["name"], JSON.parse(info["snapshot"]))
+                const tableChallenges : TableChallenges[] = result.map((info: any) => {
+                    const table = createTableFromFromObjectArray(info["name"], JSON.parse(info["snapshot"]))
                     return {table: table, challenges: info["challenges"], name: info["name"]}
                 }).filter((t : TableChallenges | undefined) => t != undefined);
                 setDatasetPreviews(tableChallenges);
@@ -183,7 +183,7 @@ export const TableSelectionDialog: React.FC<{ buttonElement: any }> = function T
       // No variable dependencies means this would run only once after the first render
       }, []);
 
-    let dispatch = useDispatch<AppDispatch>();
+    const dispatch = useDispatch<AppDispatch>();
 
     return <>
         <Button sx={{fontSize: "inherit"}} onClick={() => {
@@ -219,7 +219,7 @@ export const TableSelectionDialog: React.FC<{ buttonElement: any }> = function T
                                 return response.text()
                             })
                             .then((text) => {         
-                                let fullTable = createTableFromFromObjectArray(tableChallenges.table.id, JSON.parse(text));
+                                const fullTable = createTableFromFromObjectArray(tableChallenges.table.id, JSON.parse(text));
                                 if (fullTable) {
                                     dispatch(dfActions.addTable(fullTable));
                                     dispatch(fetchFieldSemanticType(fullTable));
@@ -256,15 +256,15 @@ export const TableUploadDialog: React.FC<TableUploadDialogProps> = ({ buttonElem
 
     const dispatch = useDispatch<AppDispatch>();
 
-    let $uploadInputFile = React.createRef<HTMLInputElement>();
+    const $uploadInputFile = React.createRef<HTMLInputElement>();
 
-    let handleFileUpload = (event: React.FormEvent<HTMLElement>): void => {
+    const handleFileUpload = (event: React.FormEvent<HTMLElement>): void => {
         const target: any = event.target;
         if (target && target.files) {
-            for (let file of target.files) {
+            for (const file of target.files) {
                 //const file: File = target.files[0];
                 (file as File).text().then((text) => {
-                    let table = loadDataWrapper(file.name, text, file.type);
+                    const table = loadDataWrapper(file.name, text, file.type);
                     if (table) {
                         dispatch(dfActions.addTable(table));
                         dispatch(fetchFieldSemanticType(table));
@@ -298,11 +298,11 @@ export const TableCopyDialog: React.FC<TableCopyDialogProps> = ({ buttonElement,
 
     const dispatch = useDispatch<AppDispatch>();
 
-    let handleSubmitContent = (): void => {
+    const handleSubmitContent = (): void => {
 
         let table : undefined | DictTable = undefined;
         try {
-            let content = JSON.parse(tableContent);
+            const content = JSON.parse(tableContent);
             table = createTableFromFromObjectArray(tableName || 'dataset', content);
         } catch (error) {
             table = createTableFromText(tableName || 'dataset', tableContent);
@@ -314,7 +314,7 @@ export const TableCopyDialog: React.FC<TableCopyDialogProps> = ({ buttonElement,
         }        
     };
 
-    let dialog = <Dialog key="table-selection-dialog" onClose={()=>{setDialogOpen(false)}} open={dialogOpen}
+    const dialog = <Dialog key="table-selection-dialog" onClose={()=>{setDialogOpen(false)}} open={dialogOpen}
             sx={{ '& .MuiDialog-paper': { maxWidth: '80%', maxHeight: 800, minWidth: 800 } }}
         >
             <DialogTitle  sx={{display: "flex"}}>Paste & Upload Data
@@ -368,9 +368,9 @@ export const TableURLDialog: React.FC<TableURLDialogProps> = ({ buttonElement, d
 
     const dispatch = useDispatch<AppDispatch>();
 
-    let handleSubmitContent = (): void => {
+    const handleSubmitContent = (): void => {
 
-        let  parts = tableURL.split('/');
+        const  parts = tableURL.split('/');
 
         // Get the last part of the URL, which should be the file name with extension
         const tableName = parts[parts.length - 1];
@@ -380,7 +380,7 @@ export const TableURLDialog: React.FC<TableURLDialogProps> = ({ buttonElement, d
         .then(content => {
             let table : undefined | DictTable = undefined;
             try {
-                let jsonContent = JSON.parse(content);
+                const jsonContent = JSON.parse(content);
                 table = createTableFromFromObjectArray(tableName || 'dataset', jsonContent);
             } catch (error) {
                 table = createTableFromText(tableName || 'dataset', content);
@@ -393,9 +393,9 @@ export const TableURLDialog: React.FC<TableURLDialogProps> = ({ buttonElement, d
         })
     };
 
-    let hasValidSuffix = tableURL.endsWith('.csv') || tableURL.endsWith('.tsv') || tableURL.endsWith(".json");
+    const hasValidSuffix = tableURL.endsWith('.csv') || tableURL.endsWith('.tsv') || tableURL.endsWith(".json");
 
-    let dialog = <Dialog key="table-url-dialog" onClose={()=>{setDialogOpen(false)}} open={dialogOpen}
+    const dialog = <Dialog key="table-url-dialog" onClose={()=>{setDialogOpen(false)}} open={dialogOpen}
             sx={{ '& .MuiDialog-paper': { maxWidth: '80%', maxHeight: 800, minWidth: 800 } }} disableRestoreFocus
         >
             <DialogTitle  sx={{display: "flex"}}>Upload data URL
@@ -436,7 +436,7 @@ export const TableURLDialog: React.FC<TableURLDialogProps> = ({ buttonElement, d
 
 export const TableCopyDialogV2: React.FC<TableCopyDialogProps> = ({ buttonElement, disabled }) => {
 
-    let activeModel = useSelector(dfSelectors.getActiveModel);
+    const activeModel = useSelector(dfSelectors.getActiveModel);
     
     const [dialogOpen, setDialogOpen] = useState<boolean>(false);
     const [tableName, setTableName] = useState<string>("");
@@ -448,20 +448,20 @@ export const TableCopyDialogV2: React.FC<TableCopyDialogProps> = ({ buttonElemen
     const [cleaningInProgress, setCleaningInProgress] = useState<boolean>(false);
     const [cleanTableContent, setCleanTableContent] = useState<{content: string, reason: string, mode: string} | undefined>(undefined);
 
-    let viewTable = cleanTableContent == undefined ?  undefined : createTableFromText(tableName || "clean-table", cleanTableContent.content)
+    const viewTable = cleanTableContent == undefined ?  undefined : createTableFromText(tableName || "clean-table", cleanTableContent.content)
  
 
     const [loadFromURL, setLoadFromURL] = useState<boolean>(false);
     const [url, setURL] = useState<string>("");
 
-    let theme = useTheme()
+    const theme = useTheme()
 
     const dispatch = useDispatch<AppDispatch>();
 
-    let handleSubmitContent = (tableStr: string): void => {
+    const handleSubmitContent = (tableStr: string): void => {
         let table : undefined | DictTable = undefined;
         try {
-            let content = JSON.parse(tableStr);
+            const content = JSON.parse(tableStr);
             table = createTableFromFromObjectArray(tableName || 'data-0', content);
         } catch (error) {
             table = createTableFromText(tableName || 'data-0', tableStr);
@@ -472,11 +472,11 @@ export const TableCopyDialogV2: React.FC<TableCopyDialogProps> = ({ buttonElemen
         }        
     };
 
-    let handleLoadURL = () => {
+    const handleLoadURL = () => {
         console.log("hello hello")
         setLoadFromURL(!loadFromURL);
 
-        let  parts = url.split('/');
+        const  parts = url.split('/');
 
         // Get the last part of the URL, which should be the file name with extension
         const tableName = parts[parts.length - 1];
@@ -490,12 +490,12 @@ export const TableCopyDialogV2: React.FC<TableCopyDialogProps> = ({ buttonElemen
         })
     }
 
-    let handleCleanData = () => {
+    const handleCleanData = () => {
         //setCleanTableContent("hehehao\n\n" + tableContent);
-        let token = String(Date.now());
+        const token = String(Date.now());
         setCleaningInProgress(true);
         setCleanTableContent(undefined);
-        let message = {
+        const message = {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', },
             body: JSON.stringify({
@@ -516,11 +516,11 @@ export const TableCopyDialogV2: React.FC<TableCopyDialogProps> = ({ buttonElemen
 
                 if (data["status"] == "ok") {
                     if (data["token"] == token) {
-                        let candidate = data["result"][0];
+                        const candidate = data["result"][0];
                         console.log(candidate)
 
-                        let cleanContent = candidate['content'];
-                        let info = candidate['info'];
+                        const cleanContent = candidate['content'];
+                        const info = candidate['info'];
 
                         setCleanTableContent({content: cleanContent.trim(), reason: info['reason'], mode: info['mode']});
                         console.log(`data cleaning reason:`)
@@ -580,11 +580,11 @@ export const TableCopyDialogV2: React.FC<TableCopyDialogProps> = ({ buttonElemen
         }
     };
 
-    let renderLines = (str: string) => (
+    const renderLines = (str: string) => (
         <span style={{ }} >{str}</span>
     );
 
-    let dialog = <Dialog key="table-selection-dialog" onClose={()=>{setDialogOpen(false)}} open={dialogOpen}
+    const dialog = <Dialog key="table-selection-dialog" onClose={()=>{setDialogOpen(false)}} open={dialogOpen}
             sx={{ '& .MuiDialog-paper': { maxWidth: '80%', maxHeight: 800, minWidth: 800 } }}
         >
             <DialogTitle  sx={{display: "flex"}}>Paste & Upload Data
@@ -660,13 +660,13 @@ export const TableCopyDialogV2: React.FC<TableCopyDialogProps> = ({ buttonElemen
                             onPasteCapture={(e) => {
                                 console.log(e.clipboardData.files);
                                 if (e.clipboardData.files.length > 0) {
-                                    let file = e.clipboardData.files[0];
-                                    let read = new FileReader();
+                                    const file = e.clipboardData.files[0];
+                                    const read = new FileReader();
 
                                     read.readAsDataURL(file);
 
                                     read.onloadend = function(){
-                                        let res = read.result;
+                                        const res = read.result;
                                         console.log(res);
                                         if (res) { 
                                             setTableContent(res as string); 

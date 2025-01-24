@@ -60,11 +60,11 @@ export function MessageSnackbar() {
         </React.Fragment>
     );
 
-    let timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    let timestamp = message == undefined ? "" : new Date((message as Message).timestamp).toLocaleString('en-US', { timeZone, hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const timestamp = message == undefined ? "" : new Date((message as Message).timestamp).toLocaleString('en-US', { timeZone, hour: "2-digit", minute: "2-digit", second: "2-digit" });
 
     console.log(challenges);
-    let challenge = challenges.find(c => tables.find(t => t.id == c.tableId));
+    const challenge = challenges.find(c => tables.find(t => t.id == c.tableId));
 
     return (
         <Box>

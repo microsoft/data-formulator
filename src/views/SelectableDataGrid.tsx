@@ -48,8 +48,8 @@ interface SelectableCellProps {
 }
 
 const SelectableCell = createSelectable<SelectableCellProps>((props: TSelectableItemProps & SelectableCellProps) => {
-    let { selectableRef, selected, isSelected, column, isSelecting, value, align, indices, selectedBounds, onClick, match } = props;
-    let theme = useTheme();
+    const { selectableRef, selected, isSelected, column, isSelecting, value, align, indices, selectedBounds, onClick, match } = props;
+    const theme = useTheme();
     
 
     // Kind of a hack to change selected bounds but didn't want to redraw every cell
@@ -140,7 +140,7 @@ function getComparator<Key extends keyof any>(
 export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({ rows, tableName, columnDefs, $tableRef, onSelectionFinished }) => {
 
     const [footerActionExpand, setFooterActionExpand] = React.useState<boolean>(false);
-    let activeModel = useSelector(dfSelectors.getActiveModel);
+    const activeModel = useSelector(dfSelectors.getActiveModel);
     
     const [orderBy, setOrderBy] = React.useState<string | undefined>(undefined);
     const [order, setOrder] = React.useState<'asc' | 'desc'>('asc');
@@ -150,8 +150,8 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({ rows, ta
     const [selectedCells, setSelectedCells] = React.useState<[number, number][]>([]);
     const [selectedColumnNames, setSelectedColumnNames] = React.useState<string[]>([]);
 
-    let theme = useTheme();
-    let dispatch = useDispatch();
+    const theme = useTheme();
+    const dispatch = useDispatch();
 
     React.useEffect(() => {
         // use this to handle cases when the table add new columns/remove new columns etc
@@ -209,16 +209,16 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({ rows, ta
 
 
     const handleSelectionFinish = (selected: any[]) => {
-        let newSelectedCells = _.uniq(selected.map(x => x.props.indices));
+        const newSelectedCells = _.uniq(selected.map(x => x.props.indices));
         setSelectedCells(newSelectedCells);
-        let values = selected.map(x => x.props.value);
-        let columns = _.uniq(selected.map(x => x.props.column.id));
+        const values = selected.map(x => x.props.value);
+        const columns = _.uniq(selected.map(x => x.props.column.id));
 
         setSelectedColumnNames(columns);
         onSelectionFinished(columns, values);
     }
 
-    let footerActionsItems = 
+    const footerActionsItems = 
         <Box sx={{display: 'flex'}}>
             <Box key="search-box">
                 <OutlinedInput
@@ -282,7 +282,7 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({ rows, ta
     
                         console.log(rows);
 
-                        let message = {
+                        const message = {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json', },
                             body: JSON.stringify({
@@ -302,7 +302,7 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({ rows, ta
                                 console.log("---model output")
                                 console.log(data);
     
-                                let status = data["status"];
+                                const status = data["status"];
                                 let codeList: string[] = [];
     
                                 if (data["status"] == "ok") {

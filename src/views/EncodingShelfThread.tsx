@@ -46,16 +46,16 @@ export interface EncodingShelfThreadProps {
     chartId: string,
 }
 
-export let ChartElementFC: FC<{chart: Chart, tableRows: any[], boxWidth?: number, boxHeight?: number}> = function({chart, tableRows, boxWidth, boxHeight}) {
+export const ChartElementFC: FC<{chart: Chart, tableRows: any[], boxWidth?: number, boxHeight?: number}> = function({chart, tableRows, boxWidth, boxHeight}) {
 
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
 
-    let WIDTH = boxWidth || 120;
-    let HEIGHT = boxHeight || 80;
+    const WIDTH = boxWidth || 120;
+    const HEIGHT = boxHeight || 80;
 
-    let chartTemplate = getChartTemplate(chart.chartType);
+    const chartTemplate = getChartTemplate(chart.chartType);
 
-    let [available, unfilledFields] = chartAvailabilityCheck(chart.encodingMap, conceptShelfItems, tableRows);
+    const [available, unfilledFields] = chartAvailabilityCheck(chart.encodingMap, conceptShelfItems, tableRows);
 
     if (chart.chartType == "Auto") {
         return <Box sx={{ position: "relative", display: "flex", flexDirection: "column", margin: 'auto', color: 'darkgray' }}>
@@ -86,14 +86,14 @@ export let ChartElementFC: FC<{chart: Chart, tableRows: any[], boxWidth?: number
 
     // Temporary fix, down sample the dataset
     if (assembledChart["data"]["values"].length > 5000) {
-        let values = assembledChart["data"]["values"];
+        const values = assembledChart["data"]["values"];
         assembledChart = (({ data, ...o }) => o)(assembledChart);
 
-        let getRandom = (seed: number) => {
-            let x = Math.sin(seed++) * 10000;
+        const getRandom = (seed: number) => {
+            const x = Math.sin(seed++) * 10000;
             return x - Math.floor(x);
         }
-        let getRandomSubarray = (arr: any[], size: number) => {
+        const getRandomSubarray = (arr: any[], size: number) => {
             let shuffled = arr.slice(0), i = arr.length, temp, index;
             while (i--) {
                 index = Math.floor((i + 1) * getRandom(233 * i + 888));
@@ -113,7 +113,7 @@ export let ChartElementFC: FC<{chart: Chart, tableRows: any[], boxWidth?: number
     embed('#' + id, assembledChart, { actions: false, renderer: "canvas" }).then(function (result) {
         // Access the Vega view instance (https://vega.github.io/vega/docs/api/view/) as result.view
         if (result.view.container()?.getElementsByTagName("canvas")) {
-            let comp = result.view.container()?.getElementsByTagName("canvas")[0];
+            const comp = result.view.container()?.getElementsByTagName("canvas")[0];
 
             // Doesn't seem like width & height are actual numbers here on Edge bug
             // let width = parseInt(comp?.style.width as string);
@@ -123,7 +123,7 @@ export let ChartElementFC: FC<{chart: Chart, tableRows: any[], boxWidth?: number
                 //console.log(`THUMB: width = ${width} height = ${height}`);
 
                 if (width > WIDTH || height > HEIGHT) {
-                    let ratio = width / height;
+                    const ratio = width / height;
                     let fixedWidth = width;
                     if (ratio * HEIGHT < width) {
                         fixedWidth = ratio * HEIGHT;
@@ -148,26 +148,26 @@ export let ChartElementFC: FC<{chart: Chart, tableRows: any[], boxWidth?: number
     return element;
 }
 
-let selectBaseTables = (activeFields: FieldItem[], conceptShelfItems: FieldItem[], tables: DictTable[]) : DictTable[] => {
+const selectBaseTables = (activeFields: FieldItem[], conceptShelfItems: FieldItem[], tables: DictTable[]) : DictTable[] => {
     
     // if there is no active fields at all!!
     if (activeFields.length == 0) {
         return [tables[0]];
     }
 
-    let activeBaseFields = conceptShelfItems.filter((field) => {
+    const activeBaseFields = conceptShelfItems.filter((field) => {
         return activeFields.map(f => f.source == "derived" ? findBaseFields(f, conceptShelfItems).map(f2 => f2.id) : [f.id]).flat().includes(field.id);
     });
 
-    let activeOriginalFields = activeBaseFields.filter(field => field.source == "original");
-    let activeCustomFields = activeBaseFields.filter(field => field.source == "custom");
-    let activeDerivedFields = activeFields.filter(f => f.source == "derived");
+    const activeOriginalFields = activeBaseFields.filter(field => field.source == "original");
+    const activeCustomFields = activeBaseFields.filter(field => field.source == "custom");
+    const activeDerivedFields = activeFields.filter(f => f.source == "derived");
 
     if (activeOriginalFields.length == 0 && activeFields.length > 0 && tables.length > 0) {
         return [tables[0]];
     }
 
-    let baseTables = tables.filter(t => activeOriginalFields.map(f => f.tableRef as string).includes(t.id));
+    const baseTables = tables.filter(t => activeOriginalFields.map(f => f.tableRef as string).includes(t.id));
 
     return baseTables
 }
@@ -177,20 +177,20 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
     // reference to states
     const tables = useSelector((state: DataFormulatorState) => state.tables);
     const charts = useSelector((state: DataFormulatorState) => state.charts);
-    let activeThreadChartId = useSelector((state: DataFormulatorState) => state.activeThreadChartId);
-    let activeModel = useSelector(dfSelectors.getActiveModel);
+    const activeThreadChartId = useSelector((state: DataFormulatorState) => state.activeThreadChartId);
+    const activeModel = useSelector(dfSelectors.getActiveModel);
     
-    let [reformulateRunning, setReformulteRunning] = useState<boolean>(false);
+    const [reformulateRunning, setReformulteRunning] = useState<boolean>(false);
 
-    let activeThreadChart = charts.find(c => c.id == activeThreadChartId);
+    const activeThreadChart = charts.find(c => c.id == activeThreadChartId);
     let activeTableThread : string[] = [];
     if (activeThreadChart != undefined) {
-        let t = tables.find(t => t.id == (activeThreadChart as Chart).tableRef) as DictTable;
+        const t = tables.find(t => t.id == (activeThreadChart as Chart).tableRef) as DictTable;
         activeTableThread = getTriggers(t, tables).map(tr => tr.tableId);
         activeTableThread = [...activeTableThread, (activeThreadChart as Chart).tableRef];
     }
 
-    let chart = charts.find(chart => chart.id == chartId) as Chart;
+    const chart = charts.find(chart => chart.id == chartId) as Chart;
 
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
 
@@ -200,36 +200,36 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
 
     let previousInstructions : any = ""
 
-    let reFormulate = (trigger: Trigger) => {
+    const reFormulate = (trigger: Trigger) => {
 
-        let mode = 'formulate';
+        const mode = 'formulate';
 
-        let sourceTable = tables.find(t => t.id == trigger.tableId) as DictTable;
-        let overrideTableId = trigger.resultTableId;
+        const sourceTable = tables.find(t => t.id == trigger.tableId) as DictTable;
+        const overrideTableId = trigger.resultTableId;
 
-        let baseTableIds = sourceTable.derive?.source || [sourceTable.id];
-        let baseTables = tables.filter(t => baseTableIds.includes(t.id));
+        const baseTableIds = sourceTable.derive?.source || [sourceTable.id];
+        const baseTables = tables.filter(t => baseTableIds.includes(t.id));
         if (baseTables.length == 0) {
             return;
         }
 
         // these two items decides what fields and prompt will be used
-        let triggerChart = charts.find(c => c.id == trigger.chartRef) as Chart;
-        let prompt = trigger.instruction;
+        const triggerChart = charts.find(c => c.id == trigger.chartRef) as Chart;
+        const prompt = trigger.instruction;
 
         // derive active fields from encoding map so that we can keep the order of which fields will be visualized
-        let activeFields = Object.values(triggerChart.encodingMap).map(enc => enc.fieldID).filter(fieldId => fieldId && conceptShelfItems.map(f => f.id)
+        const activeFields = Object.values(triggerChart.encodingMap).map(enc => enc.fieldID).filter(fieldId => fieldId && conceptShelfItems.map(f => f.id)
                 .includes(fieldId)).map(fieldId => conceptShelfItems.find(f => f.id == fieldId) as FieldItem);
-        let activeBaseFields = activeFields.map(f => f.source == 'derived' ? (f.transform as ConceptTransformation).parentIDs : [f.id])
+        const activeBaseFields = activeFields.map(f => f.source == 'derived' ? (f.transform as ConceptTransformation).parentIDs : [f.id])
                 .flat().map(fieldId => conceptShelfItems.find(f => f.id == fieldId) as FieldItem)
 
         dispatch(dfActions.clearUnReferencedTables());
         dispatch(dfActions.setVisPaneSize(640));
 
-        let fieldNamesStr = activeFields.map(f => f.name).reduce(
+        const fieldNamesStr = activeFields.map(f => f.name).reduce(
             (a: string, b: string, i, array) => a + (i < array.length - 1 ? ', ' : ' and ') + b, "")
 
-        let token = String(Date.now());
+        const token = String(Date.now());
 
         // if nothing is specified, just a formulation from the beginning
         let messageBody = JSON.stringify({
@@ -259,7 +259,7 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
             engine = getUrls().SERVER_REFINE_DATA_URL;
         }
 
-        let message = {
+        const message = {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -285,13 +285,13 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
                 console.log(token);
                 if (data.results.length > 0) {
                     if (data["token"] == token) {
-                        let candidates = data.results.filter((item: any) => {
+                        const candidates = data.results.filter((item: any) => {
                             return item["status"] == "ok" && item["content"].length > 0 
                         });
 
                         if (candidates.length == 0) {
-                            let errorMessage = data.results[0].content;
-                            let code = data.results[0].code;
+                            const errorMessage = data.results[0].content;
+                            const code = data.results[0].code;
                             dispatch(dfActions.addMessages({
                                 "timestamp": Date.now(),
                                 "type": "error",
@@ -301,11 +301,11 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
                             }));
                         } else {
 
-                            let candidateTableId = overrideTableId;
+                            const candidateTableId = overrideTableId;
 
                             // process candidate table
-                            let candidate = candidates[0];
-                            let candidateTable = createDictTable(
+                            const candidate = candidates[0];
+                            const candidateTable = createDictTable(
                                 candidateTableId, 
                                 candidate["content"],
                                 {   code: candidate["code"], 
@@ -316,10 +316,10 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
                                 }
                             )
 
-                            let names = candidateTable.names;
-                            let missingNames = names.filter(name => !conceptShelfItems.some(field => field.name == name));
+                            const names = candidateTable.names;
+                            const missingNames = names.filter(name => !conceptShelfItems.some(field => field.name == name));
                 
-                            let conceptsToAdd = missingNames.map((name) => {
+                            const conceptsToAdd = missingNames.map((name) => {
                                 return {
                                     id: `concept-${name}-${Date.now()}`, name: name, type: "auto" as Type, 
                                     description: "", source: "custom", temporary: true, domain: [],
@@ -327,7 +327,7 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
                             });
 
                             // concepts from the current table
-                            let currentConcepts = [...conceptShelfItems.filter(c => names.includes(c.name)), ...conceptsToAdd];
+                            const currentConcepts = [...conceptShelfItems.filter(c => names.includes(c.name)), ...conceptsToAdd];
                             
                             dispatch(dfActions.addConceptItems(conceptsToAdd));
                             dispatch(dfActions.overrideDerivedTables(candidateTable));
@@ -335,20 +335,20 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
                             dispatch(fetchCodeExpl(candidateTable));
 
                             if (triggerChart.chartType != "Auto" && charts.find(c => c.tableRef == overrideTableId)) { 
-                                let cId = [...charts.filter(c => c.intermediate == undefined), ...charts].find(c => c.tableRef == overrideTableId)?.id;
+                                const cId = [...charts.filter(c => c.intermediate == undefined), ...charts].find(c => c.tableRef == overrideTableId)?.id;
                                 dispatch(dfActions.setFocusedChart(cId));
                             } else {
-                                let refinedGoal = candidate['refined_goal']
+                                const refinedGoal = candidate['refined_goal']
 
                                 let newChart : Chart; 
                                 if (triggerChart.chartType == "Auto") {
-                                    let chartTypeMap : any = {
+                                    const chartTypeMap : any = {
                                         "line" : "Line Chart",
                                         "bar": "Bar Chart",
                                         "point": "Scatter Plot",
                                         "boxplot": "Boxplot"
                                     }
-                                    let chartType = chartTypeMap[refinedGoal['chart_type']] || 'Scatter Plot';
+                                    const chartType = chartTypeMap[refinedGoal['chart_type']] || 'Scatter Plot';
                                     newChart = generateFreshChart(candidateTable.id, chartType) as Chart;
                                 } else if (chart.chartType == "Table") {
                                     newChart = generateFreshChart(candidateTable.id, 'Table')
@@ -404,7 +404,7 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
     }
 
     //let triggers = currentTable.derive.triggers;
-    let tableList = activeTableThread.map((tableId) => <div className="table-list-item">
+    const tableList = activeTableThread.map((tableId) => <div className="table-list-item">
         <Button variant="text" sx={{textTransform: 'none', padding: 0, minWidth: 0}} onClick={() => { dispatch(dfActions.setFocusedTable(tableId)) }}>
             <Stack direction="row" sx={{fontSize: '12px'}} alignItems="center" gap={"2px"}>
                 <TableRowsIcon fontSize="inherit" />
@@ -415,7 +415,7 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
         </Button>
     </div>);
 
-    let tableCards = activeTableThread.map((tableId) => 
+    const tableCards = activeTableThread.map((tableId) => 
         <Card variant='outlined' sx={{padding: '2px 0 2px 0'}}>
             <Button variant="text" sx={{textTransform: 'none', padding: 0, marginLeft: 1, minWidth: 0}} onClick={() => { dispatch(dfActions.setFocusedTable(tableId)) }}>
                 <Stack direction="row" sx={{fontSize: '12px'}} alignItems="center" gap={"2px"}>
@@ -427,17 +427,17 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
             </Button>
         </Card>);
 
-    let leafTable = tables.find(t => t.id == activeTableThread[activeTableThread.length - 1]) as DictTable;
-    let triggers =  getTriggers(leafTable, tables) //leafTable.derive?.triggers || [];
-    let instructionCards = triggers.map((trigger, i) => {
-        let extractActiveFields = (t: Trigger) => {
-            let encodingMap = (charts.find(c => c.id == t.chartRef) as Chart).encodingMap
+    const leafTable = tables.find(t => t.id == activeTableThread[activeTableThread.length - 1]) as DictTable;
+    const triggers =  getTriggers(leafTable, tables) //leafTable.derive?.triggers || [];
+    const instructionCards = triggers.map((trigger, i) => {
+        const extractActiveFields = (t: Trigger) => {
+            const encodingMap = (charts.find(c => c.id == t.chartRef) as Chart).encodingMap
             return Array.from(Object.values(encodingMap)).map((enc: EncodingItem) => enc.fieldID).filter(x => x != undefined)
         };
 
-        let previousActiveFields = new Set(i == 0 ? [] : extractActiveFields(triggers[i - 1]))
-        let currentActiveFields = new Set(extractActiveFields(trigger))
-        let fieldsIdentical = _.isEqual(previousActiveFields, currentActiveFields)
+        const previousActiveFields = new Set(i == 0 ? [] : extractActiveFields(triggers[i - 1]))
+        const currentActiveFields = new Set(extractActiveFields(trigger))
+        const fieldsIdentical = _.isEqual(previousActiveFields, currentActiveFields)
 
         return  <Box sx={{padding: 0, display: 'flex'}}>
                     {/* <SouthIcon sx={{fontSize: "inherit", margin: 'auto 4px'}} /> */}
@@ -465,12 +465,12 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
                 </Box>;
     })
     
-    let spaceElement = "" //<Box sx={{padding: '4px 0px', background: 'aliceblue', margin: 'auto', width: '200px', height: '3px', paddingBottom: 0.5}}></Box>;
+    const spaceElement = "" //<Box sx={{padding: '4px 0px', background: 'aliceblue', margin: 'auto', width: '200px', height: '3px', paddingBottom: 0.5}}></Box>;
 
-    let cutIndex = activeTableThread.findIndex((s) => s == chart.tableRef)
+    const cutIndex = activeTableThread.findIndex((s) => s == chart.tableRef)
 
-    let tableCardsSublist = tableList.slice(0, cutIndex + 1);
-    let instructionCardsSublist = instructionCards.slice(0, cutIndex);
+    const tableCardsSublist = tableList.slice(0, cutIndex + 1);
+    const instructionCardsSublist = instructionCards.slice(0, cutIndex);
 
     previousInstructions = 
         <Collapse orientation="vertical" in={true} sx={{width: "100%" }}>
@@ -484,12 +484,12 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
     let postInstruction : any = "";
     if (chart.intermediate) {
 
-        let activeThreadChart = (activeThreadChartId ?  charts.find(c => c.id == activeThreadChartId) :
+        const activeThreadChart = (activeThreadChartId ?  charts.find(c => c.id == activeThreadChartId) :
                                 (charts.find(c => c.intermediate == undefined && c.tableRef == activeTableThread[activeTableThread.length - 1]))) as Chart;
-        let endChartId = activeThreadChart.id;
+        const endChartId = activeThreadChart.id;
 
-        let activeEndChartTable = tables.find(t => t.id == activeThreadChart.tableRef) as DictTable;
-        let endChartCard = <Card variant="outlined" className={"hover-card"} 
+        const activeEndChartTable = tables.find(t => t.id == activeThreadChart.tableRef) as DictTable;
+        const endChartCard = <Card variant="outlined" className={"hover-card"} 
                             onClick={() => { 
                                 dispatch(dfActions.setFocusedChart(endChartId));
                                 dispatch(dfActions.setFocusedTable(activeThreadChart.tableRef));
@@ -498,7 +498,7 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
                 <ChartElementFC chart={activeThreadChart} tableRows={activeEndChartTable.rows} boxWidth={200} boxHeight={160}/>
             </Card>
 
-        let postInstructEndPoint = activeTableThread.findIndex(s => s == activeThreadChart.tableRef);
+        const postInstructEndPoint = activeTableThread.findIndex(s => s == activeThreadChart.tableRef);
         postInstruction = <Collapse orientation="vertical" in={true} sx={{width: "100%"}}>
                 <Box  sx={{padding: '4px 0px', display: 'flex', flexDirection: "column" }}>
                     {interleaveArrays([<Box sx={{width: '17px', height: '12px'}}>

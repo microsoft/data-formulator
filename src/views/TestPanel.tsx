@@ -34,7 +34,7 @@ export default class TestPanel extends React.Component<TestPanelProps, TestPanel
         // done  - true if the stream has already given you all its data.
         // value - some data. Always undefined when done is true.
 
-        let { done, value } = state;
+        const { done, value } = state;
 
         if (done) {
             console.log("Stream complete");
@@ -46,8 +46,8 @@ export default class TestPanel extends React.Component<TestPanelProps, TestPanel
         console.log(`Current chunk = ${chunk}`);
 
         if (value) {
-            let vgObj = JSON.parse(value);
-            let vgSpecs = this.state.vgSpecs;
+            const vgObj = JSON.parse(value);
+            const vgSpecs = this.state.vgSpecs;
             vgSpecs.push(vgObj);
             this.setState({
                 vgSpecs
