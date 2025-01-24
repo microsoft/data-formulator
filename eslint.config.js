@@ -32,7 +32,6 @@ export default [
       "no-empty": "off",
       "no-unsafe-optional-chaining": "off",
       "no-useless-escape": "off",
-      "react/jsx-key": "off",
       "react/no-unescaped-entities": "off",
     }
   }

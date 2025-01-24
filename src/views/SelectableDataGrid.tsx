@@ -87,7 +87,9 @@ const SelectableCell = createSelectable<SelectableCellProps>((props: TSelectable
                 match.length > 0 && matchIndex > -1 ? (
                     [
                         `${value}`.substring(0, matchIndex),
-                        <span className="bold">{match}</span>,
+                        <span 
+                            key={`match-${indices[0]}-${indices[1]}`}
+                            className="bold">{match}</span>,
                         `${value}`.substring(matchIndex + match.length)
                     ]
                 ) : (value)

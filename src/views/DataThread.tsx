@@ -217,7 +217,9 @@ const SingleThreadView: FC<{
 
         return [
             regularTableBox,
-            <Box sx={{display: 'flex', flexDirection: 'row'}}>
+            <Box 
+                key={`table-${tableId}`}
+                sx={{display: 'flex', flexDirection: 'row'}}>
                 <div style={{minWidth: '1px', padding: '0px', width: '17px',  flex: 'none', display: 'flex'
                             //borderLeft: '1px dashed darkgray',
                             }}>
@@ -457,7 +459,9 @@ export const DataThread: FC<{}> = function ({ }) {
         {leafTables.map((lt, i) => {
             const usedTableIds = leafTables.slice(0, i)
                 .map(x => [x.id, ...getTriggers(x, tables).map(y => y.tableId) || []]).flat();
-            return <SingleThreadView  scrollRef={scrollRef} threadIdx={i} leafTable={lt} chartElements={chartElements} usedTableIds={usedTableIds} />
+            return <SingleThreadView
+                key={`thread-${lt.id}`}
+                scrollRef={scrollRef} threadIdx={i} leafTable={lt} chartElements={chartElements} usedTableIds={usedTableIds} />
         })}
     </Box>
 

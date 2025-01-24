@@ -405,7 +405,9 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
     }
 
     //let triggers = currentTable.derive.triggers;
-    const tableList = activeTableThread.map((tableId) => <div className="table-list-item">
+    const tableList = activeTableThread.map((tableId) => <div
+        key={tableId}
+        className="table-list-item">
         <Button variant="text" sx={{textTransform: 'none', padding: 0, minWidth: 0}} onClick={() => { dispatch(dfActions.setFocusedTable(tableId)) }}>
             <Stack direction="row" sx={{fontSize: '12px'}} alignItems="center" gap={"2px"}>
                 <TableRowsIcon fontSize="inherit" />
@@ -417,7 +419,9 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
     </div>);
 
     const tableCards = activeTableThread.map((tableId) => 
-        <Card variant='outlined' sx={{padding: '2px 0 2px 0'}}>
+        <Card 
+            key={tableId}
+            variant='outlined' sx={{padding: '2px 0 2px 0'}}>
             <Button variant="text" sx={{textTransform: 'none', padding: 0, marginLeft: 1, minWidth: 0}} onClick={() => { dispatch(dfActions.setFocusedTable(tableId)) }}>
                 <Stack direction="row" sx={{fontSize: '12px'}} alignItems="center" gap={"2px"}>
                     <TableRowsIcon fontSize="inherit" />
@@ -440,7 +444,9 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
         const currentActiveFields = new Set(extractActiveFields(trigger))
         const fieldsIdentical = _.isEqual(previousActiveFields, currentActiveFields)
 
-        return  <Box sx={{padding: 0, display: 'flex'}}>
+        return  <Box 
+                    key={trigger.tableId}
+                    sx={{padding: 0, display: 'flex'}}>
                     {/* <SouthIcon sx={{fontSize: "inherit", margin: 'auto 4px'}} /> */}
                     <Box sx={{minWidth: '1px', padding: '0px', width: '17px',  flex: 'none', display: 'flex', flexDirection: 'column'
                               //borderLeft: '1px dashed darkgray',
@@ -502,7 +508,9 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
         const postInstructEndPoint = activeTableThread.findIndex(s => s == activeThreadChart.tableRef);
         postInstruction = <Collapse orientation="vertical" in={true} sx={{width: "100%"}}>
                 <Box  sx={{padding: '4px 0px', display: 'flex', flexDirection: "column" }}>
-                    {interleaveArrays([<Box sx={{width: '17px', height: '12px'}}>
+                    {interleaveArrays([<Box
+                        key="post-instruction"
+                        sx={{width: '17px', height: '12px'}}>
                             <Box sx={{padding:0, width: '1px', margin:'auto', height: '100%',
                                                     backgroundImage: 'linear-gradient(180deg, darkgray, darkgray 75%, transparent 75%, transparent 100%)',
                                                     backgroundSize: '1px 6px, 3px 100%'}}></Box>
@@ -532,7 +540,9 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
                 </Typography>
             </Box> */}
              {[   
-                <Box sx={{display: 'flex'}}> 
+                <Box
+                    key="encoding-shelf" 
+                    sx={{display: 'flex'}}> 
                     {previousInstructions}
                 </Box>,
                 // <Box sx={{padding: '4px 0px', background: 'aliceblue', margin: 'auto', width: '200px', height: '6px', paddingBottom: 0.5}}></Box>

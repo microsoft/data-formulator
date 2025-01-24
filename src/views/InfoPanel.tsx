@@ -73,7 +73,6 @@ export const InfoPanelFC: FC<{ $tableRef: React.RefObject<AgGridReact | Selectab
         return {
             id: `simple-tab-${index}`,
             'aria-controls': `simple-tabpanel-${index}`,
-            key: `simple-tab-${index}`
         };
     }
 
@@ -89,7 +88,9 @@ export const InfoPanelFC: FC<{ $tableRef: React.RefObject<AgGridReact | Selectab
                 <IconButton color="primary" sx={{ borderRadius: 0 }} onClick={() => { setHidePanel(!hidePanel) }}>{hidePanel ? <UnfoldMoreIcon /> : <UnfoldLessIcon />}</IconButton>
                 <Tabs value={Math.abs(tabValue)} >
                     {tabEntries.map((entry, index) => (
-                        <Tab  className={entry.highlight && index != tabValue ? "background-highlight" : ''} 
+                        <Tab
+                            key={`simple-tab-${index}`}
+                            className={entry.highlight && index != tabValue ? "background-highlight" : ''} 
                             onClick={(event) => { handleTabSwitch(event, index) }} label={entry.label} {...a11yProps(index)} 
                             sx={{ "&.MuiTab-root": { "textTransform": "none" } }} />))}
                 </Tabs>
