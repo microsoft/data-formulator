@@ -34,7 +34,6 @@ export default [
       "no-useless-escape": "off",
       "react/jsx-key": "off",
       "react/no-unescaped-entities": "off",
-      "jsx-a11y/alt-text": "off",
     }
   }
 ];
