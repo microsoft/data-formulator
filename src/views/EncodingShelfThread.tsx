@@ -94,8 +94,7 @@ export const ChartElementFC: FC<{chart: Chart, tableRows: any[], boxWidth?: numb
             return x - Math.floor(x);
         }
         const getRandomSubarray = (arr: any[], size: number) => {
-            const shuffled = arr.slice(0);
-            let i = arr.length, temp, index;
+            let shuffled = arr.slice(0), i = arr.length, temp, index;
             while (i--) {
                 index = Math.floor((i + 1) * getRandom(233 * i + 888));
                 temp = shuffled[index];
