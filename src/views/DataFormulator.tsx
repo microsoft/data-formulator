@@ -62,7 +62,7 @@ export const DataFormulatorFC = ({ }) => {
         document.title = toolName;
     }, []);
 
-    const conceptEncodingPanel = (
+    let conceptEncodingPanel = (
         <Box sx={{display: "flex", flexDirection: "row", width: '100%', flexGrow: 1, overflow: "hidden"}}>
             <ConceptShelf />
         </Box>
@@ -73,7 +73,7 @@ export const DataFormulatorFC = ({ }) => {
             <VisualizationViewFC />
         </Box>);
 
-    const $tableRef = React.createRef<SelectableGroup>();
+    let $tableRef = React.createRef<SelectableGroup>();
 
     const visPane = (// @ts-ignore
         <SplitPane split="horizontal"
@@ -122,7 +122,7 @@ export const DataFormulatorFC = ({ }) => {
             </Box>
         </Box>);
 
-    const exampleMessyText=`Rank	NOC	Gold	Silver	Bronze	Total
+    let exampleMessyText=`Rank	NOC	Gold	Silver	Bronze	Total
 1	 South Korea	5	1	1	7
 2	 France*	0	1	1	2
  United States	0	1	1	2
@@ -133,7 +133,7 @@ export const DataFormulatorFC = ({ }) => {
 Totals (7 entries)	5	5	5	15
 `
 
-    const dataUploadRequestBox = <Box sx={{width: '100vw'}}>
+    let dataUploadRequestBox = <Box sx={{width: '100vw'}}>
         <Box sx={{paddingTop: "8%", display: "flex", flexDirection: "column", textAlign: "center"}}>
             <Box component="img" sx={{  width: 256, margin: "auto" }} alt="" src={dfLogo} />
             <Typography variant="h3" sx={{marginTop: "20px"}}>
@@ -156,7 +156,7 @@ Totals (7 entries)	5	5	5	15
                 href="https://privacy.microsoft.com/en-US/data-privacy-notice">view data privacy notice</Button>
     </Box>;
 
-    const modelSelectionDialogBox = <Box sx={{width: '100vw'}}>
+    let modelSelectionDialogBox = <Box sx={{width: '100vw'}}>
         <Box sx={{paddingTop: "8%", display: "flex", flexDirection: "column", textAlign: "center"}}>
             <Box component="img" sx={{  width: 256, margin: "auto" }} alt="" src={dfLogo} />
             <Typography variant="h3" sx={{marginTop: "20px"}}>

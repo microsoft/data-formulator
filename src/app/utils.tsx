@@ -74,11 +74,11 @@ export function runCodeOnInputListsInVM(
         try {
             // slightly safer?
             if (code != "") {
-                const jsCode = ts.transpile(code);
+                let jsCode = ts.transpile(code);
                 //target = eval(jsCode)(s);
                 
                 //console.log(`let func = ${code}; func(arg)`)
-                const context = { inputTupleList : inputTupleList, outputs: inputTupleList.map(args => undefined) };
+                let context = { inputTupleList : inputTupleList, outputs: inputTupleList.map(args => undefined) };
                 //console.log(`let func = ${jsCode}; let outputs = inputList.map(arg => func(arg));`);
                 vm.runInNewContext(`let func = ${jsCode}; outputs = inputTupleList.map(args => func(...args));`, context);
                 ioPairs = inputTupleList.map((args, i) => [args, context.outputs[i]]);
@@ -90,8 +90,8 @@ export function runCodeOnInputListsInVM(
     } else if (mode == "faster") {
         try {
             if (code != "") {
-                const jsCode = ts.transpile(code);
-                const func = eval(jsCode);
+                let jsCode = ts.transpile(code);
+                let func = eval(jsCode);
                 ioPairs = inputTupleList.map(args => {
                     let target = undefined;
                     try {
@@ -119,11 +119,11 @@ export function baseTableToExtTable(table: any[], derivedFields: FieldItem[], al
         return [];
     }
 
-    const availableBaseFields = allFields.filter(f => Object.keys(table[0]).includes(f.name));
+    let availableBaseFields = allFields.filter(f => Object.keys(table[0]).includes(f.name));
     let extDerivedFields = [...derivedFields];
     while(true) {
         let unresolvedDerivedParentID = extDerivedFields.map(field => {
-            const parentIDs = (field.transform as ConceptTransformation).parentIDs;
+            let parentIDs = (field.transform as ConceptTransformation).parentIDs;
             return allFields.filter(f => parentIDs.includes(f.id) && f.source == "derived")
                             .filter(f => !extDerivedFields.map(f => f.id).includes(f.id))
                             .map(f => f.id);
@@ -138,11 +138,11 @@ export function baseTableToExtTable(table: any[], derivedFields: FieldItem[], al
     }
 
     // derivedCols contains the derived column name, parent column names and its values
-    const derivedColID2Cols : Map<string, [string, string[], any[]]> = new Map();
+    let derivedColID2Cols : Map<string, [string, string[], any[]]> = new Map();
     
     // contains the list of IDs of concepts that have already been derived
     while(!extDerivedFields.every(f => derivedColID2Cols.has(f.id))) {
-        const readyFields = extDerivedFields.filter(f => !derivedColID2Cols.has(f.id))
+        let readyFields = extDerivedFields.filter(f => !derivedColID2Cols.has(f.id))
                             .filter(f => (f.transform as ConceptTransformation).parentIDs.every(
                                 parentID => [...derivedColID2Cols.keys(), ...availableBaseFields.map(f => f.id)].includes(parentID)));
         
@@ -151,12 +151,12 @@ export function baseTableToExtTable(table: any[], derivedFields: FieldItem[], al
             break
         }
 
-        const newlyDerivedCols: [string, string[], any[]][] = readyFields.map(field => {
+        let newlyDerivedCols: [string, string[], any[]][] = readyFields.map(field => {
             //let baseFields = (field.transform as ConceptTransformation).parentIDs.map((parentID) => allFields.find(f => f.id == parentID) as FieldItem);
 
-            const parentNames = (field.transform as ConceptTransformation).parentIDs.map(parentID => (allFields.find(f => f.id == parentID) as FieldItem).name);
-            const baseCols = (field.transform as ConceptTransformation).parentIDs.map(parentID => {
-                const baseField = availableBaseFields.find(f => f.id == parentID);
+            let parentNames = (field.transform as ConceptTransformation).parentIDs.map(parentID => (allFields.find(f => f.id == parentID) as FieldItem).name);
+            let baseCols = (field.transform as ConceptTransformation).parentIDs.map(parentID => {
+                let baseField = availableBaseFields.find(f => f.id == parentID);
                 if (baseField != undefined) {
                     return table.map((row) => row[(baseField as FieldItem).name])
                 } else {
@@ -164,13 +164,13 @@ export function baseTableToExtTable(table: any[], derivedFields: FieldItem[], al
                 }
             });
             
-            const jsCode = ts.transpile((field.transform as ConceptTransformation).code as string);
-            const func = eval(jsCode);
+            let jsCode = ts.transpile((field.transform as ConceptTransformation).code as string);
+            let func = eval(jsCode);
     
             //let baseFieldCols = baseFields.map(f => table.map((row) => row[f.name]));
             
-            const values = table.map((row, rowIdx) => {
-                const inputTuples = baseCols.map(col => col[rowIdx]) // baseFields.map((baseField) => row[baseField.name]);
+            let values = table.map((row, rowIdx) => {
+                let inputTuples = baseCols.map(col => col[rowIdx]) // baseFields.map((baseField) => row[baseField.name]);
                 let target = undefined;
 
                 try {
@@ -196,36 +196,36 @@ export function baseTableToExtTable(table: any[], derivedFields: FieldItem[], al
         }
     }
 
-    const derivedCols = [...derivedColID2Cols.values()];
+    let derivedCols = [...derivedColID2Cols.values()];
     
-    const tableNames = Object.keys(table[0]);
-    const orderedNames = [...tableNames];
+    let tableNames = Object.keys(table[0]);
+    let orderedNames = [...tableNames];
 
     while(true) {
-        const missingCols = derivedCols.filter(c => !orderedNames.includes(c[0]))
+        let missingCols = derivedCols.filter(c => !orderedNames.includes(c[0]))
         if (missingCols.length == 0) {
             break
         }
-        for (const [name, parentNames, vals] of missingCols) {
+        for (let [name, parentNames, vals] of missingCols) {
             if (!parentNames.every(name => orderedNames.includes(name))) {
                 // wait for next round
                 continue
             }
-            const lastParent = (parentNames as string[]).sort((n1, n2) => orderedNames.indexOf(n2) - orderedNames.indexOf(n1))[0];
-            const lastParentIndex = orderedNames.indexOf(lastParent);
+            let lastParent = (parentNames as string[]).sort((n1, n2) => orderedNames.indexOf(n2) - orderedNames.indexOf(n1))[0];
+            let lastParentIndex = orderedNames.indexOf(lastParent);
             orderedNames.splice(lastParentIndex + 1, 0, name);
         }
     }
 
-    const derivedColName2Values : any = {};
+    let derivedColName2Values : any = {};
     for (let i = 0; i < derivedCols.length; i ++) {
         derivedColName2Values[derivedCols[i][0] as string] = derivedCols[i][2];
     }
     // console.log(orderedNames)
 
-    const extTable = table.map((row, i) => {
-        const newRow : any = {};
-        for (const name of orderedNames) {
+    let extTable = table.map((row, i) => {
+        let newRow : any = {};
+        for (let name of orderedNames) {
             if (name in row) {
                 newRow[name] = row[name]
             } else {
@@ -246,7 +246,7 @@ export const instantiateVegaTemplate = (chartType: string, encodingMap: { [key i
         return ["Table", undefined];
     }
 
-    const chartTemplate = getChartTemplate(chartType) as ChartTemplate;
+    let chartTemplate = getChartTemplate(chartType) as ChartTemplate;
     //console.log(chartTemplate);
 
     let vgObj = JSON.parse(JSON.stringify(chartTemplate.template));
@@ -254,7 +254,7 @@ export const instantiateVegaTemplate = (chartType: string, encodingMap: { [key i
 
     for (const [channel, encoding] of Object.entries(encodingMap)) {
 
-        const encodingObj: any = {};
+        let encodingObj: any = {};
 
         if (channel == "radius") {
             encodingObj["scale"] = {"type": "sqrt", "zero": true};
@@ -264,11 +264,11 @@ export const instantiateVegaTemplate = (chartType: string, encodingMap: { [key i
         if (field) {
             //console.log(field)
             // the synthesizer only need to see base table schema
-            const baseFields = (field.source == "derived" ? 
+            let baseFields = (field.source == "derived" ? 
                     (field.transform as ConceptTransformation).parentIDs.map((parentID) => allFields.find((f) => f.id == parentID) as FieldItem) 
                   : [field]);
 
-            for (const baseField of baseFields) {
+            for (let baseField of baseFields) {
                 if (Object.keys(baseTableSchemaObj).includes(baseField.name)) {
                     continue;
                 }
@@ -306,11 +306,11 @@ export const instantiateVegaTemplate = (chartType: string, encodingMap: { [key i
             if (encodingObj["type"] == "nominal" && channel == 'color') {
 
                 // special case, unify
-                const actualDomain = [...new Set(workingTable.map(r => r[field.name]))];
+                let actualDomain = [...new Set(workingTable.map(r => r[field.name]))];
                 if (actualDomain.every(v => field.domain.includes(v)) && field.domain.length > actualDomain.length) {
 
-                    const scaleValues = [...new Set(field.domain)].sort();
-                    const legendValues = actualDomain.sort();
+                    let scaleValues = [...new Set(field.domain)].sort();
+                    let legendValues = actualDomain.sort();
 
                     encodingObj["scale"] = {
                         domain: scaleValues,
@@ -346,7 +346,7 @@ export const instantiateVegaTemplate = (chartType: string, encodingMap: { [key i
             }
         }
         if (encoding.sortBy || encoding.sortOrder) {
-            const sortOrder = encoding.sortOrder || "ascending";
+            let sortOrder = encoding.sortOrder || "ascending";
 
             if (encoding.sortBy == undefined || encoding.sortBy == "default") {
                 encodingObj["sort"] = sortOrder;
@@ -354,7 +354,7 @@ export const instantiateVegaTemplate = (chartType: string, encodingMap: { [key i
                 encodingObj["sort"] = `${sortOrder == "ascending" ? "" : "-"}${encoding.sortBy}`;
             } else {
                 try {
-                    const sortedValues = JSON.parse(encoding.sortBy)['values'];
+                    let sortedValues = JSON.parse(encoding.sortBy)['values'];
                     encodingObj['sort'] = sortOrder == "ascending" ? sortedValues : sortedValues.reverse();
 
                     // special hack: ensure stack bar and stacked area charts are ordered correctly
@@ -386,7 +386,7 @@ export const instantiateVegaTemplate = (chartType: string, encodingMap: { [key i
         }
 
         if (Object.keys(encodingObj).length != 0 && chartTemplate.paths[channel]) {
-            const pathObj = chartTemplate.paths[channel];
+            let pathObj = chartTemplate.paths[channel];
             let paths : (string | number)[][] = []
             if (pathObj.length > 0 && pathObj[0].constructor === Array) {
                 // in this case, there are many destinations, we add the encodingObj to all paths
@@ -396,9 +396,9 @@ export const instantiateVegaTemplate = (chartType: string, encodingMap: { [key i
                 paths = [pathObj as (string | number)[]]
             }
             // fill the template with encoding objects
-            for (const path of paths) {
+            for (let path of paths) {
                 let ref = vgObj;
-                for (const key of path.slice(0, path.length - 1)) {
+                for (let key of path.slice(0, path.length - 1)) {
                     ref = ref[key]
                 }
 
@@ -407,7 +407,7 @@ export const instantiateVegaTemplate = (chartType: string, encodingMap: { [key i
                 if (typeof ref[path[path.length - 1]] === 'string' || ref[path[path.length - 1]] instanceof String) {
                     ref[path[path.length - 1]] = encodingObj['field'];
                 } else {
-                    const prebuiltEntries = ref[path[path.length - 1]] != undefined ? Object.entries(ref[path[path.length - 1]]) : []
+                    let prebuiltEntries = ref[path[path.length - 1]] != undefined ? Object.entries(ref[path[path.length - 1]]) : []
                     ref[path[path.length - 1]] = Object.fromEntries([...prebuiltEntries, ...Object.entries(encodingObj)]);
                 }
                 
@@ -433,13 +433,13 @@ export const instantiateVegaTemplate = (chartType: string, encodingMap: { [key i
 
 export const assembleChart = (chart: Chart, conceptShelfItems: FieldItem[], dataValues: any[]) => {
 
-    const vgSpec: any = instantiateVegaTemplate(chart.chartType, chart.encodingMap, conceptShelfItems, dataValues)[0];
+    let vgSpec: any = instantiateVegaTemplate(chart.chartType, chart.encodingMap, conceptShelfItems, dataValues)[0];
 
     let values = JSON.parse(JSON.stringify(dataValues));
     values = values.map((r: any) => { 
-        const keys = Object.keys(r);
-        const temporalKeys = keys.filter((k: string) => conceptShelfItems.some(concept => concept.name == k && (concept.type == "date" || concept.semanticType == "Year")));
-        for (const temporalKey of temporalKeys) {
+        let keys = Object.keys(r);
+        let temporalKeys = keys.filter((k: string) => conceptShelfItems.some(concept => concept.name == k && (concept.type == "date" || concept.semanticType == "Year")));
+        for (let temporalKey of temporalKeys) {
             r[temporalKey] = String(r[temporalKey]);
         }
         return r;
@@ -449,19 +449,19 @@ export const assembleChart = (chart: Chart, conceptShelfItems: FieldItem[], data
 
 export const adaptChart = (chart: Chart, targetTemplate: ChartTemplate) => {
 
-    const discardedChannels = Object.entries(chart.encodingMap).filter(([ch, enc]) => {
+    let discardedChannels = Object.entries(chart.encodingMap).filter(([ch, enc]) => {
         return !targetTemplate.channels.includes(ch) && enc.fieldID != undefined
     });
 
-    const newEncodingMap = Object.assign({}, ...targetTemplate.channels.map((channel) => {
-        const encoding = Object.keys(chart.encodingMap).includes(channel) ? chart.encodingMap[channel as Channel] : { channel: channel, bin: false }
+    let newEncodingMap = Object.assign({}, ...targetTemplate.channels.map((channel) => {
+        let encoding = Object.keys(chart.encodingMap).includes(channel) ? chart.encodingMap[channel as Channel] : { channel: channel, bin: false }
         return { [channel]: encoding }
     })) as EncodingMap
 
     // for channels that will be discarded, find another way to adapt it
-    for (const [ch, enc] of discardedChannels) {
-        const otherChannelsFromSameGroup = (Object.entries(ChannelGroups).find(([grp, channelList]) => channelList.includes(ch)) as [string, string[]])[1]
-        const candChannels = targetTemplate.channels.filter(c => otherChannelsFromSameGroup.includes(c) && newEncodingMap[c as Channel].fieldID == undefined);
+    for (let [ch, enc] of discardedChannels) {
+        let otherChannelsFromSameGroup = (Object.entries(ChannelGroups).find(([grp, channelList]) => channelList.includes(ch)) as [string, string[]])[1]
+        let candChannels = targetTemplate.channels.filter(c => otherChannelsFromSameGroup.includes(c) && newEncodingMap[c as Channel].fieldID == undefined);
         if (candChannels.length > 0) {
             newEncodingMap[candChannels[0] as Channel] = enc
         }
@@ -476,19 +476,19 @@ export const adaptChart = (chart: Chart, targetTemplate: ChartTemplate) => {
 export const resolveChartFields = (chart: Chart, currentConcepts: FieldItem[], refinedGoal: any, table: DictTable) => {
     // resolve and update chart fields based on refined visualization goal
 
-    const targetFieldNames : string[] = refinedGoal['visualization_fields'];
-    const targetFieldIds : string[] = targetFieldNames.map(name => currentConcepts.find(c => c.name == name)?.id).filter(fid => fid != undefined) as string[];
+    let targetFieldNames : string[] = refinedGoal['visualization_fields'];
+    let targetFieldIds : string[] = targetFieldNames.map(name => currentConcepts.find(c => c.name == name)?.id).filter(fid => fid != undefined) as string[];
 
-    const chartChannels = getChartChannels(chart.chartType);
+    let chartChannels = getChartChannels(chart.chartType);
 
-    const ocupiedChannels = chartChannels.filter(ch => {
-        const fieldId = chart.encodingMap[ch as keyof EncodingMap].fieldID;
+    let ocupiedChannels = chartChannels.filter(ch => {
+        let fieldId = chart.encodingMap[ch as keyof EncodingMap].fieldID;
         return  fieldId != undefined && table.names.includes(currentConcepts.find(c => c.id == fieldId)?.name || "")
     });
-    const ocupiedFieldIds = ocupiedChannels.map(ch => chart.encodingMap[ch as keyof EncodingMap].fieldID);
+    let ocupiedFieldIds = ocupiedChannels.map(ch => chart.encodingMap[ch as keyof EncodingMap].fieldID);
 
-    const newAdditionFieldIds = targetFieldIds.filter(fid => !ocupiedFieldIds.includes(fid))
-    const channelsToUpdate = [...chartChannels.filter(ch => !ocupiedChannels.includes(ch))];
+    let newAdditionFieldIds = targetFieldIds.filter(fid => !ocupiedFieldIds.includes(fid))
+    let channelsToUpdate = [...chartChannels.filter(ch => !ocupiedChannels.includes(ch))];
     
     
     for (let i = 0; i < Math.max(newAdditionFieldIds.length, channelsToUpdate.length); i ++) {
@@ -498,14 +498,14 @@ export const resolveChartFields = (chart: Chart, currentConcepts: FieldItem[], r
     return chart;
 }
 
-export const getTriggers = (leafTable: DictTable, tables: DictTable[]) => {
+export let getTriggers = (leafTable: DictTable, tables: DictTable[]) => {
     // recursively find triggers that ends in leafTable
     let triggers : Trigger[] = [];
     let t = leafTable;
     while(t.derive != undefined) {
-        const trigger = t.derive.trigger as Trigger;
+        let trigger = t.derive.trigger as Trigger;
         triggers = [trigger, ...triggers];
-        const parentTable = tables.find(x => x.id == trigger.tableId);
+        let parentTable = tables.find(x => x.id == trigger.tableId);
         if (parentTable) {
             t = parentTable
         } else {
@@ -524,7 +524,7 @@ export const getTriggers = (leafTable: DictTable, tables: DictTable[]) => {
 export function hashCode(str: string) {
     let hash = 0;
     for (let i = 0, len = str.length; i < len; i++) {
-        const chr = str.charCodeAt(i);
+        let chr = str.charCodeAt(i);
         hash = (hash << 5) - hash + chr;
         hash |= 0; // Convert to 32bit integer
     }

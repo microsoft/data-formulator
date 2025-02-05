@@ -37,14 +37,14 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView({  $table
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
     const focusedTableId = useSelector((state: DataFormulatorState) => state.focusedTableId);
 
-    const derivedFields =  conceptShelfItems.filter(f => f.source == "derived" && f.name != "");
+    let derivedFields =  conceptShelfItems.filter(f => f.source == "derived" && f.name != "");
 
     // we only change extTable when conceptShelfItems and extTable changes
-    const extTables = useMemo(()=>{
+    let extTables = useMemo(()=>{
         return tables.map(table => {
             // try to let table figure out all fields are derivable from the table
-            const rows = baseTableToExtTable(table.rows, derivedFields, conceptShelfItems);
-            const extTable = createTableFromFromObjectArray(`${table.id}`, rows, table.derive);
+            let rows = baseTableToExtTable(table.rows, derivedFields, conceptShelfItems);
+            let extTable = createTableFromFromObjectArray(`${table.id}`, rows, table.derive);
             return extTable
         })
     }, [tables, conceptShelfItems])
@@ -72,7 +72,7 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView({  $table
     //console.log(focusedExtTable)
 
     // given a table render the table
-    const renderTableBody = (targetTable: DictTable | undefined) => {
+    let renderTableBody = (targetTable: DictTable | undefined) => {
         const rowData = targetTable ? targetTable.rows.map((r: any, i: number) => ({ ...r, "#rowId": i })) : [];
         let colDefs = targetTable ? targetTable.names.map((name, i) => { return {
                 id: name, label: name, minWidth: 60, width: 100, align: undefined, 
@@ -98,17 +98,17 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView({  $table
     // handle when selection changes
     const onRangeSelectionChanged = (columns: string[], selected: any[]) => {
         // no need to sort it
-        const values = _.uniq(selected);
+        let values = _.uniq(selected);
         // dispatch(dfActions.setStagedValues({columns, values}));
         // dispatch(dfActions.setStagedValues(_.uniq(valueArray).sort()));
     };
 
-    const tableToRender = extTables; //focusedTable && !focusedTable.names.every(name => !conceptShelfItems.find(f => f.name == name && f.source == "custom")) ? [baseExtTable, focusedTable] : [baseExtTable];
+    let tableToRender = extTables; //focusedTable && !focusedTable.names.every(name => !conceptShelfItems.find(f => f.name == name && f.source == "custom")) ? [baseExtTable, focusedTable] : [baseExtTable];
     
-    const coreTables = tableToRender.filter(t => t.derive == undefined);
-    const tempTables = tableToRender.filter(t => t.derive);
+    let coreTables = tableToRender.filter(t => t.derive == undefined);
+    let tempTables = tableToRender.filter(t => t.derive);
 
-    const genTableLink =  (t: DictTable) => 
+    let genTableLink =  (t: DictTable) => 
         <Link underline="hover" key={t.id} sx={{cursor: "pointer"}} 
             color="#1770c7" onClick={()=>{ dispatch(dfActions.setFocusedTable(t.id)) }}>
             <Typography sx={{fontWeight: t.id == focusedTableId? "bold" : "inherit", fontSize: 'inherit'}} component='span'>{t.id}</Typography>

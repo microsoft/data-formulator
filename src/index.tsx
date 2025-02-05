@@ -13,7 +13,7 @@ import { PersistGate } from 'redux-persist/integration/react'
 import { persistStore } from 'redux-persist'
 import { createRoot } from 'react-dom/client';
 
-const persistor = persistStore(store);
+let persistor = persistStore(store);
 
 
 const domNode = document.getElementById('root') as HTMLElement;

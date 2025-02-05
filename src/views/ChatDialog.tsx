@@ -55,7 +55,7 @@ export const ChatDialog: FC<ChatDialogProps> = function ChatDialog({code, dialog
                 
                 {dialog.filter(entry => entry["role"] != 'system').map((chatEntry, idx) => {
 
-                    const role = chatEntry['role'];
+                    let role = chatEntry['role'];
                     let message : any = chatEntry['content'] as string;
                     // if (message.search("Instruction: ") != -1)
                     //     message = message.slice(message.search("Instruction: "));

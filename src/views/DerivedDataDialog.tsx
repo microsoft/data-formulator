@@ -59,25 +59,25 @@ export interface DerivedDataDialogProps {
 export const DerivedDataDialog: FC<DerivedDataDialogProps> = function DerivedDataDialog({ 
         chart, candidateTables, open, handleCloseDialog, handleSelection, handleDeleteChart, bodyOnly }) {
 
-    const direction = candidateTables.length > 1 ? "horizontal" : "horizontal" ;
+    let direction = candidateTables.length > 1 ? "horizontal" : "horizontal" ;
 
-    const [selectionIdx, setSelectionIdx] = React.useState(0);
+    let [selectionIdx, setSelectionIdx] = React.useState(0);
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
-    const derivedFields = conceptShelfItems.filter(f => f.source == "derived");
+    let derivedFields = conceptShelfItems.filter(f => f.source == "derived");
 
-    const body = 
+    let body = 
         <Box sx={{display: "flex", overflowX: "auto", flexDirection: direction == "horizontal" ? "column" : "row", 
                   justifyContent: "space-between", position: "relative", marginTop: "10px", minHeight: "50px"}}>
             
             {candidateTables.map((table, idx) => {
-                const code = table.derive?.code || "";
-                const toDeriveFields = derivedFields.filter(f => f.name != "").filter(f => findBaseFields(f, conceptShelfItems).every(f2 => table.names.includes(f2.name)))
-                const extTable = baseTableToExtTable(JSON.parse(JSON.stringify(table.rows)), toDeriveFields, conceptShelfItems);
+                let code = table.derive?.code || "";
+                let toDeriveFields = derivedFields.filter(f => f.name != "").filter(f => findBaseFields(f, conceptShelfItems).every(f2 => table.names.includes(f2.name)))
+                let extTable = baseTableToExtTable(JSON.parse(JSON.stringify(table.rows)), toDeriveFields, conceptShelfItems);
             
-                const vgSpec: any = instantiateVegaTemplate(chart.chartType, chart.encodingMap, conceptShelfItems, extTable)[0];
+                let vgSpec: any = instantiateVegaTemplate(chart.chartType, chart.encodingMap, conceptShelfItems, extTable)[0];
             
             
-                const assembledChart = {...vgSpec, data: {values: JSON.parse(JSON.stringify(extTable))}};
+                let assembledChart = {...vgSpec, data: {values: JSON.parse(JSON.stringify(extTable))}};
                 assembledChart["background"] = "transparent";
                 // chart["autosize"] = {
                 //     "type": "fit",
@@ -95,7 +95,7 @@ export const DerivedDataDialog: FC<DerivedDataDialogProps> = function DerivedDat
                 embed('#' + id, assembledChart, { actions: false, renderer: "canvas" }).then(function (result) {
                     // Access the Vega view instance (https://vega.github.io/vega/docs/api/view/) as result.view
                     if (result.view.container()?.getElementsByTagName("canvas")) {
-                        const comp = result.view.container()?.getElementsByTagName("canvas")[0];
+                        let comp = result.view.container()?.getElementsByTagName("canvas")[0];
 
                         // Doesn't seem like width & height are actual numbers here on Edge bug
                         // let width = parseInt(comp?.style.width as string);
@@ -104,7 +104,7 @@ export const DerivedDataDialog: FC<DerivedDataDialogProps> = function DerivedDat
                             const { width, height } = comp.getBoundingClientRect();
                             //console.log(`THUMB: width = ${width} height = ${height}`);
                             if (width > 240 || height > 180) {
-                                const ratio = width / height;
+                                let ratio = width / height;
                                 let fixedWidth = width;
                                 if (ratio * 180 < width) {
                                     fixedWidth = ratio * 180;
@@ -124,8 +124,8 @@ export const DerivedDataDialog: FC<DerivedDataDialogProps> = function DerivedDat
                     // console.error(reason)
                 });
 
-                const simpleTableView = (t: DictTable) => {
-                    const colDefs = t.names.map(name => {
+                let simpleTableView = (t: DictTable) => {
+                    let colDefs = t.names.map(name => {
                         return {
                             id: name, label: name, minWidth: 30, align: undefined, 
                             format: (value: any) => `${value}`, source: conceptShelfItems.find(f => f.name == name)?.source

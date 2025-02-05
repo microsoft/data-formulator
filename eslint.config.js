@@ -32,6 +32,7 @@ export default [
       "no-empty": "off",
       "no-unsafe-optional-chaining": "off",
       "no-useless-escape": "off",
+      "prefer-const": "off",
       "react/no-unescaped-entities": "off",
     }
   }

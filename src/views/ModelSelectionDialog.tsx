@@ -76,10 +76,10 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
     const [showKeys, setShowKeys] = useState<boolean>(false);
     const [tempSelectedModel, setTempSelectedMode] = useState<{model: string, endpoint: string} | undefined >(selectedModel);
 
-    const updateModelStatus = (model: string, endpoint: string, status: 'ok' | 'error' | 'testing' | 'unknown', message: string) => {
+    let updateModelStatus = (model: string, endpoint: string, status: 'ok' | 'error' | 'testing' | 'unknown', message: string) => {
         dispatch(dfActions.updateModelStatus({endpoint, model, status, message}));
     }
-    const getStatus = (model: string, endpoint: string) => {
+    let getStatus = (model: string, endpoint: string) => {
         return testedModels.find(t => t.model == model && t.endpoint == endpoint)?.status || 'unknown';
     }
 
@@ -89,11 +89,11 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
     const [newModel, setNewModel] = useState<string>("");
 
 
-    const modelExists = oaiModels.some(m => m.endpoint == newEndpoint && m.model == newModel);
+    let modelExists = oaiModels.some(m => m.endpoint == newEndpoint && m.model == newModel);
 
-    const testModel = (endpoint: string, key: string, model: string) => {
+    let testModel = (endpoint: string, key: string, model: string) => {
         updateModelStatus(model, endpoint, 'testing', "");
-        const message = {
+        let message = {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', },
             body: JSON.stringify({
@@ -105,14 +105,14 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
         fetch(getUrls().TEST_MODEL, {...message })
             .then((response) => response.json())
             .then((data) => {
-                const status = data["status"] || 'error';
+                let status = data["status"] || 'error';
                 updateModelStatus(model, endpoint, status, data["message"] || "");
             }).catch((error) => {
                 updateModelStatus(model, endpoint, 'error', error.message)
             });
     }
 
-    const newModelEntry = <TableRow
+    let newModelEntry = <TableRow
         key={`new-model-entry`}
         sx={{ '&:last-child td, &:last-child th': { border: 0 }, padding: "6px 6px" }}
         onClick={() => {setTempSelectedMode(undefined)}}
@@ -181,7 +181,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                         if (modelExists) {
                             return
                         }
-                        const endpoint = newKeyType == 'openai' ? 'openai' : newEndpoint;
+                        let endpoint = newKeyType == 'openai' ? 'openai' : newEndpoint;
                         event.stopPropagation()
 
                         dispatch(dfActions.addModel({model: newModel, key: newKey, endpoint}));
@@ -215,7 +215,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
         </TableCell>
     </TableRow>
 
-    const modelTable = <TableContainer>
+    let modelTable = <TableContainer>
         <Table sx={{ minWidth: 600 }} size="small" >
             <TableHead >
                 <TableRow>
@@ -230,14 +230,14 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
             </TableHead>
             <TableBody>
                 {oaiModels.map((oaiModel) => {
-                    const isItemSelected = tempSelectedModel && 
+                    let isItemSelected = tempSelectedModel && 
                                             tempSelectedModel.endpoint == oaiModel.endpoint && 
                                             tempSelectedModel.model == oaiModel.model;
-                    const status =  getStatus(oaiModel.model, oaiModel.endpoint);
-                    const statusIcon = status  == "unknown" ? <HelpOutlineIcon color="warning" /> : ( status == 'testing' ? <CircularProgress size={24} />:
+                    let status =  getStatus(oaiModel.model, oaiModel.endpoint);
+                    let statusIcon = status  == "unknown" ? <HelpOutlineIcon color="warning" /> : ( status == 'testing' ? <CircularProgress size={24} />:
                             (status == "ok" ? <CheckCircleOutlineIcon color="success"/> : <ErrorOutlineIcon color="error"/> ))
                     
-                    const message = status == "unknown" ? "Status unknown, click the status icon to test again." : 
+                    let message = status == "unknown" ? "Status unknown, click the status icon to test again." : 
                         (testedModels.find(m => m.model === oaiModel.model && m.endpoint === oaiModel.endpoint)?.message || "Unknown error");
                     const borderStyle = ['error', 'unknown'].includes(status) ? '1px dashed text.secondary' : undefined;
                     const noBorderStyle = ['error', 'unknown'].includes(status) ? 'none' : undefined;
@@ -286,7 +286,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                                                 if (oaiModels.length == 0) {
                                                     setTempSelectedMode(undefined);
                                                 } else {
-                                                    const chosenModel = oaiModels[oaiModels.length - 1];
+                                                    let chosenModel = oaiModels[oaiModels.length - 1];
                                                     setTempSelectedMode({
                                                         model: chosenModel.model, endpoint: chosenModel.endpoint
                                                     })

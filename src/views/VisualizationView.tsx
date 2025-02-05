@@ -80,7 +80,7 @@ export interface VisPanelState {
     viewMode: "gallery" | "carousel";
 }
 
-export const generateChartSkeleton = (iconPath: string | undefined, width: number = 160, height: number = 160) => (
+export let generateChartSkeleton = (iconPath: string | undefined, width: number = 160, height: number = 160) => (
     <Box width={width} height={height} sx={{ display: "flex" }}>
         {iconPath == undefined ?
             <AddchartIcon sx={{ color: "lightgray", margin: "auto" }} /> :
@@ -92,7 +92,7 @@ export const generateChartSkeleton = (iconPath: string | undefined, width: numbe
     </Box>
 )
 
-export const renderTableChart = (
+export let renderTableChart = (
     chart: Chart, conceptShelfItems: FieldItem[], extTable: any[], 
     width: number = 120, height: number = 120) => {
 
@@ -104,10 +104,10 @@ export const renderTableChart = (
         fields = conceptShelfItems.filter(f => Object.keys(extTable[0]).includes(f.name));
     }
 
-    const rows = extTable.map(row => Object.fromEntries(fields.filter(f => Object.keys(row).includes(f.name)).map(f => [f.name, row[f.name]])))
+    let rows = extTable.map(row => Object.fromEntries(fields.filter(f => Object.keys(row).includes(f.name)).map(f => [f.name, row[f.name]])))
 
-    const colDefs = fields.map(field => {
-        const name = field.name;
+    let colDefs = fields.map(field => {
+        let name = field.name;
         return {
             id: name, label: name, minWidth: 30, align: undefined, 
             format: (value: any) => `${value}`, source: field.source
@@ -119,7 +119,7 @@ export const renderTableChart = (
     </Box>
 }
 
-export const getDataTable = (chart: Chart, tables: DictTable[], charts: Chart[], 
+export let getDataTable = (chart: Chart, tables: DictTable[], charts: Chart[], 
                            conceptShelfItems: FieldItem[], ignoreTableRef = false) => {
     // given a chart, determine which table would be used to visualize the chart
 
@@ -128,14 +128,14 @@ export const getDataTable = (chart: Chart, tables: DictTable[], charts: Chart[],
         return tables.find(t => t.id == chart.tableRef) as DictTable;
     }
 
-    const activeFields = conceptShelfItems.filter((field) => Array.from(Object.values(chart.encodingMap)).map((enc: EncodingItem) => enc.fieldID).includes(field.id));
-    const activeBaseFields = conceptShelfItems.filter((field) => {
+    let activeFields = conceptShelfItems.filter((field) => Array.from(Object.values(chart.encodingMap)).map((enc: EncodingItem) => enc.fieldID).includes(field.id));
+    let activeBaseFields = conceptShelfItems.filter((field) => {
         return activeFields.some(f => findBaseFields(f, conceptShelfItems).flat().map(x => x.id).includes(field.id));
     });
 
-    const workingTableCandidates = tables.filter(t => activeBaseFields.every(f => t.names.includes(f.name)));
+    let workingTableCandidates = tables.filter(t => activeBaseFields.every(f => t.names.includes(f.name)));
     
-    const confirmedTableCandidates = workingTableCandidates.filter(t => !charts.some(c => c.saved && c.tableRef == t.id));
+    let confirmedTableCandidates = workingTableCandidates.filter(t => !charts.some(c => c.saved && c.tableRef == t.id));
     if(confirmedTableCandidates.length > 0) {
         return confirmedTableCandidates[0];
     } else if (workingTableCandidates.length > 0) {
@@ -147,7 +147,7 @@ export const getDataTable = (chart: Chart, tables: DictTable[], charts: Chart[],
     }
 }
 
-export const CodeBox : FC<{code: string, language: string}> = function  CodeBox({ code, language }) {
+export let CodeBox : FC<{code: string, language: string}> = function  CodeBox({ code, language }) {
     useEffect(() => {
       Prism.highlightAll();
     }, []);
@@ -160,19 +160,19 @@ export const CodeBox : FC<{code: string, language: string}> = function  CodeBox(
   }
 
 export const chartAvailabilityCheck = (encodingMap: EncodingMap, conceptShelfItems: FieldItem[], data: any[]) => {
-    const unfilledFields = [];
-    const dataFields = [...Object.keys(data[0])];
+    let unfilledFields = [];
+    let dataFields = [...Object.keys(data[0])];
 
     for (const [channel, encoding] of Object.entries(encodingMap)) {
         if (encoding.fieldID == undefined) continue;
 
-        const field = conceptShelfItems.find(f => f.id == encoding.fieldID);
+        let field = conceptShelfItems.find(f => f.id == encoding.fieldID);
 
         if (field && !dataFields.includes(field.name)) {
             unfilledFields.push(field.name);
         }
     }
-    const unavailable = (unfilledFields.length > 0 || Object.entries(encodingMap).filter(entry => entry[1].fieldID != undefined).length == 0);
+    let unavailable = (unfilledFields.length > 0 || Object.entries(encodingMap).filter(entry => entry[1].fieldID != undefined).length == 0);
     return [!unavailable, unfilledFields];
 }
 
@@ -187,7 +187,7 @@ const BaseChartCreationMenu: FC<{tableId: string; buttonElement: any}> = functio
         setAnchorEl(event.currentTarget);
     };
 
-    const menu = <Menu
+    let menu = <Menu
             aria-labelledby="demo-positioned-button"
             anchorEl={anchorEl}
             open={open}
@@ -238,22 +238,22 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
 
     const componentRef = useRef<HTMLHeadingElement>(null);
 
-    const tables = useSelector((state: DataFormulatorState) => state.tables);
-    const charts = useSelector((state: DataFormulatorState) => state.charts);
-    const focusedChartId = useSelector((state: DataFormulatorState) => state.focusedChartId);
-    const chartSynthesisInProgress = useSelector((state: DataFormulatorState) => state.chartSynthesisInProgress);
-    const threadDrawerOpen = useSelector((state: DataFormulatorState) => state.threadDrawerOpen);
+    let tables = useSelector((state: DataFormulatorState) => state.tables);
+    let charts = useSelector((state: DataFormulatorState) => state.charts);
+    let focusedChartId = useSelector((state: DataFormulatorState) => state.focusedChartId);
+    let chartSynthesisInProgress = useSelector((state: DataFormulatorState) => state.chartSynthesisInProgress);
+    let threadDrawerOpen = useSelector((state: DataFormulatorState) => state.threadDrawerOpen);
 
-    const synthesisRunning = focusedChartId ? chartSynthesisInProgress.includes(focusedChartId) : false;
-    const handleDeleteChart = () => { focusedChartId && dispatch(dfActions.deleteChartById(focusedChartId)) }
+    let synthesisRunning = focusedChartId ? chartSynthesisInProgress.includes(focusedChartId) : false;
+    let handleDeleteChart = () => { focusedChartId && dispatch(dfActions.deleteChartById(focusedChartId)) }
 
-    const focusedChart = charts.find(c => c.id == focusedChartId) as Chart;
+    let focusedChart = charts.find(c => c.id == focusedChartId) as Chart;
 
     const dispatch = useDispatch();
 
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
 
-    const derivedFields = conceptShelfItems.filter(f => f.source == "derived");
+    let derivedFields = conceptShelfItems.filter(f => f.source == "derived");
 
     const [candidatesViewAnchorEl, setCandidatesViewAnchorEl] = useState<null | HTMLElement>(null);
 
@@ -263,16 +263,16 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
     const [chatDialogOpen, setChatDialogOpen] = useState<boolean>(false);
     const [focusUpdated, setFocusUpdated] = useState<boolean>(true);
 
-    const [collapseEditor, setCollapseEditor] = useState<boolean>(false);
+    let [collapseEditor, setCollapseEditor] = useState<boolean>(false);
 
-    const scaleFactor = focusedChart.scaleFactor || 1;
+    let scaleFactor = focusedChart.scaleFactor || 1;
 
     useEffect(() => {
         setFocusUpdated(true);
     }, [focusedChartId])
 
     useEffect(() => {
-        const width = componentRef.current ? componentRef.current.offsetWidth : 0
+        let width = componentRef.current ? componentRef.current.offsetWidth : 0
         if (width < 640 && threadDrawerOpen == true) {
             setCollapseEditor(threadDrawerOpen);
         }
@@ -280,11 +280,11 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
 
     let chartUnavailable = true;
     
-    const table = getDataTable(focusedChart, tables, charts, conceptShelfItems);
+    let table = getDataTable(focusedChart, tables, charts, conceptShelfItems);
 
-    const resultTable = tables.find(t => t.id == focusedChart.intermediate?.resultTableId);
+    let resultTable = tables.find(t => t.id == focusedChart.intermediate?.resultTableId);
 
-    const candidates = cachedCandidates.length > 0 ? cachedCandidates : [table];
+    let candidates = cachedCandidates.length > 0 ? cachedCandidates : [table];
 
     useEffect(() => {
         if (candidates.length == 0) {
@@ -292,13 +292,13 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
         }
     }, [candidates])
 
-    const codeExpl = table.derive?.codeExpl || "";
+    let codeExpl = table.derive?.codeExpl || "";
 
-    const toDeriveFields = derivedFields.filter(f => f.name != "").filter(f => findBaseFields(f, conceptShelfItems).every(f2 => table.names.includes(f2.name)))
-    const focusedExtTable = baseTableToExtTable(JSON.parse(JSON.stringify(table.rows)), toDeriveFields, conceptShelfItems);
+    let toDeriveFields = derivedFields.filter(f => f.name != "").filter(f => findBaseFields(f, conceptShelfItems).every(f2 => table.names.includes(f2.name)))
+    let focusedExtTable = baseTableToExtTable(JSON.parse(JSON.stringify(table.rows)), toDeriveFields, conceptShelfItems);
 
-    const createChartElement = (chart: Chart, extTable: any[], id: string) => {
-        const chartTemplate = getChartTemplate(chart.chartType);
+    let createChartElement = (chart: Chart, extTable: any[], id: string) => {
+        let chartTemplate = getChartTemplate(chart.chartType);
  
         if (chart.chartType == "Auto") {
             return <Box sx={{ position: "relative", display: "flex", flexDirection: "column", margin: 'auto', color: 'darkgray' }}>
@@ -319,7 +319,7 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
 
         element = <Box id={id} key={`focused-chart`} ></Box>    
 
-        const assembledChart = assembleChart(chart, conceptShelfItems, extTable);
+        let assembledChart = assembleChart(chart, conceptShelfItems, extTable);
         assembledChart['resize'] = true;
 
         embed('#' + id, { ...assembledChart }, { actions: true, renderer: "svg" }).then(function (result) {
@@ -328,7 +328,7 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
             // the intermediate data used by vega-lite
             //let data_0 = (result.view as any)._runtime.data.data_0.values.value;
             if (result.view.container()?.getElementsByTagName("svg")) {
-                const comp = result.view.container()?.getElementsByTagName("svg")[0];
+                let comp = result.view.container()?.getElementsByTagName("svg")[0];
                 if (comp) {
                     const { width, height } = comp.getBoundingClientRect();
                     // console.log(`main chart; width = ${width} height = ${height}`)
@@ -337,7 +337,7 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
             }
 
             if (result.view.container()?.getElementsByTagName("canvas")) {
-                const comp = result.view.container()?.getElementsByTagName("canvas")[0];
+                let comp = result.view.container()?.getElementsByTagName("canvas")[0];
                 if (comp) {
                     const { width, height } = comp.getBoundingClientRect();
                     // console.log(`main chart; width = ${width} height = ${height}`)
@@ -360,18 +360,18 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
         return element;
     }
 
-    const focusedChartElement = createChartElement(focusedChart, focusedExtTable, `focused-element-${focusedChart.id}`);
-    const arrowCard = <></>;
-    const resultChartElement = <></>;
+    let focusedChartElement = createChartElement(focusedChart, focusedExtTable, `focused-element-${focusedChart.id}`);
+    let arrowCard = <></>;
+    let resultChartElement = <></>;
 
-    const focusedElement = <Box sx={{margin: "auto", display: 'flex', flexDirection: 'row'}}>
+    let focusedElement = <Box sx={{margin: "auto", display: 'flex', flexDirection: 'row'}}>
                                 {focusedChartElement}
                                 {arrowCard}
                                 {resultChartElement}
                             </Box>;
 
     
-    const saveButton = focusedChart.saved ?
+    let saveButton = focusedChart.saved ?
         (
             <IconButton size="large" key="save-btn" sx={{ textTransform: "none" }}
                 onClick={() => {
@@ -398,7 +398,7 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
             </Tooltip>
         );
 
-    const duplicateButton = <Tooltip title="duplicate the chart">
+    let duplicateButton = <Tooltip title="duplicate the chart">
         <IconButton color="primary" key="duplicate-btn" size="small" sx={{ textTransform: "none" }}
         disabled={focusedChart.intermediate != undefined}
         onClick={() => {
@@ -413,13 +413,13 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
         </IconButton>
     </Tooltip>
 
-    const createNewChartButton =  <ChartCreationMenu tableId={focusedChart.tableRef} buttonElement={
+    let createNewChartButton =  <ChartCreationMenu tableId={focusedChart.tableRef} buttonElement={
             <Tooltip title="create a new chart">
                 <AddchartIcon sx={{ fontSize: "3rem" }} />
             </Tooltip>} />
 
 
-    const deleteButton = (
+    let deleteButton = (
         <Tooltip title="delete" key="delete-btn-tooltip">
             <IconButton color="warning" size="small" sx={{ textTransform: "none" }}  disabled={focusedChart.intermediate != undefined}
                         onClick={() => { handleDeleteChart() }}>
@@ -435,7 +435,7 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
 
     //console.log(focusedChart)
 
-    const derivedTableItems =  (resultTable?.derive || table.derive) ? [
+    let derivedTableItems =  (resultTable?.derive || table.derive) ? [
         <Tooltip title={`${codeViewOpen ? 'hide' : 'view'} transformation code`} key="code-view-btn-tooltip">
             <IconButton color="primary" size="small" sx={{ textTransform: "none",  marginLeft: 1,
                                                             backgroundColor: !codeViewOpen ? "" : "rgba(2, 136, 209, 0.3)", 
@@ -462,7 +462,7 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
                     dialog={resultTable?.derive?.dialog || table.derive?.dialog as any[]} />
     ] : [];
     
-    const chartActionButtons = [
+    let chartActionButtons = [
         <Box key="data-source" fontSize="small" sx={{ margin: "auto", display: "flex", flexDirection: "row"}}>
             <Typography component="span" sx={{}} fontSize="inherit">
                 data: {table.id}
@@ -475,7 +475,7 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
         deleteButton,
     ]
 
-    const chartActionItems = chartUnavailable ?
+    let chartActionItems = chartUnavailable ?
         <Box key="chart-unavailable-box" sx={{ display: 'flex', flexDirection: "column", textAlign: 'center', paddingTop: 1 }} component="div" color="text.secondary">
             {synthesisRunning || Boolean(candidatesViewAnchorEl) ? "" : <Typography component="div" fontSize="small" sx={{ maxWidth: 640, margin: 'auto' }}>
                 {Object.entries(focusedChart.encodingMap).filter(entry => entry[1].fieldID != undefined).length == 0  ?
@@ -504,7 +504,7 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
             </Box>
         </>
     
-    const codeExplComp = <MuiMarkdown
+    let codeExplComp = <MuiMarkdown
             overrides={{
                 ...getOverrides(), // This will keep the other default overrides.
                 code: {
@@ -657,7 +657,7 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
     }
     //sticky for encodingshelfthread: sx={{position: 'absolute', right: 0, zIndex: 1000, paddingTop: 1}}
     
-    const content = [
+    let content = [
         <Box key='focused-box' className="vega-focused" sx={{ display: "flex", overflow: 'auto', flexDirection: 'column', position: 'relative' }}>
             {focusedComponent}
         </Box>,
@@ -679,9 +679,9 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
         </Collapse>,
     ]
 
-    const [scaleMin, scaleMax] = [0.2, 2.4]
+    let [scaleMin, scaleMax] = [0.2, 2.4]
 
-    const chartResizer = <Stack spacing={1} direction="row" sx={{ padding: '8px', width: 160, position: "absolute", zIndex: 10, color: 'darkgray' }} alignItems="center">
+    let chartResizer = <Stack spacing={1} direction="row" sx={{ padding: '8px', width: 160, position: "absolute", zIndex: 10, color: 'darkgray' }} alignItems="center">
         <Tooltip title="zoom out">
             <IconButton color="primary" size='small' disabled={scaleFactor <= scaleMin} onClick={() => {
                 dispatch(dfActions.updateChartScaleFactor({ chartId: focusedChart.id, scaleFactor: scaleFactor - 0.1 }))
@@ -716,14 +716,14 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
 
 export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView({ }) {
 
-    const tables = useSelector((state: DataFormulatorState) => state.tables);
-    const charts = useSelector((state: DataFormulatorState) => state.charts);
-    const focusedChartId = useSelector((state: DataFormulatorState) => state.focusedChartId);
+    let tables = useSelector((state: DataFormulatorState) => state.tables);
+    let charts = useSelector((state: DataFormulatorState) => state.charts);
+    let focusedChartId = useSelector((state: DataFormulatorState) => state.focusedChartId);
 
-    const visViewMode = useSelector((state: DataFormulatorState) => state.visViewMode);
+    let visViewMode = useSelector((state: DataFormulatorState) => state.visViewMode);
 
-    const [cachedCandidates, setCachedCandidates] = useState<{chartId: string, tables: DictTable[]}[]>([])
-    const handleUpdateCandidates = (chartId: string, candidates: DictTable[]) => {
+    let [cachedCandidates, setCachedCandidates] = useState<{chartId: string, tables: DictTable[]}[]>([])
+    let handleUpdateCandidates = (chartId: string, candidates: DictTable[]) => {
         setCachedCandidates([{chartId, tables: candidates}, ...cachedCandidates.filter(l => l.chartId != chartId)]);
     }
 
@@ -733,14 +733,14 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
 
     // when there is no result and synthesis is running, just show the waiting panel
     if (charts.length == 0 || focusedChartId == undefined || !charts.find(c => c.id == focusedChartId) || charts.find(c => c.id == focusedChartId)?.chartType == "?") {
-        const chartSelectionBox = <Box sx={{display: "flex", flexDirection: "row", width: '720px', flexWrap: "wrap"}}> 
+        let chartSelectionBox = <Box sx={{display: "flex", flexDirection: "row", width: '720px', flexWrap: "wrap"}}> 
             {Object.entries(CHART_TEMPLATES).map(([cls, templates])=>templates).flat().filter(t => t.template["name"] != "?").map(t =>
                 <Button 
                     key={`${t.chart}-btn`}
                     sx={{margin: '2px', padding:'2px', display:'flex', flexDirection: 'column', 
                             textTransform: 'none', justifyContent: 'flex-start'}}
                     onClick={() => { 
-                        const focusedChart = charts.find(c => c.id == focusedChartId);
+                        let focusedChart = charts.find(c => c.id == focusedChartId);
                         if (focusedChart?.chartType == "?") { 
                             dispatch(dfActions.updateChartType({chartType: t.chart, chartId: focusedChartId as string}));
                         } else {
@@ -762,7 +762,7 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
         )
     }
 
-    const chartEditor = <ChartEditorFC key={focusedChartId}
+    let chartEditor = <ChartEditorFC key={focusedChartId}
                         cachedCandidates={cachedCandidates.find(l => l.chartId == focusedChartId)?.tables || []}
                         handleUpdateCandidates={handleUpdateCandidates} />
 
@@ -772,22 +772,22 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
     // if (tables.length > 0) {
     //     vegaSpec = createVegaObj(markType, encodingMap, conceptShelfItems)[0];
     // }
-    const derivedFields = conceptShelfItems.filter(f => f.source == "derived");
+    let derivedFields = conceptShelfItems.filter(f => f.source == "derived");
 
     let finalView = <Box></Box>;
 
     if (visViewMode == "gallery") {
 
-        const chartElements = charts.filter(c => !c.intermediate).map((chart, index) => {
+        let chartElements = charts.filter(c => !c.intermediate).map((chart, index) => {
 
-            const table = getDataTable(chart, tables, charts, conceptShelfItems);
+            let table = getDataTable(chart, tables, charts, conceptShelfItems);
     
-            const toDeriveFields = derivedFields.filter(f => f.name != "").filter(f => findBaseFields(f, conceptShelfItems).every(f2 => table.names.includes(f2.name)))
-            const extTable = baseTableToExtTable(JSON.parse(JSON.stringify(table.rows)), toDeriveFields, conceptShelfItems);
+            let toDeriveFields = derivedFields.filter(f => f.name != "").filter(f => findBaseFields(f, conceptShelfItems).every(f2 => table.names.includes(f2.name)))
+            let extTable = baseTableToExtTable(JSON.parse(JSON.stringify(table.rows)), toDeriveFields, conceptShelfItems);
 
-            const chartTemplate = getChartTemplate(chart.chartType);
+            let chartTemplate = getChartTemplate(chart.chartType);
 
-            const setIndexFunc = () => {
+            let setIndexFunc = () => {
                 dispatch(dfActions.setFocusedChart(chart.id));
                 dispatch(dfActions.setFocusedTable(table.id));
                 dispatch(dfActions.setVisViewMode('carousel'));
@@ -803,17 +803,17 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
                 >{renderTableChart(chart, conceptShelfItems, extTable)}</Box>
             }
 
-            const [available, unfilledFields] = chartAvailabilityCheck(chart.encodingMap, conceptShelfItems, extTable);
+            let [available, unfilledFields] = chartAvailabilityCheck(chart.encodingMap, conceptShelfItems, extTable);
             if (!available) {
                 return <Box className={"vega-thumbnail" + (focusedChartId === chart.id ? " focused-vega-thumbnail" : "")} 
                             key="skeleton" onClick={setIndexFunc}>{generateChartSkeleton(chartTemplate?.icon)}</Box>;
             }
 
-            const assembledChart = assembleChart(chart, conceptShelfItems, extTable);
+            let assembledChart = assembleChart(chart, conceptShelfItems, extTable);
 
             const id = `chart-element-${index}`;
 
-            const element =
+            let element =
                 <Box key={`animateOnChange-${index}`}
                      className="vega-thumbnail-box"
                      onClick={setIndexFunc}
@@ -856,7 +856,7 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
         );
     }
 
-    const visPanel = finalView;
+    let visPanel = finalView;
 
     return visPanel;
 }

@@ -17,7 +17,7 @@ const persistConfig = {
 
 const persistedReducer = persistReducer(persistConfig, dataFormulatorReducer)
 
-const store = configureStore({
+let store = configureStore({
     reducer: persistedReducer,
     middleware: (getDefaultMiddleware) =>
         getDefaultMiddleware({

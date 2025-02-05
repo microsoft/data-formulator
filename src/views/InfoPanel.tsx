@@ -46,8 +46,8 @@ export const InfoPanelFC: FC<{ $tableRef: React.RefObject<AgGridReact | Selectab
     // reference to states
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
 
-    const [tabValue, setTabValue] = useState(0);
-    const [hidePanel, setHidePanel] = useState(true);
+    let [tabValue, setTabValue] = useState(0);
+    let [hidePanel, setHidePanel] = useState(true);
 
     // useEffect(() => {
     //     // Logs `HTMLInputElement`
@@ -57,15 +57,15 @@ export const InfoPanelFC: FC<{ $tableRef: React.RefObject<AgGridReact | Selectab
     //     }
     // }, [stagedValues]);
 
-    const handleTabSwitch = (event: React.SyntheticEvent, newValue: number) => {
+    let handleTabSwitch = (event: React.SyntheticEvent, newValue: number) => {
         setHidePanel(false);
         setTabValue(newValue);
     };
 
     // data selection view
-    const dataSelectionView = "";
+    let dataSelectionView = "";
 
-    const tabEntries = [
+    let tabEntries = [
         { label: "Selected Data", panelElement: dataSelectionView, highlight: false },
     ];
 
@@ -76,7 +76,7 @@ export const InfoPanelFC: FC<{ $tableRef: React.RefObject<AgGridReact | Selectab
         };
     }
 
-    const infoPanel = (
+    let infoPanel = (
         <Box sx={{ width: '100%', display: "flex", flexDirection: "column", borderTop: "1px solid lightgray" }}>
             {/* {synthesizerRunning ? <Box sx={{
                 position: "absolute", height: "100%", width: "100%", zIndex: 20,
