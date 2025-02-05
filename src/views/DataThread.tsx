@@ -217,7 +217,9 @@ let SingleThreadView: FC<{
 
         return [
             regularTableBox,
-            <Box sx={{display: 'flex', flexDirection: 'row'}}>
+            <Box 
+                key={`table-${tableId}`}
+                sx={{display: 'flex', flexDirection: 'row'}}>
                 <div style={{minWidth: '1px', padding: '0px', width: '17px',  flex: 'none', display: 'flex'
                             //borderLeft: '1px dashed darkgray',
                             }}>
@@ -381,11 +383,11 @@ export const DataThread: FC<{}> = function ({ }) {
             assembledChart = (({ data, ...o }) => o)(assembledChart);
 
             let getRandom = (seed: number) => {
-                var x = Math.sin(seed++) * 10000;
+                let x = Math.sin(seed++) * 10000;
                 return x - Math.floor(x);
             }
             let getRandomSubarray = (arr: any[], size: number) => {
-                var shuffled = arr.slice(0), i = arr.length, temp, index;
+                let shuffled = arr.slice(0), i = arr.length, temp, index;
                 while (i--) {
                     index = Math.floor((i + 1) * getRandom(233 * i + 888));
                     temp = shuffled[index];
@@ -456,7 +458,9 @@ export const DataThread: FC<{}> = function ({ }) {
         {leafTables.map((lt, i) => {
             let usedTableIds = leafTables.slice(0, i)
                 .map(x => [x.id, ...getTriggers(x, tables).map(y => y.tableId) || []]).flat();
-            return <SingleThreadView  scrollRef={scrollRef} threadIdx={i} leafTable={lt} chartElements={chartElements} usedTableIds={usedTableIds} />
+            return <SingleThreadView
+                key={`thread-${lt.id}`}
+                scrollRef={scrollRef} threadIdx={i} leafTable={lt} chartElements={chartElements} usedTableIds={usedTableIds} />
         })}
     </Box>
 

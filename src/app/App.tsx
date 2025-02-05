@@ -124,8 +124,8 @@ export const ExportStateButton: React.FC<{}> = ({}) => {
     return <Tooltip title="save session locally">
         <Button variant="text" onClick={()=>{
             function download(content: string, fileName: string, contentType: string) {
-                    var a = document.createElement("a");
-                    var file = new Blob([content], {type: contentType});
+                    let a = document.createElement("a");
+                    let file = new Blob([content], {type: contentType});
                     a.href = URL.createObjectURL(file);
                     a.download = fileName;
                     a.click();

@@ -136,7 +136,9 @@ export const TableSelectionView: React.FC<TableSelectionViewProps> = function Ta
                 {challengeView}
             </Paper>
 
-            return  <TabPanel value={value} index={i} >
+            return  <TabPanel 
+                        key={i}
+                        value={value} index={i} >
                         {content}
                         <Box width="100%" sx={{display: "flex"}}>
                             <Typography sx={{fontSize: 10, color: "text.secondary"}}>{Object.keys(t.rows[0]).length} columns{hideRowNum ? "" : ` ⨉ ${t.rows.length} rows`}</Typography>

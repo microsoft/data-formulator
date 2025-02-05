@@ -2,7 +2,7 @@ import globals from "globals";
 import pluginJs from "@eslint/js";
 import tseslint from "typescript-eslint";
 import pluginReact from "eslint-plugin-react";
-
+import jsxA11y from "eslint-plugin-jsx-a11y";
 
 /** @type {import('eslint').Linter.Config[]} */
 export default [
@@ -18,6 +18,9 @@ export default [
   ...tseslint.configs.recommended,
   pluginReact.configs.flat.recommended,
   {
+    plugins: {
+      'jsx-a11y': jsxA11y,
+    },
     rules: {
       "@typescript-eslint/ban-ts-comment": "off",
       "@typescript-eslint/no-non-null-asserted-optional-chain": "off",
@@ -27,11 +30,9 @@ export default [
       "@typescript-eslint/no-unused-vars": "off",
       "no-empty-pattern": "off",
       "no-empty": "off",
-      "no-var": "off",
       "no-unsafe-optional-chaining": "off",
       "no-useless-escape": "off",
       "prefer-const": "off",
-      "react/jsx-key": "off",
       "react/no-unescaped-entities": "off",
     }
   }

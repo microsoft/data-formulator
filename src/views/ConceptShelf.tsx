@@ -142,7 +142,9 @@ export const ConceptShelf: FC<ConceptShelfProps> = function ConceptShelf() {
                         <OperatorCard operator="bin" />
                     </Box>
                     {groupNames.map(gp => [
-                        <Box sx={{display: "block", width: "100%"}}>
+                        <Box 
+                            key={`concept-group-${gp}`}
+                            sx={{display: "block", width: "100%"}}>
                             <Divider orientation="horizontal" textAlign="left"><Typography component="h2" sx={{fontSize: "10px"}} color="text.secondary">
                                 {gp}
                             </Typography></Divider>

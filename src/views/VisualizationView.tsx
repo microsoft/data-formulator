@@ -546,7 +546,7 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
             }}>{codeExpl}</MuiMarkdown>
 
     let focusedComponent = [];
-    if (Boolean(candidatesViewAnchorEl)) {
+    if (candidatesViewAnchorEl) {
         focusedComponent = [
             //chartActionItems,
             <Box key="derived-dialog" sx={{ margin: "16px", display: "flex", flexDirection: "column", flex: "1", justifyContent: 'flex-start'}}>
@@ -663,7 +663,9 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
         </Box>,
         // <EncodingShelf key='encoding-shelf' synthesisRunning={synthesisRunning} chartId={chart.id} 
         //                handleUpdateCandidates={handleUpdateCandidates} handleSetSynthesisStatus={handleSetSynthesisStatus} />
-        <Collapse collapsedSize={48} in={!collapseEditor} orientation='horizontal' 
+        <Collapse 
+            key='encoding-shelf'
+            collapsedSize={48} in={!collapseEditor} orientation='horizontal' 
             sx={{position: 'relative'}}>
             <Box sx={{display: 'flex', flexDirection: 'row', height: '100%'}}>
                 <Tooltip placement="left" title={collapseEditor ? "open editor" : "hide editor"}>
@@ -675,7 +677,6 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
                 <EncodingShelfThread key='encoding-shelf' chartId={focusedChart.id} />
             </Box>
         </Collapse>,
-        
     ]
 
     let [scaleMin, scaleMax] = [0.2, 2.4]

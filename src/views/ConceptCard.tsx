@@ -622,6 +622,7 @@ export const DerivedConceptForm: FC<ConceptFormProps> = function DerivedConceptF
                             console.log(conceptShelfItems.find(f => f.id == conceptID)?.source)
                             let chipColor = conceptShelfItems.find(f => f.id == conceptID)?.source == "original" ? theme.palette.primary.light : theme.palette.custom.main;
                             return <Chip 
+                                key={conceptID}
                                 variant="outlined" size="small" 
                                 // color={}
                                 sx={{ 
