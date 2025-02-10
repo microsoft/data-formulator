@@ -145,7 +145,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
         <TableCell align="left" >
             <TextField fullWidth size="small" type={showKeys ? "text" : "password"} 
                 InputProps={{ style: { fontSize: "0.875rem" } }} 
-                placeholder='leave bank if using keyless access'
+                placeholder='leave blank if using keyless access'
                 value={newKey}  onChange={(event: any) => { setNewKey(event.target.value); }} 
                 autoComplete='off'/>
         </TableCell>
