@@ -56,7 +56,7 @@ Play with Data Formulator with one of the following options:
   # start data_formulator
   data_formulator 
   
-  # alternatively, you can run data formualtor with this command
+  # alternatively, you can run data formulator with this command
   python -m data_formulator
   ```
 
