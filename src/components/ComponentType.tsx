@@ -63,7 +63,7 @@ export interface DictTable {
         codeExpl: string,
         dialog: any[], // the log of how the data is derived with gpt (the GPT conversation log)
         // tracks how this derivation is triggered, as we as user instruction used to do the formulation,
-        // there is a subtle difference between trigger and source, trigger identifies the occassion when the derivision is called,
+        // there is a subtle difference between trigger and source, trigger identifies the occasion when the derivision is called,
         // source specifies how the deriviation is done from the source tables, they may be the same, but not necessarily
         // in fact, right now dict tables are all triggered from charts
         trigger: Trigger,
