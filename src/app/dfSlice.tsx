@@ -257,7 +257,7 @@ export const dataFormulatorSlice = createSlice({
             let savedState = action.payload;
 
             state.models = savedState.models;
-            state.selectedModelId = state.models.length > 0 ? state.models[0].id : undefined;
+            state.selectedModelId = savedState.selectedModelId;
             state.testedModels = []; // models should be tested again
 
             //state.table = undefined;

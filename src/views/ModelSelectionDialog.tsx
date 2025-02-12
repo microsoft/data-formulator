@@ -77,17 +77,11 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
     const [showKeys, setShowKeys] = useState<boolean>(false);
     const [tempSelectedModelId, setTempSelectedModeId] = useState<string | undefined >(selectedModelId);
 
-    console.log("--------------------------------");
-    console.log("models", models);
-    console.log("selectedModelId", selectedModelId);
-    console.log("tempSelectedModelId", tempSelectedModelId);
-    console.log("testedModels", testedModels);
-
     let updateModelStatus = (model: ModelConfig, status: 'ok' | 'error' | 'testing' | 'unknown', message: string) => {
         dispatch(dfActions.updateModelStatus({id: model.id, status, message}));
     }
-    let getStatus = (id: string) => {
-        return testedModels.find(t => (t.id == id))?.status || 'unknown';
+    let getStatus = (id: string | undefined) => {
+        return id != undefined ? (testedModels.find(t => (t.id == id))?.status || 'unknown') : 'unknown';
     }
 
     const [newEndpoint, setNewEndpoint] = useState<string>(""); // openai, azure, ollama etc
@@ -97,7 +91,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
     const [newApiVersion, setNewApiVersion] = useState<string | undefined>(undefined);
 
     useEffect(() => {
-        if (newEndpoint == 'ollama' ) {
+        if (newEndpoint == 'ollama') {
             if (!newApiBase) {
                 setNewApiBase('http://localhost:11434');
             }
@@ -142,7 +136,10 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
     let newModelEntry = <TableRow
         key={`new-model-entry`}
         sx={{ '&:last-child td, &:last-child th': { border: 0 }, padding: "6px 6px" }}
-        onClick={() => {setTempSelectedModeId(undefined)}}
+        onClick={(event) => {
+            event.stopPropagation();
+            setTempSelectedModeId(undefined);
+        }}
     >
         <TableCell align="right">
             <Radio checked={tempSelectedModelId == undefined} name="radio-buttons" inputProps={{'aria-label': 'Select this model'}}/>
@@ -205,7 +202,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                 freeSolo
                 onChange={(event: any, newValue: string | null) => { setNewModel(newValue || ""); }}
                 value={newModel}
-                options={['gpt-4o-mini', 'gpt-4o', 'claude-3-5-sonnet-20241022', 'codellama']}
+                options={['gpt-4o-mini', 'gpt-4o', 'claude-3-5-sonnet-20241022']}
                 renderOption={(props, option) => {
                     return <Typography {...props} onClick={()=>{ setNewModel(option); }} sx={{fontSize: "small"}}>{option}</Typography>
                 }}
@@ -260,28 +257,33 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                     disabled={!readyToTest}
                     sx={{cursor: modelExists ? 'help' : 'pointer'}}
                     onClick={(event) => {
-                        if (modelExists) {
-                            return
-                        }
-                        let endpoint = newEndpoint;
                         event.stopPropagation()
+
+                        console.log("checkpont 1")
+
+                        let endpoint = newEndpoint;
 
                         let id = `${endpoint}-${newModel}-${newApiKey}-${newApiBase}-${newApiVersion}`;
 
                         let model = {endpoint, model: newModel, api_key: newApiKey, api_base: newApiBase, api_version: newApiVersion, id: id};
 
+                        console.log("checkpont 2")
+
                         dispatch(dfActions.addModel(model));
                         dispatch(dfActions.selectModel(id));
                         setTempSelectedModeId(id);
+
+                        console.log("checkpont 3")
 
                         testModel(model); 
                         
                         setNewEndpoint("");
                         setNewModel("");
-
                         setNewApiKey(undefined);
                         setNewApiBase(undefined);
                         setNewApiVersion(undefined);
+
+                        console.log("checkpont 4")
                     }}>
                     <AddCircleIcon />
                 </IconButton>
@@ -434,7 +436,15 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                 {selectedModelId ? `Model: ${(models.find(m => m.id == selectedModelId) as any)?.model}` : 'Select A Model'}
             </Button>
         </Tooltip>
-        <Dialog maxWidth="lg" onClose={()=>{setModelDialogOpen(false)}} open={modelDialogOpen}>
+        <Dialog 
+            maxWidth="lg" 
+            open={modelDialogOpen}
+            onClose={(event, reason) => {
+                if (reason !== 'backdropClick') {
+                    setModelDialogOpen(false);
+                }
+            }}
+        >
             <DialogTitle sx={{display: "flex",  alignItems: "center"}}>Select Model</DialogTitle>
             <DialogContent >
                 {modelTable}
@@ -444,7 +454,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                     setShowKeys(!showKeys);}}>
                         {showKeys ? 'hide' : 'show'} keys
                 </Button>
-                <Button disabled={!(tempSelectedModelId != undefined && getStatus(tempSelectedModelId) == 'ok')} 
+                <Button disabled={getStatus(tempSelectedModelId) !== 'ok'} 
                     variant={(selectedModelId == tempSelectedModelId) ? 'text' : 'contained'}
                     onClick={()=>{
                         dispatch(dfActions.selectModel(tempSelectedModelId));
