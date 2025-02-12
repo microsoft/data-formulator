@@ -20,6 +20,8 @@ import threading
 
 from flask_cors import CORS
 
+import logging
+
 import json
 import time
 from pathlib import Path
@@ -41,16 +43,37 @@ from dotenv import load_dotenv
 
 APP_ROOT = Path(os.path.join(Path(__file__).parent)).absolute()
 
+import os
+
+app = Flask(__name__, static_url_path='', static_folder=os.path.join(APP_ROOT, "dist"))
+CORS(app)
+
 print(APP_ROOT)
 
 # Load the single environment file
 load_dotenv(os.path.join(APP_ROOT, "..", "..", 'api-keys.env'))
 load_dotenv(os.path.join(APP_ROOT, 'api-keys.env'))
 
-import os
+# Configure root logger for general application logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[logging.StreamHandler(sys.stdout)]
+)
 
-app = Flask(__name__, static_url_path='', static_folder=os.path.join(APP_ROOT, "dist"))
-CORS(app)
+# Get logger for this module
+logger = logging.getLogger(__name__)
+
+# Configure Flask app logger to use the same settings
+app.logger.handlers = []
+for handler in logging.getLogger().handlers:
+    app.logger.addHandler(handler)
+
+# Example usage:
+logger.info("Application level log")  # General application logging
+app.logger.info("Flask specific log") # Web request related logging
+
+
 
 def get_client(model_config):
     for key in model_config:

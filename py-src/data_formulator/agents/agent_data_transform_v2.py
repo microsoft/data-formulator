@@ -2,6 +2,7 @@
 # Licensed under the MIT License.
 
 import json
+import sys
 
 from data_formulator.agents.agent_utils import extract_json_objects, generate_data_summary, extract_code_from_gpt_response
 import data_formulator.py_sandbox as py_sandbox
@@ -10,6 +11,7 @@ import traceback
 
 import logging
 
+# Replace/update the logger configuration
 logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = '''You are a data scientist to help user to transform data that will be used for visualization.
@@ -207,8 +209,8 @@ class DataTransformationAgentV2(object):
         
         candidates = []
         for choice in response.choices:
-            print("\n=== Data transformation result ===>\n")
-            print(choice.message.content + "\n")
+            logger.info("=== Data transformation result ===>")
+            logger.info(choice.message.content + "\n")
             
             json_blocks = extract_json_objects(choice.message.content + "\n")
             if len(json_blocks) > 0:
@@ -218,8 +220,8 @@ class DataTransformationAgentV2(object):
 
             code_blocks = extract_code_from_gpt_response(choice.message.content + "\n", "python")
 
-            print("\n=== Code blocks ===>\n")
-            print(code_blocks)
+            logger.info("=== Code blocks ===>")
+            logger.info(code_blocks)
 
             if len(code_blocks) > 0:
                 code_str = code_blocks[-1]
@@ -246,8 +248,8 @@ class DataTransformationAgentV2(object):
             result['refined_goal'] = refined_goal
             candidates.append(result)
 
-        print("\n=== Candidates ===>\n")
-        print(candidates)
+        logger.info("=== Candidates ===>")
+        logger.info(candidates)
 
         return candidates
 

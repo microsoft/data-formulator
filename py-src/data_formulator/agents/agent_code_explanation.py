@@ -83,7 +83,6 @@ class CodeExplanationAgent(object):
         ###### the part that calls open_ai
         response = self.client.get_completion(messages = messages)
         
-        logger.info('\n=== explanation output ===>\n')
-        logger.info(response.choices[0].message.content)
+        logger.info(f"=== explanation output ===>\n{response.choices[0].message.content}\n")
         
         return response.choices[0].message.content
