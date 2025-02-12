@@ -33,7 +33,8 @@ dependencies = [
     "azure-identity",  
     "azure-keyvault-secrets",  
     "python-dotenv",  
-    "vega_datasets"
+    "vega_datasets",
+    "litellm"
 ]
 
 [project.urls]
