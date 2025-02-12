@@ -1,7 +1,3 @@
-
-// Copyright (c) Microsoft Corporation.
-// Licensed under the MIT License.
-
 import React, { useState } from 'react';
 import '../scss/App.scss';
 
@@ -132,6 +128,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                 >
                     <MenuItem sx={{fontSize: '0.875rem' }} value="openai">openai</MenuItem>
                     <MenuItem sx={{fontSize: '0.875rem' }} value="azureopenai">azure openai</MenuItem>
+                    <MenuItem sx={{fontSize: '0.875rem' }} value="ollama">ollama</MenuItem>
                 </Select>
             </FormControl>
         </TableCell>
@@ -254,7 +251,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                                 <Radio checked={isItemSelected} name="radio-buttons" inputProps={{'aria-label': 'Select this model'}} />
                             </TableCell>
                             <TableCell align="left" sx={{ borderBottom: noBorderStyle }}>
-                                {oaiModel.endpoint == 'openai' ? 'openai' : 'azure openai'}
+                                {oaiModel.endpoint == 'openai' ? 'openai' : (oaiModel.endpoint.includes('ollama') ? 'ollama' : 'azure openai')}
                             </TableCell>
                             <TableCell component="th" scope="row" sx={{ borderBottom: borderStyle }}>
                                 {oaiModel.endpoint}

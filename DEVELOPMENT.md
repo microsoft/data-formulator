@@ -84,6 +84,23 @@ How to set up your local machine.
 
     Open [http://localhost:5000](http://localhost:5000) to view it in the browser.
 
+## Third-Party LLM Endpoints
+
+To use third-party LLM endpoints, such as Ollama, follow these steps:
+
+1. **Set Environment Variables**  
+    Set the following environment variables to configure the third-party LLM endpoint:
+    ```bash
+    export LLM_ENDPOINT="http://localhost:11434"  # Example for Ollama
+    export LLM_MODEL="llama2"  # Default model
+    export LLM_API_KEY=""  # API key if required
+    ```
+
+2. **Update `client_utils.py`**  
+    Ensure that the `get_client` function in `py-src/data_formulator/agents/client_utils.py` is updated to handle third-party LLM endpoints using LiteLLM.
+
+3. **Frontend Configuration**  
+    Update the frontend UI in `src/views/ModelSelectionDialog.tsx` to provide options for third-party LLM endpoints.
 
 ## Usage
 See the [Usage section on the README.md page](README.md#usage).
