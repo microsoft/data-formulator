@@ -167,9 +167,8 @@ Derive average grade from writing, reading, math, grade should be A, B, C, D, F
 
 class ConceptDeriveAgent(object):
 
-    def __init__(self, client, model):
+    def __init__(self, client):
         self.client = client
-        self.model = model
 
     def run(self, input_table, input_fields, output_field, description, n=1):
         """derive a new concept based on input table, input fields, and output field name, (and description)
@@ -190,9 +189,7 @@ class ConceptDeriveAgent(object):
                     {"role":"user","content": user_query}]
         
         ###### the part that calls open_ai
-        response = self.client.chat.completions.create(
-            model=self.model, messages = messages, temperature=0.7, max_tokens=1200,
-            top_p=0.95, n=n, frequency_penalty=0, presence_penalty=0, stop=None)
+        response = self.client.get_completion(messages = messages)
 
         #log = {'messages': messages, 'response': response.model_dump(mode='json')}
 

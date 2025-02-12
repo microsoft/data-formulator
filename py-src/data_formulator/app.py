@@ -35,7 +35,7 @@ from data_formulator.agents.agent_data_load import DataLoadAgent
 from data_formulator.agents.agent_data_clean import DataCleanAgent
 from data_formulator.agents.agent_code_explanation import CodeExplanationAgent
 
-from data_formulator.agents.client_utils import get_client
+from data_formulator.agents.client_utils import Client
 
 from dotenv import load_dotenv
 
@@ -52,6 +52,19 @@ import os
 
 app = Flask(__name__, static_url_path='', static_folder=os.path.join(APP_ROOT, "dist"))
 CORS(app)
+
+def get_client(model_config):
+    for key in model_config:
+        model_config[key] = html.escape(model_config[key].strip())
+
+    client = Client(
+        model_config["endpoint"],
+        model_config["model"],
+        model_config["api_key"] if "api_key" in model_config else None,
+        model_config["api_base"] if "api_base" in model_config else None,
+        model_config["api_version"] if "api_version" in model_config else None)
+
+    return client
 
 @app.route('/vega-datasets')
 def get_example_dataset_list():
@@ -125,13 +138,18 @@ def check_available_models():
     if os.getenv("ENDPOINT") is None:
         return json.dumps(results)
 
-    client = get_client(os.getenv("ENDPOINT"), "")
+    endpoint = os.getenv("ENDPOINT")
     models = [model.strip() for model in os.getenv("MODELS").split(',')]
+    api_base = os.getenv("API_BASE")
+
+    print("endpoint", endpoint)
+    print("models", models)
+    print("api_base", api_base)
 
     for model in models:
         try:
-            response = client.chat.completions.create(
-                model=model,
+            client = Client(endpoint, model, api_key=None, api_base=api_base, api_version=None)
+            response = client.get_completion(
                 messages=[
                     {"role": "system", "content": "You are a helpful assistant."},
                     {"role": "user", "content": "Respond 'I can hear you.' if you can hear me. Do not say anything other than 'I can hear you.'"},
@@ -143,12 +161,15 @@ def check_available_models():
 
             if "I can hear you." in response.choices[0].message.content:
                 results.append({
+                    "id": f"default-{model}",
                     "endpoint": "default",
                     "key": "",
                     "model": model
                 })
-        except:
-            pass
+        except Exception as e:
+            print(f"Error: {e}")
+            error_message = str(e)
+
 
     return json.dumps(results)
 
@@ -158,31 +179,27 @@ def test_model():
     if request.is_json:
         app.logger.info("# code query: ")
         content = request.get_json()
-        endpoint = html.escape(content['endpoint'].strip())
-        key = html.escape(f"{content['key']}".strip())
 
+        # contains endpoint, key, model, api_base, api_version
+        print("content------------------------------")
         print(content)
 
-        client = get_client(endpoint, key)
-        model = html.escape(content['model'].strip())
+        client = get_client(content['model'])
 
         try:
-            response = client.chat.completions.create(
-                model=model,
+            response = client.get_completion(
                 messages=[
                     {"role": "system", "content": "You are a helpful assistant."},
                     {"role": "user", "content": "Respond 'I can hear you.' if you can hear me. Do not say anything other than 'I can hear you.'"},
                 ]
             )
 
-            print(f"model: {model}")
+            print(f"model: {content['model']}")
             print(f"welcome message: {response.choices[0].message.content}")
 
             if "I can hear you." in response.choices[0].message.content:
                 result = {
-                    "endpoint": endpoint,
-                    "key": key,
-                    "model": model,
+                    "model": content['model'],
                     "status": 'ok',
                     "message": ""
                 }
@@ -190,14 +207,12 @@ def test_model():
             print(f"Error: {e}")
             error_message = str(e)
             result = {
-                "endpoint": endpoint,
-                "key": key,
-                "model": model,
+                "model": content['model'],
                 "status": 'error',
                 "message": error_message,
             }
     else:
-        {'status': 'error'}
+        result = {'status': 'error'}
     
     return json.dumps(result)
 
@@ -269,11 +284,11 @@ def process_data_on_load_request():
         content = request.get_json()
         token = content["token"]
 
-        client = get_client(content['model']['endpoint'], content['model']['key'])
-        model = content['model']['model']
+        client = get_client(content['model'])
+
         app.logger.info(f" model: {content['model']}")
         
-        agent = DataLoadAgent(client=client, model=model)
+        agent = DataLoadAgent(client=client)
         candidates = agent.run(content["input_data"])
         
         candidates = [c['content'] for c in candidates if c['status'] == 'ok']
@@ -294,11 +309,10 @@ def derive_concept_request():
         content = request.get_json()
         token = content["token"]
 
-        client = get_client(content['model']['endpoint'], content['model']['key'])
-        model = content['model']['model']
+        client = get_client(content['model'])
+
         app.logger.info(f" model: {content['model']}")
-        
-        agent = ConceptDeriveAgent(client=client, model=model)
+        agent = ConceptDeriveAgent(client=client)
 
         #print(content["input_data"])
 
@@ -323,12 +337,11 @@ def clean_data_request():
         content = request.get_json()
         token = content["token"]
 
-        client = get_client(content['model']['endpoint'], content['model']['key'])
-        model = content['model']['model']
+        client = get_client(content['model'])
 
         app.logger.info(f" model: {content['model']}")
         
-        agent = DataCleanAgent(client=client, model=model)
+        agent = DataCleanAgent(client=client)
 
         candidates = agent.run(content['content_type'], content["raw_data"], content["image_cleaning_instruction"])
         
@@ -350,11 +363,9 @@ def sort_data_request():
         content = request.get_json()
         token = content["token"]
 
-        client = get_client(content['model']['endpoint'], content['model']['key'])
-        model = content['model']['model']
-        app.logger.info(f" model: {content['model']}")
+        client = get_client(content['model'])
 
-        agent = SortDataAgent(client=client, model=model)
+        agent = SortDataAgent(client=client)
         candidates = agent.run(content['field'], content['items'])
 
         #candidates, dialog = limbo_concept.call_codex_sort(content["items"], content["field"])
@@ -375,9 +386,7 @@ def derive_data():
         content = request.get_json()        
         token = content["token"]
 
-        client = get_client(content['model']['endpoint'], content['model']['key'])
-        model = content['model']['model']
-        app.logger.info(f" model: {content['model']}")
+        client = get_client(content['model'])
 
         # each table is a dict with {"name": xxx, "rows": [...]}
         input_tables = content["input_tables"]
@@ -394,10 +403,10 @@ def derive_data():
 
         if mode == "recommendation":
             # now it's in recommendation mode
-            agent = DataRecAgent(client, model)
+            agent = DataRecAgent(client=client)
             results = agent.run(input_tables, instruction)
         else:
-            agent = DataTransformationAgentV2(client=client, model=model)
+            agent = DataTransformationAgentV2(client=client)
             results = agent.run(input_tables, instruction, [field['name'] for field in new_fields])
 
         repair_attempts = 0
@@ -429,9 +438,7 @@ def refine_data():
         content = request.get_json()        
         token = content["token"]
 
-        client = get_client(content['model']['endpoint'], content['model']['key'])
-        model = content['model']['model']
-        app.logger.info(f" model: {content['model']}")
+        client = get_client(content['model'])
 
         # each table is a dict with {"name": xxx, "rows": [...]}
         input_tables = content["input_tables"]
@@ -443,7 +450,7 @@ def refine_data():
         print(dialog)
 
         # always resort to the data transform agent       
-        agent = DataTransformationAgentV2(client, model=model)
+        agent = DataTransformationAgentV2(client=client)
         results = agent.followup(input_tables, dialog, [field['name'] for field in output_fields], new_instruction)
 
         repair_attempts = 0
@@ -469,15 +476,13 @@ def request_code_expl():
         content = request.get_json()        
         token = content["token"]
 
-        client = get_client(content['model']['endpoint'], content['model']['key'])
-        model = content['model']['model']
-        app.logger.info(f" model: {content['model']}")
+        client = get_client(content['model'])
 
         # each table is a dict with {"name": xxx, "rows": [...]}
         input_tables = content["input_tables"]
         code = content["code"]
         
-        code_expl_agent = CodeExplanationAgent(client=client, model=model)
+        code_expl_agent = CodeExplanationAgent(client=client)
         expl = code_expl_agent.run(input_tables, code)
     else:
         expl = ""

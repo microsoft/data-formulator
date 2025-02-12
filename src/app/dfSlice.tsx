@@ -26,12 +26,21 @@ export const generateFreshChart = (tableRef: string, chartType?: string) : Chart
     }
 }
 
+export interface ModelConfig {
+    id: string; // unique identifier for the model / client combination
+    endpoint: string;
+    model: string;
+    api_key?: string;
+    api_base?: string;
+    api_version?: string;
+}
+
 // Define a type for the slice state
 export interface DataFormulatorState {
 
-    oaiModels: {endpoint: string, key: string, model: string }[];
-    selectedModel: {endpoint: string, model: string}  | undefined;
-    testedModels: {endpoint: string, model: string, status: 'ok' | 'error' | 'testing' | 'unknown', message: string}[];
+    models: ModelConfig[];
+    selectedModelId: string | undefined;
+    testedModels: {id: string, status: 'ok' | 'error' | 'testing' | 'unknown', message: string}[];
 
     tables : DictTable[];
     charts: Chart[];
@@ -63,8 +72,8 @@ export interface DataFormulatorState {
 // Define the initial state using that type
 const initialState: DataFormulatorState = {
 
-    oaiModels: [],
-    selectedModel: undefined,
+    models: [],
+    selectedModelId: undefined,
     testedModels: [],
 
     tables: [],
@@ -222,7 +231,7 @@ export const dataFormulatorSlice = createSlice({
             
             // avoid resetting inputted models
             // state.oaiModels = state.oaiModels.filter((m: any) => m.endpoint != 'default');
-            state.selectedModel = state.oaiModels.length > 0 ? state.oaiModels[0] : undefined;
+            state.selectedModelId = state.models.length > 0 ? state.models[0].id : undefined;
             state.testedModels = [];
 
             state.tables = [];
@@ -247,8 +256,8 @@ export const dataFormulatorSlice = createSlice({
 
             let savedState = action.payload;
 
-            state.oaiModels = savedState.oaiModels.filter((m: any) => m.endpoint != 'default');
-            state.selectedModel = state.oaiModels.length > 0 ? state.oaiModels[0] : undefined;
+            state.models = savedState.models.filter((m: any) => m.endpoint != 'default');
+            state.selectedModelId = state.models.length > 0 ? state.models[0].id : undefined;
             state.testedModels = []; // models should be tested again
 
             //state.table = undefined;
@@ -274,25 +283,27 @@ export const dataFormulatorSlice = createSlice({
         toggleBetaMode: (state, action: PayloadAction<boolean>) => {
             state.betaMode = action.payload;
         },
-        selectModel: (state, action: PayloadAction<{model: string, endpoint: string}>) => {
-            state.selectedModel = action.payload;
+        selectModel: (state, action: PayloadAction<string | undefined>) => {
+            state.selectedModelId = action.payload;
         },
-        addModel: (state, action: PayloadAction<{model: string, key: string, endpoint: string}>) => {
-            state.oaiModels = [...state.oaiModels, action.payload];
+        addModel: (state, action: PayloadAction<ModelConfig>) => {
+            state.models = [...state.models, action.payload];
         },
-        removeModel: (state, action: PayloadAction<{model: string, endpoint: string}>) => {
-            let model = action.payload.model;
-            let endpoint = action.payload.endpoint;
-            state.oaiModels = state.oaiModels.filter(oaiModel => oaiModel.model != model || oaiModel.endpoint != endpoint );
-            state.testedModels = state.testedModels.filter(m => !(m.model == model && m.endpoint == endpoint));
+        removeModel: (state, action: PayloadAction<string>) => {
+            state.models = state.models.filter(model => model.id != action.payload);
+            if (state.selectedModelId == action.payload) {
+                state.selectedModelId = undefined;
+            }
         },
-        updateModelStatus: (state, action: PayloadAction<{model: string, endpoint: string, status: 'ok' | 'error' | 'testing' | 'unknown', message: string}>) => {
-            let model = action.payload.model;
-            let endpoint = action.payload.endpoint;
+        updateModelStatus: (state, action: PayloadAction<{id: string, status: 'ok' | 'error' | 'testing' | 'unknown', message: string}>) => {
+            let id = action.payload.id;
             let status = action.payload.status;
             let message = action.payload.message;
             
-            state.testedModels = [...state.testedModels.filter(t => !(t.model == model && t.endpoint == endpoint)), {model, endpoint, status, message} ]
+            state.testedModels = [
+                ...state.testedModels.filter(t => t.id != id), 
+                {id: id, status, message}
+            ];
         },
         addTable: (state, action: PayloadAction<DictTable>) => {
             let table = action.payload;
@@ -640,17 +651,19 @@ export const dataFormulatorSlice = createSlice({
         })
         .addCase(fetchAvailableModels.fulfilled, (state, action) => {
             let defaultModels = action.payload;
-            state.oaiModels = [...defaultModels, ...state.oaiModels.filter(e => !defaultModels.map((m: any) => m.endpoint).includes(e.endpoint))];
-            console.log(state.oaiModels)
+            state.models = [...defaultModels, ...state.models.filter(e => !defaultModels.map((m: any) => m.endpoint).includes(e.endpoint))];
             
-            state.testedModels = [...state.testedModels.filter(t => !(t.endpoint == 'default')), 
-                                    ...defaultModels.map((m: any) => {return {endpoint: m.endpoint, model: m.model, status: 'ok'}}) ]
+            console.log("defaultModels", defaultModels);
+            console.log("state.models", state.models);
+            console.log("state.testedModels", state.testedModels);
 
-            if (state.selectedModel == undefined && defaultModels.length > 0) {
-                state.selectedModel = {
-                    model: defaultModels[0].model,
-                    endpoint: defaultModels[0].endpoint
-                }
+            state.testedModels = [ 
+                ...defaultModels.map((m: any) => {return {id: `default-${m.model}`, status: 'ok'}}) ,
+                ...state.testedModels.filter(t => !defaultModels.map((m: any) => m.endpoint).includes(t.id))
+            ]
+
+            if (state.selectedModelId == undefined && defaultModels.length > 0) {
+                state.selectedModelId = defaultModels[0].id;
             }
             
             console.log("fetched models");
@@ -670,11 +683,10 @@ export const dataFormulatorSlice = createSlice({
 })
 
 export const dfSelectors = {
-    getActiveModel: (state: DataFormulatorState) => {
-        return state.oaiModels.find(m => m.endpoint == state.selectedModel?.endpoint && m.model == state.selectedModel.model) || {'endpoint': 'default', model: 'gpt-4o', key: ""}
+    getActiveModel: (state: DataFormulatorState) : ModelConfig => {
+        return state.models.find(m => m.id == state.selectedModelId) || {'endpoint': 'default', model: 'gpt-4o', id: 'default-gpt-4o'}
     }
 }
-
 
 // derived field: extra all field items from the table
 export const getDataFieldItems = (baseTable: DictTable): FieldItem[] => {

@@ -125,9 +125,8 @@ def filter_row(row, df):
 
 class DataFilterAgent(object):
 
-    def __init__(self, client, model):
+    def __init__(self, client):
         self.client = client
-        self.model = model
 
     def process_gpt_result(self, input_table, response, messages):
         #log = {'messages': messages, 'response': response.model_dump(mode='json')}
@@ -177,9 +176,7 @@ class DataFilterAgent(object):
                     {"role":"user","content": user_query}]
         
         ###### the part that calls open_ai
-        response = self.client.chat.completions.create(
-            model=self.model, messages = messages, temperature=0.7, max_tokens=1200,
-            top_p=0.95, n=1, frequency_penalty=0, presence_penalty=0, stop=None)
+        response = self.client.get_completion(messages = messages)
 
         return self.process_gpt_result(input_table, response, messages)
 
@@ -190,8 +187,6 @@ class DataFilterAgent(object):
                               "content": new_instruction + '\nupdate the filter function accordingly'}]
 
         ##### the part that calls open_ai
-        response = self.client.chat.completions.create(
-            model=self.model, messages=messages, temperature=0.7, max_tokens=1200,
-            top_p=0.95, n=n, frequency_penalty=0, presence_penalty=0, stop=None)
+        response = self.client.get_completion(messages = messages)
 
         return self.process_gpt_result(input_table, response, messages)

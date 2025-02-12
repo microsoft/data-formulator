@@ -178,12 +178,10 @@ def transform_data(df):
 ```
 '''
 
-def completion_response_wrapper(client, model, messages, n):
+def completion_response_wrapper(client, messages, n):
     ### wrapper for completion response, especially handling errors
     try:
-        response = client.chat.completions.create(
-                model=model, messages=messages, temperature=0.7, max_tokens=1200,
-                top_p=0.95, n=n, frequency_penalty=0, presence_penalty=0, stop=None)
+        response = client.get_completion(messages = messages)
     except Exception as e:
         response = e
 
@@ -192,9 +190,8 @@ def completion_response_wrapper(client, model, messages, n):
 
 class DataTransformationAgentV2(object):
 
-    def __init__(self, client, model, system_prompt=None):
+    def __init__(self, client, system_prompt=None):
         self.client = client
-        self.model = model
         self.system_prompt = system_prompt if system_prompt is not None else SYSTEM_PROMPT
 
     def process_gpt_response(self, input_tables, messages, response):
@@ -265,7 +262,7 @@ class DataTransformationAgentV2(object):
         messages = [{"role":"system", "content": self.system_prompt},
                     {"role":"user","content": user_query}]
         
-        response = completion_response_wrapper(self.client, self.model, messages, n)
+        response = completion_response_wrapper(self.client, messages, n)
 
         return self.process_gpt_response(input_tables, messages, response)
         
@@ -287,6 +284,6 @@ class DataTransformationAgentV2(object):
         messages = [*updated_dialog, {"role":"user", 
                               "content": f"Update the code above based on the following instruction:\n\n{json.dumps(goal, indent=4)}"}]
 
-        response = completion_response_wrapper(self.client, self.model, messages, n)
+        response = completion_response_wrapper(self.client, messages, n)
 
         return self.process_gpt_response(input_tables, messages, response)

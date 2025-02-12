@@ -126,9 +126,8 @@ def transform_data(df):
 
 class DataRecAgent(object):
 
-    def __init__(self, client, model, system_prompt=None):
+    def __init__(self, client, system_prompt=None):
         self.client = client
-        self.model = model
         self.system_prompt = system_prompt if system_prompt is not None else SYSTEM_PROMPT
 
     def process_gpt_response(self, input_tables, messages, response):
@@ -192,7 +191,7 @@ class DataRecAgent(object):
         messages = [{"role":"system", "content": self.system_prompt},
                     {"role":"user","content": user_query}]
         
-        response = completion_response_wrapper(self.client, self.model, messages, n)
+        response = completion_response_wrapper(self.client, messages, n)
         
         return self.process_gpt_response(input_tables, messages, response)
         
@@ -204,7 +203,6 @@ class DataRecAgent(object):
 
         messages = [*dialog, {"role":"user", "content": f"Update: \n\n{new_instruction}"}]
 
-        ##### the part that calls open_ai
-        response = completion_response_wrapper(self.client, self.model, messages, n)
+        response = completion_response_wrapper(self.client, messages, n)
 
         return self.process_gpt_response(input_tables, messages, response)
