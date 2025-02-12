@@ -22,6 +22,11 @@ Transform data and create rich visualizations iteratively with AI 🪄. Try Data
 
 ## News 🔥🔥🔥
 
+- [02-12-2025] Run Data Formulator with different models (powered by [LiteLLM](https://github.com/BerriAI/litellm))!
+  - You can now run Data Formulator with different models by specifying the model in the model selection dialog.
+  - We have tested with OpenAI, Azure, Ollama, and Anthropic. Models with good code generation capabilities are recommended (gpt-4o, gpt-4o-mini, claude-3-5-sonnet etc.).
+  - If running locally, you can also save your API keys in the `api-keys.env` file (check `api-keys.env.template` for reference), Data Formulator will automatically load them.
+
 - [11-07-2024] Minor fun update: data visualization challenges!
   - We added a few visualization challenges with the sample datasets. Can you complete them all? [[try them out!]](https://github.com/microsoft/data-formulator/issues/53#issue-2641841252)
   - Comment in the issue when you did, or share your results/questions with others! [[comment here]](https://github.com/microsoft/data-formulator/issues/53)
@@ -77,7 +82,7 @@ Play with Data Formulator with one of the following options:
 
 ## Using Data Formulator
 
-Once you’ve completed the setup using either option, follow these steps to start using Data Formulator:
+Once you've completed the setup using either option, follow these steps to start using Data Formulator:
 
 ### The basics of data visualization
 * Provide OpenAI keys and select a model (GPT-4o suggested) and choose a dataset.
