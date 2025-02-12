@@ -18,8 +18,13 @@ How to set up your local machine.
     ```bash
     pip install -r requirements.txt
     ```
+- **Configure environment variable (optional)s**
+    - copy `api-keys.env.example` to `api-keys.env` and add your API keys.
+    - required fields for different providers are different, please refer to the [LiteLLM setup](https://docs.litellm.ai/docs#litellm-python-sdk) guide for more details.
+        - currently only endpoint, model, api_key, api_base, api_version are supported.
+    - this helps data formulator to automatically load the API keys when you run the app, so you don't need to set the API keys in the app UI.
 
-- **Run**
+- **Run the app**
     - **Windows**
     ```bash
     .\local_server.bat
@@ -27,7 +32,7 @@ How to set up your local machine.
 
     - **Unix-based**
     ```bash
-    .\local_server.sh
+    ./local_server.sh
     ```
 
 ## Frontend (TypeScript)
