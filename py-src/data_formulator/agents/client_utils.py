@@ -10,13 +10,8 @@ class Client(object):
     """
     def __init__(self, endpoint, model, api_key=None,  api_base=None, api_version=None):
         
-        if endpoint == "default":
-            self.endpoint = os.getenv("ENDPOINT", "azure_openai")
-            self.model = model
-            api_base = os.getenv("API_BASE")
-        else:
-            self.endpoint = endpoint
-            self.model = model
+        self.endpoint = endpoint
+        self.model = model
 
         # other params, including temperature, max_completion_tokens, api_base, api_version
         self.params = {
@@ -35,7 +30,7 @@ class Client(object):
                 self.model = model
             else:
                 self.model = f"anthropic/{model}"
-        elif self.endpoint == "azure_openai":
+        elif self.endpoint == "azure":
             self.params["api_base"] = api_base
             self.params["api_version"] = api_version if api_version else "2024-02-15-preview"
             if api_key is None or api_key == "":

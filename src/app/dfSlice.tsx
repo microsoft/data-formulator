@@ -203,7 +203,7 @@ export const fetchCodeExpl = createAsyncThunk(
 export const fetchAvailableModels = createAsyncThunk(
     "dataFormulatorSlice/fetchAvailableModels",
     async () => {
-        console.log(">>> call agent to infer semantic types <<<")
+        console.log(">>> call agent to fetch available models <<<")
         let message = {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', },
@@ -256,7 +256,7 @@ export const dataFormulatorSlice = createSlice({
 
             let savedState = action.payload;
 
-            state.models = savedState.models.filter((m: any) => m.endpoint != 'default');
+            state.models = savedState.models;
             state.selectedModelId = state.models.length > 0 ? state.models[0].id : undefined;
             state.testedModels = []; // models should be tested again
 
@@ -651,23 +651,25 @@ export const dataFormulatorSlice = createSlice({
         })
         .addCase(fetchAvailableModels.fulfilled, (state, action) => {
             let defaultModels = action.payload;
-            state.models = [...defaultModels, ...state.models.filter(e => !defaultModels.map((m: any) => m.endpoint).includes(e.endpoint))];
-            
-            console.log("defaultModels", defaultModels);
-            console.log("state.models", state.models);
-            console.log("state.testedModels", state.testedModels);
 
+            state.models = [
+                ...defaultModels, 
+                ...state.models.filter(e => !defaultModels.map((m: ModelConfig) => m.endpoint).includes(e.endpoint))
+            ];
+            
             state.testedModels = [ 
-                ...defaultModels.map((m: any) => {return {id: `default-${m.model}`, status: 'ok'}}) ,
-                ...state.testedModels.filter(t => !defaultModels.map((m: any) => m.endpoint).includes(t.id))
+                ...defaultModels.map((m: ModelConfig) => {return {id: m.id, status: 'ok'}}) ,
+                ...state.testedModels.filter(t => !defaultModels.map((m: ModelConfig) => m.id).includes(t.id))
             ]
 
             if (state.selectedModelId == undefined && defaultModels.length > 0) {
                 state.selectedModelId = defaultModels[0].id;
             }
-            
-            console.log("fetched models");
-            console.log(action.payload);
+
+            console.log("load model complete");
+            console.log("state.models", state.models);
+            console.log("state.selectedModelId", state.selectedModelId);
+            console.log("state.testedModels", state.testedModels);
         })
         .addCase(fetchCodeExpl.fulfilled, (state, action) => {
             let codeExpl = action.payload;
@@ -684,7 +686,7 @@ export const dataFormulatorSlice = createSlice({
 
 export const dfSelectors = {
     getActiveModel: (state: DataFormulatorState) : ModelConfig => {
-        return state.models.find(m => m.id == state.selectedModelId) || {'endpoint': 'default', model: 'gpt-4o', id: 'default-gpt-4o'}
+        return state.models.find(m => m.id == state.selectedModelId) || state.models[0];
     }
 }
 

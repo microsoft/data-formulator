@@ -43,10 +43,9 @@ APP_ROOT = Path(os.path.join(Path(__file__).parent)).absolute()
 
 print(APP_ROOT)
 
-# try to look for stored openAI keys information from the ROOT dir, 
-# this file might be in one of the two locations
-load_dotenv(os.path.join(APP_ROOT, "..", "..", 'openai-keys.env'))
-load_dotenv(os.path.join(APP_ROOT, 'openai-keys.env'))
+# Load the single environment file
+load_dotenv(os.path.join(APP_ROOT, "..", "..", 'api-keys.env'))
+load_dotenv(os.path.join(APP_ROOT, 'api-keys.env'))
 
 import os
 
@@ -131,46 +130,56 @@ def get_datasets(path):
 
 @app.route('/check-available-models', methods=['GET', 'POST'])
 def check_available_models():
-
     results = []
+    
+    # Define configurations for different providers
+    providers = ['openai', 'azure', 'anthropic', 'gemini', 'ollama']
 
-    # dont need to check if it's empty
-    if os.getenv("ENDPOINT") is None:
-        return json.dumps(results)
+    for provider in providers:
+        # Skip if provider is not enabled
+        if not os.getenv(f"{provider.upper()}_ENABLED", "").lower() == "true":
+            continue
+        
+        api_key = os.getenv(f"{provider.upper()}_API_KEY", "")
+        api_base = os.getenv(f"{provider.upper()}_API_BASE", "")
+        api_version = os.getenv(f"{provider.upper()}_API_VERSION", "")
+        models = os.getenv(f"{provider.upper()}_MODELS", "")
 
-    endpoint = os.getenv("ENDPOINT")
-    models = [model.strip() for model in os.getenv("MODELS").split(',')]
-    api_base = os.getenv("API_BASE")
+        if not (api_key or api_base):
+            continue
 
-    print("endpoint", endpoint)
-    print("models", models)
-    print("api_base", api_base)
+        if not models:
+            continue
 
-    for model in models:
-        try:
-            client = Client(endpoint, model, api_key=None, api_base=api_base, api_version=None)
-            response = client.get_completion(
-                messages=[
-                    {"role": "system", "content": "You are a helpful assistant."},
-                    {"role": "user", "content": "Respond 'I can hear you.' if you can hear me. Do not say anything other than 'I can hear you.'"},
-                ]
-            )
+        # Build config for each model
+        for model in models.split(","):
+            model = model.strip()
+            if not model:
+                continue
 
-            print(f"model: {model}")
-            print(f"welcome message: {response.choices[0].message.content}")
-
-            if "I can hear you." in response.choices[0].message.content:
-                results.append({
-                    "id": f"default-{model}",
-                    "endpoint": "default",
-                    "key": "",
-                    "model": model
-                })
-        except Exception as e:
-            print(f"Error: {e}")
-            error_message = str(e)
-
-
+            model_config = {
+                "id": f"{provider}-{model}-{api_key}-{api_base}-{api_version}",
+                "endpoint": provider,
+                "model": model,
+                "api_key": api_key,
+                "api_base": api_base,
+                "api_version": api_version
+            }
+            
+            try:
+                client = get_client(model_config)
+                response = client.get_completion(
+                    messages=[
+                        {"role": "system", "content": "You are a helpful assistant."},
+                        {"role": "user", "content": "Respond 'I can hear you.' if you can hear me."},
+                    ]
+                )
+                
+                if "I can hear you." in response.choices[0].message.content:
+                    results.append(model_config)
+            except Exception as e:
+                print(f"Error testing {provider} model {model}: {e}")
+                
     return json.dumps(results)
 
 @app.route('/test-model', methods=['GET', 'POST'])

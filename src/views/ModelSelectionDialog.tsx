@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import '../scss/App.scss';
 
 import { useDispatch, useSelector } from "react-redux";
@@ -90,16 +90,16 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
         return testedModels.find(t => (t.id == id))?.status || 'unknown';
     }
 
-    const [newEndpoint, setNewEndpoint] = useState<string>(""); // openai, azure_openai, ollama etc
+    const [newEndpoint, setNewEndpoint] = useState<string>(""); // openai, azure, ollama etc
     const [newModel, setNewModel] = useState<string>("");
     const [newApiKey, setNewApiKey] = useState<string | undefined>(undefined);
     const [newApiBase, setNewApiBase] = useState<string | undefined>(undefined);
     const [newApiVersion, setNewApiVersion] = useState<string | undefined>(undefined);
 
-    let disableApiKey = newEndpoint == "default" || newEndpoint == "" || newEndpoint == "ollama";
-    let disableModel = newEndpoint == "default" || newEndpoint == "";
-    let disableApiBase = newEndpoint != "azure_openai";
-    let disableApiVersion = newEndpoint != "azure_openai";
+    let disableApiKey = newEndpoint == "" || newEndpoint == "ollama";
+    let disableModel = newEndpoint == "";
+    let disableApiBase = newEndpoint != "azure";
+    let disableApiVersion = newEndpoint != "azure";
 
     let modelExists = models.some(m => m.endpoint == newEndpoint && m.model == newModel && m.api_base == newApiBase && m.api_key == newApiKey && m.api_version == newApiVersion);
 
@@ -123,13 +123,10 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
     }
 
     let readyToTest = false;
-    if (newEndpoint != "default") {
-        readyToTest = true;
-    }
     if (newEndpoint == "openai") {
         readyToTest = newModel != "";
     }
-    if (newEndpoint == "azure_openai") {
+    if (newEndpoint == "azure") {
         readyToTest = newModel != "" && newApiBase != "";
     }
     if (newEndpoint == "ollama") {
@@ -153,11 +150,11 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                     if (newModel == "" && newValue == "openai") {
                         setNewModel("gpt-4o");
                     }
-                    if (!newApiVersion && newValue == "azure_openai") {
+                    if (!newApiVersion && newValue == "azure") {
                         setNewApiVersion("2024-02-15");
                     }
                 }}
-                options={['openai', 'azure_openai', 'ollama', 'gemini', 'anthropic']}
+                options={['openai', 'azure', 'ollama', 'gemini', 'anthropic']}
                 renderOption={(props, option) => (
                     <Typography {...props} onClick={() => setNewEndpoint(option)} sx={{fontSize: "0.875rem"}}>
                         {option}
@@ -203,7 +200,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                 disabled={disableModel}
                 onChange={(event: any, newValue: string | null) => { setNewModel(newValue || ""); }}
                 value={newModel}
-                options={['gpt-35-turbo', 'gpt-4', 'gpt-4o', 'llama3.2']}
+                options={['gpt-4o-mini', 'gpt-4', 'llama3.2']}
                 renderOption={(props, option) => {
                     return <Typography {...props} onClick={()=>{ setNewModel(option); }} sx={{fontSize: "small"}}>{option}</Typography>
                 }}
@@ -241,7 +238,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                 value={newApiBase}  onChange={(event: any) => { setNewApiBase(event.target.value); }} 
                 autoComplete='off'
                 disabled={disableApiBase}
-                required={newEndpoint == "azure_openai"}
+                required={newEndpoint == "azure"}
             />
         </TableCell>
         <TableCell align="right">
@@ -419,7 +416,8 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                 {newModelEntry}
                 <TableRow>
                     <TableCell colSpan={8} align="left" sx={{fontSize: "0.625rem"}}>
-                        model configuration based on LiteLLM, check out supported endpoint / model configurations <a href="https://docs.litellm.ai/docs/" target="_blank" rel="noopener noreferrer">here.</a>
+                        Model configuration based on LiteLLM,  <a href="https://docs.litellm.ai/docs/" target="_blank" rel="noopener noreferrer">check out supported endpoint / models here</a>. 
+                        Models with limited code generation capabilities (e.g., llama3.2) may fail frequently to derive new data.
                     </TableCell>
                 </TableRow>
             </TableBody>
