@@ -96,10 +96,23 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
     const [newApiBase, setNewApiBase] = useState<string | undefined>(undefined);
     const [newApiVersion, setNewApiVersion] = useState<string | undefined>(undefined);
 
-    let disableApiKey = newEndpoint == "" || newEndpoint == "ollama";
-    let disableModel = newEndpoint == "";
-    let disableApiBase = newEndpoint != "azure";
-    let disableApiVersion = newEndpoint != "azure";
+    useEffect(() => {
+        if (newEndpoint == 'ollama' ) {
+            if (!newApiBase) {
+                setNewApiBase('http://localhost:11434');
+            }
+        }
+        if (newEndpoint == "openai") {
+            if (!newModel) {
+                setNewModel('gpt-4o');
+            }
+        }
+        if (newEndpoint == "anthropic") {
+            if (!newModel) {
+                setNewModel('claude-3-5-sonnet-20241022');
+            }
+        }
+    }, [newEndpoint]);
 
     let modelExists = models.some(m => m.endpoint == newEndpoint && m.model == newModel && m.api_base == newApiBase && m.api_key == newApiKey && m.api_version == newApiVersion);
 
@@ -122,16 +135,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
             });
     }
 
-    let readyToTest = false;
-    if (newEndpoint == "openai") {
-        readyToTest = newModel != "";
-    }
-    if (newEndpoint == "azure") {
-        readyToTest = newModel != "" && newApiBase != "";
-    }
-    if (newEndpoint == "ollama") {
-        readyToTest = newModel != "";
-    }
+    let readyToTest = newModel && (newApiKey || newApiBase);
 
     let newModelEntry = <TableRow
         key={`new-model-entry`}
@@ -189,24 +193,23 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
             <TextField fullWidth size="small" type={showKeys ? "text" : "password"} 
                 InputProps={{ style: { fontSize: "0.875rem" } }} 
                 placeholder='leave blank if using keyless access'
+                error={newEndpoint != "azure" && !newApiKey}
                 value={newApiKey}  onChange={(event: any) => { setNewApiKey(event.target.value); }} 
                 autoComplete='off'
-                disabled={disableApiKey}
             />
         </TableCell>
         <TableCell align="left">
             <Autocomplete
                 freeSolo
-                disabled={disableModel}
                 onChange={(event: any, newValue: string | null) => { setNewModel(newValue || ""); }}
                 value={newModel}
-                options={['gpt-4o-mini', 'gpt-4', 'llama3.2']}
+                options={['gpt-4o-mini', 'gpt-4o', 'claude-3-5-sonnet-20241022', 'codellama']}
                 renderOption={(props, option) => {
                     return <Typography {...props} onClick={()=>{ setNewModel(option); }} sx={{fontSize: "small"}}>{option}</Typography>
                 }}
                 renderInput={(params) => (
                     <TextField
-                        error={modelExists}
+                        error={newEndpoint != "" && !newModel}
                         {...params}
                         placeholder="model name"
                         InputProps={{ ...params.InputProps, style: { fontSize: "0.875rem" } }}
@@ -234,11 +237,11 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
         <TableCell align="right">
             <TextField size="small" type="text" fullWidth
                 placeholder="api_base"
+                error={newEndpoint === "azure" && !newApiBase}
                 InputProps={{ style: { fontSize: "0.875rem" } }}
-                value={newApiBase}  onChange={(event: any) => { setNewApiBase(event.target.value); }} 
+                value={newApiBase}  
+                onChange={(event: any) => { setNewApiBase(event.target.value); }} 
                 autoComplete='off'
-                disabled={disableApiBase}
-                required={newEndpoint == "azure"}
             />
         </TableCell>
         <TableCell align="right">
@@ -246,7 +249,6 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                 InputProps={{ style: { fontSize: "0.875rem" } }}
                 value={newApiVersion}  onChange={(event: any) => { setNewApiVersion(event.target.value); }} 
                 autoComplete='off'
-                disabled={disableApiVersion}
                 placeholder="api_version"
             />
         </TableCell>
