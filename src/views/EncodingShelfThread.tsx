@@ -405,7 +405,7 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
 
     //let triggers = currentTable.derive.triggers;
     let tableList = activeTableThread.map((tableId) => <div
-        key={tableId}
+        key={`${tableId}-table-list-item`}
         className="table-list-item">
         <Button variant="text" sx={{textTransform: 'none', padding: 0, minWidth: 0}} onClick={() => { dispatch(dfActions.setFocusedTable(tableId)) }}>
             <Stack direction="row" sx={{fontSize: '12px'}} alignItems="center" gap={"2px"}>
@@ -419,7 +419,7 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
 
     let tableCards = activeTableThread.map((tableId) => 
         <Card 
-            key={tableId}
+            key={`${tableId}-table-card`}
             variant='outlined' sx={{padding: '2px 0 2px 0'}}>
             <Button variant="text" sx={{textTransform: 'none', padding: 0, marginLeft: 1, minWidth: 0}} onClick={() => { dispatch(dfActions.setFocusedTable(tableId)) }}>
                 <Stack direction="row" sx={{fontSize: '12px'}} alignItems="center" gap={"2px"}>
@@ -444,7 +444,7 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
         let fieldsIdentical = _.isEqual(previousActiveFields, currentActiveFields)
 
         return  <Box 
-                    key={trigger.tableId}
+                    key={`${trigger.tableId}-trigger-card`}
                     sx={{padding: 0, display: 'flex'}}>
                     {/* <SouthIcon sx={{fontSize: "inherit", margin: 'auto 4px'}} /> */}
                     <Box sx={{minWidth: '1px', padding: '0px', width: '17px',  flex: 'none', display: 'flex', flexDirection: 'column'
