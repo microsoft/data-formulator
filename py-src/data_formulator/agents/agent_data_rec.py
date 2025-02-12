@@ -170,7 +170,7 @@ class DataRecAgent(object):
                     logger.warning(error_message)
                     result = {'status': 'other error', 'code': code_str, 'content': f"Unexpected error: {error_message}"}
             else:
-                result = {'status': 'no transformation', 'code': "", 'content': input_tables[0]['rows']}
+                result = {'status': 'error', 'code': "", 'content': "No code block found in the response. The model is unable to generate code to complete the task."}
             
             result['dialog'] = [*messages, {"role": choice.message.role, "content": choice.message.content}]
             result['agent'] = 'DataRecAgent'

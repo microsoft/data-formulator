@@ -114,7 +114,9 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
         }
     }, [newEndpoint]);
 
-    let modelExists = models.some(m => m.endpoint == newEndpoint && m.model == newModel && m.api_base == newApiBase && m.api_key == newApiKey && m.api_version == newApiVersion);
+    let modelExists = models.some(m => 
+        m.endpoint == newEndpoint && m.model == newModel && m.api_base == newApiBase 
+        && m.api_key == newApiKey && m.api_version == newApiVersion);
 
     let testModel = (model: ModelConfig) => {
         updateModelStatus(model, 'testing', "");
@@ -158,7 +160,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                         setNewApiVersion("2024-02-15");
                     }
                 }}
-                options={['openai', 'azure', 'ollama', 'gemini', 'anthropic']}
+                options={['openai', 'azure', 'ollama', 'anthropic', 'gemini']}
                 renderOption={(props, option) => (
                     <Typography {...props} onClick={() => setNewEndpoint(option)} sx={{fontSize: "0.875rem"}}>
                         {option}
@@ -193,7 +195,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
             <TextField fullWidth size="small" type={showKeys ? "text" : "password"} 
                 InputProps={{ style: { fontSize: "0.875rem" } }} 
                 placeholder='leave blank if using keyless access'
-                error={newEndpoint != "azure" && !newApiKey}
+                error={!(newEndpoint == "azure" || newEndpoint == "ollama") && !newApiKey}
                 value={newApiKey}  onChange={(event: any) => { setNewApiKey(event.target.value); }} 
                 autoComplete='off'
             />

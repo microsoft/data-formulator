@@ -207,8 +207,8 @@ class DataTransformationAgentV2(object):
         
         candidates = []
         for choice in response.choices:
-            # logger.info("\n=== Data transformation result ===>\n")
-            # logger.info(choice.message.content + "\n")
+            print("\n=== Data transformation result ===>\n")
+            print(choice.message.content + "\n")
             
             json_blocks = extract_json_objects(choice.message.content + "\n")
             if len(json_blocks) > 0:
@@ -217,6 +217,9 @@ class DataTransformationAgentV2(object):
                 refined_goal = {'visualization_fields': [], 'instruction': '', 'reason': ''}
 
             code_blocks = extract_code_from_gpt_response(choice.message.content + "\n", "python")
+
+            print("\n=== Code blocks ===>\n")
+            print(code_blocks)
 
             if len(code_blocks) > 0:
                 code_str = code_blocks[-1]
@@ -234,14 +237,17 @@ class DataTransformationAgentV2(object):
                     logger.warning('Error occurred during code execution:')
                     error_message = f"An error occurred during code execution. Error type: {type(e).__name__}"
                     logger.warning(error_message)
-                    result = {'status': 'other error', 'code': code_str, 'content': error_message}
+                    result = {'status': 'error', 'code': code_str, 'content': error_message}
             else:
-                result = {'status': 'no transformation', 'code': "", 'content': input_tables[0]['rows']}
+                result = {'status': 'error', 'code': "", 'content': "No code block found in the response. The model is unable to generate code to complete the task."}
             
             result['dialog'] = [*messages, {"role": choice.message.role, "content": choice.message.content}]
             result['agent'] = 'DataTransformationAgent'
             result['refined_goal'] = refined_goal
             candidates.append(result)
+
+        print("\n=== Candidates ===>\n")
+        print(candidates)
 
         return candidates
 
