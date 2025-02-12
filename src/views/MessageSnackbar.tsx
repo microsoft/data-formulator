@@ -168,15 +168,8 @@ export function MessageSnackbar() {
                         <Divider textAlign="left" sx={{my: 1, fontSize: 12, opacity: 0.7}} > [details] </Divider>
                     : ""}
                     {message?.detail ? 
-                        <Box
-                            sx={{
-                                borderRadius: 1,
-                                position: 'relative'
-                            }}
-                        >
-                            <Typography fontSize={12} >
-                                    {message?.detail}
-                            </Typography>
+                        <Box sx={{ borderRadius: 1, position: 'relative' }} >
+                            <Typography fontSize={12} > {message?.detail} </Typography>
                         </Box>
                     : ""}
                     {message?.code ? 
