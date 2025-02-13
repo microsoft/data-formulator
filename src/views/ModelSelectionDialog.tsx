@@ -192,7 +192,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
             <TextField fullWidth size="small" type={showKeys ? "text" : "password"} 
                 InputProps={{ style: { fontSize: "0.875rem" } }} 
                 placeholder='leave blank if using keyless access'
-                error={!(newEndpoint == "azure" || newEndpoint == "ollama") && !newApiKey}
+                error={!(newEndpoint == "azure" || newEndpoint == "ollama" || newEndpoint == "") && !newApiKey}
                 value={newApiKey}  onChange={(event: any) => { setNewApiKey(event.target.value); }} 
                 autoComplete='off'
             />
