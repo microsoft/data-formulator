@@ -154,7 +154,7 @@ let SingleThreadView: FC<{
                 </Box>)
 
             // only charts without dependency can be deleted
-            let tableDeleteEnabled = table?.derive && !tables.some(t => t.derive?.trigger.tableId == tableId);
+            let tableDeleteEnabled = !tables.some(t => t.derive?.trigger.tableId == tableId);
 
             let colloapsedTableBox = <div style={{ padding: 0 }}>
                 <Box sx={{ textTransform: 'none', padding: 0, minWidth: 0, color: 'gray' }} >
