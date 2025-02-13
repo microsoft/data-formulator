@@ -289,7 +289,8 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
                     <Divider orientation="vertical" variant="middle" flexItem /> */}
                     <ModelSelectionButton />
                     <Divider orientation="vertical" variant="middle" flexItem />
-
+                    <TableCopyDialogV2 buttonElement={"ADD TABLE"} disabled={false} />
+                    <Divider orientation="vertical" variant="middle" flexItem />
                     <ExportStateButton />
                     <ImportStateButton />
                     <Divider orientation="vertical" variant="middle" flexItem />
