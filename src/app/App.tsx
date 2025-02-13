@@ -5,7 +5,7 @@ import React, { FC, useEffect, useState } from 'react';
 import '../scss/App.scss';
 
 import { useDispatch, useSelector } from "react-redux";
-import { 
+import {
     DataFormulatorState,
     dfActions,
     fetchAvailableModels,
@@ -58,6 +58,7 @@ import { ActionSubscription, subscribe, unsubscribe } from './embed';
 import dfLogo from '../assets/df-logo.png';
 import { Popup } from '../components/Popup';
 import { ModelSelectionButton } from '../views/ModelSelectionDialog';
+import { TableCopyDialogV2 } from '../views/TableSelectionView';
 
 const AppBar = styled(MuiAppBar)(({ theme }) => ({
     color: 'black',
@@ -70,7 +71,7 @@ const AppBar = styled(MuiAppBar)(({ theme }) => ({
     }),
 }));
 
-declare module '@mui/material/styles' {  
+declare module '@mui/material/styles' {
     interface Palette {
         derived: Palette['primary'];
         custom: Palette['primary'];
@@ -97,44 +98,44 @@ export const ImportStateButton: React.FC<{}> = ({ }) => {
                         let savedState = JSON.parse(text);
                         dispatch(dfActions.loadState(savedState));
                     } catch {
-                        
+
                     }
                 });
             }
         }
     };
 
-    
+
     return <Tooltip title="load a saved session">
-                <Button variant="text" color="primary" 
-                    //endIcon={<InputIcon />}
-                >
-                    <Input inputProps={{ accept: '.dfstate', multiple: false  }} id="upload-data-file"
-                        type="file"  sx={{ display: 'none' }} aria-hidden={true} 
-                        ref={$uploadStateFile} onChange={handleFileUpload}
-                    />
-                    Import
-                </Button>
-            </Tooltip>;
+        <Button variant="text" color="primary"
+        //endIcon={<InputIcon />}
+        >
+            <Input inputProps={{ accept: '.dfstate', multiple: false }} id="upload-data-file"
+                type="file" sx={{ display: 'none' }} aria-hidden={true}
+                ref={$uploadStateFile} onChange={handleFileUpload}
+            />
+            Import
+        </Button>
+    </Tooltip>;
 }
 
-export const ExportStateButton: React.FC<{}> = ({}) => {
+export const ExportStateButton: React.FC<{}> = ({ }) => {
     const fullStateJson = useSelector((state: DataFormulatorState) => JSON.stringify(state));
-    
+
     return <Tooltip title="save session locally">
-        <Button variant="text" onClick={()=>{
+        <Button variant="text" onClick={() => {
             function download(content: string, fileName: string, contentType: string) {
-                    let a = document.createElement("a");
-                    let file = new Blob([content], {type: contentType});
-                    a.href = URL.createObjectURL(file);
-                    a.download = fileName;
-                    a.click();
-                }
-                download(fullStateJson, `data-formulator.${new Date().toISOString()}.dfstate`, 'text/plain');
-            }} 
-            //endIcon={<OutputIcon />}
+                let a = document.createElement("a");
+                let file = new Blob([content], { type: contentType });
+                a.href = URL.createObjectURL(file);
+                a.download = fileName;
+                a.click();
+            }
+            download(fullStateJson, `data-formulator.${new Date().toISOString()}.dfstate`, 'text/plain');
+        }}
+        //endIcon={<OutputIcon />}
         >
-            Export 
+            Export
         </Button>
     </Tooltip>
 }
@@ -142,7 +143,7 @@ export const ExportStateButton: React.FC<{}> = ({}) => {
 
 //type AppProps = ConnectedProps<typeof connector>;
 
-export const toolName = "Data Formulator" 
+export const toolName = "Data Formulator"
 
 export interface AppFCProps {
 }
@@ -154,12 +155,12 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
     const tables = useSelector((state: DataFormulatorState) => state.tables);
 
     // if the user has logged in
-    const [userInfo, setUserInfo] = useState<{name: string, userId: string} | undefined>(undefined);
+    const [userInfo, setUserInfo] = useState<{ name: string, userId: string } | undefined>(undefined);
 
-    const [popupConfig, setPopupConfig] = useState<PopupConfig>({ });
+    const [popupConfig, setPopupConfig] = useState<PopupConfig>({});
 
     const dispatch = useDispatch<AppDispatch>();
-    
+
     useEffect(() => {
         const subscription: ActionSubscription = {
             loadData: (table: DictTable) => {
@@ -179,23 +180,23 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
 
     useEffect(() => {
         fetch('/.auth/me')
-        .then(function(response) { return response.json(); })
-        .then(function(result) {
-            if (Array.isArray(result) && result.length > 0) {
-                let authInfo = result[0];
-                let userInfo = {
-                    name: authInfo['user_claims'].find((item: any) => item.typ == 'name')?.val || '',
-                    userId: authInfo['user_id']
+            .then(function (response) { return response.json(); })
+            .then(function (result) {
+                if (Array.isArray(result) && result.length > 0) {
+                    let authInfo = result[0];
+                    let userInfo = {
+                        name: authInfo['user_claims'].find((item: any) => item.typ == 'name')?.val || '',
+                        userId: authInfo['user_id']
+                    }
+                    setUserInfo(userInfo);
+                    // console.log("logging info")
+                    // console.log(userInfo);
                 }
-                setUserInfo(userInfo);
-                // console.log("logging info")
-                // console.log(userInfo);
-            }
-            
-        }).catch(err => {
-            //user is not logged in, do not show logout button
-            //console.error(err)
-        });
+
+            }).catch(err => {
+                //user is not logged in, do not show logout button
+                //console.error(err)
+            });
     }, [])
 
     const [resetDialogOpen, setResetDialogOpen] = useState<boolean>(false);
@@ -264,18 +265,20 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
 
     let appBar = [
         <AppBar className="app-bar" position="static" key="app-bar-main">
-            <Toolbar variant="dense" sx={{backgroundColor: betaMode ? 'lavender' : ''}}>
-                <Button href={"/"} sx={{display: "flex", flexDirection: "row", textTransform: "none", 
-                                        backgroundColor: 'transparent',
-                                        "&:hover": {
-                                            backgroundColor: "transparent"
-                                        }}} color="inherit">
-                    <Box component="img" sx={{ height: 32, marginRight: "12px"}} alt="" src={dfLogo} />
+            <Toolbar variant="dense" sx={{ backgroundColor: betaMode ? 'lavender' : '' }}>
+                <Button href={"/"} sx={{
+                    display: "flex", flexDirection: "row", textTransform: "none",
+                    backgroundColor: 'transparent',
+                    "&:hover": {
+                        backgroundColor: "transparent"
+                    }
+                }} color="inherit">
+                    <Box component="img" sx={{ height: 32, marginRight: "12px" }} alt="" src={dfLogo} />
                     <Typography variant="h6" noWrap component="h1" sx={{ fontWeight: 300, display: { xs: 'none', sm: 'block' } }}>
-                        {toolName} {betaMode ? "β" : ""} {process.env.NODE_ENV == "development" ? "" : ""} 
+                        {toolName} {betaMode ? "β" : ""} {process.env.NODE_ENV == "development" ? "" : ""}
                     </Typography>
                 </Button>
-                <Box sx={{ flexGrow: 1, textAlign: 'center', display: 'flex', justifyContent: 'center' }} > 
+                <Box sx={{ flexGrow: 1, textAlign: 'center', display: 'flex', justifyContent: 'center' }} >
                     {switchers}
                 </Box>
                 <Box sx={{ display: 'flex', fontSize: 14 }}>
@@ -286,28 +289,29 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
                     <Divider orientation="vertical" variant="middle" flexItem /> */}
                     <ModelSelectionButton />
                     <Divider orientation="vertical" variant="middle" flexItem />
+
                     <ExportStateButton />
                     <ImportStateButton />
                     <Divider orientation="vertical" variant="middle" flexItem />
-                    <Button variant="text" onClick={()=>{setResetDialogOpen(true)}} endIcon={<PowerSettingsNewIcon />}>
+                    <Button variant="text" onClick={() => { setResetDialogOpen(true) }} endIcon={<PowerSettingsNewIcon />}>
                         Reset session
                     </Button>
-                    <Popup popupConfig={popupConfig} appConfig={appConfig} table={tables[0]}  />
-                    <Dialog onClose={()=>{setResetDialogOpen(false)}} open={resetDialogOpen}>
-                        <DialogTitle sx={{display: "flex", alignItems: "center"}}>Reset Session?</DialogTitle>
+                    <Popup popupConfig={popupConfig} appConfig={appConfig} table={tables[0]} />
+                    <Dialog onClose={() => { setResetDialogOpen(false) }} open={resetDialogOpen}>
+                        <DialogTitle sx={{ display: "flex", alignItems: "center" }}>Reset Session?</DialogTitle>
                         <DialogContent>
                             <DialogContentText>
                                 <Typography>All unexported content (charts, derived data, concepts) will be lost upon reset.</Typography>
                             </DialogContentText>
                         </DialogContent>
                         <DialogActions>
-                            <Button onClick={()=>{dispatch(dfActions.resetState()); setResetDialogOpen(false);}} endIcon={<PowerSettingsNewIcon />}>reset session </Button>
-                            <Button onClick={()=>{setResetDialogOpen(false);}}>cancel</Button>
+                            <Button onClick={() => { dispatch(dfActions.resetState()); setResetDialogOpen(false); }} endIcon={<PowerSettingsNewIcon />}>reset session </Button>
+                            <Button onClick={() => { setResetDialogOpen(false); }}>cancel</Button>
                         </DialogActions>
                     </Dialog>
                     {userInfo && <>
                         <Divider orientation="vertical" variant="middle" flexItem />
-                        <Divider orientation="vertical" variant="middle" flexItem sx={{marginRight: "6px"}} />
+                        <Divider orientation="vertical" variant="middle" flexItem sx={{ marginRight: "6px" }} />
                         <Avatar key="user-avatar" {...stringAvatar(userInfo?.name || 'U')} />
                         <Button variant="text" className="ml-auto" href="/.auth/logout">Sign out</Button>
                     </>}
@@ -351,15 +355,15 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
             element: <About />,
         }, {
             path: "*",
-            element:  <DataFormulatorFC />,
-            errorElement: <Box sx={{width: "100%", height: "100%", display: "flex"}}>
-                            <Typography color="gray" sx={{margin: "150px auto"}}>An error has occurred, please <Link href="/">refresh the session</Link>. If the problem still exists, click close session.</Typography>
-                          </Box>
+            element: <DataFormulatorFC />,
+            errorElement: <Box sx={{ width: "100%", height: "100%", display: "flex" }}>
+                <Typography color="gray" sx={{ margin: "150px auto" }}>An error has occurred, please <Link href="/">refresh the session</Link>. If the problem still exists, click close session.</Typography>
+            </Box>
         }
     ]);
 
-    let app = 
-        <Box sx={{ flexGrow: 1, height: '100%', overflow: "hidden", display: "flex", flexDirection: "column"}}>
+    let app =
+        <Box sx={{ flexGrow: 1, height: '100%', overflow: "hidden", display: "flex", flexDirection: "column" }}>
             {appBar}
             <RouterProvider router={router} />
             <MessageSnackbar />
@@ -376,7 +380,7 @@ function stringAvatar(name: string) {
     let displayName = ""
     try {
         let nameSplit = name.split(' ')
-        displayName = `${nameSplit[0][0]}${nameSplit.length > 1 ? nameSplit[nameSplit.length-1][0] : ''}`
+        displayName = `${nameSplit[0][0]}${nameSplit.length > 1 ? nameSplit[nameSplit.length - 1][0] : ''}`
     } catch {
         displayName = name ? name[0] : "?";
     }
