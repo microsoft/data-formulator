@@ -11,7 +11,7 @@
 
 </div>
 
-Transform data and create rich visualizations iteratively with AI 🪄. Try Data Formulator now in GitHub Codespaces!
+Transform data and create rich visualizations iteratively with AI 🪄. Try Data Formulator now!
 
 [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/microsoft/data-formulator?quickstart=1)
 
@@ -22,9 +22,9 @@ Transform data and create rich visualizations iteratively with AI 🪄. Try Data
 
 ## News 🔥🔥🔥
 
-- [02-12-2025] More models supported now! Powered by [LiteLLM](https://github.com/BerriAI/litellm)!
-  - Now supports OpenAI, Azure, Ollama, and Anthropic models (and more based on LiteLLM);
-  - Models with strong code generation capabilities are recommended (gpt-4o, claude-3-5-sonnet etc.);
+- [02-12-2025] More models supported now!
+  - Now supports OpenAI, Azure, Ollama, and Anthropic models (and more powered by [LiteLLM](https://github.com/BerriAI/litellm));
+  - Models with strong code generation and instruction following capabilities are recommended (gpt-4o, claude-3-5-sonnet etc.);
   - You can store API keys in `api-keys.env` to avoid typing them every time (see template `api-keys.env.template`).
   - Let us know which models you have good/bad experiences with, and what models you would like to see supported! [[comment here]](https://github.com/microsoft/data-formulator/issues/49)
 
