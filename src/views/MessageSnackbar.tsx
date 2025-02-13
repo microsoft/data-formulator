@@ -8,7 +8,7 @@ import IconButton from '@mui/material/IconButton';
 import CloseIcon from '@mui/icons-material/Close';
 import { DataFormulatorState, dfActions } from '../app/dfSlice';
 import { useDispatch, useSelector } from 'react-redux';
-import { Alert, alpha, Box, Paper, Tooltip, Typography } from '@mui/material';
+import { Alert, alpha, Box, Divider, Paper, Tooltip, Typography } from '@mui/material';
 import InfoIcon from '@mui/icons-material/Info';
 import AssignmentIcon from '@mui/icons-material/Assignment';
 
@@ -156,38 +156,31 @@ export function MessageSnackbar() {
             </Snackbar> : ""}
             {message != undefined ? <Snackbar
                 open={open && message != undefined}
-                autoHideDuration={message?.type == "error" ? 15000 : 5000}
+                autoHideDuration={message?.type == "error" ? 20000 : 10000}
                 anchorOrigin={{vertical: 'bottom', horizontal: 'right'}}
                 onClose={handleClose}
                 action={action}
             >
-                <Alert onClose={handleClose} severity={message?.type} sx={{ maxWidth: '400px' }}>
+                <Alert icon={false} onClose={handleClose} severity={message?.type} sx={{ maxWidth: '400px' }}>
                     <Typography fontSize={10} component="span" sx={{margin: "auto", opacity: 0.7}}>[{timestamp}]</Typography>  &nbsp;
-                    {message?.value} 
+                    <Typography fontSize={12} component="span" sx={{margin: "auto", fontWeight: 'bold'}}>{message?.value}</Typography> 
                     {message?.detail ? 
-                        <>
-                            <br />
-                            <Typography fontSize={12} component="span" sx={{marginBottom: 0, fontWeight: 'bold'}}>
-                                [error details]
-                            </Typography>
-                            <br />
-                            <Typography fontSize={12} component="span" sx={{margin: "auto", opacity: 0.7}}>
-                                {message?.detail}   
-                            </Typography>
-                        </>
+                        <Divider textAlign="left" sx={{my: 1, fontSize: 12, opacity: 0.7}} > [details] </Divider>
+                    : ""}
+                    {message?.detail ? 
+                        <Box sx={{ borderRadius: 1, position: 'relative' }} >
+                            <Typography fontSize={12} > {message?.detail} </Typography>
+                        </Box>
                     : ""}
                     {message?.code ? 
-                        <>
-                            <br />
-                            <Typography fontSize={12} component="span" sx={{marginBottom: 0, fontWeight: 'bold'}}>
-                                [generated code]
-                            </Typography>
-                            <Typography fontSize={10} component="span" sx={{margin: "auto", opacity: 0.7}}>
-                                <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', marginTop: 1 }}>
-                                    {message?.code?.split('\n').filter(line => line.trim() !== '').join('\n')}
-                                </pre>
-                            </Typography>
-                        </>
+                        <Divider textAlign="left" sx={{my: 1, fontSize: 12, opacity: 0.7}} > [generated code] </Divider>
+                    : ""}
+                    {message?.code ? 
+                        <Typography fontSize={10} component="span" sx={{margin: "auto", opacity: 0.7}}>
+                            <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', marginTop: 1 }}>
+                                {message?.code?.split('\n').filter(line => line.trim() !== '').join('\n')}
+                            </pre>
+                        </Typography>
                     : ""}
                 </Alert>    
             </Snackbar> : ""}

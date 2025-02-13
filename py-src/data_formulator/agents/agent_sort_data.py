@@ -65,9 +65,8 @@ For example:
 
 class SortDataAgent(object):
 
-    def __init__(self, client, model):
+    def __init__(self, client):
         self.client = client
-        self.model = model
 
     def run(self, name, values, n=1):
 
@@ -84,9 +83,7 @@ class SortDataAgent(object):
                     {"role":"user","content": user_query}]
         
         ###### the part that calls open_ai
-        response = self.client.chat.completions.create(
-            model=self.model, messages = messages, temperature=0.2, max_tokens=2400,
-            top_p=0.95, n=n, frequency_penalty=0, presence_penalty=0, stop=None)
+        response = self.client.get_completion(messages = messages)
 
         #log = {'messages': messages, 'response': response.model_dump(mode='json')}
 

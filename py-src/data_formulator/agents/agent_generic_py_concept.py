@@ -157,9 +157,8 @@ def derive(row, df):
 
 class GenericPyConceptDeriveAgent(object):
 
-    def __init__(self, client, model_version):
+    def __init__(self, client):
         self.client = client
-        self.model_version = model_version
 
     def process_gpt_response(self, input_table, output_field, response, messages):
         #log = {'messages': messages, 'response': response.model_dump(mode='json')}
@@ -220,10 +219,7 @@ output = json.dumps(df.to_dict("records"))
                     {"role":"user","content": user_query}]
         
         ###### the part that calls open_ai
-        response = self.client.chat.completions.create(
-            model=self.model_version, 
-            messages = messages, temperature=0.7, max_tokens=1200,
-            top_p=0.95, n=1, frequency_penalty=0, presence_penalty=0, stop=None)
+        response = self.client.get_completion(messages = messages)
 
         return self.process_gpt_response(input_table, output_field, response, messages)
 
@@ -234,9 +230,7 @@ output = json.dumps(df.to_dict("records"))
                               "content": new_instruction + '\n update the function accordingly'}]
 
         ##### the part that calls open_ai
-        response = self.client.chat.completions.create(
-            model=self.model, messages=messages, temperature=0.7, max_tokens=1200,
-            top_p=0.95, n=n, frequency_penalty=0, presence_penalty=0, stop=None)
+        response = self.client.get_completion(messages = messages)
 
         candidates = self.process_gpt_response(input_table, output_field, response, messages)
 

@@ -2,6 +2,7 @@
 # Licensed under the MIT License.
 
 import json
+import sys
 
 from data_formulator.agents.agent_utils import extract_json_objects, generate_data_summary, extract_code_from_gpt_response
 import data_formulator.py_sandbox as py_sandbox
@@ -10,6 +11,7 @@ import traceback
 
 import logging
 
+# Replace/update the logger configuration
 logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = '''You are a data scientist to help user to transform data that will be used for visualization.
@@ -178,12 +180,10 @@ def transform_data(df):
 ```
 '''
 
-def completion_response_wrapper(client, model, messages, n):
+def completion_response_wrapper(client, messages, n):
     ### wrapper for completion response, especially handling errors
     try:
-        response = client.chat.completions.create(
-                model=model, messages=messages, temperature=0.7, max_tokens=1200,
-                top_p=0.95, n=n, frequency_penalty=0, presence_penalty=0, stop=None)
+        response = client.get_completion(messages = messages)
     except Exception as e:
         response = e
 
@@ -192,9 +192,8 @@ def completion_response_wrapper(client, model, messages, n):
 
 class DataTransformationAgentV2(object):
 
-    def __init__(self, client, model, system_prompt=None):
+    def __init__(self, client, system_prompt=None):
         self.client = client
-        self.model = model
         self.system_prompt = system_prompt if system_prompt is not None else SYSTEM_PROMPT
 
     def process_gpt_response(self, input_tables, messages, response):
@@ -210,8 +209,8 @@ class DataTransformationAgentV2(object):
         
         candidates = []
         for choice in response.choices:
-            # logger.info("\n=== Data transformation result ===>\n")
-            # logger.info(choice.message.content + "\n")
+            logger.info("=== Data transformation result ===>")
+            logger.info(choice.message.content + "\n")
             
             json_blocks = extract_json_objects(choice.message.content + "\n")
             if len(json_blocks) > 0:
@@ -220,6 +219,9 @@ class DataTransformationAgentV2(object):
                 refined_goal = {'visualization_fields': [], 'instruction': '', 'reason': ''}
 
             code_blocks = extract_code_from_gpt_response(choice.message.content + "\n", "python")
+
+            logger.info("=== Code blocks ===>")
+            logger.info(code_blocks)
 
             if len(code_blocks) > 0:
                 code_str = code_blocks[-1]
@@ -237,14 +239,17 @@ class DataTransformationAgentV2(object):
                     logger.warning('Error occurred during code execution:')
                     error_message = f"An error occurred during code execution. Error type: {type(e).__name__}"
                     logger.warning(error_message)
-                    result = {'status': 'other error', 'code': code_str, 'content': error_message}
+                    result = {'status': 'error', 'code': code_str, 'content': error_message}
             else:
-                result = {'status': 'no transformation', 'code': "", 'content': input_tables[0]['rows']}
+                result = {'status': 'error', 'code': "", 'content': "No code block found in the response. The model is unable to generate code to complete the task."}
             
             result['dialog'] = [*messages, {"role": choice.message.role, "content": choice.message.content}]
             result['agent'] = 'DataTransformationAgent'
             result['refined_goal'] = refined_goal
             candidates.append(result)
+
+        logger.info("=== Candidates ===>")
+        logger.info(candidates)
 
         return candidates
 
@@ -265,7 +270,7 @@ class DataTransformationAgentV2(object):
         messages = [{"role":"system", "content": self.system_prompt},
                     {"role":"user","content": user_query}]
         
-        response = completion_response_wrapper(self.client, self.model, messages, n)
+        response = completion_response_wrapper(self.client, messages, n)
 
         return self.process_gpt_response(input_tables, messages, response)
         
@@ -287,6 +292,6 @@ class DataTransformationAgentV2(object):
         messages = [*updated_dialog, {"role":"user", 
                               "content": f"Update the code above based on the following instruction:\n\n{json.dumps(goal, indent=4)}"}]
 
-        response = completion_response_wrapper(self.client, self.model, messages, n)
+        response = completion_response_wrapper(self.client, messages, n)
 
         return self.process_gpt_response(input_tables, messages, response)

@@ -328,7 +328,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                             dispatch(dfActions.addMessages({
                                 "timestamp": Date.now(),
                                 "type": "error",
-                                "value": `Data formulation failed, please retry.`,
+                                "value": `Data formulation failed, please try again.`,
                                 "code": code,
                                 "detail": errorMessage
                             }));

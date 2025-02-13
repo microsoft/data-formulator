@@ -78,8 +78,7 @@ Totals (7 entries)	5	5	5	15
 
 class DataCleanAgent(object):
 
-    def __init__(self, client, model):
-        self.model = model
+    def __init__(self, client):
         self.client = client
 
     def run(self, content_type, raw_data, image_cleaning_instruction):
@@ -129,9 +128,7 @@ class DataCleanAgent(object):
         messages = [system_message, user_prompt]
         
         ###### the part that calls open_ai
-        response = self.client.chat.completions.create(
-            model=self.model, messages = messages, temperature=0.7, max_tokens=1200,
-            top_p=0.95, n=1, frequency_penalty=0, presence_penalty=0, stop=None)
+        response = self.client.get_completion(messages = messages)
 
         candidates = []
         for choice in response.choices:

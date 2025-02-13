@@ -66,9 +66,8 @@ def transform_data(df_0):
 
 class CodeExplanationAgent(object):
 
-    def __init__(self, client, model):
+    def __init__(self, client):
         self.client = client
-        self.model = model
 
     def run(self, input_tables, code):
 
@@ -82,11 +81,8 @@ class CodeExplanationAgent(object):
                     {"role":"user","content": user_query}]
         
         ###### the part that calls open_ai
-        response = self.client.chat.completions.create(
-            model=self.model, messages = messages, temperature=0.7, max_tokens=1200,
-            top_p=0.95, n=1, frequency_penalty=0, presence_penalty=0, stop=None)
+        response = self.client.get_completion(messages = messages)
         
-        logger.info('\n=== explanation output ===>\n')
-        logger.info(response.choices[0].message.content)
+        logger.info(f"=== explanation output ===>\n{response.choices[0].message.content}\n")
         
         return response.choices[0].message.content

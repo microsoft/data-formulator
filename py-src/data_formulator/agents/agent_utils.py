@@ -66,6 +66,7 @@ def table_hash(table):
     frozen_table = tuple(sorted([tuple([hash(value_handling_func(r[key])) for key in schema]) for r in table]))
     return hash(frozen_table)
 
+
 def extract_code_from_gpt_response(code_raw, language):
     """search for matches and then look for pairs of ```...``` to extract code"""
 

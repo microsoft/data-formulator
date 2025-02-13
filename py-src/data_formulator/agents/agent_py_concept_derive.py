@@ -131,8 +131,7 @@ def derive(writing, reading, math):
 
 class PyConceptDeriveAgent(object):
 
-    def __init__(self, client, model):
-        self.model = model
+    def __init__(self, client):
         self.client = client
 
     def run(self, input_table, input_fields, output_field, description):
@@ -163,9 +162,7 @@ def derive({arg_string}):
                     {"role":"user","content": user_query}]
         
         ###### the part that calls open_ai
-        response = self.client.chat.completions.create(
-            model=self.model, messages = messages, temperature=0.7, max_tokens=1200,
-            top_p=0.95, n=1, frequency_penalty=0, presence_penalty=0, stop=None)
+        response = self.client.get_completion(messages = messages)
 
         #log = {'messages': messages, 'response': response.model_dump(mode='json')}
 

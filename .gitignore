@@ -1,6 +1,5 @@
 
-
-*openai-keys.env 
+*api-keys.env
 **/*.ipynb_checkpoints/
 
 .DS_Store

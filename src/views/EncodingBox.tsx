@@ -594,7 +594,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
         }}
         freeSolo
         renderInput={(params) => (
-            <TextField {...params} variant="standard" autoComplete='off' placeholder='field or concept'
+            <TextField {...params} variant="standard" autoComplete='off' placeholder='field'
                 sx={{height: "24px", "& .MuiInput-root": {height: "24px", fontSize: "small"}}} />
         )}
     />

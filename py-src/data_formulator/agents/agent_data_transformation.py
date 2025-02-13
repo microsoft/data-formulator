@@ -122,9 +122,8 @@ def transform_data(df_0):
 
 class DataTransformationAgent(object):
 
-    def __init__(self, client, model):
+    def __init__(self, client):
         self.client = client
-        self.model = model
 
     def process_gpt_response(self, input_tables, messages, response):
         """process gpt response to handle execution"""
@@ -185,9 +184,7 @@ class DataTransformationAgent(object):
                     {"role":"user","content": user_query}]
         
         ###### the part that calls open_ai
-        response = self.client.chat.completions.create(
-            model=self.model, messages = messages, temperature=0.7, max_tokens=1200,
-            top_p=0.95, n=n, frequency_penalty=0, presence_penalty=0, stop=None)
+        response = self.client.get_completion(messages = messages)
         
         return self.process_gpt_response(input_tables, messages, response)
 
@@ -207,9 +204,7 @@ class DataTransformationAgent(object):
                               "content": "Update the code above based on the following instruction:\n\n" + new_instruction + output_fields_instr}]
 
         ##### the part that calls open_ai
-        response = self.client.chat.completions.create(
-            model=self.model, messages=messages, temperature=0.7, max_tokens=1200,
-            top_p=0.95, n=n, frequency_penalty=0, presence_penalty=0, stop=None)
+        response = self.client.get_completion(messages = messages)
         
         logger.info(response)
         
