@@ -255,17 +255,15 @@ export interface TableUploadDialogProps {
 }
 
 export const TableUploadDialog: React.FC<TableUploadDialogProps> = ({ buttonElement, disabled }) => {
-
     const dispatch = useDispatch<AppDispatch>();
+    const inputRef = React.useRef<HTMLInputElement>(null);
 
-    let $uploadInputFile = React.createRef<HTMLInputElement>();
-
-    let handleFileUpload = (event: React.FormEvent<HTMLElement>): void => {
-        const target: any = event.target;
-        if (target && target.files) {
-            for (let file of target.files) {
-                //const file: File = target.files[0];
-                (file as File).text().then((text) => {
+    let handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>): void => {
+        const files = event.target.files;
+        
+        if (files) {
+            for (let file of files) {
+                file.text().then((text) => {
                     let table = loadDataWrapper(file.name, text, file.type);
                     if (table) {
                         dispatch(dfActions.addTable(table));
@@ -276,14 +274,30 @@ export const TableUploadDialog: React.FC<TableUploadDialogProps> = ({ buttonElem
         }
     };
 
-    return <Button sx={{fontSize: "inherit"}} variant="text" color="primary" 
-                   disabled={disabled}>
-                <Input inputProps={{ accept: '.csv,.tsv,.json', multiple: true  }} id="upload-data-file"
-                    type="file"  sx={{ display: 'none' }} aria-hidden={true} 
-                    ref={$uploadInputFile} onChange={handleFileUpload}
-                />
+    return (
+        <>
+            <Input
+                inputProps={{ 
+                    accept: '.csv,.tsv,.json',
+                    multiple: true,
+                }}
+                id="upload-data-file"
+                type="file"
+                sx={{ display: 'none' }}
+                inputRef={inputRef}
+                onChange={handleFileUpload}
+            />
+            <Button 
+                sx={{fontSize: "inherit"}} 
+                variant="text" 
+                color="primary" 
+                disabled={disabled}
+                onClick={() => inputRef.current?.click()}
+            >
                 {buttonElement}
-            </Button>;
+            </Button>
+        </>
+    );
 }
 
 
