@@ -1,84 +1,123 @@
 # Docker Support for Data Formulator
 
-This directory contains Docker configuration for running Data Formulator in a containerized environment.
+This directory contains Docker configuration for running Data Formulator in both development and production environments.
 
 ## Quick Start
 
 1. Clone the repository:
 ```bash
 git clone https://github.com/microsoft/data-formulator.git
-cd data-formulator/docker
+cd data-formulator
 ```
 
 2. Configure your API keys:
-   - Create a `config/api-keys.env` file with your API keys:
+   - Copy the template: `cp docker/config/api-keys.env.template docker/config/api-keys.env`
+   - Edit `docker/config/api-keys.env` with your API keys:
    ```env
    OPENAI_API_KEY=your_openai_key
    AZURE_API_KEY=your_azure_key
    ANTHROPIC_API_KEY=your_anthropic_key
    ```
-   Or set them directly in `docker-compose.yml`
 
-3. Build and run using Docker Compose:
+## Development Mode
+
+Development mode provides hot-reloading for both frontend and backend changes.
+
+1. Start the development environment:
 ```bash
-docker compose up -d
+docker compose -f docker/docker-compose.yml up data-formulator-dev
 ```
 
-4. Access Data Formulator at http://localhost:5000
+2. Access the development servers:
+   - Frontend: http://localhost:5173 (with hot-reloading)
+   - Backend: http://localhost:5000
+
+3. Development Features:
+   - Live reload on frontend changes
+   - Source code mounted from host
+   - Node modules persisted in Docker volume
+   - Both frontend and backend servers running
+
+## Production Mode
+
+Production mode runs the optimized build for deployment.
+
+1. Start the production environment:
+```bash
+docker compose -f docker/docker-compose.yml up data-formulator
+```
+
+2. Access Data Formulator at http://localhost:5000
 
 ## Configuration
 
 ### Environment Variables
 
 - `PORT`: The port to run Data Formulator on (default: 5000)
+- `NODE_ENV`: Environment mode ('development' or 'production')
 - `OPENAI_API_KEY`: Your OpenAI API key
 - `AZURE_API_KEY`: Your Azure API key
 - `ANTHROPIC_API_KEY`: Your Anthropic API key
 
-### Docker Compose
+### Custom Port Configuration
 
-The included `docker-compose.yml` provides a ready-to-use configuration:
-- Maps port 5000 to the host
-- Mounts a local config directory for API keys
-- Configures automatic restart
-
-### Custom Port
-
-To use a different port:
-
-1. Update the port in `docker-compose.yml`:
+1. Update ports in docker-compose.yml:
 ```yaml
 ports:
-  - "8080:5000"  # Change 8080 to your desired port
+  - "8080:5000"  # For production
+  # For development:
+  - "8080:5000"  # Backend
+  - "5173:5173"  # Frontend dev server
 ```
 
 2. Or use environment variable:
 ```bash
-PORT=8080 docker compose up -d
+PORT=8080 docker compose -f docker/docker-compose.yml up data-formulator
 ```
 
-## Development
+## Building
 
-To build the image manually:
+### Development Build
 ```bash
-docker build -t data-formulator .
+docker compose -f docker/docker-compose.yml build data-formulator-dev
 ```
 
-To run without Docker Compose:
+### Production Build
 ```bash
-docker run -p 5000:5000 -v ./config:/app/config data-formulator
+docker compose -f docker/docker-compose.yml build data-formulator
+```
+
+## Testing
+
+1. Run tests in development container:
+```bash
+docker compose -f docker/docker-compose.yml run --rm data-formulator-dev yarn test
 ```
 
 ## Troubleshooting
 
-1. If you see permission errors:
-   - Ensure the config directory exists and has proper permissions
-   - Check that api-keys.env is readable
+1. Permission Issues:
+   - Ensure the config directory exists: `mkdir -p docker/config`
+   - Set proper permissions: `chmod 644 docker/config/api-keys.env`
 
-2. If the container exits immediately:
-   - Check the logs: `docker compose logs`
-   - Verify your API keys are properly configured
+2. Container Startup Issues:
+   - Check logs: `docker compose -f docker/docker-compose.yml logs`
+   - Verify API keys in docker/config/api-keys.env
+   - Ensure no conflicting services on ports 5000 or 5173
 
-3. If you can't connect:
-   - Verify the port mapping in docker-compose.yml
-   - Check if another service is using port 5000
+3. Development Mode Issues:
+   - Clear node_modules volume: `docker compose -f docker/docker-compose.yml down -v`
+   - Rebuild development container: `docker compose -f docker/docker-compose.yml build --no-cache data-formulator-dev`
+
+4. Hot Reload Not Working:
+   - Ensure proper volume mounts in docker-compose.yml
+   - Check frontend console for errors
+   - Verify file permissions on mounted directories
+
+## Contributing
+
+When contributing Docker-related changes:
+1. Test both development and production builds
+2. Verify hot-reloading functionality
+3. Update documentation for any new features or changes
+4. Follow the project's coding standards
