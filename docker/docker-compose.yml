@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  data-formulator:
+    build: .
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./config:/app/config
+    environment:
+      - PORT=5000
+    # Uncomment and set your API keys as needed:
+    # environment:
+    #   - OPENAI_API_KEY=your_key_here
+    #   - AZURE_API_KEY=your_key_here
+    #   - ANTHROPIC_API_KEY=your_key_here
+    restart: unless-stopped

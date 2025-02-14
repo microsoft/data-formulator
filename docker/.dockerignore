@@ -1,0 +1,28 @@
+# Version control
+.git
+.gitignore
+
+# Environment files
+.env
+config/api-keys.env
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.env/
+.venv/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
