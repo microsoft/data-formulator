@@ -33,8 +33,8 @@ import { DndProvider } from 'react-dnd'
 import { HTML5Backend } from 'react-dnd-html5-backend'
 
 import { SelectableGroup } from 'react-selectable-fast';
-import { TableCopyDialogV2, TableSelectionDialog, TableURLDialog } from './TableSelectionView';
-import { TableCopyDialog, TableUploadDialog } from './TableSelectionView';
+import { TableCopyDialogV2, TableSelectionDialog } from './TableSelectionView';
+import { TableUploadDialog } from './TableSelectionView';
 import { toolName } from '../app/App';
 import { DataThread } from './DataThread';
 

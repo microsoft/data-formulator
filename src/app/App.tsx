@@ -33,6 +33,8 @@ import {
     DialogActions,
     ToggleButtonGroup,
     ToggleButton,
+    Menu,
+    MenuItem,
 } from '@mui/material';
 
 
@@ -59,6 +61,8 @@ import dfLogo from '../assets/df-logo.png';
 import { Popup } from '../components/Popup';
 import { ModelSelectionButton } from '../views/ModelSelectionDialog';
 import { TableCopyDialogV2 } from '../views/TableSelectionView';
+import { TableUploadDialog } from '../views/TableSelectionView';
+import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 
 const AppBar = styled(MuiAppBar)(({ theme }) => ({
     color: 'black',
@@ -263,6 +267,15 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
         </Box>
     )
 
+    const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
+    const open = Boolean(anchorEl);
+    const handleClick = (event: React.MouseEvent<HTMLButtonElement>) => {
+        setAnchorEl(event.currentTarget);
+    };
+    const handleClose = () => {
+        setAnchorEl(null);
+    };
+
     let appBar = [
         <AppBar className="app-bar" position="static" key="app-bar-main">
             <Toolbar variant="dense" sx={{ backgroundColor: betaMode ? 'lavender' : '' }}>
@@ -289,7 +302,40 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
                     <Divider orientation="vertical" variant="middle" flexItem /> */}
                     <ModelSelectionButton />
                     <Divider orientation="vertical" variant="middle" flexItem />
-                    <TableCopyDialogV2 buttonElement={"ADD TABLE"} disabled={false} />
+                    <Typography sx={{ display: 'flex', fontSize: 14, alignItems: 'center', gap: 1 }}>
+                        <Button
+                            variant="text"
+                            onClick={handleClick}
+                            endIcon={<KeyboardArrowDownIcon />}
+                            aria-controls={open ? 'add-table-menu' : undefined}
+                            aria-haspopup="true"
+                            aria-expanded={open ? 'true' : undefined}
+                        >
+                            Add A Table
+                        </Button>
+                        <Menu
+                            id="add-table-menu"
+                            anchorEl={anchorEl}
+                            open={open}
+                            onClose={handleClose}
+                            MenuListProps={{
+                                'aria-labelledby': 'add-table-button',
+                                sx: { py: '2px' }
+                            }}
+                            sx={{  '& .MuiMenuItem-root': { padding: 0, margin: 0 } }}
+                        >
+                            <MenuItem onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                            }} sx={{ fontSize: 14, '& .MuiButton-root': { textTransform: 'none' } }}>
+                                <TableCopyDialogV2 buttonElement={"from clipboard"} disabled={false} />
+                            </MenuItem>
+                            <MenuItem onClick={(e) => {
+                            }} sx={{ fontSize: 14, '& .MuiButton-root': { textTransform: 'none' } }}>
+                                <TableUploadDialog buttonElement={"from file"} disabled={false} />
+                            </MenuItem>
+                        </Menu>
+                    </Typography>
                     <Divider orientation="vertical" variant="middle" flexItem />
                     <ExportStateButton />
                     <ImportStateButton />

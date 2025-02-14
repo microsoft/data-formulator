@@ -29,7 +29,7 @@ import CancelIcon from '@mui/icons-material/Cancel';
 
 import ReactDiffViewer from 'react-diff-viewer'
 
-import { dfActions, dfSelectors, fetchFieldSemanticType } from '../app/dfSlice';
+import { DataFormulatorState, dfActions, dfSelectors, fetchFieldSemanticType } from '../app/dfSlice';
 import { useDispatch, useSelector } from 'react-redux';
 import { useState } from 'react';
 import { AppDispatch } from '../app/store';
@@ -254,23 +254,39 @@ export interface TableUploadDialogProps {
     disabled: boolean;
 }
 
+const getUniqueTableName = (baseName: string, existingNames: Set<string>): string => {
+    let uniqueName = baseName;
+    let counter = 1;
+    while (existingNames.has(uniqueName)) {
+        uniqueName = `${baseName}_${counter}`;
+        counter++;
+    }
+    return uniqueName;
+};
+
 export const TableUploadDialog: React.FC<TableUploadDialogProps> = ({ buttonElement, disabled }) => {
     const dispatch = useDispatch<AppDispatch>();
     const inputRef = React.useRef<HTMLInputElement>(null);
+    const existingTables = useSelector((state: DataFormulatorState) => state.tables);
+    const existingNames = new Set(existingTables.map(t => t.id));
 
     let handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>): void => {
         const files = event.target.files;
-        
+
         if (files) {
             for (let file of files) {
                 file.text().then((text) => {
-                    let table = loadDataWrapper(file.name, text, file.type);
+                    const uniqueName = getUniqueTableName(file.name, existingNames);
+                    let table = loadDataWrapper(uniqueName, text, file.type);
                     if (table) {
                         dispatch(dfActions.addTable(table));
                         dispatch(fetchFieldSemanticType(table));
                     }
                 });
             }
+        }
+        if (inputRef.current) {
+            inputRef.current.value = '';
         }
     };
 
@@ -305,72 +321,6 @@ export interface TableCopyDialogProps {
     buttonElement: any;
     disabled: boolean;
 }
-
-export const TableCopyDialog: React.FC<TableCopyDialogProps> = ({ buttonElement, disabled }) => {
-
-    const [dialogOpen, setDialogOpen] = useState<boolean>(false);
-    const [tableName, setTableName] = useState<string>("");
-    const [tableContent, setTableContent] = useState<string>("");
-
-    const dispatch = useDispatch<AppDispatch>();
-
-    let handleSubmitContent = (): void => {
-
-        let table : undefined | DictTable = undefined;
-        try {
-            let content = JSON.parse(tableContent);
-            table = createTableFromFromObjectArray(tableName || 'dataset', content);
-        } catch (error) {
-            table = createTableFromText(tableName || 'dataset', tableContent);
-        }
-
-        if (table) {
-            dispatch(dfActions.addTable(table));
-            dispatch(fetchFieldSemanticType(table));
-        }        
-    };
-
-    let dialog = <Dialog key="table-selection-dialog" onClose={()=>{setDialogOpen(false)}} open={dialogOpen}
-            sx={{ '& .MuiDialog-paper': { maxWidth: '80%', maxHeight: 800, minWidth: 800 } }}
-        >
-            <DialogTitle  sx={{display: "flex"}}>Paste & Upload Data
-                <IconButton
-                    sx={{marginLeft: "auto"}}
-                    edge="start"
-                    size="small"
-                    color="inherit"
-                    onClick={()=>{ setDialogOpen(false); }}
-                    aria-label="close"
-                >
-                    <CloseIcon fontSize="inherit"/>
-                </IconButton>
-            </DialogTitle>
-            <DialogContent sx={{overflowX: "hidden", padding: 2, display: "flex", flexDirection: "column"}} dividers>
-                <TextField sx={{marginBottom: 1}} size="small" value={tableName} onChange={(event) => { setTableName(event.target.value); }} 
-                           autoComplete='off' id="outlined-basic" label="dataset name" variant="outlined" />
-                <TextField autoFocus size="small" id="upload content" value={tableContent} maxRows={20}
-                            onChange={(event) => { setTableContent(event.target.value); }}
-                            autoComplete='off'
-                            label="content (csv, tsv, or json format)" variant="outlined" multiline minRows={15} />
-            </ DialogContent>
-            <DialogActions>
-                <Button variant="contained" size="small" onClick={()=>{ setDialogOpen(false); }}>cancel</Button>
-                <Button variant="contained" size="small" onClick={()=>{ setDialogOpen(false); handleSubmitContent(); }} >
-                    upload
-                </Button>
-            </DialogActions>
-        </Dialog>;
-
-    return <>
-        <Button sx={{fontSize: "inherit"}} variant="text" color="primary" 
-                    disabled={disabled} onClick={()=>{setDialogOpen(true)}}>
-                {buttonElement}
-        </Button>
-        {dialog}
-    </>;
-}
-
-
 
 export interface TableURLDialogProps {
     buttonElement: any;
@@ -473,14 +423,30 @@ export const TableCopyDialogV2: React.FC<TableCopyDialogProps> = ({ buttonElemen
     let theme = useTheme()
 
     const dispatch = useDispatch<AppDispatch>();
+    const existingTables = useSelector((state: DataFormulatorState) => state.tables);
+    const existingNames = new Set(existingTables.map(t => t.id));
 
     let handleSubmitContent = (tableStr: string): void => {
-        let table : undefined | DictTable = undefined;
+        let table: undefined | DictTable = undefined;
+        
+        // Generate a short unique name based on content and time if no name provided
+        const defaultName = (() => {
+            const hashStr = tableStr.substring(0, 100) + Date.now();
+            const hashCode = hashStr.split('').reduce((acc, char) => {
+                return ((acc << 5) - acc) + char.charCodeAt(0) | 0;
+            }, 0);
+            const shortHash = Math.abs(hashCode).toString(36).substring(0, 4);
+            return `data-${shortHash}`;
+        })();
+
+        const baseName = tableName || defaultName;
+        const uniqueName = getUniqueTableName(baseName, existingNames);
+
         try {
             let content = JSON.parse(tableStr);
-            table = createTableFromFromObjectArray(tableName || 'data-0', content);
+            table = createTableFromFromObjectArray(uniqueName, content);
         } catch (error) {
-            table = createTableFromText(tableName || 'data-0', tableStr);
+            table = createTableFromText(uniqueName, tableStr);
         }
         if (table) {
             dispatch(dfActions.addTable(table));

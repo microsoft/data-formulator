@@ -189,7 +189,10 @@ let SingleThreadView: FC<{
                             <Box sx={{ margin: '4px 8px 4px 2px' }}>
                                 <Typography fontSize="inherit" sx={{
                                     textAlign: 'center',
-                                    color: 'rgba(0,0,0,0.7)', maxWidth: 'calc(100%)'
+                                    color: 'rgba(0,0,0,0.7)', 
+                                    maxWidth: '100px',
+                                    wordWrap: 'break-word',
+                                    whiteSpace: 'normal'
                                 }}>{tableId}</Typography>
                             </Box>
                         </Stack>
@@ -495,7 +498,7 @@ export const DataThread: FC<{}> = function ({ }) {
                 transition: 'width 200ms cubic-bezier(0.4, 0, 0.2, 1) 0ms', overflow: 'auto',
                 direction: 'rtl', display: 'flex', flex: 1
             }}
-                width={drawerOpen ? threadDrawerWidth + 2 : 212} className="thread-view-mode">
+                width={drawerOpen ? threadDrawerWidth + 12 : 224} className="thread-view-mode">
                 {view}
             </Box>
         </Box>
