@@ -87,40 +87,51 @@ declare module '@mui/material/styles' {
 }
 
 export const ImportStateButton: React.FC<{}> = ({ }) => {
-
     const dispatch = useDispatch();
+    const inputRef = React.useRef<HTMLInputElement>(null);
 
-    let $uploadStateFile = React.createRef<HTMLInputElement>();
-
-    let handleFileUpload = (event: React.FormEvent<HTMLElement>): void => {
-        const target: any = event.target;
-        if (target && target.files) {
-            for (let file of target.files) {
-                //const file: File = target.files[0];
-                (file as File).text().then((text) => {
+    const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>): void => {
+        const files = event.target.files;
+        if (files) {
+            for (let file of files) {
+                file.text().then((text) => {
                     try {
                         let savedState = JSON.parse(text);
                         dispatch(dfActions.loadState(savedState));
-                    } catch {
-
+                    } catch (error) {
+                        console.error('Failed to parse state file:', error);
                     }
                 });
             }
         }
+        // Reset the input value to allow uploading the same file again
+        if (inputRef.current) {
+            inputRef.current.value = '';
+        }
     };
 
-
-    return <Tooltip title="load a saved session">
-        <Button variant="text" color="primary"
-        //endIcon={<InputIcon />}
-        >
-            <Input inputProps={{ accept: '.dfstate', multiple: false }} id="upload-data-file"
-                type="file" sx={{ display: 'none' }} aria-hidden={true}
-                ref={$uploadStateFile} onChange={handleFileUpload}
-            />
-            Import
-        </Button>
-    </Tooltip>;
+    return (
+        <Tooltip title="load a saved session">
+            <Button 
+                variant="text" 
+                color="primary"
+                onClick={() => inputRef.current?.click()}
+            >
+                <Input 
+                    inputProps={{ 
+                        accept: '.dfstate',
+                        multiple: false 
+                    }}
+                    id="upload-data-file"
+                    type="file"
+                    sx={{ display: 'none' }}
+                    inputRef={inputRef}
+                    onChange={handleFileUpload}
+                />
+                Import
+            </Button>
+        </Tooltip>
+    );
 }
 
 export const ExportStateButton: React.FC<{}> = ({ }) => {
