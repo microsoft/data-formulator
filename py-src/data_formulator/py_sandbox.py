@@ -141,3 +141,30 @@ output = df_out.to_json(None, "records")
     '''
 
     return run_data_process_in_sandbox(code, table_rows, exec_str)
+def run_join_tables_in_sandbox2020(code_str, input_tables):
+    """Executes the table join code in a sandboxed environment."""
+    allowed_objects = [input_tables]
+
+    import_str = "import pandas as pd\nimport json"
+    df_vars = [f"df_{i} = pd.DataFrame.from_records(input_tables[{i}])" for i in range(len(input_tables))]
+    df_arg_names = [f"df_{i}" for i in range(len(input_tables))]
+    function_call_args = ', '.join(df_arg_names)
+
+    exec_str = f'''
+{'\n'.join(df_vars)}
+joined_df = join_tables({function_call_args})
+output = joined_df.to_json(None, "records")
+    '''
+    
+    script_str = f'{import_str}\n\n{code_str}{exec_str}'
+    
+    #print(f"Code to be executed in sandbox: {script_str} \n endcode")
+    
+    sandbox_locals = dict((key, value) for key, value in locals().items() if value in allowed_objects)
+    parent_conn, child_conn = Pipe()
+    p = Process(target=ran_in_subprocess, args=(script_str, sandbox_locals, child_conn, 'output'))
+    p.start()
+
+    result = parent_conn.recv()
+    p.join()
+    return result

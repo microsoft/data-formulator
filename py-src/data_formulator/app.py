@@ -36,6 +36,7 @@ from data_formulator.agents.agent_sort_data import SortDataAgent
 from data_formulator.agents.agent_data_load import DataLoadAgent
 from data_formulator.agents.agent_data_clean import DataCleanAgent
 from data_formulator.agents.agent_code_explanation import CodeExplanationAgent
+from data_formulator.agents.agent_table_join import TableJoinAgent
 
 from data_formulator.agents.client_utils import Client
 
@@ -520,7 +521,35 @@ def request_code_expl():
         expl = ""
     return expl
 
+@app.route('/join-table', methods=['GET', 'POST'])
+def join_table():
+    if request.is_json:
+        app.logger.info("# joining tables: ")
+        content = request.get_json()
+        token = content.get("token")
 
+        client = get_client(content['model'])
+        app.logger.info(f" model: {content['model']}")
+        tables = content["tables"]
+        description = content["description"]
+
+        agent = TableJoinAgent(client=client)
+        candidates = agent.run(tables, description=description)
+        repair_attempts = 0
+        while candidates[0]['status'] == 'error' and repair_attempts == 0: # only try once
+            error_message = candidates[0]['content']
+            new_instruction = f"We run into the following problem executing the code, please fix it:\n\n{error_message}\n\nPlease think step by step, reflect why the error happens and fix the code so that no more errors would occur."
+            prev_dialog = candidates[0]['dialog']
+
+            candidates = agent.followup(tables, prev_dialog, new_instruction)
+            repair_attempts += 1
+        
+        response = flask.jsonify({ "status": "ok", "token": token, "result": candidates })
+    else:
+        response = flask.jsonify({ "token": -1, "status": "error", "result": [] })
+    response.headers.add('Access-Control-Allow-Origin', '*')
+    return response
+    
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Data Formulator")
     parser.add_argument("-p", "--port", type=int, default=5000, help="The port number you want to use")
