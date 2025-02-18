@@ -2,7 +2,6 @@ import os
 from litellm import completion
 from azure.identity import DefaultAzureCredential, get_bearer_token_provider
 
-
 class Client(object):
     """
     Returns a LiteLLM client configured for the specified endpoint and model.

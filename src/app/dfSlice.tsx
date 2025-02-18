@@ -687,6 +687,13 @@ export const dataFormulatorSlice = createSlice({
 export const dfSelectors = {
     getActiveModel: (state: DataFormulatorState) : ModelConfig => {
         return state.models.find(m => m.id == state.selectedModelId) || state.models[0];
+    },
+    getActiveBaseTableIds: (state: DataFormulatorState) => {
+        let focusedTableId = state.focusedTableId;
+        let tables = state.tables;
+        let focusedTable = tables.find(t => t.id == focusedTableId);
+        let sourceTables = focusedTable?.derive?.source || [focusedTable?.id];
+        return sourceTables;
     }
 }
 

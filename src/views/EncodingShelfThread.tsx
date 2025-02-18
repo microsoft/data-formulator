@@ -392,14 +392,24 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
                 }
             }).catch((error) => {
                 setReformulteRunning(false);
-           
                 dispatch(dfActions.changeChartRunningStatus({chartId, status: false}));
-                dispatch(dfActions.addMessages({
-                    "timestamp": Date.now(),
-                    "type": "error",
-                    "value": `Data formulation failed, please try again.`,
-                    "detail": error.message
-                }));
+           
+                // Check if the error was caused by the AbortController
+                if (error.name === 'AbortError') {
+                    dispatch(dfActions.addMessages({
+                        "timestamp": Date.now(),
+                        "type": "error",
+                        "value": "Data formulation timed out after 30 seconds. Please try again.",
+                        "detail": "Request exceeded timeout limit"
+                    }));
+                } else {
+                    dispatch(dfActions.addMessages({
+                        "timestamp": Date.now(),
+                        "type": "error",
+                        "value": `Data formulation failed, please try again.`,
+                        "detail": error.message
+                    }));
+                }
             });
     }
 
