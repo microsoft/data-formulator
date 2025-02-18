@@ -178,7 +178,7 @@ Totals (7 entries)	5	5	5	15
     console.log(selectedModelId)
     
     return (
-        <Box sx={{ display: 'block', width: "100%", height: 'calc(100vh - 49px)' }}>
+        <Box sx={{ display: 'block', width: "100%", height: 'calc(100% - 49px)' }}>
             <DndProvider backend={HTML5Backend}>
                 {selectedModelId == undefined ? modelSelectionDialogBox : (tables.length > 0 ? fixedSplitPane : dataUploadRequestBox)} 
             </DndProvider>

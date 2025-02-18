@@ -465,10 +465,28 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
     ]);
 
     let app =
-        <Box sx={{ flexGrow: 1, height: '100%', overflow: "hidden", display: "flex", flexDirection: "column" }}>
-            {appBar}
-            <RouterProvider router={router} />
-            <MessageSnackbar />
+        <Box sx={{ 
+            position: 'absolute',  // Added to fill viewport
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            overflow: 'auto',      // Enable scrolling at root level
+            '& > *': {
+                minWidth: '1200px',
+                minHeight: '800px'
+            }
+        }}>
+            <Box sx={{ 
+                display: 'flex',
+                flexDirection: 'column',
+                height: '100%',
+                width: '100%'
+            }}>
+                {appBar}
+                <RouterProvider router={router} />
+                <MessageSnackbar />
+            </Box>
         </Box>;
 
     return (

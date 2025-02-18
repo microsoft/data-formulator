@@ -331,7 +331,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                     
                     let message = "the model is ready to use";
                     if (status == "unknown") {
-                        message = "Status unknown, click the status icon to test again.";
+                        message = "Click the status icon to test again before applying.";
                     } else if (status == "error") {
                         message = testedModels.find(t => t.id == model.id)?.message || "Unknown error";
                     }
@@ -419,7 +419,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                                 }}
                             >
                                 <TableCell colSpan={2} align="right" ></TableCell>
-                                <TableCell colSpan={5}>
+                                <TableCell colSpan={6}>
                                     <Typography variant="caption" color="#c82c2c">
                                         {message}
                                     </Typography>
