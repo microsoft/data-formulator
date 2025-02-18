@@ -176,7 +176,7 @@ export const ConceptShelf: FC<ConceptShelfProps> = function ConceptShelf() {
                                         </Typography>
                                         {!isCustomGroup && (
                                             <Typography sx={{fontSize: "10px", ml: 1}} color="text.secondary">
-                                                {expandedGroups.includes(groupName) ? '▸' : '▾'}
+                                                {expandedGroups.includes(groupName) ? '▾' : '▸'}
                                             </Typography>
                                         )}
                                     </Box>
