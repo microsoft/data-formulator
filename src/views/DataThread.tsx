@@ -15,6 +15,7 @@ import {
     Tooltip,
     ButtonGroup,
     useTheme,
+    SxProps
 } from '@mui/material';
 
 import { VegaLite } from 'react-vega'
@@ -67,13 +68,15 @@ let SingleThreadView: FC<{
     threadIdx: number,
     leafTable: DictTable;
     chartElements: { tableId: string, chartId: string, element: any }[];
-    usedTableIds: string[]
+    usedTableIds: string[],
+    sx?: SxProps
 }> = function ({
     scrollRef,
     threadIdx,
     leafTable,
     chartElements,
     usedTableIds, // tables that have been used
+    sx
 }) {
         let theme = useTheme();
 
@@ -83,7 +86,6 @@ let SingleThreadView: FC<{
         let focusedTableId = useSelector((state: DataFormulatorState) => state.focusedTableId);
 
         let focusedChart = charts.find(c => c.id == focusedChartId);
-
 
         const dispatch = useDispatch();
 
@@ -118,7 +120,8 @@ let SingleThreadView: FC<{
                 let fieldsIdentical = _.isEqual(previousActiveFields, currentActiveFields)
 
                 let triggerCard = <div key={'thread-card-trigger-box'}>
-                    <Box sx={{ flex: 1 }} /*sx={{ width: 'calc(100% - 8px)', marginLeft: 1, borderLeft: '1px dashed darkgray' }}*/ >
+                    <Box sx={{ flex: 1 }} 
+                    /*sx={{ width: 'calc(100% - 8px)', marginLeft: 1, borderLeft: '1px dashed darkgray' }}*/ >
                         <TriggerCard className={selectedClassName} trigger={trigger} hideFields={fieldsIdentical} />
                     </Box>
                 </div>;
@@ -228,11 +231,12 @@ let SingleThreadView: FC<{
                     key={`table-${tableId}`}
                     sx={{ display: 'flex', flexDirection: 'row' }}>
                     <div style={{
-                        minWidth: '1px', padding: '0px', width: '17px', flex: 'none', display: 'flex'
-                        //borderLeft: '1px dashed darkgray',
+                        minWidth: '1px', padding: '0px', width: '8px', flex: 'none', display: 'flex',
+                        marginLeft: '8px',
+                        borderLeft: '1px dashed darkgray',
                     }}>
                         <Box sx={{
-                            padding: 0, width: '1px', margin: 'auto', height: '100%',
+                            padding: 0, width: '1px', margin: 'auto',
                             //borderLeft: 'thin solid lightgray',
                             // the following for 
                             backgroundImage: 'linear-gradient(180deg, darkgray, darkgray 75%, transparent 75%, transparent 100%)',
@@ -252,31 +256,9 @@ let SingleThreadView: FC<{
         content = w(tableList, triggerCards, "")
 
         return <Box sx={{
-            backgroundColor: (threadIdx % 2 == 1 ? "rgba(0, 0, 0, 0.02)" : 'white'), //threadIsFocused ? alpha(theme.palette.primary.main, 0.05) : 
-            padding: '8px 8px'
-        }}>
-            {/* <Tooltip title={collapsed ? 'expand' : 'collapse'}>
-           <Button fullWidth sx={{display: 'flex',  direction: 'ltr'}} color="primary" onClick={() => setCollapsed(!collapsed)}>
-                <Divider flexItem sx={{
-                            "& .MuiDivider-wrapper": {
-                                display: 'flex', flexDirection: 'row',
-                            },
-                            "&::before, &::after": {
-                                borderColor: theme.palette.primary.light,
-                                opacity: 0.5,
-                                borderWidth: '4px',
-                                width: 50,
-
-                            },
-                        }} 
-                        >
-                    <Typography sx={{fontSize: "10px", fontWeight: 'bold', textTransform: 'none'}}>
-                        {`thread - ${threadIdx + 1}`}
-                    </Typography>
-                    {!collapsed ? <ExpandLess sx={{fontSize: 14}}/> : <ExpandMore sx={{fontSize: 14}}/>}
-                </Divider>
-            </Button>
-        </Tooltip>*/}
+             
+            ...sx
+        }} data-thread-index={threadIdx}>
             <Box sx={{ display: 'flex', direction: 'ltr', margin: 1 }}>
                 <Divider flexItem sx={{
                     margin: 'auto',
@@ -462,20 +444,104 @@ export const DataThread: FC<{}> = function ({ }) {
     let refTables = tables;
     let leafTables = refTables.filter(t => !refTables.some(t2 => t2.derive?.trigger.tableId == t.id));
 
-
     let drawerOpen = leafTables.length > 1 && threadDrawerOpen;
+    let threadDrawerWidth = Math.max(Math.min(600, leafTables.length * 200), 212)
 
-    let view = <Box sx={{ width: '100%', margin: "0px 0px 8px 0px", display: 'flex', flexDirection: drawerOpen ? 'row-reverse' : 'column', paddingBottom: 2 }}>
+    let view = <Box width={drawerOpen ? threadDrawerWidth + 12 : 224} sx={{ 
+        overflowY: 'auto',
+        position: 'relative',
+        display: 'flex', 
+        flexDirection: drawerOpen ? 'row-reverse' : 'column',
+    }}>
         {leafTables.map((lt, i) => {
             let usedTableIds = leafTables.slice(0, i)
                 .map(x => [x.id, ...getTriggers(x, tables).map(y => y.tableId) || []]).flat();
             return <SingleThreadView
                 key={`thread-${lt.id}`}
-                scrollRef={scrollRef} threadIdx={i} leafTable={lt} chartElements={chartElements} usedTableIds={usedTableIds} />
+                scrollRef={scrollRef} 
+                threadIdx={i} 
+                leafTable={lt} 
+                chartElements={chartElements} 
+                usedTableIds={usedTableIds} 
+                sx={{
+                    backgroundColor: (i % 2 == 1 ? "rgba(0, 0, 0, 0.02)" : 'white'), 
+                    padding: '8px 8px',
+                    flex: 1,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    height: '100%'
+                }} />
         })}
     </Box>
 
-    let threadDrawerWidth = Math.max(Math.min(Math.max(600, window.innerWidth * 0.8), leafTables.length * 200), 212)
+
+    let jumpButtonsDrawerOpen = <ButtonGroup size="small" color="primary">
+        {_.chunk(Array.from({length: leafTables.length}, (_, i) => i), 3).map((group, groupIdx) => {
+            const startNum = group[0] + 1;
+            const endNum = group[group.length - 1] + 1;
+            const label = startNum === endNum ? `${startNum}` : `${startNum}-${endNum}`;
+            
+            return (
+                <Tooltip key={`thread-nav-group-${groupIdx}`} title={`Jump to thread${startNum === endNum ? '' : 's'} ${label}`}>
+                    <IconButton
+                        size="small"
+                        color="primary"
+                        sx={{ fontSize: '12px' }}
+                        onClick={() => {
+                            setTimeout(() => {
+                                // Get currently most visible thread index
+                                const viewportCenter = window.innerWidth / 2;
+                                const currentIndex = Array.from(document.querySelectorAll('[data-thread-index]')).reduce((closest, element) => {
+                                    const rect = element.getBoundingClientRect();
+                                    const distance = Math.abs(rect.left + rect.width/2 - viewportCenter);
+                                    if (!closest || distance < closest.distance) {
+                                        return { index: parseInt(element.getAttribute('data-thread-index') || '0'), distance };
+                                    }
+                                    return closest;
+                                }, null as { index: number, distance: number } | null)?.index || 0;
+
+                                // If moving from larger to smaller numbers (scrolling left), target first element
+                                // If moving from smaller to larger numbers (scrolling right), target last element
+                                const targetIndex = currentIndex > group[0] ? group[0] : group[group.length - 1];
+                                
+                                const targetElement = document.querySelector(`[data-thread-index="${targetIndex}"]`);
+                                if (targetElement) {
+                                    targetElement.scrollIntoView({
+                                        behavior: 'smooth',
+                                        block: 'nearest', // Don't change vertical scroll
+                                        inline: currentIndex > group[group.length - 1] ? 'start' : 'end'
+                                    });
+                                }
+                            }, 100);
+                        }}
+                    >
+                        {label}
+                    </IconButton>
+                </Tooltip>
+            );
+        })}
+    </ButtonGroup>
+
+    let jumpButtonDrawerClosed = <ButtonGroup size="small" color="primary" sx={{ gap: 0 }}>
+        {leafTables.map((_, idx) => (
+            <Tooltip key={`thread-nav-${idx}`} title={`Jump to thread ${idx + 1}`}>
+                <IconButton 
+                    size="small" 
+                    color="primary"
+                    sx={{ fontSize: '12px', padding: '4px' }} 
+                    onClick={() => {
+                        const threadElement = document.querySelector(`[data-thread-index="${idx}"]`);
+                        threadElement?.scrollIntoView({ behavior: 'smooth' });
+                    }}
+                > 
+                    {idx + 1}
+                </IconButton>
+            </Tooltip>
+        ))}
+    </ButtonGroup>
+
+    let jumpButtons = drawerOpen ? jumpButtonsDrawerOpen : jumpButtonDrawerClosed;
+
 
     let carousel = (
         <Box className="data-thread" sx={{ overflow: 'hidden', }}>
@@ -483,9 +549,13 @@ export const DataThread: FC<{}> = function ({ }) {
                 direction: 'ltr', display: 'flex',
                 paddingTop: "10px", paddingLeft: '12px', alignItems: 'center', justifyContent: 'space-between'
             }}>
-                <Typography className="view-title" component="h2" sx={{ marginTop: "6px" }}>
-                    Data Threads
-                </Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <Typography className="view-title" component="h2" sx={{ marginTop: "6px" }}>
+                        Data Threads
+                    </Typography>
+                    {jumpButtons}
+                </Box>
+                
                 <Tooltip title={drawerOpen ? "collapse" : "expand"}>
                     <IconButton size={'small'} color="primary" disabled={leafTables.length <= 1} onClick={() => { setThreadDrawerOpen(!threadDrawerOpen); }}>
                         {drawerOpen ? <ChevronLeftIcon /> : <ChevronRightIcon />}
@@ -493,10 +563,10 @@ export const DataThread: FC<{}> = function ({ }) {
                 </Tooltip>
             </Box>
             <Box sx={{
-                transition: 'width 200ms cubic-bezier(0.4, 0, 0.2, 1) 0ms', overflow: 'auto',
-                direction: 'rtl', display: 'flex', flex: 1
+                transition: 'width 200ms cubic-bezier(0.4, 0, 0.2, 1) 0ms', overflowY: 'auto',
+                direction: 'rtl', display: 'block', flex: 1
             }}
-                width={drawerOpen ? threadDrawerWidth + 12 : 224} className="thread-view-mode">
+                 className="thread-view-mode">
                 {view}
             </Box>
         </Box>
