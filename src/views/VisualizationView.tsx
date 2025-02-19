@@ -242,7 +242,6 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
     let charts = useSelector((state: DataFormulatorState) => state.charts);
     let focusedChartId = useSelector((state: DataFormulatorState) => state.focusedChartId);
     let chartSynthesisInProgress = useSelector((state: DataFormulatorState) => state.chartSynthesisInProgress);
-    let threadDrawerOpen = useSelector((state: DataFormulatorState) => state.threadDrawerOpen);
 
     let synthesisRunning = focusedChartId ? chartSynthesisInProgress.includes(focusedChartId) : false;
     let handleDeleteChart = () => { focusedChartId && dispatch(dfActions.deleteChartById(focusedChartId)) }
@@ -270,13 +269,6 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
     useEffect(() => {
         setFocusUpdated(true);
     }, [focusedChartId])
-
-    useEffect(() => {
-        let width = componentRef.current ? componentRef.current.offsetWidth : 0
-        if (width < 640 && threadDrawerOpen == true) {
-            setCollapseEditor(threadDrawerOpen);
-        }
-    }, [threadDrawerOpen])
 
     let chartUnavailable = true;
     

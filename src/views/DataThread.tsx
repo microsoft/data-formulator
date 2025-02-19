@@ -299,21 +299,19 @@ export const DataThread: FC<{}> = function ({ }) {
     let tables = useSelector((state: DataFormulatorState) => state.tables);
     let charts = useSelector((state: DataFormulatorState) => state.charts);
     let focusedChartId = useSelector((state: DataFormulatorState) => state.focusedChartId);
-    let threadDrawerOpen = useSelector((state: DataFormulatorState) => state.threadDrawerOpen);
 
     let chartSynthesisInProgress = useSelector((state: DataFormulatorState) => state.chartSynthesisInProgress);
 
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
+
+    let [threadDrawerOpen, setThreadDrawerOpen] = useState<boolean>(false);
 
     const scrollRef = useRef<null | HTMLDivElement>(null)
 
     const executeScroll = () => { if (scrollRef.current != null) scrollRef.current.scrollIntoView() }
     // run this function from an event handler or an effect to execute scroll 
 
-
     const dispatch = useDispatch();
-
-    let setThreadDrawerOpen = (flag: boolean) => { dispatch(dfActions.setThreadDrawerOpen(flag)); }
 
     useEffect(() => {
         executeScroll();
@@ -467,7 +465,7 @@ export const DataThread: FC<{}> = function ({ }) {
 
     let drawerOpen = leafTables.length > 1 && threadDrawerOpen;
 
-    let view = <Box sx={{ margin: "0px 0px 8px 0px", display: 'flex', flexDirection: drawerOpen ? 'row-reverse' : 'column', paddingBottom: 2 }}>
+    let view = <Box sx={{ width: '100%', margin: "0px 0px 8px 0px", display: 'flex', flexDirection: drawerOpen ? 'row-reverse' : 'column', paddingBottom: 2 }}>
         {leafTables.map((lt, i) => {
             let usedTableIds = leafTables.slice(0, i)
                 .map(x => [x.id, ...getTriggers(x, tables).map(y => y.tableId) || []]).flat();
