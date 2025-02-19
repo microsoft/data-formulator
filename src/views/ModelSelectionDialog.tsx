@@ -181,7 +181,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                 PaperComponent={({ children }) => (
                     <Paper>
                         <Typography sx={{ p: 1, color: 'gray', fontStyle: 'italic', fontSize: '0.75rem' }}>
-                            suggestions
+                            examples
                         </Typography>
                         {children}
                     </Paper>
@@ -226,7 +226,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                 PaperComponent={({ children }) => (
                     <Paper>
                         <Typography sx={{ p: 1, color: 'gray', fontStyle: 'italic', fontSize: 'small' }}>
-                            suggestions
+                            examples
                         </Typography>
                         {children}
                     </Paper>
@@ -267,13 +267,9 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
 
                         let model = {endpoint, model: newModel, api_key: newApiKey, api_base: newApiBase, api_version: newApiVersion, id: id};
 
-                        console.log("checkpont 2")
-
                         dispatch(dfActions.addModel(model));
                         dispatch(dfActions.selectModel(id));
                         setTempSelectedModeId(id);
-
-                        console.log("checkpont 3")
 
                         testModel(model); 
                         
@@ -282,8 +278,6 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                         setNewApiKey(undefined);
                         setNewApiBase(undefined);
                         setNewApiVersion(undefined);
-
-                        console.log("checkpont 4")
                     }}>
                     <AddCircleIcon />
                 </IconButton>
