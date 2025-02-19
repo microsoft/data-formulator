@@ -479,6 +479,7 @@ export const DataThread: FC<{}> = function ({ }) {
         display: 'flex', 
         flexDirection: drawerOpen ? 'row-reverse' : 'column',
         minHeight: '100%',
+        transition: 'all 0.3s ease',
     }}>
         {leafTables.map((lt, i) => {
             let usedTableIds = leafTables.slice(0, i)
@@ -493,10 +494,12 @@ export const DataThread: FC<{}> = function ({ }) {
                 sx={{
                     backgroundColor: (i % 2 == 1 ? "rgba(0, 0, 0, 0.03)" : 'white'), 
                     padding: '8px 8px',
-                    flex: 1,
+                    flex: drawerOpen ? 1 : 'none',
                     display: 'flex',
                     flexDirection: 'column',
-                    height: 'calc(100% - 16px)'
+                    height: 'calc(100% - 16px)',
+                    width: '208px', 
+                    transition: 'all 0.3s ease',
                 }} />
         })}
     </Box>

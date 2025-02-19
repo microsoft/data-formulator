@@ -223,7 +223,7 @@ export const TableSelectionDialog: React.FC<{ buttonElement: any }> = function T
                             .then((text) => {         
                                 let fullTable = createTableFromFromObjectArray(tableChallenges.table.id, JSON.parse(text));
                                 if (fullTable) {
-                                    dispatch(dfActions.addTable(fullTable));
+                                    dispatch(dfActions.loadTable(fullTable));
                                     dispatch(fetchFieldSemanticType(fullTable));
                                     dispatch(dfActions.addChallenges({
                                         tableId: tableChallenges.table.id,
@@ -279,7 +279,7 @@ export const TableUploadDialog: React.FC<TableUploadDialogProps> = ({ buttonElem
                     const uniqueName = getUniqueTableName(file.name, existingNames);
                     let table = loadDataWrapper(uniqueName, text, file.type);
                     if (table) {
-                        dispatch(dfActions.addTable(table));
+                        dispatch(dfActions.loadTable(table));
                         dispatch(fetchFieldSemanticType(table));
                     }
                 });
@@ -353,7 +353,7 @@ export const TableURLDialog: React.FC<TableURLDialogProps> = ({ buttonElement, d
             }
 
             if (table) {
-                dispatch(dfActions.addTable(table));
+                dispatch(dfActions.loadTable(table));
                 dispatch(fetchFieldSemanticType(table));
             }        
         })
@@ -449,7 +449,7 @@ export const TableCopyDialogV2: React.FC<TableCopyDialogProps> = ({ buttonElemen
             table = createTableFromText(uniqueName, tableStr);
         }
         if (table) {
-            dispatch(dfActions.addTable(table));
+            dispatch(dfActions.loadTable(table));
             dispatch(fetchFieldSemanticType(table));
         }        
     };
@@ -585,7 +585,8 @@ export const TableCopyDialogV2: React.FC<TableCopyDialogProps> = ({ buttonElemen
                                 flexDirection: "column", 
                                 "& .MuiOutlinedInput-root.Mui-disabled": {backgroundColor: 'rgba(0,0,0,0.05)'}}} dividers>
                 <Box sx={{width: '100%', marginBottom: 1, display:'flex'}}>
-                    <TextField sx={{flex: 1}} disabled={loadFromURL} size="small" value={tableName} onChange={(event) => { setTableName(event.target.value); }} 
+                    <TextField sx={{flex: 1}} disabled={loadFromURL} size="small" 
+                            value={tableName} onChange={(event) => { setTableName(event.target.value); }} 
                            autoComplete='off' id="outlined-basic" label="dataset name" variant="outlined" />
                     <Divider sx={{margin: 1}} flexItem orientation='vertical'/>
                     <Button sx={{marginLeft: 0, textTransform: 'none'}} onClick={() => {setLoadFromURL(!loadFromURL)}} 
@@ -611,16 +612,6 @@ export const TableCopyDialogV2: React.FC<TableCopyDialogProps> = ({ buttonElemen
                     {cleaningInProgress && tableContentType == "text" ? <LinearProgress sx={{ width: '100%', height: "calc(100% - 8px)", marginTop: 1, minHeight: 200, opacity: 0.1, position: 'absolute', zIndex: 1 }} /> : ""}
                     {viewTable  ? 
                     <>
-                        {/* <ReactDiffViewer
-                            leftTitle={'source'}
-                            rightTitle={'cleaning suggestions'}
-                            styles={newStyles}
-                            oldValue={tableContent}
-                            showDiffOnly={false}
-                            newValue={cleanTableContent.content}
-                            splitView={true}
-                            renderContent={renderLines}
-                        /> */}
                         <CustomReactTable
                             rows={viewTable.rows} 
                             rowsPerPageNum={-1} compact={false}

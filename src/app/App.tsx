@@ -311,7 +311,7 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
     useEffect(() => {
         const subscription: ActionSubscription = {
             loadData: (table: DictTable) => {
-                dispatch(dfActions.addTable(table));
+                dispatch(dfActions.loadTable(table));
                 dispatch(fetchFieldSemanticType(table));
             },
             setAppConfig: (config) => {
@@ -345,8 +345,6 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
                 //console.error(err)
             });
     }, [])
-
-    const [resetDialogOpen, setResetDialogOpen] = useState<boolean>(false);
 
     useEffect(() => {
         document.title = toolName;

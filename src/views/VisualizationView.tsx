@@ -711,6 +711,7 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
     let tables = useSelector((state: DataFormulatorState) => state.tables);
     let charts = useSelector((state: DataFormulatorState) => state.charts);
     let focusedChartId = useSelector((state: DataFormulatorState) => state.focusedChartId);
+    let focusedTableId = useSelector((state: DataFormulatorState) => state.focusedTableId);
 
     let visViewMode = useSelector((state: DataFormulatorState) => state.visViewMode);
 
@@ -736,7 +737,7 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
                         if (focusedChart?.chartType == "?") { 
                             dispatch(dfActions.updateChartType({chartType: t.chart, chartId: focusedChartId as string}));
                         } else {
-                            dispatch(dfActions.createNewChart({chartType: t.chart, tableId: tables[0].id}));
+                            dispatch(dfActions.createNewChart({chartType: t.chart, tableId: focusedTableId}));
                         }
                     }}
                 >
@@ -758,12 +759,6 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
                         cachedCandidates={cachedCandidates.find(l => l.chartId == focusedChartId)?.tables || []}
                         handleUpdateCandidates={handleUpdateCandidates} />
 
-    //console.log(tables);
-
-    //let vegaSpec: any = createVegaObj(markType, encodingMap, conceptShelfItems)[0];
-    // if (tables.length > 0) {
-    //     vegaSpec = createVegaObj(markType, encodingMap, conceptShelfItems)[0];
-    // }
     let derivedFields = conceptShelfItems.filter(f => f.source == "derived");
 
     let finalView = <Box></Box>;
