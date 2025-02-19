@@ -441,8 +441,34 @@ export const DataThread: FC<{}> = function ({ }) {
     })
 
 
-    let refTables = tables;
-    let leafTables = refTables.filter(t => !refTables.some(t2 => t2.derive?.trigger.tableId == t.id));
+
+    let leafTables = tables.filter(t => !tables.some(t2 => t2.derive?.trigger.tableId == t.id));
+    
+    // we want to sort the leaf tables by the order of their ancestors
+    // for example if ancestor of list a is [0, 3] and the ancestor of list b is [0, 2] then b should come before a
+    let tableOrder = Object.fromEntries(tables.map((table, index) => [table.id, index]));
+    let getAncestorOrders = (leafTable: DictTable) => {
+        let triggers = getTriggers(leafTable, tables);
+        return [...triggers.map(t => tableOrder[t.tableId]), tableOrder[leafTable.id]];
+    }
+    for (let i = 0; i < leafTables.length; i++) {
+        let aAncestors = getAncestorOrders(leafTables[i]);
+        console.log(leafTables[i].id, aAncestors);
+    }
+    leafTables.sort((a, b) => {
+        let aAncestors = getAncestorOrders(a);
+        let bAncestors = getAncestorOrders(b);
+        
+        // If lengths are equal, compare ancestors in order
+        for (let i = 0; i < Math.min(aAncestors.length, bAncestors.length); i++) {
+            if (aAncestors[i] !== bAncestors[i]) {
+                return aAncestors[i] - bAncestors[i];
+            }
+        }
+        
+        // If all ancestors are equal, compare the leaf tables themselves
+        return aAncestors.length - bAncestors.length;
+    });
 
     let drawerOpen = leafTables.length > 1 && threadDrawerOpen;
     let threadDrawerWidth = Math.max(Math.min(600, leafTables.length * 200), 212)
@@ -452,6 +478,7 @@ export const DataThread: FC<{}> = function ({ }) {
         position: 'relative',
         display: 'flex', 
         flexDirection: drawerOpen ? 'row-reverse' : 'column',
+        minHeight: '100%',
     }}>
         {leafTables.map((lt, i) => {
             let usedTableIds = leafTables.slice(0, i)
@@ -464,12 +491,12 @@ export const DataThread: FC<{}> = function ({ }) {
                 chartElements={chartElements} 
                 usedTableIds={usedTableIds} 
                 sx={{
-                    backgroundColor: (i % 2 == 1 ? "rgba(0, 0, 0, 0.02)" : 'white'), 
+                    backgroundColor: (i % 2 == 1 ? "rgba(0, 0, 0, 0.03)" : 'white'), 
                     padding: '8px 8px',
                     flex: 1,
                     display: 'flex',
                     flexDirection: 'column',
-                    height: '100%'
+                    height: 'calc(100% - 16px)'
                 }} />
         })}
     </Box>
