@@ -113,7 +113,7 @@ export const TriggerCard: FC<{className?: string, trigger: Trigger, hideFields?:
                 let field = fieldItems.find(f => f.id == encoding.fieldID) as FieldItem;
                 return [index > 0 ? '⨉' : '', 
                         <Chip 
-                            key={`trigger-${channel}-${field.id}`}
+                            key={`trigger-${channel}-${field?.id}`}
                             sx={{color:'inherit', maxWidth: '110px', marginLeft: "2px", height: 18, fontSize: 12, borderRadius: '4px', 
                                    border: '1px solid rgb(250 235 215)', background: 'rgb(250 235 215 / 70%)',
                                    '& .MuiChip-label': { paddingLeft: '6px', paddingRight: '6px' }}} 
