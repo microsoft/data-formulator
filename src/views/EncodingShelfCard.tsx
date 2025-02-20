@@ -52,28 +52,38 @@ export interface EncodingShelfCardProps {
     noBorder?: boolean;
 }
 
-let selectBaseTables = (activeFields: FieldItem[], conceptShelfItems: FieldItem[], tables: DictTable[]) : DictTable[] => {
+let selectBaseTables = (activeFields: FieldItem[], conceptShelfItems: FieldItem[], tables: DictTable[], currentTable: DictTable) : DictTable[] => {
     
+    let baseTables = [];
+
+    if (currentTable.derive) {
+        baseTables = currentTable.derive.source.map(t => tables.find(t2 => t2.id == t) as DictTable);
+    } else {
+        baseTables.push(currentTable);
+    }
+
     // if there is no active fields at all!!
     if (activeFields.length == 0) {
-        return [tables[0]];
+        return [currentTable];
+    } else {
+        // find what are other tables that was used to derive the active fields
+        let activeBaseFields = conceptShelfItems.filter((field) => {
+            return activeFields.map(f => f.source == "derived" ? findBaseFields(f, conceptShelfItems).map(f2 => f2.id) : [f.id]).flat().includes(field.id);
+        });
+    
+        let activeOriginalFields = activeBaseFields.filter(field => field.source == "original");
+    
+        if (activeOriginalFields.length == 0 && activeFields.length > 0 && tables.length > 0) {
+            return [currentTable];
+        }
+    
+        // find all tables that contains the active original fields
+        let tablesToAdd = tables.filter(t => activeOriginalFields.map(f => f.tableRef as string).includes(t.id));
+
+        baseTables.push(...tablesToAdd.filter(t => !baseTables.map(t2 => t2.id).includes(t.id)));
     }
 
-    let activeBaseFields = conceptShelfItems.filter((field) => {
-        return activeFields.map(f => f.source == "derived" ? findBaseFields(f, conceptShelfItems).map(f2 => f2.id) : [f.id]).flat().includes(field.id);
-    });
-
-    let activeOriginalFields = activeBaseFields.filter(field => field.source == "original");
-    let activeCustomFields = activeBaseFields.filter(field => field.source == "custom");
-    let activeDerivedFields = activeFields.filter(f => f.source == "derived");
-
-    if (activeOriginalFields.length == 0 && activeFields.length > 0 && tables.length > 0) {
-        return [tables[0]];
-    }
-
-    let baseTables = tables.filter(t => activeOriginalFields.map(f => f.tableRef as string).includes(t.id));
-
-    return baseTables
+    return baseTables;
 }
 
 export const TriggerCard: FC<{className?: string, trigger: Trigger, hideFields?: boolean, label?: string}> = function ({ label, className, trigger, hideFields }) {
@@ -104,7 +114,7 @@ export const TriggerCard: FC<{className?: string, trigger: Trigger, hideFields?:
                             sx={{color:'inherit', maxWidth: '110px', marginLeft: "2px", height: 18, fontSize: 12, borderRadius: '4px', 
                                    border: '1px solid rgb(250 235 215)', background: 'rgb(250 235 215 / 70%)',
                                    '& .MuiChip-label': { paddingLeft: '6px', paddingRight: '6px' }}} 
-                              label={`${field.name}`} />]
+                              label={`${field?.name}`} />]
             })
     }
 
@@ -190,6 +200,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
     const tables = useSelector((state: DataFormulatorState) => state.tables);
     const charts = useSelector((state: DataFormulatorState) => state.charts);
     const betaMode = useSelector((state: DataFormulatorState) => state.betaMode);
+
     let activeModel = useSelector(dfSelectors.getActiveModel);
 
     let [prompt, setPrompt] = useState<string>(trigger?.instruction || "");
@@ -233,7 +244,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
     let deriveNewData = (overrideTableId?: string) => {
 
         let mode = 'formulate';
-        let baseTables = selectBaseTables(activeFields, conceptShelfItems, tables);
+        let baseTables = selectBaseTables(activeFields, conceptShelfItems, tables, currentTable);
 
         let instruction = (chart.chartType == 'Auto' && prompt == "") ? "let's get started" : prompt;
 
@@ -352,6 +363,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                             let triggerChartSpec = duplicateChart(chart);
                             let currentTrigger: Trigger =  { 
                                 tableId: currentTable.id, 
+                                sourceTableIds: baseTables.map(t => t.id),
                                 instruction: instruction, 
                                 chartRef: triggerChartSpec.id,
                                 resultTableId: candidateTableId

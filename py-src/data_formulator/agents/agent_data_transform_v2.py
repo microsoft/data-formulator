@@ -226,6 +226,10 @@ class DataTransformationAgentV2(object):
             if len(code_blocks) > 0:
                 code_str = code_blocks[-1]
 
+                for table in input_tables:
+                    logger.info(f"Table: {table['name']}")
+                    logger.info(table['rows'])
+
                 try:
                     result = py_sandbox.run_transform_in_sandbox2020(code_str, [t['rows'] for t in input_tables])
                     result['code'] = code_str
