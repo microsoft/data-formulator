@@ -166,7 +166,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                 renderInput={(params) => (
                     <TextField
                         {...params}
-                        placeholder="endpoint"
+                        placeholder="provider"
                         InputProps={{
                             ...params.InputProps,
                             style: { fontSize: "0.875rem" }
@@ -181,7 +181,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                 PaperComponent={({ children }) => (
                     <Paper>
                         <Typography sx={{ p: 1, color: 'gray', fontStyle: 'italic', fontSize: '0.75rem' }}>
-                            suggestions
+                            examples
                         </Typography>
                         {children}
                     </Paper>
@@ -226,7 +226,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                 PaperComponent={({ children }) => (
                     <Paper>
                         <Typography sx={{ p: 1, color: 'gray', fontStyle: 'italic', fontSize: 'small' }}>
-                            suggestions
+                            examples
                         </Typography>
                         {children}
                     </Paper>
@@ -252,7 +252,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
             />
         </TableCell>
         <TableCell align="right">
-            <Tooltip title={modelExists ? "endpoint + model already exists" : "add and test model"}>
+            <Tooltip title={modelExists ? "provider + model already exists" : "add and test model"}>
                 <IconButton color={modelExists ? 'error' : 'primary'}
                     disabled={!readyToTest}
                     sx={{cursor: modelExists ? 'help' : 'pointer'}}
@@ -267,13 +267,9 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
 
                         let model = {endpoint, model: newModel, api_key: newApiKey, api_base: newApiBase, api_version: newApiVersion, id: id};
 
-                        console.log("checkpont 2")
-
                         dispatch(dfActions.addModel(model));
                         dispatch(dfActions.selectModel(id));
                         setTempSelectedModeId(id);
-
-                        console.log("checkpont 3")
 
                         testModel(model); 
                         
@@ -282,8 +278,6 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                         setNewApiKey(undefined);
                         setNewApiBase(undefined);
                         setNewApiVersion(undefined);
-
-                        console.log("checkpont 4")
                     }}>
                     <AddCircleIcon />
                 </IconButton>
@@ -312,7 +306,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
             <TableHead >
                 <TableRow>
                     <TableCell align="right"></TableCell>
-                    <TableCell sx={{fontWeight: 'bold', width: '120px'}}>endpoint</TableCell>
+                    <TableCell sx={{fontWeight: 'bold', width: '120px'}}>provider</TableCell>
                     <TableCell sx={{fontWeight: 'bold', width: '240px'}}>api_key</TableCell>
                     <TableCell sx={{fontWeight: 'bold', width: '120px'}} align="left">model</TableCell>
                     <TableCell sx={{fontWeight: 'bold', width: '240px'}} align="left">api_base</TableCell>
@@ -331,7 +325,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                     
                     let message = "the model is ready to use";
                     if (status == "unknown") {
-                        message = "Status unknown, click the status icon to test again.";
+                        message = "Click the status icon to test again before applying.";
                     } else if (status == "error") {
                         message = testedModels.find(t => t.id == model.id)?.message || "Unknown error";
                     }
@@ -354,9 +348,19 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                                 {model.endpoint}
                             </TableCell>
                             <TableCell component="th" scope="row" sx={{ borderBottom: borderStyle }}>
-                                {model.api_key != "" ? 
-                                    (showKeys ? (model.api_key || <Typography sx={{color: "text.secondary"}} fontSize='inherit'>N/A</Typography>) : "************") :
-                                    <Typography sx={{color: "text.secondary"}} fontSize='inherit'>N/A</Typography> 
+                                {model.api_key  ? (showKeys ? 
+                                    <Typography 
+                                        sx={{ 
+                                            maxWidth: '240px',
+                                            wordBreak: 'break-all',
+                                            whiteSpace: 'normal'
+                                        }} 
+                                        fontSize={10}
+                                    >
+                                        {model.api_key}
+                                    </Typography> 
+                                    : "************")
+                                     : <Typography sx={{color: "text.secondary"}} fontSize='inherit'>N/A</Typography>
                                 }
                             </TableCell>
                             <TableCell align="left" sx={{ borderBottom: borderStyle }}>
@@ -409,7 +413,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                                 }}
                             >
                                 <TableCell colSpan={2} align="right" ></TableCell>
-                                <TableCell colSpan={5}>
+                                <TableCell colSpan={6}>
                                     <Typography variant="caption" color="#c82c2c">
                                         {message}
                                     </Typography>
@@ -432,7 +436,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
 
     return <>
         <Tooltip title="select model">
-            <Button sx={{fontSize: "inherit"}} variant="text" color="primary" onClick={()=>{setModelDialogOpen(true)}} endIcon={selectedModelId ? <SettingsIcon /> : ''}>
+            <Button sx={{fontSize: "inherit", textTransform: "none"}} variant="text" color="primary" onClick={()=>{setModelDialogOpen(true)}} endIcon={selectedModelId ? <SettingsIcon /> : ''}>
                 {selectedModelId ? `Model: ${(models.find(m => m.id == selectedModelId) as any)?.model}` : 'Select A Model'}
             </Button>
         </Tooltip>

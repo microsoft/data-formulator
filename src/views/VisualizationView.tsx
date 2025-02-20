@@ -242,7 +242,6 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
     let charts = useSelector((state: DataFormulatorState) => state.charts);
     let focusedChartId = useSelector((state: DataFormulatorState) => state.focusedChartId);
     let chartSynthesisInProgress = useSelector((state: DataFormulatorState) => state.chartSynthesisInProgress);
-    let threadDrawerOpen = useSelector((state: DataFormulatorState) => state.threadDrawerOpen);
 
     let synthesisRunning = focusedChartId ? chartSynthesisInProgress.includes(focusedChartId) : false;
     let handleDeleteChart = () => { focusedChartId && dispatch(dfActions.deleteChartById(focusedChartId)) }
@@ -270,13 +269,6 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
     useEffect(() => {
         setFocusUpdated(true);
     }, [focusedChartId])
-
-    useEffect(() => {
-        let width = componentRef.current ? componentRef.current.offsetWidth : 0
-        if (width < 640 && threadDrawerOpen == true) {
-            setCollapseEditor(threadDrawerOpen);
-        }
-    }, [threadDrawerOpen])
 
     let chartUnavailable = true;
     
@@ -719,6 +711,7 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
     let tables = useSelector((state: DataFormulatorState) => state.tables);
     let charts = useSelector((state: DataFormulatorState) => state.charts);
     let focusedChartId = useSelector((state: DataFormulatorState) => state.focusedChartId);
+    let focusedTableId = useSelector((state: DataFormulatorState) => state.focusedTableId);
 
     let visViewMode = useSelector((state: DataFormulatorState) => state.visViewMode);
 
@@ -744,7 +737,7 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
                         if (focusedChart?.chartType == "?") { 
                             dispatch(dfActions.updateChartType({chartType: t.chart, chartId: focusedChartId as string}));
                         } else {
-                            dispatch(dfActions.createNewChart({chartType: t.chart, tableId: tables[0].id}));
+                            dispatch(dfActions.createNewChart({chartType: t.chart, tableId: focusedTableId}));
                         }
                     }}
                 >
@@ -766,12 +759,6 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
                         cachedCandidates={cachedCandidates.find(l => l.chartId == focusedChartId)?.tables || []}
                         handleUpdateCandidates={handleUpdateCandidates} />
 
-    //console.log(tables);
-
-    //let vegaSpec: any = createVegaObj(markType, encodingMap, conceptShelfItems)[0];
-    // if (tables.length > 0) {
-    //     vegaSpec = createVegaObj(markType, encodingMap, conceptShelfItems)[0];
-    // }
     let derivedFields = conceptShelfItems.filter(f => f.source == "derived");
 
     let finalView = <Box></Box>;

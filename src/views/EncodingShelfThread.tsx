@@ -148,30 +148,6 @@ export let ChartElementFC: FC<{chart: Chart, tableRows: any[], boxWidth?: number
     return element;
 }
 
-let selectBaseTables = (activeFields: FieldItem[], conceptShelfItems: FieldItem[], tables: DictTable[]) : DictTable[] => {
-    
-    // if there is no active fields at all!!
-    if (activeFields.length == 0) {
-        return [tables[0]];
-    }
-
-    let activeBaseFields = conceptShelfItems.filter((field) => {
-        return activeFields.map(f => f.source == "derived" ? findBaseFields(f, conceptShelfItems).map(f2 => f2.id) : [f.id]).flat().includes(field.id);
-    });
-
-    let activeOriginalFields = activeBaseFields.filter(field => field.source == "original");
-    let activeCustomFields = activeBaseFields.filter(field => field.source == "custom");
-    let activeDerivedFields = activeFields.filter(f => f.source == "derived");
-
-    if (activeOriginalFields.length == 0 && activeFields.length > 0 && tables.length > 0) {
-        return [tables[0]];
-    }
-
-    let baseTables = tables.filter(t => activeOriginalFields.map(f => f.tableRef as string).includes(t.id));
-
-    return baseTables
-}
-
 export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ chartId }) {
 
     // reference to states
@@ -204,11 +180,12 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
 
         let mode = 'formulate';
 
-        let sourceTable = tables.find(t => t.id == trigger.tableId) as DictTable;
+        let triggerTable = tables.find(t => t.id == trigger.tableId) as DictTable;
+
+        let baseTables = trigger.sourceTableIds.map(id => tables.find(t => t.id == id)).filter(t => t != undefined);
+
         let overrideTableId = trigger.resultTableId;
 
-        let baseTableIds = sourceTable.derive?.source || [sourceTable.id];
-        let baseTables = tables.filter(t => baseTableIds.includes(t.id));
         if (baseTables.length == 0) {
             return;
         }
@@ -243,20 +220,30 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
         let engine = getUrls().SERVER_DERIVE_DATA_URL;
 
         console.log("current log")
-        console.log(sourceTable.derive?.dialog)
+        console.log(triggerTable.derive?.dialog)
 
 
-        if (mode == "formulate" && sourceTable.derive?.dialog) {
+        if (mode == "formulate" && triggerTable.derive?.dialog) {
             messageBody = JSON.stringify({
                 token: token,
                 mode,
                 input_tables: baseTables.map(t => {return { name: t.id.replace(/\.[^/.]+$/ , ""), rows: t.rows }}),
-                output_fields: activeBaseFields.map(f => { return {name: f.name } }),
-                dialog: sourceTable.derive?.dialog,
-                new_instruction: prompt,
+                new_fields: activeBaseFields.map(f => { return {name: f.name} }),
+                extra_prompt: prompt,
+                additional_messages: triggerTable.derive?.dialog,
                 model: activeModel
-            })
-            engine = getUrls().SERVER_REFINE_DATA_URL;
+            }) 
+            engine = getUrls().SERVER_DERIVE_DATA_URL;
+            // messageBody = JSON.stringify({
+            //     token: token,
+            //     mode,
+            //     input_tables: baseTables.map(t => {return { name: t.id.replace(/\.[^/.]+$/ , ""), rows: t.rows }}),
+            //     output_fields: activeBaseFields.map(f => { return {name: f.name } }),
+            //     dialog: triggerTable.derive?.dialog,
+            //     new_instruction: prompt,
+            //     model: activeModel
+            // })
+            //engine = getUrls().SERVER_REFINE_DATA_URL;
         }
 
         let message = {
@@ -392,14 +379,24 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
                 }
             }).catch((error) => {
                 setReformulteRunning(false);
-           
                 dispatch(dfActions.changeChartRunningStatus({chartId, status: false}));
-                dispatch(dfActions.addMessages({
-                    "timestamp": Date.now(),
-                    "type": "error",
-                    "value": `Data formulation failed, please try again.`,
-                    "detail": error.message
-                }));
+           
+                // Check if the error was caused by the AbortController
+                if (error.name === 'AbortError') {
+                    dispatch(dfActions.addMessages({
+                        "timestamp": Date.now(),
+                        "type": "error",
+                        "value": "Data formulation timed out after 30 seconds. Please try again.",
+                        "detail": "Request exceeded timeout limit"
+                    }));
+                } else {
+                    dispatch(dfActions.addMessages({
+                        "timestamp": Date.now(),
+                        "type": "error",
+                        "value": `Data formulation failed, please try again.`,
+                        "detail": error.message
+                    }));
+                }
             });
     }
 

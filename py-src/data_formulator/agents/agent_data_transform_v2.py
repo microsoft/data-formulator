@@ -45,7 +45,7 @@ Concretely, you should first refine users' goal and then create a python functio
 }
 ```
 
-    2. Then, write a python function based on the refined goal, the function input is a dataframe "df" and the output is the transformed dataframe "transformed_df". "transformed_df" should contain all "output_fields" from the refined goal.
+    2. Then, write a python function based on the refined goal, the function input is a dataframe "df" (or multiple dataframes based on tables presented in the [CONTEXT] section) and the output is the transformed dataframe "transformed_df". "transformed_df" should contain all "output_fields" from the refined goal.
 The python function must follow the template provided in [TEMPLATE], do not import any other libraries or modify function name. The function should be as simple as possible and easily readable.
 If there is no data transformation needed based on "output_fields", the transformation function can simply "return df".
 
@@ -56,10 +56,14 @@ import pandas as pd
 import collections
 import numpy as np
 
-def transform_data(df):
+def transform_data(df1, df2, ...): 
     # complete the template here
     return transformed_df
 ```
+
+note: 
+- if the user provided one table, then it should be def transform_data(df1), if the user provided multiple tables, then it should be def transform_data(df1, df2, ...) and you should consider the join between tables to derive the output.
+- try to use table names to refer to the input dataframes, for example, if the user provided two tables city and weather, you can use `transform_data(df_city, df_weather)` to refer to the two dataframes.
 
     3. The [OUTPUT] must only contain a json object representing the refined goal (including "detailed_instruction", "output_fields", "visualization_fields" and "reason") and a python code block representing the transformation code, do not add any extra text explanation.
 '''
@@ -226,6 +230,10 @@ class DataTransformationAgentV2(object):
             if len(code_blocks) > 0:
                 code_str = code_blocks[-1]
 
+                for table in input_tables:
+                    logger.info(f"Table: {table['name']}")
+                    logger.info(table['rows'])
+
                 try:
                     result = py_sandbox.run_transform_in_sandbox2020(code_str, [t['rows'] for t in input_tables])
                     result['code'] = code_str
@@ -254,7 +262,16 @@ class DataTransformationAgentV2(object):
         return candidates
 
 
-    def run(self, input_tables, description, expected_fields: list[str], n=1):
+    def run(self, input_tables, description, expected_fields: list[str], prev_messages: list[dict] = [], n=1):
+
+        if len(prev_messages) > 0:
+            logger.info("=== Previous messages ===>")
+            formatted_prev_messages = ""
+            for m in prev_messages:
+                if m['role'] != 'system':
+                    formatted_prev_messages += f"{m['role']}: \n\n\t{m['content']}\n\n"
+            logger.info(formatted_prev_messages)
+            prev_messages = [{"role": "user", "content": '[Previous Messages] Here are the previous messages for your reference:\n\n' + formatted_prev_messages}]
 
         data_summary = generate_data_summary(input_tables, include_data_samples=True)
 
@@ -268,6 +285,7 @@ class DataTransformationAgentV2(object):
         logger.info(user_query)
 
         messages = [{"role":"system", "content": self.system_prompt},
+                    *prev_messages,
                     {"role":"user","content": user_query}]
         
         response = completion_response_wrapper(self.client, messages, n)

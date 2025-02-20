@@ -425,6 +425,11 @@ def derive_data():
         new_fields = content["new_fields"]
         instruction = content["extra_prompt"]
 
+        if "additional_messages" in content:
+            prev_messages = content["additional_messages"]
+        else:
+            prev_messages = []
+
         print("spec------------------------------")
         print(new_fields)
         print(instruction)
@@ -439,7 +444,7 @@ def derive_data():
             results = agent.run(input_tables, instruction)
         else:
             agent = DataTransformationAgentV2(client=client)
-            results = agent.run(input_tables, instruction, [field['name'] for field in new_fields])
+            results = agent.run(input_tables, instruction, [field['name'] for field in new_fields], prev_messages)
 
         repair_attempts = 0
         while results[0]['status'] == 'error' and repair_attempts == 0: # only try once

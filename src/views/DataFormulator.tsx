@@ -33,8 +33,8 @@ import { DndProvider } from 'react-dnd'
 import { HTML5Backend } from 'react-dnd-html5-backend'
 
 import { SelectableGroup } from 'react-selectable-fast';
-import { TableCopyDialogV2, TableSelectionDialog, TableURLDialog } from './TableSelectionView';
-import { TableCopyDialog, TableUploadDialog } from './TableSelectionView';
+import { TableCopyDialogV2, TableSelectionDialog } from './TableSelectionView';
+import { TableUploadDialog } from './TableSelectionView';
 import { toolName } from '../app/App';
 import { DataThread } from './DataThread';
 
@@ -178,7 +178,7 @@ Totals (7 entries)	5	5	5	15
     console.log(selectedModelId)
     
     return (
-        <Box sx={{ display: 'block', width: "100%", height: 'calc(100vh - 49px)' }}>
+        <Box sx={{ display: 'block', width: "100%", height: 'calc(100% - 49px)' }}>
             <DndProvider backend={HTML5Backend}>
                 {selectedModelId == undefined ? modelSelectionDialogBox : (tables.length > 0 ? fixedSplitPane : dataUploadRequestBox)} 
             </DndProvider>
