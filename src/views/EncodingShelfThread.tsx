@@ -182,7 +182,8 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
 
         let triggerTable = tables.find(t => t.id == trigger.tableId) as DictTable;
 
-        let baseTables = tables.filter(t => trigger.sourceTableIds.includes(t.id));
+        let baseTables = trigger.sourceTableIds.map(id => tables.find(t => t.id == id)).filter(t => t != undefined);
+
         let overrideTableId = trigger.resultTableId;
 
         if (baseTables.length == 0) {
@@ -227,12 +228,22 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
                 token: token,
                 mode,
                 input_tables: baseTables.map(t => {return { name: t.id.replace(/\.[^/.]+$/ , ""), rows: t.rows }}),
-                output_fields: activeBaseFields.map(f => { return {name: f.name } }),
-                dialog: triggerTable.derive?.dialog,
-                new_instruction: prompt,
+                new_fields: activeBaseFields.map(f => { return {name: f.name} }),
+                extra_prompt: prompt,
+                additional_messages: triggerTable.derive?.dialog,
                 model: activeModel
-            })
-            engine = getUrls().SERVER_REFINE_DATA_URL;
+            }) 
+            engine = getUrls().SERVER_DERIVE_DATA_URL;
+            // messageBody = JSON.stringify({
+            //     token: token,
+            //     mode,
+            //     input_tables: baseTables.map(t => {return { name: t.id.replace(/\.[^/.]+$/ , ""), rows: t.rows }}),
+            //     output_fields: activeBaseFields.map(f => { return {name: f.name } }),
+            //     dialog: triggerTable.derive?.dialog,
+            //     new_instruction: prompt,
+            //     model: activeModel
+            // })
+            //engine = getUrls().SERVER_REFINE_DATA_URL;
         }
 
         let message = {

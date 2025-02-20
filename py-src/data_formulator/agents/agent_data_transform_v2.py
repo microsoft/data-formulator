@@ -258,7 +258,16 @@ class DataTransformationAgentV2(object):
         return candidates
 
 
-    def run(self, input_tables, description, expected_fields: list[str], n=1):
+    def run(self, input_tables, description, expected_fields: list[str], prev_messages: list[dict] = [], n=1):
+
+        if len(prev_messages) > 0:
+            logger.info("=== Previous messages ===>")
+            formatted_prev_messages = ""
+            for m in prev_messages:
+                if m['role'] != 'system':
+                    formatted_prev_messages += f"{m['role']}: \n\n\t{m['content']}\n\n"
+            logger.info(formatted_prev_messages)
+            prev_messages = [{"role": "user", "content": '[Previous Messages] Here are the previous messages for your reference:\n\n' + formatted_prev_messages}]
 
         data_summary = generate_data_summary(input_tables, include_data_samples=True)
 
@@ -272,6 +281,7 @@ class DataTransformationAgentV2(object):
         logger.info(user_query)
 
         messages = [{"role":"system", "content": self.system_prompt},
+                    *prev_messages,
                     {"role":"user","content": user_query}]
         
         response = completion_response_wrapper(self.client, messages, n)

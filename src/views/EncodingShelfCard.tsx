@@ -83,6 +83,9 @@ let selectBaseTables = (activeFields: FieldItem[], conceptShelfItems: FieldItem[
         baseTables.push(...tablesToAdd.filter(t => !baseTables.map(t2 => t2.id).includes(t.id)));
     }
 
+    console.log("selectBaseTables baseTables");
+    console.log(baseTables);
+
     return baseTables;
 }
 
@@ -199,7 +202,6 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
     // reference to states
     const tables = useSelector((state: DataFormulatorState) => state.tables);
     const charts = useSelector((state: DataFormulatorState) => state.charts);
-    const betaMode = useSelector((state: DataFormulatorState) => state.betaMode);
 
     let activeModel = useSelector(dfSelectors.getActiveModel);
 
@@ -293,16 +295,46 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
         let engine = getUrls().SERVER_DERIVE_DATA_URL;
 
         if (mode == "formulate" && currentTable.derive?.dialog) {
-            messageBody = JSON.stringify({
-                token: token,
-                mode,
-                input_tables: baseTables.map(t => {return { name: t.id.replace(/\.[^/.]+$/ , ""), rows: t.rows }}),
-                output_fields: activeBaseFields.map(f => { return {name: f.name} }),
-                dialog: currentTable.derive?.dialog,
-                new_instruction: instruction,
-                model: activeModel
-            })
-            engine = getUrls().SERVER_REFINE_DATA_URL;
+                let sourceTableIds = currentTable.derive?.source;
+                let baseTableIds = baseTables.map(t => t.id);
+
+                console.log("sourceTableIds ---- and ---- baseTableIds");
+                console.log(sourceTableIds);
+                console.log(baseTableIds);
+
+                // Compare if source and base table IDs are different
+                if (!sourceTableIds.every(id => baseTableIds.includes(id)) || 
+                    !baseTableIds.every(id => sourceTableIds.includes(id))) {
+                    
+                    let additionalMessages = currentTable.derive.dialog;
+
+                    console.log("in here");
+                    console.log(additionalMessages);
+
+                    // in this case, because table ids has changed, we need to use the additional messages and reformulate
+                    messageBody = JSON.stringify({
+                        token: token,
+                        mode,
+                        input_tables: baseTables.map(t => {return { name: t.id.replace(/\.[^/.]+$/ , ""), rows: t.rows }}),
+                        new_fields: activeBaseFields.map(f => { return {name: f.name} }),
+                        extra_prompt: instruction,
+                        model: activeModel,
+                        additional_messages: additionalMessages
+                    });
+                    engine = getUrls().SERVER_DERIVE_DATA_URL;
+                } else {
+                    messageBody = JSON.stringify({
+                        token: token,
+                        mode,
+                        input_tables: baseTables.map(t => {return { name: t.id.replace(/\.[^/.]+$/ , ""), rows: t.rows }}),
+                        output_fields: activeBaseFields.map(f => { return {name: f.name} }),
+                        dialog: currentTable.derive?.dialog,
+                        new_instruction: instruction,
+                        model: activeModel
+                    })
+                    engine = getUrls().SERVER_REFINE_DATA_URL;
+                }
+            
         }
 
         let message = {

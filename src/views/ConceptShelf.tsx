@@ -198,7 +198,7 @@ export const ConceptShelf: FC<ConceptShelfProps> = function ConceptShelf() {
                                         }
                                     }}
                                 >
-                                    click to expand fields
+                                    {`add fields from ${groupName} for tables joins`}
                                 </Button>
                             )}
                             <Box
