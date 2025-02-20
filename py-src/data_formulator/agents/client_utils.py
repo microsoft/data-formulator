@@ -61,12 +61,17 @@ class Client(object):
         # Configure LiteLLM 
 
         if self.endpoint == "openai":
-            client = openai.OpenAI(api_key=self.params["api_key"], base_url=self.params["api_base"] if "api_base" in self.params else None)
+            client = openai.OpenAI(
+                api_key=self.params["api_key"], 
+                base_url=self.params["api_base"] if "api_base" in self.params else None,
+                timeout=120
+            )
 
             return client.chat.completions.create(
                 model=self.model,
                 messages=messages,
-                **{k: v for k, v in self.params.items() if k != "api_key"}
+                temperature=self.params["temperature"],
+                max_tokens=self.params["max_completion_tokens"],
             )
         else:
             return litellm.completion(
