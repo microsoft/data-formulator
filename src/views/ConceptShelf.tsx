@@ -182,7 +182,37 @@ export const ConceptShelf: FC<ConceptShelfProps> = function ConceptShelf() {
                                     </Box>
                                 </Divider>
                             </Box>
-                            {!expandedGroups.includes(groupName) && !isCustomGroup && (
+                            
+                            <Box
+                                sx={{
+                                    maxHeight: expandedGroups.includes(groupName) || isCustomGroup ? '1000px' : '240px',
+                                    overflow: 'hidden',
+                                    transition: 'max-height 0.3s ease-in-out',
+                                    width: '100%'
+                                }}
+                            >
+                                {(expandedGroups.includes(groupName) || isCustomGroup ? fields : fields.slice(0, 5)).map((field) => (
+                                    <ConceptCard key={`concept-card-${field.id}`} field={field} />
+                                ))}
+                                {!expandedGroups.includes(groupName) && !isCustomGroup && fields.length > 5 && (
+                                    <Box sx={{ 
+                                        position: 'relative', 
+                                        height: '40px',
+                                        '&::after': {
+                                            content: '""',
+                                            position: 'absolute',
+                                            bottom: 0,
+                                            left: 0,
+                                            right: 0,
+                                            height: '100%',
+                                            background: 'linear-gradient(to bottom, transparent, white)'
+                                        }
+                                    }}>
+                                        <ConceptCard field={fields[5]} />
+                                    </Box>
+                                )}
+                            </Box>
+                            {!expandedGroups.includes(groupName) && !isCustomGroup && fields.length > 5 && (
                                 <Button
                                     onClick={() => updateExpandedGroup(groupName, true)}
                                     sx={{
@@ -198,23 +228,13 @@ export const ConceptShelf: FC<ConceptShelfProps> = function ConceptShelf() {
                                         }
                                     }}
                                 >
-                                    {`add fields from ${groupName} for tables joins`}
+                                    {`... show all ${fields.length} ${groupName} fields ▾`}
                                 </Button>
                             )}
-                            <Box
-                                sx={{
-                                    maxHeight: expandedGroups.includes(groupName) || isCustomGroup ? '1000px' : '0px',
-                                    overflow: 'hidden',
-                                    transition: 'max-height 0.3s ease-in-out'
-                                }}
-                            >
-                                {fields.map((field) => (
-                                    <ConceptCard key={`concept-card-${field.id}`} field={field} />
-                                ))}
-                            </Box>
                             </>
                         )
                     })}
+                    <Divider orientation="horizontal" textAlign="left" sx={{mt: 1}}></Divider>
                 </Box>
             </Box>
         </Box>
