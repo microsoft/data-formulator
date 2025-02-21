@@ -155,7 +155,8 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
     const charts = useSelector((state: DataFormulatorState) => state.charts);
     let activeThreadChartId = useSelector((state: DataFormulatorState) => state.activeThreadChartId);
     let activeModel = useSelector(dfSelectors.getActiveModel);
-    
+    const config = useSelector((state: DataFormulatorState) => state.config);
+
     let [reformulateRunning, setReformulteRunning] = useState<boolean>(false);
 
     let activeThreadChart = charts.find(c => c.id == activeThreadChartId);
@@ -215,7 +216,8 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
             input_tables: baseTables.map(t => {return { name: t.id.replace(/\.[^/.]+$/ , ""), rows: t.rows }}),
             new_fields: activeBaseFields.map(f => { return {name: f.name} }),
             extra_prompt: prompt,
-            model: activeModel
+            model: activeModel,
+            max_repair_attempts: config.maxRepairAttempts
         }) 
         let engine = getUrls().SERVER_DERIVE_DATA_URL;
 
@@ -231,7 +233,8 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
                 new_fields: activeBaseFields.map(f => { return {name: f.name} }),
                 extra_prompt: prompt,
                 additional_messages: triggerTable.derive?.dialog,
-                model: activeModel
+                model: activeModel,
+                max_repair_attempts: config.maxRepairAttempts
             }) 
             engine = getUrls().SERVER_DERIVE_DATA_URL;
             // messageBody = JSON.stringify({
@@ -241,7 +244,8 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
             //     output_fields: activeBaseFields.map(f => { return {name: f.name } }),
             //     dialog: triggerTable.derive?.dialog,
             //     new_instruction: prompt,
-            //     model: activeModel
+            //     model: activeModel,
+            //     max_repair_attempts: config.maxRepairAttempts
             // })
             //engine = getUrls().SERVER_REFINE_DATA_URL;
         }
@@ -258,7 +262,7 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
 
         // timeout the request after 30 seconds
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 30000);
+        const timeoutId = setTimeout(() => controller.abort(), config.formulateTimeoutSeconds * 1000);
 
         setReformulteRunning(true);
     
@@ -386,7 +390,7 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
                     dispatch(dfActions.addMessages({
                         "timestamp": Date.now(),
                         "type": "error",
-                        "value": "Data formulation timed out after 30 seconds. Please try again.",
+                        "value": `Data formulation timed out after ${config.formulateTimeoutSeconds} seconds. Consider breaking down the task, using a different model or prompt, or increasing the timeout limit.`,
                         "detail": "Request exceeded timeout limit"
                     }));
                 } else {

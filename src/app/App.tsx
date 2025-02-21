@@ -35,6 +35,7 @@ import {
     ToggleButton,
     Menu,
     MenuItem,
+    TextField,
 } from '@mui/material';
 
 
@@ -46,7 +47,7 @@ import { DataFormulatorFC } from '../views/DataFormulator';
 
 import GridViewIcon from '@mui/icons-material/GridView';
 import ViewSidebarIcon from '@mui/icons-material/ViewSidebar';
-
+import SettingsIcon from '@mui/icons-material/Settings';
 import {
     createBrowserRouter,
     RouterProvider,
@@ -295,10 +296,101 @@ const ResetDialog: React.FC = () => {
     );
 };
 
+const ConfigDialog: React.FC = () => {
+    const [open, setOpen] = useState(false);
+    const dispatch = useDispatch();
+    const config = useSelector((state: DataFormulatorState) => state.config);
+
+    const [formulateTimeoutSeconds, setFormulateTimeoutSeconds] = useState(config.formulateTimeoutSeconds);
+    const [maxRepairAttempts, setMaxRepairAttempts] = useState(config.maxRepairAttempts);
+
+    // Add check for changes
+    const hasChanges = formulateTimeoutSeconds !== config.formulateTimeoutSeconds || 
+                      maxRepairAttempts !== config.maxRepairAttempts;
+
+    return (
+        <>
+            <Button variant="text" sx={{textTransform: 'none'}} onClick={() => setOpen(true)} startIcon={<SettingsIcon />}>
+                 <Box component="span" sx={{lineHeight: 1.2, display: 'flex', flexDirection: 'column', alignItems: 'left'}}>
+                    <Box component="span" sx={{py: 0, my: 0, fontSize: '10px', mr: 'auto'}}>timeout={config.formulateTimeoutSeconds}s</Box>
+                    <Box component="span" sx={{py: 0, my: 0, fontSize: '10px', mr: 'auto'}}>max_repair={config.maxRepairAttempts}</Box>
+                </Box>
+            </Button>
+            <Dialog onClose={() => setOpen(false)} open={open}>
+                <DialogTitle>Data Formulator Configuration</DialogTitle>
+                <DialogContent>
+                    <DialogContentText>
+                        <Box sx={{ 
+                            display: 'flex', 
+                            flexDirection: 'column', 
+                            gap: 3,
+                            my: 2,
+                            maxWidth: 400
+                        }}>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                                <Box sx={{ flex: 1 }}>
+                                    <TextField
+                                        label="formulate timeout (seconds)"
+                                        type="number"
+                                        variant="outlined"
+                                        value={formulateTimeoutSeconds}
+                                        onChange={(e) => setFormulateTimeoutSeconds(parseInt(e.target.value))}
+                                        fullWidth
+                                    />
+                                    <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+                                        Maximum time allowed for the formulation process before timing out. 
+                                    </Typography>
+                                    <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+                                        Smaller values (&lt;30s) make the model fails fast thus providing a smoother UI experience. Increase this value for slow models.
+                                    </Typography>
+                                </Box>
+                            </Box>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                                <Box sx={{ flex: 1 }}>
+                                    <TextField
+                                        label="max repair attempts"
+                                        type="number"
+                                        variant="outlined"
+                                        value={maxRepairAttempts}
+                                        onChange={(e) => setMaxRepairAttempts(parseInt(e.target.value))}
+                                        fullWidth
+                                    />
+                                    <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+                                        Maximum number of times the LLM will attempt to repair code if generated code fails to execute (recommended = 1).
+                                    </Typography>
+                                    <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+                                        Higher values <span style={{fontStyle: 'italic'}}>might</span> increase chances of success but may take longer. Repair time is considered as part of the formulate timeout.
+                                    </Typography>
+                                </Box>
+                            </Box>
+                        </Box>
+                    </DialogContentText>
+                </DialogContent>
+                <DialogActions sx={{'.MuiButton-root': {textTransform: 'none'}}}>
+                    <Button sx={{marginRight: 'auto'}} onClick={() => {
+                        setFormulateTimeoutSeconds(30);
+                        setMaxRepairAttempts(1);
+                    }}>Reset to default</Button>
+                    <Button onClick={() => setOpen(false)}>Cancel</Button>
+                    <Button 
+                        variant={hasChanges ? "contained" : "text"}
+                        onClick={() => {
+                            dispatch(dfActions.setConfig({formulateTimeoutSeconds, maxRepairAttempts}));
+                            setOpen(false);
+                        }}
+                    >
+                        Apply
+                    </Button>
+                </DialogActions>
+            </Dialog>
+        </>
+    );  
+}
+
 export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
 
     const visViewMode = useSelector((state: DataFormulatorState) => state.visViewMode);
-    const betaMode = useSelector((state: DataFormulatorState) => state.betaMode);
+    const config = useSelector((state: DataFormulatorState) => state.config);
     const tables = useSelector((state: DataFormulatorState) => state.tables);
 
     // if the user has logged in
@@ -410,7 +502,7 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
 
     let appBar = [
         <AppBar className="app-bar" position="static" key="app-bar-main">
-            <Toolbar variant="dense" sx={{ backgroundColor: betaMode ? 'lavender' : '' }}>
+            <Toolbar variant="dense">
                 <Button href={"/"} sx={{
                     display: "flex", flexDirection: "row", textTransform: "none",
                     backgroundColor: 'transparent',
@@ -420,7 +512,7 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
                 }} color="inherit">
                     <Box component="img" sx={{ height: 32, marginRight: "12px" }} alt="" src={dfLogo} />
                     <Typography variant="h6" noWrap component="h1" sx={{ fontWeight: 300, display: { xs: 'none', sm: 'block' } }}>
-                        {toolName} {betaMode ? "β" : ""} {process.env.NODE_ENV == "development" ? "" : ""}
+                        {toolName} {process.env.NODE_ENV == "development" ? "" : ""}
                     </Typography>
                 </Button>
                 <Box sx={{ flexGrow: 1, textAlign: 'center', display: 'flex', justifyContent: 'center' }} >
@@ -432,6 +524,8 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
                         about
                     </Button>
                     <Divider orientation="vertical" variant="middle" flexItem /> */}
+                    <ConfigDialog />
+                    <Divider orientation="vertical" variant="middle" flexItem />
                     <ModelSelectionButton />
                     <Divider orientation="vertical" variant="middle" flexItem />
                     <Typography sx={{ display: 'flex', fontSize: 14, alignItems: 'center', gap: 1 }}>

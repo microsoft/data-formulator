@@ -425,6 +425,8 @@ def derive_data():
         new_fields = content["new_fields"]
         instruction = content["extra_prompt"]
 
+        max_repair_attempts = content["max_repair_attempts"] if "max_repair_attempts" in content else 1
+
         if "additional_messages" in content:
             prev_messages = content["additional_messages"]
         else:
@@ -447,7 +449,7 @@ def derive_data():
             results = agent.run(input_tables, instruction, [field['name'] for field in new_fields], prev_messages)
 
         repair_attempts = 0
-        while results[0]['status'] == 'error' and repair_attempts == 0: # only try once
+        while results[0]['status'] == 'error' and repair_attempts < max_repair_attempts: # try up to n times
             error_message = results[0]['content']
             new_instruction = f"We run into the following problem executing the code, please fix it:\n\n{error_message}\n\nPlease think step by step, reflect why the error happens and fix the code so that no more errors would occur."
 
@@ -482,7 +484,10 @@ def refine_data():
         output_fields = content["output_fields"]
         dialog = content["dialog"]
         new_instruction = content["new_instruction"]
-        
+        max_repair_attempts = content["max_repair_attempts"] if "max_repair_attempts" in content else 1
+
+        print("max_repair_attempts")
+        print(max_repair_attempts)
         print("previous dialog")
         print(dialog)
 
@@ -491,7 +496,7 @@ def refine_data():
         results = agent.followup(input_tables, dialog, [field['name'] for field in output_fields], new_instruction)
 
         repair_attempts = 0
-        while results[0]['status'] == 'error' and repair_attempts == 0: # only try once
+        while results[0]['status'] == 'error' and repair_attempts < max_repair_attempts: # only try once
             error_message = results[0]['content']
             new_instruction = f"We run into the following problem executing the code, please fix it:\n\n{error_message}\n\nPlease think step by step, reflect why the error happens and fix the code so that no more errors would occur."
             prev_dialog = results[0]['dialog']

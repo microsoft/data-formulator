@@ -65,7 +65,10 @@ export interface DataFormulatorState {
 
     chartSynthesisInProgress: string[];
 
-    betaMode: boolean;
+    config: {
+        formulateTimeoutSeconds: number;
+        maxRepairAttempts: number;
+    }
 }
 
 // Define the initial state using that type
@@ -98,7 +101,10 @@ const initialState: DataFormulatorState = {
 
     chartSynthesisInProgress: [],
 
-    betaMode: false,
+    config: {
+        formulateTimeoutSeconds: 30,
+        maxRepairAttempts: 1,
+    }
 }
 
 let getUnrefedDerivedTableIds = (state: DataFormulatorState) => {
@@ -247,7 +253,11 @@ export const dataFormulatorSlice = createSlice({
 
             state.chartSynthesisInProgress = [];
 
-            state.betaMode = false;
+            // avoid resetting config
+            // state.config = {
+            //     formulateTimeoutSeconds: 30,
+            //     repairAttempts: 1,
+            // }
         },
         loadState: (state, action: PayloadAction<any>) => {
 
@@ -274,10 +284,10 @@ export const dataFormulatorSlice = createSlice({
 
             state.chartSynthesisInProgress = [];
 
-            state.betaMode = savedState.betaMode;
+            state.config = savedState.config;
         },
-        toggleBetaMode: (state, action: PayloadAction<boolean>) => {
-            state.betaMode = action.payload;
+        setConfig: (state, action: PayloadAction<{formulateTimeoutSeconds: number, maxRepairAttempts: number}>) => {
+            state.config = action.payload;
         },
         selectModel: (state, action: PayloadAction<string | undefined>) => {
             state.selectedModelId = action.payload;

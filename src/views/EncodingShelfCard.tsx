@@ -308,6 +308,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
     // reference to states
     const tables = useSelector((state: DataFormulatorState) => state.tables);
     const charts = useSelector((state: DataFormulatorState) => state.charts);
+    const config = useSelector((state: DataFormulatorState) => state.config);
 
     let existMultiplePossibleBaseTables = tables.filter(t => t.derive == undefined).length > 1;
 
@@ -421,7 +422,8 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
             input_tables: actionTables.map(t => {return { name: t.id.replace(/\.[^/.]+$/ , ""), rows: t.rows }}),
             new_fields: activeBaseFields.map(f => { return {name: f.name} }),
             extra_prompt: instruction,
-            model: activeModel
+            model: activeModel,
+            max_repair_attempts: config.maxRepairAttempts
         }) 
         let engine = getUrls().SERVER_DERIVE_DATA_URL;
 
@@ -449,7 +451,8 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                         new_fields: activeBaseFields.map(f => { return {name: f.name} }),
                         extra_prompt: instruction,
                         model: activeModel,
-                        additional_messages: additionalMessages
+                        additional_messages: additionalMessages,
+                        max_repair_attempts: config.maxRepairAttempts
                     });
                     engine = getUrls().SERVER_DERIVE_DATA_URL;
                 } else {
@@ -460,7 +463,8 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                         output_fields: activeBaseFields.map(f => { return {name: f.name} }),
                         dialog: currentTable.derive?.dialog,
                         new_instruction: instruction,
-                        model: activeModel
+                        model: activeModel,
+                        max_repair_attempts: config.maxRepairAttempts
                     })
                     engine = getUrls().SERVER_REFINE_DATA_URL;
                 }
@@ -479,7 +483,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
 
         // timeout the request after 30 seconds
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 30000);
+        const timeoutId = setTimeout(() => controller.abort(), config.formulateTimeoutSeconds * 1000);
     
         fetch(engine, {...message, signal: controller.signal })
             .then((response) => response.json())
@@ -650,7 +654,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                     dispatch(dfActions.addMessages({
                         "timestamp": Date.now(),
                         "type": "error",
-                        "value": "Data formulation timed out after 30 seconds. Please try again.",
+                        "value": `Data formulation timed out after ${config.formulateTimeoutSeconds} seconds. Consider breaking down the task, using a different model or prompt, or increasing the timeout limit.`,
                         "detail": "Request exceeded timeout limit"
                     }));
                 } else {
