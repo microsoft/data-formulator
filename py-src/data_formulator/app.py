@@ -213,8 +213,8 @@ def test_model():
         content = request.get_json()
 
         # contains endpoint, key, model, api_base, api_version
-        print("content------------------------------")
-        print(content)
+        logger.info("content------------------------------")
+        logger.info(content)
 
         client = get_client(content['model'])
 
@@ -226,8 +226,8 @@ def test_model():
                 ]
             )
 
-            print(f"model: {content['model']}")
-            print(f"welcome message: {response.choices[0].message.content}")
+            logger.info(f"model: {content['model']}")
+            logger.info(f"welcome message: {response.choices[0].message.content}")
 
             if "I can hear you." in response.choices[0].message.content:
                 result = {
@@ -236,7 +236,7 @@ def test_model():
                     "message": ""
                 }
         except Exception as e:
-            print(f"Error: {e}")
+            logger.info(f"Error: {e}")
             error_message = str(e)
             result = {
                 "model": content['model'],
@@ -250,13 +250,13 @@ def test_model():
 
 @app.route("/", defaults={"path": ""})
 def index_alt(path):
-    print(app.static_folder)
+    logger.info(app.static_folder)
     return send_from_directory(app.static_folder, "index.html")
 
 @app.errorhandler(404)
 def page_not_found(e):
     # your processing here
-    print(app.static_folder)
+    logger.info(app.static_folder)
     return send_from_directory(app.static_folder, "index.html") #'Hello 404!' #send_from_directory(app.static_folder, "index.html")
 
 ###### test functions ######
@@ -425,14 +425,21 @@ def derive_data():
         new_fields = content["new_fields"]
         instruction = content["extra_prompt"]
 
+        max_repair_attempts = content["max_repair_attempts"] if "max_repair_attempts" in content else 1
+
         if "additional_messages" in content:
             prev_messages = content["additional_messages"]
         else:
             prev_messages = []
 
-        print("spec------------------------------")
-        print(new_fields)
-        print(instruction)
+        logger.info("== input tables ===>")
+        for table in input_tables:
+            logger.info(f"===> Table: {table['name']} (first 5 rows)")
+            logger.info(table['rows'][:5])
+
+        logger.info("== user spec ===")
+        logger.info(new_fields)
+        logger.info(instruction)
 
         mode = "transform"
         if len(new_fields) == 0:
@@ -447,7 +454,7 @@ def derive_data():
             results = agent.run(input_tables, instruction, [field['name'] for field in new_fields], prev_messages)
 
         repair_attempts = 0
-        while results[0]['status'] == 'error' and repair_attempts == 0: # only try once
+        while results[0]['status'] == 'error' and repair_attempts < max_repair_attempts: # try up to n times
             error_message = results[0]['content']
             new_instruction = f"We run into the following problem executing the code, please fix it:\n\n{error_message}\n\nPlease think step by step, reflect why the error happens and fix the code so that no more errors would occur."
 
@@ -482,16 +489,23 @@ def refine_data():
         output_fields = content["output_fields"]
         dialog = content["dialog"]
         new_instruction = content["new_instruction"]
+        max_repair_attempts = content["max_repair_attempts"] if "max_repair_attempts" in content else 1
         
-        print("previous dialog")
-        print(dialog)
+        logger.info("== input tables ===>")
+        for table in input_tables:
+            logger.info(f"===> Table: {table['name']} (first 5 rows)")
+            logger.info(table['rows'][:5])
+        
+        logger.info("== user spec ===>")
+        logger.info(output_fields)
+        logger.info(new_instruction)
 
         # always resort to the data transform agent       
         agent = DataTransformationAgentV2(client=client)
         results = agent.followup(input_tables, dialog, [field['name'] for field in output_fields], new_instruction)
 
         repair_attempts = 0
-        while results[0]['status'] == 'error' and repair_attempts == 0: # only try once
+        while results[0]['status'] == 'error' and repair_attempts < max_repair_attempts: # only try once
             error_message = results[0]['content']
             new_instruction = f"We run into the following problem executing the code, please fix it:\n\n{error_message}\n\nPlease think step by step, reflect why the error happens and fix the code so that no more errors would occur."
             prev_dialog = results[0]['dialog']

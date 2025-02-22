@@ -436,7 +436,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
 
     return <>
         <Tooltip title="select model">
-            <Button sx={{fontSize: "inherit", textTransform: "none"}} variant="text" color="primary" onClick={()=>{setModelDialogOpen(true)}} endIcon={selectedModelId ? <SettingsIcon /> : ''}>
+            <Button sx={{fontSize: "inherit", textTransform: "none"}} variant="text" color="primary" onClick={()=>{setModelDialogOpen(true)}}>
                 {selectedModelId ? `Model: ${(models.find(m => m.id == selectedModelId) as any)?.model}` : 'Select A Model'}
             </Button>
         </Tooltip>

@@ -224,15 +224,8 @@ class DataTransformationAgentV2(object):
 
             code_blocks = extract_code_from_gpt_response(choice.message.content + "\n", "python")
 
-            logger.info("=== Code blocks ===>")
-            logger.info(code_blocks)
-
             if len(code_blocks) > 0:
                 code_str = code_blocks[-1]
-
-                for table in input_tables:
-                    logger.info(f"Table: {table['name']}")
-                    logger.info(table['rows'])
 
                 try:
                     result = py_sandbox.run_transform_in_sandbox2020(code_str, [t['rows'] for t in input_tables])
@@ -256,8 +249,13 @@ class DataTransformationAgentV2(object):
             result['refined_goal'] = refined_goal
             candidates.append(result)
 
-        logger.info("=== Candidates ===>")
-        logger.info(candidates)
+        logger.info("=== Transform Candidates ===>")
+        for candidate in candidates:
+            for key, value in candidate.items():
+                if key in ['dialog', 'content']:
+                    logger.info(f"##{key}:\n{str(value)[:1000]}...")
+                else:
+                    logger.info(f"## {key}:\n{value}")
 
         return candidates
 

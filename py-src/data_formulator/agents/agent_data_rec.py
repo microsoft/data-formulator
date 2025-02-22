@@ -181,6 +181,14 @@ class DataRecAgent(object):
             result['refined_goal'] = refined_goal
             candidates.append(result)
 
+        logger.info("=== Recommendation Candidates ===>")
+        for candidate in candidates:
+            for key, value in candidate.items():
+                if key in ['dialog', 'content']:
+                    logger.info(f"##{key}:\n{str(value)[:1000]}...")
+                else:
+                    logger.info(f"## {key}:\n{value}")
+
         return candidates
     
 
