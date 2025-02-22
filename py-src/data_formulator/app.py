@@ -213,8 +213,8 @@ def test_model():
         content = request.get_json()
 
         # contains endpoint, key, model, api_base, api_version
-        print("content------------------------------")
-        print(content)
+        logger.info("content------------------------------")
+        logger.info(content)
 
         client = get_client(content['model'])
 
@@ -226,8 +226,8 @@ def test_model():
                 ]
             )
 
-            print(f"model: {content['model']}")
-            print(f"welcome message: {response.choices[0].message.content}")
+            logger.info(f"model: {content['model']}")
+            logger.info(f"welcome message: {response.choices[0].message.content}")
 
             if "I can hear you." in response.choices[0].message.content:
                 result = {
@@ -236,7 +236,7 @@ def test_model():
                     "message": ""
                 }
         except Exception as e:
-            print(f"Error: {e}")
+            logger.info(f"Error: {e}")
             error_message = str(e)
             result = {
                 "model": content['model'],
@@ -250,13 +250,13 @@ def test_model():
 
 @app.route("/", defaults={"path": ""})
 def index_alt(path):
-    print(app.static_folder)
+    logger.info(app.static_folder)
     return send_from_directory(app.static_folder, "index.html")
 
 @app.errorhandler(404)
 def page_not_found(e):
     # your processing here
-    print(app.static_folder)
+    logger.info(app.static_folder)
     return send_from_directory(app.static_folder, "index.html") #'Hello 404!' #send_from_directory(app.static_folder, "index.html")
 
 ###### test functions ######
@@ -432,9 +432,14 @@ def derive_data():
         else:
             prev_messages = []
 
-        print("spec------------------------------")
-        print(new_fields)
-        print(instruction)
+        logger.info("== input tables ===>")
+        for table in input_tables:
+            logger.info(f"===> Table: {table['name']} (first 5 rows)")
+            logger.info(table['rows'][:5])
+
+        logger.info("== user spec ===")
+        logger.info(new_fields)
+        logger.info(instruction)
 
         mode = "transform"
         if len(new_fields) == 0:
@@ -485,11 +490,15 @@ def refine_data():
         dialog = content["dialog"]
         new_instruction = content["new_instruction"]
         max_repair_attempts = content["max_repair_attempts"] if "max_repair_attempts" in content else 1
-
-        print("max_repair_attempts")
-        print(max_repair_attempts)
-        print("previous dialog")
-        print(dialog)
+        
+        logger.info("== input tables ===>")
+        for table in input_tables:
+            logger.info(f"===> Table: {table['name']} (first 5 rows)")
+            logger.info(table['rows'][:5])
+        
+        logger.info("== user spec ===>")
+        logger.info(output_fields)
+        logger.info(new_instruction)
 
         # always resort to the data transform agent       
         agent = DataTransformationAgentV2(client=client)

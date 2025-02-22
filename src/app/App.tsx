@@ -334,7 +334,17 @@ const ConfigDialog: React.FC = () => {
                                         type="number"
                                         variant="outlined"
                                         value={formulateTimeoutSeconds}
-                                        onChange={(e) => setFormulateTimeoutSeconds(parseInt(e.target.value))}
+                                        onChange={(e) => {
+                                            const value = parseInt(e.target.value);
+                                            setFormulateTimeoutSeconds(value);
+                                        }}
+                                        inputProps={{
+                                            min: 0,
+                                            max: 3600,
+                                        }}
+                                        error={formulateTimeoutSeconds <= 0 || formulateTimeoutSeconds > 3600}
+                                        helperText={formulateTimeoutSeconds <= 0 || formulateTimeoutSeconds > 3600 ? 
+                                            "Value must be between 1 and 3600 seconds" : ""}
                                         fullWidth
                                     />
                                     <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
@@ -352,14 +362,24 @@ const ConfigDialog: React.FC = () => {
                                         type="number"
                                         variant="outlined"
                                         value={maxRepairAttempts}
-                                        onChange={(e) => setMaxRepairAttempts(parseInt(e.target.value))}
+                                        onChange={(e) => {
+                                            const value = parseInt(e.target.value);
+                                            setMaxRepairAttempts(value);
+                                        }}
                                         fullWidth
+                                        inputProps={{
+                                            min: 1,
+                                            max: 5,
+                                        }}
+                                        error={maxRepairAttempts <= 0 || maxRepairAttempts > 5}
+                                        helperText={maxRepairAttempts <= 0 || maxRepairAttempts > 5 ? 
+                                            "Value must be between 1 and 5" : ""}
                                     />
                                     <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
                                         Maximum number of times the LLM will attempt to repair code if generated code fails to execute (recommended = 1).
                                     </Typography>
                                     <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
-                                        Higher values <span style={{fontStyle: 'italic'}}>might</span> increase chances of success but may take longer. Repair time is considered as part of the formulate timeout.
+                                        Higher values might slightly increase the chance of success but can crash the backend. Repair time is as part of the formulate timeout.
                                     </Typography>
                                 </Box>
                             </Box>
@@ -374,6 +394,7 @@ const ConfigDialog: React.FC = () => {
                     <Button onClick={() => setOpen(false)}>Cancel</Button>
                     <Button 
                         variant={hasChanges ? "contained" : "text"}
+                        disabled={!hasChanges || isNaN(maxRepairAttempts) || maxRepairAttempts <= 0 || maxRepairAttempts > 5 || isNaN(formulateTimeoutSeconds) || formulateTimeoutSeconds <= 0 || formulateTimeoutSeconds > 3600}
                         onClick={() => {
                             dispatch(dfActions.setConfig({formulateTimeoutSeconds, maxRepairAttempts}));
                             setOpen(false);
