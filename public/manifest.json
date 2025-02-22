@@ -3,7 +3,7 @@
   "name": "Data Formulator",
   "icons": [
     {
-      "src": "data-formulator-logo-128.png",
+      "src": "df-logo.png",
       "type": "image/png",
       "sizes": "128x128"
     }

@@ -1,18 +1,20 @@
 <!DOCTYPE html>
 <html lang="en">
 
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Data Formulator embedded iframe</title>
-</head>
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Omni Dashboard embedded iframe</title>
+    </head>
 
-<body>
-    <iframe id="df" src="./index.html" style="width:1500px;height:1000px"></iframe>
-    <div>
-        <button onclick="postMessageToIframe()">Post Load Data message to iframe</button>
-    </div>
-    <script>
+    <body>
+        <iframe id="df" src="./index.html"
+            style="width:1500px;height:1000px"></iframe>
+        <div>
+            <button onclick="postMessageToIframe()">Post Load Data message to
+                iframe</button>
+        </div>
+        <script>
         function postMessageToIframe() {
             var iframe = document.getElementById('df');
 
@@ -111,6 +113,6 @@
             iframe.contentWindow.postMessage(dataMessage, '*');
         }
     </script>
-</body>
+    </body>
 
 </html>
