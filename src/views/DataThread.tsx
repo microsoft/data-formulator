@@ -453,7 +453,8 @@ export const DataThread: FC<{}> = function ({ }) {
     }
     for (let i = 0; i < leafTables.length; i++) {
         let aAncestors = getAncestorOrders(leafTables[i]);
-        console.log(leafTables[i].id, aAncestors);
+        // this is for debugging ancestor orders
+        //console.log(leafTables[i].id, aAncestors);
     }
     leafTables.sort((a, b) => {
         let aAncestors = getAncestorOrders(a);

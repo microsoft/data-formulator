@@ -675,8 +675,6 @@ export const dataFormulatorSlice = createSlice({
 
             console.log("load model complete");
             console.log("state.models", state.models);
-            console.log("state.selectedModelId", state.selectedModelId);
-            console.log("state.testedModels", state.testedModels);
         })
         .addCase(fetchCodeExpl.fulfilled, (state, action) => {
             let codeExpl = action.payload;
