@@ -24,7 +24,7 @@ import { VegaLite } from 'react-vega'
 import '../scss/VisualizationView.scss';
 import { useDispatch, useSelector } from 'react-redux';
 import { DataFormulatorState, dfActions } from '../app/dfSlice';
-import { assembleChart, baseTableToExtTable, getTriggers } from '../app/utils';
+import { assembleVegaChart, baseTableToExtTable, getTriggers } from '../app/utils';
 import { Chart, DictTable, EncodingItem, Trigger } from "../components/ComponentType";
 
 import DeleteIcon from '@mui/icons-material/Delete';
@@ -367,7 +367,7 @@ export const DataThread: FC<{}> = function ({ }) {
         }
 
         // prepare the chart to be rendered
-        let assembledChart = assembleChart(chart, conceptShelfItems, extTable);
+        let assembledChart = assembleVegaChart(chart.chartType, chart.encodingMap, conceptShelfItems, extTable, 20);
         assembledChart["background"] = "transparent";
 
         // Temporary fix, down sample the dataset
