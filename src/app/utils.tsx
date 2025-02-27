@@ -421,32 +421,39 @@ export const assembleVegaChart = (
     })
 
     // Handle nominal axes with many entries
-    for (const channel of ['x', 'y']) {
+    for (const channel of ['x', 'y', 'column', 'row', 'xOffset']) {
         const encoding = vgObj.encoding?.[channel];
         if (encoding?.type === 'nominal') {
             const fieldName = encoding.field;
-            const uniqueValues = [...new Set(workingTable.map(r => r[fieldName]))];
+            const uniqueValues = [...new Set(values.map((r: any) => r[fieldName]))];
             
+            let valuesToKeep: any[];
             if (uniqueValues.length > maxNominalValues) {
-                const oppositeChannel = channel === 'x' ? 'y' : 'x';
-                const oppositeEncoding = vgObj.encoding?.[oppositeChannel];
-                
-                let valuesToKeep: any[];
-                if (oppositeEncoding?.type === 'quantitative') {
-                    // Sort by the quantitative field and take top maxNominalValues
-                    const quantField = oppositeEncoding.field;
-                    valuesToKeep = uniqueValues
-                        .map(val => ({
-                            value: val,
-                            sum: workingTable
-                                .filter(r => r[fieldName] === val)
-                                .reduce((sum, r) => sum + (r[quantField] || 0), 0)
-                        }))
-                        .sort((a, b) => b.sum - a.sum)
-                        .slice(0, maxNominalValues)
-                        .map(v => v.value);
+
+                if (channel == 'x' || channel == 'y') {
+                    const oppositeChannel = channel === 'x' ? 'y' : 'x';
+                    const oppositeEncoding = vgObj.encoding?.[oppositeChannel];
+                    
+                    if (oppositeEncoding?.type === 'quantitative') {
+                        // Sort by the quantitative field and take top maxNominalValues
+                        const quantField = oppositeEncoding.field;
+                        valuesToKeep = uniqueValues
+                            .map(val => ({
+                                value: val,
+                                sum: workingTable
+                                    .filter(r => r[fieldName] === val)
+                                    .reduce((sum, r) => sum + (r[quantField] || 0), 0)
+                            }))
+                            .sort((a, b) => b.sum - a.sum)
+                            .slice(0, maxNominalValues)
+                            .map(v => v.value);
+                    } else {
+                        // If no quantitative axis, just take first maxNominalValues
+                        valuesToKeep = uniqueValues.slice(0, maxNominalValues);
+                    }
+                } else if (channel == 'row') {
+                    valuesToKeep = uniqueValues.slice(0, 20);
                 } else {
-                    // If no quantitative axis, just take first maxNominalValues
                     valuesToKeep = uniqueValues.slice(0, maxNominalValues);
                 }
 
