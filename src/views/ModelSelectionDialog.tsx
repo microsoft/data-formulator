@@ -76,6 +76,14 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
     const [modelDialogOpen, setModelDialogOpen] = useState<boolean>(false);
     const [showKeys, setShowKeys] = useState<boolean>(false);
     const [tempSelectedModelId, setTempSelectedModeId] = useState<string | undefined >(selectedModelId);
+    const [providerModelOptions, setProviderModelOptions] = useState<{[key: string]: string[]}>({
+        'openai': [],
+        'azure': [],
+        'anthropic': [],
+        'gemini': [],
+        'ollama': []
+    });
+    const [isLoadingModelOptions, setIsLoadingModelOptions] = useState<boolean>(false);
 
     let updateModelStatus = (model: ModelConfig, status: 'ok' | 'error' | 'testing' | 'unknown', message: string) => {
         dispatch(dfActions.updateModelStatus({id: model.id, status, message}));
@@ -90,6 +98,43 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
     const [newApiBase, setNewApiBase] = useState<string | undefined>(undefined);
     const [newApiVersion, setNewApiVersion] = useState<string | undefined>(undefined);
 
+    // Fetch available models from the API
+    useEffect(() => {
+        const fetchModelOptions = async () => {
+            setIsLoadingModelOptions(true);
+            try {
+                const response = await fetch(getUrls().CHECK_AVAILABLE_MODELS);
+                const data = await response.json();
+                
+                // Group models by provider
+                const modelsByProvider: {[key: string]: string[]} = {
+                    'openai': [],
+                    'azure': [],
+                    'anthropic': [],
+                    'gemini': [],
+                    'ollama': []
+                };
+                
+                data.forEach((modelConfig: any) => {
+                    const provider = modelConfig.endpoint;
+                    const model = modelConfig.model;
+                    
+                    if (provider && model && !modelsByProvider[provider].includes(model)) {
+                        modelsByProvider[provider].push(model);
+                    }
+                });
+                
+                setProviderModelOptions(modelsByProvider);
+            } catch (error) {
+                console.error("Failed to fetch model options:", error);
+            } finally {
+                setIsLoadingModelOptions(false);
+            }
+        };
+        
+        fetchModelOptions();
+    }, []);
+
     useEffect(() => {
         if (newEndpoint == 'ollama') {
             if (!newApiBase) {
@@ -97,16 +142,16 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
             }
         }
         if (newEndpoint == "openai") {
-            if (!newModel) {
-                setNewModel('gpt-4o');
+            if (!newModel && providerModelOptions.openai.length > 0) {
+                setNewModel(providerModelOptions.openai[0]);
             }
         }
         if (newEndpoint == "anthropic") {
-            if (!newModel) {
-                setNewModel('claude-3-5-sonnet-20241022');
+            if (!newModel && providerModelOptions.anthropic.length > 0) {
+                setNewModel(providerModelOptions.anthropic[0]);
             }
         }
-    }, [newEndpoint]);
+    }, [newEndpoint, providerModelOptions]);
 
     let modelExists = models.some(m => 
         m.endpoint == newEndpoint && m.model == newModel && m.api_base == newApiBase 
@@ -150,8 +195,8 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                 value={newEndpoint}
                 onChange={(event: any, newValue: string | null) => {
                     setNewEndpoint(newValue || "");
-                    if (newModel == "" && newValue == "openai") {
-                        setNewModel("gpt-4o");
+                    if (newModel == "" && newValue == "openai" && providerModelOptions.openai.length > 0) {
+                        setNewModel(providerModelOptions.openai[0]);
                     }
                     if (!newApiVersion && newValue == "azure") {
                         setNewApiVersion("2024-02-15");
@@ -202,7 +247,8 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                 freeSolo
                 onChange={(event: any, newValue: string | null) => { setNewModel(newValue || ""); }}
                 value={newModel}
-                options={['gpt-4o-mini', 'gpt-4o', 'claude-3-5-sonnet-20241022']}
+                options={newEndpoint && providerModelOptions[newEndpoint] ? providerModelOptions[newEndpoint] : []}
+                loading={isLoadingModelOptions}
                 renderOption={(props, option) => {
                     return <Typography {...props} onClick={()=>{ setNewModel(option); }} sx={{fontSize: "small"}}>{option}</Typography>
                 }}
@@ -211,7 +257,16 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                         error={newEndpoint != "" && !newModel}
                         {...params}
                         placeholder="model name"
-                        InputProps={{ ...params.InputProps, style: { fontSize: "0.875rem" } }}
+                        InputProps={{ 
+                            ...params.InputProps, 
+                            style: { fontSize: "0.875rem" },
+                            endAdornment: (
+                                <>
+                                    {isLoadingModelOptions ? <CircularProgress color="inherit" size={20} /> : null}
+                                    {params.InputProps.endAdornment}
+                                </>
+                            ),
+                        }}
                         inputProps={{
                             ...params.inputProps,
                             'aria-label': 'Select or enter a model',
@@ -226,7 +281,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                 PaperComponent={({ children }) => (
                     <Paper>
                         <Typography sx={{ p: 1, color: 'gray', fontStyle: 'italic', fontSize: 'small' }}>
-                            examples
+                            {isLoadingModelOptions ? 'Loading models...' : 'examples'}
                         </Typography>
                         {children}
                     </Paper>
