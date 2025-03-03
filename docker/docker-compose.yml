@@ -8,7 +8,7 @@ services:
       dockerfile: docker/Dockerfile
       target: development
     ports:
-      - "5000:5000" # Backend port
+      - "5001:5000" # Backend port (changed from 5000 to avoid conflict)
       - "5173:5173" # Frontend development port
     volumes:
       - ..:/app # Mount source code for development
@@ -21,7 +21,7 @@ services:
       # - OPENAI_API_KEY=your_key_here
       # - AZURE_API_KEY=your_key_here
       # - ANTHROPIC_API_KEY=your_key_here
-    command: sh -c "yarn && yarn start --host 0.0.0.0" # Start in development mode
+      # Let the entrypoint script handle starting both backend and frontend
     entrypoint: [ "/bin/bash", "/app/docker/docker-entrypoint.sh" ]
     restart: unless-stopped
 

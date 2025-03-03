@@ -30,13 +30,15 @@ docker compose -f docker/docker-compose.yml up data-formulator-dev
 
 2. Access the development servers:
    - Frontend: http://localhost:5173 (with hot-reloading)
-   - Backend: http://localhost:5000
+   - Backend API: http://localhost:5001 (mapped to internal port 5000)
 
 3. Development Features:
    - Live reload on frontend changes
    - Source code mounted from host
    - Node modules persisted in Docker volume
-   - Both frontend and backend servers running
+   - Both frontend and backend servers running in the same container
+   - The frontend Vite server runs on port 5173
+   - The backend Flask server runs on port 5001 (mapped from internal port 5000)
 
 ## Production Mode
 
@@ -113,6 +115,12 @@ docker compose -f docker/docker-compose.yml run --rm data-formulator-dev yarn te
    - Ensure proper volume mounts in docker-compose.yml
    - Check frontend console for errors
    - Verify file permissions on mounted directories
+
+5. Backend and Frontend Connection Issues:
+   - The frontend is accessible at http://localhost:5173
+   - The backend API is accessible at http://localhost:5001
+   - If you can access the frontend but not the backend, ensure both services are running in the container
+   - Check that the PYTHONPATH is correctly set to include the py-src directory
 
 ## Contributing
 
