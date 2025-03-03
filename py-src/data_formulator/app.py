@@ -53,6 +53,7 @@ print(APP_ROOT)
 # Load the single environment file
 load_dotenv(os.path.join(APP_ROOT, "..", "..", 'api-keys.env'))
 load_dotenv(os.path.join(APP_ROOT, 'api-keys.env'))
+load_dotenv(os.path.join(APP_ROOT, '.env'))
 
 # Configure root logger for general application logging
 logging.basicConfig(
@@ -539,6 +540,13 @@ def request_code_expl():
         expl = ""
     return expl
 
+@app.route('/app-config', methods=['GET'])
+def get_app_config():
+    """Provide frontend configuration settings from environment variables"""
+    config = {
+        "SHOW_KEYS_ENABLED": os.getenv("SHOW_KEYS_ENABLED", "true").lower() == "true"
+    }
+    return flask.jsonify(config)
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Data Formulator")
