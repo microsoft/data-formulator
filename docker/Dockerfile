@@ -1,5 +1,5 @@
 # Stage 1: Development environment
-FROM python:3.11-slim as development
+FROM python:3.12-slim as development
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
@@ -7,7 +7,7 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Node.js and yarn
-RUN curl -fsSL https://deb.nodesource.com/setup_18.x | bash - \
+RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
     && apt-get install -y nodejs \
     && npm install -g yarn
 
@@ -18,12 +18,14 @@ WORKDIR /app
 RUN mkdir -p /app/config
 
 # Copy entrypoint script
-COPY docker-entrypoint.sh /app/
+COPY docker/docker-entrypoint.sh /app/
 RUN chmod +x /app/docker-entrypoint.sh
 
 # Install Python dependencies
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Remove the "-e ." line from requirements.txt before installing
+RUN sed -i '/-e \./d' requirements.txt && \
+    pip install --no-cache-dir -r requirements.txt
 
 # Install Node.js dependencies
 COPY package.json yarn.lock ./
@@ -44,7 +46,7 @@ ENV NODE_ENV=development
 ENTRYPOINT ["/app/docker-entrypoint.sh"]
 
 # Stage 2: Production environment
-FROM python:3.11-slim as production
+FROM python:3.12-slim as production
 
 # Set working directory
 WORKDIR /app
@@ -53,7 +55,7 @@ WORKDIR /app
 RUN mkdir -p /app/config
 
 # Copy entrypoint script
-COPY docker-entrypoint.sh /app/
+COPY docker/docker-entrypoint.sh /app/
 RUN chmod +x /app/docker-entrypoint.sh
 
 # Install data_formulator package
