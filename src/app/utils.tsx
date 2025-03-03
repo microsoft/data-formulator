@@ -49,6 +49,8 @@ export function getUrls() {
         VEGA_DATASET_LIST: `${appConfig.serverUrl}/vega-datasets`,
         VEGA_DATASET_REQUEST_PREFIX: `${appConfig.serverUrl}/vega-dataset/`,
 
+        APP_CONFIG: `${appConfig.serverUrl}/app-config`,
+
         AUTH_INFO_PREFIX: `${appConfig.serverUrl}/.auth/`
     };
 }
