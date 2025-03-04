@@ -54,6 +54,11 @@ import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
 
 import { getUrls } from '../app/utils';
 
+// Add interface for app configuration
+interface AppConfig {
+    SHOW_KEYS_ENABLED: boolean;
+}
+
 export const GroupHeader = styled('div')(({ theme }) => ({
     position: 'sticky',
     padding: '8px 8px',
@@ -84,6 +89,19 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
         'ollama': []
     });
     const [isLoadingModelOptions, setIsLoadingModelOptions] = useState<boolean>(false);
+    const [appConfig, setAppConfig] = useState<AppConfig>({ SHOW_KEYS_ENABLED: true });
+
+    // Fetch app configuration
+    useEffect(() => {
+        fetch(getUrls().APP_CONFIG)
+            .then(response => response.json())
+            .then(data => {
+                setAppConfig(data);
+            })
+            .catch(error => {
+                console.error("Failed to fetch app configuration:", error);
+            });
+    }, []);
 
     let updateModelStatus = (model: ModelConfig, status: 'ok' | 'error' | 'testing' | 'unknown', message: string) => {
         dispatch(dfActions.updateModelStatus({id: model.id, status, message}));
@@ -509,10 +527,12 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                 {modelTable}
             </DialogContent>
             <DialogActions>
-                <Button sx={{marginRight: 'auto'}} endIcon={showKeys ? <VisibilityOffIcon /> : <VisibilityIcon />} onClick={()=>{
-                    setShowKeys(!showKeys);}}>
-                        {showKeys ? 'hide' : 'show'} keys
-                </Button>
+                {appConfig.SHOW_KEYS_ENABLED && (
+                    <Button sx={{marginRight: 'auto'}} endIcon={showKeys ? <VisibilityOffIcon /> : <VisibilityIcon />} onClick={()=>{
+                        setShowKeys(!showKeys);}}>
+                            {showKeys ? 'hide' : 'show'} keys
+                    </Button>
+                )}
                 <Button disabled={getStatus(tempSelectedModelId) !== 'ok'} 
                     variant={(selectedModelId == tempSelectedModelId) ? 'text' : 'contained'}
                     onClick={()=>{
