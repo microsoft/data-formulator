@@ -54,6 +54,8 @@ How to set up your local machine.
 
 ## Build for Production
 
+### Option 1: Local Build
+
 - **Build the frontend and then the backend**
 
     Compile the TypeScript files and bundle the project:
@@ -89,6 +91,37 @@ How to set up your local machine.
 
     Open [http://localhost:5000](http://localhost:5000) to view it in the browser.
 
+### Option 2: Docker Build
+
+Data Formulator can also be run using Docker, which provides isolated development and production environments.
+
+#### Development Environment
+
+1. Start the development server with hot-reloading:
+```bash
+docker compose -f docker/docker-compose.yml up data-formulator-dev
+```
+
+2. Access the development servers:
+   - Frontend: http://localhost:5173 (with hot-reloading)
+   - Backend: http://localhost:5000
+
+The development environment provides:
+- Live reload for both frontend and backend changes
+- Source code mounted from host
+- Isolated dependencies
+- Automatic API key configuration
+
+#### Production Environment
+
+1. Build and start the production server:
+```bash
+docker compose -f docker/docker-compose.yml up data-formulator
+```
+
+2. Access Data Formulator at http://localhost:5000
+
+For detailed Docker instructions, configuration options, and troubleshooting, see the [Docker documentation](docker/README.md).
 
 ## Usage
 See the [Usage section on the README.md page](README.md#usage).
