@@ -16,8 +16,10 @@ class Client(object):
         # other params, including temperature, max_completion_tokens, api_base, api_version
         self.params = {
             "temperature": 0.7,
-            "max_completion_tokens": 1200,
         }
+
+        if not (model == "o3-mini" or model == "o1"):
+            self.params["max_completion_tokens"] = 1200
 
         if api_key is not None and api_key != "":
             self.params["api_key"] = api_key
@@ -67,12 +69,16 @@ class Client(object):
                 timeout=120
             )
 
-            return client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                temperature=self.params["temperature"],
-                max_tokens=self.params["max_completion_tokens"],
-            )
+            completion_params = {
+                "model": self.model,
+                "messages": messages,
+            }
+            
+            if not (self.model == "o3-mini" or self.model == "o1"):
+                completion_params["temperature"] = self.params["temperature"]
+                completion_params["max_tokens"] = self.params["max_completion_tokens"]
+                
+            return client.chat.completions.create(**completion_params)
         else:
             return litellm.completion(
                 model=self.model,
