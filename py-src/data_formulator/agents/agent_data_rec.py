@@ -52,7 +52,7 @@ Concretely:
     (4) "visualization_fields" should be no more than 3 (for x,y,legend).
     (5) "chart_type" must be one of "point", "bar", "line", or "boxplot"
 
-    2. Then, write a python function based on the inferred goal, the function input is a dataframe "df" and the output is the transformed dataframe "transformed_df". "transformed_df" should contain all "output_fields" from the refined goal.
+    2. Then, write a python function based on the inferred goal, the function input is a dataframe "df" (or multiple dataframes based on tables presented in the [CONTEXT] section) and the output is the transformed dataframe "transformed_df". "transformed_df" should contain all "output_fields" from the refined goal.
 The python function must follow the template provided in [TEMPLATE], do not import any other libraries or modify function name. The function should be as simple as possible and easily readable. 
 If there is no data transformation needed based on "output_fields", the transformation function can simply "return df".
 
@@ -63,10 +63,14 @@ import pandas as pd
 import collections
 import numpy as np
 
-def transform_data(df):
+def transform_data(df1, df2, ...): 
     # complete the template here
     return transformed_df
 ```
+
+note: 
+- if the user provided one table, then it should be def transform_data(df1), if the user provided multiple tables, then it should be def transform_data(df1, df2, ...) and you should consider the join between tables to derive the output.
+- try to use table names to refer to the input dataframes, for example, if the user provided two tables city and weather, you can use `transform_data(df_city, df_weather)` to refer to the two dataframes.
 
     3. The [OUTPUT] must only contain a json object representing the refined goal and a python code block representing the transformation code, do not add any extra text explanation.
 '''
@@ -176,6 +180,14 @@ class DataRecAgent(object):
             result['agent'] = 'DataRecAgent'
             result['refined_goal'] = refined_goal
             candidates.append(result)
+
+        logger.info("=== Recommendation Candidates ===>")
+        for candidate in candidates:
+            for key, value in candidate.items():
+                if key in ['dialog', 'content']:
+                    logger.info(f"##{key}:\n{str(value)[:1000]}...")
+                else:
+                    logger.info(f"## {key}:\n{value}")
 
         return candidates
     

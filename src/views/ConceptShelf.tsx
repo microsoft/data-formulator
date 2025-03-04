@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-import { FC, useEffect } from 'react'
+import { FC, useEffect, useState } from 'react'
 import { useSelector, useDispatch } from 'react-redux'
 import { useTheme } from '@mui/material/styles';
 import { alpha } from "@mui/material";
@@ -21,7 +21,7 @@ import AddCircleIcon from '@mui/icons-material/AddCircle';
 import { FieldItem, Channel } from '../components/ComponentType';
 
 import React from 'react';
-import { DataFormulatorState, dfActions } from '../app/dfSlice';
+import { DataFormulatorState, dfActions, dfSelectors } from '../app/dfSlice';
 import { ConceptCard } from './ConceptCard';
 import { Type } from '../data/types';
 import { groupConceptItems } from './ViewUtils';
@@ -43,6 +43,7 @@ export interface ConceptShelfProps {
     
 }
 
+
 export const ConceptShelf: FC<ConceptShelfProps> = function ConceptShelf() {
 
     let theme = useTheme();
@@ -51,6 +52,15 @@ export const ConceptShelf: FC<ConceptShelfProps> = function ConceptShelf() {
     const focusedTableId = useSelector((state: DataFormulatorState) => state.focusedTableId);
     const tables = useSelector((state: DataFormulatorState) => state.tables);
     const charts = useSelector((state: DataFormulatorState) => state.charts);
+
+    let [expandedGroups, setExpandedGroups] = useState<string[]>([]);
+    let updateExpandedGroup = (groupName: string, isExpanded: boolean) => {
+        if (isExpanded) {
+            setExpandedGroups([...expandedGroups, groupName]);
+        } else {
+            setExpandedGroups(expandedGroups.filter(g => g != groupName));
+        }
+    }
 
     const dispatch = useDispatch();
     let handleDeleteConcept = (conceptID: string) => dispatch(dfActions.deleteConceptItemByID(conceptID));
@@ -76,6 +86,12 @@ export const ConceptShelf: FC<ConceptShelfProps> = function ConceptShelf() {
     
             // add and delete temporary fields
             dispatch(dfActions.batchDeleteConceptItemByID(conceptIdsToDelete));
+
+
+            // update collapsed groups
+            let sourceTables = focusedTable.derive?.source || [focusedTable.id];
+            setExpandedGroups(sourceTables);
+
         } else {
             if (tables.length > 0) {
                 dispatch(dfActions.setFocusedTable(tables[0].id))
@@ -141,19 +157,84 @@ export const ConceptShelf: FC<ConceptShelfProps> = function ConceptShelf() {
                         <OperatorCard operator="median" />
                         <OperatorCard operator="bin" />
                     </Box>
-                    {groupNames.map(gp => [
-                        <Box 
-                            key={`concept-group-${gp}`}
-                            sx={{display: "block", width: "100%"}}>
-                            <Divider orientation="horizontal" textAlign="left"><Typography component="h2" sx={{fontSize: "10px"}} color="text.secondary">
-                                {gp}
-                            </Typography></Divider>
-                        </Box>,
-                        ...conceptItemGroups.filter(g => g.group == gp)
-                                            .map(item => item.field)
-                                            .map((field) => (
-                                                <ConceptCard key={`concept-card-${field.id}`} field={field} />))
-                    ])}
+                    {groupNames.map(groupName => {
+                        let fields = conceptItemGroups.filter(g => g.group == groupName).map(g => g.field);
+                        let isCustomGroup = groupName == "new fields";
+
+                        return (
+                            <>
+                                <Box sx={{display: "block", width: "100%"}}>
+                                    <Divider orientation="horizontal" textAlign="left">
+                                    <Box sx={{ 
+                                        display: 'flex', 
+                                        alignItems: 'center', 
+                                        cursor: !isCustomGroup ? 'pointer' : 'default' 
+                                    }}
+                                        onClick={() => !isCustomGroup && updateExpandedGroup(groupName, !expandedGroups.includes(groupName))}>
+                                        <Typography component="h2" sx={{fontSize: "10px"}} color="text.secondary">
+                                            {groupName}
+                                        </Typography>
+                                        {!isCustomGroup && (
+                                            <Typography sx={{fontSize: "10px", ml: 1}} color="text.secondary">
+                                                {expandedGroups.includes(groupName) ? '▾' : '▸'}
+                                            </Typography>
+                                        )}
+                                    </Box>
+                                </Divider>
+                            </Box>
+                            
+                            <Box
+                                sx={{
+                                    maxHeight: expandedGroups.includes(groupName) || isCustomGroup ? '1000px' : '240px',
+                                    overflow: 'hidden',
+                                    transition: 'max-height 0.3s ease-in-out',
+                                    width: '100%'
+                                }}
+                            >
+                                {(expandedGroups.includes(groupName) || isCustomGroup ? fields : fields.slice(0, 5)).map((field) => (
+                                    <ConceptCard key={`concept-card-${field.id}`} field={field} />
+                                ))}
+                                {!expandedGroups.includes(groupName) && !isCustomGroup && fields.length > 5 && (
+                                    <Box sx={{ 
+                                        position: 'relative', 
+                                        height: '40px',
+                                        '&::after': {
+                                            content: '""',
+                                            position: 'absolute',
+                                            bottom: 0,
+                                            left: 0,
+                                            right: 0,
+                                            height: '100%',
+                                            background: 'linear-gradient(to bottom, transparent, white)'
+                                        }
+                                    }}>
+                                        <ConceptCard field={fields[5]} />
+                                    </Box>
+                                )}
+                            </Box>
+                            {!expandedGroups.includes(groupName) && !isCustomGroup && fields.length > 5 && (
+                                <Button
+                                    onClick={() => updateExpandedGroup(groupName, true)}
+                                    sx={{
+                                        fontSize: "10px",
+                                        color: "text.secondary",
+                                        pl: 2,
+                                        py: 0.5,
+                                        fontStyle: "italic",
+                                        textTransform: 'none',
+                                        '&:hover': {
+                                            background: 'transparent',
+                                            textDecoration: 'underline'
+                                        }
+                                    }}
+                                >
+                                    {`... show all ${fields.length} ${groupName} fields ▾`}
+                                </Button>
+                            )}
+                            </>
+                        )
+                    })}
+                    <Divider orientation="horizontal" textAlign="left" sx={{mt: 1}}></Divider>
                 </Box>
             </Box>
         </Box>

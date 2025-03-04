@@ -45,7 +45,7 @@ Concretely, you should first refine users' goal and then create a python functio
 }
 ```
 
-    2. Then, write a python function based on the refined goal, the function input is a dataframe "df" and the output is the transformed dataframe "transformed_df". "transformed_df" should contain all "output_fields" from the refined goal.
+    2. Then, write a python function based on the refined goal, the function input is a dataframe "df" (or multiple dataframes based on tables presented in the [CONTEXT] section) and the output is the transformed dataframe "transformed_df". "transformed_df" should contain all "output_fields" from the refined goal.
 The python function must follow the template provided in [TEMPLATE], do not import any other libraries or modify function name. The function should be as simple as possible and easily readable.
 If there is no data transformation needed based on "output_fields", the transformation function can simply "return df".
 
@@ -56,10 +56,14 @@ import pandas as pd
 import collections
 import numpy as np
 
-def transform_data(df):
+def transform_data(df1, df2, ...): 
     # complete the template here
     return transformed_df
 ```
+
+note: 
+- if the user provided one table, then it should be def transform_data(df1), if the user provided multiple tables, then it should be def transform_data(df1, df2, ...) and you should consider the join between tables to derive the output.
+- try to use table names to refer to the input dataframes, for example, if the user provided two tables city and weather, you can use `transform_data(df_city, df_weather)` to refer to the two dataframes.
 
     3. The [OUTPUT] must only contain a json object representing the refined goal (including "detailed_instruction", "output_fields", "visualization_fields" and "reason") and a python code block representing the transformation code, do not add any extra text explanation.
 '''
@@ -220,9 +224,6 @@ class DataTransformationAgentV2(object):
 
             code_blocks = extract_code_from_gpt_response(choice.message.content + "\n", "python")
 
-            logger.info("=== Code blocks ===>")
-            logger.info(code_blocks)
-
             if len(code_blocks) > 0:
                 code_str = code_blocks[-1]
 
@@ -248,13 +249,27 @@ class DataTransformationAgentV2(object):
             result['refined_goal'] = refined_goal
             candidates.append(result)
 
-        logger.info("=== Candidates ===>")
-        logger.info(candidates)
+        logger.info("=== Transform Candidates ===>")
+        for candidate in candidates:
+            for key, value in candidate.items():
+                if key in ['dialog', 'content']:
+                    logger.info(f"##{key}:\n{str(value)[:1000]}...")
+                else:
+                    logger.info(f"## {key}:\n{value}")
 
         return candidates
 
 
-    def run(self, input_tables, description, expected_fields: list[str], n=1):
+    def run(self, input_tables, description, expected_fields: list[str], prev_messages: list[dict] = [], n=1):
+
+        if len(prev_messages) > 0:
+            logger.info("=== Previous messages ===>")
+            formatted_prev_messages = ""
+            for m in prev_messages:
+                if m['role'] != 'system':
+                    formatted_prev_messages += f"{m['role']}: \n\n\t{m['content']}\n\n"
+            logger.info(formatted_prev_messages)
+            prev_messages = [{"role": "user", "content": '[Previous Messages] Here are the previous messages for your reference:\n\n' + formatted_prev_messages}]
 
         data_summary = generate_data_summary(input_tables, include_data_samples=True)
 
@@ -268,6 +283,7 @@ class DataTransformationAgentV2(object):
         logger.info(user_query)
 
         messages = [{"role":"system", "content": self.system_prompt},
+                    *prev_messages,
                     {"role":"user","content": user_query}]
         
         response = completion_response_wrapper(self.client, messages, n)

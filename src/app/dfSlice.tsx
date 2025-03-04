@@ -62,11 +62,13 @@ export interface DataFormulatorState {
     focusedTableId: string | undefined;
     focusedChartId: string | undefined;
     activeThreadChartId: string | undefined; // specifying which chartThread is actively viewed
-    threadDrawerOpen: boolean; // decides whether the thread drawer is open
 
     chartSynthesisInProgress: string[];
 
-    betaMode: boolean;
+    config: {
+        formulateTimeoutSeconds: number;
+        maxRepairAttempts: number;
+    }
 }
 
 // Define the initial state using that type
@@ -96,11 +98,13 @@ const initialState: DataFormulatorState = {
     focusedTableId: undefined,
     focusedChartId: undefined,
     activeThreadChartId: undefined,
-    threadDrawerOpen: false,
 
     chartSynthesisInProgress: [],
 
-    betaMode: false,
+    config: {
+        formulateTimeoutSeconds: 30,
+        maxRepairAttempts: 1,
+    }
 }
 
 let getUnrefedDerivedTableIds = (state: DataFormulatorState) => {
@@ -246,11 +250,14 @@ export const dataFormulatorSlice = createSlice({
             state.focusedTableId = undefined;
             state.focusedChartId = undefined;
             state.activeThreadChartId = undefined;
-            state.threadDrawerOpen = false;
 
             state.chartSynthesisInProgress = [];
 
-            state.betaMode = false;
+            // avoid resetting config
+            // state.config = {
+            //     formulateTimeoutSeconds: 30,
+            //     repairAttempts: 1,
+            // }
         },
         loadState: (state, action: PayloadAction<any>) => {
 
@@ -274,14 +281,13 @@ export const dataFormulatorSlice = createSlice({
             state.focusedTableId = savedState.focusedTableId || undefined;
             state.focusedChartId = savedState.focusedChartId || undefined;
             state.activeThreadChartId = savedState.activeThreadChartId || undefined;
-            state.threadDrawerOpen = false;
 
             state.chartSynthesisInProgress = [];
 
-            state.betaMode = savedState.betaMode;
+            state.config = savedState.config;
         },
-        toggleBetaMode: (state, action: PayloadAction<boolean>) => {
-            state.betaMode = action.payload;
+        setConfig: (state, action: PayloadAction<{formulateTimeoutSeconds: number, maxRepairAttempts: number}>) => {
+            state.config = action.payload;
         },
         selectModel: (state, action: PayloadAction<string | undefined>) => {
             state.selectedModelId = action.payload;
@@ -305,10 +311,14 @@ export const dataFormulatorSlice = createSlice({
                 {id: id, status, message}
             ];
         },
-        addTable: (state, action: PayloadAction<DictTable>) => {
+        loadTable: (state, action: PayloadAction<DictTable>) => {
             let table = action.payload;
             state.tables = [...state.tables, table];
             state.conceptShelfItems = [...state.conceptShelfItems, ...getDataFieldItems(table)];
+
+            state.focusedTableId = table.id;
+            state.focusedChartId = undefined;
+            state.activeThreadChartId = undefined;  
         },
         deleteTable: (state, action: PayloadAction<string>) => {
             let tableId = action.payload;
@@ -573,9 +583,6 @@ export const dataFormulatorSlice = createSlice({
         setVisPaneSize: (state, action: PayloadAction<number>) => {
             state.visPaneSize = action.payload;
         },
-        setThreadDrawerOpen: (state, action: PayloadAction<boolean>) => {
-            state.threadDrawerOpen = action.payload;
-        },
         setDisplayPanelSize: (state, action: PayloadAction<number>) => {
             state.displayPanelSize = action.payload;
         },
@@ -687,6 +694,13 @@ export const dataFormulatorSlice = createSlice({
 export const dfSelectors = {
     getActiveModel: (state: DataFormulatorState) : ModelConfig => {
         return state.models.find(m => m.id == state.selectedModelId) || state.models[0];
+    },
+    getActiveBaseTableIds: (state: DataFormulatorState) => {
+        let focusedTableId = state.focusedTableId;
+        let tables = state.tables;
+        let focusedTable = tables.find(t => t.id == focusedTableId);
+        let sourceTables = focusedTable?.derive?.source || [focusedTable?.id];
+        return sourceTables;
     }
 }
 

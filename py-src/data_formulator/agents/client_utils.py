@@ -1,7 +1,7 @@
 import os
-from litellm import completion
+import litellm
+import openai
 from azure.identity import DefaultAzureCredential, get_bearer_token_provider
-
 
 class Client(object):
     """
@@ -15,10 +15,16 @@ class Client(object):
 
         # other params, including temperature, max_completion_tokens, api_base, api_version
         self.params = {
-            "api_key": api_key,
             "temperature": 0.7,
             "max_completion_tokens": 1200,
         }
+
+        if api_key is not None and api_key != "":
+            self.params["api_key"] = api_key
+        if api_base is not None and api_base != "":
+            self.params["api_base"] = api_base
+        if api_version is not None and api_version != "":
+            self.params["api_version"] = api_version
 
         if self.endpoint == "gemini":
             if model.startswith("gemini/"):
@@ -53,9 +59,24 @@ class Client(object):
         Supports OpenAI, Azure, Ollama, and other providers via LiteLLM.
         """
         # Configure LiteLLM 
-        return completion(
-            model=self.model,
-            messages=messages,
-            drop_params=True,
-            **self.params
-        )
+
+        if self.endpoint == "openai":
+            client = openai.OpenAI(
+                api_key=self.params["api_key"], 
+                base_url=self.params["api_base"] if "api_base" in self.params else None,
+                timeout=120
+            )
+
+            return client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                temperature=self.params["temperature"],
+                max_tokens=self.params["max_completion_tokens"],
+            )
+        else:
+            return litellm.completion(
+                model=self.model,
+                messages=messages,
+                drop_params=True,
+                **self.params
+            )
