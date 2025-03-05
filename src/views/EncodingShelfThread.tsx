@@ -27,7 +27,7 @@ import '../scss/EncodingShelf.scss';
 import { createDictTable, DictTable } from "../components/ComponentType";
 import embed from 'vega-embed';
 
-import { getTriggers, getUrls, assembleChart, resolveChartFields } from '../app/utils';
+import { getTriggers, getUrls, assembleVegaChart, resolveChartFields } from '../app/utils';
 
 import { getChartTemplate } from '../components/ChartTemplates';
 import { chartAvailabilityCheck, generateChartSkeleton } from './VisualizationView';
@@ -74,7 +74,7 @@ export let ChartElementFC: FC<{chart: Chart, tableRows: any[], boxWidth?: number
     // }
 
     // prepare the chart to be rendered
-    let assembledChart = assembleChart(chart, conceptShelfItems, tableRows);
+    let assembledChart = assembleVegaChart(chart.chartType, chart.encodingMap, conceptShelfItems, tableRows);
     assembledChart["background"] = "transparent";
     // chart["autosize"] = {
     //     "type": "fit",

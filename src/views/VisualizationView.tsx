@@ -36,7 +36,7 @@ import AnimateOnChange from 'react-animate-on-change'
 import '../scss/VisualizationView.scss';
 import { useDispatch, useSelector } from 'react-redux';
 import { DataFormulatorState, dfActions } from '../app/dfSlice';
-import { assembleChart, baseTableToExtTable  } from '../app/utils';
+import { assembleVegaChart, baseTableToExtTable  } from '../app/utils';
 import { Chart, EncodingItem, EncodingMap, FieldItem } from '../components/ComponentType';
 import { DictTable } from "../components/ComponentType";
 
@@ -311,7 +311,7 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
 
         element = <Box id={id} key={`focused-chart`} ></Box>    
 
-        let assembledChart = assembleChart(chart, conceptShelfItems, extTable);
+        let assembledChart = assembleVegaChart(chart.chartType, chart.encodingMap, conceptShelfItems, extTable);
         assembledChart['resize'] = true;
 
         embed('#' + id, { ...assembledChart }, { actions: true, renderer: "svg" }).then(function (result) {
@@ -796,7 +796,7 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
                             key="skeleton" onClick={setIndexFunc}>{generateChartSkeleton(chartTemplate?.icon)}</Box>;
             }
 
-            let assembledChart = assembleChart(chart, conceptShelfItems, extTable);
+            let assembledChart = assembleVegaChart(chart.chartType, chart.encodingMap, conceptShelfItems, extTable);
 
             const id = `chart-element-${index}`;
 

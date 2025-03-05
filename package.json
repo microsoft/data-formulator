@@ -45,7 +45,8 @@
         "vega": "^5.26.0",
         "vega-embed": "^6.21.0",
         "vega-lite": "^5.5.0",
-        "vm-browserify": "^1.1.2"
+        "vm-browserify": "^1.1.2",
+        "xlsx": "^0.18.5"
     },
     "scripts": {
         "lint": "eslint -c eslint.config.js src/**/*.{ts,tsx} --fix",

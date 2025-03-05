@@ -116,20 +116,15 @@ export const ConceptCard: FC<ConceptCardProps> = function ConceptCard({ field })
         }),
     }));
 
-    let notInAnyTable = tables.some(t => t.names.includes(field.name));
-
     let notInFocusedTable : boolean;
     if (field.source == "derived") {
         let parentConceptNames = (field.transform as ConceptTransformation)
                 .parentIDs.map((parentID) => conceptShelfItems.find(c => c.id == parentID) as FieldItem).map(f => f.name);
-        console.log(parentConceptNames)
         notInFocusedTable = parentConceptNames.some(name => !focusedChartRefTable?.names.includes(name));
     } else {
         notInFocusedTable = !focusedChartRefTable?.names.includes(field.name);
     }
     
-
-
     let opacity = isDragging ? 0.3 :(notInFocusedTable ? 0.65 : 1);
     let fontStyle = "inherit";
     let border = "hidden";
@@ -176,21 +171,6 @@ export const ConceptCard: FC<ConceptCardProps> = function ConceptCard({ field })
         editOption,
         //deleteOption
     ]
-
-    let exampleToComponent = (values: any[], exampleSize: number, label?: string) => {
-        let examples = values.slice(0, values.length > exampleSize ? exampleSize : values.length);
-        let incomplete = examples.length < values.length;
-
-        return (
-            values.length == 0 ? "" : (<Typography className="draggable-card-example-values" key={examples.toString()}
-                sx={{ fontSize: "inherit", textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap" }}>
-                {label ? <Typography variant="body2" sx={{ fontSize: 14 }}>
-                    {label}:
-                </Typography> : ""}
-                {examples.map((v: any) => String(v)).join(", ")} {incomplete ? "..." : ""}
-            </Typography>)
-        );
-    }
 
     const editModeCard = (
         <CardContent className="draggable-card-body-edit-mode">
@@ -398,7 +378,6 @@ export const CustomConceptForm: FC<ConceptFormProps> = function CustomConceptFor
     )
 
     let cardTopComponents = undefined;
-    let cardBottomComponents = undefined;
 
     let childrenConceptIDs = [concept.id];
     while (true) {
@@ -415,43 +394,6 @@ export const CustomConceptForm: FC<ConceptFormProps> = function CustomConceptFor
     cardTopComponents = [
         nameField,
         typeField,
-        // <Tooltip key="prompt-expand" title="Provide additional prompt to explain the concept">
-        //     <IconButton
-        //         key="prompt-expand"
-        //         color="primary" sx={{
-        //             margin: "auto"
-        //         }}
-        //         size="small" onClick={() => { setDescOptOpen(!descOptOpen); }}>
-        //         <ExpandCircleDownIcon sx={{
-        //             transform: descOptOpen ? "rotate(180deg)" : "rotate(0)",
-        //             transitionProperty: "transform",
-        //             fontSize: 16,
-        //             transitionTimingFunction: "ease-in-out",
-        //             transitionDuration: "0.1s"   
-        //         }} />
-        //     </IconButton>
-        // </Tooltip>
-    ]
-
-    cardBottomComponents = [
-        <Box key="codearea-container" width="100%">
-            {/*descOptOpen ? <TextField fullWidth value={description} key={`input-description`} onChange={(event: any) => { setDescription(event.target.value) }}
-                        multiline variant="standard" label={"Additional prompt to explain the concept (optional)"} /> : ""*/}
-            {/* <Autocomplete
-                id="free-solo-demo"
-                freeSolo
-                size="small"
-                color="primary"
-                value={description}
-                onChange={(event: any, newValue: any | null) => { setDescription(newValue || ""); }}
-                sx={{ flex: 1, "& .MuiAutocomplete-option": { fontSize: '12px' } }}
-                options={[]}
-                renderOption={(params, option) => <Typography {...params} style={{ fontSize: "12px" }}>{option}</Typography>}
-                renderInput={(params) => {
-                    return 
-                }}
-            /> */}
-        </Box>
     ]
 
     const checkCustomConceptDiff = () => {
@@ -473,7 +415,6 @@ export const CustomConceptForm: FC<ConceptFormProps> = function CustomConceptFor
                 <Box sx={{ overflowX: "clip", display: "flex", flexDirection: "row", justifyContent: "flex-start", alignItems: "baseline" }}>
                     {cardTopComponents}
                 </Box>
-                {cardBottomComponents}
                 <ButtonGroup size="small" sx={{ "& button": { textTransform: "none", padding: "2px 4px", marginLeft: "4px" }, flexGrow: 1, justifyContent: "right" }}>
                     <IconButton size="small"
                         color="primary" aria-label="Delete" component="span"
@@ -603,6 +544,11 @@ export const DerivedConceptForm: FC<ConceptFormProps> = function DerivedConceptF
         childrenConceptIDs = [...childrenConceptIDs, ...newChildrens];
     }
 
+    // this might be a hack, but it works
+    // the first parent is the concept that the user initially clicks to create the derived concept, thus its tableRef is the affiliated table
+    // since this locks out other tables to be used as parents, the affiliated table is an invariant for tables created here
+    let affiliatedTableId = conceptShelfItems.find(f => f.id == conceptTransform.parentIDs[0])?.tableRef;
+
     cardTopComponents = [
         nameField,
         <FormControl fullWidth key="derived-card-control" sx={{ minWidth: 120 }} size="small">
@@ -618,8 +564,6 @@ export const DerivedConceptForm: FC<ConceptFormProps> = function DerivedConceptF
                 renderValue={(selected) =>
                     <Typography key={selected[0]} sx={{ whiteSpace: "normal", fontSize: "inherit" }}>
                         {selected.map(conceptID => {
-                            console.log(conceptID)
-                            console.log(conceptShelfItems.find(f => f.id == conceptID)?.source)
                             let chipColor = conceptShelfItems.find(f => f.id == conceptID)?.source == "original" ? theme.palette.primary.light : theme.palette.custom.main;
                             return <Chip 
                                 key={conceptID}
@@ -640,10 +584,8 @@ export const DerivedConceptForm: FC<ConceptFormProps> = function DerivedConceptF
                     typeof value === "string" ? setTransformParentIDs([value]) : setTransformParentIDs(value);
                 }}
             >
-                {conceptShelfItems.filter((t) => t.name != "").map((t, i) => (
+                {conceptShelfItems.filter((t) => t.name != "" && t.tableRef == affiliatedTableId).map((t, i) => (
                     <MenuItem value={t.id} key={`${concept.id}-${t.id}`} sx={{ fontSize: 12, marginLeft: "0px" }} disabled={childrenConceptIDs.includes(t.id)}>
-                        {/* <Checkbox size="small" checked={transformParentIDs.indexOf(t.id) > -1} />
-                        <ListItemText sx={{fontSize: 12}} primary={t.name} /> */}
                         {<Checkbox sx={{padding: 0.5}} size="small" checked={transformParentIDs.indexOf(t.id) > -1} />}
                         {t.name}
                     </MenuItem>
@@ -662,16 +604,6 @@ export const DerivedConceptForm: FC<ConceptFormProps> = function DerivedConceptF
         let colNames: [string[], string] = [parentConcepts.map(f => f.name), name];
 
         viewExamples = (<Box key="viewexample--box" width="100%" sx={{ position: "relative", }}>
-            {/* <Tooltip title={collapseCode ? "view / edit transformation code" : "hide transformation code"}>
-                <IconButton color="primary" sx={{
-                    position: "absolute", right: "4px", top: "4px", zIndex: 3,
-                    backgroundColor: collapseCode ? "" : "rgba(2, 136, 209, 0.3)",
-                    "&:hover": { backgroundColor: collapseCode ? "default" : "rgba(2, 136, 209, 0.3)" }
-                }}
-                    size="small" onClick={() => { setCollapseCode(!collapseCode); setCollapseVisInspector(true); }}>
-                    <TerminalIcon fontSize="small" />
-                </IconButton>
-            </Tooltip> */}
             <InputLabel shrink>illustration of the generated function</InputLabel>
             <GroupItems sx={{ padding: "0px 0px 6px 0px", margin: 0 }}>
                 {simpleTableView(transformResult, colNames, conceptShelfItems, 5)}
@@ -703,9 +635,8 @@ export const DerivedConceptForm: FC<ConceptFormProps> = function DerivedConceptF
             let candidates = processCodeCandidates(rawCodeList, transformParentIDs, conceptShelfItems, tables)
             let candidate = candidates[0];
 
-            setCodeCandidates(candidates); // setCodeCandidates(codeList)
+            setCodeCandidates(candidates);
             setTransformCode(candidate);
-
 
             if (candidates.length > 0) {
                 dispatch(dfActions.addMessages({
@@ -940,11 +871,12 @@ export const CodexDialogBox: FC<CodexDialogBoxProps> = function ({
     let textBox = <Box key="interaction-comp" width='100%' sx={{ display: 'flex' }}>
         <TextField 
             size="small"
+            sx={{fontSize: 12}}
             color="primary"
             fullWidth
             disabled={outputName == ""}
             InputProps={{
-                endAdornment: formulateButton
+                endAdornment: formulateButton,
             }}
             InputLabelProps={{ shrink: true }}
             multiline
