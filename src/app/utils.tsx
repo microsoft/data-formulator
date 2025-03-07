@@ -98,7 +98,7 @@ export function runCodeOnInputListsInVM(
                     let target = undefined;
                     try {
                         // copy args to ensure correctness of mapping
-                        target = func(...JSON.parse(JSON.stringify(args)))
+                        target = func(...structuredClone(args))
                     } catch (err) {
                         console.warn(`execution err ${err}`)
                     }
@@ -179,7 +179,7 @@ export function baseTableToExtTable(table: any[], derivedFields: FieldItem[], al
                     let args = inputTuples;
                     if (func.length == baseCols.length * 2 + 1) {
                         // avoid side effect, use the copy of the column when calling the function
-                        args = [...inputTuples, rowIdx, ...JSON.parse(JSON.stringify(baseCols))]
+                        args = [...inputTuples, rowIdx, ...structuredClone(baseCols)]
                     }            
         
                     target = func(...args);
@@ -257,7 +257,7 @@ export const assembleVegaChart = (
     let chartTemplate = getChartTemplate(chartType) as ChartTemplate;
     //console.log(chartTemplate);
 
-    let vgObj = JSON.parse(JSON.stringify(chartTemplate.template));
+    let vgObj = structuredClone(chartTemplate.template);
 
     for (const [channel, encoding] of Object.entries(encodingMap)) {
 
@@ -412,7 +412,7 @@ export const assembleVegaChart = (
     }
 
     // this is the data that will be assembled into the vega chart
-    let values = JSON.parse(JSON.stringify(workingTable));
+    let values = structuredClone(workingTable);
     values = values.map((r: any) => { 
         let keys = Object.keys(r);
         let temporalKeys = keys.filter((k: string) => conceptShelfItems.some(concept => concept.name == k && (concept.type == "date" || concept.semanticType == "Year")));

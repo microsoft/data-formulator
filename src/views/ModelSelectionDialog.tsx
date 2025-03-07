@@ -136,6 +136,10 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                 data.forEach((modelConfig: any) => {
                     const provider = modelConfig.endpoint;
                     const model = modelConfig.model;
+
+                    if (provider && model && !modelsByProvider[provider]) {
+                        modelsByProvider[provider] = [];
+                    }
                     
                     if (provider && model && !modelsByProvider[provider].includes(model)) {
                         modelsByProvider[provider].push(model);
@@ -143,11 +147,11 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                 });
                 
                 setProviderModelOptions(modelsByProvider);
+                
             } catch (error) {
                 console.error("Failed to fetch model options:", error);
-            } finally {
-                setIsLoadingModelOptions(false);
-            }
+            } 
+            setIsLoadingModelOptions(false);
         };
         
         fetchModelOptions();
@@ -501,13 +505,18 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                 })}
                 {newModelEntry}
                 <TableRow>
-                    <TableCell colSpan={8} align="left" sx={{fontSize: "0.625rem"}}>
-                        Model configuration based on LiteLLM,  <a href="https://docs.litellm.ai/docs/" target="_blank" rel="noopener noreferrer">check out supported endpoint / models here</a>. 
-                        Models with limited code generation capabilities (e.g., llama3.2) may fail frequently to derive new data.
+                    <TableCell colSpan={8} align="left" sx={{ '& .MuiTypography-root': { fontSize: "0.625rem" } }}>
+                        <Typography>
+                            Model configuration based on LiteLLM,  <a href="https://docs.litellm.ai/docs/" target="_blank" rel="noopener noreferrer">check out supported endpoint / models here</a>. 
+                            If using custom providers that are compatible with the OpenAI API, choose 'openai' as the provider.
+                        </Typography>
+                        <Typography>
+                            Models with limited code generation capabilities (e.g., llama3.2) may fail frequently to derive new data.
+                        </Typography>
                     </TableCell>
                 </TableRow>
-            </TableBody>
-        </Table>
+                </TableBody>
+            </Table>
     </TableContainer>
 
     return <>
