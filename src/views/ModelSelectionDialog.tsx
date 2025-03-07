@@ -267,6 +267,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                 value={newModel}
                 options={newEndpoint && providerModelOptions[newEndpoint] ? providerModelOptions[newEndpoint] : []}
                 loading={isLoadingModelOptions}
+                loadingText={<Typography sx={{fontSize: "0.875rem"}}>loading...</Typography>}
                 renderOption={(props, option) => {
                     return <Typography {...props} onClick={()=>{ setNewModel(option); }} sx={{fontSize: "small"}}>{option}</Typography>
                 }}
@@ -280,7 +281,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                             style: { fontSize: "0.875rem" },
                             endAdornment: (
                                 <>
-                                    {isLoadingModelOptions ? <CircularProgress color="inherit" size={20} /> : null}
+                                    {isLoadingModelOptions ? <CircularProgress color="primary" size={20} /> : null}
                                     {params.InputProps.endAdornment}
                                 </>
                             ),
@@ -298,9 +299,11 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                 }}
                 PaperComponent={({ children }) => (
                     <Paper>
-                        <Typography sx={{ p: 1, color: 'gray', fontStyle: 'italic', fontSize: 'small' }}>
-                            {isLoadingModelOptions ? 'Loading models...' : 'examples'}
-                        </Typography>
+                        {!isLoadingModelOptions && (
+                            <Typography sx={{ p: 1, color: 'gray', fontStyle: 'italic', fontSize: 'small' }}>
+                                examples
+                            </Typography>
+                        )}
                         {children}
                     </Paper>
                 )}
