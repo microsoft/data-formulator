@@ -80,7 +80,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
 
     const [modelDialogOpen, setModelDialogOpen] = useState<boolean>(false);
     const [showKeys, setShowKeys] = useState<boolean>(false);
-    const [tempSelectedModelId, setTempSelectedModeId] = useState<string | undefined >(selectedModelId);
+    const [tempSelectedModelId, setTempSelectedModelId] = useState<string | undefined >(selectedModelId);
     const [providerModelOptions, setProviderModelOptions] = useState<{[key: string]: string[]}>({
         'openai': [],
         'azure': [],
@@ -205,7 +205,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
         sx={{ '&:last-child td, &:last-child th': { border: 0 }, padding: "6px 6px" }}
         onClick={(event) => {
             event.stopPropagation();
-            setTempSelectedModeId(undefined);
+            setTempSelectedModelId(undefined);
         }}
     >
         <TableCell align="right">
@@ -349,7 +349,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
 
                         dispatch(dfActions.addModel(model));
                         dispatch(dfActions.selectModel(id));
-                        setTempSelectedModeId(id);
+                        setTempSelectedModelId(id);
 
                         testModel(model); 
                         
@@ -418,7 +418,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                         <TableRow
                             selected={isItemSelected}
                             key={`${model.id}`}
-                            onClick={() => { setTempSelectedModeId(model.id) }}
+                            onClick={() => { setTempSelectedModelId(model.id) }}
                             sx={{ cursor: 'pointer'}}
                         >
                             <TableCell align="right" sx={{ borderBottom: noBorderStyle }}>
@@ -469,10 +469,10 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                                             if ((tempSelectedModelId) 
                                                     && tempSelectedModelId == model.id) {
                                                 if (models.length == 0) {
-                                                    setTempSelectedModeId(undefined);
+                                                    setTempSelectedModelId(undefined);
                                                 } else {
                                                     let chosenModel = models[models.length - 1];
-                                                    setTempSelectedModeId(chosenModel.id)
+                                                    setTempSelectedModelId(chosenModel.id)
                                                 }
                                             }
                                         }}>
@@ -484,7 +484,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                         {['error', 'unknown'].includes(status) && (
                             <TableRow 
                                 selected={isItemSelected}
-                                onClick={() => { setTempSelectedModeId(model.id) }}
+                                onClick={() => { setTempSelectedModelId(model.id) }}
                                 sx={{ 
                                     cursor: 'pointer',
                                     '&:hover': {
@@ -551,7 +551,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                         dispatch(dfActions.selectModel(tempSelectedModelId));
                         setModelDialogOpen(false);}}>apply model</Button>
                 <Button onClick={()=>{
-                    setTempSelectedModeId(selectedModelId);
+                    setTempSelectedModelId(selectedModelId);
                     setModelDialogOpen(false);
                 }}>cancel</Button>
             </DialogActions>
