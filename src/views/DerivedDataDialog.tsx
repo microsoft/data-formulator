@@ -74,7 +74,7 @@ export const DerivedDataDialog: FC<DerivedDataDialogProps> = function DerivedDat
                 let toDeriveFields = derivedFields.filter(f => f.name != "").filter(f => findBaseFields(f, conceptShelfItems).every(f2 => table.names.includes(f2.name)))
                 let extTable = baseTableToExtTable(JSON.parse(JSON.stringify(table.rows)), toDeriveFields, conceptShelfItems);
             
-                let assembledChart: any = assembleVegaChart(chart.chartType, chart.encodingMap, conceptShelfItems, extTable)[0];
+                let assembledChart: any = assembleVegaChart(chart.chartType, chart.encodingMap, conceptShelfItems, extTable);
                 assembledChart["background"] = "transparent";
                 // chart["autosize"] = {
                 //     "type": "fit",
