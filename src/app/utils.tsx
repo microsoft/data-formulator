@@ -98,7 +98,7 @@ export function runCodeOnInputListsInVM(
                     let target = undefined;
                     try {
                         // copy args to ensure correctness of mapping
-                        target = func(...JSON.parse(JSON.stringify(args)))
+                        target = func(...structuredClone(args))
                     } catch (err) {
                         console.warn(`execution err ${err}`)
                     }
@@ -179,7 +179,7 @@ export function baseTableToExtTable(table: any[], derivedFields: FieldItem[], al
                     let args = inputTuples;
                     if (func.length == baseCols.length * 2 + 1) {
                         // avoid side effect, use the copy of the column when calling the function
-                        args = [...inputTuples, rowIdx, ...JSON.parse(JSON.stringify(baseCols))]
+                        args = [...inputTuples, rowIdx, ...structuredClone(baseCols)]
                     }            
         
                     target = func(...args);
@@ -242,7 +242,13 @@ export function baseTableToExtTable(table: any[], derivedFields: FieldItem[], al
 }
 
 
-export const instantiateVegaTemplate = (chartType: string, encodingMap: { [key in Channel]: EncodingItem; }, allFields: FieldItem[], workingTable: any[]) => {
+export const assembleVegaChart = (
+    chartType: string, 
+    encodingMap: { [key in Channel]: EncodingItem; }, 
+    conceptShelfItems: FieldItem[], 
+    workingTable: any[],
+    maxNominalValues: number = 68
+) => {
 
     if (chartType == "Table") {
         return ["Table", undefined];
@@ -251,8 +257,7 @@ export const instantiateVegaTemplate = (chartType: string, encodingMap: { [key i
     let chartTemplate = getChartTemplate(chartType) as ChartTemplate;
     //console.log(chartTemplate);
 
-    let vgObj = JSON.parse(JSON.stringify(chartTemplate.template));
-    const baseTableSchemaObj: any = {};
+    let vgObj = structuredClone(chartTemplate.template);
 
     for (const [channel, encoding] of Object.entries(encodingMap)) {
 
@@ -262,30 +267,8 @@ export const instantiateVegaTemplate = (chartType: string, encodingMap: { [key i
             encodingObj["scale"] = {"type": "sqrt", "zero": true};
         }
 
-        const field = encoding.fieldID ? _.find(allFields, (f) => f.id === encoding.fieldID) : undefined;
+        const field = encoding.fieldID ? _.find(conceptShelfItems, (f) => f.id === encoding.fieldID) : undefined;
         if (field) {
-            //console.log(field)
-            // the synthesizer only need to see base table schema
-            let baseFields = (field.source == "derived" ? 
-                    (field.transform as ConceptTransformation).parentIDs.map((parentID) => allFields.find((f) => f.id == parentID) as FieldItem) 
-                  : [field]);
-
-            for (let baseField of baseFields) {
-                if (Object.keys(baseTableSchemaObj).includes(baseField.name)) {
-                    continue;
-                }
-                baseTableSchemaObj[baseField.name] = {
-                    channel, 
-                    dtype: getDType(baseField.type, workingTable.map(r => r[baseField.name])),
-                    name: baseField.name,
-                    original: baseField.source == "original",
-                    // domain: {
-                    //     values: [...new Set(baseField.domain.values)],
-                    //     is_complete: baseField.domain.isComplete
-                    // },
-                };
-            }
-
             // create the encoding
             encodingObj["field"] = field.name;
             encodingObj["type"] = getDType(field.type, workingTable.map(r => r[field.name]));
@@ -428,16 +411,8 @@ export const instantiateVegaTemplate = (chartType: string, encodingMap: { [key i
         vgObj = chartTemplate.postProcessor(vgObj, workingTable);
     }
 
-    // console.log(JSON.stringify(vgObj))
-
-    return [vgObj, baseTableSchemaObj];
-}
-
-export const assembleChart = (chart: Chart, conceptShelfItems: FieldItem[], dataValues: any[]) => {
-
-    let vgSpec: any = instantiateVegaTemplate(chart.chartType, chart.encodingMap, conceptShelfItems, dataValues)[0];
-
-    let values = JSON.parse(JSON.stringify(dataValues));
+    // this is the data that will be assembled into the vega chart
+    let values = structuredClone(workingTable);
     values = values.map((r: any) => { 
         let keys = Object.keys(r);
         let temporalKeys = keys.filter((k: string) => conceptShelfItems.some(concept => concept.name == k && (concept.type == "date" || concept.semanticType == "Year")));
@@ -446,8 +421,81 @@ export const assembleChart = (chart: Chart, conceptShelfItems: FieldItem[], data
         }
         return r;
     })
-    return {...vgSpec, data: {values: values}}
+
+    // Handle nominal axes with many entries
+    for (const channel of ['x', 'y', 'column', 'row', 'xOffset']) {
+        const encoding = vgObj.encoding?.[channel];
+        if (encoding?.type === 'nominal') {
+            const fieldName = encoding.field;
+            const uniqueValues = [...new Set(values.map((r: any) => r[fieldName]))];
+            
+            let valuesToKeep: any[];
+            if (uniqueValues.length > maxNominalValues) {
+
+                if (channel == 'x' || channel == 'y') {
+                    const oppositeChannel = channel === 'x' ? 'y' : 'x';
+                    const oppositeEncoding = vgObj.encoding?.[oppositeChannel];
+                    
+                    if (oppositeEncoding?.type === 'quantitative') {
+                        // Sort by the quantitative field and take top maxNominalValues
+                        const quantField = oppositeEncoding.field;
+                        valuesToKeep = uniqueValues
+                            .map(val => ({
+                                value: val,
+                                sum: workingTable
+                                    .filter(r => r[fieldName] === val)
+                                    .reduce((sum, r) => sum + (r[quantField] || 0), 0)
+                            }))
+                            .sort((a, b) => b.sum - a.sum)
+                            .slice(0, maxNominalValues)
+                            .map(v => v.value);
+                    } else {
+                        // If no quantitative axis, just take first maxNominalValues
+                        valuesToKeep = uniqueValues.slice(0, maxNominalValues);
+                    }
+                } else if (channel == 'row') {
+                    valuesToKeep = uniqueValues.slice(0, 20);
+                } else {
+                    valuesToKeep = uniqueValues.slice(0, maxNominalValues);
+                }
+
+                // Filter the working table
+                const omittedCount = uniqueValues.length - maxNominalValues;
+                const placeholder = `...${omittedCount} items omitted`;
+                values = values.filter((row: any) => valuesToKeep.includes(row[fieldName]));
+
+                // Add text formatting configuration
+                if (!encoding.axis) {
+                    encoding.axis = {};
+                }
+                encoding.axis.labelColor = {
+                    condition: {
+                        test: `datum.label == '${placeholder}'`,
+                        value: "#999999"
+                    },
+                    value: "#000000" // default color for other labels
+                };
+                encoding.axis.labelFont = {
+                    condition: {
+                        test: `datum.label == '${placeholder}'`,
+                        value: "italic"
+                    },
+                    value: "normal" // default font style for other labels
+                };
+
+                // Add placeholder to domain
+                if (!encoding.scale) {
+                    encoding.scale = {};
+                }
+                encoding.scale.domain = [...valuesToKeep, placeholder]
+            }
+        }
+    }
+
+    return {...vgObj, data: {values: values}}
 }
+
+
 
 export const adaptChart = (chart: Chart, targetTemplate: ChartTemplate) => {
 

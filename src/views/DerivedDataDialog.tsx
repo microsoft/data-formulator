@@ -20,7 +20,7 @@ import {
 
 import React from 'react';
 
-import { baseTableToExtTable, instantiateVegaTemplate } from '../app/utils';
+import { baseTableToExtTable, assembleVegaChart } from '../app/utils';
 import { Chart } from '../components/ComponentType';
 import { findBaseFields } from './ViewUtils';
 import { useSelector } from 'react-redux';
@@ -74,10 +74,7 @@ export const DerivedDataDialog: FC<DerivedDataDialogProps> = function DerivedDat
                 let toDeriveFields = derivedFields.filter(f => f.name != "").filter(f => findBaseFields(f, conceptShelfItems).every(f2 => table.names.includes(f2.name)))
                 let extTable = baseTableToExtTable(JSON.parse(JSON.stringify(table.rows)), toDeriveFields, conceptShelfItems);
             
-                let vgSpec: any = instantiateVegaTemplate(chart.chartType, chart.encodingMap, conceptShelfItems, extTable)[0];
-            
-            
-                let assembledChart = {...vgSpec, data: {values: JSON.parse(JSON.stringify(extTable))}};
+                let assembledChart: any = assembleVegaChart(chart.chartType, chart.encodingMap, conceptShelfItems, extTable);
                 assembledChart["background"] = "transparent";
                 // chart["autosize"] = {
                 //     "type": "fit",

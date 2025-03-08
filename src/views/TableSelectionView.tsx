@@ -17,7 +17,7 @@ import { DictTable } from "../components/ComponentType";
 
 import DeleteIcon from '@mui/icons-material/Delete';
 import { getUrls } from '../app/utils';
-import { createTableFromFromObjectArray, createTableFromText, loadDataWrapper } from '../data/utils';
+import { createTableFromFromObjectArray, createTableFromText, loadTextDataWrapper, loadBinaryDataWrapper } from '../data/utils';
 
 import CloseIcon from '@mui/icons-material/Close';
 import KeyboardReturnIcon from '@mui/icons-material/KeyboardReturn';
@@ -275,14 +275,56 @@ export const TableUploadDialog: React.FC<TableUploadDialogProps> = ({ buttonElem
 
         if (files) {
             for (let file of files) {
-                file.text().then((text) => {
-                    const uniqueName = getUniqueTableName(file.name, existingNames);
-                    let table = loadDataWrapper(uniqueName, text, file.type);
-                    if (table) {
-                        dispatch(dfActions.loadTable(table));
-                        dispatch(fetchFieldSemanticType(table));
-                    }
-                });
+                const uniqueName = getUniqueTableName(file.name, existingNames);
+                
+                // Check if file is a text type (csv, tsv, json)
+                if (file.type === 'text/csv' || 
+                    file.type === 'text/tab-separated-values' || 
+                    file.type === 'application/json' ||
+                    file.name.endsWith('.csv') || 
+                    file.name.endsWith('.tsv') || 
+                    file.name.endsWith('.json')) {
+                    
+                    // Handle text files
+                    file.text().then((text) => {
+                        let table = loadTextDataWrapper(uniqueName, text, file.type);
+                        if (table) {
+                            dispatch(dfActions.loadTable(table));
+                            dispatch(fetchFieldSemanticType(table));
+                        }
+                    });
+                } else if (file.type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
+                           file.type === 'application/vnd.ms-excel' ||
+                           file.name.endsWith('.xlsx') || 
+                           file.name.endsWith('.xls')) {
+                    // Handle Excel files
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        const arrayBuffer = e.target?.result as ArrayBuffer;
+                        if (arrayBuffer) {
+                            let tables = loadBinaryDataWrapper(uniqueName, arrayBuffer);
+                            for (let table of tables) {
+                                dispatch(dfActions.loadTable(table));
+                                dispatch(fetchFieldSemanticType(table));
+                            }
+                            if (tables.length == 0) {
+                                dispatch(dfActions.addMessages({
+                                    "timestamp": Date.now(),
+                                    "type": "error",
+                                    "value": `Failed to parse Excel file ${file.name}. Please check the file format.`
+                                }));
+                            }
+                        }
+                    };
+                    reader.readAsArrayBuffer(file);
+                } else {
+                    // Unsupported file type
+                    dispatch(dfActions.addMessages({
+                        "timestamp": Date.now(),
+                        "type": "error",
+                        "value": `Unsupported file format: ${file.name}. Please use CSV, TSV, JSON, or Excel files.`
+                    }));
+                }
             }
         }
         if (inputRef.current) {
@@ -294,7 +336,7 @@ export const TableUploadDialog: React.FC<TableUploadDialogProps> = ({ buttonElem
         <>
             <Input
                 inputProps={{ 
-                    accept: '.csv,.tsv,.json',
+                    accept: '.csv,.tsv,.json,.xlsx,.xls',
                     multiple: true,
                 }}
                 id="upload-data-file"

@@ -80,7 +80,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
 
     const [modelDialogOpen, setModelDialogOpen] = useState<boolean>(false);
     const [showKeys, setShowKeys] = useState<boolean>(false);
-    const [tempSelectedModelId, setTempSelectedModeId] = useState<string | undefined >(selectedModelId);
+    const [tempSelectedModelId, setTempSelectedModelId] = useState<string | undefined >(selectedModelId);
     const [providerModelOptions, setProviderModelOptions] = useState<{[key: string]: string[]}>({
         'openai': [],
         'azure': [],
@@ -136,6 +136,10 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                 data.forEach((modelConfig: any) => {
                     const provider = modelConfig.endpoint;
                     const model = modelConfig.model;
+
+                    if (provider && model && !modelsByProvider[provider]) {
+                        modelsByProvider[provider] = [];
+                    }
                     
                     if (provider && model && !modelsByProvider[provider].includes(model)) {
                         modelsByProvider[provider].push(model);
@@ -143,11 +147,11 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                 });
                 
                 setProviderModelOptions(modelsByProvider);
+                
             } catch (error) {
                 console.error("Failed to fetch model options:", error);
-            } finally {
-                setIsLoadingModelOptions(false);
-            }
+            } 
+            setIsLoadingModelOptions(false);
         };
         
         fetchModelOptions();
@@ -201,7 +205,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
         sx={{ '&:last-child td, &:last-child th': { border: 0 }, padding: "6px 6px" }}
         onClick={(event) => {
             event.stopPropagation();
-            setTempSelectedModeId(undefined);
+            setTempSelectedModelId(undefined);
         }}
     >
         <TableCell align="right">
@@ -267,6 +271,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                 value={newModel}
                 options={newEndpoint && providerModelOptions[newEndpoint] ? providerModelOptions[newEndpoint] : []}
                 loading={isLoadingModelOptions}
+                loadingText={<Typography sx={{fontSize: "0.875rem"}}>loading...</Typography>}
                 renderOption={(props, option) => {
                     return <Typography {...props} onClick={()=>{ setNewModel(option); }} sx={{fontSize: "small"}}>{option}</Typography>
                 }}
@@ -280,7 +285,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                             style: { fontSize: "0.875rem" },
                             endAdornment: (
                                 <>
-                                    {isLoadingModelOptions ? <CircularProgress color="inherit" size={20} /> : null}
+                                    {isLoadingModelOptions ? <CircularProgress color="primary" size={20} /> : null}
                                     {params.InputProps.endAdornment}
                                 </>
                             ),
@@ -298,9 +303,11 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                 }}
                 PaperComponent={({ children }) => (
                     <Paper>
-                        <Typography sx={{ p: 1, color: 'gray', fontStyle: 'italic', fontSize: 'small' }}>
-                            {isLoadingModelOptions ? 'Loading models...' : 'examples'}
-                        </Typography>
+                        {!isLoadingModelOptions && (
+                            <Typography sx={{ p: 1, color: 'gray', fontStyle: 'italic', fontSize: 'small' }}>
+                                examples
+                            </Typography>
+                        )}
                         {children}
                     </Paper>
                 )}
@@ -342,7 +349,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
 
                         dispatch(dfActions.addModel(model));
                         dispatch(dfActions.selectModel(id));
-                        setTempSelectedModeId(id);
+                        setTempSelectedModelId(id);
 
                         testModel(model); 
                         
@@ -411,7 +418,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                         <TableRow
                             selected={isItemSelected}
                             key={`${model.id}`}
-                            onClick={() => { setTempSelectedModeId(model.id) }}
+                            onClick={() => { setTempSelectedModelId(model.id) }}
                             sx={{ cursor: 'pointer'}}
                         >
                             <TableCell align="right" sx={{ borderBottom: noBorderStyle }}>
@@ -462,10 +469,10 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                                             if ((tempSelectedModelId) 
                                                     && tempSelectedModelId == model.id) {
                                                 if (models.length == 0) {
-                                                    setTempSelectedModeId(undefined);
+                                                    setTempSelectedModelId(undefined);
                                                 } else {
                                                     let chosenModel = models[models.length - 1];
-                                                    setTempSelectedModeId(chosenModel.id)
+                                                    setTempSelectedModelId(chosenModel.id)
                                                 }
                                             }
                                         }}>
@@ -477,7 +484,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                         {['error', 'unknown'].includes(status) && (
                             <TableRow 
                                 selected={isItemSelected}
-                                onClick={() => { setTempSelectedModeId(model.id) }}
+                                onClick={() => { setTempSelectedModelId(model.id) }}
                                 sx={{ 
                                     cursor: 'pointer',
                                     '&:hover': {
@@ -498,13 +505,18 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                 })}
                 {newModelEntry}
                 <TableRow>
-                    <TableCell colSpan={8} align="left" sx={{fontSize: "0.625rem"}}>
-                        Model configuration based on LiteLLM,  <a href="https://docs.litellm.ai/docs/" target="_blank" rel="noopener noreferrer">check out supported endpoint / models here</a>. 
-                        Models with limited code generation capabilities (e.g., llama3.2) may fail frequently to derive new data.
+                    <TableCell colSpan={8} align="left" sx={{ '& .MuiTypography-root': { fontSize: "0.625rem" } }}>
+                        <Typography>
+                            Model configuration based on LiteLLM,  <a href="https://docs.litellm.ai/docs/" target="_blank" rel="noopener noreferrer">check out supported endpoint / models here</a>. 
+                            If using custom providers that are compatible with the OpenAI API, choose 'openai' as the provider.
+                        </Typography>
+                        <Typography>
+                            Models with limited code generation capabilities (e.g., llama3.2) may fail frequently to derive new data.
+                        </Typography>
                     </TableCell>
                 </TableRow>
-            </TableBody>
-        </Table>
+                </TableBody>
+            </Table>
     </TableContainer>
 
     return <>
@@ -539,7 +551,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                         dispatch(dfActions.selectModel(tempSelectedModelId));
                         setModelDialogOpen(false);}}>apply model</Button>
                 <Button onClick={()=>{
-                    setTempSelectedModeId(selectedModelId);
+                    setTempSelectedModelId(selectedModelId);
                     setModelDialogOpen(false);
                 }}>cancel</Button>
             </DialogActions>

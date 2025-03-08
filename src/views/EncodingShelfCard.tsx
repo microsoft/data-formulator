@@ -89,9 +89,6 @@ let selectBaseTables = (activeFields: FieldItem[], conceptShelfItems: FieldItem[
         baseTables.push(...tablesToAdd.filter(t => !baseTables.map(t2 => t2.id).includes(t.id)));
     }
 
-    console.log("selectBaseTables baseTables");
-    console.log(baseTables);
-
     return baseTables;
 }
 
@@ -430,18 +427,11 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
         if (mode == "formulate" && currentTable.derive?.dialog) {
                 let sourceTableIds = currentTable.derive?.source;
 
-                console.log("sourceTableIds ---- and ---- baseTableIds");
-                console.log(sourceTableIds);
-                console.log(actionTableIds);
-
                 // Compare if source and base table IDs are different
                 if (!sourceTableIds.every(id => actionTableIds.includes(id)) || 
                     !actionTableIds.every(id => sourceTableIds.includes(id))) {
                     
                     let additionalMessages = currentTable.derive.dialog;
-
-                    console.log("in here");
-                    console.log(additionalMessages);
 
                     // in this case, because table ids has changed, we need to use the additional messages and reformulate
                     messageBody = JSON.stringify({
@@ -490,8 +480,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
             .then((data) => {
                 
                 dispatch(dfActions.changeChartRunningStatus({chartId, status: false}))
-                console.log(data);
-                console.log(token);
+
                 if (data.results.length > 0) {
                     if (data["token"] == token) {
                         let candidates = data["results"].filter((item: any) => {
