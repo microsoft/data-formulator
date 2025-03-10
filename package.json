@@ -23,7 +23,7 @@
         "mui-markdown": "^1.1.13",
         "prettier": "^2.8.3",
         "prism-react-renderer": "^1.3.5",
-        "prismjs": "^1.29.0",
+        "prismjs": "^1.30.0",
         "react": "^18.2.0",
         "react-animate-height": "^3.0.4",
         "react-animate-on-change": "^2.2.0",
