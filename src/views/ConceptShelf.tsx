@@ -185,7 +185,7 @@ export const ConceptShelf: FC<ConceptShelfProps> = function ConceptShelf() {
                             
                             <Box
                                 sx={{
-                                    maxHeight: expandedGroups.includes(groupName) || isCustomGroup ? '1000px' : '240px',
+                                    maxHeight: expandedGroups.includes(groupName) || isCustomGroup ? 'auto' : '240px',
                                     overflow: 'hidden',
                                     transition: 'max-height 0.3s ease-in-out',
                                     width: '100%'
