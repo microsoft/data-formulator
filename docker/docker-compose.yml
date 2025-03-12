@@ -1,0 +1,49 @@
+version: '3.8'
+
+services:
+  # Development service with hot-reloading
+  data-formulator-dev:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: development
+    ports:
+      - "5001:5000" # Backend port (changed from 5000 to avoid conflict)
+      - "5173:5173" # Frontend development port
+    volumes:
+      - ..:/app # Mount source code for development
+      - ./config:/app/config # Mount config directory
+      - node_modules:/app/node_modules # Persist node_modules
+    environment:
+      - PORT=5000
+      - NODE_ENV=development
+      # Uncomment and set your API keys as needed:
+      # - OPENAI_API_KEY=your_key_here
+      # - AZURE_API_KEY=your_key_here
+      # - ANTHROPIC_API_KEY=your_key_here
+      # Let the entrypoint script handle starting both backend and frontend
+    entrypoint: [ "/bin/bash", "/app/docker/docker-entrypoint.sh" ]
+    restart: unless-stopped
+
+  # Production service
+  data-formulator:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: production
+    ports:
+      - "8080:5000"
+    volumes:
+      - ./config:/app/config
+    environment:
+      - PORT=5000
+      - NODE_ENV=production
+      # Uncomment and set your API keys as needed:
+      # - OPENAI_API_KEY=your_key_here
+      # - AZURE_API_KEY=your_key_here
+      # - ANTHROPIC_API_KEY=your_key_here
+    entrypoint: [ "/bin/bash", "/app/docker/docker-entrypoint.sh" ]
+    restart: unless-stopped
+
+volumes:
+  node_modules: # Named volume for node_modules
