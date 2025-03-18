@@ -229,9 +229,6 @@ const BaseChartCreationMenu: FC<{tableId: string; buttonElement: any}> = functio
     </>;
 }
 
-export const ChartCreationMenu = styled(BaseChartCreationMenu)({});
-
-
 export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
             handleUpdateCandidates: (chartId: string, tables: DictTable[]) => void,
     }> = function ChartEditorFC({ cachedCandidates, handleUpdateCandidates }) {
@@ -405,7 +402,7 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
         </IconButton>
     </Tooltip>
 
-    let createNewChartButton =  <ChartCreationMenu tableId={focusedChart.tableRef} buttonElement={
+    let createNewChartButton =  <BaseChartCreationMenu tableId={focusedChart.tableRef} buttonElement={
             <Tooltip title="create a new chart">
                 <AddchartIcon sx={{ fontSize: "3rem" }} />
             </Tooltip>} />

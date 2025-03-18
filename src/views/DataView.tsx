@@ -39,37 +39,25 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView({  $table
 
     let derivedFields =  conceptShelfItems.filter(f => f.source == "derived" && f.name != "");
 
-    // we only change extTable when conceptShelfItems and extTable changes
+    // we only change extTable when conceptShelfItems and tables changes
     let extTables = useMemo(()=>{
-        return tables.map(table => {
-            // try to let table figure out all fields are derivable from the table
-            let rows = baseTableToExtTable(table.rows, derivedFields, conceptShelfItems);
-            let extTable = createTableFromFromObjectArray(`${table.id}`, rows, table.derive);
-            return extTable
-        })
-    }, [tables, conceptShelfItems])
+        if (derivedFields.some(f => f.tableRef == focusedTableId)) {
+            return tables.map(table => {
+                // try to let table figure out all fields are derivable from the table
+                let rows = baseTableToExtTable(table.rows, derivedFields, conceptShelfItems);
+                let extTable = createTableFromFromObjectArray(`${table.id}`, rows, table.derive);
+                return extTable
+            })
+        } else {
+            return tables;
+        }
+    }, [tables, derivedFields])
 
     useEffect(() => {
         if(focusedTableId == undefined && tables.length > 0) {
             dispatch(dfActions.setFocusedTable(tables[0].id))
         }
     }, [tables])
-
-    // let focusedExtTable = useMemo(() => {
-    //     if (focusedTable == undefined) 
-    //         return focusedTable;
-
-    //     let toDeriveFields = derivedFields
-    //                             .filter(f => !Object.keys((focusedTable as DictTable).rows[0]).includes(f.name))
-    //                             .filter(f => findBaseFields(f, conceptShelfItems).every(f2 => Object.keys((focusedTable as DictTable).rows[0]).includes(f2.name)))
-    //                             .filter(f => f.name != "")
-    //     if (toDeriveFields.length == 0) {
-    //         return focusedTable;
-    //     }
-    //     let rows = baseTableToExtTable(JSON.parse(JSON.stringify(focusedTable.rows)), toDeriveFields, conceptShelfItems);
-    //     return createTableFromFromObjectArray(`${focusedTable.title}`, rows);
-    // }, [conceptShelfItems])
-    //console.log(focusedExtTable)
 
     // given a table render the table
     let renderTableBody = (targetTable: DictTable | undefined) => {
@@ -90,21 +78,17 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView({  $table
             }, ...colDefs]
         }
 
-        // return <SelectableTable $tableRef={$tableRef} rows={rowData} columnDefs={colDefs} rowsPerPageNum={100} onSelect={onRangeSelectionChanged} />
         return <SelectableDataGrid $tableRef={$tableRef} tableName={targetTable?.id || "table"} rows={rowData} 
                                    columnDefs={colDefs} onSelectionFinished={onRangeSelectionChanged} />
     }
 
     // handle when selection changes
     const onRangeSelectionChanged = (columns: string[], selected: any[]) => {
-        // no need to sort it
         let values = _.uniq(selected);
-        // dispatch(dfActions.setStagedValues({columns, values}));
-        // dispatch(dfActions.setStagedValues(_.uniq(valueArray).sort()));
     };
 
-    let tableToRender = extTables; //focusedTable && !focusedTable.names.every(name => !conceptShelfItems.find(f => f.name == name && f.source == "custom")) ? [baseExtTable, focusedTable] : [baseExtTable];
-    
+    let tableToRender = extTables; 
+
     let coreTables = tableToRender.filter(t => t.derive == undefined);
     let tempTables = tableToRender.filter(t => t.derive);
 

@@ -142,7 +142,7 @@ export const groupConceptItems = (conceptShelfItems: FieldItem[])  => {
         } else if (f.source == "custom") {
             group = "new fields"
         } else if (f.source == "derived") {
-            group = findBaseFields(f, conceptShelfItems)[0].tableRef || "custom concepts";
+            group = f.tableRef as string;
         }
         return {group, field: f}
     });

@@ -42,11 +42,6 @@ import dfLogo from '../assets/df-logo.png';
 import exampleImageTable from "../assets/example-image-table.png";
 import { ModelSelectionButton } from './ModelSelectionDialog';
 
-const MainSplitPane = styled(SplitPane)(({ theme }) => ({
-    //height: 'calc(100% - 49px) !important',
-    //left: '121px !important'
-}));
-
 //type AppProps = ConnectedProps<typeof connector>;
 
 export const DataFormulatorFC = ({ }) => {
@@ -89,7 +84,7 @@ export const DataFormulatorFC = ({ }) => {
         </SplitPane>);
 
     const splitPane = ( // @ts-ignore
-        <MainSplitPane split="vertical"
+        <SplitPane split="vertical"
             maxSize={440}
             minSize={320}
             primary="second"
@@ -106,7 +101,7 @@ export const DataFormulatorFC = ({ }) => {
                 {conceptEncodingPanel}
                 {/* <InfoPanelFC $tableRef={$tableRef}/> */}
             </Box>
-        </MainSplitPane>);
+        </SplitPane>);
 
     const fixedSplitPane = ( 
         <Box sx={{display: 'flex', flexDirection: 'row', height: '100%'}}>

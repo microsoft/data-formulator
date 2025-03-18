@@ -71,7 +71,7 @@ export const CustomReactTable: React.FC<CustomReactTableProps> = ({ rows, column
                                 return <TableCell
                                         key={column.id}
                                         align={column.align}
-                                        style={{
+                                        sx={{
                                             minWidth: column.minWidth, fontSize: 12, color: "#333",
                                             backgroundColor: backgroundColor,
                                             borderBottomColor, borderBottomWidth: '1px', borderBottomStyle: 'solid'

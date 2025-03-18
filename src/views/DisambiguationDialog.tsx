@@ -33,18 +33,6 @@ import { CodexDialogBox } from './ConceptCard';
 import { CodeBox } from './VisualizationView';
 import { CustomReactTable } from './ReactTable';
 
-export const GroupHeader = styled('div')(({ theme }) => ({
-    position: 'sticky',
-    top: '-8px',
-    padding: '4px 4px',
-    color: "darkgray",
-    fontSize: "12px",
-}));
-  
-export const GroupItems = styled('ul')({
-    padding: 0,
-});
-
 export interface DisambiguationDialogProps {
     conceptName: string;
     parentIDs: string[];
@@ -201,11 +189,6 @@ export const DisambiguationDialog: FC<DisambiguationDialogProps> = function Disa
 
                         }
 
-                        
-
-                        
-                        
-
                         return <Card key={`candidate-dialog-${idx}`} onClick={()=>{setSelectionIdx(idx)}} 
                               sx={{minWidth: "280px", maxWidth: "600px", display: "flex",  flexGrow: 1, margin: "10px", 
                                    border: selectionIdx == idx ? "2px solid rgb(2 136 209 / 0.7)": "2px solid rgba(255, 255, 255, 0)"}}>
@@ -217,20 +200,20 @@ export const DisambiguationDialog: FC<DisambiguationDialogProps> = function Disa
                                         '& .MuiFormLabel-root': { fontSize: "inherit" } }}
                                     value={idx} control={<Radio checked={selectionIdx == idx} />} label={`candidate-${idx+1}`} />
                                 <Box width="100%" sx={{}}>
-                                    <GroupHeader>
-                                        <Typography style={{ fontSize: "12px" }}>transformation result on sample data</Typography>
-                                    </GroupHeader>
-                                    <GroupItems sx={{padding: "0px 10px", margin: 0}}>
+                                    <Box className="GroupHeader">
+                                        <Typography style={{ fontSize: "12px" }}>transformation result on sample data </Typography>
+                                    </Box>
+                                    <Box className="GroupItems" sx={{padding: "0px 10px", margin: 0}}>
                                         {/* <ExampleMappingTable ioPairList={codeOutputSamples} colNames={colNames} handlePageInc={handlePageInc} handlePageDesc={handlePageDesc}
                                             highlight={highlightedRows} numDisplayed={displayPageSize} /> */}
                                         <Box sx={{maxHeight: 300, minWidth: '200px', width: "100%", overflow: "auto", flexGrow: 1,fontSize: 10 }}>
                                             {simpleTableView(codeOutputs[idx], colNames, conceptShelfItems)}
                                         </Box>
-                                    </GroupItems>
+                                    </Box>
                                 </Box>
-                                <GroupHeader sx={{marginTop: 1}}>
+                                <Box className="GroupHeader" sx={{marginTop: 1}}>
                                     <Typography style={{ fontSize: "12px" }}>transformation code</Typography>
-                                </GroupHeader>
+                                </Box>
                                 <Box sx={{maxHeight: 280, width: "100%", overflow: "auto", flexGrow: 1 }}>
                                     <CodeBox code={formattedCode} language="typescript"/>
                                     {/* <Editor

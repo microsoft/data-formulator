@@ -313,7 +313,7 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
                             let conceptsToAdd = missingNames.map((name) => {
                                 return {
                                     id: `concept-${name}-${Date.now()}`, name: name, type: "auto" as Type, 
-                                    description: "", source: "custom", temporary: true, domain: [],
+                                    description: "", source: "custom", tableRef: "custom", temporary: true, domain: [],
                                 } as FieldItem
                             });
 

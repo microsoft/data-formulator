@@ -55,7 +55,7 @@ export const createTableFromText = (title: string, text: string): DictTable | un
     return createTableFromFromObjectArray(title, values);
 };
 
-export const createTableFromFromObjectArray = (title: string, values: any[], derive?: any): DictTable => {
+export const createTableFromFromObjectArray = (title: string, values: any[], derive?: any, anchored?: boolean): DictTable => {
     const len = values.length;
     let names: string[] = [];
     let cleanNames: string[] = [];
@@ -98,7 +98,8 @@ export const createTableFromFromObjectArray = (title: string, values: any[], der
         names: columnTable.names(),
         types: columnTable.names().map(name => (columnTable.column(name) as Column).type),
         rows: columnTable.objects(),
-        derive: derive
+        derive: derive,
+        anchored: false
     }
 };
 
