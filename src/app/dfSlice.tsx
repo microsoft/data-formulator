@@ -335,6 +335,11 @@ export const dataFormulatorSlice = createSlice({
             // separate this, so that we only delete on tier of table a time
             state.charts = state.charts.filter(c => !(c.intermediate && c.intermediate.resultTableId == tableId));
         },
+        updateTableAnchored: (state, action: PayloadAction<{tableId: string, anchored: boolean}>) => {
+            let tableId = action.payload.tableId;
+            let anchored = action.payload.anchored;
+            state.tables = state.tables.map(t => t.id == tableId ? {...t, anchored} : t);
+        },
         addChallenges: (state, action: PayloadAction<{tableId: string, challenges: { text: string; difficulty: 'easy' | 'medium' | 'hard'; }[]}>) => {
             state.activeChallenges = [...state.activeChallenges, action.payload];
         },

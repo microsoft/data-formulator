@@ -15,7 +15,8 @@ import {
     Tooltip,
     ButtonGroup,
     useTheme,
-    SxProps
+    SxProps,
+    Button
 } from '@mui/material';
 
 import { VegaLite } from 'react-vega'
@@ -32,6 +33,7 @@ import AddchartIcon from '@mui/icons-material/Addchart';
 import StarIcon from '@mui/icons-material/Star';
 import SouthIcon from '@mui/icons-material/South';
 import TableRowsIcon from '@mui/icons-material/TableRowsOutlined';
+import AnchorIcon from '@mui/icons-material/Anchor';
 import PanoramaFishEyeIcon from '@mui/icons-material/PanoramaFishEye';
 import InsightsIcon from '@mui/icons-material/Insights';
 
@@ -42,7 +44,6 @@ import { findBaseFields } from './ViewUtils';
 import 'prismjs/components/prism-python' // Language
 import 'prismjs/components/prism-typescript' // Language
 import 'prismjs/themes/prism.css'; //Example style, you can use another
-
 
 import { chartAvailabilityCheck, generateChartSkeleton, getDataTable } from './VisualizationView';
 import { TriggerCard } from './EncodingShelfCard';
@@ -78,12 +79,11 @@ let SingleThreadView: FC<{
     usedTableIds, // tables that have been used
     sx
 }) {
-        let theme = useTheme();
-
         let tables = useSelector((state: DataFormulatorState) => state.tables);
         let charts = useSelector((state: DataFormulatorState) => state.charts);
         let focusedChartId = useSelector((state: DataFormulatorState) => state.focusedChartId);
         let focusedTableId = useSelector((state: DataFormulatorState) => state.focusedTableId);
+        const theme = useTheme();
 
         let focusedChart = charts.find(c => c.id == focusedChartId);
 
@@ -95,6 +95,7 @@ let SingleThreadView: FC<{
 
         let content: any = ""
 
+        let originTableIdOfThread  = undefined;
         let tableIdList = [leafTable.id]
         let triggerCards: any[] = []
         let triggers = getTriggers(leafTable, tables);
@@ -102,6 +103,10 @@ let SingleThreadView: FC<{
         if (leafTable.derive) {
             let firstNewTableIndex = triggers.findIndex(tg => !usedTableIds.includes(tg.tableId));
             firstNewTableIndex = firstNewTableIndex == -1 ? triggers.length : firstNewTableIndex;
+
+            if (firstNewTableIndex - 1 > 0) {
+                originTableIdOfThread = triggers[0].tableId;
+            }
             triggers = firstNewTableIndex > 0 ? triggers.slice(firstNewTableIndex - 1) : triggers;
 
             tableIdList = [...triggers.map((trigger) => trigger.tableId), leafTable.id];
@@ -135,8 +140,42 @@ let SingleThreadView: FC<{
             });
         }
 
-        // the thread is focused if the focused chart is in this table
-        let threadIsFocused = focusedChart && tableIdList.includes(focusedChart.tableRef) && !usedTableIds.includes(focusedChart.tableRef);
+
+        const findTableIdsBetweenAnchors = (tableIds: string[], tables: DictTable[], focusedTableId?: string): string[] => {
+            if (!focusedTableId) return [];
+            
+            // Find the index of the focused table
+            const focusedIndex = tableIds.indexOf(focusedTableId);
+            if (focusedIndex === -1) return [];
+            
+            // Find anchored tables or boundaries
+            let startIndex = 0;
+            let endIndex = tableIds.length - 1;
+            
+            // Search backward for an anchored table or start
+            for (let i = focusedIndex; i >= 0; i--) {
+                const table = tables.find(t => t.id === tableIds[i]);
+                if (table?.anchored) {
+                    startIndex = i;
+                    break;
+                }
+            }
+            
+            // Search forward for an anchored table or end
+            for (let i = focusedIndex; i < tableIds.length; i++) {
+                const table = tables.find(t => t.id === tableIds[i]);
+                if (table?.anchored) {
+                    endIndex = i;
+                    break;
+                }
+            }
+            
+            // Return the slice of tableIds between anchors
+            return tableIds.slice(startIndex, endIndex + 1);
+        };
+        
+        // Find tableIds between anchored tables that include the focused table
+        let tableIdsBetweenAnchors = findTableIdsBetweenAnchors(originTableIdOfThread ? [originTableIdOfThread, ...tableIdList] : tableIdList, tables, focusedTableId);
 
         let tableList = tableIdList.map((tableId, i) => {
             // filter charts relavent to this
@@ -159,17 +198,6 @@ let SingleThreadView: FC<{
             // only charts without dependency can be deleted
             let tableDeleteEnabled = !tables.some(t => t.derive?.trigger.tableId == tableId);
 
-            let colloapsedTableBox = <div style={{ padding: 0 }}>
-                <Box sx={{ textTransform: 'none', padding: 0, minWidth: 0, color: 'gray' }} >
-                    <Stack direction="row" sx={{ fontSize: '12px', fontWeight: tableId == focusedTableId ? 'bold' : 'normal' }} alignItems="center" gap={"2px"}>
-                        <TableRowsIcon fontSize="inherit" sx={{ fontWeight: 'inherit' }} />
-                        <Typography sx={{ fontSize: '12px', fontWeight: 'inherit' }} >
-                            {tableId}
-                        </Typography>
-                    </Stack>
-                </Box>
-            </div>;
-
             let regularTableBox = <div ref={relevantCharts.some(c => c.chartId == focusedChartId) ? scrollRef : null} style={{ padding: '0px' }}>
                 <Card className={`data-thread-card ${selectedClassName}`} variant="outlined"
                     sx={{ width: '100%', background: 'aliceblue' }}
@@ -187,12 +215,27 @@ let SingleThreadView: FC<{
                         }
                     }}>
                     <Box sx={{ margin: '0px', display: 'flex' }}>
-                        <Stack direction="row" sx={{ marginLeft: 1, marginRight: 'auto', fontSize: 12 }} alignItems="center" gap={"2px"}>
-                            <TableRowsIcon sx={{ color: 'darkgray', width: '14px', height: '14px' }} />
+                        <Stack direction="row" sx={{ marginLeft: 0.5, marginRight: 'auto', fontSize: 12 }} alignItems="center" gap={"2px"}>
+                            <IconButton color="primary" sx={{
+                                minWidth: 0, 
+                                padding: 0.25,
+                                '&:hover': {
+                                    transform: 'scale(1.2)',
+                                    transition: 'all 0.2s ease'
+                                }
+                            }} 
+                            size="small" 
+                            disabled={table?.derive == undefined}
+                            onClick={(event) => {
+                                event.stopPropagation();
+                                dispatch(dfActions.updateTableAnchored({tableId: tableId, anchored: !table?.anchored}));
+                            }}>
+                                {table?.anchored ? <AnchorIcon sx={{ fontSize: 18 }} />  : <TableRowsIcon sx={{ fontSize: 18 }} />}
+                            </IconButton>
                             <Box sx={{ margin: '4px 8px 4px 2px' }}>
                                 <Typography fontSize="inherit" sx={{
                                     textAlign: 'center',
-                                    color: 'rgba(0,0,0,0.7)', 
+                                    color:  'rgba(0,0,0,0.7)', 
                                     maxWidth: '100px',
                                     wordWrap: 'break-word',
                                     whiteSpace: 'normal'
@@ -201,7 +244,10 @@ let SingleThreadView: FC<{
                         </Stack>
                         <ButtonGroup aria-label="Basic button group" variant="text" sx={{ textAlign: 'end', margin: "auto 2px auto auto" }}>
                             {tableDeleteEnabled && <Tooltip title="delete table">
-                                <IconButton aria-label="share" size="small" sx={{ padding: '2px' }}>
+                                <IconButton aria-label="share" size="small" sx={{ padding: 0.25, '&:hover': {
+                                    transform: 'scale(1.2)',
+                                    transition: 'all 0.2s ease'
+                                } }}>
                                     <DeleteIcon fontSize="small" sx={{ fontSize: 18 }} color='warning'
                                         onClick={(event) => {
                                             event.stopPropagation();
@@ -210,7 +256,10 @@ let SingleThreadView: FC<{
                                 </IconButton>
                             </Tooltip>}
                             <Tooltip title="create a new chart">
-                                <IconButton aria-label="share" size="small" sx={{ padding: '2px' }}>
+                                <IconButton aria-label="share" size="small" sx={{ padding: 0.25, '&:hover': {
+                                    transform: 'scale(1.2)',
+                                    transition: 'all 0.2s ease'
+                                } }}>
                                     <AddchartIcon fontSize="small" sx={{ fontSize: 18 }} color='primary'
                                         onClick={(event) => {
                                             event.stopPropagation();
@@ -230,19 +279,18 @@ let SingleThreadView: FC<{
                 <Box
                     key={`table-${tableId}`}
                     sx={{ display: 'flex', flexDirection: 'row' }}>
-                    <div style={{
+                    <Box sx={{
                         minWidth: '1px', padding: '0px', width: '8px', flex: 'none', display: 'flex',
-                        marginLeft: '8px',
-                        borderLeft: '1px dashed darkgray',
+                        marginLeft: tableIdsBetweenAnchors.includes(tableId) ? '7px' : '8px',
+                        borderLeft: tableIdsBetweenAnchors.includes(tableId) ? 
+                            `3px solid ${theme.palette.primary.light}` : '1px dashed darkgray',
                     }}>
                         <Box sx={{
                             padding: 0, width: '1px', margin: 'auto',
-                            //borderLeft: 'thin solid lightgray',
-                            // the following for 
                             backgroundImage: 'linear-gradient(180deg, darkgray, darkgray 75%, transparent 75%, transparent 100%)',
                             backgroundSize: '1px 6px, 3px 100%'
                         }}></Box>
-                    </div>
+                    </Box>
                     <Box sx={{ flex: 1, padding: '8px 0px', minHeight: '8px', ...chartElementProps }}>
                         {releventChartElements}
                     </Box>
@@ -271,6 +319,16 @@ let SingleThreadView: FC<{
                 </Divider>
             </Box>
             <div style={{ padding: '2px 4px 2px 4px', marginTop: 0, marginBottom: '8px', direction: 'ltr' }}>
+                {originTableIdOfThread && <Box sx={{ direction: 'ltr' }}>
+                    <Typography sx={{ ml: 0.25, fontSize: "10px", color: 'text.secondary', textTransform: 'none' }}>
+                        {`${originTableIdOfThread}`}
+                    </Typography>
+                    <Box sx={{
+                        height: '14px',
+                        ml: 1,
+                        borderLeft: tableIdsBetweenAnchors.includes(originTableIdOfThread) ? `3px solid ${theme.palette.primary.light}` : `1px dashed rgba(0, 0, 0, 0.3)`
+                    }}></Box>
+                </Box>}
                 {content}
             </div>
         </Box>

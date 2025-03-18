@@ -45,7 +45,7 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView({  $table
             return tables.map(table => {
                 // try to let table figure out all fields are derivable from the table
                 let rows = baseTableToExtTable(table.rows, derivedFields, conceptShelfItems);
-                let extTable = createTableFromFromObjectArray(`${table.id}`, rows, table.derive);
+                let extTable = createTableFromFromObjectArray(`${table.id}`, rows, table.anchored, table.derive);
                 return extTable
             })
         } else {
