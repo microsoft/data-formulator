@@ -8,13 +8,13 @@ How to set up your local machine.
 
 ## Backend (Python)
 
-- **Create a Virtual Environment**  
+- **Create a Virtual Environment**
     ```bash
     python -m venv venv
     .\venv\Scripts\activate
     ```
 
-- **Install Dependencies**  
+- **Install Dependencies**
     ```bash
     pip install -r requirements.txt
     ```
@@ -23,6 +23,11 @@ How to set up your local machine.
     - required fields for different providers are different, please refer to the [LiteLLM setup](https://docs.litellm.ai/docs#litellm-python-sdk) guide for more details.
         - currently only endpoint, model, api_key, api_base, api_version are supported.
     - this helps data formulator to automatically load the API keys when you run the app, so you don't need to set the API keys in the app UI.
+- **Run the app (using Docker - Recommended for development)**
+   ```bash
+   docker-compose up --build
+   ```
+   This will build the Docker image and start the application in a container.  Any changes you make to the code will be automatically reflected in the running application thanks to the volume mount in `docker-compose.yml`.
 
 - **Run the app**
     - **Windows**
@@ -37,8 +42,8 @@ How to set up your local machine.
 
 ## Frontend (TypeScript)
 
-- **Install NPM packages**  
-    
+- **Install NPM packages**
+
     ```bash
     yarn
     ```
@@ -60,7 +65,7 @@ How to set up your local machine.
     ```bash
     yarn build
     ```
-    This builds the app for production to the `py-src/data_formulator/dist` folder.  
+    This builds the app for production to the `py-src/data_formulator/dist` folder.
 
     Then, build python package:
 
@@ -74,15 +79,15 @@ How to set up your local machine.
 
     You can then install the build result wheel (testing in a virtual environment is recommended):
     ```bash
-    # replace <version> with the actual build version. 
-    pip install dist/data_formulator-<version>-py3-none-any.whl 
+    # replace <version> with the actual build version.
+    pip install dist/data_formulator-<version>-py3-none-any.whl
     ```
 
     Once installed, you can run Data Formulator with:
     ```bash
     data_formulator
     ```
-    or 
+    or
     ```bash
     python -m data_formulator
     ```
