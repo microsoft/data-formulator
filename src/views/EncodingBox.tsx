@@ -526,7 +526,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
         }
     }
 
-    let conceptGroups = groupConceptItems(conceptShelfItems);
+    let conceptGroups = groupConceptItems(conceptShelfItems, tables);
     let createConceptInputBox = <Autocomplete
         key="concept-create-input-box"
         onChange={(event, value) => {

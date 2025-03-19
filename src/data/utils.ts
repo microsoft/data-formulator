@@ -95,6 +95,7 @@ export const createTableFromFromObjectArray = (title: string, values: any[], anc
 
     return  {
         id: title,
+        displayId: `${title}`,
         names: columnTable.names(),
         types: columnTable.names().map(name => (columnTable.column(name) as Column).type),
         rows: columnTable.objects(),

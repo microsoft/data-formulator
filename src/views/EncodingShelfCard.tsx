@@ -62,7 +62,8 @@ let selectBaseTables = (activeFields: FieldItem[], conceptShelfItems: FieldItem[
     
     let baseTables = [];
 
-    if (currentTable.derive) {
+    // if the current table is derived from other tables, then we need to add those tables to the base tables
+    if (currentTable.derive && !currentTable.anchored) {
         baseTables = currentTable.derive.source.map(t => tables.find(t2 => t2.id == t) as DictTable);
     } else {
         baseTables.push(currentTable);
@@ -70,7 +71,7 @@ let selectBaseTables = (activeFields: FieldItem[], conceptShelfItems: FieldItem[
 
     // if there is no active fields at all!!
     if (activeFields.length == 0) {
-        return [currentTable];
+        return baseTables;
     } else {
         // find what are other tables that was used to derive the active fields
         let activeBaseFields = conceptShelfItems.filter((field) => {
@@ -82,9 +83,11 @@ let selectBaseTables = (activeFields: FieldItem[], conceptShelfItems: FieldItem[
         if (activeOriginalFields.length == 0 && activeFields.length > 0 && tables.length > 0) {
             return [currentTable];
         }
+
+        let unavailableActiveOriginalFields = activeOriginalFields.filter(f => !baseTables.map(t => t.names).flat().includes(f.name));
     
         // find all tables that contains the active original fields
-        let tablesToAdd = tables.filter(t => activeOriginalFields.map(f => f.tableRef as string).includes(t.id));
+        let tablesToAdd = tables.filter(t => unavailableActiveOriginalFields.map(f => f.tableRef as string).includes(t.id));
 
         baseTables.push(...tablesToAdd.filter(t => !baseTables.map(t2 => t2.id).includes(t.id)));
     }
@@ -307,7 +310,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
     const charts = useSelector((state: DataFormulatorState) => state.charts);
     const config = useSelector((state: DataFormulatorState) => state.config);
 
-    let existMultiplePossibleBaseTables = tables.filter(t => t.derive == undefined).length > 1;
+    let existMultiplePossibleBaseTables = tables.filter(t => t.derive == undefined || t.anchored).length > 1;
 
     let activeModel = useSelector(dfSelectors.getActiveModel);
 
@@ -364,12 +367,13 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
     let requiredActionTables = selectBaseTables(activeFields, conceptShelfItems, tables, currentTable);
 
     useEffect(() => {
-        if (!requiredActionTables.every(t => actionTableIds.includes(t.id))) {
-            setActionTableIds([
-                ...requiredActionTables.map(t => t.id), 
-                ...actionTableIds.filter(id => !requiredActionTables.map(t => t.id).includes(id))
-            ]);
-        }
+        setActionTableIds([
+            ...requiredActionTables.map(t => t.id), 
+            ...actionTableIds
+                    .filter(id => !requiredActionTables.map(t => t.id).includes(id))
+                    .filter(id => tables.find(t => t.id == id)?.anchored)
+                    .filter(id => requiredActionTables.some(t => !t.derive?.source.includes(id)))
+        ]);
     }, [requiredActionTables]);
     
     let deriveNewData = (overrideTableId?: string) => {
@@ -424,7 +428,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
         }) 
         let engine = getUrls().SERVER_DERIVE_DATA_URL;
 
-        if (mode == "formulate" && currentTable.derive?.dialog) {
+        if (currentTable.derive?.dialog && !currentTable.anchored) {
                 let sourceTableIds = currentTable.derive?.source;
 
                 // Compare if source and base table IDs are different
@@ -718,7 +722,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
         <Box sx={{ width: "100%", minWidth: "210px", height: '100%', display: "flex", flexDirection: "column" }}>
             {existMultiplePossibleBaseTables && <ActionTableSelector 
                 actionTableIds={actionTableIds}
-                tables={tables.filter(t => t.derive === undefined)}
+                tables={tables.filter(t => t.derive === undefined || t.anchored)}
                 updateActionTableIds={handleActionTableChange}
                 requiredTableIds={requiredActionTables.map(t => t.id)}
             />}

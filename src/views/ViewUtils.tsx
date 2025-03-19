@@ -133,16 +133,16 @@ export const findBaseFields = (field: FieldItem, conceptShelfItems: FieldItem[])
     }
 }
 
-export const groupConceptItems = (conceptShelfItems: FieldItem[])  => {
+export const groupConceptItems = (conceptShelfItems: FieldItem[], tables: DictTable[])  => {
     // group concepts based on which source table they belongs to
     return conceptShelfItems.map(f => {
         let group = ""
         if (f.source == "original") {
-            group = f.tableRef as string;
+            group = tables.find(t => t.id == f.tableRef)?.displayId || f.tableRef;
         } else if (f.source == "custom") {
             group = "new fields"
         } else if (f.source == "derived") {
-            group = f.tableRef as string;
+            group = tables.find(t => t.id == f.tableRef)?.displayId || f.tableRef;
         }
         return {group, field: f}
     });

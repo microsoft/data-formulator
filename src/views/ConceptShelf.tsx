@@ -85,7 +85,7 @@ export const ConceptGroup: FC<{groupName: string, fields: FieldItem[]}> = functi
             {fields.map((field) => (
                 <ConceptCard key={`concept-card-${field.id}`} field={field} />
             ))}
-            {fields.length > 5 && !expanded && (
+            {fields.length > 6 && !expanded && (
                 <Box sx={{ 
                     position: 'relative', 
                     height: '40px',
@@ -99,11 +99,11 @@ export const ConceptGroup: FC<{groupName: string, fields: FieldItem[]}> = functi
                         background: 'linear-gradient(to bottom, transparent, white)'
                     }
                 }}>
-                    <ConceptCard field={fields[5]} />
+                    <ConceptCard field={fields[6]} />
                 </Box>
             )}
         </Box>
-        {fields.length > 5 && !expanded && (
+        {fields.length > 6 && !expanded && (
             <Button
                 onClick={() => setExpanded(!expanded)}
                 sx={{
@@ -165,7 +165,7 @@ export const ConceptShelf: FC<ConceptShelfProps> = function ConceptShelf() {
     }, [focusedTableId])
     
     // group concepts based on types
-    let conceptItemGroups = groupConceptItems(conceptShelfItems);
+    let conceptItemGroups = groupConceptItems(conceptShelfItems, tables);
     let groupNames = [...new Set(conceptItemGroups.map(g => g.group))]
 
     return (

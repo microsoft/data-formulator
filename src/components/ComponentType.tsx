@@ -57,6 +57,7 @@ export interface Trigger {
 
 export interface DictTable {
     id: string; // name/id of the table
+    displayId: string; // display id of the table 
     names: string[]; // column names
     types: Type[]; // column types
     rows: any[]; // table content, each entry is a row
@@ -84,6 +85,7 @@ export function createDictTable(
 
     return {
         id,
+        displayId: `${id}`,
         names, 
         rows,
         types: names.map(name => inferTypeFromValueArray(rows.map(r => r[name]))),

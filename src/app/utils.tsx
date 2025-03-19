@@ -549,10 +549,21 @@ export const resolveChartFields = (chart: Chart, currentConcepts: FieldItem[], r
 }
 
 export let getTriggers = (leafTable: DictTable, tables: DictTable[]) => {
-    // recursively find triggers that ends in leafTable
+    // recursively find triggers that ends in leafTable (if the leaf table is anchored, we will find till the previous table is anchored)
     let triggers : Trigger[] = [];
     let t = leafTable;
-    while(t.derive != undefined) {
+    while(true) {
+
+        // this is when we find an original table
+        if (t.derive == undefined) {
+            break;
+        }
+
+        // this is when we find an anchored table (which is not the leaf table)
+        if (t !== leafTable && t.anchored) {
+            break;
+        }
+
         let trigger = t.derive.trigger as Trigger;
         triggers = [trigger, ...triggers];
         let parentTable = tables.find(x => x.id == trigger.tableId);

@@ -454,7 +454,7 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
     let chartActionButtons = [
         <Box key="data-source" fontSize="small" sx={{ margin: "auto", display: "flex", flexDirection: "row"}}>
             <Typography component="span" sx={{}} fontSize="inherit">
-                data: {table.id}
+                data: {table.displayId || table.id}
             </Typography>
         </Box>,
         ...derivedTableItems,

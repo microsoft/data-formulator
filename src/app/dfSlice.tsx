@@ -340,6 +340,11 @@ export const dataFormulatorSlice = createSlice({
             let anchored = action.payload.anchored;
             state.tables = state.tables.map(t => t.id == tableId ? {...t, anchored} : t);
         },
+        updateTableDisplayId: (state, action: PayloadAction<{tableId: string, displayId: string}>) => {
+            let tableId = action.payload.tableId;
+            let displayId = action.payload.displayId;
+            state.tables = state.tables.map(t => t.id == tableId ? {...t, displayId} : t);
+        },
         addChallenges: (state, action: PayloadAction<{tableId: string, challenges: { text: string; difficulty: 'easy' | 'medium' | 'hard'; }[]}>) => {
             state.activeChallenges = [...state.activeChallenges, action.payload];
         },
