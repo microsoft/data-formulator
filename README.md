@@ -22,6 +22,11 @@ Transform data and create rich visualizations iteratively with AI 🪄. Try Data
 
 ## News 🔥🔥🔥
 
+- [03-20-2025] Data Formulator 0.1.7
+  - Anchor an intermediate dataset, so that followup data analysis are built on top of the anchored data, not the original one. It could be handy when you clean a data, and only want to use the cleaned data for followup analysis; when you want to create a subset from the original data or join multiple data together, and then focus your analysis. The AI agent will be less likely to get confused and work faster. ⚡️
+  - Fixed some performane issues from the UI (let us know if it is smoother).
+  - Don't forget to update Data Formulator to test it out.
+
 - [02-20-2025] Data Formulator 0.1.6 released! 
   - Now supports working with multiple datasets at once! Tell Data Formulator which data tables you would like to use in the encoding shelf, and it will figure out how to join the tables to create a visualization to answer your question. 🪄
   - Checkout the demo at [[https://github.com/microsoft/data-formulator/releases/tag/0.1.6]](https://github.com/microsoft/data-formulator/releases/tag/0.1.6).
