@@ -46,10 +46,12 @@ export interface ConceptShelfProps {
 export const ConceptGroup: FC<{groupName: string, fields: FieldItem[]}> = function ConceptGroup({groupName, fields}) {
 
     const focusedTableId = useSelector((state: DataFormulatorState) => state.focusedTableId);
+    const tables = useSelector((state: DataFormulatorState) => state.tables);
     const [expanded, setExpanded] = useState(false);
 
     useEffect(() => {
-        if (focusedTableId == groupName) {
+        let focusedTable = tables.find(t => t.id == focusedTableId);
+        if (focusedTableId == groupName || focusedTable?.derive?.source.includes(groupName)) {
             setExpanded(true);
         } else if (focusedTableId != groupName && groupName != "new fields") {
             setExpanded(false);

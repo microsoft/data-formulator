@@ -99,7 +99,6 @@ export const TriggerCard: FC<{className?: string, trigger: Trigger, hideFields?:
 
     const charts = useSelector((state: DataFormulatorState) => state.charts);
     let fieldItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
-    const focusedChartId = useSelector((state: DataFormulatorState) => state.focusedChartId);
 
     const dispatch = useDispatch<AppDispatch>();
 
@@ -204,14 +203,17 @@ export const MiniTriggerCard: FC<{className?: string, trigger: Trigger, hideFiel
 }
 
 // Add this component before EncodingShelfCard
-const ActionTableSelector: FC<{
-    actionTableIds: string[],
+const UserActionTableSelector: FC<{
+    requiredActionTableIds: string[],
+    userSelectedActionTableIds: string[],
     tables: DictTable[],
-    updateActionTableIds: (tableIds: string[]) => void,
+    updateUserSelectedActionTableIds: (tableIds: string[]) => void,
     requiredTableIds?: string[]
-}> = ({ actionTableIds, tables, updateActionTableIds, requiredTableIds = [] }) => {
+}> = ({ requiredActionTableIds, userSelectedActionTableIds, tables, updateUserSelectedActionTableIds, requiredTableIds = [] }) => {
     const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
     const open = Boolean(anchorEl);
+
+    let actionTableIds = [...requiredActionTableIds, ...userSelectedActionTableIds.filter(id => !requiredActionTableIds.includes(id))];
 
     const handleClick = (event: React.MouseEvent<HTMLElement>) => {
         setAnchorEl(event.currentTarget);
@@ -223,7 +225,7 @@ const ActionTableSelector: FC<{
 
     const handleTableSelect = (table: DictTable) => {
         if (!actionTableIds.includes(table.id)) {
-            updateActionTableIds([...actionTableIds, table.id]);
+            updateUserSelectedActionTableIds([...userSelectedActionTableIds, table.id]);
         }
         handleClose();
     };
@@ -241,7 +243,7 @@ const ActionTableSelector: FC<{
                 return (
                     <Chip
                         key={tableId}
-                        label={tableId}
+                        label={tables.find(t => t.id == tableId)?.displayId}
                         size="small"
                         sx={{
                             height: 16,
@@ -255,7 +257,7 @@ const ActionTableSelector: FC<{
                             }
                         }}
                         deleteIcon={<CloseIcon sx={{ fontSize: '8px', width: '12px', height: '12px' }} />}
-                        onDelete={isRequired ? undefined : () => updateActionTableIds(actionTableIds.filter(id => id !== tableId))}
+                        onDelete={isRequired ? undefined : () => updateUserSelectedActionTableIds(actionTableIds.filter(id => id !== tableId))}
                     />
                 );
             })}
@@ -293,7 +295,7 @@ const ActionTableSelector: FC<{
                                     alignItems: 'center'
                                 }}
                             >
-                                {table.id}
+                                {table.displayId}
                             </MenuItem>
                         );
                     })
@@ -331,12 +333,12 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
     
 
     // Add this state
-    const [actionTableIds, setActionTableIds] = useState<string[]>([]);
+    const [userSelectedActionTableIds, setUserSelectedActionTableIds] = useState<string[]>([]);
     
     
     // Update the handler to use state
-    const handleActionTableChange = (newTableIds: string[]) => {
-        setActionTableIds(newTableIds);
+    const handleUserSelectedActionTableChange = (newTableIds: string[]) => {
+        setUserSelectedActionTableIds(newTableIds);
     };
 
     let encodingBoxGroups = Object.entries(ChannelGroups)
@@ -365,17 +367,11 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
     // this is the base tables that will be used to derive the new data
     // this is the bare minimum tables that are required to derive the new data, based fields that will be used
     let requiredActionTables = selectBaseTables(activeFields, conceptShelfItems, tables, currentTable);
+    let actionTableIds = [
+        ...requiredActionTables.map(t => t.id),
+        ...userSelectedActionTableIds.filter(id => !requiredActionTables.map(t => t.id).includes(id))
+    ];
 
-    useEffect(() => {
-        setActionTableIds([
-            ...requiredActionTables.map(t => t.id), 
-            ...actionTableIds
-                    .filter(id => !requiredActionTables.map(t => t.id).includes(id))
-                    .filter(id => tables.find(t => t.id == id)?.anchored)
-                    .filter(id => requiredActionTables.some(t => !t.derive?.source.includes(id)))
-        ]);
-    }, [requiredActionTables]);
-    
     let deriveNewData = (overrideTableId?: string) => {
 
         let mode = 'formulate';
@@ -720,10 +716,11 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
 
     let channelComponent = (
         <Box sx={{ width: "100%", minWidth: "210px", height: '100%', display: "flex", flexDirection: "column" }}>
-            {existMultiplePossibleBaseTables && <ActionTableSelector 
-                actionTableIds={actionTableIds}
+            {existMultiplePossibleBaseTables && <UserActionTableSelector 
+                requiredActionTableIds={requiredActionTables.map(t => t.id)}
+                userSelectedActionTableIds={userSelectedActionTableIds}
                 tables={tables.filter(t => t.derive === undefined || t.anchored)}
-                updateActionTableIds={handleActionTableChange}
+                updateUserSelectedActionTableIds={handleUserSelectedActionTableChange}
                 requiredTableIds={requiredActionTables.map(t => t.id)}
             />}
             <Box key='mark-selector-box' sx={{ flex: '0 0 auto' }}>

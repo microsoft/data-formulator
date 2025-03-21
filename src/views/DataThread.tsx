@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-import React, { FC, useEffect, useRef, useState } from 'react';
+import React, { FC, useEffect, useMemo, useRef, useState, useCallback, memo } from 'react';
 
 import {
     Box,
@@ -69,24 +69,27 @@ let buildChartCard = (chartElement: { tableId: string, chartId: string, element:
 const EditableTableName: FC<{
     initialValue: string,
     tableId: string,
-    dispatch: any
-}> = ({ initialValue, tableId, dispatch }) => {
+    handleUpdateTableDisplayId: (tableId: string, displayId: string) => void,
+    nonEditingSx?: SxProps
+}> = ({ initialValue, tableId, handleUpdateTableDisplayId, nonEditingSx }) => {
     const [isEditing, setIsEditing] = useState(false);
     const [inputValue, setInputValue] = useState(initialValue);
     
-    const handleSubmit = () => {
-        if (inputValue !== initialValue) {
-            dispatch(dfActions.updateTableDisplayId({
-                tableId: tableId,
-                displayId: inputValue
-            }));
+    const handleSubmit = (e?: React.MouseEvent | React.KeyboardEvent) => {
+        if (e) {
+            e.preventDefault();
+            e.stopPropagation();
         }
-        setIsEditing(false);
+        
+        if (inputValue.trim() !== '') {  // Only update if input is not empty
+            handleUpdateTableDisplayId(tableId, inputValue);
+            setIsEditing(false);
+        }
     };
 
     const handleKeyDown = (e: React.KeyboardEvent) => {
         if (e.key === 'Enter') {
-            handleSubmit();
+            handleSubmit(e);
         } else if (e.key === 'Escape') {
             setInputValue(initialValue);
             setIsEditing(false);
@@ -95,29 +98,31 @@ const EditableTableName: FC<{
 
     if (!isEditing) {
         return (
-            <Box
-                component="span"
-                onClick={(event) => {
-                    event.stopPropagation();
-                    setIsEditing(true);
-                }}
-                sx={{
-                    textAlign: 'center',
-                    color: 'rgba(0,0,0,0.5)',
-                    maxWidth: '100px',
-                    wordWrap: 'break-word',
-                    whiteSpace: 'normal',
-                    ml: 0.25,
-                    padding: '2px',
-                    '&:hover': {
-                        backgroundColor: 'rgba(0,0,0,0.04)',
-                        borderRadius: '2px',
-                        cursor: 'pointer'
-                    }
-                }}
-            >
-                {initialValue}
-            </Box>
+            <Tooltip title="edit table name">
+                <Typography
+                    onClick={(event) => {
+                        event.stopPropagation();
+                        setIsEditing(true);
+                    }}
+                    sx={{
+                        ...nonEditingSx,
+                        fontSize: 'inherit',
+                        minWidth: '60px',
+                        maxWidth: '100px',
+                        wordWrap: 'break-word',
+                        whiteSpace: 'normal',
+                        ml: 0.25,
+                        padding: '2px',
+                        '&:hover': {
+                            backgroundColor: 'rgba(0,0,0,0.04)',
+                            borderRadius: '2px',
+                            cursor: 'pointer'
+                        }
+                    }}
+                >
+                    {initialValue}
+                </Typography>
+            </Tooltip>
         );
     }
 
@@ -137,18 +142,21 @@ const EditableTableName: FC<{
                 onChange={(e) => setInputValue(e.target.value)}
                 onKeyDown={handleKeyDown}
                 autoFocus
-                variant="outlined"
+                variant="filled"
                 size="small"
-                onBlur={() => {
-                    setInputValue(initialValue);
-                    setIsEditing(false);
+                onBlur={(e) => {
+                    // Only reset if click is not on the submit button
+                    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                        setInputValue(initialValue);
+                        setIsEditing(false);
+                    }
                 }}
                 sx={{
-                    '& .MuiOutlinedInput-root': {
+                    '& .MuiFilledInput-root': {
                         fontSize: 'inherit',
                         padding: 0,
                         '& input': {
-                            padding: '2px 24px 2px 8px',  // Make room for the button
+                            padding: '2px 24px 2px 8px',
                             width: '80px',
                         }
                     }
@@ -156,12 +164,16 @@ const EditableTableName: FC<{
             />
             <IconButton
                 size="small"
-                onClick={handleSubmit}
+                onMouseDown={(e) => {
+                    e.preventDefault(); // Prevent blur from firing before click
+                }}
+                onClick={(e) => handleSubmit(e)}
                 sx={{
                     position: 'absolute',
                     right: 2,
                     padding: '2px',
                     minWidth: 'unset',
+                    zIndex: 1,
                     '& .MuiSvgIcon-root': {
                         fontSize: '0.8rem'
                     }
@@ -192,6 +204,14 @@ let SingleThreadView: FC<{
         let charts = useSelector((state: DataFormulatorState) => state.charts);
         let focusedChartId = useSelector((state: DataFormulatorState) => state.focusedChartId);
         let focusedTableId = useSelector((state: DataFormulatorState) => state.focusedTableId);
+
+        let handleUpdateTableDisplayId = (tableId: string, displayId: string) => {
+            dispatch(dfActions.updateTableDisplayId({
+                tableId: tableId,
+                displayId: displayId
+            }));
+        }   
+
         const theme = useTheme();
 
         let focusedChart = charts.find(c => c.id == focusedChartId);
@@ -209,8 +229,6 @@ let SingleThreadView: FC<{
         let triggers = getTriggers(leafTable, tables);
 
         let highlightedTableIds: string[] = [leafTable.id];
-
-        console.log(`leafTable: ${leafTable.id}; triggers: ${triggers.map(t => t.tableId)}`);
 
         if (leafTable.derive) {
 
@@ -269,14 +287,46 @@ let SingleThreadView: FC<{
             if (tableId == leafTable.id && leafTable.anchored && tableIdList.length > 1) {
                 let table = tables.find(t => t.id == tableId);
                 return <Typography sx={{ background: 'transparent', }} >
-                    <Box sx={{ margin: '0px', display: 'flex' }}>
+                    <Box 
+                        sx={{ 
+                            margin: '0px', 
+                            width: 'fit-content',
+                            display: 'flex', 
+                            cursor: 'pointer',
+                            padding: '2px 4px',
+                            borderRadius: '4px',
+                            transition: 'all 0.2s ease',
+                            '&:hover': {
+                                backgroundColor: 'rgba(0, 0, 0, 0.04)',
+                                boxShadow: '0 2px 4px rgba(0,0,0,0.05)'
+                            }
+                        }}
+                        onClick={(event) => {
+                            event.stopPropagation();
+                            dispatch(dfActions.setFocusedTable(tableId));
+                            
+                            // Find and set the first chart associated with this table
+                            let firstRelatedChart = charts.find((c: Chart) => c.tableRef == tableId && c.intermediate == undefined) 
+                                || charts.find((c: Chart) => c.tableRef == tableId);
+                            
+                            if (firstRelatedChart) {
+                                if (firstRelatedChart.intermediate == undefined) {
+                                    dispatch(dfActions.setFocusedChart(firstRelatedChart.id));
+                                }
+                            }
+                        }}
+                    >
                         <Stack direction="row" sx={{ marginLeft: 0.25, marginRight: 'auto', fontSize: 12 }} alignItems="center" gap={"2px"}>
                             <AnchorIcon sx={{ fontSize: 14, color: 'rgba(0,0,0,0.5)' }} />
-                            <EditableTableName
-                                initialValue={table?.displayId || tableId}
-                                tableId={tableId}
-                                dispatch={dispatch}
-                            />
+                            <Typography fontSize="inherit" sx={{
+                                textAlign: 'center',
+                                color: 'rgba(0,0,0,0.7)', 
+                                maxWidth: '100px',
+                                wordWrap: 'break-word',
+                                whiteSpace: 'normal'
+                            }}>
+                                {table?.displayId || tableId}
+                            </Typography>
                         </Stack>
                     </Box>
                 </Typography>
@@ -342,16 +392,49 @@ let SingleThreadView: FC<{
                                 event.stopPropagation();
                                 dispatch(dfActions.updateTableAnchored({tableId: tableId, anchored: !table?.anchored}));
                             }}>
-                                {table?.anchored ? <AnchorIcon sx={{ fontSize: 16 }} />  : <TableRowsIcon sx={{ fontSize: 16 }} />}
+                                <Tooltip title={table?.anchored ? "unanchor table" : "anchor table"}>
+                                    <span>  {/* Wrapper span needed for disabled IconButton tooltip */}
+                                        <IconButton color="primary" sx={{
+                                            minWidth: 0, 
+                                            padding: 0.25,
+                                            '&:hover': {
+                                                transform: 'scale(1.1)',
+                                                transition: 'all 0.2s ease',
+                                            },
+                                            '&.Mui-disabled': {
+                                                color: 'rgba(0, 0, 0, 0.5)'
+                                            }
+                                        }} 
+                                        size="small" 
+                                        disabled={table?.derive == undefined || tables.some(t => t.derive?.trigger.tableId == tableId)}
+                                        onClick={(event) => {
+                                            event.stopPropagation();
+                                            dispatch(dfActions.updateTableAnchored({tableId: tableId, anchored: !table?.anchored}));
+                                        }}>
+                                            {table?.anchored ? 
+                                                <AnchorIcon sx={{ 
+                                                    fontSize: tableId === focusedTableId ? 20 : 16,
+                                                    color: tableId === focusedTableId ? theme.palette.primary.main : 'rgba(0,0,0,0.5)',
+                                                    fontWeight: tableId === focusedTableId ? 'bold' : 'normal',
+                                                }} /> : 
+                                                <TableRowsIcon sx={{ fontSize: 16 }} />
+                                            }
+                                        </IconButton>
+                                    </span>
+                                </Tooltip>
                             </IconButton>
                             <Box sx={{ margin: '4px 8px 4px 2px' }}>
-                                <Typography fontSize="inherit" sx={{
+                                {focusedTableId == tableId ? <EditableTableName
+                                    initialValue={table?.displayId || tableId}
+                                    tableId={tableId}
+                                    handleUpdateTableDisplayId={handleUpdateTableDisplayId}
+                                /> : <Typography fontSize="inherit" sx={{
                                     textAlign: 'center',
                                     color:  'rgba(0,0,0,0.7)', 
                                     maxWidth: '100px',
                                     wordWrap: 'break-word',
                                     whiteSpace: 'normal'
-                                }}>{table?.displayId || tableId}</Typography>
+                                }}>{table?.displayId || tableId}</Typography>}
                             </Box>
                         </Stack>
                         <ButtonGroup aria-label="Basic button group" variant="text" sx={{ textAlign: 'end', margin: "auto 2px auto auto" }}>
@@ -444,6 +527,64 @@ let SingleThreadView: FC<{
         </Box>
     }
 
+const ChartElement = memo<{
+    chart: Chart,
+    assembledSpec: any,
+    table: any,
+    chartSynthesisInProgress: string[],
+    isSaved?: boolean,
+    onChartClick: (chartId: string, tableId: string) => void,
+    onDelete: (chartId: string) => void
+}>(({ chart, assembledSpec, table, chartSynthesisInProgress, isSaved, onChartClick, onDelete }) => {
+    const id = `data-thread-chart-Element-${chart.id}`;
+
+    return (
+        <Box
+            onClick={() => onChartClick(chart.id, table.id)}
+            className="vega-thumbnail-box"
+            style={{ width: "100%", position: "relative", cursor: "pointer !important" }}
+        >
+            <Box sx={{ margin: "auto" }}>
+                {isSaved && <Typography sx={{ position: "absolute", margin: "5px", zIndex: 2 }}>
+                    <StarIcon sx={{ color: "gold" }} fontSize="small" />
+                </Typography>}
+                {chartSynthesisInProgress.includes(chart.id) && <Box sx={{
+                    position: "absolute", height: "100%", width: "100%", zIndex: 20,
+                    backgroundColor: "rgba(243, 243, 243, 0.8)", display: "flex", alignItems: "center", cursor: "pointer"
+                }}>
+                    <LinearProgress sx={{ width: "100%", height: "100%", opacity: 0.05 }} />
+                </Box>}
+                <Box className='data-thread-chart-card-action-button'
+                    sx={{ zIndex: 10, color: 'blue', position: "absolute", right: 1, background: 'rgba(255, 255, 255, 0.95)' }}>
+                    <Tooltip title="delete chart">
+                        <IconButton 
+                            size="small" 
+                            color="warning" 
+                            onClick={(event) => {
+                                event.stopPropagation();
+                                onDelete(chart.id);
+                            }}
+                        >
+                            <DeleteIcon fontSize="small" />
+                        </IconButton>
+                    </Tooltip>
+                </Box>
+                <Box className={"vega-thumbnail"}
+                    id={id}
+                    sx={{
+                        display: "flex",
+                        backgroundColor: isSaved ? "rgba(255,215,0,0.05)" : "white",
+                        '& .vega-embed': { margin: 'auto' },
+                        '& canvas': { width: 'auto !important', height: 'auto !important', maxWidth: 120, maxHeight: 100 }
+                    }}
+                >
+                    <VegaLite spec={assembledSpec} actions={false} />
+                </Box>
+            </Box>
+        </Box>
+    );
+});
+
 export const DataThread: FC<{}> = function ({ }) {
 
     let tables = useSelector((state: DataFormulatorState) => state.tables);
@@ -473,22 +614,16 @@ export const DataThread: FC<{}> = function ({ }) {
     // when there is no result and synthesis is running, just show the waiting panel
 
     // // we don't always render it, so make this a function to enable lazy rendering
-    let chartElements = charts.filter(chart => !chart.intermediate).map((chart, index) => {
-        const id = `data-thread-chart-Element-${chart.id}`;
+    const handleChartClick = useCallback((chartId: string, tableId: string) => {
+        dispatch(dfActions.setFocusedChart(chartId));
+        dispatch(dfActions.setFocusedTable(tableId));
+    }, [dispatch]);
 
-        let table = getDataTable(chart, tables, charts, conceptShelfItems);
+    let chartElements = useMemo(() => charts.filter(chart => !chart.intermediate).map((chart) => {
+        const table = getDataTable(chart, tables, charts, conceptShelfItems);
 
         let toDeriveFields = derivedFields.filter(f => f.name != "").filter(f => findBaseFields(f, conceptShelfItems).every(f2 => table.names.includes(f2.name)))
         let extTable = baseTableToExtTable(JSON.parse(JSON.stringify(table.rows)), toDeriveFields, conceptShelfItems);
-
-        let chartTemplate = getChartTemplate(chart.chartType);
-
-        let setIndexFunc = () => {
-            //let focusedIndex = index;
-            dispatch(dfActions.setFocusedChart(chart.id));
-            dispatch(dfActions.setFocusedTable(table.id));
-            //this.setState({focusedIndex, focusUpdated: true});
-        }
 
         if (chart.chartType == "Auto") {
             let element = <Box sx={{ position: "relative", width: "fit-content", display: "flex", flexDirection: "column", margin: 'auto', color: 'darkgray' }}>
@@ -501,9 +636,13 @@ export const DataThread: FC<{}> = function ({ }) {
 
         if (!available || chart.chartType == "Table") {
 
-            let element = <Box key={`unavailable-${id}`} width={"100%"}
+            console.log(">>> chart = ", chart)
+
+            let chartTemplate = getChartTemplate(chart.chartType);
+
+            let element = <Box key={`unavailable-${chart.id}`} width={"100%"}
                 className={"vega-thumbnail vega-thumbnail-box"}
-                onClick={setIndexFunc}
+                onClick={() => handleChartClick(chart.id, table.id)}
                 sx={{
                     display: "flex", backgroundColor: "rgba(0,0,0,0.01)", position: 'relative',
                     //border: "0.5px dashed lightgray", 
@@ -563,48 +702,18 @@ export const DataThread: FC<{}> = function ({ }) {
             "axis": { "labelLimit": 30 }
         }
 
-        const element =
-            <Box
-                key={`animateOnChange-carousel-${index}`}
-                onClick={setIndexFunc}
-                className="vega-thumbnail-box"
-                style={{ width: "100%", position: "relative", cursor: "pointer !important" }}
-            >
-                <Box sx={{ margin: "auto" }}>
-                    {chart.saved ? <Typography sx={{ position: "absolute", margin: "5px", zIndex: 2 }}>
-                        <StarIcon sx={{ color: "gold" }} fontSize="small" />
-                    </Typography> : ""}
-                    {chartSynthesisInProgress.includes(chart.id) ? <Box sx={{
-                        position: "absolute", height: "100%", width: "100%", zIndex: 20,
-                        backgroundColor: "rgba(243, 243, 243, 0.8)", display: "flex", alignItems: "center", cursor: "pointer"
-                    }}>
-                        <LinearProgress sx={{ width: "100%", height: "100%", opacity: 0.05 }} />
-                    </Box> : ''}
-                    <Box className='data-thread-chart-card-action-button'
-                        sx={{ zIndex: 10, color: 'blue', position: "absolute", right: 1, background: 'rgba(255, 255, 255, 0.95)' }}>
-                        <Tooltip title="delete chart">
-                            <IconButton size="small" color="warning" onClick={(event) => {
-                                event.stopPropagation();
-                                dispatch(dfActions.deleteChartById(chart.id));
-                            }}><DeleteIcon fontSize="small" /></IconButton>
-                        </Tooltip>
-                    </Box>
-                    <Box className={"vega-thumbnail" + (focusedChartId == chart.id ? " focused-vega-thumbnail" : "")}
-                        id={id} key={`chart-thumbnail-${index}`}
-                        sx={{
-                            display: "flex",
-                            backgroundColor: chart.saved ? "rgba(255,215,0,0.05)" : "white",
-                            '& .vega-embed': { margin: 'auto' },
-                            '& canvas': { width: 'auto !important', height: 'auto !important', maxWidth: 120, maxHeight: 100 }
-                        }}
-                    >
-                        <VegaLite spec={assembledChart} actions={false} />
-                    </Box>
-                </Box>
-            </Box>;
+        const element = <ChartElement
+            chart={chart}
+            assembledSpec={assembledChart}
+            table={table}
+            chartSynthesisInProgress={chartSynthesisInProgress}
+            isSaved={chart.saved}
+            onChartClick={handleChartClick}
+            onDelete={(chartId) => dispatch(dfActions.deleteChartById(chartId))}
+        />;
 
         return { chartId: chart.id, tableId: table.id, element };
-    })
+    }), [charts, tables, conceptShelfItems, chartSynthesisInProgress, handleChartClick]);
 
 
     // anchors are considered leaf tables to simplify the view
@@ -650,7 +759,7 @@ export const DataThread: FC<{}> = function ({ }) {
             let usedIntermediateTableIds = leafTables.slice(0, i)
                 .map(x => [ ...getTriggers(x, tables).map(y => y.tableId) || []]).flat();
             return <SingleThreadView
-                key={`thread-${lt.id}`}
+                key={`thread-${lt.id}-${i}`}
                 scrollRef={scrollRef} 
                 threadIdx={i} 
                 leafTable={lt} 

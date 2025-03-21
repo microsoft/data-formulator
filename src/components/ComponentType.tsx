@@ -100,7 +100,6 @@ export type Chart = {
     encodingMap: EncodingMap, 
     tableRef: string, 
     saved: boolean,
-    scaleFactor?: number,
     intermediate?: Trigger // whether this chart is only an intermediate chart (e.g., only used as a spec for transforming tables)
 }
 

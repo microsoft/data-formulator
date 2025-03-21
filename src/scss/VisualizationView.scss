@@ -152,12 +152,6 @@ $accelerate-ease: cubic-bezier(0.4, 0.0, 1, 1);
         animation: appear 0.5s ease-out;
     }
 
-    .focused-vega-thumbnail {
-        //background-color: blue;
-        box-shadow: 0 0 5px rgba(33,33,33,.3);
-        z-index: 1;
-    }
-
     .vega-thumbnail:hover {
         transform: translateY(1px);
         box-shadow: 0 0 3px rgba(33,33,33,.2);

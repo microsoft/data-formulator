@@ -23,6 +23,7 @@ import { SelectableGroup } from 'react-selectable-fast';
 import { SelectableDataGrid } from './SelectableDataGrid';
 
 import ParkIcon from '@mui/icons-material/Park';
+import AnchorIcon from '@mui/icons-material/Anchor';
 
 export interface FreeDataViewProps {
     $tableRef: React.RefObject<SelectableGroup>;
@@ -89,8 +90,8 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView({  $table
 
     let tableToRender = extTables; 
 
-    let coreTables = tableToRender.filter(t => t.derive == undefined);
-    let tempTables = tableToRender.filter(t => t.derive);
+    let coreTables = tableToRender.filter(t => t.derive == undefined || t.anchored);
+    let tempTables = tableToRender.filter(t => t.derive && !t.anchored);
 
     let genTableLink =  (t: DictTable) => 
         <Link underline="hover" key={t.id} sx={{cursor: "pointer"}} 
@@ -100,15 +101,14 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView({  $table
 
     return (
         <Box sx={{height: "100%", display: "flex", flexDirection: "column", background: "rgba(0,0,0,0.02)"}}>
-            {/* <Box sx={{fontSize: "12px", margin: "4px 12px", display: 'flex'}}>
-                {coreTables.map((t, i) => [i > 0 ? <Divider orientation="vertical" sx={{margin: '0px 4px'}}/> : "", genTableLink(t)])}
-            </Box> */}
+
             <Box sx={{display: 'flex'}}>
+                <Typography sx={{display: 'flex', color: 'rgba(0,0,0,0.5)', ml: 1}} component='span'><AnchorIcon sx={{ fontSize: 14, margin: 'auto'}}/></Typography>
                 <Breadcrumbs sx={{fontSize: "12px", margin: "4px 12px"}} separator="·" aria-label="breadcrumb">
                     {coreTables.map(t => genTableLink(t))}
                 </Breadcrumbs>
                 {/* <Divider variant="inset" orientation="vertical" sx={{margin: '0px 4px'}} /> */}
-                <Typography sx={{display: 'flex', color: 'darkgray'}} component='span'><ParkIcon sx={{ fontSize: 14, margin: 'auto'}}/></Typography>
+                <Typography sx={{display: 'flex', color: 'rgba(0,0,0,0.5)', ml: 1}} component='span'><ParkIcon sx={{ fontSize: 14, margin: 'auto'}}/></Typography>
                 <Breadcrumbs sx={{fontSize: "12px", margin: "4px 12px"}} separator="·" aria-label="breadcrumb">
                     {tempTables.map(t => genTableLink(t))}
                 </Breadcrumbs>

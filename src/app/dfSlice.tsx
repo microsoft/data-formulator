@@ -142,9 +142,11 @@ let deleteChartsRoutine = (state: DataFormulatorState, chartIds: string[]) => {
     state.activeThreadChartId = activeThreadChartId;
 
     let unrefedDerivedTableIds = getUnrefedDerivedTableIds(state);
-    state.tables = state.tables.filter(t => !unrefedDerivedTableIds.includes(t.id));
+    let tableIdsToDelete = state.tables.filter(t => !t.anchored && unrefedDerivedTableIds.includes(t.id)).map(t => t.id);
+    
+    state.tables = state.tables.filter(t => !tableIdsToDelete.includes(t.id));
     // remove intermediate charts that lead to this table
-    state.charts = state.charts.filter(c => !(c.intermediate && unrefedDerivedTableIds.includes(c.intermediate.resultTableId)));
+    state.charts = state.charts.filter(c => !(c.intermediate && tableIdsToDelete.includes(c.intermediate.resultTableId)));
 }
 
 export const fetchFieldSemanticType = createAsyncThunk(
@@ -376,18 +378,6 @@ export const dataFormulatorSlice = createSlice({
             state.charts = state.charts.map(chart => {
                 if (chart.id == chartId) {
                     return { ...chart, saved: !chart.saved };
-                } else {
-                    return chart;
-                }
-            })
-        },
-        updateChartScaleFactor: (state, action: PayloadAction<{chartId: string, scaleFactor: number}>) => {
-            let chartId = action.payload.chartId;
-            let scaleFactor = action.payload.scaleFactor;
-
-            state.charts = state.charts.map(chart => {
-                if (chart.id == chartId) {
-                    return { ...chart, scaleFactor: scaleFactor };
                 } else {
                     return chart;
                 }
