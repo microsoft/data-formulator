@@ -18,7 +18,7 @@ export const loadTextDataWrapper = (title: string, text: string, fileType: strin
     if (fileType == "text/csv" || fileType == "text/tab-separated-values") {
         table = createTableFromText(tableName, text);
     } else if (fileType == "application/json") {
-        table = createTableFromFromObjectArray(tableName, JSON.parse(text));
+        table = createTableFromFromObjectArray(tableName, JSON.parse(text), true);
     } 
     return table;
 };
@@ -52,10 +52,10 @@ export const createTableFromText = (title: string, text: string): DictTable | un
             return row;
           });
     
-    return createTableFromFromObjectArray(title, values);
+    return createTableFromFromObjectArray(title, values, true);
 };
 
-export const createTableFromFromObjectArray = (title: string, values: any[], derive?: any): DictTable => {
+export const createTableFromFromObjectArray = (title: string, values: any[], anchored: boolean, derive?: any): DictTable => {
     const len = values.length;
     let names: string[] = [];
     let cleanNames: string[] = [];
@@ -95,10 +95,12 @@ export const createTableFromFromObjectArray = (title: string, values: any[], der
 
     return  {
         id: title,
+        displayId: `${title}`,
         names: columnTable.names(),
         types: columnTable.names().map(name => (columnTable.column(name) as Column).type),
         rows: columnTable.objects(),
-        derive: derive
+        derive: derive,
+        anchored: anchored
     }
 };
 
@@ -171,7 +173,7 @@ export const loadBinaryDataWrapper = (title: string, arrayBuffer: ArrayBuffer): 
             const jsonData = XLSX.utils.sheet_to_json(worksheet);
             
             // Create a table from the JSON data with sheet name included in the title
-            const sheetTable = createTableFromFromObjectArray(`${title}-${sheetName}`, jsonData);
+            const sheetTable = createTableFromFromObjectArray(`${title}-${sheetName}`, jsonData, true);
             tables.push(sheetTable);
         }
         

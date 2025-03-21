@@ -33,6 +33,7 @@ import { getChartTemplate } from '../components/ChartTemplates';
 import { chartAvailabilityCheck, generateChartSkeleton } from './VisualizationView';
 import TableRowsIcon from '@mui/icons-material/TableRowsOutlined';
 import InsightsIcon from '@mui/icons-material/Insights';
+import AnchorIcon from '@mui/icons-material/Anchor';
 
 import { findBaseFields } from './ViewUtils';
 import { AppDispatch } from '../app/store';
@@ -150,7 +151,6 @@ export let ChartElementFC: FC<{chart: Chart, tableRows: any[], boxWidth?: number
 
 export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ chartId }) {
 
-    // reference to states
     const tables = useSelector((state: DataFormulatorState) => state.tables);
     const charts = useSelector((state: DataFormulatorState) => state.charts);
     let activeThreadChartId = useSelector((state: DataFormulatorState) => state.activeThreadChartId);
@@ -221,11 +221,7 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
         }) 
         let engine = getUrls().SERVER_DERIVE_DATA_URL;
 
-        console.log("current log")
-        console.log(triggerTable.derive?.dialog)
-
-
-        if (mode == "formulate" && triggerTable.derive?.dialog) {
+        if (triggerTable.derive?.dialog && !triggerTable.anchored) {
             messageBody = JSON.stringify({
                 token: token,
                 mode,
@@ -313,7 +309,7 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
                             let conceptsToAdd = missingNames.map((name) => {
                                 return {
                                     id: `concept-${name}-${Date.now()}`, name: name, type: "auto" as Type, 
-                                    description: "", source: "custom", temporary: true, domain: [],
+                                    description: "", source: "custom", tableRef: "custom", temporary: true, domain: [],
                                 } as FieldItem
                             });
 
@@ -404,36 +400,30 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
             });
     }
 
-    //let triggers = currentTable.derive.triggers;
-    let tableList = activeTableThread.map((tableId) => <div
-        key={`${tableId}-table-list-item`}
-        className="table-list-item">
-        <Button variant="text" sx={{textTransform: 'none', padding: 0, minWidth: 0}} onClick={() => { dispatch(dfActions.setFocusedTable(tableId)) }}>
-            <Stack direction="row" sx={{fontSize: '12px'}} alignItems="center" gap={"2px"}>
-                <TableRowsIcon fontSize="inherit" />
-                <Typography sx={{fontSize: '12px'}} >
-                    {tableId} 
-                </Typography>
-            </Stack>
-        </Button>
-    </div>);
-
-    let tableCards = activeTableThread.map((tableId) => 
-        <Card 
-            key={`${tableId}-table-card`}
-            variant='outlined' sx={{padding: '2px 0 2px 0'}}>
-            <Button variant="text" sx={{textTransform: 'none', padding: 0, marginLeft: 1, minWidth: 0}} onClick={() => { dispatch(dfActions.setFocusedTable(tableId)) }}>
+    let tableList = activeTableThread.map((tableId) => {
+        let table = tables.find(t => t.id == tableId) as DictTable;
+        return <div
+                key={`${tableId}-table-list-item`}
+                className="table-list-item">
+                <Button variant="text" sx={{textTransform: 'none', padding: 0, minWidth: 0}} onClick={() => { dispatch(dfActions.setFocusedTable(tableId)) }}>
                 <Stack direction="row" sx={{fontSize: '12px'}} alignItems="center" gap={"2px"}>
-                    <TableRowsIcon fontSize="inherit" />
+                    {table.anchored ? <AnchorIcon fontSize="inherit" /> : <TableRowsIcon fontSize="inherit" />}
                     <Typography sx={{fontSize: '12px'}} >
-                        {tableId} 
+                        {table.displayId || tableId}
                     </Typography>
                 </Stack>
             </Button>
-        </Card>);
+        </div>
+    });
+
 
     let leafTable = tables.find(t => t.id == activeTableThread[activeTableThread.length - 1]) as DictTable;
-    let triggers =  getTriggers(leafTable, tables) //leafTable.derive?.triggers || [];
+    let triggers =  getTriggers(leafTable, tables)
+
+
+    console.log('from local data thread')
+    console.log(triggers[triggers.length - 1]);
+
     let instructionCards = triggers.map((trigger, i) => {
         let extractActiveFields = (t: Trigger) => {
             let encodingMap = (charts.find(c => c.id == t.chartRef) as Chart).encodingMap
@@ -445,31 +435,25 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
         let fieldsIdentical = _.isEqual(previousActiveFields, currentActiveFields)
 
         return  <Box 
-                    key={`${trigger.tableId}-trigger-card`}
-                    sx={{padding: 0, display: 'flex'}}>
-                    {/* <SouthIcon sx={{fontSize: "inherit", margin: 'auto 4px'}} /> */}
-                    <Box sx={{minWidth: '1px', padding: '0px', width: '17px',  flex: 'none', display: 'flex', flexDirection: 'column'
-                              //borderLeft: '1px dashed darkgray',
-                            }}>
-                        <Box sx={{padding:0, width: '1px', margin:'auto', height: '100%',
-                                    backgroundImage: 'linear-gradient(180deg, darkgray, darkgray 75%, transparent 75%, transparent 100%)',
-                                    backgroundSize: '1px 6px, 3px 100%'}}></Box>
-                        {/* <Box sx={{marginLeft: "6px", marginTop: '-10px', marginBottom: '-4px'}}><PanoramaFishEyeIcon sx={{fontSize: 5}}/></Box>
-                        <Box sx={{padding:0, width: '1px', margin:'auto', height: '49%',
-                                               backgroundImage: 'linear-gradient(180deg, darkgray, darkgray 75%, transparent 75%, transparent 100%)',
-                            backgroundSize: '1px 6px, 3px 100%'}}></Box> */}
-                    </Box>
-                    <TriggerCard className="encoding-shelf-trigger-card" trigger={trigger} hideFields={fieldsIdentical} />
-                    {i == triggers.length - 1 && chart.intermediate == undefined ? 
-                        <Tooltip title={`reformulate: override ${chart.tableRef}`}>
-                            <IconButton color="warning" size="small"
-                                onClick={() => {
-                                    reFormulate(triggers[triggers.length - 1]);
-                                }}
-                            >{reformulateRunning ? <CircularProgress size={18} color="warning" /> : <ChangeCircleOutlinedIcon />}</IconButton>
-                        </Tooltip> 
-                        : ""}
-                </Box>;
+            key={`${trigger.tableId}-trigger-card`}
+            sx={{padding: 0, display: 'flex'}}>
+            <Box sx={{minWidth: '1px', padding: '0px', width: '17px',  flex: 'none', display: 'flex', flexDirection: 'column'
+                    }}>
+                <Box sx={{padding:0, width: '1px', margin:'auto', height: '100%',
+                            backgroundImage: 'linear-gradient(180deg, darkgray, darkgray 75%, transparent 75%, transparent 100%)',
+                            backgroundSize: '1px 6px, 3px 100%'}}></Box>
+            </Box>
+            <TriggerCard className="encoding-shelf-trigger-card" trigger={trigger} hideFields={fieldsIdentical} />
+            {i == triggers.length - 1 && chart.intermediate == undefined ? 
+                <Tooltip title={`reformulate: override ${chart.tableRef}`}>
+                    <IconButton color="warning" size="small"
+                        onClick={() => {
+                            reFormulate(triggers[triggers.length - 1]);
+                        }}
+                    >{reformulateRunning ? <CircularProgress size={18} color="warning" /> : <ChangeCircleOutlinedIcon />}</IconButton>
+                </Tooltip> 
+                : ""}
+        </Box>;
     })
     
     let spaceElement = "" //<Box sx={{padding: '4px 0px', background: 'aliceblue', margin: 'auto', width: '200px', height: '3px', paddingBottom: 0.5}}></Box>;
@@ -516,13 +500,6 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
                                                     backgroundSize: '1px 6px, 3px 100%'}}></Box>
                         </Box>, ...instructionCards.slice(cutIndex+1, postInstructEndPoint)], 
                         tableList.slice(cutIndex + 1, postInstructEndPoint + 1), spaceElement)}
-                    {/* {w(Array(tableList.length - (cutIndex) - 1).fill(
-                        <Box sx={{padding: '2px 0 2px 0', display: 'flex', alignItems: "center"}}>
-                            <SouthIcon sx={{fontSize: "inherit", margin: 'auto 4px'}} />
-                        </Box>), 
-                        tableList.slice(cutIndex + 1), spaceElement)} */}
-                    {/* {w(tableList.slice(0, tableList.length - 1), instructionList.slice(0, instructionList.length - 1))}  */}
-                    {/* <Button sx={{minWidth: '24px'}}><RestartAlt /></Button> */}
                 </Box>
                 <Box>
                     {endChartCard}

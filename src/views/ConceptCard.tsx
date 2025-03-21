@@ -63,28 +63,16 @@ export interface ConceptCardProps {
     field: FieldItem,
 }
 
-export const GroupHeader = styled('div')(({ theme }) => ({
-    position: 'sticky',
-    marginTop: '-8px',
-    padding: '4px 4px',
-    color: "rgba(0, 0, 0, 0.6)",
-    fontSize: "12px",
-}));
-
-export const GroupItems = styled('ul')({
-    padding: 0,
-});
-
 const checkConceptIsEmpty = (field: FieldItem) => {
     return field.name == "" &&
         ((field.source == "derived" && !field.transform?.description && (field.transform as ConceptTransformation).code == "")
             || (field.source == "custom"))
 }
 
-export const genFreshDerivedConcept = (parentIDs: string[]) => {
+export const genFreshDerivedConcept = (parentIDs: string[], tableRef: string) => {
     return {
         id: `concept-${Date.now()}`, name: "", type: "string" as Type,
-        source: "derived", domain:[],
+        source: "derived", domain:[], tableRef: tableRef,
         transform: { parentIDs: parentIDs, code: "", description: ""}
     } as FieldItem
 }
@@ -130,17 +118,16 @@ export const ConceptCard: FC<ConceptCardProps> = function ConceptCard({ field })
     let border = "hidden";
 
     const cursorStyle = isDragging ? "grabbing" : "grab";
-    let editOption = field.source === "original" ? undefined : (
+    let editOption = field.source == "derived" && (
         <Tooltip key="edit-icon-button" title="edit">
             <IconButton size="small" key="edit-icon-button"
                 color="primary" aria-label="Edit" component="span"
                 onClick={() => { setEditMode(!editMode) }}>
                 <EditIcon fontSize="inherit" />
             </IconButton>
-        </Tooltip>
-    );
+        </Tooltip>);
 
-    let deriveOption = (
+    let deriveOption = (field.source == "derived" || field.source == "original") && (
         <Tooltip key="derive-icon-button" title="derive new concept">
             <IconButton size="small"
                 key="derive-icon-button"
@@ -149,15 +136,14 @@ export const ConceptCard: FC<ConceptCardProps> = function ConceptCard({ field })
                         && f.transform?.parentIDs.includes(field.id)).length > 0) {
                         return
                     }
-                    handleUpdateConcept(genFreshDerivedConcept([field.id]));
+                    handleUpdateConcept(genFreshDerivedConcept([field.id], field.tableRef));
                 }} >
                 <ForkRightIcon fontSize="inherit" sx={{ transform: "rotate(90deg)" }} />
             </IconButton>
         </Tooltip>
     );
 
-    let deleteOption = field.source == "original" ? "" :
-        <IconButton size="small"
+    let deleteOption = !(field.source == "original") && <IconButton size="small"
             key="delete-icon-button"
             color="primary" aria-label="Delete" component="span"
             disabled={conceptShelfItems.filter(f => f.source == "derived" && f.transform?.parentIDs.includes(field.id)).length > 0}
@@ -169,16 +155,13 @@ export const ConceptCard: FC<ConceptCardProps> = function ConceptCard({ field })
         deleteOption,
         deriveOption,
         editOption,
-        //deleteOption
     ]
 
-    const editModeCard = (
+    const editModeCard = field.source == "derived" && (
         <CardContent className="draggable-card-body-edit-mode">
-            {field.source == "derived" ? <DerivedConceptForm concept={field} handleUpdateConcept={handleUpdateConcept}
+            <DerivedConceptForm concept={field} handleUpdateConcept={handleUpdateConcept}
                 handleDeleteConcept={handleDeleteConcept}
-                turnOffEditMode={() => { setEditMode(false); }} /> : field.source == "custom" ? <CustomConceptForm concept={field} handleUpdateConcept={handleUpdateConcept}
-                handleDeleteConcept={handleDeleteConcept}
-                turnOffEditMode={() => { setEditMode(false); }} /> : ""}
+                turnOffEditMode={() => { setEditMode(false); }} />
         </CardContent>
     );
 
@@ -335,128 +318,6 @@ export const CodeEditor: FC<{ code: string; handleSaveCode: (code: string) => vo
     </Box>
 }
 
-export const CustomConceptForm: FC<ConceptFormProps> = function CustomConceptForm({ concept, handleUpdateConcept, handleDeleteConcept, turnOffEditMode }) {
-
-    const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
-
-    const [name, setName] = useState(concept.name);
-    const handleNameChange = (event: React.ChangeEvent<HTMLInputElement>) => { setName(event.target.value); };
-
-    const [dtype, setDtype] = useState(concept.name == "" ? "auto" : concept.type as string);
-    const handleDtypeChange = (event: SelectChangeEvent) => { setDtype(event.target.value); };
-
-    // if these two fields are changed from other places, update their values
-    useEffect(() => { setDtype(concept.type) }, [concept.type]);
-
-    let typeList = TypeList
-    let nameField = (
-        <TextField key="name-field" id="name" label="concept name" value={name} sx={{ minWidth: 120, maxWidth: 160, flex: 1 }}
-            FormHelperTextProps={{
-                style: { fontSize: 8, marginTop: 0, marginLeft: "auto" }
-            }}
-            multiline
-            helperText={conceptShelfItems.some(f => f.name == name && f.id != concept.id) ? "this name already exists" : ""}
-            size="small" onChange={handleNameChange} required error={name == "" || conceptShelfItems.some(f => f.name == name && f.id != concept.id)}
-        />)
-
-    let typeField = (
-        <FormControl key="type-select" sx={{ width: 100, marginLeft: "4px" }} size="small">
-            <InputLabel id="dtype-select-label">data type</InputLabel>
-            <Select
-                labelId="dtype-select-label"
-                id="dtype-select"
-                value={dtype}
-                label="data type"
-                onChange={handleDtypeChange}>
-                {typeList.map((t, i) => (
-                    <MenuItem value={t} key={`${concept.id}-${i}`}>
-                        <Typography component="span" sx={{ fontSize: "inherit", marginLeft: "0px" }}>{t}</Typography>
-                    </MenuItem>
-                ))}
-            </Select>
-        </FormControl>
-    )
-
-    let cardTopComponents = undefined;
-
-    let childrenConceptIDs = [concept.id];
-    while (true) {
-        let newChildrens = conceptShelfItems.filter(f => f.source == "derived"
-                && !childrenConceptIDs.includes(f.id)
-                && f.transform?.parentIDs.some(pid => childrenConceptIDs.includes(pid)))
-            .map(f => f.id);
-        if (newChildrens.length == 0) {
-            break
-        }
-        childrenConceptIDs = [...childrenConceptIDs, ...newChildrens];
-    }
-
-    cardTopComponents = [
-        nameField,
-        typeField,
-    ]
-
-    const checkCustomConceptDiff = () => {
-        let nameTypeNeq = (concept.name != name || concept.type != dtype);
-        return (nameTypeNeq );
-    }
-
-    let saveDisabledMsg = [];
-    if (name == "" || conceptShelfItems.some(f => f.name == name && f.id != concept.id)) {
-        saveDisabledMsg.push("concept name is empty")
-    }
-
-    return (
-        <Box sx={{ display: "flex", flexDirection: "column" }} >
-            <Box component="form" className="concept-form"
-                sx={{ display: "flex", flexWrap: "wrap", '& > :not(style)': { margin: "4px", /*width: '25ch'*/ }, }}
-                noValidate
-                autoComplete="off">
-                <Box sx={{ overflowX: "clip", display: "flex", flexDirection: "row", justifyContent: "flex-start", alignItems: "baseline" }}>
-                    {cardTopComponents}
-                </Box>
-                <ButtonGroup size="small" sx={{ "& button": { textTransform: "none", padding: "2px 4px", marginLeft: "4px" }, flexGrow: 1, justifyContent: "right" }}>
-                    <IconButton size="small"
-                        color="primary" aria-label="Delete" component="span"
-                        disabled={conceptShelfItems.filter(f => f.source == "derived" && f.transform?.parentIDs.includes(concept.id)).length > 0}
-                        onClick={() => { handleDeleteConcept(concept.id); }}>
-                        <Tooltip title="delete">
-                            <DeleteIcon fontSize="inherit" />
-                        </Tooltip>
-                    </IconButton>
-                    <Button size="small" variant="outlined" onClick={() => {
-                        setName(concept.name);
-                        setDtype(concept.type);
-                
-                        if (checkConceptIsEmpty(concept)) {
-                            handleDeleteConcept(concept.id);
-                        }
-                        if (turnOffEditMode) {
-                            turnOffEditMode();
-                        }
-                    }}>
-                        Cancel
-                    </Button>
-                    <Button size="small" variant={checkCustomConceptDiff() ? "contained" : "outlined"} disabled={saveDisabledMsg.length > 0 || checkCustomConceptDiff() == false} onClick={() => {
-                        
-                        let tmpConcept = duplicateField(concept);
-                        tmpConcept.name = name;
-                        tmpConcept.type = dtype as Type;
-                        
-                        if (turnOffEditMode) {
-                            turnOffEditMode();
-                        }
-                        handleUpdateConcept(tmpConcept);
-
-                        //setName(""); setDtype("string" as Type); setExamples([]);
-                    }}>
-                        Save
-                    </Button>
-                </ButtonGroup>
-            </Box>
-        </Box>
-    );
-}
 
 export const DerivedConceptForm: FC<ConceptFormProps> = function DerivedConceptForm({ concept, handleUpdateConcept, handleDeleteConcept, turnOffEditMode }) {
 
@@ -497,9 +358,6 @@ export const DerivedConceptForm: FC<ConceptFormProps> = function DerivedConceptF
 
     let dispatch = useDispatch();
 
-    const [collapseCode, setCollapseCode] = useState<boolean>(true);
-    const [collapseVisInspector, setCollapseVisInspector] = useState<boolean>(true);
-
     let [dialogOpen, setDialogOpen] = useState<boolean>(false);
     let [codeCandidates, setCodeCandidates] = useState<string[]>([]);
 
@@ -514,11 +372,8 @@ export const DerivedConceptForm: FC<ConceptFormProps> = function DerivedConceptF
         }
     }, [transformCode]);
 
-    // time stamps used to track functions from server
-    const [requestTimeStamp, setRequestTimeStamp] = useState<number>(0);
     const [codeGenInProgress, setCodeGenInProgress] = useState<boolean>(false);
 
-    let typeList = TypeList
     let nameField = (
         <TextField key="name-field" id="name" fullWidth label="concept name" value={name} sx={{ minWidth: 120, flex: 1, paddingBottom: 1 }}
             FormHelperTextProps={{
@@ -605,9 +460,9 @@ export const DerivedConceptForm: FC<ConceptFormProps> = function DerivedConceptF
 
         viewExamples = (<Box key="viewexample--box" width="100%" sx={{ position: "relative", }}>
             <InputLabel shrink>illustration of the generated function</InputLabel>
-            <GroupItems sx={{ padding: "0px 0px 6px 0px", margin: 0 }}>
+            <Box className="GroupItems" sx={{ padding: "0px 0px 6px 0px", margin: 0 }}>
                 {simpleTableView(transformResult, colNames, conceptShelfItems, 5)}
-            </GroupItems>
+            </Box>
         </Box>)
     }
 

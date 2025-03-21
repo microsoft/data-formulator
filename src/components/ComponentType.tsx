@@ -20,9 +20,10 @@ export interface FieldItem {
     type: Type;
     source: FieldSource;
     domain: any[];
+    tableRef: string; // which table it belongs to, it matters when it's an original field or a derived field
+
     transform?: ConceptTransformation;
-    tableRef?: string; // which table it comes from, it matters when it's an original field
-    temporary?: true;
+    temporary?: true; // the field is temporary, and it will be deleted unless it's saved
     levels?: {values: any[], reason: string}; // the order in which values in this field would be sorted
     semanticType?: string; // the semantic type of the object, inferred by the model
 }
@@ -56,6 +57,7 @@ export interface Trigger {
 
 export interface DictTable {
     id: string; // name/id of the table
+    displayId: string; // display id of the table 
     names: string[]; // column names
     types: Type[]; // column types
     rows: any[]; // table content, each entry is a row
@@ -69,22 +71,26 @@ export interface DictTable {
         // source specifies how the deriviation is done from the source tables, they may be the same, but not necessarily
         // in fact, right now dict tables are all triggered from charts
         trigger: Trigger,
-    }
+    };
+    anchored: boolean; // whether this table is anchored as a persistent table used to derive other tables
 }
 
 export function createDictTable(
     id: string, rows: any[], 
     derive: {code: string, codeExpl: string, source: string[], dialog: any[], 
-             trigger: Trigger} | undefined = undefined) : DictTable {
+             trigger: Trigger} | undefined = undefined,
+    anchored: boolean = false) : DictTable {
     
     let names = Object.keys(rows[0])
 
     return {
         id,
+        displayId: `${id}`,
         names, 
         rows,
         types: names.map(name => inferTypeFromValueArray(rows.map(r => r[name]))),
         derive,
+        anchored
     }
 }
 
@@ -94,7 +100,6 @@ export type Chart = {
     encodingMap: EncodingMap, 
     tableRef: string, 
     saved: boolean,
-    scaleFactor?: number,
     intermediate?: Trigger // whether this chart is only an intermediate chart (e.g., only used as a spec for transforming tables)
 }
 

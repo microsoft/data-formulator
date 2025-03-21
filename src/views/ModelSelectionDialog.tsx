@@ -59,18 +59,6 @@ interface AppConfig {
     SHOW_KEYS_ENABLED: boolean;
 }
 
-export const GroupHeader = styled('div')(({ theme }) => ({
-    position: 'sticky',
-    padding: '8px 8px',
-    marginLeft: '-8px',
-    color: "rgba(0, 0, 0, 0.6)",
-    fontSize: "12px",
-}));
-
-export const GroupItems = styled('ul')({
-    padding: 0,
-});
-
 export const ModelSelectionButton: React.FC<{}> = ({ }) => {
 
     const dispatch = useDispatch();

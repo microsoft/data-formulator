@@ -177,7 +177,7 @@ export const TableSelectionDialog: React.FC<{ buttonElement: any }> = function T
             .then((response) => response.json())
             .then((result) => {
                 let tableChallenges : TableChallenges[] = result.map((info: any) => {
-                    let table = createTableFromFromObjectArray(info["name"], JSON.parse(info["snapshot"]))
+                    let table = createTableFromFromObjectArray(info["name"], JSON.parse(info["snapshot"]), true)
                     return {table: table, challenges: info["challenges"], name: info["name"]}
                 }).filter((t : TableChallenges | undefined) => t != undefined);
                 setDatasetPreviews(tableChallenges);
@@ -221,7 +221,7 @@ export const TableSelectionDialog: React.FC<{ buttonElement: any }> = function T
                                 return response.text()
                             })
                             .then((text) => {         
-                                let fullTable = createTableFromFromObjectArray(tableChallenges.table.id, JSON.parse(text));
+                                let fullTable = createTableFromFromObjectArray(tableChallenges.table.id, JSON.parse(text), true);
                                 if (fullTable) {
                                     dispatch(dfActions.loadTable(fullTable));
                                     dispatch(fetchFieldSemanticType(fullTable));
@@ -389,7 +389,7 @@ export const TableURLDialog: React.FC<TableURLDialogProps> = ({ buttonElement, d
             let table : undefined | DictTable = undefined;
             try {
                 let jsonContent = JSON.parse(content);
-                table = createTableFromFromObjectArray(tableName || 'dataset', jsonContent);
+                table = createTableFromFromObjectArray(tableName || 'dataset', jsonContent, true);
             } catch (error) {
                 table = createTableFromText(tableName || 'dataset', content);
             }
@@ -486,7 +486,7 @@ export const TableCopyDialogV2: React.FC<TableCopyDialogProps> = ({ buttonElemen
 
         try {
             let content = JSON.parse(tableStr);
-            table = createTableFromFromObjectArray(uniqueName, content);
+            table = createTableFromFromObjectArray(uniqueName, content, true);
         } catch (error) {
             table = createTableFromText(uniqueName, tableStr);
         }

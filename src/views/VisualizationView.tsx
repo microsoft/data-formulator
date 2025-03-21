@@ -229,9 +229,6 @@ const BaseChartCreationMenu: FC<{tableId: string; buttonElement: any}> = functio
     </>;
 }
 
-export const ChartCreationMenu = styled(BaseChartCreationMenu)({});
-
-
 export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
             handleUpdateCandidates: (chartId: string, tables: DictTable[]) => void,
     }> = function ChartEditorFC({ cachedCandidates, handleUpdateCandidates }) {
@@ -264,7 +261,7 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
 
     let [collapseEditor, setCollapseEditor] = useState<boolean>(false);
 
-    let scaleFactor = focusedChart.scaleFactor || 1;
+    const [localScaleFactor, setLocalScaleFactor] = useState<number>(1);
 
     useEffect(() => {
         setFocusUpdated(true);
@@ -324,7 +321,7 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
                 if (comp) {
                     const { width, height } = comp.getBoundingClientRect();
                     // console.log(`main chart; width = ${width} height = ${height}`)
-                    comp?.setAttribute("style", `width: ${width * scaleFactor}px; height: ${height * scaleFactor}px;`);
+                    comp?.setAttribute("style", `width: ${width * localScaleFactor}px; height: ${height * localScaleFactor}px;`);
                 }
             }
 
@@ -333,7 +330,7 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
                 if (comp) {
                     const { width, height } = comp.getBoundingClientRect();
                     // console.log(`main chart; width = ${width} height = ${height}`)
-                    comp?.setAttribute("style", `width: ${width * scaleFactor}px; height: ${height * scaleFactor}px;`);
+                    comp?.setAttribute("style", `width: ${width * localScaleFactor}px; height: ${height * localScaleFactor}px;`);
                 }
             }
 
@@ -405,7 +402,7 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
         </IconButton>
     </Tooltip>
 
-    let createNewChartButton =  <ChartCreationMenu tableId={focusedChart.tableRef} buttonElement={
+    let createNewChartButton =  <BaseChartCreationMenu tableId={focusedChart.tableRef} buttonElement={
             <Tooltip title="create a new chart">
                 <AddchartIcon sx={{ fontSize: "3rem" }} />
             </Tooltip>} />
@@ -457,7 +454,7 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
     let chartActionButtons = [
         <Box key="data-source" fontSize="small" sx={{ margin: "auto", display: "flex", flexDirection: "row"}}>
             <Typography component="span" sx={{}} fontSize="inherit">
-                data: {table.id}
+                data: {table.displayId || table.id}
             </Typography>
         </Box>,
         ...derivedTableItems,
@@ -560,6 +557,10 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
              </Box>
         ]
     } else {
+
+        let transformationIndicatorText = table.derive?.source ? 
+            `${table.derive.source.map(s => tables.find(t => t.id === s)?.displayId || s).join(", ")} → ${table.displayId || table.id}` : "";
+
         focusedComponent = [
             <Box key="chart-focused-element"  sx={{ margin: "auto", display: "flex", flexDirection: "column"}}>
                 <AnimateOnChange
@@ -572,17 +573,6 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
                         <Collapse in={codeViewOpen}>
                             <Box sx={{minWidth: 440, maxWidth: 800, padding: "0px 8px", position: 'relative', margin: '8px auto'}}>
                                 <ButtonGroup sx={{position: 'absolute', right: 8, top: 1}}>
-                                    {/* <Tooltip title="view data derivation dialog" key="focused-view-chat-history-btn-tooltip">
-                                        <IconButton color="secondary" sx={{ textTransform: "none" }} 
-                                                onClick={() => { setChatDialogOpen(!chatDialogOpen) }}><QuestionAnswerIcon />
-                                        </IconButton>
-                                    </Tooltip>
-                                    <Divider />
-                                    <Tooltip title="go to explanation view" key="view-code-expl-btn-tooltip">
-                                        <IconButton color="primary" sx={{ textTransform: "none" }} 
-                                                onClick={() => { setCodeViewOpen(false); setCodeExplViewOpen(true) }}><AssistantIcon />
-                                        </IconButton>
-                                    </Tooltip> */}
                                     <IconButton onClick={() => {setCodeViewOpen(false)}}  color='primary' aria-label="delete">
                                         <CloseIcon />
                                     </IconButton>
@@ -593,7 +583,7 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
                                         border: "1px solid rgba(33, 33, 33, 0.1)"}}>
                                     <CardContent sx={{display: "flex", flexDirection: "column", flexGrow: 1, padding: '0', paddingBottom: '0px !important'}}>
                                         <Typography sx={{ fontSize: 14, margin: 1 }}  gutterBottom>
-                                            Data transformation code ({table.derive?.source} → {table.id})
+                                            Data transformation code ({transformationIndicatorText})
                                         </Typography>
                                         <Box sx={{display: 'flex', flexDirection: "row", alignItems: "center", flex: 'auto', padding: 1, background: '#f5f2f0'}}>
                                             <Box sx={{maxWidth: 800, width: 'fit-content',  display: 'flex',}}>
@@ -607,17 +597,6 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
                         <Collapse in={codeExplViewOpen}>
                             <Box sx={{minWidth: 440, maxWidth: 800, padding: "0px 8px", position: 'relative', margin: '8px auto'}}>
                                 <ButtonGroup sx={{position: 'absolute', right: 8, top: 0}}>
-                                    {/* <Tooltip title="view data derivation dialog" key="view-chat-history-btn-tooltip">
-                                        <IconButton color="secondary" sx={{ textTransform: "none" }} 
-                                                onClick={() => { setChatDialogOpen(!chatDialogOpen) }}><QuestionAnswerIcon />
-                                        </IconButton>
-                                    </Tooltip>
-                                    <Divider />
-                                    <Tooltip title="go to code view" key="view-code-expl-btn-tooltip">
-                                        <IconButton color="primary" sx={{ textTransform: "none" }} 
-                                                onClick={() => { setCodeViewOpen(true); setCodeExplViewOpen(false) }}><TerminalIcon />
-                                        </IconButton>
-                                    </Tooltip> */}
                                     <IconButton onClick={() => {setCodeExplViewOpen(false)}}  color='primary' aria-label="delete">
                                         <CloseIcon />
                                     </IconButton>
@@ -627,7 +606,7 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
                                         border: "1px solid rgba(33, 33, 33, 0.1)"}}>
                                     <CardContent sx={{display: "flex", flexDirection: "column", flexGrow: 1, padding: '0', paddingBottom: '0px !important'}}>
                                         <Typography sx={{ fontSize: 14, margin: 1 }}  gutterBottom>
-                                            Data transformation explanation ({table.derive?.source} → {table.id})
+                                            Data transformation explanation ({transformationIndicatorText})
                                         </Typography>
                                         <Box sx={{display: 'flex', flexDirection: "row", alignItems: "center", flex: 'auto', padding: 1, background: '#f5f2f0'}}>
                                             <Box sx={{width: 'fit-content',  display: 'flex',}}>
@@ -675,19 +654,19 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
 
     let chartResizer = <Stack spacing={1} direction="row" sx={{ padding: '8px', width: 160, position: "absolute", zIndex: 10, color: 'darkgray' }} alignItems="center">
         <Tooltip title="zoom out">
-            <IconButton color="primary" size='small' disabled={scaleFactor <= scaleMin} onClick={() => {
-                dispatch(dfActions.updateChartScaleFactor({ chartId: focusedChart.id, scaleFactor: scaleFactor - 0.1 }))
+            <IconButton color="primary" size='small' disabled={localScaleFactor <= scaleMin} onClick={() => {
+                setLocalScaleFactor(prev => Math.max(scaleMin, prev - 0.1));
             }}>
                 <ZoomOutIcon fontSize="small" />
             </IconButton>
         </Tooltip>
         <Slider aria-label="chart-resize" defaultValue={1} step={0.1} min={scaleMin} max={scaleMax} 
-                value={scaleFactor} onChange={(event: Event, newValue: number | number[]) => {
-            dispatch(dfActions.updateChartScaleFactor({chartId: focusedChart.id, scaleFactor: newValue as number}))
+                value={localScaleFactor} onChange={(event: Event, newValue: number | number[]) => {
+            setLocalScaleFactor(newValue as number);
         }} />
         <Tooltip title="zoom in">
-            <IconButton color="primary" size='small' disabled={scaleFactor >= scaleMax} onClick={() => {
-                dispatch(dfActions.updateChartScaleFactor({ chartId: focusedChart.id, scaleFactor: scaleFactor + 0.1 }))
+            <IconButton color="primary" size='small' disabled={localScaleFactor >= scaleMax} onClick={() => {
+                setLocalScaleFactor(prev => Math.min(scaleMax, prev + 0.1));
             }}>
                 <ZoomInIcon fontSize="small" />
             </IconButton>

@@ -34,18 +34,6 @@ import { CustomReactTable } from './ReactTable';
 import DeleteIcon from '@mui/icons-material/Delete';
 import SaveIcon from '@mui/icons-material/Save';
 
-export const GroupHeader = styled('div')(({ theme }) => ({
-    position: 'sticky',
-    top: '-8px',
-    padding: '4px 4px',
-    color: "darkgray",
-    fontSize: "12px",
-}));
-  
-export const GroupItems = styled('ul')({
-    padding: 0,
-});
-
 export interface DerivedDataDialogProps {
     chart: Chart,
     candidateTables: DictTable[],

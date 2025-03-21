@@ -49,18 +49,7 @@ import { deriveTransformExamplesV2, getDomains, getIconFromType, groupConceptIte
 import { getUrls } from '../app/utils';
 import { Type } from '../data/types';
 
-const GroupHeader = styled('div')(({ theme }) => ({
-    position: 'sticky',
-    top: '-8px',
-    padding: '4px 10px',
-    fontSize: '10px',
-    color: 'darkgray',
-    //backgroundColor: 'rbga(0,0,0,0.6)'
-  }));
-  
-  const GroupItems = styled('ul')({
-    padding: 0,
-  });
+
 
 let getChannelDisplay = (channel: Channel) => {
     if (channel == "x") {
@@ -528,7 +517,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
                 console.log(`about to add ${option}`)
                 let newConept = {
                     id: `concept-${Date.now()}`, name: option, type: "auto" as Type, 
-                    description: "", source: "custom", domain: [],
+                    description: "", source: "custom", domain: [], tableRef: "custom",
                 } as FieldItem;
                 dispatch(dfActions.updateConceptItems(newConept));
                 updateEncProp("fieldID", newConept.id);
@@ -537,7 +526,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
         }
     }
 
-    let conceptGroups = groupConceptItems(conceptShelfItems);
+    let conceptGroups = groupConceptItems(conceptShelfItems, tables);
     let createConceptInputBox = <Autocomplete
         key="concept-create-input-box"
         onChange={(event, value) => {
@@ -579,10 +568,10 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
             }         
         }}
         renderGroup={(params) => (
-            <li>
-              <GroupHeader>{params.group}</GroupHeader>
-              <GroupItems>{params.children}</GroupItems>
-            </li>
+            <Box>
+              <Box className="GroupHeader">{params.group}</Box>
+              <Box className="GroupItems">{params.children}</Box>
+            </Box>
           )}
         renderOption={(props, option) => {
             let renderOption = (conceptShelfItems.map(f => f.name).includes(option) || option == "...") ? option : `"${option}"`;

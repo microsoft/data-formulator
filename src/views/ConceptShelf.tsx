@@ -31,7 +31,7 @@ import { OperatorCard } from './OperatorCard';
 export const genFreshCustomConcept : () => FieldItem = () => {
     return {
         id: `concept-${Date.now()}`, name: "", type: "auto" as Type, domain: [],
-        description: "", source: "custom",
+        description: "", source: "custom", tableRef: "custom",
     }
 }
 
@@ -43,28 +43,100 @@ export interface ConceptShelfProps {
     
 }
 
+export const ConceptGroup: FC<{groupName: string, fields: FieldItem[]}> = function ConceptGroup({groupName, fields}) {
+
+    const focusedTableId = useSelector((state: DataFormulatorState) => state.focusedTableId);
+    const tables = useSelector((state: DataFormulatorState) => state.tables);
+    const [expanded, setExpanded] = useState(false);
+
+    useEffect(() => {
+        let focusedTable = tables.find(t => t.id == focusedTableId);
+        if (focusedTableId == groupName || focusedTable?.derive?.source.includes(groupName)) {
+            setExpanded(true);
+        } else if (focusedTableId != groupName && groupName != "new fields") {
+            setExpanded(false);
+        }
+    }, [focusedTableId])
+
+    return <Box>
+        <Box sx={{display: "block", width: "100%"}}>
+            <Divider orientation="horizontal" textAlign="left">
+                <Box sx={{ 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    cursor: 'pointer' 
+                }}
+                    onClick={() => setExpanded(!expanded)}>
+                    <Typography component="h2" sx={{fontSize: "10px"}} color="text.secondary">
+                        {groupName}
+                    </Typography>
+                    <Typography sx={{fontSize: "10px", ml: 1}} color="text.secondary">
+                        {expanded ? '▾' : '▸'}
+                    </Typography>
+                </Box>
+            </Divider>
+        </Box>
+        <Box
+            sx={{
+                maxHeight: expanded ? 'auto' : '240px',
+                overflow: 'hidden',
+                transition: 'max-height 0.3s ease-in-out',
+                width: '100%'
+            }}
+        >
+            {fields.map((field) => (
+                <ConceptCard key={`concept-card-${field.id}`} field={field} />
+            ))}
+            {fields.length > 6 && !expanded && (
+                <Box sx={{ 
+                    position: 'relative', 
+                    height: '40px',
+                    '&::after': {
+                        content: '""',
+                        position: 'absolute',
+                        bottom: 0,
+                        left: 0,
+                        right: 0,
+                        height: '100%',
+                        background: 'linear-gradient(to bottom, transparent, white)'
+                    }
+                }}>
+                    <ConceptCard field={fields[6]} />
+                </Box>
+            )}
+        </Box>
+        {fields.length > 6 && !expanded && (
+            <Button
+                onClick={() => setExpanded(!expanded)}
+                sx={{
+                    fontSize: "10px",
+                    color: "text.secondary",
+                    pl: 2,
+                    py: 0.5,
+                    fontStyle: "italic",
+                    textTransform: 'none',
+                    '&:hover': {
+                        background: 'transparent',
+                        textDecoration: 'underline'
+                    }
+                }}
+            >
+                {`... show all ${fields.length} ${groupName} fields ▾`}
+            </Button>
+        )}
+    </Box>;
+}
+
 
 export const ConceptShelf: FC<ConceptShelfProps> = function ConceptShelf() {
 
-    let theme = useTheme();
     // reference to states
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
     const focusedTableId = useSelector((state: DataFormulatorState) => state.focusedTableId);
     const tables = useSelector((state: DataFormulatorState) => state.tables);
     const charts = useSelector((state: DataFormulatorState) => state.charts);
 
-    let [expandedGroups, setExpandedGroups] = useState<string[]>([]);
-    let updateExpandedGroup = (groupName: string, isExpanded: boolean) => {
-        if (isExpanded) {
-            setExpandedGroups([...expandedGroups, groupName]);
-        } else {
-            setExpandedGroups(expandedGroups.filter(g => g != groupName));
-        }
-    }
-
     const dispatch = useDispatch();
-    let handleDeleteConcept = (conceptID: string) => dispatch(dfActions.deleteConceptItemByID(conceptID));
-    let handleUpdateConcept = (field: FieldItem) => dispatch(dfActions.updateConceptItems(field));
 
     useEffect(() => { 
         let focusedTable = tables.find(t => t.id == focusedTableId);
@@ -75,7 +147,7 @@ export const ConceptShelf: FC<ConceptShelfProps> = function ConceptShelf() {
             let conceptsToAdd = missingNames.map((name) => {
                 return {
                     id: `concept-${name}-${Date.now()}`, name: name, type: "auto" as Type, 
-                    description: "", source: "custom", temporary: true, domain: [],
+                    description: "", source: "custom", tableRef: 'custom', temporary: true, domain: [],
                 } as FieldItem
             })
             dispatch(dfActions.addConceptItems(conceptsToAdd));
@@ -87,50 +159,15 @@ export const ConceptShelf: FC<ConceptShelfProps> = function ConceptShelf() {
             // add and delete temporary fields
             dispatch(dfActions.batchDeleteConceptItemByID(conceptIdsToDelete));
 
-
-            // update collapsed groups
-            let sourceTables = focusedTable.derive?.source || [focusedTable.id];
-            setExpandedGroups(sourceTables);
-
         } else {
             if (tables.length > 0) {
                 dispatch(dfActions.setFocusedTable(tables[0].id))
             }
         }
     }, [focusedTableId])
-
-
-    let conceptCreatorBtn = (
-        <Tooltip title="Create a new concept">
-            <Button
-                sx={{ fontSize: "14px", color: theme.palette.custom.main, '&:hover': { backgroundColor: alpha(theme.palette.custom.main, 0.1) },
-                      float: "right", textTransform: "none", minWidth: "20px", lineHeight: 1, padding: "0px 4px"}}
-                size="small"
-                aria-label="Create new concept"
-                endIcon={<AddCircleIcon fontSize="inherit" />}
-                onClick={() => {
-                    if (conceptShelfItems.filter(f => f.name === "").length > 0) {
-                        return
-                    }
-                    handleUpdateConcept(genFreshCustomConcept());
-                }}>
-                new
-            </Button>
-        </Tooltip>);
-
-    // // items for controlling icon creation
-    // const [fieldSelectorAnchorEl, setFieldSelectorAnchorEl] = React.useState<HTMLButtonElement | null>(null);
-    // const handleOpenFieldSelector = (event: React.MouseEvent<HTMLButtonElement>) => {
-    //     setFieldSelectorAnchorEl(event.currentTarget);
-    // };
-    // const handleCloseFieldSelector = () => { setFieldSelectorAnchorEl(null); };
- 
-    // define anchor open
-    // const fieldSelectorOpen = Boolean(fieldSelectorAnchorEl);
-    // const fieldSelectorId = fieldSelectorOpen ? `conceptCreator` : undefined;
-
+    
     // group concepts based on types
-    let conceptItemGroups = groupConceptItems(conceptShelfItems);
+    let conceptItemGroups = groupConceptItems(conceptShelfItems, tables);
     let groupNames = [...new Set(conceptItemGroups.map(g => g.group))]
 
     return (
@@ -139,7 +176,6 @@ export const ConceptShelf: FC<ConceptShelfProps> = function ConceptShelf() {
                 <Typography className="view-title" component="h2" sx={{marginTop: "6px"}}>
                     Data Fields
                 </Typography>
-                {conceptCreatorBtn}
             </Box>
             <Box className="data-fields-group">
                 <Box className="data-fields-list">
@@ -161,78 +197,7 @@ export const ConceptShelf: FC<ConceptShelfProps> = function ConceptShelf() {
                         let fields = conceptItemGroups.filter(g => g.group == groupName).map(g => g.field);
                         let isCustomGroup = groupName == "new fields";
 
-                        return (
-                            <>
-                                <Box sx={{display: "block", width: "100%"}}>
-                                    <Divider orientation="horizontal" textAlign="left">
-                                    <Box sx={{ 
-                                        display: 'flex', 
-                                        alignItems: 'center', 
-                                        cursor: !isCustomGroup ? 'pointer' : 'default' 
-                                    }}
-                                        onClick={() => !isCustomGroup && updateExpandedGroup(groupName, !expandedGroups.includes(groupName))}>
-                                        <Typography component="h2" sx={{fontSize: "10px"}} color="text.secondary">
-                                            {groupName}
-                                        </Typography>
-                                        {!isCustomGroup && (
-                                            <Typography sx={{fontSize: "10px", ml: 1}} color="text.secondary">
-                                                {expandedGroups.includes(groupName) ? '▾' : '▸'}
-                                            </Typography>
-                                        )}
-                                    </Box>
-                                </Divider>
-                            </Box>
-                            
-                            <Box
-                                sx={{
-                                    maxHeight: expandedGroups.includes(groupName) || isCustomGroup ? 'auto' : '240px',
-                                    overflow: 'hidden',
-                                    transition: 'max-height 0.3s ease-in-out',
-                                    width: '100%'
-                                }}
-                            >
-                                {(expandedGroups.includes(groupName) || isCustomGroup ? fields : fields.slice(0, 5)).map((field) => (
-                                    <ConceptCard key={`concept-card-${field.id}`} field={field} />
-                                ))}
-                                {!expandedGroups.includes(groupName) && !isCustomGroup && fields.length > 5 && (
-                                    <Box sx={{ 
-                                        position: 'relative', 
-                                        height: '40px',
-                                        '&::after': {
-                                            content: '""',
-                                            position: 'absolute',
-                                            bottom: 0,
-                                            left: 0,
-                                            right: 0,
-                                            height: '100%',
-                                            background: 'linear-gradient(to bottom, transparent, white)'
-                                        }
-                                    }}>
-                                        <ConceptCard field={fields[5]} />
-                                    </Box>
-                                )}
-                            </Box>
-                            {!expandedGroups.includes(groupName) && !isCustomGroup && fields.length > 5 && (
-                                <Button
-                                    onClick={() => updateExpandedGroup(groupName, true)}
-                                    sx={{
-                                        fontSize: "10px",
-                                        color: "text.secondary",
-                                        pl: 2,
-                                        py: 0.5,
-                                        fontStyle: "italic",
-                                        textTransform: 'none',
-                                        '&:hover': {
-                                            background: 'transparent',
-                                            textDecoration: 'underline'
-                                        }
-                                    }}
-                                >
-                                    {`... show all ${fields.length} ${groupName} fields ▾`}
-                                </Button>
-                            )}
-                            </>
-                        )
+                        return <ConceptGroup key={`concept-group-${groupName}`} groupName={groupName} fields={fields} />
                     })}
                     <Divider orientation="horizontal" textAlign="left" sx={{mt: 1}}></Divider>
                 </Box>

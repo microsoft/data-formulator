@@ -142,9 +142,11 @@ let deleteChartsRoutine = (state: DataFormulatorState, chartIds: string[]) => {
     state.activeThreadChartId = activeThreadChartId;
 
     let unrefedDerivedTableIds = getUnrefedDerivedTableIds(state);
-    state.tables = state.tables.filter(t => !unrefedDerivedTableIds.includes(t.id));
+    let tableIdsToDelete = state.tables.filter(t => !t.anchored && unrefedDerivedTableIds.includes(t.id)).map(t => t.id);
+    
+    state.tables = state.tables.filter(t => !tableIdsToDelete.includes(t.id));
     // remove intermediate charts that lead to this table
-    state.charts = state.charts.filter(c => !(c.intermediate && unrefedDerivedTableIds.includes(c.intermediate.resultTableId)));
+    state.charts = state.charts.filter(c => !(c.intermediate && tableIdsToDelete.includes(c.intermediate.resultTableId)));
 }
 
 export const fetchFieldSemanticType = createAsyncThunk(
@@ -335,6 +337,16 @@ export const dataFormulatorSlice = createSlice({
             // separate this, so that we only delete on tier of table a time
             state.charts = state.charts.filter(c => !(c.intermediate && c.intermediate.resultTableId == tableId));
         },
+        updateTableAnchored: (state, action: PayloadAction<{tableId: string, anchored: boolean}>) => {
+            let tableId = action.payload.tableId;
+            let anchored = action.payload.anchored;
+            state.tables = state.tables.map(t => t.id == tableId ? {...t, anchored} : t);
+        },
+        updateTableDisplayId: (state, action: PayloadAction<{tableId: string, displayId: string}>) => {
+            let tableId = action.payload.tableId;
+            let displayId = action.payload.displayId;
+            state.tables = state.tables.map(t => t.id == tableId ? {...t, displayId} : t);
+        },
         addChallenges: (state, action: PayloadAction<{tableId: string, challenges: { text: string; difficulty: 'easy' | 'medium' | 'hard'; }[]}>) => {
             state.activeChallenges = [...state.activeChallenges, action.payload];
         },
@@ -366,18 +378,6 @@ export const dataFormulatorSlice = createSlice({
             state.charts = state.charts.map(chart => {
                 if (chart.id == chartId) {
                     return { ...chart, saved: !chart.saved };
-                } else {
-                    return chart;
-                }
-            })
-        },
-        updateChartScaleFactor: (state, action: PayloadAction<{chartId: string, scaleFactor: number}>) => {
-            let chartId = action.payload.chartId;
-            let scaleFactor = action.payload.scaleFactor;
-
-            state.charts = state.charts.map(chart => {
-                if (chart.id == chartId) {
-                    return { ...chart, scaleFactor: scaleFactor };
                 } else {
                     return chart;
                 }
