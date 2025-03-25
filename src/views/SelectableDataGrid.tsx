@@ -384,9 +384,11 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({ rows, ta
                                             style={{ padding: 0, minWidth: columnDef.minWidth, width: columnDef.width, }}
                                             sx={{}}
                                         >
-                                            <Box className="data-view-header-container" 
-                                                 sx={{ backgroundColor, borderBottomColor, borderBottomWidth: '2px', borderBottomStyle: 'solid'}}>
-                                                <TableSortLabel
+                                            <Tooltip title={`${columnDef.label}`} >
+                                                <Box className="data-view-header-container" 
+                                                     sx={{ backgroundColor, borderBottomColor, borderBottomWidth: '2px', borderBottomStyle: 'solid'}}>
+                                                    <TableSortLabel
+                                                    className="data-view-header-title"
                                                     sx={{ display: "flex", flexDirection: "row", width: "100%" }}
                                                     active={orderBy === columnDef.id}
                                                     direction={orderBy === columnDef.id ? order : 'asc'}
@@ -396,17 +398,15 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({ rows, ta
                                                         setOrderBy(columnDef.id);
                                                     }}
                                                 >
-                                                    <Box component="span" className="data-view-header-title">
-                                                        <Tooltip title={`${columnDef.dataType} type`} >
-                                                            <span role="img" style={{ fontSize: "inherit", padding: "2px", display: "inline-flex", alignItems: "center" }}>
-                                                                {getIconFromType(columnDef.dataType)}
-                                                            </span>
-                                                        </Tooltip>
-                                                        <Typography className="data-view-header-name">{columnDef.label}</Typography>
-                                                    </Box>
+                                                    <span role="img" style={{ fontSize: "inherit", padding: "2px", display: "inline-flex", alignItems: "center" }}>
+                                                        {getIconFromType(columnDef.dataType)}
+                                                    </span>
+                                                    <Typography className="data-view-header-name">
+                                                        {columnDef.label}
+                                                    </Typography>
                                                 </TableSortLabel>
-
                                             </Box>
+                                            </Tooltip>
                                         </TableCell>
                                     );
                                 })}

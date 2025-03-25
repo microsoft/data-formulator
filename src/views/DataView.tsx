@@ -63,12 +63,48 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView({  $table
     // given a table render the table
     let renderTableBody = (targetTable: DictTable | undefined) => {
         const rowData = targetTable ? targetTable.rows.map((r: any, i: number) => ({ ...r, "#rowId": i })) : [];
-        let colDefs = targetTable ? targetTable.names.map((name, i) => { return {
-                id: name, label: name, minWidth: 60, width: 100, align: undefined, 
+
+        // Randomly sample up to 29 rows for column width calculation
+        const sampleSize = Math.min(29, rowData.length);
+        const sampledRows = _.sampleSize(rowData, sampleSize);
+        
+        // Calculate appropriate column widths based on content
+        const calculateColumnWidth = (name: string) => {
+            if (name === "#rowId") return { minWidth: 10, width: 40 }; // Default for row ID column
+            
+            // Get all values for this column from sampled rows
+            const values = sampledRows.map(row => String(row[name] || ''));
+            
+            // Estimate width based on content length (simple approach)
+            const avgLength = values.length > 0 
+                ? values.reduce((sum, val) => sum + val.length, 0) / values.length 
+                : 0;
+                
+            // Adjust width based on average content length and column name length
+            const nameSegments = name.split(/[\s-]+/); // Split by whitespace or hyphen
+            const maxNameSegmentLength = nameSegments.length > 0 
+                ? nameSegments.reduce((max, segment) => Math.max(max, segment.length), 0)
+                : name.length;
+            const contentLength = Math.max(maxNameSegmentLength, avgLength);
+            const minWidth = Math.max(60, contentLength * 8 > 200 ? 200 : contentLength * 8) + 50; // 8px per character with 50px padding
+            const width = minWidth;
+            
+            return { minWidth, width };
+        };
+
+        let colDefs = targetTable ? targetTable.names.map((name, i) => {
+            const { minWidth, width } = calculateColumnWidth(name);
+            return {
+                id: name, 
+                label: name, 
+                minWidth, 
+                width, 
+                align: undefined, 
                 format: (value: any) => <Typography fontSize="inherit">{`${value}`}</Typography>, 
                 dataType: targetTable?.types[i] as Type,
                 source: conceptShelfItems.find(f => f.name == name)?.source || "original", 
-            }}) : [];
+            };
+        }) : [];
 
         if (colDefs) {
             colDefs = [{
