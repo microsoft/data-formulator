@@ -228,45 +228,17 @@ export const fetchAvailableModels = createAsyncThunk(
     }
 );
 
-// Add this helper function to generate a UUID
-const generateSessionId = () => {
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-    const r = Math.random() * 16 | 0, 
-          v = c == 'x' ? r : (r & 0x3 | 0x8);
-    return v.toString(16);
-  });
-};
-
-// Create or retrieve a session ID from local storage
-const getOrCreateSessionId = () => {
-  let sessionId = localStorage.getItem('app_session_id');
-  if (!sessionId) {
-    sessionId = generateSessionId();
-    localStorage.setItem('app_session_id', sessionId);
-  }
-  return sessionId;
-};
-
-// Update your fetch function to include the session ID in the request
 export const fetchSessionId = createAsyncThunk(
-  "dataFormulatorSlice/fetchSessionId",
-  async () => {
-    const sessionId = getOrCreateSessionId();
-    
-    const response = await fetch(getUrls().SESSION_ID, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Session-ID': sessionId  // Pass session ID as a custom header
-      }
-    });
-    
-    const data = await response.json();
-    return {
-      ...data,
-      session_id: sessionId  // Ensure we return the session ID
-    };
-  }
+    "dataFormulatorSlice/fetchSessionId",
+    async () => {
+        const response = await fetch(getUrls().SESSION_ID, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        });
+        return response.json();
+    }
 );
   
 export const dataFormulatorSlice = createSlice({
@@ -731,8 +703,6 @@ export const dataFormulatorSlice = createSlice({
             console.log(action.payload);
         })
         .addCase(fetchSessionId.fulfilled, (state, action) => {
-            console.log(">>> fetchSessionId <<<")
-            console.log(action.payload)
             state.sessionId = action.payload.session_id;
         })
     },
