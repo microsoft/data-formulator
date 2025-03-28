@@ -10,6 +10,7 @@ import {
     dfActions,
     fetchAvailableModels,
     fetchFieldSemanticType,
+    fetchSessionId
 } from './dfSlice'
 
 import blue from '@mui/material/colors/blue';
@@ -226,6 +227,7 @@ const TableMenu: React.FC = () => {
 const SessionMenu: React.FC = () => {
     const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
     const open = Boolean(anchorEl);
+    const sessionId = useSelector((state: DataFormulatorState) => state.sessionId);
     
     return (
         <>
@@ -235,7 +237,7 @@ const SessionMenu: React.FC = () => {
                 endIcon={<KeyboardArrowDownIcon />} 
                 sx={{ textTransform: 'none' }}
             >
-                Session
+                Session {sessionId ? `(${sessionId.substring(0, 8)}...)` : ''}
             </Button>
             <Menu
                 id="session-menu"
@@ -248,6 +250,13 @@ const SessionMenu: React.FC = () => {
                 }}
                 sx={{ '& .MuiMenuItem-root': { padding: 0, margin: 0 } }}
             >
+                {sessionId && (
+                    <MenuItem disabled>
+                        <Typography sx={{ fontSize: 12, color: 'text.secondary', mx: 2 }}>
+                            ID: {sessionId}
+                        </Typography>
+                    </MenuItem>
+                )}
                 <MenuItem onClick={() => {}}>
                     <ExportStateButton />
                 </MenuItem>
@@ -413,6 +422,7 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
     const visViewMode = useSelector((state: DataFormulatorState) => state.visViewMode);
     const config = useSelector((state: DataFormulatorState) => state.config);
     const tables = useSelector((state: DataFormulatorState) => state.tables);
+    const sessionId = useSelector((state: DataFormulatorState) => state.sessionId);
 
     // if the user has logged in
     const [userInfo, setUserInfo] = useState<{ name: string, userId: string } | undefined>(undefined);
@@ -462,6 +472,7 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
     useEffect(() => {
         document.title = toolName;
         dispatch(fetchAvailableModels());
+        dispatch(fetchSessionId());
     }, []);
 
     let theme = createTheme({

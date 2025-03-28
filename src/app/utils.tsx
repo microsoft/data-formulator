@@ -20,7 +20,7 @@ export interface PopupConfig {
 }
 
 export const appConfig: AppConfig = {
-    serverUrl:  process.env.NODE_ENV == "production" ? "./" : "http://127.0.0.1:5000/",
+    serverUrl:  process.env.NODE_ENV == "production" ? "./" : "/api",
 };
 
 export function assignAppConfig(config: AppConfig) {
@@ -51,7 +51,9 @@ export function getUrls() {
 
         APP_CONFIG: `${appConfig.serverUrl}/app-config`,
 
-        AUTH_INFO_PREFIX: `${appConfig.serverUrl}/.auth/`
+        AUTH_INFO_PREFIX: `${appConfig.serverUrl}/.auth/`,
+
+        SESSION_ID: `${appConfig.serverUrl}/get-session-id`,
     };
 }
 

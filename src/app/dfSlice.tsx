@@ -37,7 +37,7 @@ export interface ModelConfig {
 
 // Define a type for the slice state
 export interface DataFormulatorState {
-
+    sessionId: string | undefined;
     models: ModelConfig[];
     selectedModelId: string | undefined;
     testedModels: {id: string, status: 'ok' | 'error' | 'testing' | 'unknown', message: string}[];
@@ -73,7 +73,7 @@ export interface DataFormulatorState {
 
 // Define the initial state using that type
 const initialState: DataFormulatorState = {
-
+    sessionId: undefined,
     models: [],
     selectedModelId: undefined,
     testedModels: [],
@@ -226,6 +226,47 @@ export const fetchAvailableModels = createAsyncThunk(
 
         return response.json();
     }
+);
+
+// Add this helper function to generate a UUID
+const generateSessionId = () => {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    const r = Math.random() * 16 | 0, 
+          v = c == 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+};
+
+// Create or retrieve a session ID from local storage
+const getOrCreateSessionId = () => {
+  let sessionId = localStorage.getItem('app_session_id');
+  if (!sessionId) {
+    sessionId = generateSessionId();
+    localStorage.setItem('app_session_id', sessionId);
+  }
+  return sessionId;
+};
+
+// Update your fetch function to include the session ID in the request
+export const fetchSessionId = createAsyncThunk(
+  "dataFormulatorSlice/fetchSessionId",
+  async () => {
+    const sessionId = getOrCreateSessionId();
+    
+    const response = await fetch(getUrls().SESSION_ID, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Session-ID': sessionId  // Pass session ID as a custom header
+      }
+    });
+    
+    const data = await response.json();
+    return {
+      ...data,
+      session_id: sessionId  // Ensure we return the session ID
+    };
+  }
 );
   
 export const dataFormulatorSlice = createSlice({
@@ -632,7 +673,10 @@ export const dataFormulatorSlice = createSlice({
             } else {
                 state.chartSynthesisInProgress = state.chartSynthesisInProgress.filter(s => s != action.payload.chartId);
             }
-        }
+        },
+        setSessionId: (state, action: PayloadAction<string>) => {
+            state.sessionId = action.payload;
+        },
     },
     extraReducers: (builder) => {
         builder
@@ -685,6 +729,11 @@ export const dataFormulatorSlice = createSlice({
             }
             console.log("fetched codeExpl");
             console.log(action.payload);
+        })
+        .addCase(fetchSessionId.fulfilled, (state, action) => {
+            console.log(">>> fetchSessionId <<<")
+            console.log(action.payload)
+            state.sessionId = action.payload.session_id;
         })
     },
 })

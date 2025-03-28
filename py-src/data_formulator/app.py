@@ -10,15 +10,13 @@ mimetypes.add_type('application/javascript', '.js')
 mimetypes.add_type('application/javascript', '.mjs')
 
 import flask
-from flask import Flask, request, send_from_directory, redirect, url_for
+from flask import Flask, request, send_from_directory, redirect, url_for, session
 from flask import stream_with_context, Response
 import html
 import pandas as pd
 
 import webbrowser
 import threading
-
-from flask_cors import CORS
 
 import logging
 
@@ -40,13 +38,14 @@ from data_formulator.agents.agent_code_explanation import CodeExplanationAgent
 from data_formulator.agents.client_utils import Client
 
 from dotenv import load_dotenv
+import secrets
 
 APP_ROOT = Path(os.path.join(Path(__file__).parent)).absolute()
 
 import os
 
 app = Flask(__name__, static_url_path='', static_folder=os.path.join(APP_ROOT, "dist"))
-CORS(app)
+app.secret_key = secrets.token_hex(16)  # Generate a random secret key for sessions
 
 print(APP_ROOT)
 
@@ -73,7 +72,6 @@ for handler in logging.getLogger().handlers:
 # Example usage:
 logger.info("Application level log")  # General application logging
 app.logger.info("Flask specific log") # Web request related logging
-
 
 
 def get_client(model_config):
@@ -540,11 +538,41 @@ def request_code_expl():
         expl = ""
     return expl
 
+@app.route('/get-session-id', methods=['GET'])
+def get_session_id():
+    """Endpoint to get or confirm a session ID from the client"""
+    
+    if not os.getenv("SESSION_ENABLED", "true").lower() == "true":
+        return flask.jsonify({
+            "status": "ok",
+            "session_id": None
+        })
+    
+    # Create session if it doesn't exist
+    if 'session_id' not in session:
+        session['session_id'] = secrets.token_hex(16)
+        session.permanent = True
+        logger.info(f"Created new session: {session['session_id']}")
+    
+    return flask.jsonify({
+        "status": "ok",
+        "session_id": session['session_id']
+    })
+
 @app.route('/app-config', methods=['GET'])
 def get_app_config():
     """Provide frontend configuration settings from environment variables"""
+    
+    # Create session if it doesn't exist
+    if 'session_id' not in session:
+        session['session_id'] = secrets.token_hex(16)
+        session.permanent = True
+        logger.info(f"Created new session: {session['session_id']}")
+    
     config = {
-        "SHOW_KEYS_ENABLED": os.getenv("SHOW_KEYS_ENABLED", "true").lower() == "true"
+        "SHOW_KEYS_ENABLED": os.getenv("SHOW_KEYS_ENABLED", "true").lower() == "true",
+        "SESSION_ENABLED": os.getenv("SESSION_ENABLED", "true").lower() == "true",
+        "SESSION_ID": session['session_id'] if os.getenv("SESSION_ENABLED", "true").lower() == "true" else None
     }
     return flask.jsonify(config)
 
