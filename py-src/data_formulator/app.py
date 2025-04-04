@@ -10,7 +10,7 @@ mimetypes.add_type('application/javascript', '.js')
 mimetypes.add_type('application/javascript', '.mjs')
 
 import flask
-from flask import Flask, request, send_from_directory, redirect, url_for, session
+from flask import Flask, request, send_from_directory, has_request_context, redirect, url_for, session, jsonify
 from flask import stream_with_context, Response
 import html
 import pandas as pd
@@ -40,9 +40,12 @@ from data_formulator.agents.client_utils import Client
 from dotenv import load_dotenv
 import secrets
 
+from data_formulator.db_manager import db_manager
+
 APP_ROOT = Path(os.path.join(Path(__file__).parent)).absolute()
 
 import os
+import tempfile
 
 app = Flask(__name__, static_url_path='', static_folder=os.path.join(APP_ROOT, "dist"))
 app.secret_key = secrets.token_hex(16)  # Generate a random secret key for sessions
@@ -73,7 +76,6 @@ for handler in logging.getLogger().handlers:
 logger.info("Application level log")  # General application logging
 app.logger.info("Flask specific log") # Web request related logging
 
-
 def get_client(model_config):
     for key in model_config:
         model_config[key] = model_config[key].strip()
@@ -87,7 +89,7 @@ def get_client(model_config):
 
     return client
 
-@app.route('/vega-datasets')
+@app.route('/api/vega-datasets')
 def get_example_dataset_list():
     dataset_names = vega_data.list_datasets()
     example_datasets = [
@@ -137,7 +139,7 @@ def get_example_dataset_list():
     response.headers.add('Access-Control-Allow-Origin', '*')
     return response
 
-@app.route('/vega-dataset/<path:path>')
+@app.route('/api/vega-dataset/<path:path>')
 def get_datasets(path):
     try:
         df = vega_data(path)
@@ -150,7 +152,7 @@ def get_datasets(path):
     response = data_object
     return response
 
-@app.route('/check-available-models', methods=['GET', 'POST'])
+@app.route('/api/check-available-models', methods=['GET', 'POST'])
 def check_available_models():
     results = []
     
@@ -204,7 +206,7 @@ def check_available_models():
                 
     return json.dumps(results)
 
-@app.route('/test-model', methods=['GET', 'POST'])
+@app.route('/api/test-model', methods=['GET', 'POST'])
 def test_model():
     
     if request.is_json:
@@ -260,7 +262,7 @@ def page_not_found(e):
 
 ###### test functions ######
 
-@app.route('/hello')
+@app.route('/api/hello')
 def hello():
     values = [
             {"a": "A", "b": 28}, {"a": "B", "b": 55}, {"a": "C", "b": 43},
@@ -280,7 +282,7 @@ def hello():
     return json.dumps(spec)
 
 
-@app.route('/hello-stream')
+@app.route('/api/hello-stream')
 def streamed_response():
     def generate():
         values = [
@@ -307,7 +309,7 @@ def streamed_response():
 
 ###### agent related functions ######
 
-@app.route('/process-data-on-load', methods=['GET', 'POST'])
+@app.route('/api/process-data-on-load', methods=['GET', 'POST'])
 def process_data_on_load_request():
 
     if request.is_json:
@@ -332,7 +334,7 @@ def process_data_on_load_request():
     return response
 
 
-@app.route('/derive-concept-request', methods=['GET', 'POST'])
+@app.route('/api/derive-concept-request', methods=['GET', 'POST'])
 def derive_concept_request():
 
     if request.is_json:
@@ -360,7 +362,7 @@ def derive_concept_request():
     return response
 
 
-@app.route('/clean-data', methods=['GET', 'POST'])
+@app.route('/api/clean-data', methods=['GET', 'POST'])
 def clean_data_request():
 
     if request.is_json:
@@ -386,7 +388,7 @@ def clean_data_request():
     return response
 
 
-@app.route('/codex-sort-request', methods=['GET', 'POST'])
+@app.route('/api/codex-sort-request', methods=['GET', 'POST'])
 def sort_data_request():
 
     if request.is_json:
@@ -409,7 +411,7 @@ def sort_data_request():
     return response
 
 
-@app.route('/derive-data', methods=['GET', 'POST'])
+@app.route('/api/derive-data', methods=['GET', 'POST'])
 def derive_data():
 
     if request.is_json:
@@ -473,7 +475,7 @@ def derive_data():
     response.headers.add('Access-Control-Allow-Origin', '*')
     return response
 
-@app.route('/refine-data', methods=['GET', 'POST'])
+@app.route('/api/refine-data', methods=['GET', 'POST'])
 def refine_data():
 
     if request.is_json:
@@ -519,7 +521,7 @@ def refine_data():
     response.headers.add('Access-Control-Allow-Origin', '*')
     return response
 
-@app.route('/code-expl', methods=['GET', 'POST'])
+@app.route('/api/code-expl', methods=['GET', 'POST'])
 def request_code_expl():
     if request.is_json:
         app.logger.info("# request data: ")
@@ -538,15 +540,9 @@ def request_code_expl():
         expl = ""
     return expl
 
-@app.route('/get-session-id', methods=['GET'])
+@app.route('/api/get-session-id', methods=['GET'])
 def get_session_id():
     """Endpoint to get or confirm a session ID from the client"""
-    
-    if not os.getenv("SESSION_ENABLED", "true").lower() == "true":
-        return flask.jsonify({
-            "status": "ok",
-            "session_id": None
-        })
     
     # Create session if it doesn't exist
     if 'session_id' not in session:
@@ -558,8 +554,9 @@ def get_session_id():
         "status": "ok",
         "session_id": session['session_id']
     })
+    
 
-@app.route('/app-config', methods=['GET'])
+@app.route('/api/app-config', methods=['GET'])
 def get_app_config():
     """Provide frontend configuration settings from environment variables"""
     
@@ -571,10 +568,320 @@ def get_app_config():
     
     config = {
         "SHOW_KEYS_ENABLED": os.getenv("SHOW_KEYS_ENABLED", "true").lower() == "true",
-        "SESSION_ENABLED": os.getenv("SESSION_ENABLED", "true").lower() == "true",
-        "SESSION_ID": session['session_id'] if os.getenv("SESSION_ENABLED", "true").lower() == "true" else None
+        "SESSION_ID": session['session_id']
     }
     return flask.jsonify(config)
+
+
+@app.route('/api/tables', methods=['GET'])
+def list_tables():
+    """List all tables in the current session"""
+    try:
+        result = []
+        with db_manager.connection(session['session_id']) as db:
+            tables = db.execute("SHOW TABLES").fetchall()
+        
+            for table in tables:
+                table_name = table[0]
+                # Get column information
+                columns = db.execute(f"DESCRIBE {table_name}").fetchall()
+                # Get row count
+                row_count = db.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()[0]
+                sample_rows = db.execute(f"SELECT * FROM {table_name} LIMIT 1000").fetchall()
+
+                result.append({
+                    "name": table_name,
+                    "columns": [{"name": col[0], "type": col[1]} for col in columns],
+                    "row_count": row_count,
+                    "sample_rows": [dict(zip([col[0] for col in columns], row)) for row in sample_rows]
+                })
+        
+        return jsonify({
+            "status": "success",
+            "tables": result
+        })
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
+
+
+@app.route('/api/tables/sample-table', methods=['POST'])
+def sample_table():
+    """Sample a table"""
+    try:
+        data = request.get_json()
+        table_id = data.get('table')
+        sample_size = data.get('size', 1000)
+        method = data.get('method', 'random') # one of 'random', 'head', 'bottom'
+
+        with db_manager.connection(session['session_id']) as db:
+            if method == 'random':
+                result = db.execute(f"SELECT * FROM {table_id} ORDER BY RAND() LIMIT {sample_size}").fetchall()
+            elif method == 'head':
+                result = db.execute(f"SELECT * FROM {table_id} LIMIT {sample_size}").fetchall()
+            elif method == 'bottom':
+                # Get the bottom rows by ordering in descending order and limiting
+                result = db.execute(f"SELECT * FROM {table_id} ORDER BY ROWID DESC LIMIT {sample_size}").fetchall()
+
+        return jsonify({
+            "status": "success",
+            "rows": result
+        })
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
+
+@app.route('/api/tables/get-table', methods=['GET'])
+def get_table_data():
+    """Get data from a specific table"""
+    try:
+        with db_manager.connection(session['session_id']) as db:
+
+            table_name = request.args.get('table_name')
+            # Get pagination parameters
+            page = int(request.args.get('page', 1))
+            page_size = int(request.args.get('page_size', 100))
+            offset = (page - 1) * page_size
+            
+            if not table_name:
+                return jsonify({
+                    "status": "error",
+                    "message": "Table name is required"
+                }), 400
+            
+            # Get total count
+            total_rows = db.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()[0]
+            
+            # Get paginated data
+            result = db.execute(
+                f"SELECT * FROM {table_name} LIMIT {page_size} OFFSET {offset}"
+            ).fetchall()
+            
+            # Get column names
+            columns = [col[0] for col in db.execute(f"DESCRIBE {table_name}").fetchall()]
+            
+            # Convert to list of dictionaries
+            rows = [dict(zip(columns, row)) for row in result]
+        
+            return jsonify({
+                "status": "success",
+                "table_name": table_name,
+                "columns": columns,
+                "rows": rows,
+                "total_rows": total_rows,
+                "page": page,
+                "page_size": page_size
+            })
+    
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
+
+@app.route('/api/tables/create-table', methods=['POST'])
+def create_table():
+    """Create a new table from uploaded data"""
+    try:
+        if 'file' not in request.files:
+            return jsonify({"status": "error", "message": "No file provided"}), 400
+        
+        file = request.files['file']
+        table_name = request.form.get('table_name')
+
+        print(f"table_name: {table_name}")
+        print(f"file: {file.filename}")
+        print(f"file: {file}")
+        
+        if not table_name:
+            return jsonify({"status": "error", "message": "No table name provided"}), 400
+            
+        # Sanitize table name:
+        # 1. Convert to lowercase
+        # 2. Replace hyphens with underscores
+        # 3. Replace spaces with underscores
+        # 4. Remove any other special characters
+        sanitized_table_name = table_name.lower()
+        sanitized_table_name = sanitized_table_name.replace('-', '_')
+        sanitized_table_name = sanitized_table_name.replace(' ', '_')
+        sanitized_table_name = ''.join(c for c in sanitized_table_name if c.isalnum() or c == '_')
+        
+        # Ensure table name starts with a letter
+        if not sanitized_table_name or not sanitized_table_name[0].isalpha():
+            sanitized_table_name = 'table_' + sanitized_table_name
+            
+        # Verify we have a valid table name after sanitization
+        if not sanitized_table_name:
+            return jsonify({"status": "error", "message": "Invalid table name"}), 400
+            
+        with db_manager.connection(session['session_id']) as db:
+        
+            # Read file based on extension
+            if file.filename.endswith('.csv'):
+                df = pd.read_csv(file)
+            elif file.filename.endswith(('.xlsx', '.xls')):
+                df = pd.read_excel(file)
+            elif file.filename.endswith('.json'):
+                df = pd.read_json(file)
+            else:
+                return jsonify({"status": "error", "message": "Unsupported file format"}), 400
+            
+            # Create table
+            db.register('df_temp', df)
+            db.execute(f"CREATE TABLE {sanitized_table_name} AS SELECT * FROM df_temp")
+            db.execute("DROP VIEW df_temp")  # Drop the temporary view after creating the table
+            
+            return jsonify({
+                "status": "success",
+                "table_name": sanitized_table_name,
+                "row_count": len(df),
+                "columns": list(df.columns)
+            })
+    
+    except Exception as e:
+        print(e)
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
+
+@app.route('/api/tables/delete-table', methods=['POST'])
+def drop_table():
+    """Drop a table"""
+    try:
+        data = request.get_json()
+        table_name = data.get('table_name')
+        
+        if not table_name:
+            return jsonify({"status": "error", "message": "No table name provided"}), 400
+            
+        with db_manager.connection(session['session_id']) as db:
+            db.execute(f"DROP TABLE IF EXISTS {table_name}")
+        
+            return jsonify({
+                "status": "success",
+                "message": f"Table {table_name} dropped"
+            })
+    
+    except Exception as e:
+        print(e)
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
+
+
+@app.route('/api/tables/query', methods=['POST'])
+def query_table():
+    """Execute a query on a table"""
+    try:
+        data = request.get_json()
+
+        query = data.get('query')
+
+        if not query:
+            return jsonify({"status": "error", "message": "No query provided"}), 400
+        
+        with db_manager.connection(session['session_id']) as db:
+            result = db.execute(query).fetch_df()
+        
+            return jsonify({
+                "status": "success",
+                "rows": result.to_dict('records'),
+                "columns": list(result.columns)
+            })
+    
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
+
+
+# Example of a more complex query endpoint
+@app.route('/api/tables/analyze', methods=['POST'])
+def analyze_table():
+    """Get basic statistics about a table"""
+    try:
+        data = request.get_json()
+        table_name = data.get('table_name')
+        
+        if not table_name:
+            return jsonify({"status": "error", "message": "No table name provided"}), 400
+        
+        with db_manager.connection(session['session_id']) as db:
+        
+            # Get column information
+            columns = db.execute(f"DESCRIBE {table_name}").fetchall()
+            
+            print(f"columns: {columns}")
+            stats = []
+            for col in columns:
+                col_name = col[0]
+                col_type = col[1]
+                
+                # Properly quote column names to avoid SQL keywords issues
+                quoted_col_name = f'"{col_name}"'
+                
+                # Basic stats query
+                stats_query = f"""
+                SELECT 
+                    COUNT(*) as count,
+                    COUNT(DISTINCT {quoted_col_name}) as unique_count,
+                    COUNT(*) - COUNT({quoted_col_name}) as null_count
+                FROM {table_name}
+                """
+                
+                # Add numeric stats if applicable
+                if col_type in ['INTEGER', 'DOUBLE', 'DECIMAL']:
+                    stats_query = f"""
+                    SELECT 
+                        COUNT(*) as count,
+                        COUNT(DISTINCT {quoted_col_name}) as unique_count,
+                        COUNT(*) - COUNT({quoted_col_name}) as null_count,
+                        MIN({quoted_col_name}) as min_value,
+                        MAX({quoted_col_name}) as max_value,
+                        AVG({quoted_col_name}) as avg_value
+                    FROM {table_name}
+                    """
+                
+                col_stats = db.execute(stats_query).fetchone()
+                
+                # Create a dictionary with appropriate keys based on column type
+                if col_type in ['INTEGER', 'DOUBLE', 'DECIMAL']:
+                    stats_dict = dict(zip(
+                        ["count", "unique_count", "null_count", "min", "max", "avg"],
+                        col_stats
+                    ))
+                else:
+                    stats_dict = dict(zip(
+                        ["count", "unique_count", "null_count"],
+                        col_stats
+                    ))
+                
+                stats.append({
+                    "column": col_name,
+                    "type": col_type,
+                    "statistics": stats_dict
+                })
+        
+        return jsonify({
+            "status": "success",
+            "table_name": table_name,
+            "statistics": stats
+        })
+    
+    except Exception as e:
+        print(e)
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Data Formulator")

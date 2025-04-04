@@ -10,7 +10,6 @@ import { DictTable } from "../components/ComponentType";
 import { getDType } from "../data/types";
 
 export interface AppConfig {
-    serverUrl: string;
     popupConfig?: PopupConfig;
 }
 
@@ -20,7 +19,6 @@ export interface PopupConfig {
 }
 
 export const appConfig: AppConfig = {
-    serverUrl:  process.env.NODE_ENV == "production" ? "./" : "/api",
 };
 
 export function assignAppConfig(config: AppConfig) {
@@ -31,29 +29,36 @@ export function assignAppConfig(config: AppConfig) {
 
 export function getUrls() {
     return {
-        CHECK_AVAILABLE_MODELS: `${appConfig.serverUrl}/check-available-models`,
-        TEST_MODEL: `${appConfig.serverUrl}/test-model`,
+        CHECK_AVAILABLE_MODELS: `/api/check-available-models`,
+        TEST_MODEL: `/api/test-model`,
 
         // these functions involves openai models
-        DERIVE_CONCEPT_URL: `${appConfig.serverUrl}/derive-concept-request`,
-        SORT_DATA_URL: `${appConfig.serverUrl}/codex-sort-request`,
-        CLEAN_DATA_URL: `${appConfig.serverUrl}/clean-data`,
-        SERVER_DERIVE_DATA_URL: `${appConfig.serverUrl}/derive-data`,
-        SERVER_REFINE_DATA_URL: `${appConfig.serverUrl}/refine-data`,
-        CODE_EXPL_URL: `${appConfig.serverUrl}/code-expl`,
-        SERVER_PROCESS_DATA_ON_LOAD: `${appConfig.serverUrl}/process-data-on-load`,
+        DERIVE_CONCEPT_URL: `/api/derive-concept-request`,
+        SORT_DATA_URL: `/api/codex-sort-request`,
+        CLEAN_DATA_URL: `/api/clean-data`,
+        SERVER_DERIVE_DATA_URL: `/api/derive-data`,
+        SERVER_REFINE_DATA_URL: `/api/refine-data`,
+        CODE_EXPL_URL: `/api/code-expl`,
+        SERVER_PROCESS_DATA_ON_LOAD: `/api/process-data-on-load`,
 
-        DATASET_INFO_URL: `${appConfig.serverUrl}/datasets-info`,
-        DATASET_REQUEST_PREFIX: `${appConfig.serverUrl}/datasets/`,
+        DATASET_INFO_URL: `/api/datasets-info`,
+        DATASET_REQUEST_PREFIX: `/api/datasets/`,
 
-        VEGA_DATASET_LIST: `${appConfig.serverUrl}/vega-datasets`,
-        VEGA_DATASET_REQUEST_PREFIX: `${appConfig.serverUrl}/vega-dataset/`,
+        VEGA_DATASET_LIST: `/api/vega-datasets`,
+        VEGA_DATASET_REQUEST_PREFIX: `/api/vega-dataset/`,
 
-        APP_CONFIG: `${appConfig.serverUrl}/app-config`,
+        APP_CONFIG: `/api/app-config`,
 
-        AUTH_INFO_PREFIX: `${appConfig.serverUrl}/.auth/`,
+        AUTH_INFO_PREFIX: `/api/.auth/`,
 
-        SESSION_ID: `${appConfig.serverUrl}/get-session-id`,
+        GET_SESSION_ID: `/api/get-session-id`,
+        LIST_TABLES: `/api/tables`,
+        TABLE_DATA: `/api/tables/get-table`,
+        CREATE_TABLE: `/api/tables/create-table`,
+        DELETE_TABLE: `/api/tables/delete-table`,
+        ANALYZE_TABLE: `/api/tables/analyze`,
+        QUERY_TABLE: `/api/tables/query`,
+        SAMPLE_TABLE: `/api/tables/sample-table`,
     };
 }
 

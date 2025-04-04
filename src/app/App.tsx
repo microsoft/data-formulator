@@ -10,7 +10,7 @@ import {
     dfActions,
     fetchAvailableModels,
     fetchFieldSemanticType,
-    fetchSessionId
+    getSessionId,
 } from './dfSlice'
 
 import blue from '@mui/material/colors/blue';
@@ -68,6 +68,7 @@ import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import ContentPasteIcon from '@mui/icons-material/ContentPaste';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 import DownloadIcon from '@mui/icons-material/Download';
+import { DBTableManager } from '../views/DBTableManager';
 
 const AppBar = styled(MuiAppBar)(({ theme }) => ({
     color: 'black',
@@ -472,7 +473,7 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
     useEffect(() => {
         document.title = toolName;
         dispatch(fetchAvailableModels());
-        dispatch(fetchSessionId());
+        dispatch(getSessionId());
     }, []);
 
     let theme = createTheme({
@@ -579,6 +580,9 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
         {
             path: "/about",
             element: <About />,
+        }, {
+            path: "/test",
+            element: <DBTableManager />,
         }, {
             path: "*",
             element: <DataFormulatorFC />,

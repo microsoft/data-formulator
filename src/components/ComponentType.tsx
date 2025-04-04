@@ -72,6 +72,10 @@ export interface DictTable {
         // in fact, right now dict tables are all triggered from charts
         trigger: Trigger,
     };
+    virtual?: {
+        rowCount: number; // total number of rows in the full table
+        available: boolean; // whether the table is available to use
+    };
     anchored: boolean; // whether this table is anchored as a persistent table used to derive other tables
 }
 

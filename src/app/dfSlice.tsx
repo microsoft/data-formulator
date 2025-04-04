@@ -228,10 +228,10 @@ export const fetchAvailableModels = createAsyncThunk(
     }
 );
 
-export const fetchSessionId = createAsyncThunk(
-    "dataFormulatorSlice/fetchSessionId",
+export const getSessionId = createAsyncThunk(
+    "dataFormulatorSlice/getSessionId",
     async () => {
-        const response = await fetch(getUrls().SESSION_ID, {
+        const response = await fetch(`${getUrls().GET_SESSION_ID}`, {
             method: 'GET',
             headers: {
                 'Content-Type': 'application/json',
@@ -240,7 +240,7 @@ export const fetchSessionId = createAsyncThunk(
         return response.json();
     }
 );
-  
+
 export const dataFormulatorSlice = createSlice({
     name: 'dataFormulatorSlice',
     initialState: initialState,
@@ -250,6 +250,7 @@ export const dataFormulatorSlice = createSlice({
             
             // avoid resetting inputted models
             // state.oaiModels = state.oaiModels.filter((m: any) => m.endpoint != 'default');
+
             state.selectedModelId = state.models.length > 0 ? state.models[0].id : undefined;
             state.testedModels = [];
 
@@ -702,7 +703,8 @@ export const dataFormulatorSlice = createSlice({
             console.log("fetched codeExpl");
             console.log(action.payload);
         })
-        .addCase(fetchSessionId.fulfilled, (state, action) => {
+        .addCase(getSessionId.fulfilled, (state, action) => {
+            console.log("got sessionId ", action.payload.session_id);
             state.sessionId = action.payload.session_id;
         })
     },

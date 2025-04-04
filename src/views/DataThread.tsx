@@ -52,6 +52,7 @@ import { TriggerCard } from './EncodingShelfCard';
 
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
+import CloudQueueIcon from '@mui/icons-material/CloudQueue';
 
 let buildChartCard = (chartElement: { tableId: string, chartId: string, element: any },
     focusedChartId?: string) => {
@@ -353,6 +354,14 @@ let SingleThreadView: FC<{
             // only charts without dependency can be deleted
             let tableDeleteEnabled = !tables.some(t => t.derive?.trigger.tableId == tableId);
 
+            let tableCardIcon = table?.virtual? <CloudQueueIcon sx={{ fontSize: 18 }} /> : ( table?.anchored ? 
+                <AnchorIcon sx={{ 
+                    fontSize: tableId === focusedTableId ? 20 : 16,
+                    color: tableId === focusedTableId ? theme.palette.primary.main : 'rgba(0,0,0,0.5)',
+                    fontWeight: tableId === focusedTableId ? 'bold' : 'normal',
+                }} /> : 
+                <TableRowsIcon sx={{ fontSize: 16 }} />)
+
             let regularTableBox = <Box ref={relevantCharts.some(c => c.chartId == focusedChartId) ? scrollRef : null} 
                 sx={{ padding: '0px' }}>
                 <Card className={`data-thread-card ${selectedClassName}`} variant="outlined"
@@ -411,14 +420,7 @@ let SingleThreadView: FC<{
                                             event.stopPropagation();
                                             dispatch(dfActions.updateTableAnchored({tableId: tableId, anchored: !table?.anchored}));
                                         }}>
-                                            {table?.anchored ? 
-                                                <AnchorIcon sx={{ 
-                                                    fontSize: tableId === focusedTableId ? 20 : 16,
-                                                    color: tableId === focusedTableId ? theme.palette.primary.main : 'rgba(0,0,0,0.5)',
-                                                    fontWeight: tableId === focusedTableId ? 'bold' : 'normal',
-                                                }} /> : 
-                                                <TableRowsIcon sx={{ fontSize: 16 }} />
-                                            }
+                                            {tableCardIcon}
                                         </IconButton>
                                     </span>
                                 </Tooltip>

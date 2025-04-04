@@ -28,11 +28,17 @@ import _ from 'lodash';
 import { FieldSource } from '../components/ComponentType';
 
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
-import DeleteIcon from '@mui/icons-material/Delete';
 import FileDownloadIcon from '@mui/icons-material/FileDownload';
-import { dfActions, dfSelectors } from '../app/dfSlice';
-import { useDispatch, useSelector } from 'react-redux';
+import CloudQueueIcon from '@mui/icons-material/CloudQueue';
+import CasinoIcon from '@mui/icons-material/Casino';
+import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
+import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
+import Button from '@mui/material/Button';
 import { getUrls } from '../app/utils';
+import Menu from '@mui/material/Menu';
+import MenuItem from '@mui/material/MenuItem';
+import ListItemIcon from '@mui/material/ListItemIcon';
+import ListItemText from '@mui/material/ListItemText';
 
 interface SelectableCellProps {
     align: any;
@@ -110,8 +116,11 @@ export interface ColumnDef {
 }
 
 interface SelectableDataGridProps {
+    tableId: string;
     tableName: string;
     rows: any[];
+    rowCount: number;
+    virtual: boolean;
     columnDefs: ColumnDef[];
     onSelectionFinished: (columns: string[], values: any[]) => void;
     $tableRef: React.RefObject<SelectableGroup>;
@@ -139,10 +148,9 @@ function getComparator<Key extends keyof any>(
         : (a, b) => -descendingComparator(a, b, orderBy);
 }
 
-export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({ rows, tableName, columnDefs, $tableRef, onSelectionFinished }) => {
+export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({ tableId, rows, tableName, columnDefs, $tableRef, onSelectionFinished, rowCount, virtual }) => {
 
     const [footerActionExpand, setFooterActionExpand] = React.useState<boolean>(false);
-    let activeModel = useSelector(dfSelectors.getActiveModel);
     
     const [orderBy, setOrderBy] = React.useState<string | undefined>(undefined);
     const [order, setOrder] = React.useState<'asc' | 'desc'>('asc');
@@ -150,28 +158,27 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({ rows, ta
     const [searchValue, setSearchValue] = React.useState<string>('');
 
     const [selectedCells, setSelectedCells] = React.useState<[number, number][]>([]);
-    const [selectedColumnNames, setSelectedColumnNames] = React.useState<string[]>([]);
 
     let theme = useTheme();
-    let dispatch = useDispatch();
 
+    const [rowsToDisplay, setRowsToDisplay] = React.useState<any[]>(rows);
+    
     React.useEffect(() => {
         // use this to handle cases when the table add new columns/remove new columns etc
         $tableRef.current?.clearSelection();
     }, [columnDefs.length])
 
-    const rowsToDisplay = rows.slice()
-        .sort(getComparator(order, orderBy || "#rowId"))
-        .filter((row: any) => {
-            if (searchValue === '') return true;
-            return columnDefs.map((columnDef: ColumnDef) => (row[columnDef.id] + '').toLowerCase()).join(' ').includes(searchValue.toLowerCase());
-        })
-    //     .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
+    React.useEffect(() => {
+        setRowsToDisplay(rows.slice()
+            .sort(getComparator(order, orderBy || columnDefs[0].id))
+            .filter((row: any) => {
+                if (searchValue === '') return true;
+                return columnDefs.map((columnDef: ColumnDef) => (row[columnDef.id] + '').toLowerCase()).join(' ').includes(searchValue.toLowerCase());
+            })
+        )
+    }, [rows, order, orderBy, searchValue])
 
     const onClickCell = (event: any, rowIndex: number, colIndex: number) => {
-        // console.log('click cell');
-        // console.log(_.without(selectedCells, [rowIndex, colIndex]));
-        // console.log(event);
         for (let i = 0; i < selectedCells.length; i++) {
             const [r, c] = selectedCells[i];
             if (r === rowIndex && c === colIndex) {
@@ -191,14 +198,12 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({ rows, ta
         TableRow: (props: any) => {
             const index = props['data-index'];
             return <TableRow {...props} style={{backgroundColor: index % 2 == 0 ? "rgba(255, 255, 255, 0.05)" : "rgba(0, 0, 0, 0.02)"}}/>
-        }, //
-        //TableRow: TableRow,
+        },
         TableBody: TableBody,
     }
 
     const handleSelectionClear = () => {
         setSelectedCells([]);
-        setSelectedColumnNames([]);
     }
 
     const debouncedSearchHandler = React.useCallback(_.debounce((value: string) => {
@@ -216,12 +221,11 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({ rows, ta
         let values = selected.map(x => x.props.value);
         let columns = _.uniq(selected.map(x => x.props.column.id));
 
-        setSelectedColumnNames(columns);
         onSelectionFinished(columns, values);
     }
 
     let footerActionsItems = 
-        <Box sx={{display: 'flex'}}>
+        <Box sx={{display: 'flex', mr: 1}}>
             <Box key="search-box">
                 <OutlinedInput
                     className="table-search-input"
@@ -254,12 +258,6 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({ rows, ta
                         searchText.length > 0 ? <InputAdornment position="end">
                                     <SearchIcon fontSize='small'/> 
                         </InputAdornment> : ""
-                        // <InputAdornment position="end">
-                        //     {
-                        //         searchText.length > 0 ?
-                        //             <SearchIcon fontSize='small'/> : ""
-                        //     }
-                        // </InputAdornment>
                     }
                     onChange={(event) => {
                         setSearchText(event.target.value);
@@ -269,57 +267,39 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({ rows, ta
                     {`${rowsToDisplay.length} matches`}   
                 </Typography>: ''}
             </Box>
-            {/* <Tooltip key="delete-action" title={`Delete ${tableName}\n(note: all charts and concepts based on this table will be deleted)`}>
-                <IconButton size="small" color="warning" sx={{marginRight: 1}} onClick={() => {
-                    dispatch(dfActions.deleteTable(tableName))
-                }}>
-                    <DeleteIcon/>
-                </IconButton>
-            </Tooltip> */}
-            
-            <Tooltip title="Infer Data Type">
-            <IconButton size="small" color="primary"
-                onClick={() => {
-                        console.log(`[fyi] just sent request to process load data`);
-    
-                        console.log(rows);
-
-                        let message = {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json', },
-                            body: JSON.stringify({
-                                token: Date.now(),
-                                input_data: {name: tableName, rows: rows},
-                                model: activeModel
-                            }),
-                        };
-        
-                         // timeout the request after 20 seconds
-                        const controller = new AbortController()
-                        const timeoutId = setTimeout(() => controller.abort(), 20000)
-    
-                        fetch(getUrls().SERVER_PROCESS_DATA_ON_LOAD, {...message, signal: controller.signal })
-                            .then((response) => response.json())
-                            .then((data) => {
-                                console.log("---model output")
-                                console.log(data);
-    
-                                let status = data["status"];
-                                let codeList: string[] = [];
-    
-                                if (data["status"] == "ok") {
-                                    codeList = data["result"];
-                                    console.log(codeList)
-                                }
-                            }).catch((error) => {
-                            });
-                    }
-                }
-            ><AutoFixNormalIcon /></IconButton></Tooltip>
-            <Divider flexItem  orientation="vertical" sx={{marginRight: 1}}/>
         </Box>
 
-    // @ts-ignore
+    React.useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            const menuEl = document.getElementById('sampling-menu');
+            if (menuEl && menuEl.style.display === 'block') {
+                const isClickInsideMenu = menuEl.contains(event.target as Node);
+                const isClickOnButton = (event.target as Element).closest('[data-sampling-button]') !== null;
+                
+                if (!isClickInsideMenu && !isClickOnButton) {
+                    menuEl.style.display = 'none';
+                }
+            }
+        };
+
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside);
+        };
+    }, []);
+
+    // At the component level, add state for the menu
+    const [menuAnchorEl, setMenuAnchorEl] = React.useState<null | HTMLElement>(null);
+    const open = Boolean(menuAnchorEl);
+
+    const handleMenuClick = (event: React.MouseEvent<HTMLElement>) => {
+        setMenuAnchorEl(event.currentTarget);
+    };
+
+    const handleMenuClose = () => {
+        setMenuAnchorEl(null);
+    };
+
     return (
         <Box className="table-container table-container-small"
             sx={{
@@ -460,8 +440,104 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({ rows, ta
                 <Collapse orientation="horizontal"  in={footerActionExpand}>
                     {footerActionsItems}
                 </Collapse>
-                <Box sx={{display: 'flex', alignItems: 'center',  marginRight: 1}}>
-                    <Tooltip title={`Download ${tableName} as CSV`}>
+                <Box sx={{display: 'flex', alignItems: 'center'}}>
+                    <Typography  className="table-footer-number" sx={{display: 'flex', alignItems: 'center'}}>
+                        {virtual && <CloudQueueIcon sx={{fontSize: 16, mr: 1}}/> }
+                        {virtual ? `${rowCount} rows` : `${rowsToDisplay.length} rows`}
+                    </Typography>
+                    {virtual && (
+                        <>
+                            <Tooltip title="Sample data from this table">
+                                <IconButton 
+                                    size="small" 
+                                    color="primary" 
+                                    sx={{marginRight: 1}}
+                                    onClick={handleMenuClick}
+                                >
+                                    <CasinoIcon sx={{
+                                        fontSize: 18, 
+                                        transition: 'transform 0.5s ease-in-out',
+                                        '&:hover': {
+                                            transform: 'rotate(180deg)'
+                                        }
+                                    }} />
+                                </IconButton>
+                            </Tooltip>
+                            <Menu
+                                anchorEl={menuAnchorEl}
+                                open={open}
+                                onClose={handleMenuClose}
+                                slotProps={{
+                                    paper: {
+                                        elevation: 3,
+                                        sx: { minWidth: 180 }
+                                    }
+                                }}
+                            >
+                                <Typography variant="subtitle2" sx={{ px: 2, py: 1, fontSize: "12px", color: 'darkgray' }}>
+                                    Sample Method
+                                </Typography>
+                                {[
+                                    { label: "Top 1000 Rows", method: "head", icon: <ArrowUpwardIcon fontSize="small" /> },
+                                    { label: "Random 1000 Rows", method: "random", icon: <CasinoIcon fontSize="small" /> },
+                                    { label: "Bottom 1000 Rows", method: "bottom", icon: <ArrowDownwardIcon fontSize="small" /> }
+                                ].map((option) => (
+                                    <MenuItem
+                                        key={option.method}
+                                        sx={{ 
+                                            '& .MuiListItemText-primary': { fontSize: "12px" },
+                                            '& .MuiListItemIcon-root': { minWidth: '24px' },
+                                            '& .MuiSvgIcon-root': { fontSize: '16px' }
+                                        }}
+                                        onClick={() => {
+                                            handleMenuClose();
+                                            
+                                            // Use fetch to get the sample data
+                                            fetch(getUrls().SAMPLE_TABLE, {
+                                                method: 'POST',
+                                                headers: {
+                                                    'Content-Type': 'application/json',
+                                                },
+                                                body: JSON.stringify({
+                                                    table: tableId,
+                                                    size: 1000,
+                                                    method: option.method
+                                                }),
+                                            })
+                                            .then(response => response.json())
+                                            .then(data => {
+                                                if (data.status === 'success') {
+                                                    // Update rows state with the new sample
+                                                    console.log("sampled rows", data.rows);
+                                                    
+                                                    // Convert array rows to dictionary rows
+                                                    // This assumes the order of elements in each row matches the order of columnDefs
+                                                    const dictRows = data.rows.map((row: any) => {
+                                                        const dictRow: any = {};
+                                                        columnDefs.forEach((col, index) => {
+                                                            dictRow[col.id] = row[index];
+                                                        });
+                                                        return dictRow;
+                                                    });
+                                                    
+                                                    setRowsToDisplay(dictRows);
+                                                }
+                                            })
+                                            .catch(error => {
+                                                console.error('Error sampling table:', error);
+                                            });
+                                        }}
+                                    >
+                                        <ListItemIcon>
+                                            {option.icon}
+                                        </ListItemIcon>
+                                        <ListItemText>{option.label}</ListItemText>
+                                    </MenuItem>
+                                ))}
+                            </Menu>
+                        </>
+                    )}
+                    {!virtual && <Tooltip title={`Download ${tableName} as CSV`}>
                         <IconButton size="small" color="primary" sx={{marginRight: 1}}
                             onClick={() => {
                                 // Create CSV content
@@ -489,10 +565,8 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({ rows, ta
                         >
                             <FileDownloadIcon/>
                         </IconButton>
-                    </Tooltip>
-                    <Typography  className="table-footer-number">
-                        {`${rows.length} rows`}
-                    </Typography>
+                    </Tooltip>}
+                    
                 </Box>
             </Paper>
         </Box >

@@ -62,7 +62,10 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView({  $table
 
     // given a table render the table
     let renderTableBody = (targetTable: DictTable | undefined) => {
-        const rowData = targetTable ? targetTable.rows.map((r: any, i: number) => ({ ...r, "#rowId": i })) : [];
+
+        const rowData = targetTable ? 
+            targetTable.virtual ? targetTable.rows : targetTable.rows.map((r: any, i: number) => ({ ...r, "#rowId": i })) 
+            : [];
 
         // Randomly sample up to 29 rows for column width calculation
         const sampleSize = Math.min(29, rowData.length);
@@ -106,7 +109,7 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView({  $table
             };
         }) : [];
 
-        if (colDefs) {
+        if (colDefs && !targetTable?.virtual) {
             colDefs = [{
                 id: "#rowId", label: "#", minWidth: 10, align: undefined, width: 40,
                 format: (value: any) => <Typography fontSize="inherit" color="rgba(0,0,0,0.65)">{value}</Typography>, 
@@ -115,8 +118,16 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView({  $table
             }, ...colDefs]
         }
 
-        return <SelectableDataGrid $tableRef={$tableRef} tableName={targetTable?.id || "table"} rows={rowData} 
-                                   columnDefs={colDefs} onSelectionFinished={onRangeSelectionChanged} />
+        return <SelectableDataGrid 
+                    tableId={targetTable?.id || ""}
+                    $tableRef={$tableRef} 
+                    tableName={targetTable?.displayId || targetTable?.id || "table"} 
+                    rows={rowData} 
+                    columnDefs={colDefs}
+                    onSelectionFinished={onRangeSelectionChanged} 
+                    rowCount={targetTable?.virtual?.rowCount || rowData.length}
+                    virtual={targetTable?.virtual ? true : false}
+                />
     }
 
     // handle when selection changes

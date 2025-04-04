@@ -302,7 +302,7 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
         let element = <></>;
         if (!chart || !chartAvailabilityCheck(chart.encodingMap, conceptShelfItems, extTable)[0]) {
             return generateChartSkeleton(chartTemplate?.icon);
-        }  
+        }
 
         chartUnavailable = false;
 
