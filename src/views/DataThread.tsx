@@ -47,7 +47,7 @@ import 'prismjs/components/prism-python' // Language
 import 'prismjs/components/prism-typescript' // Language
 import 'prismjs/themes/prism.css'; //Example style, you can use another
 
-import { chartAvailabilityCheck, generateChartSkeleton, getDataTable } from './VisualizationView';
+import { checkChartAvailability, generateChartSkeleton, getDataTable } from './VisualizationView';
 import { TriggerCard } from './EncodingShelfCard';
 
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
@@ -634,7 +634,7 @@ export const DataThread: FC<{}> = function ({ }) {
             return { chartId: chart.id, tableId: table.id, element }
         }
 
-        let [available, unfilledFields] = chartAvailabilityCheck(chart.encodingMap, conceptShelfItems, extTable);
+        let available = checkChartAvailability(chart, conceptShelfItems, extTable);
 
         if (!available || chart.chartType == "Table") {
 

@@ -614,22 +614,53 @@ def sample_table():
         data = request.get_json()
         table_id = data.get('table')
         sample_size = data.get('size', 1000)
+        projection_fields = data.get('projection_fields', []) # if empty, we want to include all fields
         method = data.get('method', 'random') # one of 'random', 'head', 'bottom'
-
+        order_by_fields = data.get('order_by_fields', [])
+        
+        # Validate field names against table columns to prevent SQL injection
         with db_manager.connection(session['session_id']) as db:
+            # Get valid column names
+            columns = [col[0] for col in db.execute(f"DESCRIBE {table_id}").fetchall()]
+            
+            # Filter order_by_fields to only include valid column names
+            valid_order_by_fields = [field for field in order_by_fields if field in columns]
+            valid_projection_fields = [field for field in projection_fields if field in columns]
+
+            if len(valid_projection_fields) == 0:
+                projection_fields_str = "*"
+            else:
+                projection_fields_str = ", ".join(valid_projection_fields)
+
             if method == 'random':
-                result = db.execute(f"SELECT * FROM {table_id} ORDER BY RAND() LIMIT {sample_size}").fetchall()
+                result = db.execute(f"SELECT {projection_fields_str} FROM {table_id} ORDER BY RANDOM() LIMIT {sample_size}").fetchall()
             elif method == 'head':
-                result = db.execute(f"SELECT * FROM {table_id} LIMIT {sample_size}").fetchall()
+                if valid_order_by_fields:
+                    # Build ORDER BY clause with validated fields
+                    order_by_clause = ", ".join([f'"{field}"' for field in valid_order_by_fields])
+                    result = db.execute(f"SELECT {projection_fields_str} FROM {table_id} ORDER BY {order_by_clause} LIMIT {sample_size}").fetchall()
+                else:
+                    result = db.execute(f"SELECT {projection_fields_str} FROM {table_id} LIMIT {sample_size}").fetchall()
             elif method == 'bottom':
-                # Get the bottom rows by ordering in descending order and limiting
-                result = db.execute(f"SELECT * FROM {table_id} ORDER BY ROWID DESC LIMIT {sample_size}").fetchall()
+                if valid_order_by_fields:
+                    # Build ORDER BY clause with validated fields in descending order
+                    order_by_clause = ", ".join([f'"{field}" DESC' for field in valid_order_by_fields])
+                    result = db.execute(f"SELECT {projection_fields_str} FROM {table_id} ORDER BY {order_by_clause} LIMIT {sample_size}").fetchall()
+                else:
+                    result = db.execute(f"SELECT {projection_fields_str} FROM {table_id} ORDER BY ROWID DESC LIMIT {sample_size}").fetchall()
+
+        # When using projection_fields, we need to use those as our column names
+        if len(valid_projection_fields) > 0:
+            column_names = valid_projection_fields
+        else:
+            column_names = columns
 
         return jsonify({
             "status": "success",
-            "rows": result
+            "rows": [dict(zip(column_names, row)) for row in result]
         })
     except Exception as e:
+        print(e)
         return jsonify({
             "status": "error",
             "message": str(e)

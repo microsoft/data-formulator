@@ -30,7 +30,7 @@ import embed from 'vega-embed';
 import { getTriggers, getUrls, assembleVegaChart, resolveChartFields } from '../app/utils';
 
 import { getChartTemplate } from '../components/ChartTemplates';
-import { chartAvailabilityCheck, generateChartSkeleton } from './VisualizationView';
+import { checkChartAvailability, generateChartSkeleton } from './VisualizationView';
 import TableRowsIcon from '@mui/icons-material/TableRowsOutlined';
 import InsightsIcon from '@mui/icons-material/Insights';
 import AnchorIcon from '@mui/icons-material/Anchor';
@@ -56,7 +56,7 @@ export let ChartElementFC: FC<{chart: Chart, tableRows: any[], boxWidth?: number
 
     let chartTemplate = getChartTemplate(chart.chartType);
 
-    let [available, unfilledFields] = chartAvailabilityCheck(chart.encodingMap, conceptShelfItems, tableRows);
+    let available = checkChartAvailability(chart, conceptShelfItems, tableRows);
 
     if (chart.chartType == "Auto") {
         return <Box sx={{ position: "relative", display: "flex", flexDirection: "column", margin: 'auto', color: 'darkgray' }}>
@@ -419,10 +419,6 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
 
     let leafTable = tables.find(t => t.id == activeTableThread[activeTableThread.length - 1]) as DictTable;
     let triggers =  getTriggers(leafTable, tables)
-
-
-    console.log('from local data thread')
-    console.log(triggers[triggers.length - 1]);
 
     let instructionCards = triggers.map((trigger, i) => {
         let extractActiveFields = (t: Trigger) => {
