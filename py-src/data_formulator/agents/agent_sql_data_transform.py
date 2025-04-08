@@ -2,28 +2,25 @@
 # Licensed under the MIT License.
 
 import json
-import sys
 
-from data_formulator.agents.agent_utils import extract_json_objects, generate_data_summary, extract_code_from_gpt_response
-import data_formulator.py_sandbox as py_sandbox
+from data_formulator.agents.agent_utils import extract_json_objects, extract_code_from_gpt_response
+import pandas as pd
 
-import traceback
-
-import logging
+import logging 
 
 # Replace/update the logger configuration
 logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = '''You are a data scientist to help user to transform data that will be used for visualization.
-The user will provide you information about what data would be needed, and your job is to create a python function based on the input data summary, transformation instruction and expected fields.
+The user will provide you information about what data would be needed, and your job is to create a sql query based on the input data summary, transformation instruction and expected fields.
 The users' instruction includes "expected fields" that the user want for visualization, and natural language instructions "goal" that describe what data is needed.
 
 **Important:**
 - NEVER make assumptions or judgments about a person's gender, biological sex, sexuality, religion, race, nationality, ethnicity, political stance, socioeconomic status, mental health, invisible disabilities, medical conditions, personality type, social impressions, emotional state, and cognitive state.
 - NEVER create formulas that could be used to discriminate based on age. Ageism of any form (explicit and implicit) is strictly prohibited.
-- If above issue occurs, generate columns with np.nan.
+- If above issue occurs, generate columns with NULL.
 
-Concretely, you should first refine users' goal and then create a python function in the [OUTPUT] section based off the [CONTEXT] and [GOAL]:
+Concretely, you should first refine users' goal and then create a sql query in the [OUTPUT] section based off the [CONTEXT] and [GOAL]:
 
     1. First, refine users' [GOAL]. The main objective in this step is to check if "visualization_fields" provided by the user are sufficient to achieve their "goal". Concretely:
         (1) based on the user's "goal", elaborate the goal into a "detailed_instruction".
@@ -45,27 +42,14 @@ Concretely, you should first refine users' goal and then create a python functio
 }
 ```
 
-    2. Then, write a python function based on the refined goal, the function input is a dataframe "df" (or multiple dataframes based on tables presented in the [CONTEXT] section) and the output is the transformed dataframe "transformed_df". "transformed_df" should contain all "output_fields" from the refined goal.
-The python function must follow the template provided in [TEMPLATE], do not import any other libraries or modify function name. The function should be as simple as possible and easily readable.
-If there is no data transformation needed based on "output_fields", the transformation function can simply "return df".
+    2. Then, write a sql query based on the refined goal, the query input are table (or multiple tables presented in the [CONTEXT] section) and the output is the desired table. The output table should contain all "output_fields" from the refined goal.
+The query should be as simple as possible and easily readable. If there is no data transformation needed based on "output_fields", the transformation function can simply "SELECT * FROM table".
+note:
+    - the sql query should be written in the style of duckdb.
 
-[TEMPLATE]
-
-```python
-import pandas as pd
-import collections
-import numpy as np
-
-def transform_data(df1, df2, ...): 
-    # complete the template here
-    return transformed_df
-```
-
-note: 
-- if the user provided one table, then it should be def transform_data(df1), if the user provided multiple tables, then it should be def transform_data(df1, df2, ...) and you should consider the join between tables to derive the output.
-- try to use table names to refer to the input dataframes, for example, if the user provided two tables city and weather, you can use `transform_data(df_city, df_weather)` to refer to the two dataframes.
-
-    3. The [OUTPUT] must only contain a json object representing the refined goal (including "detailed_instruction", "output_fields", "visualization_fields" and "reason") and a python code block representing the transformation code, do not add any extra text explanation.
+    3. The [OUTPUT] must only contain two items:
+        - a json object (wrapped in ```json```) representing the refined goal (including "detailed_instruction", "output_fields", "visualization_fields" and "reason")
+        - a sql query block (wrapped in ```sql```) representing the transformation code, do not add any extra text explanation.
 '''
 
 EXAMPLE='''
@@ -164,43 +148,116 @@ table_0 (weather_seattle_atlanta) sample:
     "reason": "To compare Seattle and Atlanta temperatures with Seattle temperatures on the x-axis and Atlanta temperatures on the y-axis, and color points by which city is warmer, separate temperature fields for Seattle and Atlanta are required. Additionally, a new field 'Warmer City' is needed to indicate which city is warmer."  
 }  
 
-```python
-import pandas as pd  
-import collections  
-import numpy as np  
-  
-def transform_data(df):  
-    # Pivot the dataframe to have separate columns for Seattle and Atlanta temperatures  
-    df_pivot = df.pivot(index='Date', columns='City', values='Temperature').reset_index()  
-    df_pivot.columns = ['Date', 'Atlanta Temperature', 'Seattle Temperature']  
-      
-    # Determine which city is warmer for each date  
-    df_pivot['Warmer City'] = df_pivot.apply(lambda row: 'Atlanta' if row['Atlanta Temperature'] > row['Seattle Temperature'] else 'Seattle', axis=1)  
-      
-    # Select the output fields  
-    transformed_df = df_pivot[['Date', 'Seattle Temperature', 'Atlanta Temperature', 'Warmer City']]  
-      
-    return transformed_df 
+```sql
+WITH MovingAverage AS (  
+    SELECT   
+        Date,  
+        Cases,  
+        AVG(Cases) OVER (ORDER BY Date ROWS BETWEEN 6 PRECEDING AND CURRENT ROW) AS "7-day average cases"  
+    FROM us_covid_cases  
+)  
+SELECT Date, "7-day average cases"  
+FROM MovingAverage;  
 ```
 '''
 
-def completion_response_wrapper(client, messages, n):
-    ### wrapper for completion response, especially handling errors
-    try:
-        response = client.get_completion(messages = messages)
-    except Exception as e:
-        response = e
-
-    return response
 
 
-class DataTransformationAgentV2(object):
+def get_sql_table_statistics_str(conn, table_name: str) -> str:
 
-    def __init__(self, client, system_prompt=None):
+    # Get column information
+    columns = conn.execute(f"DESCRIBE {table_name}").fetchall()
+    sample_data = conn.execute(f"SELECT * FROM {table_name} LIMIT 5").fetchall()
+    
+    # Format sample data as pipe-separated string
+    col_names = [col[0] for col in columns]
+    formatted_sample_data = "| " + " | ".join(col_names) + " |\n"
+    for i, row in enumerate(sample_data):
+        formatted_sample_data += f"{i}| " + " | ".join(str(val) for val in row) + " |\n"
+    
+    col_metadata_list = []
+    for col in columns:
+        col_name = col[0]
+        col_type = col[1]
+        
+        # Properly quote column names to avoid SQL keywords issues
+        quoted_col_name = f'"{col_name}"'
+        
+        # Basic stats query
+        stats_query = f"""
+        SELECT 
+            COUNT(*) as count,
+            COUNT(DISTINCT {quoted_col_name}) as unique_count,
+            COUNT(*) - COUNT({quoted_col_name}) as null_count
+        FROM {table_name}
+        """
+        
+        # Add numeric stats if applicable
+        if col_type in ['INTEGER', 'DOUBLE', 'DECIMAL']:
+            stats_query = f"""
+            SELECT 
+                COUNT(*) as count,
+                COUNT(DISTINCT {quoted_col_name}) as unique_count,
+                COUNT(*) - COUNT({quoted_col_name}) as null_count,
+                MIN({quoted_col_name}) as min_value,
+                MAX({quoted_col_name}) as max_value,
+                AVG({quoted_col_name}) as avg_value
+            FROM {table_name}
+            """
+        
+        col_stats = conn.execute(stats_query).fetchone()
+        
+        # Create a dictionary with appropriate keys based on column type
+        if col_type in ['INTEGER', 'DOUBLE', 'DECIMAL']:
+            stats_dict = dict(zip(
+                ["count", "unique_count", "null_count", "min", "max", "avg"],
+                col_stats
+            ))
+        else:
+            stats_dict = dict(zip(
+                ["count", "unique_count", "null_count"],
+                col_stats
+            ))
+
+            # Combined query for top 4 and bottom 3 values using UNION ALL
+            query_for_sample_values = f"""
+            (SELECT DISTINCT {quoted_col_name}
+                FROM {table_name} 
+                WHERE {quoted_col_name} IS NOT NULL 
+                LIMIT 5)
+            """
+            
+            sample_values = conn.execute(query_for_sample_values).fetchall()
+            
+            stats_dict['sample_values'] = sample_values
+
+        col_metadata_list.append({
+            "column": col_name,
+            "type": col_type,
+            "statistics": stats_dict,
+        })
+
+    table_metadata = {
+        "column_metadata": col_metadata_list,
+        "sample_data_str": formatted_sample_data
+    }
+
+    table_summary_str = f"Column metadata:\n\n"
+    for col_metadata in table_metadata['column_metadata']:
+        table_summary_str += f"\t{col_metadata['column']} ({col_metadata['type']}) ---- {col_metadata['statistics']}\n"
+    table_summary_str += f"\n\nSample data:\n\n{table_metadata['sample_data_str']}\n"
+
+    return table_summary_str
+
+class SQLDataTransformationAgent(object):
+
+    def __init__(self, client, conn, system_prompt=None):
         self.client = client
+        self.conn = conn # duckdb connection
         self.system_prompt = system_prompt if system_prompt is not None else SYSTEM_PROMPT
 
-    def process_gpt_response(self, input_tables, messages, response):
+
+    def process_gpt_sql_response(self, response, messages):
         """process gpt response to handle execution"""
 
         #log = {'messages': messages, 'response': response.model_dump(mode='json')}
@@ -213,7 +270,7 @@ class DataTransformationAgentV2(object):
         
         candidates = []
         for choice in response.choices:
-            logger.info("=== Data transformation result ===>")
+            logger.info("=== SQL query result ===>")
             logger.info(choice.message.content + "\n")
             
             json_blocks = extract_json_objects(choice.message.content + "\n")
@@ -222,30 +279,31 @@ class DataTransformationAgentV2(object):
             else:
                 refined_goal = {'visualization_fields': [], 'instruction': '', 'reason': ''}
 
-            code_blocks = extract_code_from_gpt_response(choice.message.content + "\n", "python")
+            query_blocks = extract_code_from_gpt_response(choice.message.content + "\n", "sql")
 
-            if len(code_blocks) > 0:
-                code_str = code_blocks[-1]
+            if len(query_blocks) > 0:
+                query_str = query_blocks[-1]
 
                 try:
-                    result = py_sandbox.run_transform_in_sandbox2020(code_str, [t['rows'] for t in input_tables])
-                    result['code'] = code_str
+                    query_output = self.conn.execute(query_str).fetch_df()
+                
+                    result = {
+                        "status": "ok",
+                        "code": query_str,
+                        "content": query_output.to_dict('records'),
+                    }
 
-                    if result['status'] == 'ok':
-                        # parse the content
-                        result['content'] = json.loads(result['content'])
-                    else:
-                        logger.info(result['content'])
                 except Exception as e:
                     logger.warning('Error occurred during code execution:')
                     error_message = f"An error occurred during code execution. Error type: {type(e).__name__}"
                     logger.warning(error_message)
-                    result = {'status': 'error', 'code': code_str, 'content': error_message}
+                    result = {'status': 'error', 'code': query_str, 'content': error_message}
+
             else:
                 result = {'status': 'error', 'code': "", 'content': "No code block found in the response. The model is unable to generate code to complete the task."}
             
             result['dialog'] = [*messages, {"role": choice.message.role, "content": choice.message.content}]
-            result['agent'] = 'DataTransformationAgent'
+            result['agent'] = 'SQLDataTransformationAgent'
             result['refined_goal'] = refined_goal
             candidates.append(result)
 
@@ -261,6 +319,30 @@ class DataTransformationAgentV2(object):
 
 
     def run(self, input_tables, description, expected_fields: list[str], prev_messages: list[dict] = [], n=1):
+        """Args:
+            input_tables: list[dict], each dict contains 'name' and 'rows'
+            description: str, the description of the data transformation
+            expected_fields: list[str], the expected fields of the data transformation
+            prev_messages: list[dict], the previous messages
+            n: int, the number of candidates
+        """
+
+        for table in input_tables:
+            table_name = table['name']
+            # Check if table exists in the connection
+            try:
+                self.conn.execute(f"DESCRIBE {table_name}")
+            except Exception:
+                # Table doesn't exist, create it from the dataframe
+                df = pd.DataFrame(table['rows'])
+                # Register the dataframe as a temporary view
+                self.conn.register(f'df_temp_{table_name}', df)
+                # Create a permanent table from the temporary view
+                self.conn.execute(f"CREATE VIEW {table_name} AS SELECT * FROM df_temp_{table_name}")
+                # Drop the temporary view
+                self.conn.execute(f"DROP VIEW df_temp_{table_name}")
+                # Log the creation of the table
+                logger.info(f"Created table {table_name} from dataframe")
 
         if len(prev_messages) > 0:
             logger.info("=== Previous messages ===>")
@@ -271,14 +353,19 @@ class DataTransformationAgentV2(object):
             logger.info(formatted_prev_messages)
             prev_messages = [{"role": "user", "content": '[Previous Messages] Here are the previous messages for your reference:\n\n' + formatted_prev_messages}]
 
-        data_summary = generate_data_summary(input_tables, include_data_samples=True)
+        data_summary = ""
+        for table in input_tables:
+            table_summary_str = get_sql_table_statistics_str(self.conn, table['name'])
+           
+
+            data_summary += f"[TABLE {table['name']}]\n\n{table_summary_str}\n\n"
 
         goal = {
             "instruction": description,
             "visualization_fields": expected_fields
         }
 
-        user_query = f"[CONTEXT]\n\n{data_summary}\n\n[GOAL]\n\n{json.dumps(goal, indent=4)}\n\n[OUTPUT]\n"
+        user_query = f"[CONTEXT]\n\n{data_summary}[GOAL]\n\n{json.dumps(goal, indent=4)}\n\n[OUTPUT]\n"
 
         logger.info(user_query)
 
@@ -286,9 +373,9 @@ class DataTransformationAgentV2(object):
                     *prev_messages,
                     {"role":"user","content": user_query}]
         
-        response = completion_response_wrapper(self.client, messages, n)
+        response = self.client.get_completion(messages = messages)
 
-        return self.process_gpt_response(input_tables, messages, response)
+        return self.process_gpt_sql_response(response, messages)
         
 
     def followup(self, input_tables, dialog, output_fields: list[str], new_instruction: str, n=1):
@@ -306,8 +393,8 @@ class DataTransformationAgentV2(object):
         updated_dialog = [{"role":"system", "content": self.system_prompt}, *dialog[1:]]
 
         messages = [*updated_dialog, {"role":"user", 
-                              "content": f"Update the code above based on the following instruction:\n\n{json.dumps(goal, indent=4)}"}]
+                              "content": f"Update the sql query above based on the following instruction:\n\n{json.dumps(goal, indent=4)}"}]
 
-        response = completion_response_wrapper(self.client, messages, n)
+        response = self.client.get_completion(messages = messages)
 
-        return self.process_gpt_response(input_tables, messages, response)
+        return self.process_gpt_sql_response(response, messages)

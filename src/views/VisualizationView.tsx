@@ -221,7 +221,7 @@ export let checkChartAvailability = (chart: Chart, conceptShelfItems: FieldItem[
     let visFieldIds = Object.keys(chart.encodingMap).filter(key => chart.encodingMap[key as keyof EncodingMap].fieldID != undefined).map(key => chart.encodingMap[key as keyof EncodingMap].fieldID);
     let visFields = conceptShelfItems.filter(f => visFieldIds.includes(f.id));
     let visBaseFields = visFields.map(f => f.source == "derived" ? findBaseFields(f, conceptShelfItems).flat() : [f]).flat();
-    return visBaseFields.every(f => tableRows.map(row => row[f.name]).every(value => value != undefined));
+    return visBaseFields.length > 0 && tableRows.length > 0 && visBaseFields.every(f => Object.keys(tableRows[0]).includes(f.name));
 }
 
 export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
@@ -303,14 +303,14 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
     }   
 
     useEffect(() => {
-        if (table.virtual && dataFieldsAllAvailable) {
+        if (table.virtual && visBaseFields.length > 0 && dataFieldsAllAvailable) {
             sampleDisplayRows();
         }
     }, [])
 
     useEffect(() => {
         let existingFields = rowsToDisplay.length > 0 ? Object.keys(rowsToDisplay[0]) : [];
-        if (dataFieldsAllAvailable && visBaseFields.filter(f => !existingFields.includes(f.name)).length > 0) {
+        if (visBaseFields.length > 0 && dataFieldsAllAvailable && visBaseFields.filter(f => !existingFields.includes(f.name)).length > 0) {
             // table changed, we need to update the rows to display
             if (table.virtual) {
                 // virtual table, we need to sample the table

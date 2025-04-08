@@ -420,45 +420,57 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
             new_fields: activeBaseFields.map(f => { return {name: f.name} }),
             extra_prompt: instruction,
             model: activeModel,
-            max_repair_attempts: config.maxRepairAttempts
+            max_repair_attempts: config.maxRepairAttempts,
+            language: actionTables.some(t => t.virtual) ? "sql" : "python"
         }) 
-        let engine = getUrls().SERVER_DERIVE_DATA_URL;
+
+        let engine = getUrls().DERIVE_DATA;
 
         if (currentTable.derive?.dialog && !currentTable.anchored) {
-                let sourceTableIds = currentTable.derive?.source;
+            let sourceTableIds = currentTable.derive?.source;
 
-                // Compare if source and base table IDs are different
-                if (!sourceTableIds.every(id => actionTableIds.includes(id)) || 
-                    !actionTableIds.every(id => sourceTableIds.includes(id))) {
-                    
-                    let additionalMessages = currentTable.derive.dialog;
+            console.log("I'm here I'm here");
 
-                    // in this case, because table ids has changed, we need to use the additional messages and reformulate
-                    messageBody = JSON.stringify({
-                        token: token,
-                        mode,
-                        input_tables: actionTables.map(t => {return { name: t.id.replace(/\.[^/.]+$/ , ""), rows: t.rows }}),
-                        new_fields: activeBaseFields.map(f => { return {name: f.name} }),
-                        extra_prompt: instruction,
-                        model: activeModel,
-                        additional_messages: additionalMessages,
-                        max_repair_attempts: config.maxRepairAttempts
-                    });
-                    engine = getUrls().SERVER_DERIVE_DATA_URL;
-                } else {
-                    messageBody = JSON.stringify({
-                        token: token,
-                        mode,
-                        input_tables: actionTables.map(t => {return { name: t.id.replace(/\.[^/.]+$/ , ""), rows: t.rows }}),
-                        output_fields: activeBaseFields.map(f => { return {name: f.name} }),
-                        dialog: currentTable.derive?.dialog,
-                        new_instruction: instruction,
-                        model: activeModel,
-                        max_repair_attempts: config.maxRepairAttempts
-                    })
-                    engine = getUrls().SERVER_REFINE_DATA_URL;
-                }
+            // Compare if source and base table IDs are different
+            if (!sourceTableIds.every(id => actionTableIds.includes(id)) || 
+                !actionTableIds.every(id => sourceTableIds.includes(id))) {
+                
+                console.log("I'm here I'm here branch 1");
+                console.log(actionTables);
+
+                let additionalMessages = currentTable.derive.dialog;
+
+                // in this case, because table ids has changed, we need to use the additional messages and reformulate
+                messageBody = JSON.stringify({
+                    token: token,
+                    mode,
+                    input_tables: actionTables.map(t => {return { name: t.id.replace(/\.[^/.]+$/ , ""), rows: t.rows }}),
+                    new_fields: activeBaseFields.map(f => { return {name: f.name} }),
+                    extra_prompt: instruction,
+                    model: activeModel,
+                    additional_messages: additionalMessages,
+                    max_repair_attempts: config.maxRepairAttempts,
+                    language: actionTables.some(t => t.virtual) ? "sql" : "python"
+                });
+                engine = getUrls().DERIVE_DATA;
+            } else {
+                console.log("I'm here I'm here branch 2");
+                messageBody = JSON.stringify({
+                    token: token,
+                    mode,
+                    input_tables: actionTables.map(t => {return { name: t.id.replace(/\.[^/.]+$/ , ""), rows: t.rows }}),
+                    output_fields: activeBaseFields.map(f => { return {name: f.name} }),
+                    dialog: currentTable.derive?.dialog,
+                    new_instruction: instruction,
+                    model: activeModel,
+                    max_repair_attempts: config.maxRepairAttempts,
+                    language: actionTables.some(t => t.virtual) ? "sql" : "python"
+                })
+                engine = getUrls().REFINE_DATA;
+            } 
             
+            console.log("engine");
+            console.log(engine);
         }
 
         let message = {
@@ -481,6 +493,9 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                 
                 dispatch(dfActions.changeChartRunningStatus({chartId, status: false}))
 
+                console.log("response data");
+                console.log(data);
+
                 if (data.results.length > 0) {
                     if (data["token"] == token) {
                         let candidates = data["results"].filter((item: any) => {
@@ -490,6 +505,11 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                         if (candidates.length == 0) {
                             let errorMessage = data.results[0].content;
                             let code = data.results[0].code;
+
+                            console.log("code");
+                            console.log(code);
+                            console.log("error message");
+                            console.log(errorMessage);
 
                             dispatch(dfActions.addMessages({
                                 "timestamp": Date.now(),

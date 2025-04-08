@@ -217,11 +217,14 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
             new_fields: activeBaseFields.map(f => { return {name: f.name} }),
             extra_prompt: prompt,
             model: activeModel,
-            max_repair_attempts: config.maxRepairAttempts
+            max_repair_attempts: config.maxRepairAttempts,
+            language: baseTables.some(t => t.virtual) ? "sql" : "python"
         }) 
-        let engine = getUrls().SERVER_DERIVE_DATA_URL;
+
+        let engine = getUrls().DERIVE_DATA;
 
         if (triggerTable.derive?.dialog && !triggerTable.anchored) {
+            // make this compact by directly adding previous dialog as part of the message (as opposed to use refine_data)
             messageBody = JSON.stringify({
                 token: token,
                 mode,
@@ -230,20 +233,9 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
                 extra_prompt: prompt,
                 additional_messages: triggerTable.derive?.dialog,
                 model: activeModel,
-                max_repair_attempts: config.maxRepairAttempts
+                max_repair_attempts: config.maxRepairAttempts,
+                language: baseTables.some(t => t.virtual) ? "sql" : "python"
             }) 
-            engine = getUrls().SERVER_DERIVE_DATA_URL;
-            // messageBody = JSON.stringify({
-            //     token: token,
-            //     mode,
-            //     input_tables: baseTables.map(t => {return { name: t.id.replace(/\.[^/.]+$/ , ""), rows: t.rows }}),
-            //     output_fields: activeBaseFields.map(f => { return {name: f.name } }),
-            //     dialog: triggerTable.derive?.dialog,
-            //     new_instruction: prompt,
-            //     model: activeModel,
-            //     max_repair_attempts: config.maxRepairAttempts
-            // })
-            //engine = getUrls().SERVER_REFINE_DATA_URL;
         }
 
         let message = {

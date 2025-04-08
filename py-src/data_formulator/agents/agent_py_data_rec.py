@@ -4,7 +4,6 @@
 import json
 
 from data_formulator.agents.agent_utils import extract_json_objects, generate_data_summary, extract_code_from_gpt_response
-from data_formulator.agents.agent_data_transform_v2 import completion_response_wrapper
 
 import data_formulator.py_sandbox as py_sandbox
 
@@ -128,7 +127,7 @@ def transform_data(df):
 ```
 """
 
-class DataRecAgent(object):
+class PythonDataRecAgent(object):
 
     def __init__(self, client, system_prompt=None):
         self.client = client
@@ -177,7 +176,7 @@ class DataRecAgent(object):
                 result = {'status': 'error', 'code': "", 'content': "No code block found in the response. The model is unable to generate code to complete the task."}
             
             result['dialog'] = [*messages, {"role": choice.message.role, "content": choice.message.content}]
-            result['agent'] = 'DataRecAgent'
+            result['agent'] = 'PythonDataRecAgent'
             result['refined_goal'] = refined_goal
             candidates.append(result)
 
@@ -203,7 +202,7 @@ class DataRecAgent(object):
         messages = [{"role":"system", "content": self.system_prompt},
                     {"role":"user","content": user_query}]
         
-        response = completion_response_wrapper(self.client, messages, n)
+        response = self.client.get_completion(messages = messages)
         
         return self.process_gpt_response(input_tables, messages, response)
         
@@ -215,6 +214,6 @@ class DataRecAgent(object):
 
         messages = [*dialog, {"role":"user", "content": f"Update: \n\n{new_instruction}"}]
 
-        response = completion_response_wrapper(self.client, messages, n)
+        response = self.client.get_completion(messages = messages)
 
         return self.process_gpt_response(input_tables, messages, response)

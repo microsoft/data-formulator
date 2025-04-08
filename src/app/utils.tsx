@@ -36,8 +36,7 @@ export function getUrls() {
         DERIVE_CONCEPT_URL: `/api/derive-concept-request`,
         SORT_DATA_URL: `/api/codex-sort-request`,
         CLEAN_DATA_URL: `/api/clean-data`,
-        SERVER_DERIVE_DATA_URL: `/api/derive-data`,
-        SERVER_REFINE_DATA_URL: `/api/refine-data`,
+        
         CODE_EXPL_URL: `/api/code-expl`,
         SERVER_PROCESS_DATA_ON_LOAD: `/api/process-data-on-load`,
 
@@ -59,6 +58,9 @@ export function getUrls() {
         ANALYZE_TABLE: `/api/tables/analyze`,
         QUERY_TABLE: `/api/tables/query`,
         SAMPLE_TABLE: `/api/tables/sample-table`,
+
+        DERIVE_DATA: `/api/derive-data`,
+        REFINE_DATA: `/api/refine-data`,
     };
 }
 

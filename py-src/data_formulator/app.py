@@ -27,8 +27,10 @@ from pathlib import Path
 from vega_datasets import data as vega_data
 
 from data_formulator.agents.agent_concept_derive import ConceptDeriveAgent
-from data_formulator.agents.agent_data_transform_v2 import DataTransformationAgentV2
-from data_formulator.agents.agent_data_rec import DataRecAgent
+from data_formulator.agents.agent_py_data_transform import PythonDataTransformationAgent
+from data_formulator.agents.agent_sql_data_transform import SQLDataTransformationAgent
+from data_formulator.agents.agent_py_data_rec import PythonDataRecAgent
+from data_formulator.agents.agent_sql_data_rec import SQLDataRecAgent
 
 from data_formulator.agents.agent_sort_data import SortDataAgent
 from data_formulator.agents.agent_data_load import DataLoadAgent
@@ -45,7 +47,6 @@ from data_formulator.db_manager import db_manager
 APP_ROOT = Path(os.path.join(Path(__file__).parent)).absolute()
 
 import os
-import tempfile
 
 app = Flask(__name__, static_url_path='', static_folder=os.path.join(APP_ROOT, "dist"))
 app.secret_key = secrets.token_hex(16)  # Generate a random secret key for sessions
@@ -410,7 +411,6 @@ def sort_data_request():
     response.headers.add('Access-Control-Allow-Origin', '*')
     return response
 
-
 @app.route('/api/derive-data', methods=['GET', 'POST'])
 def derive_data():
 
@@ -425,7 +425,8 @@ def derive_data():
         input_tables = content["input_tables"]
         new_fields = content["new_fields"]
         instruction = content["extra_prompt"]
-
+        language = content.get("language", "python") # whether to use sql or python, default to python
+        
         max_repair_attempts = content["max_repair_attempts"] if "max_repair_attempts" in content else 1
 
         if "additional_messages" in content:
@@ -446,12 +447,14 @@ def derive_data():
         if len(new_fields) == 0:
             mode = "recommendation"
 
+        conn = db_manager.get_connection(session['session_id']) if language == "sql" else None
+
         if mode == "recommendation":
             # now it's in recommendation mode
-            agent = DataRecAgent(client=client)
+            agent = SQLDataRecAgent(client=client, conn=conn) if language == "sql" else PythonDataRecAgent(client=client)
             results = agent.run(input_tables, instruction)
         else:
-            agent = DataTransformationAgentV2(client=client)
+            agent = SQLDataTransformationAgent(client=client, conn=conn) if language == "sql" else PythonDataTransformationAgent(client=client)
             results = agent.run(input_tables, instruction, [field['name'] for field in new_fields], prev_messages)
 
         repair_attempts = 0
@@ -468,6 +471,9 @@ def derive_data():
 
             repair_attempts += 1
         
+        if conn:
+            conn.close()
+        
         response = flask.jsonify({ "token": token, "status": "ok", "results": results })
     else:
         response = flask.jsonify({ "token": "", "status": "error", "results": [] })
@@ -483,6 +489,7 @@ def refine_data():
         content = request.get_json()        
         token = content["token"]
 
+
         client = get_client(content['model'])
 
         # each table is a dict with {"name": xxx, "rows": [...]}
@@ -490,8 +497,9 @@ def refine_data():
         output_fields = content["output_fields"]
         dialog = content["dialog"]
         new_instruction = content["new_instruction"]
-        max_repair_attempts = content["max_repair_attempts"] if "max_repair_attempts" in content else 1
-        
+        max_repair_attempts = content.get("max_repair_attempts", 1)
+        language = content.get("language", "python") # whether to use sql or python, default to python
+
         logger.info("== input tables ===>")
         for table in input_tables:
             logger.info(f"===> Table: {table['name']} (first 5 rows)")
@@ -501,8 +509,10 @@ def refine_data():
         logger.info(output_fields)
         logger.info(new_instruction)
 
+        conn = db_manager.get_connection(session['session_id']) if language == "sql" else None
+
         # always resort to the data transform agent       
-        agent = DataTransformationAgentV2(client=client)
+        agent = SQLDataTransformationAgent(client=client, conn=conn) if language == "sql" else PythonDataTransformationAgent(client=client)
         results = agent.followup(input_tables, dialog, [field['name'] for field in output_fields], new_instruction)
 
         repair_attempts = 0
@@ -514,12 +524,17 @@ def refine_data():
             results = agent.followup(input_tables, prev_dialog, [field['name'] for field in output_fields], new_instruction)
             repair_attempts += 1
 
+        if conn:
+            conn.close()
+
         response = flask.jsonify({ "token": token, "status": "ok", "results": results})
     else:
         response = flask.jsonify({ "token": "", "status": "error", "results": []})
 
     response.headers.add('Access-Control-Allow-Origin', '*')
     return response
+
+
 
 @app.route('/api/code-expl', methods=['GET', 'POST'])
 def request_code_expl():

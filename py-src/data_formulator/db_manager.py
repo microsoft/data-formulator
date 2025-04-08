@@ -17,14 +17,14 @@ class DuckDBManager:
         """Get a DuckDB connection as a context manager that will be closed when exiting the context"""
         conn = None
         try:
-            conn = self._get_connection(session_id)
+            conn = self.get_connection(session_id)
             yield conn
         finally:
             # Close the connection after use
             if conn:
                 conn.close()
     
-    def _get_connection(self, session_id: str) -> duckdb.DuckDBPyConnection:
+    def get_connection(self, session_id: str) -> duckdb.DuckDBPyConnection:
         """Internal method to get or create a DuckDB connection for a session"""
         # Get or create the db file path for this session
         if session_id not in self._db_files:

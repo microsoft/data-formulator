@@ -293,7 +293,12 @@ const ResetDialog: React.FC = () => {
                     <Button 
                         onClick={() => { 
                             dispatch(dfActions.resetState()); 
-                            setOpen(false); 
+                            setOpen(false);
+                            
+                            // Add a delay to ensure the state has been reset before reloading
+                            setTimeout(() => {
+                                window.location.reload();
+                            }, 250); // 250ms should be enough for state update
                         }} 
                         endIcon={<PowerSettingsNewIcon />}
                     >
