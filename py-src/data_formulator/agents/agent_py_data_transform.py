@@ -221,7 +221,9 @@ class PythonDataTransformationAgent(object):
 
                     if result['status'] == 'ok':
                         # parse the content
-                        result['content'] = json.loads(result['content'])
+                        result['content'] = {
+                            'rows': json.loads(result['content']),
+                        }
                     else:
                         logger.info(result['content'])
                 except Exception as e:

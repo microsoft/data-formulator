@@ -292,8 +292,8 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
             .then(response => response.json())
             .then(data => {
                 console.log("sampled table", data.rows.length)
-                setRowsToDisplay(createVisTableRows(data.rows));
                 setFetchingDataInProgress(false);
+                setRowsToDisplay(createVisTableRows(data.rows));
             })
             .catch(error => {
                 console.error('Error sampling table:', error);

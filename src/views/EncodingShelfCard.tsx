@@ -416,7 +416,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
         let messageBody = JSON.stringify({
             token: token,
             mode,
-            input_tables: actionTables.map(t => {return { name: t.id.replace(/\.[^/.]+$/ , ""), rows: t.rows }}),
+            input_tables: actionTables.map(t => {return { name: t.virtual?.tableId || t.id.replace(/\.[^/.]+$/ , ""), rows: t.rows }}),
             new_fields: activeBaseFields.map(f => { return {name: f.name} }),
             extra_prompt: instruction,
             model: activeModel,
@@ -444,7 +444,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                 messageBody = JSON.stringify({
                     token: token,
                     mode,
-                    input_tables: actionTables.map(t => {return { name: t.id.replace(/\.[^/.]+$/ , ""), rows: t.rows }}),
+                    input_tables: actionTables.map(t => {return { name: t.virtual?.tableId || t.id.replace(/\.[^/.]+$/ , ""), rows: t.rows }}),
                     new_fields: activeBaseFields.map(f => { return {name: f.name} }),
                     extra_prompt: instruction,
                     model: activeModel,
@@ -458,7 +458,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                 messageBody = JSON.stringify({
                     token: token,
                     mode,
-                    input_tables: actionTables.map(t => {return { name: t.id.replace(/\.[^/.]+$/ , ""), rows: t.rows }}),
+                    input_tables: actionTables.map(t => {return { name: t.virtual?.tableId || t.id.replace(/\.[^/.]+$/ , ""), rows: t.rows }}),
                     output_fields: activeBaseFields.map(f => { return {name: f.name} }),
                     dialog: currentTable.derive?.dialog,
                     new_instruction: instruction,
@@ -481,6 +481,9 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
             body: messageBody,
         };
 
+        console.log("message");
+        console.log(JSON.parse(messageBody));
+
         dispatch(dfActions.changeChartRunningStatus({chartId, status: true}));
 
         // timeout the request after 30 seconds
@@ -499,17 +502,12 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                 if (data.results.length > 0) {
                     if (data["token"] == token) {
                         let candidates = data["results"].filter((item: any) => {
-                            return item["status"] == "ok" && item["content"].length > 0 
+                            return item["status"] == "ok"  
                         });
 
                         if (candidates.length == 0) {
                             let errorMessage = data.results[0].content;
                             let code = data.results[0].code;
-
-                            console.log("code");
-                            console.log(code);
-                            console.log("error message");
-                            console.log(errorMessage);
 
                             dispatch(dfActions.addMessages({
                                 "timestamp": Date.now(),
@@ -549,16 +547,28 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                         
                             // PART 2: create new table (or override table)
                             let candidate = candidates[0];
+                            let code = candidate["code"];
+                            let rows = candidate["content"]["rows"];
+                            let dialog = candidate["dialog"];
 
                             let candidateTable = createDictTable(
                                 candidateTableId, 
-                                candidate["content"], 
-                                { code: candidate["code"], 
+                                rows, 
+                                { code: code, 
                                     codeExpl: "",
                                     source: actionTableIds, 
-                                    dialog: candidate["dialog"], 
+                                    dialog: dialog, 
                                     trigger: currentTrigger }
                             )
+                            if (candidate["content"]["virtual"] != null) {
+                                candidateTable.virtual = {
+                                    tableId: candidate["content"]["virtual"]["table_name"],
+                                    rowCount: candidate["content"]["virtual"]["row_count"]
+                                };
+                            }
+
+                            console.log("candidateTable");  
+                            console.log(candidateTable);
 
                             if (overrideTableId) {
                                 dispatch(dfActions.overrideDerivedTables(candidateTable));

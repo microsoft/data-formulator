@@ -68,7 +68,8 @@ import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import ContentPasteIcon from '@mui/icons-material/ContentPaste';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 import DownloadIcon from '@mui/icons-material/Download';
-import { DBTableManager } from '../views/DBTableManager';
+import { DBTableManager, DBTableSelectionDialog } from '../views/DBTableManager';
+import CloudQueueIcon from '@mui/icons-material/CloudQueue';
 
 const AppBar = styled(MuiAppBar)(({ theme }) => ({
     color: 'black',
@@ -557,12 +558,13 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
                     {switchers}
                 </Box>
                 <Box sx={{ display: 'flex', fontSize: 14 }}>
-                    {/* <Button variant="text" href={"/about"}  sx={{display: "flex", flexDirection: "row", 
-                            "&:hover": { textDecoration: "underline" }}}>
-                        about
-                    </Button>
-                    <Divider orientation="vertical" variant="middle" flexItem /> */}
                     <ConfigDialog />
+                    <Divider orientation="vertical" variant="middle" flexItem />
+                    <DBTableSelectionDialog buttonElement={
+                        <Typography sx={{ display: 'flex', fontSize: 14, alignItems: 'center', gap: 1, textTransform: 'none' }}>
+                            <CloudQueueIcon fontSize="small" /> View Database
+                        </Typography>
+                    } />
                     <Divider orientation="vertical" variant="middle" flexItem />
                     <ModelSelectionButton />
                     <Divider orientation="vertical" variant="middle" flexItem />

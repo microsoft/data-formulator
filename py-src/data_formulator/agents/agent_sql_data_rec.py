@@ -6,8 +6,6 @@ import json
 from data_formulator.agents.agent_utils import extract_json_objects, extract_code_from_gpt_response
 from data_formulator.agents.agent_sql_data_transform import get_sql_table_statistics_str
 
-import data_formulator.py_sandbox as py_sandbox
-
 import traceback
 
 
@@ -160,7 +158,9 @@ class SQLDataRecAgent(object):
                     result = {
                         "status": "ok",
                         "code": code_str,
-                        "content": query_output.to_dict('records'),
+                        "content": {
+                            'rows': query_output.to_dict('records'),
+                        },
                     }
                 except Exception as e:
                     logger.warning('other error:')

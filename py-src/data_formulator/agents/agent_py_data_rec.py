@@ -164,7 +164,9 @@ class PythonDataRecAgent(object):
                     result['code'] = code_str
 
                     if result['status'] == 'ok':
-                        result['content'] = json.loads(result['content'])
+                        result['content'] = {
+                            'rows': json.loads(result['content']),
+                        }
                     else:
                         logger.info(result['content'])
                 except Exception as e:

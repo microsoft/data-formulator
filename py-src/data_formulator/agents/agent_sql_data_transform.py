@@ -2,6 +2,9 @@
 # Licensed under the MIT License.
 
 import json
+import time
+import random
+import string
 
 from data_formulator.agents.agent_utils import extract_json_objects, extract_code_from_gpt_response
 import pandas as pd
@@ -161,7 +164,177 @@ FROM MovingAverage;
 ```
 '''
 
+class SQLDataTransformationAgent(object):
 
+    def __init__(self, client, conn, system_prompt=None):
+        self.client = client
+        self.conn = conn # duckdb connection
+        self.system_prompt = system_prompt if system_prompt is not None else SYSTEM_PROMPT
+
+
+    def process_gpt_sql_response(self, response, messages):
+        """process gpt response to handle execution"""
+
+        #log = {'messages': messages, 'response': response.model_dump(mode='json')}
+        #logger.info("=== prompt_filter_results ===>")
+        #logger.info(response.prompt_filter_results)
+
+        if isinstance(response, Exception):
+            result = {'status': 'other error', 'content': str(response.body)}
+            return [result]
+        
+        candidates = []
+        for choice in response.choices:
+            logger.info("=== SQL query result ===>")
+            logger.info(choice.message.content + "\n")
+            
+            json_blocks = extract_json_objects(choice.message.content + "\n")
+            if len(json_blocks) > 0:
+                refined_goal = json_blocks[0]
+            else:
+                refined_goal = {'visualization_fields': [], 'instruction': '', 'reason': ''}
+
+            query_blocks = extract_code_from_gpt_response(choice.message.content + "\n", "sql")
+
+            if len(query_blocks) > 0:
+                query_str = query_blocks[-1]
+
+                try:
+                    # Generate unique table name directly with timestamp and random suffix
+                    timestamp = int(time.time())
+                    random_suffix = ''.join(random.choices(string.ascii_lowercase, k=5))
+                    table_name = f"result_{timestamp}_{random_suffix}"
+                    
+                    create_query = f"CREATE VIEW IF NOT EXISTS {table_name} AS {query_str}"
+                    self.conn.execute(create_query)
+                    self.conn.commit()
+
+                    # Check how many rows are in the table
+                    row_count = self.conn.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()[0]
+                    
+                    # Only limit to 5000 if there are more rows
+                    if row_count > 5000:
+                        query_output = self.conn.execute(f"SELECT * FROM {table_name} LIMIT 5000").fetch_df()
+                    else:
+                        query_output = self.conn.execute(f"SELECT * FROM {table_name}").fetch_df()
+                        self.conn.execute(f"DROP VIEW {table_name}")
+                
+                    result = {
+                        "status": "ok",
+                        "code": query_str,
+                        "content": {
+                            'rows': query_output.to_dict('records'),
+                            'virtual': {
+                                'table_name': table_name,
+                                'row_count': row_count
+                            } if row_count > 5000 else None
+                        },
+                    }
+
+                except Exception as e:
+                    logger.warning('Error occurred during code execution:')
+                    error_message = f"An error occurred during code execution. Error type: {type(e).__name__}"
+                    logger.warning(error_message)
+                    result = {'status': 'error', 'code': query_str, 'content': error_message}
+
+            else:
+                result = {'status': 'error', 'code': "", 'content': "No code block found in the response. The model is unable to generate code to complete the task."}
+            
+            result['dialog'] = [*messages, {"role": choice.message.role, "content": choice.message.content}]
+            result['agent'] = 'SQLDataTransformationAgent'
+            result['refined_goal'] = refined_goal
+            candidates.append(result)
+
+        logger.info("=== Transform Candidates ===>")
+        for candidate in candidates:
+            for key, value in candidate.items():
+                if key in ['dialog', 'content']:
+                    logger.info(f"##{key}:\n{str(value)[:1000]}...")
+                else:
+                    logger.info(f"## {key}:\n{value}")
+
+        return candidates
+
+
+    def run(self, input_tables, description, expected_fields: list[str], prev_messages: list[dict] = [], n=1):
+        """Args:
+            input_tables: list[dict], each dict contains 'name' and 'rows'
+            description: str, the description of the data transformation
+            expected_fields: list[str], the expected fields of the data transformation
+            prev_messages: list[dict], the previous messages
+            n: int, the number of candidates
+        """
+
+        for table in input_tables:
+            table_name = table['name']
+            # Check if table exists in the connection
+            try:
+                self.conn.execute(f"DESCRIBE {table_name}")
+            except Exception:
+                # Table doesn't exist, create it from the dataframe
+                df = pd.DataFrame(table['rows'])
+                # Register the dataframe as a temporary view
+                self.conn.register(f'df_temp_{table_name}', df)
+                # Create a permanent table from the temporary view
+                self.conn.execute(f"CREATE VIEW {table_name} AS SELECT * FROM df_temp_{table_name}")
+                # Drop the temporary view
+                self.conn.execute(f"DROP VIEW df_temp_{table_name}")
+                # Log the creation of the table
+                logger.info(f"Created table {table_name} from dataframe")
+
+        if len(prev_messages) > 0:
+            logger.info("=== Previous messages ===>")
+            formatted_prev_messages = ""
+            for m in prev_messages:
+                if m['role'] != 'system':
+                    formatted_prev_messages += f"{m['role']}: \n\n\t{m['content']}\n\n"
+            logger.info(formatted_prev_messages)
+            prev_messages = [{"role": "user", "content": '[Previous Messages] Here are the previous messages for your reference:\n\n' + formatted_prev_messages}]
+
+        data_summary = ""
+        for table in input_tables:
+            table_summary_str = get_sql_table_statistics_str(self.conn, table['name'])
+            data_summary += f"[TABLE {table['name']}]\n\n{table_summary_str}\n\n"
+
+        goal = {
+            "instruction": description,
+            "visualization_fields": expected_fields
+        }
+
+        user_query = f"[CONTEXT]\n\n{data_summary}[GOAL]\n\n{json.dumps(goal, indent=4)}\n\n[OUTPUT]\n"
+
+        logger.info(user_query)
+
+        messages = [{"role":"system", "content": self.system_prompt},
+                    *prev_messages,
+                    {"role":"user","content": user_query}]
+        
+        response = self.client.get_completion(messages = messages)
+
+        return self.process_gpt_sql_response(response, messages)
+        
+
+    def followup(self, input_tables, dialog, output_fields: list[str], new_instruction: str, n=1):
+        """extend the input data (in json records format) to include new fields"""
+
+        goal = {
+            "followup_instruction": new_instruction,
+            "visualization_fields": output_fields
+        }
+
+        logger.info(f"GOAL: \n\n{goal}")
+
+        #logger.info(dialog)
+
+        updated_dialog = [{"role":"system", "content": self.system_prompt}, *dialog[1:]]
+
+        messages = [*updated_dialog, {"role":"user", 
+                              "content": f"Update the sql query above based on the following instruction:\n\n{json.dumps(goal, indent=4)}"}]
+
+        response = self.client.get_completion(messages = messages)
+
+        return self.process_gpt_sql_response(response, messages)
+        
 
 def get_sql_table_statistics_str(conn, table_name: str) -> str:
 
@@ -248,153 +421,3 @@ def get_sql_table_statistics_str(conn, table_name: str) -> str:
     table_summary_str += f"\n\nSample data:\n\n{table_metadata['sample_data_str']}\n"
 
     return table_summary_str
-
-class SQLDataTransformationAgent(object):
-
-    def __init__(self, client, conn, system_prompt=None):
-        self.client = client
-        self.conn = conn # duckdb connection
-        self.system_prompt = system_prompt if system_prompt is not None else SYSTEM_PROMPT
-
-
-    def process_gpt_sql_response(self, response, messages):
-        """process gpt response to handle execution"""
-
-        #log = {'messages': messages, 'response': response.model_dump(mode='json')}
-        #logger.info("=== prompt_filter_results ===>")
-        #logger.info(response.prompt_filter_results)
-
-        if isinstance(response, Exception):
-            result = {'status': 'other error', 'content': str(response.body)}
-            return [result]
-        
-        candidates = []
-        for choice in response.choices:
-            logger.info("=== SQL query result ===>")
-            logger.info(choice.message.content + "\n")
-            
-            json_blocks = extract_json_objects(choice.message.content + "\n")
-            if len(json_blocks) > 0:
-                refined_goal = json_blocks[0]
-            else:
-                refined_goal = {'visualization_fields': [], 'instruction': '', 'reason': ''}
-
-            query_blocks = extract_code_from_gpt_response(choice.message.content + "\n", "sql")
-
-            if len(query_blocks) > 0:
-                query_str = query_blocks[-1]
-
-                try:
-                    query_output = self.conn.execute(query_str).fetch_df()
-                
-                    result = {
-                        "status": "ok",
-                        "code": query_str,
-                        "content": query_output.to_dict('records'),
-                    }
-
-                except Exception as e:
-                    logger.warning('Error occurred during code execution:')
-                    error_message = f"An error occurred during code execution. Error type: {type(e).__name__}"
-                    logger.warning(error_message)
-                    result = {'status': 'error', 'code': query_str, 'content': error_message}
-
-            else:
-                result = {'status': 'error', 'code': "", 'content': "No code block found in the response. The model is unable to generate code to complete the task."}
-            
-            result['dialog'] = [*messages, {"role": choice.message.role, "content": choice.message.content}]
-            result['agent'] = 'SQLDataTransformationAgent'
-            result['refined_goal'] = refined_goal
-            candidates.append(result)
-
-        logger.info("=== Transform Candidates ===>")
-        for candidate in candidates:
-            for key, value in candidate.items():
-                if key in ['dialog', 'content']:
-                    logger.info(f"##{key}:\n{str(value)[:1000]}...")
-                else:
-                    logger.info(f"## {key}:\n{value}")
-
-        return candidates
-
-
-    def run(self, input_tables, description, expected_fields: list[str], prev_messages: list[dict] = [], n=1):
-        """Args:
-            input_tables: list[dict], each dict contains 'name' and 'rows'
-            description: str, the description of the data transformation
-            expected_fields: list[str], the expected fields of the data transformation
-            prev_messages: list[dict], the previous messages
-            n: int, the number of candidates
-        """
-
-        for table in input_tables:
-            table_name = table['name']
-            # Check if table exists in the connection
-            try:
-                self.conn.execute(f"DESCRIBE {table_name}")
-            except Exception:
-                # Table doesn't exist, create it from the dataframe
-                df = pd.DataFrame(table['rows'])
-                # Register the dataframe as a temporary view
-                self.conn.register(f'df_temp_{table_name}', df)
-                # Create a permanent table from the temporary view
-                self.conn.execute(f"CREATE VIEW {table_name} AS SELECT * FROM df_temp_{table_name}")
-                # Drop the temporary view
-                self.conn.execute(f"DROP VIEW df_temp_{table_name}")
-                # Log the creation of the table
-                logger.info(f"Created table {table_name} from dataframe")
-
-        if len(prev_messages) > 0:
-            logger.info("=== Previous messages ===>")
-            formatted_prev_messages = ""
-            for m in prev_messages:
-                if m['role'] != 'system':
-                    formatted_prev_messages += f"{m['role']}: \n\n\t{m['content']}\n\n"
-            logger.info(formatted_prev_messages)
-            prev_messages = [{"role": "user", "content": '[Previous Messages] Here are the previous messages for your reference:\n\n' + formatted_prev_messages}]
-
-        data_summary = ""
-        for table in input_tables:
-            table_summary_str = get_sql_table_statistics_str(self.conn, table['name'])
-           
-
-            data_summary += f"[TABLE {table['name']}]\n\n{table_summary_str}\n\n"
-
-        goal = {
-            "instruction": description,
-            "visualization_fields": expected_fields
-        }
-
-        user_query = f"[CONTEXT]\n\n{data_summary}[GOAL]\n\n{json.dumps(goal, indent=4)}\n\n[OUTPUT]\n"
-
-        logger.info(user_query)
-
-        messages = [{"role":"system", "content": self.system_prompt},
-                    *prev_messages,
-                    {"role":"user","content": user_query}]
-        
-        response = self.client.get_completion(messages = messages)
-
-        return self.process_gpt_sql_response(response, messages)
-        
-
-    def followup(self, input_tables, dialog, output_fields: list[str], new_instruction: str, n=1):
-        """extend the input data (in json records format) to include new fields"""
-
-        goal = {
-            "followup_instruction": new_instruction,
-            "visualization_fields": output_fields
-        }
-
-        logger.info(f"GOAL: \n\n{goal}")
-
-        #logger.info(dialog)
-
-        updated_dialog = [{"role":"system", "content": self.system_prompt}, *dialog[1:]]
-
-        messages = [*updated_dialog, {"role":"user", 
-                              "content": f"Update the sql query above based on the following instruction:\n\n{json.dumps(goal, indent=4)}"}]
-
-        response = self.client.get_completion(messages = messages)
-
-        return self.process_gpt_sql_response(response, messages)

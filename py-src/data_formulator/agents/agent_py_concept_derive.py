@@ -181,7 +181,9 @@ def derive({arg_string}):
 
                     if result['status'] == 'ok':
                         new_data = json.loads(result['content'])
-                        result['content'] = new_data
+                        result['content'] = {
+                            'rows': new_data,
+                        }
                     else:
                         print(result['content'])
                     result['code'] = code_str

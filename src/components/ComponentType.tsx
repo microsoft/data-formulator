@@ -73,8 +73,8 @@ export interface DictTable {
         trigger: Trigger,
     };
     virtual?: {
+        tableId: string; // the id of the virtual table in the database
         rowCount: number; // total number of rows in the full table
-        available: boolean; // whether the table is available to use
     };
     anchored: boolean; // whether this table is anchored as a persistent table used to derive other tables
 }
@@ -83,6 +83,7 @@ export function createDictTable(
     id: string, rows: any[], 
     derive: {code: string, codeExpl: string, source: string[], dialog: any[], 
              trigger: Trigger} | undefined = undefined,
+    virtual: {tableId: string, rowCount: number} | undefined = undefined,
     anchored: boolean = false) : DictTable {
     
     let names = Object.keys(rows[0])
@@ -94,6 +95,7 @@ export function createDictTable(
         rows,
         types: names.map(name => inferTypeFromValueArray(rows.map(r => r[name]))),
         derive,
+        virtual,
         anchored
     }
 }

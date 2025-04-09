@@ -187,7 +187,9 @@ output = json.dumps(df.to_dict("records"))
 
                     if result['status'] == 'ok':
                         new_data = json.loads(result['content'])
-                        result['content'] = new_data
+                        result['content'] = {
+                            'rows': new_data,
+                        }
                     else:
                         logger.info(result['content'])
                     result['code'] = code_str

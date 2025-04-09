@@ -213,7 +213,7 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
         let messageBody = JSON.stringify({
             token: token,
             mode,
-            input_tables: baseTables.map(t => {return { name: t.id.replace(/\.[^/.]+$/ , ""), rows: t.rows }}),
+            input_tables: baseTables.map(t => {return { name: t.virtual?.tableId || t.id.replace(/\.[^/.]+$/ , ""), rows: t.rows }}),
             new_fields: activeBaseFields.map(f => { return {name: f.name} }),
             extra_prompt: prompt,
             model: activeModel,
@@ -228,7 +228,7 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
             messageBody = JSON.stringify({
                 token: token,
                 mode,
-                input_tables: baseTables.map(t => {return { name: t.id.replace(/\.[^/.]+$/ , ""), rows: t.rows }}),
+                input_tables: baseTables.map(t => {return { name: t.virtual?.tableId || t.id.replace(/\.[^/.]+$/ , ""), rows: t.rows }}),
                 new_fields: activeBaseFields.map(f => { return {name: f.name} }),
                 extra_prompt: prompt,
                 additional_messages: triggerTable.derive?.dialog,
@@ -265,7 +265,7 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
                 if (data.results.length > 0) {
                     if (data["token"] == token) {
                         let candidates = data.results.filter((item: any) => {
-                            return item["status"] == "ok" && item["content"].length > 0 
+                            return item["status"] == "ok" 
                         });
 
                         if (candidates.length == 0) {
@@ -284,16 +284,26 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
 
                             // process candidate table
                             let candidate = candidates[0];
+                            let rows = candidate["content"]["rows"];
+                            let code = candidate["code"];
+                            let dialog = candidate["dialog"];
                             let candidateTable = createDictTable(
                                 candidateTableId, 
-                                candidate["content"],
-                                {   code: candidate["code"], 
+                                rows,
+                                {   code: code, 
                                     codeExpl: "",
                                     source: baseTables.map(t => t.id), 
-                                    dialog: candidate["dialog"], 
+                                    dialog: dialog, 
                                     trigger: trigger 
                                 }
                             )
+
+                            if (candidate["content"]["virtual"]) {
+                                candidateTable.virtual = {
+                                    tableId: candidate["content"]["virtual"]["table_name"],
+                                    rowCount: candidate["content"]["virtual"]["row_count"]
+                                };
+                            }
 
                             let names = candidateTable.names;
                             let missingNames = names.filter(name => !conceptShelfItems.some(field => field.name == name));

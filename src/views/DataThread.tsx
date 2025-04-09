@@ -158,7 +158,7 @@ const EditableTableName: FC<{
                         padding: 0,
                         '& input': {
                             padding: '2px 24px 2px 8px',
-                            width: '80px',
+                            width: '64px',
                         }
                     }
                 }}
@@ -354,7 +354,7 @@ let SingleThreadView: FC<{
             // only charts without dependency can be deleted
             let tableDeleteEnabled = !tables.some(t => t.derive?.trigger.tableId == tableId);
 
-            let tableCardIcon = table?.virtual? <CloudQueueIcon sx={{ fontSize: 18 }} /> : ( table?.anchored ? 
+            let tableCardIcon =  ( table?.anchored ? 
                 <AnchorIcon sx={{ 
                     fontSize: tableId === focusedTableId ? 20 : 16,
                     color: tableId === focusedTableId ? theme.palette.primary.main : 'rgba(0,0,0,0.5)',
@@ -425,7 +425,8 @@ let SingleThreadView: FC<{
                                     </span>
                                 </Tooltip>
                             </IconButton>
-                            <Box sx={{ margin: '4px 8px 4px 2px' }}>
+                            <Box sx={{ margin: '4px 8px 4px 2px', display: 'flex', alignItems: 'center' }}>
+                                {table?.virtual? <CloudQueueIcon sx={{ fontSize: 10, }} /> : ""}
                                 {focusedTableId == tableId ? <EditableTableName
                                     initialValue={table?.displayId || tableId}
                                     tableId={tableId}
@@ -434,6 +435,7 @@ let SingleThreadView: FC<{
                                     textAlign: 'center',
                                     color:  'rgba(0,0,0,0.7)', 
                                     maxWidth: '100px',
+                                    ml: table?.virtual ? 0.5 : 0,
                                     wordWrap: 'break-word',
                                     whiteSpace: 'normal'
                                 }}>{table?.displayId || tableId}</Typography>}
