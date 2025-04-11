@@ -230,12 +230,18 @@ export const fetchAvailableModels = createAsyncThunk(
 
 export const getSessionId = createAsyncThunk(
     "dataFormulatorSlice/getSessionId",
-    async () => {
+    async (_, { getState }) => {
+        let state = getState() as DataFormulatorState;
+        let sessionId = state.sessionId;
+
         const response = await fetch(`${getUrls().GET_SESSION_ID}`, {
-            method: 'GET',
+            method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-            }
+            },
+            body: JSON.stringify({
+                session_id: sessionId,
+            }),
         });
         return response.json();
     }

@@ -50,6 +50,10 @@ export function getUrls() {
 
         AUTH_INFO_PREFIX: `/api/.auth/`,
 
+        UPLOAD_DB_FILE: `/api/tables/upload-db-file`,
+        DOWNLOAD_DB_FILE: `/api/tables/download-db-file`,
+        RESET_DB_FILE: `/api/tables/reset-db-file`,
+
         GET_SESSION_ID: `/api/get-session-id`,
         LIST_TABLES: `/api/tables`,
         TABLE_DATA: `/api/tables/get-table`,

@@ -47,6 +47,7 @@ from data_formulator.db_manager import db_manager
 APP_ROOT = Path(os.path.join(Path(__file__).parent)).absolute()
 
 import os
+import tempfile
 
 app = Flask(__name__, static_url_path='', static_folder=os.path.join(APP_ROOT, "dist"))
 app.secret_key = secrets.token_hex(16)  # Generate a random secret key for sessions
@@ -555,15 +556,27 @@ def request_code_expl():
         expl = ""
     return expl
 
-@app.route('/api/get-session-id', methods=['GET'])
+@app.route('/api/get-session-id', methods=['GET', 'POST'])
 def get_session_id():
     """Endpoint to get or confirm a session ID from the client"""
+    # if it is a POST request, we expect a session_id in the body
+    # if it is a GET request, we do not expect a session_id in the query params
     
+    current_session_id = None
+    if request.is_json:
+        content = request.get_json()
+        current_session_id = content.get("session_id", None)
+        
     # Create session if it doesn't exist
-    if 'session_id' not in session:
-        session['session_id'] = secrets.token_hex(16)
-        session.permanent = True
-        logger.info(f"Created new session: {session['session_id']}")
+    if current_session_id is None:    
+        if 'session_id' not in session:
+            session['session_id'] = secrets.token_hex(16)
+            session.permanent = True
+            logger.info(f"Created new session: {session['session_id']}")
+    else:
+        # override the session_id
+        session['session_id'] = current_session_id
+        session.permanent = True 
     
     return flask.jsonify({
         "status": "ok",
@@ -575,15 +588,9 @@ def get_session_id():
 def get_app_config():
     """Provide frontend configuration settings from environment variables"""
     
-    # Create session if it doesn't exist
-    if 'session_id' not in session:
-        session['session_id'] = secrets.token_hex(16)
-        session.permanent = True
-        logger.info(f"Created new session: {session['session_id']}")
-    
     config = {
         "SHOW_KEYS_ENABLED": os.getenv("SHOW_KEYS_ENABLED", "true").lower() == "true",
-        "SESSION_ID": session['session_id']
+        "SESSION_ID": session.get('session_id', None)
     }
     return flask.jsonify(config)
 
@@ -603,12 +610,24 @@ def list_tables():
                 # Get row count
                 row_count = db.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()[0]
                 sample_rows = db.execute(f"SELECT * FROM {table_name} LIMIT 1000").fetchall()
+                
+                # Check if this is a view or a table
+                is_view = False
+                try:
+                    # In most SQL databases, views are listed in a system table
+                    # For DuckDB, we can check if it's a view by querying the system tables
+                    view_check = db.execute(f"SELECT * FROM duckdb_views() WHERE view_name = '{table_name}'").fetchone()
+                    is_view = view_check is not None
+                except Exception:
+                    # If the query fails, assume it's a regular table
+                    pass
 
                 result.append({
                     "name": table_name,
                     "columns": [{"name": col[0], "type": col[1]} for col in columns],
                     "row_count": row_count,
-                    "sample_rows": [dict(zip([col[0] for col in columns], row)) for row in sample_rows]
+                    "sample_rows": [dict(zip([col[0] for col in columns], row)) for row in sample_rows],
+                    "is_view": is_view,
                 })
         
         return jsonify({
@@ -616,6 +635,7 @@ def list_tables():
             "tables": result
         })
     except Exception as e:
+        print(e)
         return jsonify({
             "status": "error",
             "message": str(e)
@@ -818,6 +838,166 @@ def drop_table():
         return jsonify({
             "status": "error",
             "message": str(e)
+        }), 500
+
+
+@app.route('/api/tables/upload-db-file', methods=['POST'])
+def upload_db_file():
+    """Upload a db file"""
+    try:
+        if 'file' not in request.files:
+            return jsonify({"status": "error", "message": "No file provided"}), 400
+        
+        file = request.files['file']
+        if not file.filename.endswith('.db'):
+            return jsonify({"status": "error", "message": "Invalid file format. Only .db files are supported"}), 400
+
+        # Get the session ID
+        if 'session_id' not in session:
+            return jsonify({"status": "error", "message": "No session ID found"}), 400
+        
+        session_id = session['session_id']
+        
+        # Create temp directory if it doesn't exist
+        temp_dir = os.path.join(tempfile.gettempdir())
+        os.makedirs(temp_dir, exist_ok=True)
+        
+        # Save the file temporarily to verify it
+        temp_db_path = os.path.join(temp_dir, f"temp_{session_id}.db")
+        file.save(temp_db_path)
+        
+        # Verify if it's a valid DuckDB file
+        try:
+            import duckdb
+            # Try to connect to the database
+            conn = duckdb.connect(temp_db_path, read_only=True)
+            # Try a simple query to verify it's a valid database
+            conn.execute("SELECT 1").fetchall()
+            conn.close()
+            
+            # If we get here, the file is valid - move it to final location
+            db_file_path = os.path.join(temp_dir, f"df_{session_id}.db")
+            os.replace(temp_db_path, db_file_path)
+            
+            # Update the db_manager's file mapping
+            db_manager._db_files[session_id] = db_file_path
+            
+        except Exception as db_error:
+            # Clean up temp file
+            if os.path.exists(temp_db_path):
+                os.remove(temp_db_path)
+            return jsonify({
+                "status": "error",
+                "message": f"Invalid DuckDB database file: {str(db_error)}"
+            }), 400
+        
+        return jsonify({
+            "status": "success",
+            "message": "Database file uploaded successfully",
+            "session_id": session_id
+        })
+        
+    except Exception as e:
+        logger.error(f"Error uploading database file: {str(e)}")
+        return jsonify({
+            "status": "error", 
+            "message": f"Failed to upload database file: {str(e)}"
+        }), 500
+
+@app.route('/api/tables/download-db-file', methods=['GET'])
+def download_db_file():
+    """Download the db file for a session"""
+    try:
+        # Check if session exists
+        if 'session_id' not in session:
+            return jsonify({
+                "status": "error",
+                "message": "No session ID found"
+            }), 400
+        
+        session_id = session['session_id']
+        
+        # Get the database file path from db_manager
+        if session_id not in db_manager._db_files:
+            return jsonify({
+                "status": "error",
+                "message": "No database file found for this session"
+            }), 404
+            
+        db_file_path = db_manager._db_files[session_id]
+        
+        # Check if file exists
+        if not os.path.exists(db_file_path):
+            return jsonify({
+                "status": "error",
+                "message": "Database file not found"
+            }), 404
+            
+        # Generate a filename for download
+        download_name = f"data_formulator_{session_id}.db"
+        
+        # Return the file as an attachment
+        return send_from_directory(
+            os.path.dirname(db_file_path),
+            os.path.basename(db_file_path),
+            as_attachment=True,
+            download_name=download_name,
+            mimetype='application/x-sqlite3'
+        )
+        
+    except Exception as e:
+        logger.error(f"Error downloading database file: {str(e)}")
+        return jsonify({
+            "status": "error",
+            "message": f"Failed to download database file: {str(e)}"
+        }), 500
+
+
+@app.route('/api/tables/reset-db-file', methods=['POST'])
+def reset_db_file():
+    """Reset the db file for a session"""
+    try:
+        if 'session_id' not in session:
+            return jsonify({
+                "status": "error",
+                "message": "No session ID found"
+            }), 400
+            
+        session_id = session['session_id']
+
+        print(f"session_id: {session_id}")
+        
+        # First check if there's a reference in db_manager
+        if session_id in db_manager._db_files:
+            db_file_path = db_manager._db_files[session_id]
+            
+            # Remove the file if it exists
+            if db_file_path and os.path.exists(db_file_path):
+                os.remove(db_file_path)
+            
+            # Clear the reference
+            db_manager._db_files[session_id] = None
+            
+        # Also check for any temporary files
+        temp_db_path = os.path.join(tempfile.gettempdir(), f"temp_{session_id}.db")
+        if os.path.exists(temp_db_path):
+            os.remove(temp_db_path)
+            
+        # Check for the main db file
+        main_db_path = os.path.join(tempfile.gettempdir(), f"df_{session_id}.db")
+        if os.path.exists(main_db_path):
+            os.remove(main_db_path)
+
+        return jsonify({
+            "status": "success",
+            "message": "Database file reset successfully"
+        })
+
+    except Exception as e:
+        logger.error(f"Error resetting database file: {str(e)}")
+        return jsonify({
+            "status": "error",
+            "message": f"Failed to reset database file: {str(e)}"
         }), 500
 
 

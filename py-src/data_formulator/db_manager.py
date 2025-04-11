@@ -27,18 +27,17 @@ class DuckDBManager:
     def get_connection(self, session_id: str) -> duckdb.DuckDBPyConnection:
         """Internal method to get or create a DuckDB connection for a session"""
         # Get or create the db file path for this session
-        if session_id not in self._db_files:
+        if session_id not in self._db_files or self._db_files[session_id] is None:
             db_file = os.path.join(tempfile.gettempdir(), f"df_{session_id}.db")
-            print(f"Creating new db file: {db_file}")
+            print(f"=== Creating new db file: {db_file}")
             self._db_files[session_id] = db_file
         else:
-            print(f"Using existing db file: {self._db_files[session_id]}")
+            print(f"=== Using existing db file: {self._db_files[session_id]}")
             db_file = self._db_files[session_id]
             
         # Create a fresh connection to the database file
         conn = duckdb.connect(database=db_file)
         return conn
-    
 
 # Initialize the DB manager
 db_manager = DuckDBManager()

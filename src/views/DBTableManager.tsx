@@ -27,7 +27,8 @@ import {
   TableContainer,
   TableHead,
   TableRow,
-  CircularProgress
+  CircularProgress,
+  ButtonGroup
 } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
@@ -35,6 +36,10 @@ import CloseIcon from '@mui/icons-material/Close';
 import StorageIcon from '@mui/icons-material/Storage';
 import SearchIcon from '@mui/icons-material/Search';
 import AnalyticsIcon from '@mui/icons-material/Analytics';
+import AddIcon from '@mui/icons-material/Add';
+import UploadIcon from '@mui/icons-material/Upload';
+import DownloadIcon from '@mui/icons-material/Download';
+import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import { getUrls } from '../app/utils';
 import { CustomReactTable } from './ReactTable';
 import { DictTable } from '../components/ComponentType';
@@ -232,6 +237,72 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
         }
     };
 
+    const handleDBUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+    
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('table_name', file.name.split('.')[0]);
+    
+        try {
+            setIsUploading(true);
+            const response = await fetch(getUrls().UPLOAD_DB_FILE, {
+                method: 'POST',
+                body: formData
+            });
+            const data = await response.json();
+            if (data.status === 'success') {
+                fetchTables();  // Refresh table list
+            } else {
+                // Handle error from server
+                setErrorMessage(data.error || 'Failed to upload table');
+                setShowError(true);
+            }
+        } catch (error) {
+            console.error('Failed to upload table:', error);
+            setErrorMessage('Failed to upload table. The server may need to be restarted.');
+            setShowError(true);
+        } finally {
+            setIsUploading(false);
+        }
+    };
+
+    const handleDBDownload = async () => {
+        try {
+            const response = await fetch(getUrls().DOWNLOAD_DB_FILE, {
+                method: 'GET',
+            });
+            
+            // Check if the response is ok
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || 'Failed to download database file');
+            }
+
+            // Get the blob directly from response
+            const blob = await response.blob();
+            const url = URL.createObjectURL(blob);
+            
+            // Create a temporary link element
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = 'df_session.db';
+            document.body.appendChild(link);    
+            
+            // Trigger download
+            link.click();
+            
+            // Clean up
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+        } catch (error) {
+            console.error('Failed to download database:', error);
+            setErrorMessage('Failed to download database file');
+            setShowError(true);
+        }
+    };
+
     const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];
         if (!file) return;
@@ -262,6 +333,25 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
             setIsUploading(false);
         }
     };
+
+    const handleDBReset = async () => {
+        try {
+            const response = await fetch(getUrls().RESET_DB_FILE, {
+                method: 'POST',
+            });
+            const data = await response.json();
+            if (data.status === 'success') {
+                fetchTables();
+            } else {
+                setErrorMessage(data.error || 'Failed to reset database');
+                setShowError(true);
+            }
+        } catch (error) {
+            console.error('Failed to reset database:', error);
+            setErrorMessage('Failed to reset database');
+            setShowError(true);
+        }
+    }
 
     // Delete table
     const handleDropTable = async (tableName: string) => {
@@ -400,6 +490,22 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
                         {...a11yProps(i)} 
                     />
                 ))}
+                <Button
+                    variant="text"
+                    component="label"
+                    size="small"
+                    sx={{textTransform: "none", mr: 'auto', borderLeft: `1px solid #ddd`, borderRadius: '0px'}}
+                    disabled={isUploading}
+                >
+                    <AddIcon /> {isUploading ? 'Uploading...' : 'Insert File to DB'}
+                    <input
+                        type="file"
+                        hidden
+                        onChange={handleFileUpload}
+                        accept=".csv,.xlsx,.json"
+                        disabled={isUploading}
+                    />
+                </Button>
             </Tabs> 
             {dbTables.map((t, i) => {
                 const currentTable = t;
@@ -530,23 +636,44 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
                     )}
                 </DialogContent>
                 <DialogActions>
-                    <Button
-                        variant="outlined"
-                        component="label"
-                        startIcon={<UploadFileIcon />}
-                        size="small"
-                        sx={{textTransform: "none", mr: 'auto'}}
-                        disabled={isUploading}
-                    >
-                        {isUploading ? 'Uploading...' : 'Insert File to DB'}
-                        <input
-                            type="file"
-                            hidden
-                            onChange={handleFileUpload}
-                            accept=".csv,.xlsx,.json"
+                    <Typography variant="caption" sx={{ mr: 'auto', '& .MuiButton-root': { minWidth: 'auto',  textTransform: "none" } }}>
+                        <Button
+                            variant="text" 
+                            size="small"
+                            component="label"
                             disabled={isUploading}
-                        />
-                    </Button>
+                        >
+                            Upload
+                            <input
+                                type="file"
+                                hidden
+                                onChange={handleDBUpload}
+                                accept=".db"
+                                disabled={isUploading}
+                            />
+                        </Button>
+                        ,
+                        <Button
+                            variant="text" size="small"
+                           // endIcon={<DownloadIcon />}
+                            onClick={handleDBDownload}
+                            disabled={isUploading || dbTables.length === 0}
+                        >
+                            download
+                        </Button>
+                        or
+                        <Button
+                            variant="text" size="small"
+                            color="warning"
+                            onClick={handleDBReset}
+                            disabled={isUploading}
+                            //endIcon={<RestartAltIcon />}
+                        >
+                            reset
+                        </Button>
+                        the backend database
+                    </Typography>
+
                     <Button 
                         variant="contained"
                         size="small"
