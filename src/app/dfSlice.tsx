@@ -43,6 +43,11 @@ export interface DataFormulatorState {
     testedModels: {id: string, status: 'ok' | 'error' | 'testing' | 'unknown', message: string}[];
 
     tables : DictTable[];
+    extTables: {
+        baseTableRef: string,
+        rows: any[],
+        virtualTableRef?: string, // whether this is a virtual table
+    }[]; // extensions to base tables with derived tables
     charts: Chart[];
     
     activeChallenges: {tableId: string, challenges: { text: string; difficulty: 'easy' | 'medium' | 'hard'; }[]}[];
@@ -79,6 +84,7 @@ const initialState: DataFormulatorState = {
     testedModels: [],
 
     tables: [],
+    extTables: [],
     charts: [],
 
     activeChallenges: [],
@@ -261,6 +267,7 @@ export const dataFormulatorSlice = createSlice({
             state.testedModels = [];
 
             state.tables = [];
+            state.extTables = [];
             state.charts = [];
             state.activeChallenges = [];
 
@@ -291,6 +298,7 @@ export const dataFormulatorSlice = createSlice({
 
             //state.table = undefined;
             state.tables = savedState.tables || [];
+            state.extTables = savedState.extTables || [];
             state.charts = savedState.charts || [];
             
             state.activeChallenges = savedState.activeChallenges || [];
@@ -369,6 +377,37 @@ export const dataFormulatorSlice = createSlice({
         },
         addChallenges: (state, action: PayloadAction<{tableId: string, challenges: { text: string; difficulty: 'easy' | 'medium' | 'hard'; }[]}>) => {
             state.activeChallenges = [...state.activeChallenges, action.payload];
+        },
+        setExtTables: (state, action: PayloadAction<{baseTableRef: string, rows: any[], virtualTableRef?: string}>) => {
+            let extTable = action.payload;
+
+            let baseTable = state.tables.find(t => t.id == extTable.baseTableRef) as DictTable;
+            let existingExtTable = state.extTables.find(t => t.baseTableRef == extTable.baseTableRef);
+
+            // we want to extend base rows with the new rows
+            let baseRows = existingExtTable ? existingExtTable.rows : baseTable.rows;
+
+            if (existingExtTable) {
+                for (let i = 0; i < extTable.rows.length; i++) {
+                    extTable.rows[i] = {...extTable.rows[i], ...baseRows[i]};
+                }
+            } 
+
+            if (state.extTables.some(t => t.baseTableRef == extTable.baseTableRef)) {
+                state.extTables = state.extTables.map(t => t.baseTableRef == extTable.baseTableRef ? {...t, rows: extTable.rows} : t);
+            } else {
+                state.extTables = [...state.extTables, extTable];
+            }
+        },
+        removeExtTable: (state, action: PayloadAction<string>) => {
+            let baseTableRef = action.payload;
+            state.extTables = state.extTables.filter(t => t.baseTableRef != baseTableRef);
+        },
+        updateExtTableFieldName: (state, action: PayloadAction<{baseTableRef: string, oldName: string, newName: string}>) => {
+            let baseTableRef = action.payload.baseTableRef;
+            let oldName = action.payload.oldName;
+            let newName = action.payload.newName;
+            state.extTables = state.extTables.map(t => t.baseTableRef == baseTableRef ? {...t, rows: t.rows.map(r => r[oldName] = newName)} : t);
         },
         createNewChart: (state, action: PayloadAction<{chartType?: string, tableId?: string}>) => {
             let chartType = action.payload.chartType;
@@ -542,7 +581,14 @@ export const dataFormulatorSlice = createSlice({
                 && Object.entries(chart.encodingMap).some(([channel, encoding]) => encoding.fieldID && conceptID == encoding.fieldID))) {
                 console.log("cannot delete!")
             } else {
-                state.conceptShelfItems = state.conceptShelfItems.filter(field => field.id != conceptID);
+
+                let field = state.conceptShelfItems.find(f => f.id == conceptID);
+                if (field?.source == "derived") {
+                    // delete generated column from the derived table
+                    state.extTables = state.extTables.map(t => t.baseTableRef == field.tableRef ? {...t, rows: t.rows.map(r => delete r[field.name])} : t);
+                }
+                state.conceptShelfItems = state.conceptShelfItems.filter(f => f.id != conceptID);
+
                 for (let chart of state.charts)  {
                     for (let [channel, encoding] of Object.entries(chart.encodingMap)) {
                         if (encoding.fieldID && conceptID == encoding.fieldID) {

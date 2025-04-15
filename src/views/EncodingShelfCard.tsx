@@ -496,9 +496,6 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                 
                 dispatch(dfActions.changeChartRunningStatus({chartId, status: false}))
 
-                console.log("response data");
-                console.log(data);
-
                 if (data.results.length > 0) {
                     if (data["token"] == token) {
                         let candidates = data["results"].filter((item: any) => {
@@ -518,19 +515,33 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                             }));
                         } else {
 
-                            // PART 1: handle triggers
-                            let genTableId = () => {
-                                let tableSuffix = Number.parseInt((Date.now() - Math.floor(Math.random() * 10000)).toString().slice(-2));
-                                let tableId = `table-${tableSuffix}`
-                                while (tables.find(t => t.id == tableId) != undefined) {
-                                    tableSuffix = tableSuffix + 1;
-                                    tableId = `table-${tableSuffix}`
-                                } 
-                                return tableId;
+                            let candidate = candidates[0];
+                            let code = candidate["code"];
+                            let rows = candidate["content"]["rows"];
+                            let dialog = candidate["dialog"];
+
+                            // determine the table id for the new table
+                            let candidateTableId;
+                            if (overrideTableId) {
+                                candidateTableId = overrideTableId;
+                            } else {
+                                if (candidate["content"]["virtual"] != null) {
+                                    candidateTableId = candidate["content"]["virtual"]["table_name"];
+                                } else {
+                                    let genTableId = () => {
+                                        let tableSuffix = Number.parseInt((Date.now() - Math.floor(Math.random() * 10000)).toString().slice(-2));
+                                        let tableId = `table-${tableSuffix}`
+                                        while (tables.find(t => t.id == tableId) != undefined) {
+                                            tableSuffix = tableSuffix + 1;
+                                            tableId = `table-${tableSuffix}`
+                                        } 
+                                        return tableId;
+                                    }
+                                    candidateTableId = genTableId();
+                                }
                             }
 
-                            let candidateTableId = overrideTableId || genTableId();
-
+                            // PART 1: handle triggers
                             // add the intermediate chart that will be referred by triggers
 
                             let triggerChartSpec = duplicateChart(chart);
@@ -546,11 +557,6 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                             dispatch(dfActions.addChart(triggerChartSpec));
                         
                             // PART 2: create new table (or override table)
-                            let candidate = candidates[0];
-                            let code = candidate["code"];
-                            let rows = candidate["content"]["rows"];
-                            let dialog = candidate["dialog"];
-
                             let candidateTable = createDictTable(
                                 candidateTableId, 
                                 rows, 

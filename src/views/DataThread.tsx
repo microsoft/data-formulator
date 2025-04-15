@@ -592,6 +592,8 @@ const ChartElement = memo<{
 export const DataThread: FC<{}> = function ({ }) {
 
     let tables = useSelector((state: DataFormulatorState) => state.tables);
+    let extTables = useSelector((state: DataFormulatorState) => state.extTables);
+
     let charts = useSelector((state: DataFormulatorState) => state.charts);
     let focusedChartId = useSelector((state: DataFormulatorState) => state.focusedChartId);
 
@@ -627,7 +629,7 @@ export const DataThread: FC<{}> = function ({ }) {
         const table = getDataTable(chart, tables, charts, conceptShelfItems);
 
         let toDeriveFields = derivedFields.filter(f => f.name != "").filter(f => findBaseFields(f, conceptShelfItems).every(f2 => table.names.includes(f2.name)))
-        let extTable = baseTableToExtTable(JSON.parse(JSON.stringify(table.rows)), toDeriveFields, conceptShelfItems);
+        let extTable = baseTableToExtTable(table, extTables.find(t => t.baseTableRef == table.id));
 
         if (chart.chartType == "Auto") {
             let element = <Box sx={{ position: "relative", width: "fit-content", display: "flex", flexDirection: "column", margin: 'auto', color: 'darkgray' }}>

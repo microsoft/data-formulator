@@ -28,7 +28,8 @@ import {
   TableHead,
   TableRow,
   CircularProgress,
-  ButtonGroup
+  ButtonGroup,
+  Tooltip
 } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
@@ -36,16 +37,20 @@ import CloseIcon from '@mui/icons-material/Close';
 import StorageIcon from '@mui/icons-material/Storage';
 import SearchIcon from '@mui/icons-material/Search';
 import AnalyticsIcon from '@mui/icons-material/Analytics';
+import TuneIcon from '@mui/icons-material/Tune';
 import AddIcon from '@mui/icons-material/Add';
 import UploadIcon from '@mui/icons-material/Upload';
 import DownloadIcon from '@mui/icons-material/Download';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
+import PolylineIcon from '@mui/icons-material/Polyline';
+
 import { getUrls } from '../app/utils';
 import { CustomReactTable } from './ReactTable';
 import { DictTable } from '../components/ComponentType';
 import { Type } from '../data/types';
 import { useDispatch } from 'react-redux';
 import { dfActions } from '../app/dfSlice';
+import { alpha } from '@mui/material';
 
 interface DBTable {
     name: string;
@@ -55,6 +60,7 @@ interface DBTable {
     }[];
     row_count: number;
     sample_rows: any[];
+    view_source: string | null;
 }
 
 interface TabPanelProps {
@@ -470,100 +476,106 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
         }
     }, [tableDialogOpen]);
 
-
     let mainContent = dbTables.length > 0 ? 
-        <Box sx={{ flexGrow: 1, bgcolor: 'background.paper', display: 'flex', flexDirection: 'column', height: '100%' }}>
-            <Tabs
-                orientation="horizontal"
-                variant="scrollable"
-                value={selectedTabIndex}
-                onChange={handleTabChange}
-                aria-label="Database tables"
-                sx={{ borderBottom: 1, borderColor: 'divider' }}
-            >
-                {dbTables.map((t, i) => (
-                    <Tab 
-                        key={i} 
-                        wrapped 
-                        label={t.name} 
-                        sx={{textTransform: "none",}} 
-                        {...a11yProps(i)} 
-                    />
-                ))}
-                <Button
-                    variant="text"
-                    component="label"
-                    size="small"
-                    sx={{textTransform: "none", mr: 'auto', borderLeft: `1px solid #ddd`, borderRadius: '0px'}}
-                    disabled={isUploading}
+        <Box sx={{ flexGrow: 1, bgcolor: 'background.paper', display: 'flex', flexDirection: 'row', height: '100%' }}>
+            <Box sx={{display: "flex", flexDirection: "column", width: "120px", borderRight: 1, borderColor: 'divider'}}>
+                <Tabs
+                    orientation="vertical"
+                    variant="scrollable"
+                    value={selectedTabIndex}
+                    onChange={handleTabChange}
+                    aria-label="Database tables"
+                    sx={{ width: '120px' }}
                 >
-                    <AddIcon /> {isUploading ? 'Uploading...' : 'Insert File to DB'}
-                    <input
-                        type="file"
-                        hidden
-                        onChange={handleFileUpload}
-                        accept=".csv,.xlsx,.json"
+                    {dbTables.map((t, i) => (
+                        <Tab 
+                            key={i} 
+                            wrapped 
+                            label={<Typography variant="caption" 
+                                        sx={{textTransform: "none", width: "calc(100% - 4px)", textAlign: 'center', 
+                                            textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap'}}>
+                                    {t.name}</Typography>} 
+                            sx={{textTransform: "none", minHeight: 24, padding: 1}}
+                            {...a11yProps(i)} 
+                        />
+                    ))}
+                </Tabs> 
+                <Divider sx={{my: 1}} textAlign='left'> <TuneIcon sx={{fontSize: 12, color: "text.secondary"}} /></Divider>
+                <Tooltip title="upload a csv/tsv file to the local database">
+                    <Button
+                        variant="text"
+                        component="label"
+                        size="small"
+                        sx={{ width: '100%', textTransform: "none"}}                    
                         disabled={isUploading}
-                    />
-                </Button>
-            </Tabs> 
+                        startIcon={<UploadIcon fontSize="small"/>}
+                    >
+                        {isUploading ? 'uploading...' : 'upload file'}
+                        <input
+                            type="file"
+                            hidden
+                            onChange={handleFileUpload}
+                            accept=".csv,.xlsx,.json"
+                            disabled={isUploading}
+                        />
+                    </Button>
+                </Tooltip>
+            </Box>
             {dbTables.map((t, i) => {
                 const currentTable = t;
                 const showingAnalysis = tableAnalysisMap[currentTable.name] !== undefined;
                 return (
                     <TabPanel key={i} sx={{width: 960, maxWidth: '100%'}} value={selectedTabIndex} index={i}>
-                        <Box>
-                            <Paper variant="outlined" sx={{width: "100%", marginBottom: "8px" }}>
-                                <Box sx={{ px: 1, display: 'flex', alignItems: 'center', borderBottom: '1px solid rgba(0,0,0,0.1)' }}>
-                                    <Typography variant="caption" sx={{  }}>
-                                        {showingAnalysis ? "column stats for " : "sample data from "} 
-                                        <Typography component="span" sx={{fontSize: 12, fontWeight: "bold"}}>
-                                            {currentTable.name}
-                                        </Typography>
-                                        <Typography component="span" sx={{ml: 1, fontSize: 10, color: "text.secondary"}}>
-                                            ({currentTable.columns.length} columns × {currentTable.row_count} rows)
-                                        </Typography>
+                        <Paper variant="outlined" sx={{width: "100%"}}>
+                            <Box sx={{ px: 1, display: 'flex', alignItems: 'center', borderBottom: '1px solid rgba(0,0,0,0.1)' }}>
+                                <Typography variant="caption" sx={{  }}>
+                                    {showingAnalysis ? "column stats for " : "sample data from "} 
+                                    <Typography component="span" sx={{fontSize: 12, fontWeight: "bold"}}>
+                                        {currentTable.name}
                                     </Typography>
-                                    <Box sx={{ marginLeft: 'auto', display: 'flex', gap: 1 }}>
-                                        <Button 
-                                            size="small" 
-                                            color={showingAnalysis ? "secondary" : "primary"}
-                                            onClick={() => toggleAnalysisView(currentTable.name)}
-                                            startIcon={<AnalyticsIcon fontSize="small" />}
-                                            sx={{textTransform: "none"}}
-                                        >
-                                            {showingAnalysis ? "Show Data Samples" : "Show Column Stats"}
-                                        </Button>
-                                        <IconButton 
-                                            size="small" 
-                                            color="error"
-                                            onClick={() => handleDropTable(currentTable.name)}
-                                            title="Drop Table"
-                                        >
-                                            <DeleteIcon fontSize="small" />
-                                        </IconButton>
-                                    </Box>
+                                    <Typography component="span" sx={{ml: 1, fontSize: 10, color: "text.secondary"}}>
+                                        ({currentTable.columns.length} columns × {currentTable.row_count} rows)
+                                    </Typography>
+                                </Typography>
+                                <Box sx={{ marginLeft: 'auto', display: 'flex', gap: 1 }}>
+                                    <Button 
+                                        size="small" 
+                                        color={showingAnalysis ? "secondary" : "primary"}
+                                        onClick={() => toggleAnalysisView(currentTable.name)}
+                                        startIcon={<AnalyticsIcon fontSize="small" />}
+                                        sx={{textTransform: "none"}}
+                                    >
+                                        {showingAnalysis ? "show data samples" : "show column stats"}
+                                    </Button>
+                                    <IconButton 
+                                        size="small" 
+                                        color="error"
+                                        onClick={() => handleDropTable(currentTable.name)}
+                                        title="Drop Table"
+                                    >
+                                        <DeleteIcon fontSize="small" />
+                                    </IconButton>
                                 </Box>
-                                {showingAnalysis ? (
-                                    <TableStatisticsView 
-                                        tableName={currentTable.name}
-                                        tableAnalysisMap={tableAnalysisMap}
-                                    />
-                                ) : (
-                                    <CustomReactTable 
-                                        rows={currentTable.sample_rows.slice(0, 9)} 
-                                        columnDefs={currentTable.columns.map(col => ({
-                                            id: col.name,
-                                            label: col.name,
-                                            minWidth: 60
-                                        }))}
-                                        rowsPerPageNum={-1}
-                                        compact={false}
-                                        isIncompleteTable={currentTable.row_count > 10}
-                                    />
-                                )}
-                            </Paper>
-                        </Box>
+                            </Box>
+                            {showingAnalysis ? (
+                                <TableStatisticsView 
+                                    tableName={currentTable.name}
+                                    tableAnalysisMap={tableAnalysisMap}
+                                />
+                            ) : (
+                                <CustomReactTable 
+                                    rows={currentTable.sample_rows.slice(0, 9)} 
+                                    columnDefs={currentTable.columns.map(col => ({
+                                        id: col.name,
+                                        label: col.name,
+                                        minWidth: 60
+                                    }))}
+                                    rowsPerPageNum={-1}
+                                    compact={false}
+                                    isIncompleteTable={currentTable.row_count > 10}
+                                />
+                            )}
+                        </Paper>
                     </TabPanel>
                 );
             })}
@@ -643,7 +655,7 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
                             component="label"
                             disabled={isUploading}
                         >
-                            Upload
+                            Reload
                             <input
                                 type="file"
                                 hidden

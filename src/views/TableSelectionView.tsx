@@ -110,7 +110,7 @@ export const TableSelectionView: React.FC<TableSelectionViewProps> = function Ta
             variant="scrollable"
             value={value}
             onChange={handleChange}
-            aria-label="Vertical tabs example"
+            aria-label="Vertical tabs"
             sx={{ borderRight: 1, borderColor: 'divider', minWidth: 120 }}
         >
             {tabTitiles.map((title, i) => <Tab wrapped key={i} label={title} sx={{textTransform: "none", width: 120}} {...a11yProps(0)} />)}
@@ -767,3 +767,4 @@ export const TableCopyDialogV2: React.FC<TableCopyDialogProps> = ({ buttonElemen
         {dialog}
     </>;
 }
+

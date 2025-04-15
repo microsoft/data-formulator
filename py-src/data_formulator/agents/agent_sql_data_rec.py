@@ -6,6 +6,9 @@ import json
 from data_formulator.agents.agent_utils import extract_json_objects, extract_code_from_gpt_response
 from data_formulator.agents.agent_sql_data_transform import get_sql_table_statistics_str
 
+import random
+import string
+
 import traceback
 
 
@@ -153,13 +156,32 @@ class SQLDataRecAgent(object):
                 code_str = code_blocks[-1]
 
                 try:
-                    query_output = self.conn.execute(code_str).fetch_df()
+                    random_suffix = ''.join(random.choices(string.ascii_lowercase, k=4))
+                    table_name = f"view_{random_suffix}"
+                    
+                    create_query = f"CREATE VIEW IF NOT EXISTS {table_name} AS {code_str}"
+                    self.conn.execute(create_query)
+                    self.conn.commit()
+
+                    # Check how many rows are in the table
+                    row_count = self.conn.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()[0]
+                    
+                    # Only limit to 5000 if there are more rows
+                    if row_count > 5000:
+                        query_output = self.conn.execute(f"SELECT * FROM {table_name} LIMIT 5000").fetch_df()
+                    else:
+                        query_output = self.conn.execute(f"SELECT * FROM {table_name}").fetch_df()
+                        self.conn.execute(f"DROP VIEW {table_name}")
                 
                     result = {
                         "status": "ok",
                         "code": code_str,
                         "content": {
                             'rows': query_output.to_dict('records'),
+                            'virtual': {
+                                'table_name': table_name,
+                                'row_count': row_count
+                            } if row_count > 5000 else None
                         },
                     }
                 except Exception as e:

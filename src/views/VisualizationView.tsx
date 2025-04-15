@@ -26,6 +26,7 @@ import {
     DialogContent,
     TextField,
     CircularProgress,
+    Popover,
 } from '@mui/material';
 
 import ButtonGroup from '@mui/material/ButtonGroup';
@@ -40,7 +41,7 @@ import AnimateOnChange from 'react-animate-on-change'
 import '../scss/VisualizationView.scss';
 import { useDispatch, useSelector } from 'react-redux';
 import { DataFormulatorState, dfActions } from '../app/dfSlice';
-import { assembleVegaChart, baseTableToExtTable, getUrls  } from '../app/utils';
+import { assembleVegaChart, baseTableToExtTable, getUrls, prepVisTable  } from '../app/utils';
 import { Chart, EncodingItem, EncodingMap, FieldItem } from '../components/ComponentType';
 import { DictTable } from "../components/ComponentType";
 
@@ -56,6 +57,8 @@ import ZoomInIcon from '@mui/icons-material/ZoomIn';
 import ZoomOutIcon from '@mui/icons-material/ZoomOut';
 import TextSnippetIcon from '@mui/icons-material/TextSnippet';
 import FilterAltIcon from '@mui/icons-material/FilterAlt';
+import CheckIcon from '@mui/icons-material/Check';
+import CloudQueueIcon from '@mui/icons-material/CloudQueue';
 
 import { CHART_TEMPLATES, getChartTemplate } from '../components/ChartTemplates';
 import { findBaseFields } from './ViewUtils';
@@ -224,6 +227,76 @@ export let checkChartAvailability = (chart: Chart, conceptShelfItems: FieldItem[
     return visBaseFields.length > 0 && tableRows.length > 0 && visBaseFields.every(f => Object.keys(tableRows[0]).includes(f.name));
 }
 
+export let SampleSizeEditor: FC<{
+    initialSize: number;
+    totalSize: number;
+    onSampleSizeChange: (newSize: number) => void;
+}> = function SampleSizeEditor({ initialSize, totalSize, onSampleSizeChange }) {
+
+    const [localSampleSize, setLocalSampleSize] = useState<number>(initialSize);
+    const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
+    const open = Boolean(anchorEl);
+
+    let maxSliderSize = Math.min(totalSize, 30000);
+
+    const handleClick = (event: React.MouseEvent<HTMLElement>) => {
+        setAnchorEl(event.currentTarget);
+    };
+
+    const handleClose = () => {
+        setAnchorEl(null);
+    };
+
+    return <Box component="span" sx={{ display: 'flex', flexDirection: 'row', alignItems: 'center' }}>
+        <Button 
+            onClick={handleClick}
+            sx={{ textTransform: 'none', fontSize: '12px' }}
+        >
+            {localSampleSize} / {totalSize}
+        </Button>
+        <Popover
+            open={open}
+            anchorEl={anchorEl}
+            onClose={handleClose}
+            anchorOrigin={{
+                vertical: 'bottom',
+                horizontal: 'left',
+            }}
+            transformOrigin={{
+                vertical: 'top',
+                horizontal: 'left',
+            }}
+        >
+            <Box sx={{ p: 2, width: 300 }}>
+                <Typography fontSize="small" gutterBottom>
+                    Adjust sample size: {localSampleSize} / {totalSize} rows
+                </Typography>
+                <Box sx={{ display: 'flex', flexDirection: 'row', alignItems: 'center' }}>
+                    <Typography variant="caption" color="text.secondary" sx={{ mr: 1 }}>100</Typography>
+                    <Slider
+                        size="small"
+                        min={100}
+                        max={maxSliderSize}
+                        sx={{ mr: 1 }}
+                        value={localSampleSize}
+                        onChange={(_, value) => setLocalSampleSize(value as number)}
+                        valueLabelDisplay="auto"
+                        aria-label="Sample size"
+                    />
+                    <Typography variant="caption" color="text.secondary" sx={{ ml: 1 }}>{maxSliderSize}</Typography>
+                    <Button sx={{ textTransform: 'none', ml: 2, fontSize: '12px' }} onClick={() => {
+                        onSampleSizeChange(localSampleSize);
+                        setAnchorEl(null);
+                    }}>
+                        Resample
+                    </Button>
+                </Box>
+                
+            </Box>
+        </Popover>
+    </Box>
+}
+
 export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
             handleUpdateCandidates: (chartId: string, tables: DictTable[]) => void,
     }> = function ChartEditorFC({ cachedCandidates, handleUpdateCandidates }) {
@@ -231,6 +304,8 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
     const componentRef = useRef<HTMLHeadingElement>(null);
 
     let tables = useSelector((state: DataFormulatorState) => state.tables);
+    let extTables = useSelector((state: DataFormulatorState) => state.extTables);
+    
     let charts = useSelector((state: DataFormulatorState) => state.charts);
     let focusedChartId = useSelector((state: DataFormulatorState) => state.focusedChartId);
     let chartSynthesisInProgress = useSelector((state: DataFormulatorState) => state.chartSynthesisInProgress);
@@ -269,14 +344,15 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
     }
 
     const [rowsToDisplay, setRowsToDisplay] = useState<any[]>(createVisTableRows(table.rows));
-    let [sampleSize, setSampleSize] = useState<number>(10000);
-    let [fetchingDataInProgress, setFetchingDataInProgress] = useState<boolean>(false);
 
-    let focusedExtTable = baseTableToExtTable(JSON.parse(JSON.stringify(rowsToDisplay)), toDeriveVisFields, conceptShelfItems);
+
+    let focusedVisTable = baseTableToExtTable(table, extTables.find(t => t.baseTableRef == table.id));
     
-    async function sampleDisplayRows() {
+    async function sampleDisplayRows(sampleSize?: number) {
+        if (sampleSize == undefined) {
+            sampleSize = 5000;
+        }
         if (table.virtual) {
-            setFetchingDataInProgress(true);
             fetch(getUrls().SAMPLE_TABLE, {
                 method: 'POST',
                 headers: {
@@ -291,13 +367,10 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
             })
             .then(response => response.json())
             .then(data => {
-                console.log("sampled table", data.rows.length)
-                setFetchingDataInProgress(false);
                 setRowsToDisplay(createVisTableRows(data.rows));
             })
             .catch(error => {
                 console.error('Error sampling table:', error);
-                setFetchingDataInProgress(false);
             });
         }
     }   
@@ -320,7 +393,7 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
                 setRowsToDisplay(createVisTableRows(table.rows));
             }
         }
-    }, [focusedChart, sampleSize])
+    }, [focusedChart])
     
     useEffect(() => {
         setFocusUpdated(true);
@@ -393,30 +466,11 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
         return element;
     }
 
-    let focusedChartElement = createChartElement(focusedChart, focusedExtTable, `focused-element-${focusedChart.id}`);
+    let focusedChartElement = createChartElement(focusedChart, focusedVisTable, `focused-element-${focusedChart.id}`);
     let arrowCard = <></>;
     let resultChartElement = <></>;
 
     let focusedElement = <Box sx={{margin: "auto", display: 'flex', flexDirection: 'row'}}>
-                            {fetchingDataInProgress && (
-                                    <Box sx={{ 
-                                        position: 'absolute', 
-                                        top: 0, 
-                                        left: 0, 
-                                        right: 0,
-                                        zIndex: 10, 
-                                        display: 'flex', 
-                                        alignItems: 'center', 
-                                        justifyContent: 'center',
-                                        backgroundColor: 'rgba(255, 255, 255, 0.7)',
-                                        height: '100%',
-                                        borderTopLeftRadius: '4px',
-                                        borderTopRightRadius: '4px'
-                                    }}>
-                                        <CircularProgress size={24} sx={{ mr: 1 }} />
-                                        <Typography variant="body2" color="darkgray">Fetching data...</Typography>
-                                    </Box>
-                                )}
                                 {focusedChartElement}
                                 {arrowCard}
                                 {resultChartElement}
@@ -505,8 +559,8 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
     
     let chartActionButtons = [
         <Box key="data-source" fontSize="small" sx={{ margin: "auto", display: "flex", flexDirection: "row"}}>
-            <Typography component="span" sx={{}} fontSize="inherit">
-                data: {table.displayId || table.id}
+            <Typography component="span" sx={{display: 'flex', flexDirection: 'row', alignItems: 'center'}} fontSize="inherit">
+                data: {table.virtual ? <Tooltip title="this table resides in the backend database, sample rows are used for visualization"><CloudQueueIcon  sx={{ fontSize: '12px', color: 'text.secondary', mx: 0.5}} /></Tooltip> : ""} {table.displayId || table.id}
             </Typography>
         </Box>,
         ...derivedTableItems,
@@ -540,9 +594,24 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
             {table.derive ? <Typography component="span" fontSize="small" color="text.secondary" sx={{textAlign:'center'}}>
                 AI generated results can be inaccurate, inspect it!
             </Typography> : ""}
-            {table.virtual && rowsToDisplay.length < table.virtual.rowCount ? <Typography component="span" fontSize="small" color="text.secondary" sx={{textAlign:'center'}}>
-                visualizing {rowsToDisplay.length} / {table.virtual.rowCount} sampled rows 
-            </Typography> : ""}
+            {table.virtual ? (
+                <Box sx={{ display: 'flex', flexDirection: "row", margin: "auto", justifyContent: 'center', alignItems: 'center'}}>
+                    
+                    <Typography component="span" fontSize="small" color="text.secondary" sx={{textAlign:'center'}}>
+                        visualizing
+                    </Typography>
+                    <SampleSizeEditor 
+                        initialSize={rowsToDisplay.length}
+                        totalSize={table.virtual.rowCount}
+                        onSampleSizeChange={(newSize) => {
+                            sampleDisplayRows(newSize);
+                        }}
+                    />
+                    <Typography component="span" fontSize="small" color="text.secondary" sx={{textAlign:'center'}}>
+                        sample rows
+                    </Typography>
+                </Box>
+            ) : ""}
             <Box key='chart=action-buttons' sx={{ display: 'flex', flexDirection: "row", margin: "auto", paddingTop: 1 }}>
                 {chartActionButtons}
             </Box>
@@ -600,8 +669,6 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
                         setCandidatesViewAnchorEl(null);
                     }}
                     handleSelection={(selectionIdx: number) => {
-                        console.log(`selected: ${selectionIdx}`)
-                        console.log(candidates[selectionIdx]);
                         dispatch(dfActions.replaceTable({chartId: focusedChart.id, table: candidates[selectionIdx]}))
                         dispatch(dfActions.setFocusedTable(candidates[selectionIdx].id));
                         setCandidatesViewAnchorEl(null);
@@ -715,7 +782,7 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
                 <ZoomOutIcon fontSize="small" />
             </IconButton>
         </Tooltip>
-        <Slider aria-label="chart-resize" defaultValue={1} step={0.1} min={scaleMin} max={scaleMax} 
+        <Slider aria-label="chart-resize" size='small' defaultValue={1} step={0.1} min={scaleMin} max={scaleMax} 
                 value={localScaleFactor} onChange={(event: Event, newValue: number | number[]) => {
             setLocalScaleFactor(newValue as number);
         }} />
@@ -743,6 +810,8 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
 export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView({ }) {
 
     let tables = useSelector((state: DataFormulatorState) => state.tables);
+    let extTables = useSelector((state: DataFormulatorState) => state.extTables);
+
     let charts = useSelector((state: DataFormulatorState) => state.charts);
     let focusedChartId = useSelector((state: DataFormulatorState) => state.focusedChartId);
     let focusedTableId = useSelector((state: DataFormulatorState) => state.focusedTableId);
@@ -793,7 +862,6 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
                         cachedCandidates={cachedCandidates.find(l => l.chartId == focusedChartId)?.tables || []}
                         handleUpdateCandidates={handleUpdateCandidates} />
 
-    let derivedFields = conceptShelfItems.filter(f => f.source == "derived");
 
     let finalView = <Box></Box>;
 
@@ -803,8 +871,7 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
 
             let table = getDataTable(chart, tables, charts, conceptShelfItems);
     
-            let toDeriveFields = derivedFields.filter(f => f.name != "").filter(f => findBaseFields(f, conceptShelfItems).every(f2 => table.names.includes(f2.name)))
-            let extTable = baseTableToExtTable(JSON.parse(JSON.stringify(table.rows)), toDeriveFields, conceptShelfItems);
+            let extTable = baseTableToExtTable(table, extTables.find(t => t.baseTableRef == table.id));
 
             let chartTemplate = getChartTemplate(chart.chartType);
 

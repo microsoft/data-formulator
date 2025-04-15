@@ -29,7 +29,7 @@ import { DataFormulatorState, dfActions } from '../app/dfSlice';
 
 import prettier from "prettier";
 import parserBabel from 'prettier/parser-babel';
-import { CodexDialogBox } from './ConceptCard';
+import { PyCodexDialogBox } from './ConceptCard';
 import { CodeBox } from './VisualizationView';
 import { CustomReactTable } from './ReactTable';
 
@@ -94,31 +94,30 @@ export const DisambiguationDialog: FC<DisambiguationDialogProps> = function Disa
         }
     })
 
-    let handleProcessResults = (status: string, rawCodeList: string[]) => {
+    let handleProcessResults = (status: string, results: {code: string, content: any[]}[]) => {
         setCodeGenInProgress(false);
         if (status == "ok") {
 
-            let candidates = processCodeCandidates(rawCodeList, parentIDs, conceptShelfItems, tables)
-            let candidate = candidates[0];
+            let candidate = results[0];
 
-            setCodeList(candidates); // setCodeCandidates(codeList)
-            handleUpdate(candidate, description, false);
+            setCodeList(results.map(r => r.code)); // setCodeCandidates(codeList)
+            handleUpdate(candidate.code, description, false);
 
-            if (candidates.length > 0) {
+            if (results.length > 0) {
                 dispatch(dfActions.addMessages({
                     "timestamp": Date.now(),
                     "type": "success",
-                    "value": `Find ${candidates.length} candidate transformations for concept "${conceptName}".`
+                    "value": `Find ${results.length} candidate transformations for concept "${conceptName}".`
                 }));
             } else {
                 dispatch(dfActions.addMessages({
                     "timestamp": Date.now(),
                     "type": "info",
-                    "value": `Find ${candidates.length} candidate transformations for concept "${conceptName}", please try again.`
+                    "value": `Find ${results.length} candidate transformations for concept "${conceptName}", please try again.`
                 }));
             }
 
-            return candidates;
+            return results.map(r => r.code);
         } else {
             // TODO: add warnings to show the user
             dispatch(dfActions.addMessages({
@@ -141,7 +140,7 @@ export const DisambiguationDialog: FC<DisambiguationDialogProps> = function Disa
         >
             <DialogTitle sx={{maxWidth: 800}}>Transformations from <Typography component="span" variant="h6" color="secondary">{parentConcepts.map(c => c.name).join(", ")}</Typography> to <Typography component="span" variant="h6" color="primary">{conceptName}</Typography></DialogTitle>
             <DialogContent sx={{overflowX: "hidden"}} dividers>
-                <CodexDialogBox 
+                <PyCodexDialogBox 
                     inputData={inputData}
                     inputFieldsInfo={inputFieldsInfo}
                     initialDescription={transformDesc}
@@ -179,15 +178,6 @@ export const DisambiguationDialog: FC<DisambiguationDialogProps> = function Disa
                         let colNames : [string[], string] = [parentConcepts.map(f => f.name), conceptName];
 
                         let formattedCode = code;
-                        try {
-                            formattedCode = prettier.format(code, {
-                                parser: "babel",
-                                plugins: [parserBabel],
-                                printWidth: 60
-                            })
-                        } catch {
-
-                        }
 
                         return <Card key={`candidate-dialog-${idx}`} onClick={()=>{setSelectionIdx(idx)}} 
                               sx={{minWidth: "280px", maxWidth: "600px", display: "flex",  flexGrow: 1, margin: "10px", 

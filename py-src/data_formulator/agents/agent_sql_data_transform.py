@@ -2,7 +2,6 @@
 # Licensed under the MIT License.
 
 import json
-import time
 import random
 import string
 
@@ -201,9 +200,8 @@ class SQLDataTransformationAgent(object):
 
                 try:
                     # Generate unique table name directly with timestamp and random suffix
-                    timestamp = int(time.time())
-                    random_suffix = ''.join(random.choices(string.ascii_lowercase, k=5))
-                    table_name = f"result_{timestamp}_{random_suffix}"
+                    random_suffix = ''.join(random.choices(string.ascii_lowercase, k=4))
+                    table_name = f"view_{random_suffix}"
                     
                     create_query = f"CREATE VIEW IF NOT EXISTS {table_name} AS {query_str}"
                     self.conn.execute(create_query)

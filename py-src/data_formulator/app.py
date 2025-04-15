@@ -27,6 +27,8 @@ from pathlib import Path
 from vega_datasets import data as vega_data
 
 from data_formulator.agents.agent_concept_derive import ConceptDeriveAgent
+from data_formulator.agents.agent_py_concept_derive import PyConceptDeriveAgent
+
 from data_formulator.agents.agent_py_data_transform import PythonDataTransformationAgent
 from data_formulator.agents.agent_sql_data_transform import SQLDataTransformationAgent
 from data_formulator.agents.agent_py_data_rec import PythonDataRecAgent
@@ -364,6 +366,31 @@ def derive_concept_request():
     return response
 
 
+@app.route('/api/derive-py-concept', methods=['GET', 'POST'])
+def derive_py_concept():
+
+    if request.is_json:
+        app.logger.info("# code query: ")
+        content = request.get_json()
+        token = content["token"]
+
+        client = get_client(content['model'])
+
+        app.logger.info(f" model: {content['model']}")
+        agent = PyConceptDeriveAgent(client=client)
+
+        #print(content["input_data"])
+
+        results = agent.run(content["input_data"], [f['name'] for f in content["input_fields"]], 
+                                       content["output_name"], content["description"])
+        
+        response = flask.jsonify({ "status": "ok", "token": token, "results": results })
+    else:
+        response = flask.jsonify({ "token": -1, "status": "error", "results": [] })
+
+    response.headers.add('Access-Control-Allow-Origin', '*')
+    return response
+
 @app.route('/api/clean-data', methods=['GET', 'POST'])
 def clean_data_request():
 
@@ -612,22 +639,20 @@ def list_tables():
                 sample_rows = db.execute(f"SELECT * FROM {table_name} LIMIT 1000").fetchall()
                 
                 # Check if this is a view or a table
-                is_view = False
                 try:
-                    # In most SQL databases, views are listed in a system table
-                    # For DuckDB, we can check if it's a view by querying the system tables
-                    view_check = db.execute(f"SELECT * FROM duckdb_views() WHERE view_name = '{table_name}'").fetchone()
-                    is_view = view_check is not None
-                except Exception:
+                    # Get both view existence and source in one query
+                    view_info = db.execute(f"SELECT view_name, sql FROM duckdb_views() WHERE view_name = '{table_name}'").fetchone()
+                    view_source = view_info[1] if view_info else None
+                except Exception as e:
                     # If the query fails, assume it's a regular table
-                    pass
+                    view_source = None
 
                 result.append({
                     "name": table_name,
                     "columns": [{"name": col[0], "type": col[1]} for col in columns],
                     "row_count": row_count,
                     "sample_rows": [dict(zip([col[0] for col in columns], row)) for row in sample_rows],
-                    "is_view": is_view,
+                    "view_source": view_source
                 })
         
         return jsonify({
@@ -652,6 +677,8 @@ def sample_table():
         projection_fields = data.get('projection_fields', []) # if empty, we want to include all fields
         method = data.get('method', 'random') # one of 'random', 'head', 'bottom'
         order_by_fields = data.get('order_by_fields', [])
+
+        print(f"sample_table: {table_id}, {sample_size}, {projection_fields}, {method}, {order_by_fields}")
         
         # Validate field names against table columns to prevent SQL injection
         with db_manager.connection(session['session_id']) as db:
@@ -817,7 +844,7 @@ def create_table():
 
 @app.route('/api/tables/delete-table', methods=['POST'])
 def drop_table():
-    """Drop a table"""
+    """Drop a table or view"""
     try:
         data = request.get_json()
         table_name = data.get('table_name')
@@ -826,11 +853,14 @@ def drop_table():
             return jsonify({"status": "error", "message": "No table name provided"}), 400
             
         with db_manager.connection(session['session_id']) as db:
+            # First try to drop it as a view
+            db.execute(f"DROP VIEW IF EXISTS {table_name}")
+            # Then try to drop it as a table
             db.execute(f"DROP TABLE IF EXISTS {table_name}")
         
             return jsonify({
                 "status": "success",
-                "message": f"Table {table_name} dropped"
+                "message": f"Table/view {table_name} dropped"
             })
     
     except Exception as e:

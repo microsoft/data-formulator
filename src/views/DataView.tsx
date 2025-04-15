@@ -34,25 +34,26 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView({  $table
 
     const dispatch = useDispatch();
     const tables = useSelector((state: DataFormulatorState) => state.tables);
-
+    const extTables = useSelector((state: DataFormulatorState) => state.extTables);
+    
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
     const focusedTableId = useSelector((state: DataFormulatorState) => state.focusedTableId);
 
     let derivedFields =  conceptShelfItems.filter(f => f.source == "derived" && f.name != "");
 
     // we only change extTable when conceptShelfItems and tables changes
-    let extTables = useMemo(()=>{
+    let tableToRender = useMemo(()=>{
         if (derivedFields.some(f => f.tableRef == focusedTableId)) {
             return tables.map(table => {
                 // try to let table figure out all fields are derivable from the table
-                let rows = baseTableToExtTable(table.rows, derivedFields, conceptShelfItems);
+                let rows = baseTableToExtTable(table, extTables.find(t => t.baseTableRef == table.id));
                 let extTable = createTableFromFromObjectArray(`${table.id}`, rows, table.anchored, table.derive);
                 return extTable
             })
         } else {
             return tables;
         }
-    }, [tables, derivedFields])
+    }, [tables, extTables])
 
     useEffect(() => {
         if(focusedTableId == undefined && tables.length > 0) {
@@ -134,8 +135,6 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView({  $table
     const onRangeSelectionChanged = (columns: string[], selected: any[]) => {
         let values = _.uniq(selected);
     };
-
-    let tableToRender = extTables; 
 
     let coreTables = tableToRender.filter(t => t.derive == undefined || t.anchored);
     let tempTables = tableToRender.filter(t => t.derive && !t.anchored);

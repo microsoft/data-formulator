@@ -1,4 +1,3 @@
-
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
@@ -44,7 +43,7 @@ import ZoomInIcon from '@mui/icons-material/ZoomIn';
 
 import AnimateHeight from 'react-animate-height';
 
-import { FieldItem, ConceptTransformation, duplicateField } from '../components/ComponentType';
+import { FieldItem, ConceptTransformation, duplicateField, FieldSource } from '../components/ComponentType';
 
 import {  testType, Type, TypeList } from "../data/types";
 import React from 'react';
@@ -58,6 +57,8 @@ import { deriveTransformExamplesV2, getDomains, getIconFromType, processCodeCand
 
 import _ from 'lodash';
 import { DictTable } from '../components/ComponentType';
+import { CodeBox } from './VisualizationView';
+import { CustomReactTable } from './ReactTable';
 
 export interface ConceptCardProps {
     field: FieldItem,
@@ -159,7 +160,7 @@ export const ConceptCard: FC<ConceptCardProps> = function ConceptCard({ field })
 
     const editModeCard = field.source == "derived" && (
         <CardContent className="draggable-card-body-edit-mode">
-            <DerivedConceptForm concept={field} handleUpdateConcept={handleUpdateConcept}
+            <DerivedConceptFormV2 concept={field} handleUpdateConcept={handleUpdateConcept}
                 handleDeleteConcept={handleDeleteConcept}
                 turnOffEditMode={() => { setEditMode(false); }} />
         </CardContent>
@@ -259,11 +260,6 @@ export const ConceptCard: FC<ConceptCardProps> = function ConceptCard({ field })
     return cardComponent;
 }
 
-let formatFunc = (jsCode: string) => prettier.format(jsCode, {
-    parser: "babel",
-    plugins: [parserBabel],
-    printWidth: 40
-}).trim();
 
 export interface ConceptFormProps {
     concept: FieldItem,
@@ -272,65 +268,15 @@ export interface ConceptFormProps {
     turnOffEditMode?: () => void,
 }
 
-export const CodeEditor: FC<{ code: string; handleSaveCode: (code: string) => void }> = ({ code, handleSaveCode }) => {
-
-    const [localCode, setLocalCode] = useState(code);
-
-    useEffect(() => {
-        setLocalCode(code)
-    }, [code])
-
-    return <Box>
-        <Editor
-            value={localCode}
-            onValueChange={(tempCode: string) => {
-                setLocalCode(tempCode);
-            }}
-            highlight={code => Prism.highlight(code, Prism.languages.javascript, 'javascript')}
-            padding={10}
-            style={{
-                fontFamily: '"Fira code", "Fira Mono", monospace',
-                fontSize: 10,
-                paddingBottom: '24px'
-            }}
-        />
-        <ButtonGroup size="small" disabled={code == localCode} sx={{
-            fontSize: 12, position: "absolute", right: "4px", bottom: "8px", backgroundColor: "rgb(242,249,253)",
-            "& button": { textTransform: "none", padding: "2px 4px" }, flexGrow: 1, justifyContent: "right"
-        }}>
-            <Button
-                variant="text"
-                color="primary" sx={{
-                    "&:hover": { backgroundColor: "rgba(2, 136, 209, 0.3)" }
-                }}
-                size="small" onClick={() => { setLocalCode(code); }}>
-                undo
-            </Button>
-            <Button
-                variant={localCode != code ? "contained" : "text"}
-                color="primary" sx={{
-                    "&:hover": { backgroundColor: "rgba(2, 136, 209, 0.3)" }
-                }}
-                size="small" onClick={() => { handleSaveCode(localCode); }}>
-                save code edits
-            </Button>
-        </ButtonGroup>
-    </Box>
-}
 
 
-export const DerivedConceptForm: FC<ConceptFormProps> = function DerivedConceptForm({ concept, handleUpdateConcept, handleDeleteConcept, turnOffEditMode }) {
+export const DerivedConceptFormV2: FC<ConceptFormProps> = function DerivedConceptFormV2({ concept, handleUpdateConcept, handleDeleteConcept, turnOffEditMode }) {
 
     let theme = useTheme();
 
     let conceptTransform = concept.transform as ConceptTransformation;
 
-    useEffect(() => {
-        setTransformCode(formatFunc(conceptTransform.code || ""))
-        setCodeCandidates([formatFunc(conceptTransform.code || "")])
-    }, [conceptTransform.code])
-
-    let formattedCode = formatFunc(conceptTransform.code || "");
+    let formattedCode = conceptTransform.code;
 
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
 
@@ -338,39 +284,23 @@ export const DerivedConceptForm: FC<ConceptFormProps> = function DerivedConceptF
     const handleNameChange = (event: React.ChangeEvent<HTMLInputElement>) => { setName(event.target.value); };
 
     const [dtype, setDtype] = useState(concept.name == "" ? "auto" : concept.type as string);
-    const handleDtypeChange = (event: SelectChangeEvent) => { setDtype(event.target.value); };
-
 
     // states related to transformation functions, they are only valid when the type is "derived"
     const [transformCode, setTransformCode] = useState<string>(formattedCode);
     const [transformDesc, setTransformDesc] = useState<string>(conceptTransform.description || "");
     const [transformParentIDs, setTransformParentIDs] = useState<string[]>(conceptTransform.parentIDs || []);
-    const [transformResult, setTransformResult] = useState<[any[], any][]>([]);
+    const [tempExtTable, setTempExtTable] = useState<{rows: any[], baseTableRef: string, virtualTableRef?: string} | undefined>(undefined);
 
     // use tables for infer domains
     let tables = useSelector((state: DataFormulatorState) => state.tables);
+    let extTables = useSelector((state: DataFormulatorState) => state.extTables);
 
-    //const tables = [(baseTable as DictTable).rows, ...synthOutputs.map(t => t.data), ...savedCharts.map(t => t.data)]
-
+    console.log(extTables);
 
     // if these two fields are changed from other places, update their values
     useEffect(() => { setDtype(concept.type) }, [concept.type]);
 
     let dispatch = useDispatch();
-
-    let [dialogOpen, setDialogOpen] = useState<boolean>(false);
-    let [codeCandidates, setCodeCandidates] = useState<string[]>([]);
-
-    let NUM_SAVED_TRANSFORM_RESULTS = 150;
-
-    useEffect(() => {
-        if (concept.source == "derived") {
-            let result = deriveTransformExamplesV2(transformCode, transformParentIDs, NUM_SAVED_TRANSFORM_RESULTS, conceptShelfItems, tables);
-            setTransformResult(result);
-            // automatically set the data type (the user can still change it)
-            setDtype(testType([...result.map(t => t[1])]));
-        }
-    }, [transformCode]);
 
     const [codeGenInProgress, setCodeGenInProgress] = useState<boolean>(false);
 
@@ -454,19 +384,23 @@ export const DerivedConceptForm: FC<ConceptFormProps> = function DerivedConceptF
     let viewExamples: any = "";
 
     //let transformResult = deriveTransformResult(transformCode, parentConcept.domain.values.slice(0, 5));
-    if (transformCode && transformResult.length > 0) {
+    if (transformCode && tempExtTable) {
 
         let colNames: [string[], string] = [parentConcepts.map(f => f.name), name];
+        let colDefs = [...colNames[0], colNames[1]].map(n => ({
+            id: n,
+            label: n,
+            dataType: "string" as Type,
+            source: "original" as FieldSource
+        }));
 
         viewExamples = (<Box key="viewexample--box" width="100%" sx={{ position: "relative", }}>
             <InputLabel shrink>illustration of the generated function</InputLabel>
             <Box className="GroupItems" sx={{ padding: "0px 0px 6px 0px", margin: 0 }}>
-                {simpleTableView(transformResult, colNames, conceptShelfItems, 5)}
+                <CustomReactTable rows={tempExtTable.rows.slice(0, 5)} columnDefs={colDefs} rowsPerPageNum={5} compact={true} maxCellWidth={100} />
             </Box>
         </Box>)
     }
-
-    //let codeArea = codeGenInProgress ? <LinearProgress sx={{ color: 'grey.500' }} color="inherit"/> : [codeEditor, viewExamples];
 
     let codeArea = (
         <Box key="code-area-box" sx={{
@@ -480,33 +414,37 @@ export const DerivedConceptForm: FC<ConceptFormProps> = function DerivedConceptF
                 <LinearProgress sx={{ width: "100%", height: "100%", opacity: 0.05 }} />
             </Box> : ''}
             {viewExamples}
+            <CodeBox code={transformCode.trim()} language="python"/>
         </Box>
     )
 
-    let handleProcessResults = (status: string, rawCodeList: string[]) : string[] => {
+    let handleProcessResults = (status: string, results: {code: string, content: any}[]) : void => {
         setCodeGenInProgress(false);
         if (status == "ok") {
 
-            let candidates = processCodeCandidates(rawCodeList, transformParentIDs, conceptShelfItems, tables)
-            let candidate = candidates[0];
+            console.log(`[fyi] just received results`);
+            console.log(results);
 
-            setCodeCandidates(candidates);
-            setTransformCode(candidate);
+            if (results.length > 0) {
+                let candidate = results[0];
+                setTransformCode(candidate.code);
+                setTempExtTable({
+                    baseTableRef: parentConcepts[0].tableRef,
+                    rows: candidate.content.rows, 
+                });
 
-            if (candidates.length > 0) {
                 dispatch(dfActions.addMessages({
                     "timestamp": Date.now(),
                     "type": "success",
-                    "value": `Find ${candidates.length} candidate transformations for concept "${name}".`
+                    "value": `Find ${results.length} candidate transformations for concept "${name}".`
                 }));
             } else {
                 dispatch(dfActions.addMessages({
                     "timestamp": Date.now(),
                     "type": "info",
-                    "value": `Find ${candidates.length} candidate transformations for concept "${name}", please try again.`
+                    "value": `Find ${results.length} candidate transformations for concept "${name}", please try again.`
                 }));
             }
-            return candidates;
         } else {
             // TODO: add warnings to show the user
             setTransformCode("");
@@ -515,7 +453,6 @@ export const DerivedConceptForm: FC<ConceptFormProps> = function DerivedConceptF
                 "type": "error",
                 "value": "unable to generate the desired transformation, please try again."
             }));
-            return [];
         }
     }
 
@@ -540,7 +477,7 @@ export const DerivedConceptForm: FC<ConceptFormProps> = function DerivedConceptF
     let inputData = inputDataCandidates.length > 0 ? inputDataCandidates[0] : tables[0];
 
     cardBottomComponents = [
-        <CodexDialogBox 
+        <PyCodexDialogBox 
             key="code-dialog-box"
             inputData={inputData}
             inputFieldsInfo={inputFieldsInfo}
@@ -549,29 +486,13 @@ export const DerivedConceptForm: FC<ConceptFormProps> = function DerivedConceptF
             handleProcessResults={handleProcessResults}
             callWhenSubmit={(desc: string) => {
                 setTransformDesc(desc);
-                setCodeCandidates([]);
                 setCodeGenInProgress(true);
             }}
             size={'small'}
         />,
         <Box key="codearea-container" width="100%">
             {codeArea}
-        </Box>,
-        <IconButton key="tune-icon" size="small" color="primary"
-            disabled={codeCandidates.length == 0 || codeGenInProgress}
-            onClick={() => { setDialogOpen(true) }}>
-            <Tooltip title={`inspect transformation code`}>
-                <ZoomInIcon />
-            </Tooltip>
-        </IconButton>,
-        <DisambiguationDialog
-            key="disambiguation-dialog"
-            conceptName={name} parentIDs={transformParentIDs} conceptShelfItems={conceptShelfItems}
-            open={dialogOpen} transformDesc={transformDesc}
-            codeCandidates={codeCandidates}
-            handleUpdate={(code, desc, closeDialog) => { setTransformCode(code); setTransformDesc(desc); setDialogOpen(!closeDialog); }}
-            onClose={() => { setDialogOpen(false) }}
-        />
+        </Box>
     ]
 
     const checkDerivedConceptDiff = () => {
@@ -590,13 +511,10 @@ export const DerivedConceptForm: FC<ConceptFormProps> = function DerivedConceptF
         if (transformCode == "") {
             saveDisabledMsg.push("transformation is not specified")
         }
-        if (transformResult.filter(entry => entry[1] == undefined).length > 0) {
-            //saveDisabledMsg.push("transformation unsuccessful on some inputs");
-        }
     }
 
     return (
-        <Box sx={{ display: "flex", flexDirection: "column" }} >
+        <Box sx={{ display: "flex", flexDirection: "column", borderTop: "1px solid salmon" }} >
             <Box component="form" className="concept-form"
                 sx={{ display: "flex", flexWrap: "wrap", '& > :not(style)': { margin: "4px", /*width: '25ch'*/ }, }}
                 noValidate
@@ -636,6 +554,14 @@ export const DerivedConceptForm: FC<ConceptFormProps> = function DerivedConceptF
                               code: transformCode, 
                               description: transformDesc } as ConceptTransformation : undefined;
 
+                        if (tempExtTable) {
+                            dispatch(dfActions.setExtTables({
+                                baseTableRef: tempExtTable.baseTableRef,
+                                rows: tempExtTable.rows,
+                                virtualTableRef: tempExtTable.virtualTableRef
+                            }));
+                        }
+
                         if (turnOffEditMode) {
                             turnOffEditMode();
                         }
@@ -658,11 +584,12 @@ export interface CodexDialogBoxProps {
     inputFieldsInfo: {name: string, type: string, values: any[]}[],
     initialDescription: string,
     callWhenSubmit: (desc: string) => void,
-    handleProcessResults: (status: string, codeList: string[]) => string[], // return processed cnadidates for the ease of logging
+    handleProcessResults: (status: string, results: {code: string, content: any[]}[]) => void, // return processed cnadidates for the ease of logging
     size: "large" | "small",
 }
 
-export const CodexDialogBox: FC<CodexDialogBoxProps> = function ({ 
+
+export const PyCodexDialogBox: FC<CodexDialogBoxProps> = function ({ 
     initialDescription, inputFieldsInfo, inputData, outputName, callWhenSubmit, handleProcessResults, size="small" }) {
 
     let activeModel = useSelector(dfSelectors.getActiveModel);
@@ -702,20 +629,21 @@ export const CodexDialogBox: FC<CodexDialogBoxProps> = function ({
                 const controller = new AbortController()
                 const timeoutId = setTimeout(() => controller.abort(), 20000)
 
-                fetch(getUrls().DERIVE_CONCEPT_URL, {...message, signal: controller.signal })
+                fetch(getUrls().DERIVE_PY_CONCEPT, {...message, signal: controller.signal })
                     .then((response) => response.json())
                     .then((data) => {
                         console.log("---model output")
                         console.log(data);
 
-                        let status = data["status"];
-                        let codeList: string[] = [];
+                        let candidates = data["results"].filter((r: any) => r["status"] == "ok");
 
-                        if (data["status"] == "ok" && data["token"] == requestTimeStamp) {
-                            codeList = data["result"] as string[];
-                        }
-                        handleProcessResults(status, codeList);
+                        console.log(`[fyi] just received ${candidates.length} candidates`);
+                        console.log(candidates);
+
+                        handleProcessResults(data["status"], candidates);
                     }).catch((error) => {
+                        console.log(`[fyi] just received error`);
+                        console.log(error);
                         handleProcessResults("error", []);
                     });
             }}>

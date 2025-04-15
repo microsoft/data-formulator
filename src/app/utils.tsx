@@ -34,6 +34,8 @@ export function getUrls() {
 
         // these functions involves openai models
         DERIVE_CONCEPT_URL: `/api/derive-concept-request`,
+        DERIVE_PY_CONCEPT: `/api/derive-py-concept`,
+
         SORT_DATA_URL: `/api/codex-sort-request`,
         CLEAN_DATA_URL: `/api/clean-data`,
         
@@ -127,7 +129,45 @@ export function runCodeOnInputListsInVM(
     return ioPairs;
 }
 
-export function baseTableToExtTable(table: any[], derivedFields: FieldItem[], allFields: FieldItem[]) {
+export function prepVisTable(table: any[], derivedFields: FieldItem[], allFields: FieldItem[], encodingMap: EncodingMap) {
+
+    let binningFields = []
+    let aggregateFields = []
+    let groupByFields = []
+
+    for (const [channel, encoding] of Object.entries(encodingMap)) {
+        const field = encoding.fieldID ? _.find(allFields, (f) => f.id === encoding.fieldID) : undefined;
+        if (field) {
+            if (encoding.bin) {
+                binningFields.push(field.name);
+            }
+        }
+        if (encoding.aggregate) {
+            aggregateFields.push([field?.name, encoding.aggregate]);
+        } else {
+            if (field) {
+                groupByFields.push(field.name);
+            }
+        }
+    }
+
+    ///// TODOTODO: 
+
+    return [];
+}
+
+
+
+export function baseTableToExtTable(table: DictTable, extTable?: {rows: any[], baseTableRef: string, virtualTableRef?: string}) {
+    // derive fields from derivedFields from the original table
+    if (extTable) {
+        return structuredClone(extTable.rows);
+    } else {
+        return structuredClone(table.rows);
+    }
+}
+
+export function baseTableToExtTableOld(table: any[], derivedFields: FieldItem[], allFields: FieldItem[]) {
     // derive fields from derivedFields from the original table
 
     if (table.length == 0) {
