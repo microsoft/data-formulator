@@ -35,7 +35,6 @@ import TableRowsIcon from '@mui/icons-material/TableRowsOutlined';
 import InsightsIcon from '@mui/icons-material/Insights';
 import AnchorIcon from '@mui/icons-material/Anchor';
 
-import { findBaseFields } from './ViewUtils';
 import { AppDispatch } from '../app/store';
 
 import { EncodingShelfCard, TriggerCard } from './EncodingShelfCard';

@@ -156,17 +156,6 @@ export function prepVisTable(table: any[], derivedFields: FieldItem[], allFields
     return [];
 }
 
-
-
-export function baseTableToExtTable(table: DictTable, extTable?: {rows: any[], baseTableRef: string, virtualTableRef?: string}) {
-    // derive fields from derivedFields from the original table
-    if (extTable) {
-        return structuredClone(extTable.rows);
-    } else {
-        return structuredClone(table.rows);
-    }
-}
-
 export function baseTableToExtTableOld(table: any[], derivedFields: FieldItem[], allFields: FieldItem[]) {
     // derive fields from derivedFields from the original table
 

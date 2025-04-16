@@ -5,6 +5,7 @@ from multiprocessing import Process, Pipe
 from sys import addaudithook
 import traceback
 import warnings
+import pandas as pd
 
 ## ---------------- The sandbox implementation follows, not to be changed --------------------
 
@@ -16,7 +17,6 @@ def ran_in_subprocess(code, allowed_objects, conn, output_var_name):
     output_var_name: which variable to return from the subprocess
     """
     warnings.filterwarnings('ignore')
-
 
     def block_mischief(event,arg):
         if type(event) != str: raise
@@ -76,68 +76,88 @@ output = output_df.to_json(None, "records")
     return result
 
 
-def run_data_process_in_sandbox(code, table_rows, exec_str):
+def run_data_process_in_sandbox(code, df, exec_str):
     """given a concept derivatino function, execute the function on inputs to generate a new dataframe"""
     
-    allowed_objects = [table_rows]
+    allowed_objects = [df]
 
     import_str = "import pandas as pd\nimport json"
 
     script_str = f'{import_str}\n\n{code}{exec_str}'
 
-    sandbox_locals = dict((key, value) for key,value in locals().items() if value in allowed_objects) # copy.deepcopy() ## are all obj safely serialized?
+    # Use 'is' operator instead of 'in' for exact object identity comparison
+    sandbox_locals = dict((key, value) for key, value in locals().items() if any(value is obj for obj in allowed_objects))
     parent_conn, child_conn = Pipe()
-    p = Process(target=ran_in_subprocess, args=(script_str, sandbox_locals, child_conn, 'output'))
+    p = Process(target=ran_in_subprocess, args=(script_str, sandbox_locals, child_conn, 'df'))
     p.start()
 
     result = parent_conn.recv()
     p.join()
     return result
 
-def run_derive_data_in_sandbox2020(code, field_names, output_field_name, table_rows):
+
+def derive_df_in_sandbox2020(code, output_field_name, table_rows):
+    """given a concept derivation function, execute the function on inputs to generate a new dataframe"""
+    
+    warnings.filterwarnings('ignore')
+    
+    df = pd.DataFrame.from_records(table_rows)
+    
+    # Create a restricted builtins dictionary with only safe operations
+    safe_builtins = {}
+    for name in ['abs', 'all', 'any', 'ascii', 'bin', 'bool', 'bytearray', 'bytes',
+                 'chr', 'complex', 'dict', 'divmod', 'enumerate', 'filter', 'float',
+                 'format', 'frozenset', 'hash', 'hex', 'int', 'iter', 'len', 'list',
+                 'map', 'max', 'min', 'next', 'oct', 'ord', 'pow', 'range', 'repr',
+                 'reversed', 'round', 'set', 'slice', 'sorted', 'str', 'sum', 'tuple',
+                 'zip', '__import__']:  # Note: we need __import__ for importing allowed modules
+        if name in __builtins__:
+            safe_builtins[name] = __builtins__[name]
+
+    # List of allowed modules for import
+    ALLOWED_MODULES = {
+        'pandas', 'numpy', 'math', 'datetime', 'json', 
+        'statistics', 'random', 'collections', 're',
+        'itertools', 'functools', 'operator'
+    }
+
+    # Custom import function that only allows safe modules
+    def safe_import(name, *args, **kwargs):
+        if name not in ALLOWED_MODULES:
+            raise ImportError(f"Import of module '{name}' is not allowed for security reasons. "
+                           f"Allowed modules are: {', '.join(sorted(ALLOWED_MODULES))}")
+        return __import__(name, *args, **kwargs)
+
+    # Override the builtin __import__
+    safe_builtins['__import__'] = safe_import
+
+    # Create restricted globals with only necessary modules and objects
+    restricted_globals = {
+        '__builtins__': safe_builtins,
+        'df': df   # The dataframe to operate on
+    }
+
+    try:
+        exec_str = f'''
+import pandas as pd
+{code}
+df["{output_field_name}"] = derive_new_column(df)
+'''
+        exec(exec_str, restricted_globals)
+        result = {'status': 'ok', 'content': restricted_globals['df']}
+    except Exception as err:
+        error_message = f"Error: {type(err).__name__} - {str(err)}"
+        result = {'status': 'error', 'content': error_message}
+
+    return result
+
+
+def derive_df_in_sandbox2020_subprocess(code, output_field_name, table_rows):
     """given a concept derivatino function, execute the function on inputs to generate a new dataframe"""
     
-    arg_list = ", ".join([f'r["{name}"]' for name in field_names])
-
+    df = pd.DataFrame.from_records(table_rows)
     exec_str = f'''
-df = pd.DataFrame.from_records(table_rows)
-app_func = lambda r: derive({arg_list})
-df["{output_field_name}"] = df.apply(app_func, axis = 1)
-output = df.to_json(None, "records")
-#print(output)
-    '''
-
-    return run_data_process_in_sandbox(code, table_rows, exec_str)
-
-
-
-def run_generic_derive_data_in_sandbox2020(code, field_names, output_field_name, table_rows):
-    """given a concept derivatino function, execute the function on inputs to generate a new dataframe"""
-    
-    exec_str = f'''
-df = pd.DataFrame.from_records(table_rows)
-app_func = lambda r: derive(r, df)
-df["{output_field_name}"] = df.apply(app_func, axis = 1)
-output = df.to_json(None, "records")
-#print(output)
-    '''
-
-    return run_data_process_in_sandbox(code, table_rows, exec_str)
-
-
-
-def run_filter_data_in_sandbox2020(code, table_rows):
-    """given a concept derivatino function, execute the function on inputs to generate a new dataframe"""
-
-    exec_str = f'''
-df = pd.DataFrame.from_records(table_rows)
-filter_fn = lambda r: filter_row(r, df)
-filter_boolean = df.apply(filter_fn, axis=1)
-
-df_out = df[filter_boolean]
-
-output = df_out.to_json(None, "records")
-#print(output)
-    '''
-
-    return run_data_process_in_sandbox(code, table_rows, exec_str)
+df["{output_field_name}"] = derive_new_column(df)
+'''
+    result = run_data_process_in_sandbox(code, df, exec_str)
+    return result

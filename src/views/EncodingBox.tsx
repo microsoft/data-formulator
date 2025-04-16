@@ -45,7 +45,7 @@ import _ from 'lodash';
 
 import '../scss/EncodingShelf.scss';
 import AnimateHeight from 'react-animate-height';
-import { deriveTransformExamplesV2, getDomains, getIconFromType, groupConceptItems } from './ViewUtils';
+import { getDomains, getIconFromType, groupConceptItems } from './ViewUtils';
 import { getUrls } from '../app/utils';
 import { Type } from '../data/types';
 
@@ -132,6 +132,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
 
     // use tables for infer domains
     const tables = useSelector((state: DataFormulatorState) => state.tables);
+
     const charts = useSelector((state: DataFormulatorState) => state.charts);
     let activeModel = useSelector(dfSelectors.getActiveModel);
     
@@ -253,13 +254,8 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
         </FormControl>
     ] : [];
 
-    let domainItems = (field?.source == "custom" || field?.source == "original") ? getDomains(field as FieldItem, tables)[0] : [];
-    if (field?.source == "derived") {
-        domainItems = deriveTransformExamplesV2(
-            (field.transform as ConceptTransformation).code,
-            (field.transform as ConceptTransformation).parentIDs,
-            -1, conceptShelfItems, tables).map(p => p[1]);
-    }
+    let domainItems = field ? getDomains(field as FieldItem, tables)[0] : [];
+
     // deduplicate domain items
     domainItems = [...new Set(domainItems)];
 
@@ -527,6 +523,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
     }
 
     let conceptGroups = groupConceptItems(conceptShelfItems, tables);
+
     let createConceptInputBox = <Autocomplete
         key="concept-create-input-box"
         onChange={(event, value) => {

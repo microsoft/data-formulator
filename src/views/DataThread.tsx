@@ -26,7 +26,7 @@ import { VegaLite } from 'react-vega'
 import '../scss/VisualizationView.scss';
 import { useDispatch, useSelector } from 'react-redux';
 import { DataFormulatorState, dfActions } from '../app/dfSlice';
-import { assembleVegaChart, baseTableToExtTable, getTriggers } from '../app/utils';
+import { assembleVegaChart, getTriggers } from '../app/utils';
 import { Chart, DictTable, EncodingItem, Trigger } from "../components/ComponentType";
 
 import DeleteIcon from '@mui/icons-material/Delete';
@@ -41,7 +41,6 @@ import CheckIcon from '@mui/icons-material/Check';
 
 import _ from 'lodash';
 import { getChartTemplate } from '../components/ChartTemplates';
-import { findBaseFields } from './ViewUtils';
 
 import 'prismjs/components/prism-python' // Language
 import 'prismjs/components/prism-typescript' // Language
@@ -592,7 +591,6 @@ const ChartElement = memo<{
 export const DataThread: FC<{}> = function ({ }) {
 
     let tables = useSelector((state: DataFormulatorState) => state.tables);
-    let extTables = useSelector((state: DataFormulatorState) => state.extTables);
 
     let charts = useSelector((state: DataFormulatorState) => state.charts);
     let focusedChartId = useSelector((state: DataFormulatorState) => state.focusedChartId);
@@ -627,9 +625,7 @@ export const DataThread: FC<{}> = function ({ }) {
 
     let chartElements = useMemo(() => charts.filter(chart => !chart.intermediate).map((chart) => {
         const table = getDataTable(chart, tables, charts, conceptShelfItems);
-
-        let toDeriveFields = derivedFields.filter(f => f.name != "").filter(f => findBaseFields(f, conceptShelfItems).every(f2 => table.names.includes(f2.name)))
-        let extTable = baseTableToExtTable(table, extTables.find(t => t.baseTableRef == table.id));
+        let visTableRows = structuredClone(table.rows);
 
         if (chart.chartType == "Auto") {
             let element = <Box sx={{ position: "relative", width: "fit-content", display: "flex", flexDirection: "column", margin: 'auto', color: 'darkgray' }}>
@@ -638,11 +634,9 @@ export const DataThread: FC<{}> = function ({ }) {
             return { chartId: chart.id, tableId: table.id, element }
         }
 
-        let available = checkChartAvailability(chart, conceptShelfItems, extTable);
+        let available = checkChartAvailability(chart, conceptShelfItems, visTableRows);
 
         if (!available || chart.chartType == "Table") {
-
-            console.log(">>> chart = ", chart)
 
             let chartTemplate = getChartTemplate(chart.chartType);
 
@@ -679,7 +673,7 @@ export const DataThread: FC<{}> = function ({ }) {
         }
 
         // prepare the chart to be rendered
-        let assembledChart = assembleVegaChart(chart.chartType, chart.encodingMap, conceptShelfItems, extTable, 20);
+        let assembledChart = assembleVegaChart(chart.chartType, chart.encodingMap, conceptShelfItems, visTableRows, 20);
         assembledChart["background"] = "transparent";
 
         // Temporary fix, down sample the dataset
@@ -721,12 +715,9 @@ export const DataThread: FC<{}> = function ({ }) {
         return { chartId: chart.id, tableId: table.id, element };
     }), [charts, tables, conceptShelfItems, chartSynthesisInProgress, handleChartClick]);
 
-
     // anchors are considered leaf tables to simplify the view
     let leafTables = [...tables.filter(t => (t.anchored && t.derive)), ...tables.filter(t => !tables.some(t2 => t2.derive?.trigger.tableId == t.id))];
     
-    console.log(`leafTables: ${leafTables.map(t => t.id)}`);
-
     // we want to sort the leaf tables by the order of their ancestors
     // for example if ancestor of list a is [0, 3] and the ancestor of list b is [0, 2] then b should come before a
     let tableOrder = Object.fromEntries(tables.map((table, index) => [table.id, index]));

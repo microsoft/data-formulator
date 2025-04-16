@@ -17,7 +17,6 @@ import { DictTable } from '../components/ComponentType';
 import { DataFormulatorState, dfActions } from '../app/dfSlice';
 import { useDispatch, useSelector } from 'react-redux';
 import { Type } from '../data/types';
-import { baseTableToExtTable } from '../app/utils';
 import { createTableFromFromObjectArray } from '../data/utils';
 import { SelectableGroup } from 'react-selectable-fast';
 import { SelectableDataGrid } from './SelectableDataGrid';
@@ -34,7 +33,6 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView({  $table
 
     const dispatch = useDispatch();
     const tables = useSelector((state: DataFormulatorState) => state.tables);
-    const extTables = useSelector((state: DataFormulatorState) => state.extTables);
     
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
     const focusedTableId = useSelector((state: DataFormulatorState) => state.focusedTableId);
@@ -46,14 +44,14 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView({  $table
         if (derivedFields.some(f => f.tableRef == focusedTableId)) {
             return tables.map(table => {
                 // try to let table figure out all fields are derivable from the table
-                let rows = baseTableToExtTable(table, extTables.find(t => t.baseTableRef == table.id));
+                let rows = structuredClone(table.rows);
                 let extTable = createTableFromFromObjectArray(`${table.id}`, rows, table.anchored, table.derive);
                 return extTable
             })
         } else {
             return tables;
         }
-    }, [tables, extTables])
+    }, [tables, conceptShelfItems])
 
     useEffect(() => {
         if(focusedTableId == undefined && tables.length > 0) {

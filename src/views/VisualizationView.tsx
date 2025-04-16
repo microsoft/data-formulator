@@ -41,7 +41,7 @@ import AnimateOnChange from 'react-animate-on-change'
 import '../scss/VisualizationView.scss';
 import { useDispatch, useSelector } from 'react-redux';
 import { DataFormulatorState, dfActions } from '../app/dfSlice';
-import { assembleVegaChart, baseTableToExtTable, getUrls, prepVisTable  } from '../app/utils';
+import { assembleVegaChart, getUrls, prepVisTable  } from '../app/utils';
 import { Chart, EncodingItem, EncodingMap, FieldItem } from '../components/ComponentType';
 import { DictTable } from "../components/ComponentType";
 
@@ -61,7 +61,6 @@ import CheckIcon from '@mui/icons-material/Check';
 import CloudQueueIcon from '@mui/icons-material/CloudQueue';
 
 import { CHART_TEMPLATES, getChartTemplate } from '../components/ChartTemplates';
-import { findBaseFields } from './ViewUtils';
 
 import Prism from 'prismjs'
 import 'prismjs/components/prism-python' // Language
@@ -137,11 +136,10 @@ export let getDataTable = (chart: Chart, tables: DictTable[], charts: Chart[],
     }
 
     let activeFields = conceptShelfItems.filter((field) => Array.from(Object.values(chart.encodingMap)).map((enc: EncodingItem) => enc.fieldID).includes(field.id));
-    let activeBaseFields = conceptShelfItems.filter((field) => {
-        return activeFields.some(f => findBaseFields(f, conceptShelfItems).flat().map(x => x.id).includes(field.id));
-    });
 
-    let workingTableCandidates = tables.filter(t => activeBaseFields.every(f => t.names.includes(f.name)));
+    let workingTableCandidates = tables.filter(t => {
+        return activeFields.every(f => t.names.includes(f.name));
+    });
     
     let confirmedTableCandidates = workingTableCandidates.filter(t => !charts.some(c => c.saved && c.tableRef == t.id));
     if(confirmedTableCandidates.length > 0) {
@@ -155,13 +153,13 @@ export let getDataTable = (chart: Chart, tables: DictTable[], charts: Chart[],
     }
 }
 
-export let CodeBox : FC<{code: string, language: string}> = function  CodeBox({ code, language }) {
+export let CodeBox : FC<{code: string, language: string, fontSize?: number}> = function  CodeBox({ code, language, fontSize = 10 }) {
     useEffect(() => {
-      Prism.highlightAll();
-    }, []);
+        Prism.highlightAll();
+      }, [code]);
 
     return (
-        <pre style={{fontSize: 10}}>
+        <pre style={{fontSize: fontSize}}>
           <code className={`language-${language}`} >{code}</code>
         </pre>
     );
@@ -223,8 +221,7 @@ const BaseChartCreationMenu: FC<{tableId: string; buttonElement: any}> = functio
 export let checkChartAvailability = (chart: Chart, conceptShelfItems: FieldItem[], tableRows: any[]) => {
     let visFieldIds = Object.keys(chart.encodingMap).filter(key => chart.encodingMap[key as keyof EncodingMap].fieldID != undefined).map(key => chart.encodingMap[key as keyof EncodingMap].fieldID);
     let visFields = conceptShelfItems.filter(f => visFieldIds.includes(f.id));
-    let visBaseFields = visFields.map(f => f.source == "derived" ? findBaseFields(f, conceptShelfItems).flat() : [f]).flat();
-    return visBaseFields.length > 0 && tableRows.length > 0 && visBaseFields.every(f => Object.keys(tableRows[0]).includes(f.name));
+    return visFields.length > 0 && tableRows.length > 0 && visFields.every(f => Object.keys(tableRows[0]).includes(f.name));
 }
 
 export let SampleSizeEditor: FC<{
@@ -236,6 +233,10 @@ export let SampleSizeEditor: FC<{
     const [localSampleSize, setLocalSampleSize] = useState<number>(initialSize);
     const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
     const open = Boolean(anchorEl);
+
+    useEffect(() => {
+        setLocalSampleSize(initialSize);
+    }, [initialSize])
 
     let maxSliderSize = Math.min(totalSize, 30000);
 
@@ -291,7 +292,6 @@ export let SampleSizeEditor: FC<{
                         Resample
                     </Button>
                 </Box>
-                
             </Box>
         </Popover>
     </Box>
@@ -304,7 +304,6 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
     const componentRef = useRef<HTMLHeadingElement>(null);
 
     let tables = useSelector((state: DataFormulatorState) => state.tables);
-    let extTables = useSelector((state: DataFormulatorState) => state.extTables);
     
     let charts = useSelector((state: DataFormulatorState) => state.charts);
     let focusedChartId = useSelector((state: DataFormulatorState) => state.focusedChartId);
@@ -332,22 +331,19 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
     const [localScaleFactor, setLocalScaleFactor] = useState<number>(1);
 
     let table = getDataTable(focusedChart, tables, charts, conceptShelfItems);
+    let visTableRows = structuredClone(table.rows);
     
     let visFieldIds = Object.keys(focusedChart.encodingMap).filter(key => focusedChart.encodingMap[key as keyof EncodingMap].fieldID != undefined).map(key => focusedChart.encodingMap[key as keyof EncodingMap].fieldID);
     let visFields = conceptShelfItems.filter(f => visFieldIds.includes(f.id));
-    let visBaseFields = visFields.map(f => f.source == "derived" ? findBaseFields(f, conceptShelfItems).flat() : [f]).flat();
-    let toDeriveVisFields = visFields.filter(f => f.source == "derived" && findBaseFields(f, conceptShelfItems).every(f2 => table.names.includes(f2.name)));
-    let dataFieldsAllAvailable = visBaseFields.every(f => table.names.includes(f.name));
+
+    let dataFieldsAllAvailable = visFields.every(f => table.names.includes(f.name));
 
     let createVisTableRows = (rows: any[]) => {
-        return rows.map(row => Object.fromEntries(visBaseFields.filter(f => table.names.includes(f.name)).map(f => [f.name, row[f.name]])));
+        return rows.map(row => Object.fromEntries(visFields.filter(f => table.names.includes(f.name)).map(f => [f.name, row[f.name]])));
     }
 
-    const [rowsToDisplay, setRowsToDisplay] = useState<any[]>(createVisTableRows(table.rows));
+    const [rowsToDisplay, setRowsToDisplay] = useState<any[]>(createVisTableRows(visTableRows));
 
-
-    let focusedVisTable = baseTableToExtTable(table, extTables.find(t => t.baseTableRef == table.id));
-    
     async function sampleDisplayRows(sampleSize?: number) {
         if (sampleSize == undefined) {
             sampleSize = 5000;
@@ -362,7 +358,7 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
                     table: table.id,
                     size: sampleSize,
                     method: 'random',
-                    projection_fields: visBaseFields.map(f => f.name)   
+                    projection_fields: visFields.map(f => f.name)   
                 }),
             })
             .then(response => response.json())
@@ -376,21 +372,21 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
     }   
 
     useEffect(() => {
-        if (table.virtual && visBaseFields.length > 0 && dataFieldsAllAvailable) {
+        if (table.virtual && visFields.length > 0 && dataFieldsAllAvailable) {
             sampleDisplayRows();
         }
     }, [])
 
     useEffect(() => {
         let existingFields = rowsToDisplay.length > 0 ? Object.keys(rowsToDisplay[0]) : [];
-        if (visBaseFields.length > 0 && dataFieldsAllAvailable && visBaseFields.filter(f => !existingFields.includes(f.name)).length > 0) {
+        if (visFields.length > 0 && dataFieldsAllAvailable && visFields.filter(f => !existingFields.includes(f.name)).length > 0) {
             // table changed, we need to update the rows to display
             if (table.virtual) {
                 // virtual table, we need to sample the table
-                console.log("sampling table", table.id, visBaseFields.map(f => f.name))
+                console.log("sampling table", table.id, visFields.map(f => f.name))
                 sampleDisplayRows();
             } else {
-                setRowsToDisplay(createVisTableRows(table.rows));
+                setRowsToDisplay(createVisTableRows(visTableRows));
             }
         }
     }, [focusedChart])
@@ -411,7 +407,6 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
 
     let codeExpl = table.derive?.codeExpl || "";
 
-    
     let createChartElement = (chart: Chart, extTable: any[], id: string) => {
         let chartTemplate = getChartTemplate(chart.chartType);
  
@@ -422,11 +417,11 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
         }
 
         if (chart.chartType == "Table") {
-            return renderTableChart(chart, conceptShelfItems, extTable);
+            return renderTableChart(chart, conceptShelfItems, visTableRows);
         }
 
         let element = <></>;
-        if (!chart || !checkChartAvailability(chart, conceptShelfItems, extTable)) {
+        if (!chart || !checkChartAvailability(chart, conceptShelfItems, visTableRows)) {
             return   generateChartSkeleton(chartTemplate?.icon);
         }
 
@@ -434,7 +429,7 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
 
         element = <Box id={id} key={`focused-chart`} ></Box>    
 
-        let assembledChart = assembleVegaChart(chart.chartType, chart.encodingMap, conceptShelfItems, extTable);
+        let assembledChart = assembleVegaChart(chart.chartType, chart.encodingMap, conceptShelfItems, visTableRows);
         assembledChart['resize'] = true;
 
         embed('#' + id, { ...assembledChart }, { actions: true, renderer: "svg" }).then(function (result) {
@@ -466,7 +461,7 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
         return element;
     }
 
-    let focusedChartElement = createChartElement(focusedChart, focusedVisTable, `focused-element-${focusedChart.id}`);
+    let focusedChartElement = createChartElement(focusedChart, rowsToDisplay, `focused-element-${focusedChart.id}`);
     let arrowCard = <></>;
     let resultChartElement = <></>;
 
@@ -810,7 +805,6 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
 export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView({ }) {
 
     let tables = useSelector((state: DataFormulatorState) => state.tables);
-    let extTables = useSelector((state: DataFormulatorState) => state.extTables);
 
     let charts = useSelector((state: DataFormulatorState) => state.charts);
     let focusedChartId = useSelector((state: DataFormulatorState) => state.focusedChartId);
@@ -871,7 +865,7 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
 
             let table = getDataTable(chart, tables, charts, conceptShelfItems);
     
-            let extTable = baseTableToExtTable(table, extTables.find(t => t.baseTableRef == table.id));
+            let visTableRows = structuredClone(table.rows);
 
             let chartTemplate = getChartTemplate(chart.chartType);
 
@@ -888,7 +882,7 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
                      sx={{  position: 'relative', backgroundColor: chart.saved ? "rgba(255,215,0,0.05)" : "white",
                             border: chart.saved ? '2px solid gold' : '1px solid lightgray', margin: 1, 
                             display: 'flex', flexDirection: 'column', maxWidth: '800px', maxHeight: '600px', overflow:'hidden'}}
-                >{renderTableChart(chart, conceptShelfItems, extTable)}</Box>
+                >{renderTableChart(chart, conceptShelfItems, visTableRows)}</Box>
             }
 
             if (!checkChartAvailability(chart, conceptShelfItems, table.rows)) {
@@ -896,7 +890,7 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
                             key="skeleton" onClick={setIndexFunc}>{generateChartSkeleton(chartTemplate?.icon)}</Box>;
             }
 
-            let assembledChart = assembleVegaChart(chart.chartType, chart.encodingMap, conceptShelfItems, extTable);
+            let assembledChart = assembleVegaChart(chart.chartType, chart.encodingMap, conceptShelfItems, visTableRows);
 
             const id = `chart-element-${index}`;
 

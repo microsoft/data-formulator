@@ -8,10 +8,10 @@ import { DictTable } from "../components/ComponentType";
 import { Message } from '../views/MessageSnackbar';
 import { getChartTemplate, getChartChannels } from "../components/ChartTemplates"
 import { getDataTable } from '../views/VisualizationView';
-import { findBaseFields } from '../views/ViewUtils';
 import { adaptChart, getTriggers, getUrls } from './utils';
 import { Type } from '../data/types';
 import { TableChallenges } from '../views/TableSelectionView';
+import { inferTypeFromValueArray } from '../data/utils';
 
 enableMapSet();
 
@@ -43,11 +43,6 @@ export interface DataFormulatorState {
     testedModels: {id: string, status: 'ok' | 'error' | 'testing' | 'unknown', message: string}[];
 
     tables : DictTable[];
-    extTables: {
-        baseTableRef: string,
-        rows: any[],
-        virtualTableRef?: string, // whether this is a virtual table
-    }[]; // extensions to base tables with derived tables
     charts: Chart[];
     
     activeChallenges: {tableId: string, challenges: { text: string; difficulty: 'easy' | 'medium' | 'hard'; }[]}[];
@@ -84,7 +79,6 @@ const initialState: DataFormulatorState = {
     testedModels: [],
 
     tables: [],
-    extTables: [],
     charts: [],
 
     activeChallenges: [],
@@ -123,8 +117,6 @@ let getUnrefedDerivedTableIds = (state: DataFormulatorState) => {
 
     let allRefedTableIds = [...chartRefedTables.map(t => t.id), ...triggerRefedTableIds];
 
-    // TODO: also need to consider concept shelf reference??
-    
     return state.tables.filter(table => table.derive && !allRefedTableIds.includes(table.id)).map(t => t.id);
 } 
 
@@ -267,7 +259,6 @@ export const dataFormulatorSlice = createSlice({
             state.testedModels = [];
 
             state.tables = [];
-            state.extTables = [];
             state.charts = [];
             state.activeChallenges = [];
 
@@ -298,7 +289,6 @@ export const dataFormulatorSlice = createSlice({
 
             //state.table = undefined;
             state.tables = savedState.tables || [];
-            state.extTables = savedState.extTables || [];
             state.charts = savedState.charts || [];
             
             state.activeChallenges = savedState.activeChallenges || [];
@@ -355,8 +345,7 @@ export const dataFormulatorSlice = createSlice({
             state.tables = state.tables.filter(t => t.id != tableId);
 
             // feels problematic???
-            state.conceptShelfItems = state.conceptShelfItems.filter(f => !(f.tableRef == tableId || 
-                                                                            findBaseFields(f, state.conceptShelfItems).some(f2 => f2.tableRef == tableId)));
+            state.conceptShelfItems = state.conceptShelfItems.filter(f => !(f.tableRef == tableId));
             
             // delete charts that refer to this table and intermediate charts that produce this table
             let chartIdsToDelete = state.charts.filter(c => c.tableRef == tableId).map(c => c.id);
@@ -378,36 +367,69 @@ export const dataFormulatorSlice = createSlice({
         addChallenges: (state, action: PayloadAction<{tableId: string, challenges: { text: string; difficulty: 'easy' | 'medium' | 'hard'; }[]}>) => {
             state.activeChallenges = [...state.activeChallenges, action.payload];
         },
-        setExtTables: (state, action: PayloadAction<{baseTableRef: string, rows: any[], virtualTableRef?: string}>) => {
-            let extTable = action.payload;
+        extendTableWithNewFields: (state, action: PayloadAction<{tableId: string, columnName: string, values: any[], previousName: string | undefined, parentIDs: string[]}>) => {
+            // extend the existing extTable with new columns from the new table
+            let newValues = action.payload.values;
+            let tableId = action.payload.tableId;
+            let columnName = action.payload.columnName;
+            let previousName = action.payload.previousName;
+            let parentIDs = action.payload.parentIDs;
 
-            let baseTable = state.tables.find(t => t.id == extTable.baseTableRef) as DictTable;
-            let existingExtTable = state.extTables.find(t => t.baseTableRef == extTable.baseTableRef);
+            // Find the first parent's column name
+            let lastParentField = state.conceptShelfItems.find(f => f.id === parentIDs[parentIDs.length - 1]);
+            let lastParentName = lastParentField?.name;
 
-            // we want to extend base rows with the new rows
-            let baseRows = existingExtTable ? existingExtTable.rows : baseTable.rows;
+            let table = state.tables.find(t => t.id == tableId) as DictTable;
 
-            if (existingExtTable) {
-                for (let i = 0; i < extTable.rows.length; i++) {
-                    extTable.rows[i] = {...extTable.rows[i], ...baseRows[i]};
-                }
-            } 
-
-            if (state.extTables.some(t => t.baseTableRef == extTable.baseTableRef)) {
-                state.extTables = state.extTables.map(t => t.baseTableRef == extTable.baseTableRef ? {...t, rows: extTable.rows} : t);
-            } else {
-                state.extTables = [...state.extTables, extTable];
+            let newNames = [];
+            let newTypes = [];
+            if (previousName && table.names.indexOf(previousName) != -1) {
+                let replacePosition = table.names.indexOf(previousName);
+                newNames[replacePosition] = columnName;
+                newTypes[replacePosition] = inferTypeFromValueArray(newValues);
+            } else {            
+                let insertPosition = lastParentName ? table.names.indexOf(lastParentName) : table.names.length - 1;
+                newNames = table.names.slice(0, insertPosition + 1).concat(columnName).concat(table.names.slice(insertPosition + 1));
+                newTypes = table.types.slice(0, insertPosition + 1).concat(inferTypeFromValueArray(newValues)).concat(table.types.slice(insertPosition + 1));
             }
+            
+            // Create new rows with the column positioned after the first parent
+            let newRows = table.rows.map((row, i) => {
+                let newRow: {[key: string]: any} = {};
+                for (let key of Object.keys(row)) {
+                    newRow[key] = row[key];
+                    if (key === lastParentName) {
+                        newRow[columnName] = newValues[i];
+                    }
+                }
+                if (!lastParentName) {
+                    newRow[columnName] = newValues[i];
+                }
+                if (previousName) {
+                    delete newRow[previousName];
+                }
+                return newRow;
+            });
+            
+            table.names = newNames;
+            table.types = newTypes;
+            table.rows = newRows;
         },
-        removeExtTable: (state, action: PayloadAction<string>) => {
-            let baseTableRef = action.payload;
-            state.extTables = state.extTables.filter(t => t.baseTableRef != baseTableRef);
-        },
-        updateExtTableFieldName: (state, action: PayloadAction<{baseTableRef: string, oldName: string, newName: string}>) => {
-            let baseTableRef = action.payload.baseTableRef;
-            let oldName = action.payload.oldName;
-            let newName = action.payload.newName;
-            state.extTables = state.extTables.map(t => t.baseTableRef == baseTableRef ? {...t, rows: t.rows.map(r => r[oldName] = newName)} : t);
+        removeDerivedField: (state, action: PayloadAction<{tableId: string, fieldId: string}>) => {
+            let tableId = action.payload.tableId;
+            let fieldId = action.payload.fieldId;
+            let table = state.tables.find(t => t.id == tableId) as DictTable;
+            let fieldName = state.conceptShelfItems.find(f => f.id == fieldId)?.name as string;
+
+            let fieldIndex = table.names.indexOf(fieldName);  
+            if (fieldIndex != -1) {
+                table.names = table.names.slice(0, fieldIndex).concat(table.names.slice(fieldIndex + 1));
+                table.types = table.types.slice(0, fieldIndex).concat(table.types.slice(fieldIndex + 1));
+                table.rows = table.rows.map(r => {
+                    delete r[fieldName];
+                    return r;
+                });
+            }
         },
         createNewChart: (state, action: PayloadAction<{chartType?: string, tableId?: string}>) => {
             let chartType = action.payload.chartType;
@@ -581,11 +603,17 @@ export const dataFormulatorSlice = createSlice({
                 && Object.entries(chart.encodingMap).some(([channel, encoding]) => encoding.fieldID && conceptID == encoding.fieldID))) {
                 console.log("cannot delete!")
             } else {
-
                 let field = state.conceptShelfItems.find(f => f.id == conceptID);
                 if (field?.source == "derived") {
                     // delete generated column from the derived table
-                    state.extTables = state.extTables.map(t => t.baseTableRef == field.tableRef ? {...t, rows: t.rows.map(r => delete r[field.name])} : t);
+                    let table = state.tables.find(t => t.id == field.tableRef) as DictTable;
+                    let fieldIndex = table.names.indexOf(field.name);
+                    table.names = table.names.slice(0, fieldIndex).concat(table.names.slice(fieldIndex + 1));
+                    table.types = table.types.slice(0, fieldIndex).concat(table.types.slice(fieldIndex + 1));
+                    table.rows = table.rows.map(row => {
+                        delete row[field.name];
+                        return row;
+                    });
                 }
                 state.conceptShelfItems = state.conceptShelfItems.filter(f => f.id != conceptID);
 
@@ -633,7 +661,7 @@ export const dataFormulatorSlice = createSlice({
         clearUnReferencedTables: (state) => {
             // remove all tables that are not referred
             let charts = state.charts;
-            let referredTableId = charts.map(chart => getDataTable(chart, state.tables, charts, state.conceptShelfItems).id);
+            let referredTableId = charts.map(chart => getDataTable(chart, state.tables, state.charts, state.conceptShelfItems).id);
             state.tables = state.tables.filter(t => !(t.derive && !referredTableId.some(tableId => tableId == t.id)));
         },
         clearUnReferencedCustomConcepts: (state) => {

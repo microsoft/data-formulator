@@ -65,7 +65,7 @@ export interface DictTable {
         source: string[], // which tables are this table computed from
         code: string,
         codeExpl: string,
-        dialog: any[], // the log of how the data is derived with gpt (the GPT conversation log)
+        dialog: any[], // the log of how the data is derived with LLM (the LLM conversation log)
         // tracks how this derivation is triggered, as we as user instruction used to do the formulation,
         // there is a subtle difference between trigger and source, trigger identifies the occasion when the derivision is called,
         // source specifies how the deriviation is done from the source tables, they may be the same, but not necessarily

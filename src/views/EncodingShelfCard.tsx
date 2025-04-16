@@ -44,7 +44,6 @@ import ChangeCircleOutlinedIcon from '@mui/icons-material/ChangeCircleOutlined';
 import AddIcon from '@mui/icons-material/Add';
 import CheckIcon from '@mui/icons-material/Check';
 
-import { findBaseFields } from './ViewUtils';
 import { AppDispatch } from '../app/store';
 import PrecisionManufacturing from '@mui/icons-material/PrecisionManufacturing';
 import { Type } from '../data/types';
@@ -58,7 +57,7 @@ export interface EncodingShelfCardProps {
     noBorder?: boolean;
 }
 
-let selectBaseTables = (activeFields: FieldItem[], conceptShelfItems: FieldItem[], tables: DictTable[], currentTable: DictTable) : DictTable[] => {
+let selectBaseTables = (activeFields: FieldItem[], currentTable: DictTable, tables: DictTable[]) : DictTable[] => {
     
     let baseTables = [];
 
@@ -74,20 +73,9 @@ let selectBaseTables = (activeFields: FieldItem[], conceptShelfItems: FieldItem[
         return baseTables;
     } else {
         // find what are other tables that was used to derive the active fields
-        let activeBaseFields = conceptShelfItems.filter((field) => {
-            return activeFields.map(f => f.source == "derived" ? findBaseFields(f, conceptShelfItems).map(f2 => f2.id) : [f.id]).flat().includes(field.id);
-        });
-    
-        let activeOriginalFields = activeBaseFields.filter(field => field.source == "original");
-    
-        if (activeOriginalFields.length == 0 && activeFields.length > 0 && tables.length > 0) {
-            return [currentTable];
-        }
-
-        let unavailableActiveOriginalFields = activeOriginalFields.filter(f => !baseTables.map(t => t.names).flat().includes(f.name));
-    
+        let relevantTableIds = [...new Set(activeFields.filter(t => t.source != "custom").map(t => t.tableRef))];
         // find all tables that contains the active original fields
-        let tablesToAdd = tables.filter(t => unavailableActiveOriginalFields.map(f => f.tableRef as string).includes(t.id));
+        let tablesToAdd = tables.filter(t => relevantTableIds.includes(t.id));
 
         baseTables.push(...tablesToAdd.filter(t => !baseTables.map(t2 => t2.id).includes(t.id)));
     }
@@ -311,7 +299,6 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
     const tables = useSelector((state: DataFormulatorState) => state.tables);
     const charts = useSelector((state: DataFormulatorState) => state.charts);
     const config = useSelector((state: DataFormulatorState) => state.config);
-
     let existMultiplePossibleBaseTables = tables.filter(t => t.derive == undefined || t.anchored).length > 1;
 
     let activeModel = useSelector(dfSelectors.getActiveModel);
@@ -356,17 +343,15 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
     // derive active fields from encoding map so that we can keep the order of which fields will be visualized
     let activeFields = Object.values(encodingMap).map(enc => enc.fieldID).filter(fieldId => fieldId && conceptShelfItems.map(f => f.id)
                                 .includes(fieldId)).map(fieldId => conceptShelfItems.find(f => f.id == fieldId) as FieldItem);
-    let activeBaseFields = activeFields.map(f => f.source == 'derived' ? (f.transform as ConceptTransformation).parentIDs : [f.id])
-                                .flat().map(fieldId => conceptShelfItems.find(f => f.id == fieldId) as FieldItem)
     
-    let activeCustomFields = activeBaseFields.filter(field => field.source == "custom");
+    let activeCustomFields = activeFields.filter(field => field.source == "custom");
 
     // check if the current table contains all fields already exists a table that fullfills the user's specification
-    let existsWorkingTable = activeBaseFields.length == 0 || activeBaseFields.every(f => currentTable.names.includes(f.name));
+    let existsWorkingTable = activeFields.length == 0 || activeFields.every(f => currentTable.names.includes(f.name));
     
     // this is the base tables that will be used to derive the new data
     // this is the bare minimum tables that are required to derive the new data, based fields that will be used
-    let requiredActionTables = selectBaseTables(activeFields, conceptShelfItems, tables, currentTable);
+    let requiredActionTables = selectBaseTables(activeFields, currentTable, tables);
     let actionTableIds = [
         ...requiredActionTables.map(t => t.id),
         ...userSelectedActionTableIds.filter(id => !requiredActionTables.map(t => t.id).includes(id))
@@ -386,7 +371,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
         if (currentTable.derive == undefined && instruction == "" && 
                 (activeFields.length > 0 && activeCustomFields.length == 0) && 
                 tables.some(t => t.derive == undefined && 
-                activeBaseFields.every(f => t.names.includes(f.name)))) {
+                activeFields.every(f => currentTable.names.includes(f.name)))) {
 
             // if there is no additional fields, directly generate
             let tempTable = getDataTable(chart, tables, charts, conceptShelfItems, true);
@@ -416,28 +401,24 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
         let messageBody = JSON.stringify({
             token: token,
             mode,
-            input_tables: actionTables.map(t => {return { name: t.virtual?.tableId || t.id.replace(/\.[^/.]+$/ , ""), rows: t.rows }}),
-            new_fields: activeBaseFields.map(f => { return {name: f.name} }),
+            input_tables: actionTables.map(t => {
+                return { name: t.virtual?.tableId || t.id.replace(/\.[^/.]+$/ , ""), rows: t.rows }}),
+            new_fields: activeFields.map(f => { return {name: f.name} }),
             extra_prompt: instruction,
             model: activeModel,
             max_repair_attempts: config.maxRepairAttempts,
             language: actionTables.some(t => t.virtual) ? "sql" : "python"
-        }) 
+        })
 
         let engine = getUrls().DERIVE_DATA;
 
         if (currentTable.derive?.dialog && !currentTable.anchored) {
             let sourceTableIds = currentTable.derive?.source;
 
-            console.log("I'm here I'm here");
-
             // Compare if source and base table IDs are different
             if (!sourceTableIds.every(id => actionTableIds.includes(id)) || 
                 !actionTableIds.every(id => sourceTableIds.includes(id))) {
                 
-                console.log("I'm here I'm here branch 1");
-                console.log(actionTables);
-
                 let additionalMessages = currentTable.derive.dialog;
 
                 // in this case, because table ids has changed, we need to use the additional messages and reformulate
@@ -445,7 +426,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                     token: token,
                     mode,
                     input_tables: actionTables.map(t => {return { name: t.virtual?.tableId || t.id.replace(/\.[^/.]+$/ , ""), rows: t.rows }}),
-                    new_fields: activeBaseFields.map(f => { return {name: f.name} }),
+                    new_fields: activeFields.map(f => { return {name: f.name} }),
                     extra_prompt: instruction,
                     model: activeModel,
                     additional_messages: additionalMessages,
@@ -454,12 +435,11 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                 });
                 engine = getUrls().DERIVE_DATA;
             } else {
-                console.log("I'm here I'm here branch 2");
                 messageBody = JSON.stringify({
                     token: token,
                     mode,
                     input_tables: actionTables.map(t => {return { name: t.virtual?.tableId || t.id.replace(/\.[^/.]+$/ , ""), rows: t.rows }}),
-                    output_fields: activeBaseFields.map(f => { return {name: f.name} }),
+                    output_fields: activeFields.map(f => { return {name: f.name} }),
                     dialog: currentTable.derive?.dialog,
                     new_instruction: instruction,
                     model: activeModel,
