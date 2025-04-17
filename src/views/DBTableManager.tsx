@@ -391,7 +391,7 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
         console.log('Analyzing table:', tableName);
         
         try {
-            const response = await fetch(getUrls().ANALYZE_TABLE, {
+            const response = await fetch(getUrls().GET_COLUMN_STATS, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',

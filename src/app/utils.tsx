@@ -30,44 +30,41 @@ export function assignAppConfig(config: AppConfig) {
 
 export function getUrls() {
     return {
-        CHECK_AVAILABLE_MODELS: `/api/check-available-models`,
-        TEST_MODEL: `/api/test-model`,
-
-        // these functions involves openai models
-        DERIVE_CONCEPT_URL: `/api/derive-concept-request`,
-        DERIVE_PY_CONCEPT: `/api/derive-py-concept`,
-
-        SORT_DATA_URL: `/api/codex-sort-request`,
-        CLEAN_DATA_URL: `/api/clean-data`,
-        
-        CODE_EXPL_URL: `/api/code-expl`,
-        SERVER_PROCESS_DATA_ON_LOAD: `/api/process-data-on-load`,
-
-        DATASET_INFO_URL: `/api/datasets-info`,
-        DATASET_REQUEST_PREFIX: `/api/datasets/`,
+        GET_SESSION_ID: `/api/get-session-id`,
+        APP_CONFIG: `/api/app-config`,
+        AUTH_INFO_PREFIX: `/api/.auth/`,
 
         VEGA_DATASET_LIST: `/api/vega-datasets`,
         VEGA_DATASET_REQUEST_PREFIX: `/api/vega-dataset/`,
 
-        APP_CONFIG: `/api/app-config`,
+        // these functions involves ai agents
+        CHECK_AVAILABLE_MODELS: `/api/agent/check-available-models`,
+        TEST_MODEL: `/api/agent/test-model`,
 
-        AUTH_INFO_PREFIX: `/api/.auth/`,
+        DERIVE_CONCEPT_URL: `/api/agent/derive-concept-request`,
+        DERIVE_PY_CONCEPT: `/api/agent/derive-py-concept`,
 
+        SORT_DATA_URL: `/api/agent/sort-data`,
+        CLEAN_DATA_URL: `/api/agent/clean-data`,
+        
+        CODE_EXPL_URL: `/api/agent/code-expl`,
+        SERVER_PROCESS_DATA_ON_LOAD: `/api/agent/process-data-on-load`,
+
+        DERIVE_DATA: `/api/agent/derive-data`,
+        REFINE_DATA: `/api/agent/refine-data`,
+
+        // these functions involves database
         UPLOAD_DB_FILE: `/api/tables/upload-db-file`,
         DOWNLOAD_DB_FILE: `/api/tables/download-db-file`,
         RESET_DB_FILE: `/api/tables/reset-db-file`,
 
-        GET_SESSION_ID: `/api/get-session-id`,
-        LIST_TABLES: `/api/tables`,
+        LIST_TABLES: `/api/tables/list-tables`,
         TABLE_DATA: `/api/tables/get-table`,
         CREATE_TABLE: `/api/tables/create-table`,
         DELETE_TABLE: `/api/tables/delete-table`,
-        ANALYZE_TABLE: `/api/tables/analyze`,
+        GET_COLUMN_STATS: `/api/tables/analyze`,
         QUERY_TABLE: `/api/tables/query`,
         SAMPLE_TABLE: `/api/tables/sample-table`,
-
-        DERIVE_DATA: `/api/derive-data`,
-        REFINE_DATA: `/api/refine-data`,
     };
 }
 
