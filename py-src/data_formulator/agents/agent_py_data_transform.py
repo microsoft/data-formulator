@@ -6,6 +6,7 @@ import sys
 
 from data_formulator.agents.agent_utils import extract_json_objects, generate_data_summary, extract_code_from_gpt_response
 import data_formulator.py_sandbox as py_sandbox
+import pandas as pd
 
 import logging
 
@@ -184,9 +185,10 @@ def transform_data(df):
 
 class PythonDataTransformationAgent(object):
 
-    def __init__(self, client, system_prompt=None):
+    def __init__(self, client, system_prompt=None, exec_python_in_subprocess=False):
         self.client = client
         self.system_prompt = system_prompt if system_prompt is not None else SYSTEM_PROMPT
+        self.exec_python_in_subprocess = exec_python_in_subprocess
 
     def process_gpt_response(self, input_tables, messages, response):
         """process gpt response to handle execution"""
@@ -216,13 +218,16 @@ class PythonDataTransformationAgent(object):
                 code_str = code_blocks[-1]
 
                 try:
-                    result = py_sandbox.run_transform_in_sandbox2020(code_str, [t['rows'] for t in input_tables])
+                    result = py_sandbox.run_transform_in_sandbox2020(code_str, [pd.DataFrame.from_records(t['rows']) for t in input_tables], self.exec_python_in_subprocess)
                     result['code'] = code_str
+
+                    print(f"result: {result}")
 
                     if result['status'] == 'ok':
                         # parse the content
+                        result_df = result['content']
                         result['content'] = {
-                            'rows': json.loads(result['content']),
+                            'rows': result_df.to_dict(orient='records'),
                         }
                     else:
                         logger.info(result['content'])

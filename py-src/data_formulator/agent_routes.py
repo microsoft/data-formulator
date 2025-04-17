@@ -10,7 +10,7 @@ mimetypes.add_type('application/javascript', '.js')
 mimetypes.add_type('application/javascript', '.mjs')
 
 import flask
-from flask import request, session, jsonify, Blueprint
+from flask import request, session, jsonify, Blueprint, current_app
 import logging
 
 import json
@@ -321,10 +321,10 @@ def derive_data():
 
         if mode == "recommendation":
             # now it's in recommendation mode
-            agent = SQLDataRecAgent(client=client, conn=conn) if language == "sql" else PythonDataRecAgent(client=client)
+            agent = SQLDataRecAgent(client=client, conn=conn) if language == "sql" else PythonDataRecAgent(client=client, exec_python_in_subprocess=current_app.config['CLI_ARGS']['exec_python_in_subprocess'])
             results = agent.run(input_tables, instruction)
         else:
-            agent = SQLDataTransformationAgent(client=client, conn=conn) if language == "sql" else PythonDataTransformationAgent(client=client)
+            agent = SQLDataTransformationAgent(client=client, conn=conn) if language == "sql" else PythonDataTransformationAgent(client=client, exec_python_in_subprocess=current_app.config['CLI_ARGS']['exec_python_in_subprocess'])
             results = agent.run(input_tables, instruction, [field['name'] for field in new_fields], prev_messages)
 
         repair_attempts = 0
@@ -382,7 +382,7 @@ def refine_data():
         conn = db_manager.get_connection(session['session_id']) if language == "sql" else None
 
         # always resort to the data transform agent       
-        agent = SQLDataTransformationAgent(client=client, conn=conn) if language == "sql" else PythonDataTransformationAgent(client=client)
+        agent = SQLDataTransformationAgent(client=client, conn=conn) if language == "sql" else PythonDataTransformationAgent(client=client, exec_python_in_subprocess=current_app.config['CLI_ARGS']['exec_python_in_subprocess'])
         results = agent.followup(input_tables, dialog, [field['name'] for field in output_fields], new_instruction)
 
         repair_attempts = 0

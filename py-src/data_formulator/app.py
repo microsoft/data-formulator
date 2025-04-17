@@ -38,16 +38,22 @@ from data_formulator.agent_routes import agent_bp
 app = Flask(__name__, static_url_path='', static_folder=os.path.join(APP_ROOT, "dist"))
 app.secret_key = secrets.token_hex(16)  # Generate a random secret key for sessions
 
+# Load env files early
+load_dotenv(os.path.join(APP_ROOT, "..", "..", 'api-keys.env'))
+load_dotenv(os.path.join(APP_ROOT, 'api-keys.env'))
+load_dotenv(os.path.join(APP_ROOT, '.env'))
+
+# Add this line to store args at app level
+app.config['CLI_ARGS'] = {
+    'exec_python_in_subprocess': os.environ.get('EXEC_PYTHON_IN_SUBPROCESS', 'false').lower() == 'true',
+    'disable_display_keys': os.environ.get('DISABLE_DISPLAY_KEYS', 'false').lower() == 'true'       
+}
+
 # register blueprints
 app.register_blueprint(tables_bp)
 app.register_blueprint(agent_bp)
 
 print(APP_ROOT)
-
-# Load the single environment file
-load_dotenv(os.path.join(APP_ROOT, "..", "..", 'api-keys.env'))
-load_dotenv(os.path.join(APP_ROOT, 'api-keys.env'))
-load_dotenv(os.path.join(APP_ROOT, '.env'))
 
 # Configure root logger for general application logging
 logging.basicConfig(
@@ -67,7 +73,6 @@ for handler in logging.getLogger().handlers:
 # Example usage:
 logger.info("Application level log")  # General application logging
 app.logger.info("Flask specific log") # Web request related logging
-
 
 @app.route('/api/vega-datasets')
 def get_example_dataset_list():
@@ -218,10 +223,11 @@ def get_session_id():
 
 @app.route('/api/app-config', methods=['GET'])
 def get_app_config():
-    """Provide frontend configuration settings from environment variables"""
-    
+    """Provide frontend configuration settings from CLI arguments"""
+    args = app.config['CLI_ARGS']
     config = {
-        "SHOW_KEYS_ENABLED": os.getenv("SHOW_KEYS_ENABLED", "true").lower() == "true",
+        "EXEC_PYTHON_IN_SUBPROCESS": args['exec_python_in_subprocess'],
+        "DISABLE_DISPLAY_KEYS": args['disable_display_keys'],
         "SESSION_ID": session.get('session_id', None)
     }
     return flask.jsonify(config)
@@ -230,11 +236,21 @@ def get_app_config():
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Data Formulator")
     parser.add_argument("-p", "--port", type=int, default=5000, help="The port number you want to use")
+    parser.add_argument("-e", "--exec-python-in-subprocess", action='store_true', default=False,
+        help="Whether to execute python in subprocess, it makes the app more secure (reducing the chance for the model to access the local machine), but increases the time of response")
+    parser.add_argument("-d", "--disable-display-keys", action='store_true', default=False,
+        help="Whether disable displaying keys in the frontend UI, recommended to turn on if you host the app not just for yourself.")
     return parser.parse_args()
 
 
 def run_app():
     args = parse_args()
+    # Add this line to make args available to routes
+    # override the args from the env file
+    app.config['CLI_ARGS'] = {
+        'exec_python_in_subprocess': args.exec_python_in_subprocess,
+        'disable_display_keys': args.disable_display_keys
+    }
 
     url = "http://localhost:{0}".format(args.port)
     threading.Timer(2, lambda: webbrowser.open(url, new=2)).start()

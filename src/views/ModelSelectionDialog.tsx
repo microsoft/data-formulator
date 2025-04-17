@@ -56,7 +56,7 @@ import { getUrls } from '../app/utils';
 
 // Add interface for app configuration
 interface AppConfig {
-    SHOW_KEYS_ENABLED: boolean;
+    DISABLE_DISPLAY_KEYS: boolean;
 }
 
 export const ModelSelectionButton: React.FC<{}> = ({ }) => {
@@ -77,7 +77,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
         'ollama': []
     });
     const [isLoadingModelOptions, setIsLoadingModelOptions] = useState<boolean>(false);
-    const [appConfig, setAppConfig] = useState<AppConfig>({ SHOW_KEYS_ENABLED: true });
+    const [appConfig, setAppConfig] = useState<AppConfig>({ DISABLE_DISPLAY_KEYS: false });
 
     // Fetch app configuration
     useEffect(() => {
@@ -527,7 +527,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                 {modelTable}
             </DialogContent>
             <DialogActions>
-                {appConfig.SHOW_KEYS_ENABLED && (
+                {appConfig.DISABLE_DISPLAY_KEYS && (
                     <Button sx={{marginRight: 'auto'}} endIcon={showKeys ? <VisibilityOffIcon /> : <VisibilityIcon />} onClick={()=>{
                         setShowKeys(!showKeys);}}>
                             {showKeys ? 'hide' : 'show'} keys

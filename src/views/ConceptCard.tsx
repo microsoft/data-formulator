@@ -203,7 +203,8 @@ export const ConceptCard: FC<ConceptCardProps> = function ConceptCard({ field })
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
     const tables = useSelector((state: DataFormulatorState) => state.tables);
     let focusedTableId = useSelector((state: DataFormulatorState) => state.focusedTableId);
-    let focusedTable = tables.find(t => t.id == focusedTableId) as DictTable;
+    
+    let focusedTable = tables.find(t => t.id == focusedTableId);
 
     const [editMode, setEditMode] = useState(field.name == "" ? true : false);
 
@@ -264,14 +265,14 @@ export const ConceptCard: FC<ConceptCardProps> = function ConceptCard({ field })
             color="primary" aria-label="Delete" component="span"
             disabled={
                 conceptShelfItems.filter(f => f.source == "derived" && f.transform?.parentIDs.includes(field.id)).length > 0
-                || focusedTable.id != field.tableRef
+                || focusedTableId != field.tableRef
             }
             onClick={() => { handleDeleteConcept(field.id); }}>
             <DeleteIcon fontSize="inherit" />
         </IconButton>;
 
-    let reApplyOption = field.source == "derived" 
-        && focusedTableId != field.tableRef 
+    let reApplyOption = focusedTable && field.source == "derived" 
+        && focusedTable.id != field.tableRef 
         && !focusedTable.names.includes(field.name)
         && field.transform?.parentIDs.every(pid => focusedTable.names.includes((conceptShelfItems.find(f => f.id == pid) as FieldItem).name)) 
         && (
@@ -280,7 +281,7 @@ export const ConceptCard: FC<ConceptCardProps> = function ConceptCard({ field })
             </Tooltip>
         );
 
-    let cleanupOption = focusedTableId && field.source == "derived" && focusedTableId != field.tableRef 
+    let cleanupOption = focusedTable && field.source == "derived" && focusedTableId != field.tableRef 
         && field.transform?.parentIDs.every(pid => focusedTable.names.includes((conceptShelfItems.find(f => f.id == pid) as FieldItem).name)) && focusedTable.names.includes(field.name) && (
         <Tooltip key="cleanup-icon-button" title={
                 <Typography component="span" sx={{ fontSize: "inherit" }}>remove <b>{field.name}</b> from <b>{focusedTable.displayId}</b></Typography>}>

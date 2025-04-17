@@ -7,14 +7,11 @@ import traceback
 import warnings
 import pandas as pd
 
-## ---------------- The sandbox implementation follows, not to be changed --------------------
-
-def ran_in_subprocess(code, allowed_objects, conn, output_var_name):
+def subprocess_execute(code, allowed_objects, conn):
     """run the code in a subprocess with some sort of safety measure
     code: script to execute
     allowed_objects: objects exposed to the target code
     conn: children connection
-    output_var_name: which variable to return from the subprocess
     """
     warnings.filterwarnings('ignore')
 
@@ -34,37 +31,23 @@ def ran_in_subprocess(code, allowed_objects, conn, output_var_name):
     addaudithook(block_mischief)
     del(block_mischief)  ## No way to remove or circumwent audit hooks from python. No access to this function. 
 
-    allowed_objects['conn'] = conn  # automatically add the communication pipe to objects accessible from the sandbox
+    extended_allowed_objects = { **allowed_objects, 'conn': conn }  # automatically add the communication pipe to objects accessible from the sandbox
     try:
-        exec(code, allowed_objects)
+        exec(code, extended_allowed_objects)
     except Exception as err:
         error_message = f"Error: {type(err).__name__} - {str(err)}"
-        conn.send({'status': 'error', 'content': error_message})
+        conn.send({'status': 'error', 'error_message': error_message})
         conn.close()
-        return allowed_objects
+        return {key: extended_allowed_objects[key] for key in allowed_objects}
 
-    conn.send({'status': 'ok', 'content': allowed_objects[output_var_name]})
+    conn.send({'status': 'ok', 'allowed_objects': {key: extended_allowed_objects[key] for key in allowed_objects}})
     conn.close()
-    return allowed_objects
 
-def run_transform_in_sandbox2020(code, table_list):
-    
-    allowed_objects = [table_list]
 
-    import_str = "import pandas as pd\nimport json"
-
-    exec_str = '''
-output_df = transform_data(*[pd.DataFrame.from_records(data) for data in table_list])
-#print(output_df)
-output = output_df.to_json(None, "records")
-#print(output)
-    '''
-
-    script_str = f'{import_str}\n\n{code}{exec_str}'
-
-    sandbox_locals = dict((key, value) for key,value in locals().items() if value in allowed_objects) # copy.deepcopy() ## are all obj safely serialized?
+def run_in_subprocess(code, allowed_objects):
+    sandbox_locals = { **allowed_objects }
     parent_conn, child_conn = Pipe()
-    p = Process(target=ran_in_subprocess, args=(script_str, sandbox_locals, child_conn, 'output'))
+    p = Process(target=subprocess_execute, args=(code, sandbox_locals, child_conn))
     p.start()
 
     ## NOTE: The sandbox is probably safe against file writing, as well as against access into the main process.
@@ -76,33 +59,14 @@ output = output_df.to_json(None, "records")
     return result
 
 
-def run_data_process_in_sandbox(code, df, exec_str):
-    """given a concept derivatino function, execute the function on inputs to generate a new dataframe"""
-    
-    allowed_objects = [df]
-
-    import_str = "import pandas as pd\nimport json"
-
-    script_str = f'{import_str}\n\n{code}{exec_str}'
-
-    # Use 'is' operator instead of 'in' for exact object identity comparison
-    sandbox_locals = dict((key, value) for key, value in locals().items() if any(value is obj for obj in allowed_objects))
-    parent_conn, child_conn = Pipe()
-    p = Process(target=ran_in_subprocess, args=(script_str, sandbox_locals, child_conn, 'df'))
-    p.start()
-
-    result = parent_conn.recv()
-    p.join()
-    return result
-
-
-def derive_df_in_sandbox2020(code, output_field_name, table_rows):
-    """given a concept derivation function, execute the function on inputs to generate a new dataframe"""
-    
+def run_in_main_process(code, allowed_objects):
+    """run the code in the main process with some sort of safety measure, 
+        faster than subprocess, but may crash the main process if the code is malicious
+    code: script to execute
+    allowed_objects: objects exposed to the target code
+    """
     warnings.filterwarnings('ignore')
-    
-    df = pd.DataFrame.from_records(table_rows)
-    
+
     # Create a restricted builtins dictionary with only safe operations
     safe_builtins = {}
     for name in ['abs', 'all', 'any', 'ascii', 'bin', 'bool', 'bytearray', 'bytes',
@@ -134,30 +98,72 @@ def derive_df_in_sandbox2020(code, output_field_name, table_rows):
     # Create restricted globals with only necessary modules and objects
     restricted_globals = {
         '__builtins__': safe_builtins,
-        'df': df   # The dataframe to operate on
+        **allowed_objects
     }
 
     try:
-        exec_str = f'''
-import pandas as pd
-{code}
-df["{output_field_name}"] = derive_new_column(df)
-'''
-        exec(exec_str, restricted_globals)
-        result = {'status': 'ok', 'content': restricted_globals['df']}
+        exec(code, restricted_globals)
     except Exception as err:
         error_message = f"Error: {type(err).__name__} - {str(err)}"
-        result = {'status': 'error', 'content': error_message}
+        return {'status': 'error', 'error_message': error_message}
 
-    return result
+    return {'status': 'ok', 'allowed_objects': {key: restricted_globals[key] for key in allowed_objects}}
 
 
-def derive_df_in_sandbox2020_subprocess(code, output_field_name, table_rows):
-    """given a concept derivatino function, execute the function on inputs to generate a new dataframe"""
+def run_transform_in_sandbox2020(code, df_list, exec_python_in_subprocess=False):
     
-    df = pd.DataFrame.from_records(table_rows)
-    exec_str = f'''
-df["{output_field_name}"] = derive_new_column(df)
+    allowed_objects = {
+        'df_list': df_list,
+        'output_df': None
+    }
+
+    assemble_code = f'''
+import pandas as pd
+import json
+{code}
+output_df = transform_data(*df_list)
 '''
-    result = run_data_process_in_sandbox(code, df, exec_str)
-    return result
+
+    if exec_python_in_subprocess:
+        result = run_in_subprocess(assemble_code, allowed_objects)
+    else:
+        result = run_in_main_process(assemble_code, allowed_objects)
+
+    if result['status'] == 'ok':
+        result_df = result['allowed_objects']['output_df']
+        return {
+            'status': 'ok',
+            'content': result_df
+        }
+    else:
+        return {
+            'status': 'error',
+            'content': result['error_message']
+        }
+
+
+def run_derive_concept(code, output_field_name, table_rows, exec_python_in_subprocess=False):
+    """given a concept derivation function, execute the function on inputs to generate a new dataframe"""
+    
+    assemble_code = f'''
+import pandas as pd
+{code}
+new_column = derive_new_column(df)
+'''
+
+    allowed_objects = {
+        'df': pd.DataFrame.from_records(table_rows),
+        'new_column': None # the return value of the derive_new_column function
+    }
+
+    if exec_python_in_subprocess:
+        result = run_in_subprocess(assemble_code, allowed_objects)
+    else:
+        result = run_in_main_process(assemble_code, allowed_objects)
+
+    if result['status'] == 'ok':
+        result_df = result['allowed_objects']['df']
+        result_df[output_field_name] = result['allowed_objects']['new_column']
+        return { 'status': 'ok', 'content': result_df }
+    else:
+        return { 'status': 'error', 'content': result['error_message'] }

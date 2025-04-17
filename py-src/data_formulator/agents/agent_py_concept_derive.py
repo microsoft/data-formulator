@@ -90,8 +90,9 @@ def derive_new_column(df):
 
 class PyConceptDeriveAgent(object):
 
-    def __init__(self, client):
+    def __init__(self, client, exec_python_in_subprocess=False):
         self.client = client
+        self.exec_python_in_subprocess = exec_python_in_subprocess
 
     def run(self, input_table, input_fields, output_field, description):
         """derive a new concept based on input table, input fields, and output field name, (and description)
@@ -131,7 +132,7 @@ class PyConceptDeriveAgent(object):
             if len(code_blocks) > 0:
                 code_str = code_blocks[-1]
                 try:
-                    result =  py_sandbox.derive_df_in_sandbox2020(code_str, output_field, input_table['rows'])
+                    result =  py_sandbox.run_derive_concept(code_str, output_field, input_table['rows'], self.exec_python_in_subprocess)
 
                     if result['status'] == 'ok':
                         result['content'] = {
