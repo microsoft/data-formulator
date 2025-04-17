@@ -391,11 +391,12 @@ def upload_db_file():
             
         except Exception as db_error:
             # Clean up temp file
+            logger.error(f"Error uploading db file: {str(db_error)}")
             if os.path.exists(temp_db_path):
                 os.remove(temp_db_path)
             return jsonify({
                 "status": "error",
-                "message": f"Invalid DuckDB database file: {str(db_error)}"
+                "message": f"Invalid DuckDB database file."
             }), 400
         
         return jsonify({

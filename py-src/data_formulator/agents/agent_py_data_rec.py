@@ -173,7 +173,7 @@ class PythonDataRecAgent(object):
                     logger.warning('other error:')
                     error_message = traceback.format_exc()
                     logger.warning(error_message)
-                    result = {'status': 'other error', 'code': code_str, 'content': f"Unexpected error: {error_message}"}
+                    result = {'status': 'other error', 'code': code_str, 'content': f"Unexpected error executing the code, please try again."}
             else:
                 result = {'status': 'error', 'code': "", 'content': "No code block found in the response. The model is unable to generate code to complete the task."}
             
