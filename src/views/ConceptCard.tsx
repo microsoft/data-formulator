@@ -175,7 +175,8 @@ let ConceptReApplyButton: FC<{field: FieldItem,
                 </IconButton>
             </Tooltip>
             <Dialog open={applicationDialogOpen} onClose={() => { setApplicationDialogOpen(false) }}>
-                <DialogTitle>Preview of the applied concept {field.name} to {focusedTable.displayId}</DialogTitle>
+                <DialogTitle>Preview: apply concept <Typography color="primary" component="span" sx={{ fontSize: "inherit" }}>{field.name}</Typography> to <Typography color="primary" component="span" sx={{ fontSize: "inherit"}}>{focusedTable.displayId}</Typography>
+                </DialogTitle>
                 <DialogContent>
                     <Typography sx={{ fontSize: 12, marginBottom: 1 }}>transformation code</Typography>
                     <CodeBox code={codePreview.trim()} language="python" />
@@ -281,7 +282,8 @@ export const ConceptCard: FC<ConceptCardProps> = function ConceptCard({ field })
 
     let cleanupOption = focusedTableId && field.source == "derived" && focusedTableId != field.tableRef 
         && field.transform?.parentIDs.every(pid => focusedTable.names.includes((conceptShelfItems.find(f => f.id == pid) as FieldItem).name)) && focusedTable.names.includes(field.name) && (
-        <Tooltip key="cleanup-icon-button" title={`cleanup: remove field table ${focusedTable.displayId}`}>
+        <Tooltip key="cleanup-icon-button" title={
+                <Typography component="span" sx={{ fontSize: "inherit" }}>remove <b>{field.name}</b> from <b>{focusedTable.displayId}</b></Typography>}>
             <IconButton size="small" key="cleanup-icon-button" color="primary" aria-label="cleanup" component="span" onClick={() => {
                 dispatch(dfActions.removeDerivedField({
                     tableId: focusedTableId as string,
@@ -397,7 +399,7 @@ export const ConceptCard: FC<ConceptCardProps> = function ConceptCard({ field })
                 
                 <Box sx={{ position: "absolute", right: 0, display: "flex", flexDirection: "row", alignItems: "center" }}>
                     <Box className='draggable-card-action-button' sx={{ background: 'rgba(255, 255, 255, 0.95)'}}>{cardHeaderOptions}</Box>
-                    {reApplyOption || cleanupOption ? <Divider flexItem orientation="vertical" sx={{ margin: 0, padding: 0 }} /> : ""}
+                    {reApplyOption || cleanupOption ? <Divider flexItem orientation="vertical" sx={{ my: 1, padding: 0 }} /> : ""}
                     <Box>{specialOptions}</Box>
                 </Box>
             </Box>

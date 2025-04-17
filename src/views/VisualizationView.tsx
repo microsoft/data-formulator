@@ -41,7 +41,7 @@ import AnimateOnChange from 'react-animate-on-change'
 import '../scss/VisualizationView.scss';
 import { useDispatch, useSelector } from 'react-redux';
 import { DataFormulatorState, dfActions } from '../app/dfSlice';
-import { assembleVegaChart, getUrls, prepVisTable  } from '../app/utils';
+import { assembleVegaChart, extractFieldsFromEncodingMap, getUrls, prepVisTable  } from '../app/utils';
 import { Chart, EncodingItem, EncodingMap, FieldItem } from '../components/ComponentType';
 import { DictTable } from "../components/ComponentType";
 
@@ -218,10 +218,32 @@ const BaseChartCreationMenu: FC<{tableId: string; buttonElement: any}> = functio
     </>;
 }
 
-export let checkChartAvailability = (chart: Chart, conceptShelfItems: FieldItem[], tableRows: any[]) => {
-    let visFieldIds = Object.keys(chart.encodingMap).filter(key => chart.encodingMap[key as keyof EncodingMap].fieldID != undefined).map(key => chart.encodingMap[key as keyof EncodingMap].fieldID);
+export let checkChartAvailabilityOnPreparedData = (chart: Chart, conceptShelfItems: FieldItem[], visTableRows: any[]) => {
+    let visFieldsFinalNames = Object.keys(chart.encodingMap)
+            .filter(key => chart.encodingMap[key as keyof EncodingMap].fieldID != undefined)
+            .map(key => [chart.encodingMap[key as keyof EncodingMap].fieldID, chart.encodingMap[key as keyof EncodingMap].aggregate])
+            .map(([id, aggregate]) => {
+                let field = conceptShelfItems.find(f => f.id == id);
+                if (field) {
+                    if (aggregate) {
+                        return aggregate == "count" ? "_count" : `${field.name}_${aggregate}`;
+                    } else {
+                        return field.name;
+                    }
+                }
+                return undefined;
+            }).filter(f => f != undefined);
+    console.log("visFieldsFinalNames", visFieldsFinalNames);
+    console.log("visTableRows", visTableRows.slice(0, 10));
+    return visFieldsFinalNames.length > 0 && visTableRows.length > 0 && visFieldsFinalNames.every(name => Object.keys(visTableRows[0]).includes(name));
+}
+
+export let checkChartAvailability = (chart: Chart, conceptShelfItems: FieldItem[], visTableRows: any[]) => {
+    let visFieldIds = Object.keys(chart.encodingMap)
+            .filter(key => chart.encodingMap[key as keyof EncodingMap].fieldID != undefined)
+            .map(key => chart.encodingMap[key as keyof EncodingMap].fieldID);
     let visFields = conceptShelfItems.filter(f => visFieldIds.includes(f.id));
-    return visFields.length > 0 && tableRows.length > 0 && visFields.every(f => Object.keys(tableRows[0]).includes(f.name));
+    return visFields.length > 0 && visTableRows.length > 0 && visFields.every(f => Object.keys(visTableRows[0]).includes(f.name));
 }
 
 export let SampleSizeEditor: FC<{
@@ -301,6 +323,7 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
             handleUpdateCandidates: (chartId: string, tables: DictTable[]) => void,
     }> = function ChartEditorFC({ cachedCandidates, handleUpdateCandidates }) {
 
+    const config = useSelector((state: DataFormulatorState) => state.config);
     const componentRef = useRef<HTMLHeadingElement>(null);
 
     let tables = useSelector((state: DataFormulatorState) => state.tables);
@@ -331,24 +354,27 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
     const [localScaleFactor, setLocalScaleFactor] = useState<number>(1);
 
     let table = getDataTable(focusedChart, tables, charts, conceptShelfItems);
-    let visTableRows = structuredClone(table.rows);
     
     let visFieldIds = Object.keys(focusedChart.encodingMap).filter(key => focusedChart.encodingMap[key as keyof EncodingMap].fieldID != undefined).map(key => focusedChart.encodingMap[key as keyof EncodingMap].fieldID);
     let visFields = conceptShelfItems.filter(f => visFieldIds.includes(f.id));
-
     let dataFieldsAllAvailable = visFields.every(f => table.names.includes(f.name));
 
-    let createVisTableRows = (rows: any[]) => {
-        return rows.map(row => Object.fromEntries(visFields.filter(f => table.names.includes(f.name)).map(f => [f.name, row[f.name]])));
+    let createVisTableRowsLocal = (rows: any[]) => {
+        let filteredRows = rows.map(row => Object.fromEntries(visFields.filter(f => table.names.includes(f.name)).map(f => [f.name, row[f.name]])));
+        let visTable = prepVisTable(filteredRows, conceptShelfItems, focusedChart.encodingMap);
+        return visTable;
     }
 
-    const [rowsToDisplay, setRowsToDisplay] = useState<any[]>(createVisTableRows(visTableRows));
+    let initialVisTableRows = createVisTableRowsLocal(structuredClone(table.rows));
+    const [visTableRows, setVisTableRows] = useState<any[]>(initialVisTableRows);
+    const [visTableTotalRowCount, setVisTableTotalRowCount] = useState<number>(table.virtual?.rowCount || initialVisTableRows.length);
 
-    async function sampleDisplayRows(sampleSize?: number) {
+    async function fetchDisplayRows(sampleSize?: number) {
         if (sampleSize == undefined) {
             sampleSize = 5000;
         }
         if (table.virtual) {
+            let { aggregateFields, groupByFields } = extractFieldsFromEncodingMap(focusedChart.encodingMap, conceptShelfItems);
             fetch(getUrls().SAMPLE_TABLE, {
                 method: 'POST',
                 headers: {
@@ -358,12 +384,14 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
                     table: table.id,
                     size: sampleSize,
                     method: 'random',
-                    projection_fields: visFields.map(f => f.name)   
+                    select_fields: groupByFields,
+                    aggregate_fields_and_functions: aggregateFields,
                 }),
             })
             .then(response => response.json())
             .then(data => {
-                setRowsToDisplay(createVisTableRows(data.rows));
+                setVisTableRows(data.rows);
+                setVisTableTotalRowCount(data.total_row_count);
             })
             .catch(error => {
                 console.error('Error sampling table:', error);
@@ -373,20 +401,18 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
 
     useEffect(() => {
         if (table.virtual && visFields.length > 0 && dataFieldsAllAvailable) {
-            sampleDisplayRows();
+            fetchDisplayRows();
         }
     }, [])
 
     useEffect(() => {
-        let existingFields = rowsToDisplay.length > 0 ? Object.keys(rowsToDisplay[0]) : [];
-        if (visFields.length > 0 && dataFieldsAllAvailable && visFields.filter(f => !existingFields.includes(f.name)).length > 0) {
+        if (visFields.length > 0 && dataFieldsAllAvailable) {
             // table changed, we need to update the rows to display
             if (table.virtual) {
                 // virtual table, we need to sample the table
-                console.log("sampling table", table.id, visFields.map(f => f.name))
-                sampleDisplayRows();
+                fetchDisplayRows();
             } else {
-                setRowsToDisplay(createVisTableRows(visTableRows));
+                setVisTableRows(createVisTableRowsLocal(structuredClone(table.rows)));
             }
         }
     }, [focusedChart])
@@ -407,7 +433,7 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
 
     let codeExpl = table.derive?.codeExpl || "";
 
-    let createChartElement = (chart: Chart, extTable: any[], id: string) => {
+    let createChartElement = (chart: Chart, id: string) => {
         let chartTemplate = getChartTemplate(chart.chartType);
  
         if (chart.chartType == "Auto") {
@@ -420,8 +446,13 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
             return renderTableChart(chart, conceptShelfItems, visTableRows);
         }
 
+        console.log('assembled chart');
+        console.log(chart.chartType);
+        console.log(chart.encodingMap);
+        console.log(visTableRows.slice(0, 10));
+
         let element = <></>;
-        if (!chart || !checkChartAvailability(chart, conceptShelfItems, visTableRows)) {
+        if (!chart || !checkChartAvailabilityOnPreparedData(chart, conceptShelfItems, visTableRows)) {
             return   generateChartSkeleton(chartTemplate?.icon);
         }
 
@@ -429,8 +460,17 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
 
         element = <Box id={id} key={`focused-chart`} ></Box>    
 
-        let assembledChart = assembleVegaChart(chart.chartType, chart.encodingMap, conceptShelfItems, visTableRows);
+        let assembledChart = assembleVegaChart(chart.chartType, chart.encodingMap, conceptShelfItems, visTableRows, 68, true);
+        console.log('assembled chart');
+        console.log(assembledChart);
+        
         assembledChart['resize'] = true;
+        assembledChart['config'] = {
+            "view": {
+                "continuousWidth": config.defaultChartWidth,
+                "continuousHeight": config.defaultChartHeight
+            }
+        }
 
         embed('#' + id, { ...assembledChart }, { actions: true, renderer: "svg" }).then(function (result) {
             // Access the Vega view instance (https://vega.github.io/vega/docs/api/view/) as result.view
@@ -461,7 +501,7 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
         return element;
     }
 
-    let focusedChartElement = createChartElement(focusedChart, rowsToDisplay, `focused-element-${focusedChart.id}`);
+    let focusedChartElement = createChartElement(focusedChart, `focused-element-${focusedChart.id}`);
     let arrowCard = <></>;
     let resultChartElement = <></>;
 
@@ -596,10 +636,10 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
                         visualizing
                     </Typography>
                     <SampleSizeEditor 
-                        initialSize={rowsToDisplay.length}
-                        totalSize={table.virtual.rowCount}
+                        initialSize={visTableRows.length}
+                        totalSize={visTableTotalRowCount}
                         onSampleSizeChange={(newSize) => {
-                            sampleDisplayRows(newSize);
+                            fetchDisplayRows(newSize);
                         }}
                     />
                     <Typography component="span" fontSize="small" color="text.secondary" sx={{textAlign:'center'}}>

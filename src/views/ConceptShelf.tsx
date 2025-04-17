@@ -191,12 +191,11 @@ export const ConceptShelf: FC<ConceptShelfProps> = function ConceptShelf() {
                         <OperatorCard operator="sum" />
                         <OperatorCard operator="average" />
                         <OperatorCard operator="median" />
-                        <OperatorCard operator="bin" />
+                        <OperatorCard operator="max" />
+                        <OperatorCard operator="min" />
                     </Box>
                     {groupNames.map(groupName => {
                         let fields = conceptItemGroups.filter(g => g.group == groupName).map(g => g.field);
-                        let isCustomGroup = groupName == "new fields";
-
                         return <ConceptGroup key={`concept-group-${groupName}`} groupName={groupName} fields={fields} />
                     })}
                     <Divider orientation="horizontal" textAlign="left" sx={{mt: 1}}></Divider>

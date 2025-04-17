@@ -44,6 +44,8 @@ import MuiAppBar from '@mui/material/AppBar';
 import { createTheme, styled, ThemeProvider } from '@mui/material/styles';
 
 import PowerSettingsNewIcon from '@mui/icons-material/PowerSettingsNew';
+import ClearIcon from '@mui/icons-material/Clear';
+
 import { DataFormulatorFC } from '../views/DataFormulator';
 
 import GridViewIcon from '@mui/icons-material/GridView';
@@ -317,19 +319,25 @@ const ConfigDialog: React.FC = () => {
     const dispatch = useDispatch();
     const config = useSelector((state: DataFormulatorState) => state.config);
 
+
     const [formulateTimeoutSeconds, setFormulateTimeoutSeconds] = useState(config.formulateTimeoutSeconds);
     const [maxRepairAttempts, setMaxRepairAttempts] = useState(config.maxRepairAttempts);
 
+    const [defaultChartWidth, setDefaultChartWidth] = useState(config.defaultChartWidth);
+    const [defaultChartHeight, setDefaultChartHeight] = useState(config.defaultChartHeight);
+
     // Add check for changes
     const hasChanges = formulateTimeoutSeconds !== config.formulateTimeoutSeconds || 
-                      maxRepairAttempts !== config.maxRepairAttempts;
+                      maxRepairAttempts !== config.maxRepairAttempts ||
+                      defaultChartWidth !== config.defaultChartWidth ||
+                      defaultChartHeight !== config.defaultChartHeight;
 
     return (
         <>
             <Button variant="text" sx={{textTransform: 'none'}} onClick={() => setOpen(true)} startIcon={<SettingsIcon />}>
                  <Box component="span" sx={{lineHeight: 1.2, display: 'flex', flexDirection: 'column', alignItems: 'left'}}>
-                    <Box component="span" sx={{py: 0, my: 0, fontSize: '10px', mr: 'auto'}}>timeout={config.formulateTimeoutSeconds}s</Box>
-                    <Box component="span" sx={{py: 0, my: 0, fontSize: '10px', mr: 'auto'}}>max_repair={config.maxRepairAttempts}</Box>
+                    <Box component="span" sx={{py: 0, my: 0, fontSize: '10px', mr: 'auto'}}>default_timeout={config.formulateTimeoutSeconds}s</Box>
+                    <Box component="span" sx={{py: 0, my: 0, fontSize: '10px', mr: 'auto'}}>chart_size={config.defaultChartWidth}x{config.defaultChartHeight}</Box>
                 </Box>
             </Button>
             <Dialog onClose={() => setOpen(false)} open={open}>
@@ -340,9 +348,55 @@ const ConfigDialog: React.FC = () => {
                             display: 'flex', 
                             flexDirection: 'column', 
                             gap: 3,
-                            my: 2,
                             maxWidth: 400
                         }}>
+                            <Divider><Typography variant="caption">Frontend configuration</Typography></Divider>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                                <Box sx={{ flex: 1 }}>
+                                    <TextField
+                                        label="default chart width"
+                                        type="number"
+                                        variant="outlined"
+                                        value={defaultChartWidth}
+                                        onChange={(e) => {
+                                            const value = parseInt(e.target.value);
+                                            setDefaultChartWidth(value);
+                                        }}
+                                        fullWidth
+                                        inputProps={{
+                                            min: 100,
+                                            max: 1000
+                                        }}
+                                        error={defaultChartWidth < 100 || defaultChartWidth > 1000}
+                                        helperText={defaultChartWidth < 100 || defaultChartWidth > 1000 ? 
+                                            "Value must be between 100 and 1000 pixels" : ""}
+                                    />
+                                </Box>
+                                <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+                                    <ClearIcon fontSize="small" />
+                                </Typography>
+                                <Box sx={{ flex: 1 }}>
+                                    <TextField
+                                        label="default chart height"
+                                        type="number"
+                                        variant="outlined"
+                                        value={defaultChartHeight}
+                                        onChange={(e) => {
+                                            const value = parseInt(e.target.value);
+                                            setDefaultChartHeight(value);
+                                        }}
+                                        fullWidth
+                                        inputProps={{
+                                            min: 100,
+                                            max: 1000
+                                        }}
+                                        error={defaultChartHeight < 100 || defaultChartHeight > 1000}
+                                        helperText={defaultChartHeight < 100 || defaultChartHeight > 1000 ? 
+                                            "Value must be between 100 and 1000 pixels" : ""}
+                                    />
+                                </Box>
+                            </Box>
+                            <Divider><Typography variant="caption">Backend configuration</Typography></Divider>
                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                                 <Box sx={{ flex: 1 }}>
                                     <TextField
@@ -365,9 +419,6 @@ const ConfigDialog: React.FC = () => {
                                     />
                                     <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
                                         Maximum time allowed for the formulation process before timing out. 
-                                    </Typography>
-                                    <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
-                                        Smaller values (&lt;30s) make the model fails fast thus providing a smoother UI experience. Increase this value for slow models.
                                     </Typography>
                                 </Box>
                             </Box>
@@ -406,13 +457,18 @@ const ConfigDialog: React.FC = () => {
                     <Button sx={{marginRight: 'auto'}} onClick={() => {
                         setFormulateTimeoutSeconds(30);
                         setMaxRepairAttempts(1);
+                        setDefaultChartWidth(300);
+                        setDefaultChartHeight(300);
                     }}>Reset to default</Button>
                     <Button onClick={() => setOpen(false)}>Cancel</Button>
                     <Button 
                         variant={hasChanges ? "contained" : "text"}
-                        disabled={!hasChanges || isNaN(maxRepairAttempts) || maxRepairAttempts <= 0 || maxRepairAttempts > 5 || isNaN(formulateTimeoutSeconds) || formulateTimeoutSeconds <= 0 || formulateTimeoutSeconds > 3600}
+                        disabled={!hasChanges || isNaN(maxRepairAttempts) || maxRepairAttempts <= 0 || maxRepairAttempts > 5 
+                            || isNaN(formulateTimeoutSeconds) || formulateTimeoutSeconds <= 0 || formulateTimeoutSeconds > 3600
+                            || isNaN(defaultChartWidth) || defaultChartWidth <= 0 || defaultChartWidth > 1000
+                            || isNaN(defaultChartHeight) || defaultChartHeight <= 0 || defaultChartHeight > 1000}
                         onClick={() => {
-                            dispatch(dfActions.setConfig({formulateTimeoutSeconds, maxRepairAttempts}));
+                            dispatch(dfActions.setConfig({formulateTimeoutSeconds, maxRepairAttempts, defaultChartWidth, defaultChartHeight}));
                             setOpen(false);
                         }}
                     >

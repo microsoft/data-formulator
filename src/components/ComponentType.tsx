@@ -127,7 +127,6 @@ export interface EncodingItem {
     //channel: Channel, // the channel ID
     fieldID?: string, // the fieldID
     aggregate?: AggrOp,
-    bin: boolean,
     stack?: "layered" | "zero" | "center" | "normalize",
     //sort?: "ascending" | "descending" | string,
     sortOrder?: "ascending" | "descending", // 

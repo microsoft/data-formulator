@@ -68,7 +68,9 @@ export interface DataFormulatorState {
     config: {
         formulateTimeoutSeconds: number;
         maxRepairAttempts: number;
-    }
+        defaultChartWidth: number;
+        defaultChartHeight: number;
+    }   
 }
 
 // Define the initial state using that type
@@ -104,6 +106,8 @@ const initialState: DataFormulatorState = {
     config: {
         formulateTimeoutSeconds: 30,
         maxRepairAttempts: 1,
+        defaultChartWidth: 300,
+        defaultChartHeight: 300,
     }
 }
 
@@ -273,11 +277,7 @@ export const dataFormulatorSlice = createSlice({
 
             state.chartSynthesisInProgress = [];
 
-            // avoid resetting config
-            // state.config = {
-            //     formulateTimeoutSeconds: 30,
-            //     repairAttempts: 1,
-            // }
+            state.config = initialState.config;
         },
         loadState: (state, action: PayloadAction<any>) => {
 
@@ -306,7 +306,9 @@ export const dataFormulatorSlice = createSlice({
 
             state.config = savedState.config;
         },
-        setConfig: (state, action: PayloadAction<{formulateTimeoutSeconds: number, maxRepairAttempts: number}>) => {
+        setConfig: (state, action: PayloadAction<{
+            formulateTimeoutSeconds: number, maxRepairAttempts: number, 
+            defaultChartWidth: number, defaultChartHeight: number}>) => {
             state.config = action.payload;
         },
         selectModel: (state, action: PayloadAction<string | undefined>) => {
@@ -548,8 +550,6 @@ export const dataFormulatorSlice = createSlice({
                     if (field?.levels) {
                         encoding.sortBy = JSON.stringify(field.levels);
                     }
-                } else if (prop == 'bin') {
-                    encoding.bin = value;
                 } else if (prop == 'aggregate') {
                     encoding.aggregate = value;
                 } else if (prop == 'stack') {
@@ -573,8 +573,8 @@ export const dataFormulatorSlice = createSlice({
                 let enc1 = chart.encodingMap[channel1];
                 let enc2 = chart.encodingMap[channel2];
 
-                chart.encodingMap[channel1] = { fieldID: enc2.fieldID, aggregate: enc2.aggregate, bin: enc2.bin, sortBy: enc2.sortBy };
-                chart.encodingMap[channel2] = { fieldID: enc1.fieldID, aggregate: enc1.aggregate, bin: enc1.bin, sortBy: enc1.sortBy };
+                chart.encodingMap[channel1] = { fieldID: enc2.fieldID, aggregate: enc2.aggregate, sortBy: enc2.sortBy };
+                chart.encodingMap[channel2] = { fieldID: enc1.fieldID, aggregate: enc1.aggregate, sortBy: enc1.sortBy };
             }
         },
         addConceptItems: (state, action: PayloadAction<FieldItem[]>) => {
@@ -621,7 +621,7 @@ export const dataFormulatorSlice = createSlice({
                     for (let [channel, encoding] of Object.entries(chart.encodingMap)) {
                         if (encoding.fieldID && conceptID == encoding.fieldID) {
                             // clear the encoding
-                            chart.encodingMap[channel as Channel] = { bin: false }
+                            chart.encodingMap[channel as Channel] = { }
                         }
                     }
                 }
@@ -639,7 +639,7 @@ export const dataFormulatorSlice = createSlice({
                         for (let [channel, encoding] of Object.entries(chart.encodingMap)) {
                             if (encoding.fieldID && conceptID == encoding.fieldID) {
                                 // clear the encoding
-                                chart.encodingMap[channel as Channel] = { bin: false }
+                                chart.encodingMap[channel as Channel] = { }
                             }
                         }
                     }
@@ -770,8 +770,8 @@ export const dataFormulatorSlice = createSlice({
                 state.selectedModelId = defaultModels[0].id;
             }
 
-            console.log("load model complete");
-            console.log("state.models", state.models);
+            // console.log("load model complete");
+            // console.log("state.models", state.models);
         })
         .addCase(fetchCodeExpl.fulfilled, (state, action) => {
             let codeExpl = action.payload;

@@ -666,6 +666,60 @@ def list_tables():
             "message": str(e)
         }), 500
 
+def assemble_query(aggregate_fields_and_functions, group_fields, columns, table_name):
+    """
+    Assembles a SELECT query string based on binning, aggregation, and grouping specifications.
+    
+    Args:
+        bin_fields (list): Fields to be binned into ranges
+        aggregate_fields_and_functions (list): List of tuples (field, function) for aggregation
+        group_fields (list): Fields to group by
+        columns (list): All available column names
+    
+    Returns:
+        str: The assembled SELECT query projection part
+    """
+    select_parts = []
+    output_column_names = []
+
+    # Handle aggregate fields and functions
+    for field, function in aggregate_fields_and_functions:
+        if field is None:
+            # Handle count(*) case
+            if function.lower() == 'count':
+                select_parts.append('COUNT(*) as _count')
+                output_column_names.append('_count')
+        elif field in columns:
+            if function.lower() == 'count':
+                alias = f'_count'
+                select_parts.append(f'COUNT(*) as {alias}')
+                output_column_names.append(alias)
+            else:
+                # Sanitize function name and create alias
+                if function in ["avg", "average", "mean"]:
+                    aggregate_function = "AVG"
+                else:
+                    aggregate_function = function.upper()
+                
+                alias = f'{field}_{function}'
+                select_parts.append(f'{aggregate_function}("{field}") as {alias}')
+                output_column_names.append(alias)
+
+    # Handle group fields
+    for field in group_fields:
+        if field in columns:
+            select_parts.append(f'"{field}"')
+            output_column_names.append(field)
+    # If no fields are specified, select all columns
+    if not select_parts:
+        select_parts = ["*"]
+        output_column_names = columns
+
+    from_clause = f"FROM {table_name}"
+    group_by_clause = f"GROUP BY {', '.join(group_fields)}" if len(group_fields) > 0 and len(aggregate_fields_and_functions) > 0 else ""
+
+    query = f"SELECT {', '.join(select_parts)} {from_clause} {group_by_clause}"
+    return query, output_column_names
 
 @app.route('/api/tables/sample-table', methods=['POST'])
 def sample_table():
@@ -674,12 +728,14 @@ def sample_table():
         data = request.get_json()
         table_id = data.get('table')
         sample_size = data.get('size', 1000)
-        projection_fields = data.get('projection_fields', []) # if empty, we want to include all fields
+        aggregate_fields_and_functions = data.get('aggregate_fields_and_functions', []) # each element is a tuple (field, function)
+        select_fields = data.get('select_fields', []) # if empty, we want to include all fields
         method = data.get('method', 'random') # one of 'random', 'head', 'bottom'
         order_by_fields = data.get('order_by_fields', [])
 
-        print(f"sample_table: {table_id}, {sample_size}, {projection_fields}, {method}, {order_by_fields}")
+        print(f"sample_table: {table_id}, {sample_size}, {aggregate_fields_and_functions}, {select_fields}, {method}, {order_by_fields}")
         
+        total_row_count = 0
         # Validate field names against table columns to prevent SQL injection
         with db_manager.connection(session['session_id']) as db:
             # Get valid column names
@@ -687,39 +743,43 @@ def sample_table():
             
             # Filter order_by_fields to only include valid column names
             valid_order_by_fields = [field for field in order_by_fields if field in columns]
-            valid_projection_fields = [field for field in projection_fields if field in columns]
+            valid_aggregate_fields_and_functions = [
+                field_and_function for field_and_function in aggregate_fields_and_functions 
+                if field_and_function[0] is None or field_and_function[0] in columns
+            ]
+            valid_select_fields = [field for field in select_fields if field in columns]
 
-            if len(valid_projection_fields) == 0:
-                projection_fields_str = "*"
-            else:
-                projection_fields_str = ", ".join(valid_projection_fields)
+            query, output_column_names = assemble_query(valid_aggregate_fields_and_functions, valid_select_fields, columns, table_id)
 
+            # Modify the original query to include the count:
+            count_query = f"SELECT *, COUNT(*) OVER () as total_count FROM ({query}) as subq LIMIT 1"
+            result = db.execute(count_query).fetchone()
+            total_row_count = result[-1] if result else 0
+
+            # Add ordering and limit to the main query
             if method == 'random':
-                result = db.execute(f"SELECT {projection_fields_str} FROM {table_id} ORDER BY RANDOM() LIMIT {sample_size}").fetchall()
+                query += f" ORDER BY RANDOM() LIMIT {sample_size}"
             elif method == 'head':
                 if valid_order_by_fields:
                     # Build ORDER BY clause with validated fields
                     order_by_clause = ", ".join([f'"{field}"' for field in valid_order_by_fields])
-                    result = db.execute(f"SELECT {projection_fields_str} FROM {table_id} ORDER BY {order_by_clause} LIMIT {sample_size}").fetchall()
+                    query += f" ORDER BY {order_by_clause} LIMIT {sample_size}"
                 else:
-                    result = db.execute(f"SELECT {projection_fields_str} FROM {table_id} LIMIT {sample_size}").fetchall()
+                    query += f" LIMIT {sample_size}"
             elif method == 'bottom':
                 if valid_order_by_fields:
                     # Build ORDER BY clause with validated fields in descending order
                     order_by_clause = ", ".join([f'"{field}" DESC' for field in valid_order_by_fields])
-                    result = db.execute(f"SELECT {projection_fields_str} FROM {table_id} ORDER BY {order_by_clause} LIMIT {sample_size}").fetchall()
+                    query += f" ORDER BY {order_by_clause} LIMIT {sample_size}"
                 else:
-                    result = db.execute(f"SELECT {projection_fields_str} FROM {table_id} ORDER BY ROWID DESC LIMIT {sample_size}").fetchall()
+                    query += f" ORDER BY ROWID DESC LIMIT {sample_size}"
 
-        # When using projection_fields, we need to use those as our column names
-        if len(valid_projection_fields) > 0:
-            column_names = valid_projection_fields
-        else:
-            column_names = columns
+            result = db.execute(query).fetchall()
 
         return jsonify({
             "status": "success",
-            "rows": [dict(zip(column_names, row)) for row in result]
+            "rows": [dict(zip(output_column_names, row)) for row in result],
+            "total_row_count": total_row_count
         })
     except Exception as e:
         print(e)
