@@ -6,6 +6,7 @@ import random
 import sys
 import os
 import mimetypes
+import re
 mimetypes.add_type('application/javascript', '.js')
 mimetypes.add_type('application/javascript', '.mjs')
 
@@ -113,9 +114,22 @@ def check_available_models():
                 
     return json.dumps(results)
 
+def sanitize_model_error(error_message: str) -> str:
+    """Sanitize model API error messages before sending to client."""
+    # HTML escape the message
+    message = html.escape(error_message)
+    
+    # Remove any potential API keys that might be in the error
+    message = re.sub(r'(api[-_]?key|api[-_]?token)[=:]\s*[^\s&]+', r'\1=<redacted>', message, flags=re.IGNORECASE)
+    
+    # Keep only the essential error info
+    if len(message) > 500:  # Truncate very long messages
+        message = message[:500] + "..."
+        
+    return message
+
 @agent_bp.route('/test-model', methods=['GET', 'POST'])
 def test_model():
-    
     if request.is_json:
         logger.info("# code query: ")
         content = request.get_json()
@@ -125,7 +139,7 @@ def test_model():
         logger.info(content)
 
         client = get_client(content['model'])
-
+        
         try:
             response = client.get_completion(
                 messages=[
@@ -145,11 +159,10 @@ def test_model():
                 }
         except Exception as e:
             logger.info(f"Error: {e}")
-            error_message = str(e)
             result = {
                 "model": content['model'],
                 "status": 'error',
-                "message": error_message,
+                "message": sanitize_model_error(str(e)),
             }
     else:
         result = {'status': 'error'}
