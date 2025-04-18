@@ -209,8 +209,10 @@ class SQLDataRecAgent(object):
     
 
     def run(self, input_tables, description, n=1):
-
-        data_summary = get_sql_table_statistics_str(self.conn, input_tables)
+        data_summary = ""
+        for table in input_tables:
+            table_summary_str = get_sql_table_statistics_str(self.conn, table['name'])
+            data_summary += f"[TABLE {table['name']}]\n\n{table_summary_str}\n\n"
 
         user_query = f"[CONTEXT]\n\n{data_summary}\n\n[GOAL]\n\n{description}\n\n[OUTPUT]\n"
 

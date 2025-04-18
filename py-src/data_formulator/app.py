@@ -169,7 +169,6 @@ def hello():
     }
     return json.dumps(spec)
 
-
 @app.route('/api/hello-stream')
 def streamed_response():
     def generate():
