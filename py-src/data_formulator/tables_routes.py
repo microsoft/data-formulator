@@ -287,6 +287,17 @@ def create_table():
             return jsonify({"status": "error", "message": "Invalid table name"}), 400
             
         with db_manager.connection(session['session_id']) as db:
+            # Check if table exists and generate unique name if needed
+            base_name = sanitized_table_name
+            counter = 1
+            while True:
+                # Check if table exists
+                exists = db.execute(f"SELECT COUNT(*) FROM duckdb_tables() WHERE table_name = '{sanitized_table_name}'").fetchone()[0] > 0
+                if not exists:
+                    break
+                # If exists, append counter to base name
+                sanitized_table_name = f"{base_name}_{counter}"
+                counter += 1
         
             # Read file based on extension
             if file.filename.endswith('.csv'):
@@ -297,7 +308,7 @@ def create_table():
                 df = pd.read_json(file)
             else:
                 return jsonify({"status": "error", "message": "Unsupported file format"}), 400
-            
+
             # Create table
             db.register('df_temp', df)
             db.execute(f"CREATE TABLE {sanitized_table_name} AS SELECT * FROM df_temp")
@@ -307,7 +318,9 @@ def create_table():
                 "status": "success",
                 "table_name": sanitized_table_name,
                 "row_count": len(df),
-                "columns": list(df.columns)
+                "columns": list(df.columns),
+                "original_name": base_name,  # Include the original name in response
+                "is_renamed": base_name != sanitized_table_name  # Flag indicating if name was changed
             })
     
     except Exception as e:
@@ -329,10 +342,21 @@ def drop_table():
             return jsonify({"status": "error", "message": "No table name provided"}), 400
             
         with db_manager.connection(session['session_id']) as db:
-            # First try to drop it as a view
-            db.execute(f"DROP VIEW IF EXISTS {table_name}")
-            # Then try to drop it as a table
-            db.execute(f"DROP TABLE IF EXISTS {table_name}")
+            # First check if it exists as a view
+            view_exists = db.execute(f"SELECT view_name FROM duckdb_views() WHERE view_name = '{table_name}'").fetchone() is not None
+            if view_exists:
+                db.execute(f"DROP VIEW IF EXISTS {table_name}")
+            
+            # Then check if it exists as a table
+            table_exists = db.execute(f"SELECT table_name FROM duckdb_tables() WHERE table_name = '{table_name}'").fetchone() is not None
+            if table_exists:
+                db.execute(f"DROP TABLE IF EXISTS {table_name}")
+
+            if not view_exists and not table_exists:
+                return jsonify({
+                    "status": "error",
+                    "message": f"Table/view '{table_name}' does not exist"
+                }), 404
         
             return jsonify({
                 "status": "success",

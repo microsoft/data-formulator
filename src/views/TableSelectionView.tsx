@@ -284,6 +284,17 @@ export const TableUploadDialog: React.FC<TableUploadDialogProps> = ({ buttonElem
                     file.name.endsWith('.csv') || 
                     file.name.endsWith('.tsv') || 
                     file.name.endsWith('.json')) {
+
+                    // Check if file is larger than 5MB
+                    const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB in bytes
+                    if (file.size > MAX_FILE_SIZE) {
+                        dispatch(dfActions.addMessages({
+                            "timestamp": Date.now(),
+                            "type": "error",
+                            "value": `File ${file.name} is too large (${(file.size / (1024 * 1024)).toFixed(2)}MB), upload it via DATABASE option instead.`
+                        }));
+                        continue; // Skip this file and process the next one
+                    }
                     
                     // Handle text files
                     file.text().then((text) => {

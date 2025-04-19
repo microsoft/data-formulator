@@ -226,9 +226,13 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
     const [dbTables, setDbTables] = useState<DBTable[]>([]);
     const [selectedTabIndex, setSelectedTabIndex] = useState(0);
     
-    const [errorMessage, setErrorMessage] = useState<string | null>(null);
+    const [errorMessage, setErrorMessage] = useState<{content: string, severity: "error" | "warning" | "info" | "success"} | null>(null);
     const [showError, setShowError] = useState(false);
     const [isUploading, setIsUploading] = useState<boolean>(false);
+
+    useEffect(() => {
+        fetchTables();
+    }, []);
 
     // Fetch list of tables
     const fetchTables = async () => {
@@ -267,7 +271,7 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
             }
         } catch (error) {
             console.error('Failed to upload table:', error);
-            setErrorMessage('Failed to upload table. The server may need to be restarted.');
+            setErrorMessage({content: 'Failed to upload table. The server may need to be restarted.', severity: "error"});
             setShowError(true);
         } finally {
             setIsUploading(false);
@@ -304,7 +308,7 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
             URL.revokeObjectURL(url);
         } catch (error) {
             console.error('Failed to download database:', error);
-            setErrorMessage('Failed to download database file');
+            setErrorMessage({content: 'Failed to download database file', severity: "error"});
             setShowError(true);
         }
     };
@@ -325,18 +329,25 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
             });
             const data = await response.json();
             if (data.status === 'success') {
+                if (data.is_renamed) {
+                    setErrorMessage({content: `Table ${data.original_name} already exists. Renamed to ${data.table_name}`, severity: "warning"});
+                    setShowError(true);
+                } 
                 fetchTables();  // Refresh table list
             } else {
-                // Handle error from server
-                setErrorMessage(data.error || 'Failed to upload table');
+                setErrorMessage({content: data.error || 'Failed to upload table', severity: "error"});
                 setShowError(true);
             }
         } catch (error) {
             console.error('Failed to upload table:', error);
-            setErrorMessage('Failed to upload table. The server may need to be restarted.');
+            setErrorMessage({content: 'Failed to upload table. The server may need to be restarted.', severity: "error"});
             setShowError(true);
         } finally {
             setIsUploading(false);
+            // Clear the file input value to allow uploading the same file again
+            if (event.target) {
+                event.target.value = '';
+            }
         }
     };
 
@@ -354,7 +365,7 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
             }
         } catch (error) {
             console.error('Failed to reset database:', error);
-            setErrorMessage('Failed to reset database');
+            setErrorMessage({content: 'Failed to reset database', severity: "error"});
             setShowError(true);
         }
     }
@@ -409,7 +420,7 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
             }
         } catch (error) {
             console.error('Failed to analyze table data:', error);
-            setErrorMessage('Failed to analyze table data');
+            setErrorMessage({content: 'Failed to analyze table data', severity: "error"});
             setShowError(true);
         }
     };
@@ -476,6 +487,44 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
         }
     }, [tableDialogOpen]);
 
+    let importButton = (buttonElement: React.ReactNode) => {
+        return <Tooltip title="import a duckdb .db file to the local database">
+            <Button variant="text" sx={{fontSize: "inherit", minWidth: "auto"}} component="label" disabled={isUploading}>
+                {buttonElement}
+                <input type="file" hidden onChange={handleDBUpload} accept=".db" disabled={isUploading} />
+            </Button>
+        </Tooltip>
+    }
+
+    let exportButton = 
+        <Tooltip title="save the local database to a duckdb .db file">
+            <Button variant="text" size="small" onClick={handleDBDownload} disabled={isUploading || dbTables.length === 0}>
+                export
+            </Button>
+        </Tooltip>
+
+    function uploadFileButton(element: React.ReactNode, buttonSx?: SxProps) {
+        return (
+            <Tooltip title="upload a csv/tsv file to the local database">
+                <Button
+                    variant="text"
+                    component="label"
+                    sx={{ fontSize: "inherit", ...buttonSx}}                    
+                    disabled={isUploading}
+                >
+                    {element}
+                    <input
+                        type="file"
+                        hidden
+                        onChange={handleFileUpload}
+                        accept=".csv,.xlsx,.json"
+                        disabled={isUploading}
+                    />
+                </Button>
+            </Tooltip>
+        );
+    }
+
     let mainContent = dbTables.length > 0 ? 
         <Box sx={{ flexGrow: 1, bgcolor: 'background.paper', display: 'flex', flexDirection: 'row', height: '100%' }}>
             <Box sx={{display: "flex", flexDirection: "column", width: "120px", borderRight: 1, borderColor: 'divider'}}>
@@ -485,7 +534,7 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
                     value={selectedTabIndex}
                     onChange={handleTabChange}
                     aria-label="Database tables"
-                    sx={{ width: '120px' }}
+                    sx={{ width: '120px', maxHeight: '360px' }}
                 >
                     {dbTables.map((t, i) => (
                         <Tab 
@@ -501,25 +550,7 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
                     ))}
                 </Tabs> 
                 <Divider sx={{my: 1}} textAlign='left'> <TuneIcon sx={{fontSize: 12, color: "text.secondary"}} /></Divider>
-                <Tooltip title="upload a csv/tsv file to the local database">
-                    <Button
-                        variant="text"
-                        component="label"
-                        size="small"
-                        sx={{ width: '100%', textTransform: "none"}}                    
-                        disabled={isUploading}
-                        startIcon={<UploadIcon fontSize="small"/>}
-                    >
-                        {isUploading ? 'uploading...' : 'upload file'}
-                        <input
-                            type="file"
-                            hidden
-                            onChange={handleFileUpload}
-                            accept=".csv,.xlsx,.json"
-                            disabled={isUploading}
-                        />
-                    </Button>
-                </Tooltip>
+                {uploadFileButton(<Typography component="span" fontSize={12}>{isUploading ? 'uploading...' : 'upload file'}</Typography>)}
             </Box>
             {dbTables.map((t, i) => {
                 const currentTable = t;
@@ -582,8 +613,12 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
         </Box> : 
         <Box sx={{ p: 3, textAlign: 'center', height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center' }}>
             <StorageIcon sx={{ fontSize: 60, color: 'text.secondary', mb: 2 }} />
-            <Typography variant="h6" gutterBottom>
-                Please upload a file to create a table
+            <Typography variant="caption"> Database is currently empty. </Typography>
+            <Typography>
+                {uploadFileButton(<Typography component="span">Upload a csv dataset </Typography>)}
+                or
+                {importButton(<Typography component="span">Import a db file</Typography>)}
+                <Typography component="span"> to get started.</Typography>
             </Typography>
         </Box>
 
@@ -602,8 +637,8 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
                 onClose={handleCloseError}
                 anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
             >
-                <Alert onClose={handleCloseError} severity="error" sx={{ width: '100%' }}>
-                    {errorMessage}
+                <Alert onClose={handleCloseError} severity={errorMessage?.severity} sx={{ width: '100%' }}>
+                    {errorMessage?.content}
                 </Alert>
             </Snackbar>
             
@@ -649,30 +684,9 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
                 </DialogContent>
                 <DialogActions>
                     <Typography variant="caption" sx={{ mr: 'auto', '& .MuiButton-root': { minWidth: 'auto',  textTransform: "none" } }}>
-                        <Button
-                            variant="text" 
-                            size="small"
-                            component="label"
-                            disabled={isUploading}
-                        >
-                            Reload
-                            <input
-                                type="file"
-                                hidden
-                                onChange={handleDBUpload}
-                                accept=".db"
-                                disabled={isUploading}
-                            />
-                        </Button>
+                        {importButton(<Typography component="span" fontSize="inherit">Import</Typography>)}
                         ,
-                        <Button
-                            variant="text" size="small"
-                           // endIcon={<DownloadIcon />}
-                            onClick={handleDBDownload}
-                            disabled={isUploading || dbTables.length === 0}
-                        >
-                            download
-                        </Button>
+                        {exportButton}
                         or
                         <Button
                             variant="text" size="small"

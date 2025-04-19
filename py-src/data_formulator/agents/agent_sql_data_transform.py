@@ -55,65 +55,6 @@ note:
 '''
 
 EXAMPLE='''
-
-For example:
-
-[CONTEXT]
-
-Here are our datasets, here are their field summaries and samples:
-
-table_0 (us_covid_cases) fields:
-	Date -- type: object, values: 1/1/2021, 1/1/2022, 1/1/2023, ..., 9/8/2022, 9/9/2020, 9/9/2021, 9/9/2022
-	Cases -- type: int64, values: -23999, -14195, -6940, ..., 1018935, 1032159, 1178403, 1433977
-
-table_0 (us_covid_cases) sample:
-```
-|Date|Cases
-0|1/21/2020|1
-1|1/22/2020|0
-2|1/23/2020|0
-3|1/24/2020|1
-4|1/25/2020|1
-......
-```
-
-[GOAL]
-
-{
-    "instruction": "calculate 7-day moving average",
-    "visualization_fields": ["Date", "7-day average cases"]
-}
-
-[OUTPUT]
-
-{  
-    "detailed_instruction": "Calculate the 7-day moving average of COVID-19 cases over time.",  
-    "output_fields": ["Date", "Cases", "7-day average cases"],  
-    "visualization_fields": ["Date", "7-day average cases"],  
-    "reason": "To calculate the 7-day moving average, the 'Cases' field is required, but it is not needed for visualization. The provided fields are sufficient to achieve the goal."  
-}  
-
-```python
-import pandas as pd  
-import collections  
-import numpy as np  
-  
-def transform_data(df):  
-    # Convert Date column to datetime  
-    df['Date'] = pd.to_datetime(df['Date'])  
-      
-    # Sort the dataframe by Date  
-    df = df.sort_values('Date')  
-      
-    # Calculate the 7-day moving average of cases  
-    df['7-day average cases'] = df['Cases'].rolling(window=7).mean()  
-      
-    # Select the output fields  
-    transformed_df = df[['Date', 'Cases', '7-day average cases']]  
-      
-    return transformed_df  
-```
-
 [CONTEXT]
 
 Here are our datasets, here are their field summaries and samples:
