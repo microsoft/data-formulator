@@ -57,6 +57,7 @@ export function getUrls() {
         UPLOAD_DB_FILE: `/api/tables/upload-db-file`,
         DOWNLOAD_DB_FILE: `/api/tables/download-db-file`,
         RESET_DB_FILE: `/api/tables/reset-db-file`,
+        ATTACH_EXTERNAL_DB: `/api/tables/attach-external-db`,
 
         LIST_TABLES: `/api/tables/list-tables`,
         TABLE_DATA: `/api/tables/get-table`,

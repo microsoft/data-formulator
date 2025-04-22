@@ -29,7 +29,8 @@ import {
   TableRow,
   CircularProgress,
   ButtonGroup,
-  Tooltip
+  Tooltip,
+  MenuItem
 } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
@@ -548,7 +549,7 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
                             {...a11yProps(i)} 
                         />
                     ))}
-                </Tabs> 
+                </Tabs>
                 <Divider sx={{my: 1}} textAlign='left'> <TuneIcon sx={{fontSize: 12, color: "text.secondary"}} /></Divider>
                 {uploadFileButton(<Typography component="span" fontSize={12}>{isUploading ? 'uploading...' : 'upload file'}</Typography>)}
             </Box>
@@ -595,7 +596,11 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
                                 />
                             ) : (
                                 <CustomReactTable 
-                                    rows={currentTable.sample_rows.slice(0, 9)} 
+                                    rows={currentTable.sample_rows.map((row: any) => {
+                                        return Object.fromEntries(Object.entries(row).map(([key, value]: [string, any]) => {
+                                            return [key, String(value)];
+                                        }));
+                                    }).slice(0, 9)} 
                                     columnDefs={currentTable.columns.map(col => ({
                                         id: col.name,
                                         label: col.name,

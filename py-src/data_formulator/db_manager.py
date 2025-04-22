@@ -1,16 +1,22 @@
 import duckdb
 import pandas as pd
-from typing import Optional, Dict, List, ContextManager
+from typing import Optional, Dict, List, ContextManager, Any, Tuple
 import time
 from flask import session
 import tempfile
 import os
 from contextlib import contextmanager
+from dotenv import load_dotenv
 
 class DuckDBManager:
-    def __init__(self):
+    def __init__(self, external_db_connections: Dict[str, Dict[str, Any]]):
         # Store session db file paths
         self._db_files: Dict[str, str] = {}
+        # Track which extensions have been installed for which db files
+        self._installed_extensions: Dict[str, List[str]] = {}
+
+        # external db connections
+        self._external_db_connections: Dict[str, Dict[str, Any]] = external_db_connections
     
     @contextmanager
     def connection(self, session_id: str) -> ContextManager[duckdb.DuckDBPyConnection]:
@@ -31,13 +37,49 @@ class DuckDBManager:
             db_file = os.path.join(tempfile.gettempdir(), f"df_{session_id}.db")
             print(f"=== Creating new db file: {db_file}")
             self._db_files[session_id] = db_file
+            # Initialize extension tracking for this file
+            self._installed_extensions[db_file] = []
         else:
             print(f"=== Using existing db file: {self._db_files[session_id]}")
             db_file = self._db_files[session_id]
             
         # Create a fresh connection to the database file
         conn = duckdb.connect(database=db_file)
+
+        if self._external_db_connections and self._external_db_connections['db_type'] in ['mysql', 'postgresql']:
+            db_name = self._external_db_connections['db_name']
+            db_type = self._external_db_connections['db_type']
+            
+            print(f"=== connecting to {db_type} extension")
+            # Only install if not already installed for this db file
+            if db_type not in self._installed_extensions.get(db_file, []):
+                conn.execute(f"INSTALL {db_type};")
+                self._installed_extensions[db_file].append(db_type)
+                
+            conn.execute(f"LOAD {db_type};")
+            conn.execute(f"""CREATE SECRET (
+                TYPE {db_type}, 
+                HOST '{self._external_db_connections['host']}', 
+                PORT '{self._external_db_connections['port']}', 
+                DATABASE '{self._external_db_connections['database']}', 
+                USER '{self._external_db_connections['user']}', 
+                PASSWORD '{self._external_db_connections['password']}');
+            """)
+            conn.execute(f"ATTACH '' AS {db_name} (TYPE {db_type});")
+            # result = conn.execute(f"SELECT * FROM {db_name}.information_schema.tables WHERE table_schema NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys');").fetch_df()
+            # print(f"=== result: {result}")
+                
         return conn
 
+env = load_dotenv()
+
 # Initialize the DB manager
-db_manager = DuckDBManager()
+db_manager = DuckDBManager({
+    "db_name": os.getenv('DB_NAME'),
+    "db_type": os.getenv('DB_TYPE'),
+    "host": os.getenv('DB_HOST'),
+    "port": os.getenv('DB_PORT'),
+    "database": os.getenv('DB_DATABASE'),
+    "user": os.getenv('DB_USER'),
+    "password": os.getenv('DB_PASSWORD')
+} if os.getenv('USE_EXTERNAL_DB') == 'true' else None)

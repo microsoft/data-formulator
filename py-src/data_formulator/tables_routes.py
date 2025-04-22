@@ -7,10 +7,12 @@ import os
 import mimetypes
 mimetypes.add_type('application/javascript', '.js')
 mimetypes.add_type('application/javascript', '.mjs')
+import json
 
 from flask import request, send_from_directory, session, jsonify, Blueprint
 import pandas as pd
-
+import random
+import string
 from pathlib import Path
 
 from data_formulator.db_manager import db_manager
@@ -39,15 +41,18 @@ def list_tables():
     try:
         result = []
         with db_manager.connection(session['session_id']) as db:
-            tables = db.execute("SHOW TABLES").fetchall()
+            table_metadata_list = db.execute("SELECT database_name, schema_name, table_name, schema_name==current_schema() as is_current_schema FROM duckdb_tables() WHERE internal=False").fetchall()
         
-            for table in tables:
-                table_name = table[0]
+            print(f"table_metadata_list: {table_metadata_list}")
+            for table_metadata in table_metadata_list:
+                [database_name, schema_name, table_name, is_current_schema] = table_metadata
+
+                table_name = table_name if is_current_schema else '.'.join([database_name, schema_name, table_name])
                 # Get column information
                 columns = db.execute(f"DESCRIBE {table_name}").fetchall()
                 # Get row count
                 row_count = db.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()[0]
-                sample_rows = db.execute(f"SELECT * FROM {table_name} LIMIT 1000").fetchall()
+                sample_rows = db.execute(f"SELECT * FROM {table_name} LIMIT 1000").fetchdf()
                 
                 # Check if this is a view or a table
                 try:
@@ -62,7 +67,7 @@ def list_tables():
                     "name": table_name,
                     "columns": [{"name": col[0], "type": col[1]} for col in columns],
                     "row_count": row_count,
-                    "sample_rows": [dict(zip([col[0] for col in columns], row)) for row in sample_rows],
+                    "sample_rows": json.loads(sample_rows.to_json(orient='records')),
                     "view_source": view_source
                 })
         
@@ -186,11 +191,11 @@ def sample_table():
                 else:
                     query += f" ORDER BY ROWID DESC LIMIT {sample_size}"
 
-            result = db.execute(query).fetchall()
+            result = db.execute(query).fetchdf()
 
         return jsonify({
             "status": "success",
-            "rows": [dict(zip(output_column_names, row)) for row in result],
+            "rows": json.loads(result.to_json(orient='records')),
             "total_row_count": total_row_count
         })
     except Exception as e:
@@ -436,6 +441,108 @@ def upload_db_file():
             "status": "error", 
             "message": safe_msg
         }), status_code
+
+
+def validate_db_connection_params(db_type: str, db_host: str, db_port: int, 
+                                db_database: str, db_user: str, db_password: str):
+    """Validate database connection parameters"""
+    # Validate db_type
+    valid_db_types = ['postgresql', 'mysql']
+    if not db_type or db_type.lower() not in valid_db_types:
+        raise ValueError(f"Invalid database type. Must be one of: {', '.join(valid_db_types)}")
+    
+    # Validate host (basic DNS/IP format check)
+    if not db_host or not re.match(r'^[a-zA-Z0-9.-]+$', db_host):
+        raise ValueError("Invalid host format")
+    
+    # Validate port
+    try:
+        port = int(db_port)
+        if not (1 <= port <= 65535):
+            raise ValueError()
+    except (ValueError, TypeError):
+        raise ValueError("Port must be a number between 1 and 65535")
+    
+    # Validate database name (alphanumeric and underscores only)
+    if not db_database or not re.match(r'^[a-zA-Z0-9_]+$', db_database):
+        raise ValueError("Invalid database name format")
+    
+    # Validate username (alphanumeric and some special chars)
+    if not db_user or not re.match(r'^[a-zA-Z0-9@._-]+$', db_user):
+        raise ValueError("Invalid username format")
+    
+    # Validate password exists
+    if not db_password:
+        raise ValueError("Password cannot be empty")
+
+@tables_bp.route('/attach-external-db', methods=['POST'])
+def attach_external_db():
+    """Attach an external db to the session"""
+    try:
+        data = request.get_json()
+        db_type = data.get('db_type')
+        db_host = data.get('db_host')
+        db_port = data.get('db_port')
+        db_database = data.get('db_database')
+        db_user = data.get('db_user')
+        db_password = data.get('db_password')
+
+        # Generate a random suffix for the database name
+        suffix = ''.join(random.choices(string.ascii_letters + string.digits, k=2))
+        db_name = f"{db_type.lower()}_{suffix}"
+
+        if 'session_id' not in session:
+            return jsonify({"status": "error", "message": "No session ID found"}), 400
+        
+        with db_manager.connection(session['session_id']) as conn:
+            # Create secret using parameterized query
+
+            # Install and load the extension
+            if db_type == 'mysql':
+                conn.install_extension("mysql")
+                conn.load_extension("mysql")
+            elif db_type == 'postgresql':
+                conn.install_extension("postgres")
+                conn.load_extension("postgres")
+                
+            connect_query = f"""CREATE SECRET (
+                TYPE {db_type},
+                HOST '{db_host}',
+                PORT '{db_port}',
+                DATABASE '{db_database}',
+                USER '{db_user}',
+                PASSWORD '{db_password}'
+            );"""
+            conn.execute(connect_query)
+            
+            # Attach the database
+            conn.execute(f"ATTACH '' AS {db_name} (TYPE {db_type});")
+            
+            result = conn.execute(f"SELECT * FROM {db_name}.information_schema.tables WHERE table_schema NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys');").fetch_df()
+
+            print(f"result: {result}")
+
+            result = conn.execute(f"SELECT * FROM {db_name}.sakila.actor LIMIT 10;").fetchdf()
+
+            print(f"result: {result}")
+   
+            # Log what we found for debugging
+            logger.info(f"Found {len(result)} tables: {result}")
+
+            return jsonify({
+                "status": "success",
+                "message": "External database attached successfully",
+                "result": result
+            })
+        
+    except Exception as e:
+        logger.error(f"Error attaching external database: {str(e)}")
+        safe_msg, status_code = sanitize_db_error_message(e)
+        return jsonify({
+            "status": "error", 
+            "message": safe_msg
+        }), status_code
+
 
 @tables_bp.route('/download-db-file', methods=['GET'])
 def download_db_file():

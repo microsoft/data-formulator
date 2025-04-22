@@ -15,18 +15,20 @@ from flask import stream_with_context, Response
 
 import webbrowser
 import threading
+import numpy as np
+import datetime
+import time
 
 import logging
 
 import json
-import time
 from pathlib import Path
 
 from vega_datasets import data as vega_data
 
 from dotenv import load_dotenv
 import secrets
-
+import base64
 APP_ROOT = Path(os.path.join(Path(__file__).parent)).absolute()
 
 import os
@@ -37,6 +39,16 @@ from data_formulator.agent_routes import agent_bp
 
 app = Flask(__name__, static_url_path='', static_folder=os.path.join(APP_ROOT, "dist"))
 app.secret_key = secrets.token_hex(16)  # Generate a random secret key for sessions
+
+class CustomJSONEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, np.int64):
+            return int(obj)
+        if isinstance(obj, (bytes, bytearray)):
+            return base64.b64encode(obj).decode('ascii')
+        return super().default(obj)
+
+app.json_encoder = CustomJSONEncoder
 
 # Load env files early
 load_dotenv(os.path.join(APP_ROOT, "..", "..", 'api-keys.env'))
