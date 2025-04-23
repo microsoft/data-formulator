@@ -22,6 +22,16 @@ Transform data and create rich visualizations iteratively with AI 🪄. Try Data
 
 ## News 🔥🔥🔥
 
+- [04-23-2025] Data Formulator 0.2: working with *large* data 📦📦📦
+  - Explore large data by:
+    1. Upload large data file to the local database (powered by [DuckDB](https://github.com/duckdb/duckdb)).
+    2. Use drag-and-drop to specify charts, and Data Formulator dynamically fetches data from the database to create visualizations (with ⚡️⚡️⚡️ speeds).
+    3. Ask AI agents a new exploration question, and they generate SQL queries to transform the data to create rich visualizations!
+    4. Anchor the result, follow up, create a new branch, and join tables to dive deeper. 
+  - Checkout the demos at [[https://github.com/microsoft/data-formulator/releases/tag/0.2]](https://github.com/microsoft/data-formulator/releases/tag/0.2)
+  - Improved overall system performance, and enjoy the updated derive concept functionality.
+  - `pip install --upgrade data-formulator` now!
+
 - [03-20-2025] Data Formulator 0.1.7: Anchoring ⚓︎
   - Anchor an intermediate dataset, so that followup data analysis are built on top of the anchored data, not the original one.
   - Clean a data and work with only the cleaned data; create a subset from the original data or join multiple data, and then focus your analysis from there. The AI agent will be less likely to get confused and work faster. ⚡️⚡️

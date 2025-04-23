@@ -20,9 +20,25 @@ How to set up your local machine.
     ```
 - **Configure environment variable (optional)s**
     - copy `api-keys.env.example` to `api-keys.env` and add your API keys.
-    - required fields for different providers are different, please refer to the [LiteLLM setup](https://docs.litellm.ai/docs#litellm-python-sdk) guide for more details.
-        - currently only endpoint, model, api_key, api_base, api_version are supported.
-    - this helps data formulator to automatically load the API keys when you run the app, so you don't need to set the API keys in the app UI.
+        - required fields for different providers are different, please refer to the [LiteLLM setup](https://docs.litellm.ai/docs#litellm-python-sdk) guide for more details.
+            - currently only endpoint, model, api_key, api_base, api_version are supported.
+        - this helps data formulator to automatically load the API keys when you run the app, so you don't need to set the API keys in the app UI.
+
+    - set `.env` to configure server properties:
+        - copy `.env.template` to `.env`
+        - configure settings as needed:
+            - DISABLE_DISPLAY_KEYS: if true, API keys will not be shown in the frontend
+            - EXEC_PYTHON_IN_SUBPROCESS: if true, Python code runs in a subprocess (safer but slower), you may consider setting it true when you are hosting Data Formulator for others
+            - LOCAL_DB_DIR: directory to store the local database (uses temp directory if not set)
+            - External database settings (when USE_EXTERNAL_DB=true):
+                - DB_NAME: name to refer to this database connection
+                - DB_TYPE: mysql or postgresql (currently only these two are supported)
+                - DB_HOST: database host address
+                - DB_PORT: database port
+                - DB_DATABASE: database name
+                - DB_USER: database username
+                - DB_PASSWORD: database password
+
 
 - **Run the app**
     - **Windows**
