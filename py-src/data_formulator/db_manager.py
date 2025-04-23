@@ -9,13 +9,14 @@ from contextlib import contextmanager
 from dotenv import load_dotenv
 
 class DuckDBManager:
-    def __init__(self, external_db_connections: Dict[str, Dict[str, Any]]):
+    def __init__(self, external_db_connections: Dict[str, Dict[str, Any]], local_db_dir: str):
         # Store session db file paths
         self._db_files: Dict[str, str] = {}
 
         # External db connections and tracking of installed extensions
         self._external_db_connections: Dict[str, Dict[str, Any]] = external_db_connections
         self._installed_extensions: Dict[str, List[str]] = {}
+        self._local_db_dir: str = local_db_dir
 
     @contextmanager
     def connection(self, session_id: str) -> ContextManager[duckdb.DuckDBPyConnection]:
@@ -33,7 +34,10 @@ class DuckDBManager:
         """Internal method to get or create a DuckDB connection for a session"""
         # Get or create the db file path for this session
         if session_id not in self._db_files or self._db_files[session_id] is None:
-            db_file = os.path.join(tempfile.gettempdir(), f"df_{session_id}.duckdb")
+            db_dir = self._local_db_dir if self._local_db_dir else tempfile.gettempdir()
+            if not os.path.exists(db_dir):
+                db_dir = tempfile.gettempdir()
+            db_file = os.path.join(db_dir, f"df_{session_id}.duckdb")
             print(f"=== Creating new db file: {db_file}")
             self._db_files[session_id] = db_file
             # Initialize extension tracking for this file
@@ -73,12 +77,15 @@ class DuckDBManager:
 env = load_dotenv()
 
 # Initialize the DB manager
-db_manager = DuckDBManager({
-    "db_name": os.getenv('DB_NAME'),
-    "db_type": os.getenv('DB_TYPE'),
-    "host": os.getenv('DB_HOST'),
-    "port": os.getenv('DB_PORT'),
-    "database": os.getenv('DB_DATABASE'),
-    "user": os.getenv('DB_USER'),
-    "password": os.getenv('DB_PASSWORD')
-} if os.getenv('USE_EXTERNAL_DB') == 'true' else None)
+db_manager = DuckDBManager(
+    external_db_connections={
+        "db_name": os.getenv('DB_NAME'),
+        "db_type": os.getenv('DB_TYPE'),
+        "host": os.getenv('DB_HOST'),
+        "port": os.getenv('DB_PORT'),
+        "database": os.getenv('DB_DATABASE'),
+        "user": os.getenv('DB_USER'),
+        "password": os.getenv('DB_PASSWORD')
+    } if os.getenv('USE_EXTERNAL_DB') == 'true' else None,
+    local_db_dir=os.getenv('LOCAL_DB_DIR')
+)

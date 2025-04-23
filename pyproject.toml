@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "data_formulator"
-version = "0.1.7"
+version = "0.2"
 
 requires-python = ">=3.9"
 authors = [
@@ -34,7 +34,8 @@ dependencies = [
     "azure-keyvault-secrets",  
     "python-dotenv",  
     "vega_datasets",
-    "litellm"
+    "litellm",
+    "duckdb"
 ]
 
 [project.urls]
