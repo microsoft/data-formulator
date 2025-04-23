@@ -27,6 +27,8 @@ import {
     TextField,
     CircularProgress,
     Popover,
+    Snackbar,
+    Alert,
 } from '@mui/material';
 
 import ButtonGroup from '@mui/material/ButtonGroup';
@@ -64,10 +66,11 @@ import { CHART_TEMPLATES, getChartTemplate } from '../components/ChartTemplates'
 
 import Prism from 'prismjs'
 import 'prismjs/components/prism-python' // Language
+import 'prismjs/components/prism-sql' // Language
 import 'prismjs/components/prism-markdown' // Language
-
 import 'prismjs/components/prism-typescript' // Language
 import 'prismjs/themes/prism.css'; //Example style, you can use another
+
 import { DerivedDataDialog } from './DerivedDataDialog';
 import { ChatDialog } from './ChatDialog';
 import { EncodingShelfThread } from './EncodingShelfThread';
@@ -160,7 +163,7 @@ export let CodeBox : FC<{code: string, language: string, fontSize?: number}> = f
 
     return (
         <pre style={{fontSize: fontSize}}>
-          <code className={`language-${language}`} >{code}</code>
+            <code className={`language-${language}`} >{code}</code>
         </pre>
     );
   }
@@ -359,7 +362,13 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
     let visFields = conceptShelfItems.filter(f => visFieldIds.includes(f.id));
     let dataFieldsAllAvailable = visFields.every(f => table.names.includes(f.name));
 
+    const [errorMessage, setErrorMessage] = useState<{content: string, severity: "error" | "warning" | "info" | "success"}>({content: "", severity: "error"});
+    const [showError, setShowError] = useState<boolean>(false);
+
     let createVisTableRowsLocal = (rows: any[]) => {
+        if (visFields.length == 0) {
+            return rows;
+        }
         let filteredRows = rows.map(row => Object.fromEntries(visFields.filter(f => table.names.includes(f.name)).map(f => [f.name, row[f.name]])));
         let visTable = prepVisTable(filteredRows, conceptShelfItems, focusedChart.encodingMap);
         return visTable;
@@ -390,8 +399,16 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
             })
             .then(response => response.json())
             .then(data => {
-                setVisTableRows(data.rows);
-                setVisTableTotalRowCount(data.total_row_count);
+                if (data.status == "success") {
+                    console.log("data.rows", data.total_row_count);
+                    setVisTableRows(data.rows);
+                    setVisTableTotalRowCount(data.total_row_count);
+                } else {
+                    setVisTableRows([]);
+                    setVisTableTotalRowCount(0);
+                    setErrorMessage({content: data.message, severity: "error"});
+                    setShowError(true);
+                }
             })
             .catch(error => {
                 console.error('Error sampling table:', error);
@@ -414,7 +431,7 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
             } else {
                 setVisTableRows(createVisTableRowsLocal(structuredClone(table.rows)));
             }
-        }
+        } 
     }, [focusedChart])
     
     useEffect(() => {
@@ -460,7 +477,7 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
 
         element = <Box id={id} key={`focused-chart`} ></Box>    
 
-        let assembledChart = assembleVegaChart(chart.chartType, chart.encodingMap, conceptShelfItems, visTableRows, 68, true);
+        let assembledChart = assembleVegaChart(chart.chartType, chart.encodingMap, conceptShelfItems, visTableRows, 48, true);
         console.log('assembled chart');
         console.log(assembledChart);
         
@@ -736,15 +753,15 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
                                 </ButtonGroup>
                                 {/* <Typography fontSize="small" sx={{color: 'gray'}}>{table.derive?.source} → {table.id}</Typography> */}
                                 <Card variant="outlined" key={`code-view-card`}
-                                    sx={{minWidth: "280px", maxWidth: "1920px", display: "flex", flexGrow: 1,
+                                    sx={{minWidth: "280px", maxWidth: "1920px",  display: "flex", flexGrow: 1,
                                         border: "1px solid rgba(33, 33, 33, 0.1)"}}>
-                                    <CardContent sx={{display: "flex", flexDirection: "column", flexGrow: 1, padding: '0', paddingBottom: '0px !important'}}>
+                                    <CardContent sx={{display: "flex", flexDirection: "column", flexGrow: 1, padding: 0, paddingBottom: '0px !important'}}>
                                         <Typography sx={{ fontSize: 14, margin: 1 }}  gutterBottom>
                                             Data transformation code ({transformationIndicatorText})
                                         </Typography>
-                                        <Box sx={{display: 'flex', flexDirection: "row", alignItems: "center", flex: 'auto', padding: 1, background: '#f5f2f0'}}>
-                                            <Box sx={{maxWidth: 800, width: 'fit-content',  display: 'flex',}}>
-                                                <CodeBox code={transformCode.trimStart()} language="python" />
+                                        <Box sx={{display: 'flex', flexDirection: "row", alignItems: "center", flex: 'auto'}}>
+                                            <Box sx={{maxHeight: '400px', overflow: 'auto', width: '100%', p: 0.5}}>   
+                                                <CodeBox code={transformCode.trimStart()} language={table.virtual ? "sql" : "python"} />
                                             </Box>
                                         </Box>
                                     </CardContent>
@@ -831,6 +848,11 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
     </Stack>
 
     return <Box ref={componentRef} sx={{overflow: "hidden", display: 'flex', flex: 1}}>
+        {showError ? <Snackbar open={showError} autoHideDuration={6000} onClose={() => setShowError(false)}>
+            <Alert onClose={() => setShowError(false)} severity={errorMessage?.severity} sx={{ width: '100%' }}>
+                {errorMessage?.content}
+            </Alert>
+        </Snackbar> : ""}
         {synthesisRunning ? <Box sx={{
                     position: "absolute", height: "calc(100%)", width: "calc(100%)", zIndex: 1001, 
                     backgroundColor: "rgba(243, 243, 243, 0.8)", display: "flex", alignItems: "center"

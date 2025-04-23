@@ -49,9 +49,43 @@ import { getUrls } from '../app/utils';
 import { CustomReactTable } from './ReactTable';
 import { DictTable } from '../components/ComponentType';
 import { Type } from '../data/types';
-import { useDispatch } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 import { dfActions } from '../app/dfSlice';
 import { alpha } from '@mui/material';
+import { DataFormulatorState } from '../app/dfSlice';
+
+export const handleDBDownload = async (sessionId: string) => {
+    try {
+        const response = await fetch(getUrls().DOWNLOAD_DB_FILE, {
+            method: 'GET',
+        });
+        
+        // Check if the response is ok
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Failed to download database file');
+        }
+
+        // Get the blob directly from response
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        
+        // Create a temporary link element
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `df_${sessionId?.slice(0, 4)}.db`;
+        document.body.appendChild(link);    
+        
+        // Trigger download
+        link.click();
+        
+        // Clean up
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+    } catch (error) {
+        throw error;
+    }
+};
 
 interface DBTable {
     name: string;
@@ -220,6 +254,7 @@ export const DBTableManager: React.FC = () => {
 export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function DBTableSelectionDialog({ buttonElement }) {
     
     const dispatch = useDispatch();
+    const sessionId = useSelector((state: DataFormulatorState) => state.sessionId);
 
     const [tableDialogOpen, setTableDialogOpen] = useState<boolean>(false);
     const [tableAnalysisMap, setTableAnalysisMap] = useState<Record<string, AnalysisResults | null>>({});
@@ -279,42 +314,7 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
         }
     };
 
-    const handleDBDownload = async () => {
-        try {
-            const response = await fetch(getUrls().DOWNLOAD_DB_FILE, {
-                method: 'GET',
-            });
-            
-            // Check if the response is ok
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.error || 'Failed to download database file');
-            }
-
-            // Get the blob directly from response
-            const blob = await response.blob();
-            const url = URL.createObjectURL(blob);
-            
-            // Create a temporary link element
-            const link = document.createElement('a');
-            link.href = url;
-            link.download = 'df_session.db';
-            document.body.appendChild(link);    
-            
-            // Trigger download
-            link.click();
-            
-            // Clean up
-            document.body.removeChild(link);
-            URL.revokeObjectURL(url);
-        } catch (error) {
-            console.error('Failed to download database:', error);
-            setErrorMessage({content: 'Failed to download database file', severity: "error"});
-            setShowError(true);
-        }
-    };
-
-    const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const handleDBFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];
         if (!file) return;
     
@@ -499,7 +499,14 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
 
     let exportButton = 
         <Tooltip title="save the local database to a duckdb .db file">
-            <Button variant="text" size="small" onClick={handleDBDownload} disabled={isUploading || dbTables.length === 0}>
+            <Button variant="text" size="small" onClick={() => {
+                handleDBDownload(sessionId ?? '')
+                    .catch(error => {
+                        console.error('Failed to download database:', error);
+                        setErrorMessage({content: 'Failed to download database file', severity: "error"});
+                        setShowError(true);
+                    });
+            }} disabled={isUploading || dbTables.length === 0}>
                 export
             </Button>
         </Tooltip>
@@ -517,7 +524,7 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
                     <input
                         type="file"
                         hidden
-                        onChange={handleFileUpload}
+                        onChange={handleDBFileUpload}
                         accept=".csv,.xlsx,.json"
                         disabled={isUploading}
                     />
@@ -528,14 +535,20 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
 
     let mainContent = dbTables.length > 0 ? 
         <Box sx={{ flexGrow: 1, bgcolor: 'background.paper', display: 'flex', flexDirection: 'row', height: '100%' }}>
-            <Box sx={{display: "flex", flexDirection: "column", width: "120px", borderRight: 1, borderColor: 'divider'}}>
+            <Box sx={{display: "flex", flexDirection: "column", minWidth: '120px', maxWidth: "300px", borderRight: 1, borderColor: 'divider'}}>
                 <Tabs
                     orientation="vertical"
                     variant="scrollable"
+                    scrollButtons="auto"
+                    allowScrollButtonsMobile
                     value={selectedTabIndex}
                     onChange={handleTabChange}
                     aria-label="Database tables"
-                    sx={{ width: '120px', maxHeight: '360px' }}
+                    sx={{ maxWidth: '300px', maxHeight: '360px',
+                        '& .MuiTabs-scrollButtons.Mui-disabled': {
+                            opacity: 0.3,
+                        },
+                    }}
                 >
                     {dbTables.map((t, i) => (
                         <Tab 
@@ -571,7 +584,7 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
                                 </Typography>
                                 <Box sx={{ marginLeft: 'auto', display: 'flex', gap: 1 }}>
                                     <Button 
-                                        size="small" 
+                                        size="small"
                                         color={showingAnalysis ? "secondary" : "primary"}
                                         onClick={() => toggleAnalysisView(currentTable.name)}
                                         startIcon={<AnalyticsIcon fontSize="small" />}

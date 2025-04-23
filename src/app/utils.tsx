@@ -149,19 +149,22 @@ export function extractFieldsFromEncodingMap(encodingMap: EncodingMap, allFields
 export function prepVisTable(table: any[], allFields: FieldItem[], encodingMap: EncodingMap) {
     let { aggregateFields, groupByFields } = extractFieldsFromEncodingMap(encodingMap, allFields);
 
-    console.log("aggregateFields", aggregateFields);
-    console.log("groupByFields", groupByFields);
-
     let processedTable = [...table];
 
     let result = processedTable;
 
     if (aggregateFields.length > 0) {
         // Step 2: Group by and aggregate
-        const grouped = d3.flatGroup(processedTable, ...groupByFields.map(field => (d: any) => d[field]));
-        
+        let grouped = [];
+        if (groupByFields.length > 0) {
+            grouped = d3.flatGroup(processedTable, ...groupByFields.map(field => (d: any) => d[field]));
+        } else {
+            grouped = [["_default", processedTable]];
+        }
+
         result = grouped.map(row => {
             // Last element is the array of grouped items, rest are group values
+
             const groupValues = row.slice(0, -1);
             const group = row[row.length - 1];
             
@@ -316,10 +319,10 @@ export const assembleVegaChart = (
                     let sortedValues = JSON.parse(encoding.sortBy)['values'];
                     encodingObj['sort'] = sortOrder == "ascending" ? sortedValues : sortedValues.reverse();
 
-                    // special hack: ensure stack bar and stacked area charts are ordered correctly
-                    if (channel == 'color' && (vgObj['mark'] == 'bar' || vgObj['mark'] == 'area')) {
-                        vgObj['encoding']['order'] = {'values': sortedValues};
-                    }
+                    // // special hack: ensure stack bar and stacked area charts are ordered correctly
+                    // if (channel == 'color' && (vgObj['mark'] == 'bar' || vgObj['mark'] == 'area')) {
+                    //     vgObj['encoding']['order'] = {'values': sortedValues};
+                    // }
                 } catch {
                     console.warn(`sort error > ${encoding.sortBy}`)
                 }

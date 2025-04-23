@@ -57,7 +57,7 @@ import {
 } from "react-router-dom";
 import { About } from '../views/About';
 import { MessageSnackbar } from '../views/MessageSnackbar';
-import { appConfig, assignAppConfig, getUrls, PopupConfig } from './utils';
+import { appConfig, assignAppConfig, PopupConfig } from './utils';
 import { DictTable } from '../components/ComponentType';
 import { AppDispatch } from './store';
 import { ActionSubscription, subscribe, unsubscribe } from './embed';
@@ -70,7 +70,7 @@ import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import ContentPasteIcon from '@mui/icons-material/ContentPaste';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 import DownloadIcon from '@mui/icons-material/Download';
-import { DBTableManager, DBTableSelectionDialog } from '../views/DBTableManager';
+import { DBTableManager, DBTableSelectionDialog, handleDBDownload } from '../views/DBTableManager';
 import CloudQueueIcon from '@mui/icons-material/CloudQueue';
 
 const AppBar = styled(MuiAppBar)(({ theme }) => ({
@@ -129,7 +129,7 @@ export const ImportStateButton: React.FC<{}> = ({ }) => {
         >
             <Input 
                 inputProps={{ 
-                    accept: '.dfstate',
+                    accept: '.json, .dfstate',
                     multiple: false 
                 }}
                 id="upload-data-file"
@@ -144,6 +144,7 @@ export const ImportStateButton: React.FC<{}> = ({ }) => {
 }
 
 export const ExportStateButton: React.FC<{}> = ({ }) => {
+    const sessionId = useSelector((state: DataFormulatorState) => state.sessionId);
     const fullStateJson = useSelector((state: DataFormulatorState) => JSON.stringify(state));
 
     return <Tooltip title="save session locally">
@@ -158,7 +159,7 @@ export const ExportStateButton: React.FC<{}> = ({ }) => {
                     a.download = fileName;
                     a.click();
                 }
-                download(fullStateJson, `data-formulator.${new Date().toISOString()}.dfstate`, 'text/plain');
+                download(fullStateJson, `df_state_${sessionId?.slice(0, 4)}.json`, 'text/plain');
             }}
             startIcon={<DownloadIcon />}
         >
@@ -263,6 +264,13 @@ const SessionMenu: React.FC = () => {
                 )}
                 <MenuItem onClick={() => {}}>
                     <ExportStateButton />
+                </MenuItem>
+                <MenuItem onClick={() => {
+                    handleDBDownload(sessionId ?? '');
+                }}>
+                    <Button startIcon={<DownloadIcon />} sx={{ fontSize: 14, textTransform: 'none', display: 'flex', alignItems: 'center'}}>
+                        download database
+                    </Button>
                 </MenuItem>
                 <MenuItem onClick={(e) => {}}>
                     <ImportStateButton />

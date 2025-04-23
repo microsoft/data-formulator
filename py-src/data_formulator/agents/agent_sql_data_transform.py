@@ -9,13 +9,13 @@ from data_formulator.agents.agent_utils import extract_json_objects, extract_cod
 import pandas as pd
 
 import logging 
-
+import re
 # Replace/update the logger configuration
 logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = '''You are a data scientist to help user to transform data that will be used for visualization.
 The user will provide you information about what data would be needed, and your job is to create a sql query based on the input data summary, transformation instruction and expected fields.
-The users' instruction includes "expected fields" that the user want for visualization, and natural language instructions "goal" that describe what data is needed.
+The users' instruction includes "visualization_fields" that the user want for visualization, and natural language instructions "goal" that describe what data is needed.
 
 **Important:**
 - NEVER make assumptions or judgments about a person's gender, biological sex, sexuality, religion, race, nationality, ethnicity, political stance, socioeconomic status, mental health, invisible disabilities, medical conditions, personality type, social impressions, emotional state, and cognitive state.
@@ -24,15 +24,22 @@ The users' instruction includes "expected fields" that the user want for visuali
 
 Concretely, you should first refine users' goal and then create a sql query in the [OUTPUT] section based off the [CONTEXT] and [GOAL]:
 
-    1. First, refine users' [GOAL]. The main objective in this step is to check if "visualization_fields" provided by the user are sufficient to achieve their "goal". Concretely:
-        (1) based on the user's "goal", elaborate the goal into a "detailed_instruction".
+    1. First, refine users' [GOAL]. The main objective in this step is to decide data transformation based on the user's goal. 
+        Concretely:
+        (1) based on the user's "goal" and provided "visualization_fields", elaborate the goal into a "detailed_instruction".
+            - first elaborate which fields the user wants to visualize based on "visualization_fields";
+            - then, elaborate the goal into a "detailed_instruction" contextualized with the provided "visualization_fields".
+                * note: try to distinguish whether the user wants to fitler the data with some conditions, or they want to aggregate data based on some fields.
+                * e.g., filter data to show all items from top 20 categories based on their average values, is different from showing the top 20 categories with their average values
         (2) determine "output_fields", the desired fields that the output data should have to achieve the user's goal, it's a good idea to include intermediate fields here.
-        (2) now, determine whether the user has provided sufficient fields in "visualization_fields" that are needed to achieve their goal:
-            - if the user's "visualization_fields" are sufficient, simply copy it.
+            - note: when the user asks for filtering the data, include all fields that are needed to filter the data in "output_fields" (as well as other fields the user asked for or necessary in computation).
+        (3) now, determine whether the user has provided sufficient fields in "visualization_fields" that are needed to achieve their goal:
+            - if the user's "visualization_fields" are sufficient, simply copy it from user input.
             - if the user didn't provide sufficient fields in "visualization_fields", add missing fields in "visualization_fields" (ordered them based on whether the field will be used in x,y axes or legends);
                 - "visualization_fields" should only include fields that will be visualized (do not include other intermediate fields from "output_fields")  
                 - when adding new fields to "visualization_fields", be efficient and add only a minimal number of fields that are needed to achive the user's goal. generally, the total number of fields in "visualization_fields" should be no more than 3 for x,y,legend.
-
+                - if the user's goal is to filter the data, include all fields that are needed to filter the data in "output_fields" (as well as other fields the user asked for or necessary in computation).
+                - all existing fields user provided in "visualization_fields" should be included in "visualization_fields" list.
     Prepare the result in the following json format:
 
 ```
@@ -52,6 +59,10 @@ note:
     3. The [OUTPUT] must only contain two items:
         - a json object (wrapped in ```json```) representing the refined goal (including "detailed_instruction", "output_fields", "visualization_fields" and "reason")
         - a sql query block (wrapped in ```sql```) representing the transformation code, do not add any extra text explanation.
+
+some notes:
+- in DuckDB, you escape a single quote within a string by doubling it ('') rather than using a backslash (\').
+- in DuckDB, you need to use proper date functions to perform date operations.
 '''
 
 EXAMPLE='''
@@ -103,6 +114,15 @@ SELECT Date, "7-day average cases"
 FROM MovingAverage;  
 ```
 '''
+
+def sanitize_table_name(table_name: str) -> str:
+    """Sanitize table name to be used in SQL queries"""
+    # Replace spaces with underscores
+    sanitized_name = table_name.replace(" ", "_")
+    sanitized_name = sanitized_name.replace("-", "_")
+    # Allow alphanumeric, underscore, dot, dash, and dollar sign
+    sanitized_name = re.sub(r'[^a-zA-Z0-9_\.$]', '', sanitized_name)
+    return sanitized_name
 
 class SQLDataTransformationAgent(object):
 
@@ -156,17 +176,16 @@ class SQLDataTransformationAgent(object):
                         query_output = self.conn.execute(f"SELECT * FROM {table_name} LIMIT 5000").fetch_df()
                     else:
                         query_output = self.conn.execute(f"SELECT * FROM {table_name}").fetch_df()
-                        self.conn.execute(f"DROP VIEW {table_name}")
                 
                     result = {
                         "status": "ok",
                         "code": query_str,
                         "content": {
-                            'rows': query_output.to_dict('records'),
+                            'rows': json.loads(query_output.to_json(orient='records')),
                             'virtual': {
                                 'table_name': table_name,
                                 'row_count': row_count
-                            } if row_count > 5000 else None
+                            }
                         },
                     }
 
@@ -205,19 +224,24 @@ class SQLDataTransformationAgent(object):
         """
 
         for table in input_tables:
-            table_name = table['name']
+            table_name = sanitize_table_name(table['name'])
+
             # Check if table exists in the connection
             try:
                 self.conn.execute(f"DESCRIBE {table_name}")
             except Exception:
                 # Table doesn't exist, create it from the dataframe
                 df = pd.DataFrame(table['rows'])
+
                 # Register the dataframe as a temporary view
-                self.conn.register(f'df_temp_{table_name}', df)
+                self.conn.register(f'df_temp', df)
                 # Create a permanent table from the temporary view
-                self.conn.execute(f"CREATE VIEW {table_name} AS SELECT * FROM df_temp_{table_name}")
+                self.conn.execute(f"CREATE TABLE {table_name} AS SELECT * FROM df_temp")
                 # Drop the temporary view
-                self.conn.execute(f"DROP VIEW df_temp_{table_name}")
+                self.conn.execute(f"DROP VIEW df_temp")
+
+                r = self.conn.execute(f"SELECT * FROM {table_name} LIMIT 10").fetch_df()
+                print(r)
                 # Log the creation of the table
                 logger.info(f"Created table {table_name} from dataframe")
 
@@ -232,8 +256,9 @@ class SQLDataTransformationAgent(object):
 
         data_summary = ""
         for table in input_tables:
-            table_summary_str = get_sql_table_statistics_str(self.conn, table['name'])
-            data_summary += f"[TABLE {table['name']}]\n\n{table_summary_str}\n\n"
+            table_name = sanitize_table_name(table['name'])
+            table_summary_str = get_sql_table_statistics_str(self.conn, table_name)
+            data_summary += f"[TABLE {table_name}]\n\n{table_summary_str}\n\n"
 
         goal = {
             "instruction": description,
@@ -276,6 +301,9 @@ class SQLDataTransformationAgent(object):
         
 
 def get_sql_table_statistics_str(conn, table_name: str) -> str:
+    """Get a string representation of the table statistics"""
+
+    table_name = sanitize_table_name(table_name)
 
     # Get column information
     columns = conn.execute(f"DESCRIBE {table_name}").fetchall()

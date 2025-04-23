@@ -164,7 +164,7 @@ export function MessageSnackbar() {
                 onClose={handleClose}
                 action={action}
             >
-                <Alert icon={false} onClose={handleClose} severity={message?.type} sx={{ maxWidth: '400px' }}>
+                <Alert icon={false} onClose={handleClose} severity={message?.type} sx={{ maxWidth: '400px', maxHeight: '600px', overflow: 'auto' }}>
                     <Typography fontSize={10} component="span" sx={{margin: "auto", opacity: 0.7}}>[{timestamp}]</Typography>  &nbsp;
                     <Typography fontSize={12} component="span" sx={{margin: "auto", fontWeight: 'bold'}}>{message?.value}</Typography> 
                     {message?.detail ? 

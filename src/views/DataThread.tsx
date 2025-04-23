@@ -108,7 +108,7 @@ const EditableTableName: FC<{
                         ...nonEditingSx,
                         fontSize: 'inherit',
                         minWidth: '60px',
-                        maxWidth: '100px',
+                        maxWidth: '90px',
                         wordWrap: 'break-word',
                         whiteSpace: 'normal',
                         ml: 0.25,
@@ -433,7 +433,7 @@ let SingleThreadView: FC<{
                                 /> : <Typography fontSize="inherit" sx={{
                                     textAlign: 'center',
                                     color:  'rgba(0,0,0,0.7)', 
-                                    maxWidth: '100px',
+                                    maxWidth: '90px',
                                     ml: table?.virtual ? 0.5 : 0,
                                     wordWrap: 'break-word',
                                     whiteSpace: 'normal'

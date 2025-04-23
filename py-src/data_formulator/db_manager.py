@@ -12,12 +12,11 @@ class DuckDBManager:
     def __init__(self, external_db_connections: Dict[str, Dict[str, Any]]):
         # Store session db file paths
         self._db_files: Dict[str, str] = {}
-        # Track which extensions have been installed for which db files
+
+        # External db connections and tracking of installed extensions
+        self._external_db_connections: Dict[str, Dict[str, Any]] = external_db_connections
         self._installed_extensions: Dict[str, List[str]] = {}
 
-        # external db connections
-        self._external_db_connections: Dict[str, Dict[str, Any]] = external_db_connections
-    
     @contextmanager
     def connection(self, session_id: str) -> ContextManager[duckdb.DuckDBPyConnection]:
         """Get a DuckDB connection as a context manager that will be closed when exiting the context"""
@@ -34,7 +33,7 @@ class DuckDBManager:
         """Internal method to get or create a DuckDB connection for a session"""
         # Get or create the db file path for this session
         if session_id not in self._db_files or self._db_files[session_id] is None:
-            db_file = os.path.join(tempfile.gettempdir(), f"df_{session_id}.db")
+            db_file = os.path.join(tempfile.gettempdir(), f"df_{session_id}.duckdb")
             print(f"=== Creating new db file: {db_file}")
             self._db_files[session_id] = db_file
             # Initialize extension tracking for this file

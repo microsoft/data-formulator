@@ -41,35 +41,52 @@ def list_tables():
     try:
         result = []
         with db_manager.connection(session['session_id']) as db:
-            table_metadata_list = db.execute("SELECT database_name, schema_name, table_name, schema_name==current_schema() as is_current_schema FROM duckdb_tables() WHERE internal=False").fetchall()
+            table_metadata_list = db.execute("""
+                SELECT database_name, schema_name, table_name, schema_name==current_schema() as is_current_schema, 'table' as object_type 
+                FROM duckdb_tables() 
+                WHERE internal=False 
+                UNION ALL 
+                SELECT database_name, schema_name, view_name as table_name, schema_name==current_schema() as is_current_schema, 'view' as object_type 
+                FROM duckdb_views()
+                WHERE view_name NOT LIKE 'duckdb_%' AND view_name NOT LIKE 'sqlite_%' AND view_name NOT LIKE 'pragma_%'
+            """).fetchall()
         
-            print(f"table_metadata_list: {table_metadata_list}")
+            
             for table_metadata in table_metadata_list:
-                [database_name, schema_name, table_name, is_current_schema] = table_metadata
-
+                [database_name, schema_name, table_name, is_current_schema, object_type] = table_metadata
                 table_name = table_name if is_current_schema else '.'.join([database_name, schema_name, table_name])
-                # Get column information
-                columns = db.execute(f"DESCRIBE {table_name}").fetchall()
-                # Get row count
-                row_count = db.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()[0]
-                sample_rows = db.execute(f"SELECT * FROM {table_name} LIMIT 1000").fetchdf()
+                if database_name in ['system', 'temp']:
+                    continue
                 
-                # Check if this is a view or a table
-                try:
-                    # Get both view existence and source in one query
-                    view_info = db.execute(f"SELECT view_name, sql FROM duckdb_views() WHERE view_name = '{table_name}'").fetchone()
-                    view_source = view_info[1] if view_info else None
-                except Exception as e:
-                    # If the query fails, assume it's a regular table
-                    view_source = None
+                
+                print(f"table_metadata: {table_metadata}")
 
-                result.append({
-                    "name": table_name,
-                    "columns": [{"name": col[0], "type": col[1]} for col in columns],
-                    "row_count": row_count,
-                    "sample_rows": json.loads(sample_rows.to_json(orient='records')),
-                    "view_source": view_source
-                })
+                try:
+                    # Get column information
+                    columns = db.execute(f"DESCRIBE {table_name}").fetchall()
+                    # Get row count
+                    row_count = db.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()[0]
+                    sample_rows = db.execute(f"SELECT * FROM {table_name} LIMIT 1000").fetchdf()
+                    
+                    # Check if this is a view or a table
+                    try:
+                        # Get both view existence and source in one query
+                        view_info = db.execute(f"SELECT view_name, sql FROM duckdb_views() WHERE view_name = '{table_name}'").fetchone()
+                        view_source = view_info[1] if view_info else None
+                    except Exception as e:
+                        # If the query fails, assume it's a regular table
+                        view_source = None
+
+                    result.append({
+                        "name": table_name,
+                        "columns": [{"name": col[0], "type": col[1]} for col in columns],
+                        "row_count": row_count,
+                        "sample_rows": json.loads(sample_rows.to_json(orient='records')),
+                        "view_source": view_source
+                    })
+                except Exception as e:
+                    logger.error(f"Error getting table metadata for {table_name}: {str(e)}")
+                    continue
         
         return jsonify({
             "status": "success",
@@ -157,6 +174,8 @@ def sample_table():
         with db_manager.connection(session['session_id']) as db:
             # Get valid column names
             columns = [col[0] for col in db.execute(f"DESCRIBE {table_id}").fetchall()]
+
+            print(f"columns: {columns}")
             
             # Filter order_by_fields to only include valid column names
             valid_order_by_fields = [field for field in order_by_fields if field in columns]
@@ -168,10 +187,15 @@ def sample_table():
 
             query, output_column_names = assemble_query(valid_aggregate_fields_and_functions, valid_select_fields, columns, table_id)
 
+            print(f"query: {query}")
+            print(f"output_column_names: {output_column_names}")
+
             # Modify the original query to include the count:
             count_query = f"SELECT *, COUNT(*) OVER () as total_count FROM ({query}) as subq LIMIT 1"
             result = db.execute(count_query).fetchone()
             total_row_count = result[-1] if result else 0
+
+            print(f"total_row_count: {total_row_count}")
 
             # Add ordering and limit to the main query
             if method == 'random':
@@ -191,7 +215,11 @@ def sample_table():
                 else:
                     query += f" ORDER BY ROWID DESC LIMIT {sample_size}"
 
+            print(f"query: {query}")
+
             result = db.execute(query).fetchdf()
+
+            print(f"result: {result}")
 
         return jsonify({
             "status": "success",

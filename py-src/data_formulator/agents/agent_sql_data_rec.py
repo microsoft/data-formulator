@@ -4,7 +4,7 @@
 import json
 
 from data_formulator.agents.agent_utils import extract_json_objects, extract_code_from_gpt_response
-from data_formulator.agents.agent_sql_data_transform import get_sql_table_statistics_str
+from data_formulator.agents.agent_sql_data_transform import get_sql_table_statistics_str, sanitize_table_name
 
 import random
 import string
@@ -64,6 +64,10 @@ note:
     3. The [OUTPUT] must only contain two items:
         - a json object (wrapped in ```json```) representing the refined goal (including "mode", "recommendation", "output_fields", "chart_type", "visualization_fields")
         - a sql query block (wrapped in ```sql```) representing the transformation code, do not add any extra text explanation.
+
+some notes:
+- in DuckDB, you escape a single quote within a string by doubling it ('') rather than using a backslash (\').
+- in DuckDB, you need to use proper date functions to perform date operations.
 '''
 
 example = """
@@ -167,21 +171,17 @@ class SQLDataRecAgent(object):
                     row_count = self.conn.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()[0]
                     
                     # Only limit to 5000 if there are more rows
-                    if row_count > 5000:
-                        query_output = self.conn.execute(f"SELECT * FROM {table_name} LIMIT 5000").fetch_df()
-                    else:
-                        query_output = self.conn.execute(f"SELECT * FROM {table_name}").fetch_df()
-                        self.conn.execute(f"DROP VIEW {table_name}")
+                    query_output = self.conn.execute(f"SELECT * FROM {table_name} LIMIT 5000").fetch_df()
                 
                     result = {
                         "status": "ok",
                         "code": code_str,
                         "content": {
-                            'rows': query_output.to_dict('records'),
+                            'rows': json.loads(query_output.to_json(orient='records')),
                             'virtual': {
                                 'table_name': table_name,
                                 'row_count': row_count
-                            } if row_count > 5000 else None
+                            }
                         },
                     }
                 except Exception as e:
@@ -211,8 +211,9 @@ class SQLDataRecAgent(object):
     def run(self, input_tables, description, n=1):
         data_summary = ""
         for table in input_tables:
-            table_summary_str = get_sql_table_statistics_str(self.conn, table['name'])
-            data_summary += f"[TABLE {table['name']}]\n\n{table_summary_str}\n\n"
+            table_name = sanitize_table_name(table['name'])
+            table_summary_str = get_sql_table_statistics_str(self.conn, table_name)
+            data_summary += f"[TABLE {table_name}]\n\n{table_summary_str}\n\n"
 
         user_query = f"[CONTEXT]\n\n{data_summary}\n\n[GOAL]\n\n{description}\n\n[OUTPUT]\n"
 
