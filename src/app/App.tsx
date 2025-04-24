@@ -10,6 +10,7 @@ import {
     dfActions,
     fetchAvailableModels,
     fetchFieldSemanticType,
+    getSessionId,
 } from './dfSlice'
 
 import blue from '@mui/material/colors/blue';
@@ -43,6 +44,8 @@ import MuiAppBar from '@mui/material/AppBar';
 import { createTheme, styled, ThemeProvider } from '@mui/material/styles';
 
 import PowerSettingsNewIcon from '@mui/icons-material/PowerSettingsNew';
+import ClearIcon from '@mui/icons-material/Clear';
+
 import { DataFormulatorFC } from '../views/DataFormulator';
 
 import GridViewIcon from '@mui/icons-material/GridView';
@@ -54,7 +57,7 @@ import {
 } from "react-router-dom";
 import { About } from '../views/About';
 import { MessageSnackbar } from '../views/MessageSnackbar';
-import { appConfig, assignAppConfig, getUrls, PopupConfig } from './utils';
+import { appConfig, assignAppConfig, PopupConfig } from './utils';
 import { DictTable } from '../components/ComponentType';
 import { AppDispatch } from './store';
 import { ActionSubscription, subscribe, unsubscribe } from './embed';
@@ -67,6 +70,8 @@ import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import ContentPasteIcon from '@mui/icons-material/ContentPaste';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 import DownloadIcon from '@mui/icons-material/Download';
+import { DBTableManager, DBTableSelectionDialog, handleDBDownload } from '../views/DBTableManager';
+import CloudQueueIcon from '@mui/icons-material/CloudQueue';
 
 const AppBar = styled(MuiAppBar)(({ theme }) => ({
     color: 'black',
@@ -124,7 +129,7 @@ export const ImportStateButton: React.FC<{}> = ({ }) => {
         >
             <Input 
                 inputProps={{ 
-                    accept: '.dfstate',
+                    accept: '.json, .dfstate',
                     multiple: false 
                 }}
                 id="upload-data-file"
@@ -139,6 +144,7 @@ export const ImportStateButton: React.FC<{}> = ({ }) => {
 }
 
 export const ExportStateButton: React.FC<{}> = ({ }) => {
+    const sessionId = useSelector((state: DataFormulatorState) => state.sessionId);
     const fullStateJson = useSelector((state: DataFormulatorState) => JSON.stringify(state));
 
     return <Tooltip title="save session locally">
@@ -153,7 +159,7 @@ export const ExportStateButton: React.FC<{}> = ({ }) => {
                     a.download = fileName;
                     a.click();
                 }
-                download(fullStateJson, `data-formulator.${new Date().toISOString()}.dfstate`, 'text/plain');
+                download(fullStateJson, `df_state_${sessionId?.slice(0, 4)}.json`, 'text/plain');
             }}
             startIcon={<DownloadIcon />}
         >
@@ -226,6 +232,7 @@ const TableMenu: React.FC = () => {
 const SessionMenu: React.FC = () => {
     const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
     const open = Boolean(anchorEl);
+    const sessionId = useSelector((state: DataFormulatorState) => state.sessionId);
     
     return (
         <>
@@ -235,7 +242,7 @@ const SessionMenu: React.FC = () => {
                 endIcon={<KeyboardArrowDownIcon />} 
                 sx={{ textTransform: 'none' }}
             >
-                Session
+                Session {sessionId ? `(${sessionId.substring(0, 8)}...)` : ''}
             </Button>
             <Menu
                 id="session-menu"
@@ -248,8 +255,22 @@ const SessionMenu: React.FC = () => {
                 }}
                 sx={{ '& .MuiMenuItem-root': { padding: 0, margin: 0 } }}
             >
+                {sessionId && (
+                    <MenuItem disabled>
+                        <Typography sx={{ fontSize: 12, color: 'text.secondary', mx: 2 }}>
+                            ID: {sessionId}
+                        </Typography>
+                    </MenuItem>
+                )}
                 <MenuItem onClick={() => {}}>
                     <ExportStateButton />
+                </MenuItem>
+                <MenuItem onClick={() => {
+                    handleDBDownload(sessionId ?? '');
+                }}>
+                    <Button startIcon={<DownloadIcon />} sx={{ fontSize: 14, textTransform: 'none', display: 'flex', alignItems: 'center'}}>
+                        download database
+                    </Button>
                 </MenuItem>
                 <MenuItem onClick={(e) => {}}>
                     <ImportStateButton />
@@ -283,7 +304,12 @@ const ResetDialog: React.FC = () => {
                     <Button 
                         onClick={() => { 
                             dispatch(dfActions.resetState()); 
-                            setOpen(false); 
+                            setOpen(false);
+                            
+                            // Add a delay to ensure the state has been reset before reloading
+                            setTimeout(() => {
+                                window.location.reload();
+                            }, 250); // 250ms should be enough for state update
                         }} 
                         endIcon={<PowerSettingsNewIcon />}
                     >
@@ -301,19 +327,25 @@ const ConfigDialog: React.FC = () => {
     const dispatch = useDispatch();
     const config = useSelector((state: DataFormulatorState) => state.config);
 
+
     const [formulateTimeoutSeconds, setFormulateTimeoutSeconds] = useState(config.formulateTimeoutSeconds);
     const [maxRepairAttempts, setMaxRepairAttempts] = useState(config.maxRepairAttempts);
 
+    const [defaultChartWidth, setDefaultChartWidth] = useState(config.defaultChartWidth);
+    const [defaultChartHeight, setDefaultChartHeight] = useState(config.defaultChartHeight);
+
     // Add check for changes
     const hasChanges = formulateTimeoutSeconds !== config.formulateTimeoutSeconds || 
-                      maxRepairAttempts !== config.maxRepairAttempts;
+                      maxRepairAttempts !== config.maxRepairAttempts ||
+                      defaultChartWidth !== config.defaultChartWidth ||
+                      defaultChartHeight !== config.defaultChartHeight;
 
     return (
         <>
             <Button variant="text" sx={{textTransform: 'none'}} onClick={() => setOpen(true)} startIcon={<SettingsIcon />}>
                  <Box component="span" sx={{lineHeight: 1.2, display: 'flex', flexDirection: 'column', alignItems: 'left'}}>
-                    <Box component="span" sx={{py: 0, my: 0, fontSize: '10px', mr: 'auto'}}>timeout={config.formulateTimeoutSeconds}s</Box>
-                    <Box component="span" sx={{py: 0, my: 0, fontSize: '10px', mr: 'auto'}}>max_repair={config.maxRepairAttempts}</Box>
+                    <Box component="span" sx={{py: 0, my: 0, fontSize: '10px', mr: 'auto'}}>default_timeout={config.formulateTimeoutSeconds}s</Box>
+                    <Box component="span" sx={{py: 0, my: 0, fontSize: '10px', mr: 'auto'}}>chart_size={config.defaultChartWidth}x{config.defaultChartHeight}</Box>
                 </Box>
             </Button>
             <Dialog onClose={() => setOpen(false)} open={open}>
@@ -324,9 +356,55 @@ const ConfigDialog: React.FC = () => {
                             display: 'flex', 
                             flexDirection: 'column', 
                             gap: 3,
-                            my: 2,
                             maxWidth: 400
                         }}>
+                            <Divider><Typography variant="caption">Frontend configuration</Typography></Divider>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                                <Box sx={{ flex: 1 }}>
+                                    <TextField
+                                        label="default chart width"
+                                        type="number"
+                                        variant="outlined"
+                                        value={defaultChartWidth}
+                                        onChange={(e) => {
+                                            const value = parseInt(e.target.value);
+                                            setDefaultChartWidth(value);
+                                        }}
+                                        fullWidth
+                                        inputProps={{
+                                            min: 100,
+                                            max: 1000
+                                        }}
+                                        error={defaultChartWidth < 100 || defaultChartWidth > 1000}
+                                        helperText={defaultChartWidth < 100 || defaultChartWidth > 1000 ? 
+                                            "Value must be between 100 and 1000 pixels" : ""}
+                                    />
+                                </Box>
+                                <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+                                    <ClearIcon fontSize="small" />
+                                </Typography>
+                                <Box sx={{ flex: 1 }}>
+                                    <TextField
+                                        label="default chart height"
+                                        type="number"
+                                        variant="outlined"
+                                        value={defaultChartHeight}
+                                        onChange={(e) => {
+                                            const value = parseInt(e.target.value);
+                                            setDefaultChartHeight(value);
+                                        }}
+                                        fullWidth
+                                        inputProps={{
+                                            min: 100,
+                                            max: 1000
+                                        }}
+                                        error={defaultChartHeight < 100 || defaultChartHeight > 1000}
+                                        helperText={defaultChartHeight < 100 || defaultChartHeight > 1000 ? 
+                                            "Value must be between 100 and 1000 pixels" : ""}
+                                    />
+                                </Box>
+                            </Box>
+                            <Divider><Typography variant="caption">Backend configuration</Typography></Divider>
                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                                 <Box sx={{ flex: 1 }}>
                                     <TextField
@@ -349,9 +427,6 @@ const ConfigDialog: React.FC = () => {
                                     />
                                     <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
                                         Maximum time allowed for the formulation process before timing out. 
-                                    </Typography>
-                                    <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
-                                        Smaller values (&lt;30s) make the model fails fast thus providing a smoother UI experience. Increase this value for slow models.
                                     </Typography>
                                 </Box>
                             </Box>
@@ -390,13 +465,18 @@ const ConfigDialog: React.FC = () => {
                     <Button sx={{marginRight: 'auto'}} onClick={() => {
                         setFormulateTimeoutSeconds(30);
                         setMaxRepairAttempts(1);
+                        setDefaultChartWidth(300);
+                        setDefaultChartHeight(300);
                     }}>Reset to default</Button>
                     <Button onClick={() => setOpen(false)}>Cancel</Button>
                     <Button 
                         variant={hasChanges ? "contained" : "text"}
-                        disabled={!hasChanges || isNaN(maxRepairAttempts) || maxRepairAttempts <= 0 || maxRepairAttempts > 5 || isNaN(formulateTimeoutSeconds) || formulateTimeoutSeconds <= 0 || formulateTimeoutSeconds > 3600}
+                        disabled={!hasChanges || isNaN(maxRepairAttempts) || maxRepairAttempts <= 0 || maxRepairAttempts > 5 
+                            || isNaN(formulateTimeoutSeconds) || formulateTimeoutSeconds <= 0 || formulateTimeoutSeconds > 3600
+                            || isNaN(defaultChartWidth) || defaultChartWidth <= 0 || defaultChartWidth > 1000
+                            || isNaN(defaultChartHeight) || defaultChartHeight <= 0 || defaultChartHeight > 1000}
                         onClick={() => {
-                            dispatch(dfActions.setConfig({formulateTimeoutSeconds, maxRepairAttempts}));
+                            dispatch(dfActions.setConfig({formulateTimeoutSeconds, maxRepairAttempts, defaultChartWidth, defaultChartHeight}));
                             setOpen(false);
                         }}
                     >
@@ -413,6 +493,7 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
     const visViewMode = useSelector((state: DataFormulatorState) => state.visViewMode);
     const config = useSelector((state: DataFormulatorState) => state.config);
     const tables = useSelector((state: DataFormulatorState) => state.tables);
+    const sessionId = useSelector((state: DataFormulatorState) => state.sessionId);
 
     // if the user has logged in
     const [userInfo, setUserInfo] = useState<{ name: string, userId: string } | undefined>(undefined);
@@ -462,6 +543,7 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
     useEffect(() => {
         document.title = toolName;
         dispatch(fetchAvailableModels());
+        dispatch(getSessionId());
     }, []);
 
     let theme = createTheme({
@@ -540,12 +622,13 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
                     {switchers}
                 </Box>
                 <Box sx={{ display: 'flex', fontSize: 14 }}>
-                    {/* <Button variant="text" href={"/about"}  sx={{display: "flex", flexDirection: "row", 
-                            "&:hover": { textDecoration: "underline" }}}>
-                        about
-                    </Button>
-                    <Divider orientation="vertical" variant="middle" flexItem /> */}
                     <ConfigDialog />
+                    <Divider orientation="vertical" variant="middle" flexItem />
+                    <DBTableSelectionDialog buttonElement={
+                        <Typography sx={{ display: 'flex', fontSize: 14, alignItems: 'center', gap: 1, textTransform: 'none' }}>
+                            <CloudQueueIcon fontSize="small" /> Database
+                        </Typography>
+                    } />
                     <Divider orientation="vertical" variant="middle" flexItem />
                     <ModelSelectionButton />
                     <Divider orientation="vertical" variant="middle" flexItem />
@@ -568,6 +651,9 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
         {
             path: "/about",
             element: <About />,
+        }, {
+            path: "/test",
+            element: <DBTableManager />,
         }, {
             path: "*",
             element: <DataFormulatorFC />,

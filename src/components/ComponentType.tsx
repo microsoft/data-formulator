@@ -65,12 +65,16 @@ export interface DictTable {
         source: string[], // which tables are this table computed from
         code: string,
         codeExpl: string,
-        dialog: any[], // the log of how the data is derived with gpt (the GPT conversation log)
+        dialog: any[], // the log of how the data is derived with LLM (the LLM conversation log)
         // tracks how this derivation is triggered, as we as user instruction used to do the formulation,
         // there is a subtle difference between trigger and source, trigger identifies the occasion when the derivision is called,
         // source specifies how the deriviation is done from the source tables, they may be the same, but not necessarily
         // in fact, right now dict tables are all triggered from charts
         trigger: Trigger,
+    };
+    virtual?: {
+        tableId: string; // the id of the virtual table in the database
+        rowCount: number; // total number of rows in the full table
     };
     anchored: boolean; // whether this table is anchored as a persistent table used to derive other tables
 }
@@ -79,6 +83,7 @@ export function createDictTable(
     id: string, rows: any[], 
     derive: {code: string, codeExpl: string, source: string[], dialog: any[], 
              trigger: Trigger} | undefined = undefined,
+    virtual: {tableId: string, rowCount: number} | undefined = undefined,
     anchored: boolean = false) : DictTable {
     
     let names = Object.keys(rows[0])
@@ -90,6 +95,7 @@ export function createDictTable(
         rows,
         types: names.map(name => inferTypeFromValueArray(rows.map(r => r[name]))),
         derive,
+        virtual,
         anchored
     }
 }
@@ -121,7 +127,6 @@ export interface EncodingItem {
     //channel: Channel, // the channel ID
     fieldID?: string, // the fieldID
     aggregate?: AggrOp,
-    bin: boolean,
     stack?: "layered" | "zero" | "center" | "normalize",
     //sort?: "ascending" | "descending" | string,
     sortOrder?: "ascending" | "descending", // 

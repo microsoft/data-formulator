@@ -8,9 +8,9 @@ import { ChannelGroups, getChartChannels, getChartTemplate } from "../components
 import { Channel, Chart, ChartTemplate, ConceptTransformation, EncodingItem, EncodingMap, FieldItem, Trigger } from "../components/ComponentType";
 import { DictTable } from "../components/ComponentType";
 import { getDType } from "../data/types";
+import * as d3 from 'd3';
 
 export interface AppConfig {
-    serverUrl: string;
     popupConfig?: PopupConfig;
 }
 
@@ -20,7 +20,6 @@ export interface PopupConfig {
 }
 
 export const appConfig: AppConfig = {
-    serverUrl:  process.env.NODE_ENV == "production" ? "./" : "http://127.0.0.1:5000/",
 };
 
 export function assignAppConfig(config: AppConfig) {
@@ -31,27 +30,42 @@ export function assignAppConfig(config: AppConfig) {
 
 export function getUrls() {
     return {
-        CHECK_AVAILABLE_MODELS: `${appConfig.serverUrl}/check-available-models`,
-        TEST_MODEL: `${appConfig.serverUrl}/test-model`,
+        GET_SESSION_ID: `/api/get-session-id`,
+        APP_CONFIG: `/api/app-config`,
+        AUTH_INFO_PREFIX: `/api/.auth/`,
 
-        // these functions involves openai models
-        DERIVE_CONCEPT_URL: `${appConfig.serverUrl}/derive-concept-request`,
-        SORT_DATA_URL: `${appConfig.serverUrl}/codex-sort-request`,
-        CLEAN_DATA_URL: `${appConfig.serverUrl}/clean-data`,
-        SERVER_DERIVE_DATA_URL: `${appConfig.serverUrl}/derive-data`,
-        SERVER_REFINE_DATA_URL: `${appConfig.serverUrl}/refine-data`,
-        CODE_EXPL_URL: `${appConfig.serverUrl}/code-expl`,
-        SERVER_PROCESS_DATA_ON_LOAD: `${appConfig.serverUrl}/process-data-on-load`,
+        VEGA_DATASET_LIST: `/api/vega-datasets`,
+        VEGA_DATASET_REQUEST_PREFIX: `/api/vega-dataset/`,
 
-        DATASET_INFO_URL: `${appConfig.serverUrl}/datasets-info`,
-        DATASET_REQUEST_PREFIX: `${appConfig.serverUrl}/datasets/`,
+        // these functions involves ai agents
+        CHECK_AVAILABLE_MODELS: `/api/agent/check-available-models`,
+        TEST_MODEL: `/api/agent/test-model`,
 
-        VEGA_DATASET_LIST: `${appConfig.serverUrl}/vega-datasets`,
-        VEGA_DATASET_REQUEST_PREFIX: `${appConfig.serverUrl}/vega-dataset/`,
+        DERIVE_CONCEPT_URL: `/api/agent/derive-concept-request`,
+        DERIVE_PY_CONCEPT: `/api/agent/derive-py-concept`,
 
-        APP_CONFIG: `${appConfig.serverUrl}/app-config`,
+        SORT_DATA_URL: `/api/agent/sort-data`,
+        CLEAN_DATA_URL: `/api/agent/clean-data`,
+        
+        CODE_EXPL_URL: `/api/agent/code-expl`,
+        SERVER_PROCESS_DATA_ON_LOAD: `/api/agent/process-data-on-load`,
 
-        AUTH_INFO_PREFIX: `${appConfig.serverUrl}/.auth/`
+        DERIVE_DATA: `/api/agent/derive-data`,
+        REFINE_DATA: `/api/agent/refine-data`,
+
+        // these functions involves database
+        UPLOAD_DB_FILE: `/api/tables/upload-db-file`,
+        DOWNLOAD_DB_FILE: `/api/tables/download-db-file`,
+        RESET_DB_FILE: `/api/tables/reset-db-file`,
+        ATTACH_EXTERNAL_DB: `/api/tables/attach-external-db`,
+
+        LIST_TABLES: `/api/tables/list-tables`,
+        TABLE_DATA: `/api/tables/get-table`,
+        CREATE_TABLE: `/api/tables/create-table`,
+        DELETE_TABLE: `/api/tables/delete-table`,
+        GET_COLUMN_STATS: `/api/tables/analyze`,
+        QUERY_TABLE: `/api/tables/query`,
+        SAMPLE_TABLE: `/api/tables/sample-table`,
     };
 }
 
@@ -114,140 +128,85 @@ export function runCodeOnInputListsInVM(
     return ioPairs;
 }
 
-export function baseTableToExtTable(table: any[], derivedFields: FieldItem[], allFields: FieldItem[]) {
-    // derive fields from derivedFields from the original table
-
-    if (table.length == 0) {
-        return [];
-    }
-
-    let availableBaseFields = allFields.filter(f => Object.keys(table[0]).includes(f.name));
-    let extDerivedFields = [...derivedFields];
-    while(true) {
-        let unresolvedDerivedParentID = extDerivedFields.map(field => {
-            let parentIDs = (field.transform as ConceptTransformation).parentIDs;
-            return allFields.filter(f => parentIDs.includes(f.id) && f.source == "derived")
-                            .filter(f => !extDerivedFields.map(f => f.id).includes(f.id))
-                            .map(f => f.id);
-        }).flat()
-        unresolvedDerivedParentID = [...new Set(unresolvedDerivedParentID)];
-        
-        if (unresolvedDerivedParentID.length == 0) {
-            break
+export function extractFieldsFromEncodingMap(encodingMap: EncodingMap, allFields: FieldItem[]) {
+    let aggregateFields: [string | undefined, string][] = []
+    let groupByFields: string[] = []
+    
+    for (const [channel, encoding] of Object.entries(encodingMap)) {
+        const field = encoding.fieldID ? _.find(allFields, (f) => f.id === encoding.fieldID) : undefined;
+        if (encoding.aggregate) {
+            aggregateFields.push([field?.name, encoding.aggregate]);
         } else {
-            extDerivedFields = [...extDerivedFields, ...allFields.filter(f => unresolvedDerivedParentID.includes(f.id))]
-        }
-    }
-
-    // derivedCols contains the derived column name, parent column names and its values
-    let derivedColID2Cols : Map<string, [string, string[], any[]]> = new Map();
-    
-    // contains the list of IDs of concepts that have already been derived
-    while(!extDerivedFields.every(f => derivedColID2Cols.has(f.id))) {
-        let readyFields = extDerivedFields.filter(f => !derivedColID2Cols.has(f.id))
-                            .filter(f => (f.transform as ConceptTransformation).parentIDs.every(
-                                parentID => [...derivedColID2Cols.keys(), ...availableBaseFields.map(f => f.id)].includes(parentID)));
-        
-        if (readyFields.length == 0) {
-            // there are concepts without parents???
-            break
-        }
-
-        let newlyDerivedCols: [string, string[], any[]][] = readyFields.map(field => {
-            //let baseFields = (field.transform as ConceptTransformation).parentIDs.map((parentID) => allFields.find(f => f.id == parentID) as FieldItem);
-
-            let parentNames = (field.transform as ConceptTransformation).parentIDs.map(parentID => (allFields.find(f => f.id == parentID) as FieldItem).name);
-            let baseCols = (field.transform as ConceptTransformation).parentIDs.map(parentID => {
-                let baseField = availableBaseFields.find(f => f.id == parentID);
-                if (baseField != undefined) {
-                    return table.map((row) => row[(baseField as FieldItem).name])
-                } else {
-                    return (derivedColID2Cols.get(parentID) as [string, string[], any[]])[2];
-                }
-            });
-            
-            let jsCode = ts.transpile((field.transform as ConceptTransformation).code as string);
-            let func = eval(jsCode);
-    
-            //let baseFieldCols = baseFields.map(f => table.map((row) => row[f.name]));
-            
-            let values = table.map((row, rowIdx) => {
-                let inputTuples = baseCols.map(col => col[rowIdx]) // baseFields.map((baseField) => row[baseField.name]);
-                let target = undefined;
-
-                try {
-                    let args = inputTuples;
-                    if (func.length == baseCols.length * 2 + 1) {
-                        // avoid side effect, use the copy of the column when calling the function
-                        args = [...inputTuples, rowIdx, ...structuredClone(baseCols)]
-                    }            
-        
-                    target = func(...args);
-                } catch(err) {
-                    //console.warn(err);
-                }
-                return target;
-            });
-    
-            return [field.name, parentNames, values];
-        })
-        
-        
-        for (let i = 0; i < readyFields.length; i ++) {
-            derivedColID2Cols.set(readyFields[i].id, newlyDerivedCols[i]);
-        }
-    }
-
-    let derivedCols = [...derivedColID2Cols.values()];
-    
-    let tableNames = Object.keys(table[0]);
-    let orderedNames = [...tableNames];
-
-    while(true) {
-        let missingCols = derivedCols.filter(c => !orderedNames.includes(c[0]))
-        if (missingCols.length == 0) {
-            break
-        }
-        for (let [name, parentNames, vals] of missingCols) {
-            if (!parentNames.every(name => orderedNames.includes(name))) {
-                // wait for next round
-                continue
+            if (field) {
+                groupByFields.push(field.name);
             }
-            let lastParent = (parentNames as string[]).sort((n1, n2) => orderedNames.indexOf(n2) - orderedNames.indexOf(n1))[0];
-            let lastParentIndex = orderedNames.indexOf(lastParent);
-            orderedNames.splice(lastParentIndex + 1, 0, name);
         }
     }
 
-    let derivedColName2Values : any = {};
-    for (let i = 0; i < derivedCols.length; i ++) {
-        derivedColName2Values[derivedCols[i][0] as string] = derivedCols[i][2];
+    return { aggregateFields, groupByFields };
+}   
+
+export function prepVisTable(table: any[], allFields: FieldItem[], encodingMap: EncodingMap) {
+    let { aggregateFields, groupByFields } = extractFieldsFromEncodingMap(encodingMap, allFields);
+
+    let processedTable = [...table];
+
+    let result = processedTable;
+
+    if (aggregateFields.length > 0) {
+        // Step 2: Group by and aggregate
+        let grouped = [];
+        if (groupByFields.length > 0) {
+            grouped = d3.flatGroup(processedTable, ...groupByFields.map(field => (d: any) => d[field]));
+        } else {
+            grouped = [["_default", processedTable]];
+        }
+
+        result = grouped.map(row => {
+            // Last element is the array of grouped items, rest are group values
+
+            const groupValues = row.slice(0, -1);
+            const group = row[row.length - 1];
+            
+            return {
+                // Add group by fields
+                ...Object.fromEntries(groupByFields.map((field, i) => [field, groupValues[i]])),
+                // Add aggregations
+                ...(aggregateFields.some(([_, type]) => type === 'count') 
+                    ? { _count: group.length } 
+                    : {}),
+                ...Object.fromEntries(
+                    aggregateFields
+                        .filter(([fieldName, aggType]) => aggType !== 'count' && fieldName)
+                        .map(([fieldName, aggType]) => {
+                            const values = group.map((r: any) => r[fieldName!]);
+                            const suffix = `_${aggType}`;
+                            const aggFunc = {
+                                'sum': d3.sum,
+                                'max': d3.max,
+                                'min': d3.min,
+                                'mean': d3.mean,
+                                'median': d3.median,
+                                'average': d3.mean,
+                                'mode': d3.mode
+                            }[aggType] as (values: any[]) => number | undefined;
+                            return [fieldName + suffix, aggFunc ? aggFunc(values) : undefined];
+                        })
+                )
+            };
+        });
     }
-    // console.log(orderedNames)
 
-    let extTable = table.map((row, i) => {
-        let newRow : any = {};
-        for (let name of orderedNames) {
-            if (name in row) {
-                newRow[name] = row[name]
-            } else {
-                newRow[name] = derivedColName2Values[name][i];
-            }
-        } 
-        
-        return newRow;
-    })
-
-    return extTable;
+    return result;
 }
-
 
 export const assembleVegaChart = (
     chartType: string, 
     encodingMap: { [key in Channel]: EncodingItem; }, 
     conceptShelfItems: FieldItem[], 
     workingTable: any[],
-    maxNominalValues: number = 68
+    maxNominalValues: number = 68,
+    aggrPreprocessed: boolean = false // whether the data has been preprocessed for aggregation and binning
 ) => {
 
     if (chartType == "Table") {
@@ -268,7 +227,16 @@ export const assembleVegaChart = (
         }
 
         const field = encoding.fieldID ? _.find(conceptShelfItems, (f) => f.id === encoding.fieldID) : undefined;
+        if (field == undefined && encoding.aggregate == "count" && aggrPreprocessed) {
+            encodingObj["field"] = "_count";
+            encodingObj["title"] = "Count";
+            encodingObj["type"] = "quantitative";
+        } 
+        
         if (field) {
+            console.log("field and channel");
+            console.log(`${field.name} ${channel} ${encoding.aggregate}`);
+
             // create the encoding
             encodingObj["field"] = field.name;
             encodingObj["type"] = getDType(field.type, workingTable.map(r => r[field.name]));
@@ -280,8 +248,25 @@ export const assembleVegaChart = (
                 }
             }
 
-            if (encoding.bin) {
-                encodingObj["bin"] = encoding.bin;
+            if (aggrPreprocessed) {
+                if (encoding.aggregate) {
+                    console.log("aggregate", encoding.aggregate);
+                    if (encoding.aggregate == "count") {
+                        encodingObj["field"] = "_count";
+                        encodingObj["title"] = "Count"
+                        encodingObj["type"] = "quantitative";
+                    } else {
+                        encodingObj['field'] = `${field.name || ""}_${encoding.aggregate}`;
+                        encodingObj["type"] = "quantitative";
+                    }
+                }
+            } else {
+                if (encoding.aggregate) {
+                    encodingObj["aggregate"] = encoding.aggregate;
+                    if (encodingObj["aggregate"] == "count") {
+                        encodingObj["title"] = "Count"
+                    }
+                }
             }
  
             if (encodingObj["type"] == "quantitative" && chartType.includes("Line") && channel == "x") {
@@ -319,17 +304,9 @@ export const assembleVegaChart = (
                     }
                     encodingObj["scale"]['scheme'] = "tableau20";
                 }
-
-              
-            }
-
-        }
-        if (encoding.aggregate) {
-            encodingObj["aggregate"] = encoding.aggregate;
-            if (encodingObj["aggregate"] == "count") {
-                encodingObj["title"] = "Count"
             }
         }
+        
         if (encoding.sortBy || encoding.sortOrder) {
             let sortOrder = encoding.sortOrder || "ascending";
 
@@ -342,10 +319,10 @@ export const assembleVegaChart = (
                     let sortedValues = JSON.parse(encoding.sortBy)['values'];
                     encodingObj['sort'] = sortOrder == "ascending" ? sortedValues : sortedValues.reverse();
 
-                    // special hack: ensure stack bar and stacked area charts are ordered correctly
-                    if (channel == 'color' && (vgObj['mark'] == 'bar' || vgObj['mark'] == 'area')) {
-                        vgObj['encoding']['order'] = {'values': sortedValues};
-                    }
+                    // // special hack: ensure stack bar and stacked area charts are ordered correctly
+                    // if (channel == 'color' && (vgObj['mark'] == 'bar' || vgObj['mark'] == 'area')) {
+                    //     vgObj['encoding']['order'] = {'values': sortedValues};
+                    // }
                 } catch {
                     console.warn(`sort error > ${encoding.sortBy}`)
                 }
@@ -492,10 +469,10 @@ export const assembleVegaChart = (
         }
     }
 
+
+
     return {...vgObj, data: {values: values}}
 }
-
-
 
 export const adaptChart = (chart: Chart, targetTemplate: ChartTemplate) => {
 
@@ -517,6 +494,9 @@ export const adaptChart = (chart: Chart, targetTemplate: ChartTemplate) => {
         }
     }
 
+    if (targetTemplate.chart == "Histogram") {
+        newEncodingMap.y = { aggregate: "count" };
+    }
 
     return { ...chart, chartType: targetTemplate.chart, encodingMap: newEncodingMap }
 }

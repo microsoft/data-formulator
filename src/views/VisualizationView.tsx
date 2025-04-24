@@ -22,6 +22,13 @@ import {
     Menu,
     CardContent,
     Slider,
+    Dialog,
+    DialogContent,
+    TextField,
+    CircularProgress,
+    Popover,
+    Snackbar,
+    Alert,
 } from '@mui/material';
 
 import ButtonGroup from '@mui/material/ButtonGroup';
@@ -36,7 +43,7 @@ import AnimateOnChange from 'react-animate-on-change'
 import '../scss/VisualizationView.scss';
 import { useDispatch, useSelector } from 'react-redux';
 import { DataFormulatorState, dfActions } from '../app/dfSlice';
-import { assembleVegaChart, baseTableToExtTable  } from '../app/utils';
+import { assembleVegaChart, extractFieldsFromEncodingMap, getUrls, prepVisTable  } from '../app/utils';
 import { Chart, EncodingItem, EncodingMap, FieldItem } from '../components/ComponentType';
 import { DictTable } from "../components/ComponentType";
 
@@ -51,16 +58,19 @@ import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import ZoomInIcon from '@mui/icons-material/ZoomIn';
 import ZoomOutIcon from '@mui/icons-material/ZoomOut';
 import TextSnippetIcon from '@mui/icons-material/TextSnippet';
+import FilterAltIcon from '@mui/icons-material/FilterAlt';
+import CheckIcon from '@mui/icons-material/Check';
+import CloudQueueIcon from '@mui/icons-material/CloudQueue';
 
 import { CHART_TEMPLATES, getChartTemplate } from '../components/ChartTemplates';
-import { findBaseFields } from './ViewUtils';
 
 import Prism from 'prismjs'
 import 'prismjs/components/prism-python' // Language
+import 'prismjs/components/prism-sql' // Language
 import 'prismjs/components/prism-markdown' // Language
-
 import 'prismjs/components/prism-typescript' // Language
 import 'prismjs/themes/prism.css'; //Example style, you can use another
+
 import { DerivedDataDialog } from './DerivedDataDialog';
 import { ChatDialog } from './ChatDialog';
 import { EncodingShelfThread } from './EncodingShelfThread';
@@ -129,11 +139,10 @@ export let getDataTable = (chart: Chart, tables: DictTable[], charts: Chart[],
     }
 
     let activeFields = conceptShelfItems.filter((field) => Array.from(Object.values(chart.encodingMap)).map((enc: EncodingItem) => enc.fieldID).includes(field.id));
-    let activeBaseFields = conceptShelfItems.filter((field) => {
-        return activeFields.some(f => findBaseFields(f, conceptShelfItems).flat().map(x => x.id).includes(field.id));
-    });
 
-    let workingTableCandidates = tables.filter(t => activeBaseFields.every(f => t.names.includes(f.name)));
+    let workingTableCandidates = tables.filter(t => {
+        return activeFields.every(f => t.names.includes(f.name));
+    });
     
     let confirmedTableCandidates = workingTableCandidates.filter(t => !charts.some(c => c.saved && c.tableRef == t.id));
     if(confirmedTableCandidates.length > 0) {
@@ -147,34 +156,17 @@ export let getDataTable = (chart: Chart, tables: DictTable[], charts: Chart[],
     }
 }
 
-export let CodeBox : FC<{code: string, language: string}> = function  CodeBox({ code, language }) {
+export let CodeBox : FC<{code: string, language: string, fontSize?: number}> = function  CodeBox({ code, language, fontSize = 10 }) {
     useEffect(() => {
-      Prism.highlightAll();
-    }, []);
+        Prism.highlightAll();
+      }, [code]);
 
     return (
-        <pre style={{fontSize: 10}}>
-          <code className={`language-${language}`} >{code}</code>
+        <pre style={{fontSize: fontSize}}>
+            <code className={`language-${language}`} >{code}</code>
         </pre>
     );
   }
-
-export const chartAvailabilityCheck = (encodingMap: EncodingMap, conceptShelfItems: FieldItem[], data: any[]) => {
-    let unfilledFields = [];
-    let dataFields = [...Object.keys(data[0])];
-
-    for (const [channel, encoding] of Object.entries(encodingMap)) {
-        if (encoding.fieldID == undefined) continue;
-
-        let field = conceptShelfItems.find(f => f.id == encoding.fieldID);
-
-        if (field && !dataFields.includes(field.name)) {
-            unfilledFields.push(field.name);
-        }
-    }
-    let unavailable = (unfilledFields.length > 0 || Object.entries(encodingMap).filter(entry => entry[1].fieldID != undefined).length == 0);
-    return [!unavailable, unfilledFields];
-}
 
 const BaseChartCreationMenu: FC<{tableId: string; buttonElement: any}> = function BaseChartCreationMenu({ tableId, buttonElement, ...other }) {
 
@@ -229,13 +221,116 @@ const BaseChartCreationMenu: FC<{tableId: string; buttonElement: any}> = functio
     </>;
 }
 
+export let checkChartAvailabilityOnPreparedData = (chart: Chart, conceptShelfItems: FieldItem[], visTableRows: any[]) => {
+    let visFieldsFinalNames = Object.keys(chart.encodingMap)
+            .filter(key => chart.encodingMap[key as keyof EncodingMap].fieldID != undefined)
+            .map(key => [chart.encodingMap[key as keyof EncodingMap].fieldID, chart.encodingMap[key as keyof EncodingMap].aggregate])
+            .map(([id, aggregate]) => {
+                let field = conceptShelfItems.find(f => f.id == id);
+                if (field) {
+                    if (aggregate) {
+                        return aggregate == "count" ? "_count" : `${field.name}_${aggregate}`;
+                    } else {
+                        return field.name;
+                    }
+                }
+                return undefined;
+            }).filter(f => f != undefined);
+    console.log("visFieldsFinalNames", visFieldsFinalNames);
+    console.log("visTableRows", visTableRows.slice(0, 10));
+    return visFieldsFinalNames.length > 0 && visTableRows.length > 0 && visFieldsFinalNames.every(name => Object.keys(visTableRows[0]).includes(name));
+}
+
+export let checkChartAvailability = (chart: Chart, conceptShelfItems: FieldItem[], visTableRows: any[]) => {
+    let visFieldIds = Object.keys(chart.encodingMap)
+            .filter(key => chart.encodingMap[key as keyof EncodingMap].fieldID != undefined)
+            .map(key => chart.encodingMap[key as keyof EncodingMap].fieldID);
+    let visFields = conceptShelfItems.filter(f => visFieldIds.includes(f.id));
+    return visFields.length > 0 && visTableRows.length > 0 && visFields.every(f => Object.keys(visTableRows[0]).includes(f.name));
+}
+
+export let SampleSizeEditor: FC<{
+    initialSize: number;
+    totalSize: number;
+    onSampleSizeChange: (newSize: number) => void;
+}> = function SampleSizeEditor({ initialSize, totalSize, onSampleSizeChange }) {
+
+    const [localSampleSize, setLocalSampleSize] = useState<number>(initialSize);
+    const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
+    const open = Boolean(anchorEl);
+
+    useEffect(() => {
+        setLocalSampleSize(initialSize);
+    }, [initialSize])
+
+    let maxSliderSize = Math.min(totalSize, 30000);
+
+    const handleClick = (event: React.MouseEvent<HTMLElement>) => {
+        setAnchorEl(event.currentTarget);
+    };
+
+    const handleClose = () => {
+        setAnchorEl(null);
+    };
+
+    return <Box component="span" sx={{ display: 'flex', flexDirection: 'row', alignItems: 'center' }}>
+        <Button 
+            onClick={handleClick}
+            sx={{ textTransform: 'none', fontSize: '12px' }}
+        >
+            {localSampleSize} / {totalSize}
+        </Button>
+        <Popover
+            open={open}
+            anchorEl={anchorEl}
+            onClose={handleClose}
+            anchorOrigin={{
+                vertical: 'bottom',
+                horizontal: 'left',
+            }}
+            transformOrigin={{
+                vertical: 'top',
+                horizontal: 'left',
+            }}
+        >
+            <Box sx={{ p: 2, width: 300 }}>
+                <Typography fontSize="small" gutterBottom>
+                    Adjust sample size: {localSampleSize} / {totalSize} rows
+                </Typography>
+                <Box sx={{ display: 'flex', flexDirection: 'row', alignItems: 'center' }}>
+                    <Typography variant="caption" color="text.secondary" sx={{ mr: 1 }}>100</Typography>
+                    <Slider
+                        size="small"
+                        min={100}
+                        max={maxSliderSize}
+                        sx={{ mr: 1 }}
+                        value={localSampleSize}
+                        onChange={(_, value) => setLocalSampleSize(value as number)}
+                        valueLabelDisplay="auto"
+                        aria-label="Sample size"
+                    />
+                    <Typography variant="caption" color="text.secondary" sx={{ ml: 1 }}>{maxSliderSize}</Typography>
+                    <Button sx={{ textTransform: 'none', ml: 2, fontSize: '12px' }} onClick={() => {
+                        onSampleSizeChange(localSampleSize);
+                        setAnchorEl(null);
+                    }}>
+                        Resample
+                    </Button>
+                </Box>
+            </Box>
+        </Popover>
+    </Box>
+}
+
 export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
             handleUpdateCandidates: (chartId: string, tables: DictTable[]) => void,
     }> = function ChartEditorFC({ cachedCandidates, handleUpdateCandidates }) {
 
+    const config = useSelector((state: DataFormulatorState) => state.config);
     const componentRef = useRef<HTMLHeadingElement>(null);
 
     let tables = useSelector((state: DataFormulatorState) => state.tables);
+    
     let charts = useSelector((state: DataFormulatorState) => state.charts);
     let focusedChartId = useSelector((state: DataFormulatorState) => state.focusedChartId);
     let chartSynthesisInProgress = useSelector((state: DataFormulatorState) => state.chartSynthesisInProgress);
@@ -249,8 +344,6 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
 
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
 
-    let derivedFields = conceptShelfItems.filter(f => f.source == "derived");
-
     const [candidatesViewAnchorEl, setCandidatesViewAnchorEl] = useState<null | HTMLElement>(null);
 
     const [codeViewOpen, setCodeViewOpen] = useState<boolean>(false);
@@ -263,16 +356,90 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
 
     const [localScaleFactor, setLocalScaleFactor] = useState<number>(1);
 
+    let table = getDataTable(focusedChart, tables, charts, conceptShelfItems);
+    
+    let visFieldIds = Object.keys(focusedChart.encodingMap).filter(key => focusedChart.encodingMap[key as keyof EncodingMap].fieldID != undefined).map(key => focusedChart.encodingMap[key as keyof EncodingMap].fieldID);
+    let visFields = conceptShelfItems.filter(f => visFieldIds.includes(f.id));
+    let dataFieldsAllAvailable = visFields.every(f => table.names.includes(f.name));
+
+    const [errorMessage, setErrorMessage] = useState<{content: string, severity: "error" | "warning" | "info" | "success"}>({content: "", severity: "error"});
+    const [showError, setShowError] = useState<boolean>(false);
+
+    let createVisTableRowsLocal = (rows: any[]) => {
+        if (visFields.length == 0) {
+            return rows;
+        }
+        let filteredRows = rows.map(row => Object.fromEntries(visFields.filter(f => table.names.includes(f.name)).map(f => [f.name, row[f.name]])));
+        let visTable = prepVisTable(filteredRows, conceptShelfItems, focusedChart.encodingMap);
+        return visTable;
+    }
+
+    let initialVisTableRows = createVisTableRowsLocal(structuredClone(table.rows));
+    const [visTableRows, setVisTableRows] = useState<any[]>(initialVisTableRows);
+    const [visTableTotalRowCount, setVisTableTotalRowCount] = useState<number>(table.virtual?.rowCount || initialVisTableRows.length);
+
+    async function fetchDisplayRows(sampleSize?: number) {
+        if (sampleSize == undefined) {
+            sampleSize = 5000;
+        }
+        if (table.virtual) {
+            let { aggregateFields, groupByFields } = extractFieldsFromEncodingMap(focusedChart.encodingMap, conceptShelfItems);
+            fetch(getUrls().SAMPLE_TABLE, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    table: table.id,
+                    size: sampleSize,
+                    method: 'random',
+                    select_fields: groupByFields,
+                    aggregate_fields_and_functions: aggregateFields,
+                }),
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status == "success") {
+                    console.log("data.rows", data.total_row_count);
+                    setVisTableRows(data.rows);
+                    setVisTableTotalRowCount(data.total_row_count);
+                } else {
+                    setVisTableRows([]);
+                    setVisTableTotalRowCount(0);
+                    setErrorMessage({content: data.message, severity: "error"});
+                    setShowError(true);
+                }
+            })
+            .catch(error => {
+                console.error('Error sampling table:', error);
+            });
+        }
+    }   
+
+    useEffect(() => {
+        if (table.virtual && visFields.length > 0 && dataFieldsAllAvailable) {
+            fetchDisplayRows();
+        }
+    }, [])
+
+    useEffect(() => {
+        if (visFields.length > 0 && dataFieldsAllAvailable) {
+            // table changed, we need to update the rows to display
+            if (table.virtual) {
+                // virtual table, we need to sample the table
+                fetchDisplayRows();
+            } else {
+                setVisTableRows(createVisTableRowsLocal(structuredClone(table.rows)));
+            }
+        } 
+    }, [focusedChart])
+    
     useEffect(() => {
         setFocusUpdated(true);
     }, [focusedChartId])
 
     let chartUnavailable = true;
-    
-    let table = getDataTable(focusedChart, tables, charts, conceptShelfItems);
-
     let resultTable = tables.find(t => t.id == focusedChart.intermediate?.resultTableId);
-
     let candidates = cachedCandidates.length > 0 ? cachedCandidates : [table];
 
     useEffect(() => {
@@ -283,10 +450,7 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
 
     let codeExpl = table.derive?.codeExpl || "";
 
-    let toDeriveFields = derivedFields.filter(f => f.name != "").filter(f => findBaseFields(f, conceptShelfItems).every(f2 => table.names.includes(f2.name)))
-    let focusedExtTable = baseTableToExtTable(JSON.parse(JSON.stringify(table.rows)), toDeriveFields, conceptShelfItems);
-
-    let createChartElement = (chart: Chart, extTable: any[], id: string) => {
+    let createChartElement = (chart: Chart, id: string) => {
         let chartTemplate = getChartTemplate(chart.chartType);
  
         if (chart.chartType == "Auto") {
@@ -296,20 +460,34 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
         }
 
         if (chart.chartType == "Table") {
-            return renderTableChart(chart, conceptShelfItems, extTable);
+            return renderTableChart(chart, conceptShelfItems, visTableRows);
         }
 
+        console.log('assembled chart');
+        console.log(chart.chartType);
+        console.log(chart.encodingMap);
+        console.log(visTableRows.slice(0, 10));
+
         let element = <></>;
-        if (!chart || !chartAvailabilityCheck(chart.encodingMap, conceptShelfItems, extTable)[0]) {
-            return generateChartSkeleton(chartTemplate?.icon);
-        }  
+        if (!chart || !checkChartAvailabilityOnPreparedData(chart, conceptShelfItems, visTableRows)) {
+            return   generateChartSkeleton(chartTemplate?.icon);
+        }
 
         chartUnavailable = false;
 
         element = <Box id={id} key={`focused-chart`} ></Box>    
 
-        let assembledChart = assembleVegaChart(chart.chartType, chart.encodingMap, conceptShelfItems, extTable);
+        let assembledChart = assembleVegaChart(chart.chartType, chart.encodingMap, conceptShelfItems, visTableRows, 48, true);
+        console.log('assembled chart');
+        console.log(assembledChart);
+        
         assembledChart['resize'] = true;
+        assembledChart['config'] = {
+            "view": {
+                "continuousWidth": config.defaultChartWidth,
+                "continuousHeight": config.defaultChartHeight
+            }
+        }
 
         embed('#' + id, { ...assembledChart }, { actions: true, renderer: "svg" }).then(function (result) {
             // Access the Vega view instance (https://vega.github.io/vega/docs/api/view/) as result.view
@@ -333,15 +511,6 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
                     comp?.setAttribute("style", `width: ${width * localScaleFactor}px; height: ${height * localScaleFactor}px;`);
                 }
             }
-
-            // if (result.view.container()?.getElementsByTagName("canvas")) {
-            //     let comp = result.view.container()?.getElementsByTagName("canvas")[0];
-            //     if (comp) {
-            //         const { width, height } = comp.getBoundingClientRect();
-            //         // console.log(`main chart; width = ${width} height = ${height}`)
-            //         // comp?.setAttribute("style", `width: ${width * 1.6}px; height: ${height * 1.6}px;`);
-            //     }
-            // }
         }).catch((error) => {
             //console.log(assembledChart)
             //console.error(error)
@@ -349,7 +518,7 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
         return element;
     }
 
-    let focusedChartElement = createChartElement(focusedChart, focusedExtTable, `focused-element-${focusedChart.id}`);
+    let focusedChartElement = createChartElement(focusedChart, `focused-element-${focusedChart.id}`);
     let arrowCard = <></>;
     let resultChartElement = <></>;
 
@@ -376,10 +545,6 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
             <IconButton color="primary" key="unsave-btn" size="small" sx={{ textTransform: "none" }}
                 disabled={chartUnavailable}
                 onClick={() => {
-                    // trackEvent('save-chart', { 
-                    //     vlspec: focusedChartVgSpec,
-                    //     data_sample: focusedExtTable.slice(0, 100)
-                    // });
                     dispatch(dfActions.saveUnsaveChart(focusedChart.id));
                 }}>
                     <StarBorderIcon  />
@@ -391,13 +556,8 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
         <IconButton color="primary" key="duplicate-btn" size="small" sx={{ textTransform: "none" }}
         disabled={focusedChart.intermediate != undefined}
         onClick={() => {
-            // trackEvent('save-chart', { 
-            //     vlspec: focusedChartVgSpec,
-            //     data_sample: focusedExtTable.slice(0, 100)
-            // });
             dispatch(dfActions.duplicateChart(focusedChart.id));
         }}>
-        
             <ContentCopyIcon  />
         </IconButton>
     </Tooltip>
@@ -421,8 +581,6 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
     if (table.derive?.code) {
         transformCode = `${table.derive.code}`
     }
-
-    //console.log(focusedChart)
 
     let derivedTableItems =  (resultTable?.derive || table.derive) ? [
         <Tooltip title={`${codeViewOpen ? 'hide' : 'view'} transformation code`} key="code-view-btn-tooltip">
@@ -453,8 +611,8 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
     
     let chartActionButtons = [
         <Box key="data-source" fontSize="small" sx={{ margin: "auto", display: "flex", flexDirection: "row"}}>
-            <Typography component="span" sx={{}} fontSize="inherit">
-                data: {table.displayId || table.id}
+            <Typography component="span" sx={{display: 'flex', flexDirection: 'row', alignItems: 'center'}} fontSize="inherit">
+                data: {table.virtual ? <Tooltip title="this table resides in the backend database, sample rows are used for visualization"><CloudQueueIcon  sx={{ fontSize: '12px', color: 'text.secondary', mx: 0.5}} /></Tooltip> : ""} {table.displayId || table.id}
             </Typography>
         </Box>,
         ...derivedTableItems,
@@ -488,6 +646,24 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
             {table.derive ? <Typography component="span" fontSize="small" color="text.secondary" sx={{textAlign:'center'}}>
                 AI generated results can be inaccurate, inspect it!
             </Typography> : ""}
+            {table.virtual ? (
+                <Box sx={{ display: 'flex', flexDirection: "row", margin: "auto", justifyContent: 'center', alignItems: 'center'}}>
+                    
+                    <Typography component="span" fontSize="small" color="text.secondary" sx={{textAlign:'center'}}>
+                        visualizing
+                    </Typography>
+                    <SampleSizeEditor 
+                        initialSize={visTableRows.length}
+                        totalSize={visTableTotalRowCount}
+                        onSampleSizeChange={(newSize) => {
+                            fetchDisplayRows(newSize);
+                        }}
+                    />
+                    <Typography component="span" fontSize="small" color="text.secondary" sx={{textAlign:'center'}}>
+                        sample rows
+                    </Typography>
+                </Box>
+            ) : ""}
             <Box key='chart=action-buttons' sx={{ display: 'flex', flexDirection: "row", margin: "auto", paddingTop: 1 }}>
                 {chartActionButtons}
             </Box>
@@ -545,8 +721,6 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
                         setCandidatesViewAnchorEl(null);
                     }}
                     handleSelection={(selectionIdx: number) => {
-                        console.log(`selected: ${selectionIdx}`)
-                        console.log(candidates[selectionIdx]);
                         dispatch(dfActions.replaceTable({chartId: focusedChart.id, table: candidates[selectionIdx]}))
                         dispatch(dfActions.setFocusedTable(candidates[selectionIdx].id));
                         setCandidatesViewAnchorEl(null);
@@ -579,15 +753,15 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
                                 </ButtonGroup>
                                 {/* <Typography fontSize="small" sx={{color: 'gray'}}>{table.derive?.source} → {table.id}</Typography> */}
                                 <Card variant="outlined" key={`code-view-card`}
-                                    sx={{minWidth: "280px", maxWidth: "1920px", display: "flex", flexGrow: 1,
+                                    sx={{minWidth: "280px", maxWidth: "1920px",  display: "flex", flexGrow: 1,
                                         border: "1px solid rgba(33, 33, 33, 0.1)"}}>
-                                    <CardContent sx={{display: "flex", flexDirection: "column", flexGrow: 1, padding: '0', paddingBottom: '0px !important'}}>
+                                    <CardContent sx={{display: "flex", flexDirection: "column", flexGrow: 1, padding: 0, paddingBottom: '0px !important'}}>
                                         <Typography sx={{ fontSize: 14, margin: 1 }}  gutterBottom>
                                             Data transformation code ({transformationIndicatorText})
                                         </Typography>
-                                        <Box sx={{display: 'flex', flexDirection: "row", alignItems: "center", flex: 'auto', padding: 1, background: '#f5f2f0'}}>
-                                            <Box sx={{maxWidth: 800, width: 'fit-content',  display: 'flex',}}>
-                                                <CodeBox code={transformCode.trimStart()} language="python" />
+                                        <Box sx={{display: 'flex', flexDirection: "row", alignItems: "center", flex: 'auto'}}>
+                                            <Box sx={{maxHeight: '400px', overflow: 'auto', width: '100%', p: 0.5}}>   
+                                                <CodeBox code={transformCode.trimStart()} language={table.virtual ? "sql" : "python"} />
                                             </Box>
                                         </Box>
                                     </CardContent>
@@ -660,7 +834,7 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
                 <ZoomOutIcon fontSize="small" />
             </IconButton>
         </Tooltip>
-        <Slider aria-label="chart-resize" defaultValue={1} step={0.1} min={scaleMin} max={scaleMax} 
+        <Slider aria-label="chart-resize" size='small' defaultValue={1} step={0.1} min={scaleMin} max={scaleMax} 
                 value={localScaleFactor} onChange={(event: Event, newValue: number | number[]) => {
             setLocalScaleFactor(newValue as number);
         }} />
@@ -674,6 +848,11 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
     </Stack>
 
     return <Box ref={componentRef} sx={{overflow: "hidden", display: 'flex', flex: 1}}>
+        {showError ? <Snackbar open={showError} autoHideDuration={6000} onClose={() => setShowError(false)}>
+            <Alert onClose={() => setShowError(false)} severity={errorMessage?.severity} sx={{ width: '100%' }}>
+                {errorMessage?.content}
+            </Alert>
+        </Snackbar> : ""}
         {synthesisRunning ? <Box sx={{
                     position: "absolute", height: "calc(100%)", width: "calc(100%)", zIndex: 1001, 
                     backgroundColor: "rgba(243, 243, 243, 0.8)", display: "flex", alignItems: "center"
@@ -688,6 +867,7 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
 export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView({ }) {
 
     let tables = useSelector((state: DataFormulatorState) => state.tables);
+
     let charts = useSelector((state: DataFormulatorState) => state.charts);
     let focusedChartId = useSelector((state: DataFormulatorState) => state.focusedChartId);
     let focusedTableId = useSelector((state: DataFormulatorState) => state.focusedTableId);
@@ -738,7 +918,6 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
                         cachedCandidates={cachedCandidates.find(l => l.chartId == focusedChartId)?.tables || []}
                         handleUpdateCandidates={handleUpdateCandidates} />
 
-    let derivedFields = conceptShelfItems.filter(f => f.source == "derived");
 
     let finalView = <Box></Box>;
 
@@ -748,8 +927,7 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
 
             let table = getDataTable(chart, tables, charts, conceptShelfItems);
     
-            let toDeriveFields = derivedFields.filter(f => f.name != "").filter(f => findBaseFields(f, conceptShelfItems).every(f2 => table.names.includes(f2.name)))
-            let extTable = baseTableToExtTable(JSON.parse(JSON.stringify(table.rows)), toDeriveFields, conceptShelfItems);
+            let visTableRows = structuredClone(table.rows);
 
             let chartTemplate = getChartTemplate(chart.chartType);
 
@@ -766,16 +944,15 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
                      sx={{  position: 'relative', backgroundColor: chart.saved ? "rgba(255,215,0,0.05)" : "white",
                             border: chart.saved ? '2px solid gold' : '1px solid lightgray', margin: 1, 
                             display: 'flex', flexDirection: 'column', maxWidth: '800px', maxHeight: '600px', overflow:'hidden'}}
-                >{renderTableChart(chart, conceptShelfItems, extTable)}</Box>
+                >{renderTableChart(chart, conceptShelfItems, visTableRows)}</Box>
             }
 
-            let [available, unfilledFields] = chartAvailabilityCheck(chart.encodingMap, conceptShelfItems, extTable);
-            if (!available) {
+            if (!checkChartAvailability(chart, conceptShelfItems, table.rows)) {
                 return <Box className={"vega-thumbnail" + (focusedChartId === chart.id ? " focused-vega-thumbnail" : "")} 
                             key="skeleton" onClick={setIndexFunc}>{generateChartSkeleton(chartTemplate?.icon)}</Box>;
             }
 
-            let assembledChart = assembleVegaChart(chart.chartType, chart.encodingMap, conceptShelfItems, extTable);
+            let assembledChart = assembleVegaChart(chart.chartType, chart.encodingMap, conceptShelfItems, visTableRows);
 
             const id = `chart-element-${index}`;
 

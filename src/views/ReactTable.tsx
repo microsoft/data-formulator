@@ -10,6 +10,7 @@ import TableHead from '@mui/material/TableHead';
 import TablePagination from '@mui/material/TablePagination';
 import TableRow from '@mui/material/TableRow';
 import { alpha, Box, useTheme } from '@mui/system';
+import Typography from '@mui/material/Typography';
 
 
 export interface ColumnDef {
@@ -27,9 +28,10 @@ interface CustomReactTableProps {
     rowsPerPageNum: number;
     compact: boolean;
     maxCellWidth? : number;
+    isIncompleteTable?: boolean;
 }
 
-export const CustomReactTable: React.FC<CustomReactTableProps> = ({ rows, columnDefs, rowsPerPageNum, compact, maxCellWidth }) => {
+export const CustomReactTable: React.FC<CustomReactTableProps> = ({ rows, columnDefs, rowsPerPageNum, compact, maxCellWidth, isIncompleteTable }) => {
 
     let theme = useTheme();
 
@@ -108,6 +110,15 @@ export const CustomReactTable: React.FC<CustomReactTableProps> = ({ rows, column
                                     </TableRow>
                                 );
                             })}
+                            {isIncompleteTable && (
+                                <TableRow>
+                                    {columnDefs.map((column, i) => (
+                                        <TableCell key={i} sx={{padding: 0}} align="left">
+                                            ......
+                                        </TableCell>
+                                    ))}
+                                </TableRow> 
+                            )}
                     </TableBody>
                 </Table>
             </TableContainer>

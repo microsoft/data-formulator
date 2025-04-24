@@ -20,9 +20,8 @@ import {
 
 import React from 'react';
 
-import { baseTableToExtTable, assembleVegaChart } from '../app/utils';
+import { assembleVegaChart } from '../app/utils';
 import { Chart } from '../components/ComponentType';
-import { findBaseFields } from './ViewUtils';
 import { useSelector } from 'react-redux';
 import { DataFormulatorState } from '../app/dfSlice';
 
@@ -51,7 +50,6 @@ export const DerivedDataDialog: FC<DerivedDataDialogProps> = function DerivedDat
 
     let [selectionIdx, setSelectionIdx] = React.useState(0);
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
-    let derivedFields = conceptShelfItems.filter(f => f.source == "derived");
 
     let body = 
         <Box sx={{display: "flex", overflowX: "auto", flexDirection: direction == "horizontal" ? "column" : "row", 
@@ -59,8 +57,7 @@ export const DerivedDataDialog: FC<DerivedDataDialogProps> = function DerivedDat
             
             {candidateTables.map((table, idx) => {
                 let code = table.derive?.code || "";
-                let toDeriveFields = derivedFields.filter(f => f.name != "").filter(f => findBaseFields(f, conceptShelfItems).every(f2 => table.names.includes(f2.name)))
-                let extTable = baseTableToExtTable(JSON.parse(JSON.stringify(table.rows)), toDeriveFields, conceptShelfItems);
+                let extTable = structuredClone(table.rows);
             
                 let assembledChart: any = assembleVegaChart(chart.chartType, chart.encodingMap, conceptShelfItems, extTable);
                 assembledChart["background"] = "transparent";

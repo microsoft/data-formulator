@@ -2,23 +2,49 @@
 # Licensed under the MIT License.
 
 import json
-import pandas as pd
+import time
 
-from data_formulator.agents.agent_utils import generate_data_summary, extract_code_from_gpt_response, field_name_to_ts_variable_name, infer_ts_datatype
+from data_formulator.agents.agent_utils import generate_data_summary, extract_code_from_gpt_response
 import data_formulator.py_sandbox as py_sandbox
 
 import traceback
 
 import logging
+import datetime
 
 logger = logging.getLogger(__name__)
 
 
 SYSTEM_PROMPT = '''You are a data scientist to help user to derive new column based on existing columns in a dataset.
 Your job is to write a python function based on input data summary, instruction and output column name.
-Complete a python function based off the [CONTEXT], [TEMPLATE] and [GOAL] provided, the function's input arguments are values from input columns, and the output is a value for the output column.
-The function only operates on primitive types and it will be used by a map() function later to generate the new column.
+Complete a python function based off the [CONTEXT], [TEMPLATE] and [GOAL] provided, the function's input arguments is a dataframe, and the new column derived from the dataframe is returned.
 The function should be as simple as possible. 
+
+Allowed imports, if you need any of them, import yourself, otherwise, do not import (other libraries will be blocked):
+- pandas (import pandas as pd is always included)
+- numpy
+- math
+- datetime
+- json
+- statistics
+- random
+- collections
+- re
+- itertools
+- functools
+- operator
+
+[TEMPLATE]
+
+```python
+import pandas as pd
+import re
+import datetime
+
+def derive_new_column(df):
+    # complete code here
+    return col
+```
 
 For example:
 
@@ -43,18 +69,11 @@ table_0 (us_covid_cases) sample:
 
 [GOAL]
 
-extract month from Date
-
-[TEMPLATE]
-
-```python
-import re
-import datetime
-
-def derive(date):
-    # complete code here
-    return month
-```
+{
+    "input_fields": ["Date"],
+    "output_field": "month",
+    "description": "extract month from Date"
+}
 
 [OUTPUT]
 
@@ -62,77 +81,18 @@ def derive(date):
 import re  
 import datetime  
   
-def derive(date):  
-    month = datetime.datetime.strptime(date, '%m/%d/%Y').month  
-    return month  
-```
-
-[CONTEXT]
-
-Here are our datasets, here are their field summaries and samples:
-
-table_0 (student_exam) fields:
-	student -- type: int64, values: 1, 2, 3, ..., 997, 998, 999, 1000
-	major -- type: object, values: liberal arts, science
-	math -- type: int64, values: 0, 8, 18, ..., 97, 98, 99, 100
-	reading -- type: int64, values: 17, 23, 24, ..., 96, 97, 99, 100
-	writing -- type: int64, values: 10, 15, 19, ..., 97, 98, 99, 100
-
-table_0 (student_exam) sample:
-
-```
-|student|major|math|reading|writing
-0|1|liberal arts|72|72|74
-1|2|liberal arts|69|90|88
-2|3|liberal arts|90|95|93
-3|4|science|47|57|44
-4|5|science|76|78|75
-......
-```
-
-[GOAL]
-
-Derive average grade from writing, reading, math, grade should be A, B, C, D, F
-
-[TEMPLATE]
-
-```python
-import re
-import datetime
-
-# Derive average grade from writing, reading, math, grade should be A, B, C, D, F
-def derive(writing, reading, math):
-    # complete code here
-    return grade
-```
-
-[OUTPUT]
-
-```python
-import re  
-import datetime  
-  
-# Derive average grade from writing, reading, math, grade should be A, B, C, D, F  
-def derive(writing, reading, math):  
-    avg_score = (writing + reading + math) / 3  
-    if avg_score >= 90:  
-        grade = 'A'  
-    elif avg_score >= 80:  
-        grade = 'B'  
-    elif avg_score >= 70:  
-        grade = 'C'  
-    elif avg_score >= 60:  
-        grade = 'D'  
-    else:  
-        grade = 'F'  
-    return grade  
+def derive_new_column(df):  
+    df['month'] = df['Date'].apply(lambda x: datetime.datetime.strptime(x, '%m/%d/%Y').month)  
+    return df['month']  
 ```
 '''
 
+
 class PyConceptDeriveAgent(object):
 
-    def __init__(self, client):
+    def __init__(self, client, exec_python_in_subprocess=False):
         self.client = client
+        self.exec_python_in_subprocess = exec_python_in_subprocess
 
     def run(self, input_table, input_fields, output_field, description):
         """derive a new concept based on input table, input fields, and output field name, (and description)
@@ -140,29 +100,24 @@ class PyConceptDeriveAgent(object):
         
         data_summary = generate_data_summary([input_table], include_data_samples=True)
 
-        input_fields_info = [{"name": name, "type": infer_ts_datatype(pd.DataFrame(input_table['rows']), name)} for name in input_fields]
+        objective = {
+            "input_fields": input_fields,
+            "output_field": output_field,
+            "description": description
+        }
         
-        arg_string = ", ".join([f"{field_name_to_ts_variable_name(field['name'])}" for field in input_fields_info])
-        code_template = f"""```python
-import re
-import datetime
-
-#{description}
-def derive({arg_string}):
-    # complete code here
-    return {field_name_to_ts_variable_name(output_field)}
-```
-"""
-
-        user_query = f"[CONTEXT]\n\n{data_summary}\n\n[GOAL]\n\n{description}\n\n[TEMPLATE]\n\n{code_template}\n\n[OUTPUT]\n"
+        user_query = f"[CONTEXT]\n\n{data_summary}\n\n[GOAL]\n\n{objective}\n\n[OUTPUT]\n"
 
         logger.info(user_query)
 
         messages = [{"role":"system", "content": SYSTEM_PROMPT},
                     {"role":"user","content": user_query}]
         
+        time_start = time.time()
         ###### the part that calls open_ai
         response = self.client.get_completion(messages = messages)
+        time_end = time.time()
+        logger.info(f"time taken to get response: {time_end - time_start} seconds")
 
         #log = {'messages': messages, 'response': response.model_dump(mode='json')}
 
@@ -177,11 +132,12 @@ def derive({arg_string}):
             if len(code_blocks) > 0:
                 code_str = code_blocks[-1]
                 try:
-                    result =  py_sandbox.run_derive_data_in_sandbox2020(code_str, input_fields, output_field, input_table['rows'])
+                    result =  py_sandbox.run_derive_concept(code_str, output_field, input_table['rows'], self.exec_python_in_subprocess)
 
                     if result['status'] == 'ok':
-                        new_data = json.loads(result['content'])
-                        result['content'] = new_data
+                        result['content'] = {
+                            'rows': result['content'].to_dict(orient='records'),
+                        }
                     else:
                         print(result['content'])
                     result['code'] = code_str
@@ -196,5 +152,8 @@ def derive({arg_string}):
             result['dialog'] = [*messages, {"role": choice.message.role, "content": choice.message.content}]
             result['agent'] = 'PyConceptDeriveAgent'
             candidates.append(result)
+
+        time_end = time.time()
+        logger.info(f"time taken to get candidates: {time_end - time_start} seconds")
 
         return candidates

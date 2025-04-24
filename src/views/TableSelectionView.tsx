@@ -110,7 +110,7 @@ export const TableSelectionView: React.FC<TableSelectionViewProps> = function Ta
             variant="scrollable"
             value={value}
             onChange={handleChange}
-            aria-label="Vertical tabs example"
+            aria-label="Vertical tabs"
             sx={{ borderRight: 1, borderColor: 'divider', minWidth: 120 }}
         >
             {tabTitiles.map((title, i) => <Tab wrapped key={i} label={title} sx={{textTransform: "none", width: 120}} {...a11yProps(0)} />)}
@@ -284,6 +284,17 @@ export const TableUploadDialog: React.FC<TableUploadDialogProps> = ({ buttonElem
                     file.name.endsWith('.csv') || 
                     file.name.endsWith('.tsv') || 
                     file.name.endsWith('.json')) {
+
+                    // Check if file is larger than 5MB
+                    const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB in bytes
+                    if (file.size > MAX_FILE_SIZE) {
+                        dispatch(dfActions.addMessages({
+                            "timestamp": Date.now(),
+                            "type": "error",
+                            "value": `File ${file.name} is too large (${(file.size / (1024 * 1024)).toFixed(2)}MB), upload it via DATABASE option instead.`
+                        }));
+                        continue; // Skip this file and process the next one
+                    }
                     
                     // Handle text files
                     file.text().then((text) => {
@@ -767,3 +778,4 @@ export const TableCopyDialogV2: React.FC<TableCopyDialogProps> = ({ buttonElemen
         {dialog}
     </>;
 }
+

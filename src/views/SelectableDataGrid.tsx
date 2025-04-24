@@ -12,7 +12,7 @@ import TableRow from '@mui/material/TableRow';
 import { Box } from '@mui/system';
 
 import { useTheme } from '@mui/material/styles';
-import { alpha, Collapse, Divider, Paper, ToggleButton, Tooltip } from "@mui/material";
+import { alpha, Collapse, Divider, Paper, ToggleButton, Tooltip, CircularProgress } from "@mui/material";
 
 import { TSelectableItemProps, createSelectable } from 'react-selectable-fast';
 import { SelectableGroup } from 'react-selectable-fast';
@@ -28,11 +28,17 @@ import _ from 'lodash';
 import { FieldSource } from '../components/ComponentType';
 
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
-import DeleteIcon from '@mui/icons-material/Delete';
 import FileDownloadIcon from '@mui/icons-material/FileDownload';
-import { dfActions, dfSelectors } from '../app/dfSlice';
-import { useDispatch, useSelector } from 'react-redux';
+import CloudQueueIcon from '@mui/icons-material/CloudQueue';
+import CasinoIcon from '@mui/icons-material/Casino';
+import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
+import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
+import Button from '@mui/material/Button';
 import { getUrls } from '../app/utils';
+import Menu from '@mui/material/Menu';
+import MenuItem from '@mui/material/MenuItem';
+import ListItemIcon from '@mui/material/ListItemIcon';
+import ListItemText from '@mui/material/ListItemText';
 
 interface SelectableCellProps {
     align: any;
@@ -110,8 +116,11 @@ export interface ColumnDef {
 }
 
 interface SelectableDataGridProps {
+    tableId: string;
     tableName: string;
     rows: any[];
+    rowCount: number;
+    virtual: boolean;
     columnDefs: ColumnDef[];
     onSelectionFinished: (columns: string[], values: any[]) => void;
     $tableRef: React.RefObject<SelectableGroup>;
@@ -139,10 +148,9 @@ function getComparator<Key extends keyof any>(
         : (a, b) => -descendingComparator(a, b, orderBy);
 }
 
-export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({ rows, tableName, columnDefs, $tableRef, onSelectionFinished }) => {
+export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({ tableId, rows, tableName, columnDefs, $tableRef, onSelectionFinished, rowCount, virtual }) => {
 
     const [footerActionExpand, setFooterActionExpand] = React.useState<boolean>(false);
-    let activeModel = useSelector(dfSelectors.getActiveModel);
     
     const [orderBy, setOrderBy] = React.useState<string | undefined>(undefined);
     const [order, setOrder] = React.useState<'asc' | 'desc'>('asc');
@@ -150,28 +158,29 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({ rows, ta
     const [searchValue, setSearchValue] = React.useState<string>('');
 
     const [selectedCells, setSelectedCells] = React.useState<[number, number][]>([]);
-    const [selectedColumnNames, setSelectedColumnNames] = React.useState<string[]>([]);
 
     let theme = useTheme();
-    let dispatch = useDispatch();
 
+    const [rowsToDisplay, setRowsToDisplay] = React.useState<any[]>(rows);
+    
+    const [isLoading, setIsLoading] = React.useState<boolean>(false);
+    
     React.useEffect(() => {
         // use this to handle cases when the table add new columns/remove new columns etc
         $tableRef.current?.clearSelection();
     }, [columnDefs.length])
 
-    const rowsToDisplay = rows.slice()
-        .sort(getComparator(order, orderBy || "#rowId"))
-        .filter((row: any) => {
-            if (searchValue === '') return true;
-            return columnDefs.map((columnDef: ColumnDef) => (row[columnDef.id] + '').toLowerCase()).join(' ').includes(searchValue.toLowerCase());
-        })
-    //     .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
+    React.useEffect(() => {
+        setRowsToDisplay(rows.slice()
+            .sort(getComparator(order, orderBy || columnDefs[0].id))
+            .filter((row: any) => {
+                if (searchValue === '') return true;
+                return columnDefs.map((columnDef: ColumnDef) => (row[columnDef.id] + '').toLowerCase()).join(' ').includes(searchValue.toLowerCase());
+            })
+        )
+    }, [rows, order, orderBy, searchValue])
 
     const onClickCell = (event: any, rowIndex: number, colIndex: number) => {
-        // console.log('click cell');
-        // console.log(_.without(selectedCells, [rowIndex, colIndex]));
-        // console.log(event);
         for (let i = 0; i < selectedCells.length; i++) {
             const [r, c] = selectedCells[i];
             if (r === rowIndex && c === colIndex) {
@@ -191,14 +200,12 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({ rows, ta
         TableRow: (props: any) => {
             const index = props['data-index'];
             return <TableRow {...props} style={{backgroundColor: index % 2 == 0 ? "rgba(255, 255, 255, 0.05)" : "rgba(0, 0, 0, 0.02)"}}/>
-        }, //
-        //TableRow: TableRow,
+        },
         TableBody: TableBody,
     }
 
     const handleSelectionClear = () => {
         setSelectedCells([]);
-        setSelectedColumnNames([]);
     }
 
     const debouncedSearchHandler = React.useCallback(_.debounce((value: string) => {
@@ -209,19 +216,17 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({ rows, ta
         debouncedSearchHandler(searchText);
     }, [searchText, debouncedSearchHandler]);
 
-
     const handleSelectionFinish = (selected: any[]) => {
         let newSelectedCells = _.uniq(selected.map(x => x.props.indices));
         setSelectedCells(newSelectedCells);
         let values = selected.map(x => x.props.value);
         let columns = _.uniq(selected.map(x => x.props.column.id));
 
-        setSelectedColumnNames(columns);
         onSelectionFinished(columns, values);
     }
 
     let footerActionsItems = 
-        <Box sx={{display: 'flex'}}>
+        <Box sx={{display: 'flex', mr: 1}}>
             <Box key="search-box">
                 <OutlinedInput
                     className="table-search-input"
@@ -254,12 +259,6 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({ rows, ta
                         searchText.length > 0 ? <InputAdornment position="end">
                                     <SearchIcon fontSize='small'/> 
                         </InputAdornment> : ""
-                        // <InputAdornment position="end">
-                        //     {
-                        //         searchText.length > 0 ?
-                        //             <SearchIcon fontSize='small'/> : ""
-                        //     }
-                        // </InputAdornment>
                     }
                     onChange={(event) => {
                         setSearchText(event.target.value);
@@ -269,67 +268,91 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({ rows, ta
                     {`${rowsToDisplay.length} matches`}   
                 </Typography>: ''}
             </Box>
-            {/* <Tooltip key="delete-action" title={`Delete ${tableName}\n(note: all charts and concepts based on this table will be deleted)`}>
-                <IconButton size="small" color="warning" sx={{marginRight: 1}} onClick={() => {
-                    dispatch(dfActions.deleteTable(tableName))
-                }}>
-                    <DeleteIcon/>
-                </IconButton>
-            </Tooltip> */}
-            
-            <Tooltip title="Infer Data Type">
-            <IconButton size="small" color="primary"
-                onClick={() => {
-                        console.log(`[fyi] just sent request to process load data`);
-    
-                        console.log(rows);
-
-                        let message = {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json', },
-                            body: JSON.stringify({
-                                token: Date.now(),
-                                input_data: {name: tableName, rows: rows},
-                                model: activeModel
-                            }),
-                        };
-        
-                         // timeout the request after 20 seconds
-                        const controller = new AbortController()
-                        const timeoutId = setTimeout(() => controller.abort(), 20000)
-    
-                        fetch(getUrls().SERVER_PROCESS_DATA_ON_LOAD, {...message, signal: controller.signal })
-                            .then((response) => response.json())
-                            .then((data) => {
-                                console.log("---model output")
-                                console.log(data);
-    
-                                let status = data["status"];
-                                let codeList: string[] = [];
-    
-                                if (data["status"] == "ok") {
-                                    codeList = data["result"];
-                                    console.log(codeList)
-                                }
-                            }).catch((error) => {
-                            });
-                    }
-                }
-            ><AutoFixNormalIcon /></IconButton></Tooltip>
-            <Divider flexItem  orientation="vertical" sx={{marginRight: 1}}/>
         </Box>
 
-    // @ts-ignore
+    React.useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            const menuEl = document.getElementById('sampling-menu');
+            if (menuEl && menuEl.style.display === 'block') {
+                const isClickInsideMenu = menuEl.contains(event.target as Node);
+                const isClickOnButton = (event.target as Element).closest('[data-sampling-button]') !== null;
+                
+                if (!isClickInsideMenu && !isClickOnButton) {
+                    menuEl.style.display = 'none';
+                }
+            }
+        };
+
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside);
+        };
+    }, []);
+
+    const fetchSortedVirtualData = (columnIds: string[], sortOrder: 'asc' | 'desc') => {
+        // Set loading to true when starting the fetch
+        setIsLoading(true);
+        
+        // Use the SAMPLE_TABLE endpoint with appropriate ordering
+        fetch(getUrls().SAMPLE_TABLE, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                table: tableId,
+                size: 1000,
+                method: sortOrder === 'asc' ? 'head' : 'bottom',
+                order_by_fields: columnIds
+            }),
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                setRowsToDisplay(data.rows);
+            }
+            // Set loading to false when done
+            setIsLoading(false);
+        })
+        .catch(error => {
+            console.error('Error fetching sorted table data:', error);
+            // Ensure loading is set to false even on error
+            setIsLoading(false);
+        });
+    };
+
     return (
         <Box className="table-container table-container-small"
             sx={{
                 width: '100%',
                 height: '100%',
+                position: 'relative',
                 "& .MuiTableCell-root": {
                     fontSize: 12, maxWidth: "120px", padding: "2px 6px", cursor: "default",
                     overflow: "clip", textOverflow: "ellipsis", whiteSpace: "nowrap"
                 }
             }}>
+            {/* Loading Overlay */}
+            {isLoading && (
+                <Box sx={{ 
+                    position: 'absolute', 
+                    top: 0, 
+                    left: 0, 
+                    right: 0,
+                    zIndex: 10, 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    justifyContent: 'center',
+                    backgroundColor: 'rgba(255, 255, 255, 0.7)',
+                    padding: '8px',
+                    height: '100%',
+                    borderTopLeftRadius: '4px',
+                    borderTopRightRadius: '4px'
+                }}>
+                    <CircularProgress size={24} sx={{ mr: 1 }} />
+                    <Typography variant="body2" color="darkgray">Fetching data...</Typography>
+                </Box>
+            )}
             {/* @ts-expect-error */}
             <SelectableGroup
                 ref={$tableRef}
@@ -384,29 +407,43 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({ rows, ta
                                             style={{ padding: 0, minWidth: columnDef.minWidth, width: columnDef.width, }}
                                             sx={{}}
                                         >
-                                            <Box className="data-view-header-container" 
-                                                 sx={{ backgroundColor, borderBottomColor, borderBottomWidth: '2px', borderBottomStyle: 'solid'}}>
-                                                <TableSortLabel
+                                            <Tooltip title={`${columnDef.label}`} >
+                                                <Box className="data-view-header-container" 
+                                                     sx={{ backgroundColor, borderBottomColor, borderBottomWidth: '2px', borderBottomStyle: 'solid'}}>
+                                                    <TableSortLabel
+                                                    className="data-view-header-title"
                                                     sx={{ display: "flex", flexDirection: "row", width: "100%" }}
                                                     active={orderBy === columnDef.id}
                                                     direction={orderBy === columnDef.id ? order : 'asc'}
                                                     onClick={() => {
-                                                        const newOrder = (orderBy === columnDef.id && order === 'asc') ? 'desc' : 'asc';
+                                                        let newOrder: 'asc' | 'desc' = 'asc';
+                                                        let newOrderBy : string | undefined = columnDef.id;
+                                                        if (orderBy === columnDef.id && order === 'asc') {
+                                                            newOrder = 'desc';
+                                                        } else if (orderBy === columnDef.id && order === 'desc') {
+                                                            newOrder = 'asc';
+                                                            newOrderBy = undefined;
+                                                        } else {
+                                                            newOrder = 'asc';
+                                                        }
+
                                                         setOrder(newOrder);
-                                                        setOrderBy(columnDef.id);
+                                                        setOrderBy(newOrderBy);
+                                                        
+                                                        if (virtual) {
+                                                            fetchSortedVirtualData(newOrderBy ? [newOrderBy] : [], newOrder);
+                                                        }
                                                     }}
                                                 >
-                                                    <Box component="span" className="data-view-header-title">
-                                                        <Tooltip title={`${columnDef.dataType} type`} >
-                                                            <span role="img" style={{ fontSize: "inherit", padding: "2px", display: "inline-flex", alignItems: "center" }}>
-                                                                {getIconFromType(columnDef.dataType)}
-                                                            </span>
-                                                        </Tooltip>
-                                                        <Typography className="data-view-header-name">{columnDef.label}</Typography>
-                                                    </Box>
+                                                    <span role="img" style={{ fontSize: "inherit", padding: "2px", display: "inline-flex", alignItems: "center" }}>
+                                                        {getIconFromType(columnDef.dataType)}
+                                                    </span>
+                                                    <Typography className="data-view-header-name">
+                                                        {columnDef.label}
+                                                    </Typography>
                                                 </TableSortLabel>
-
                                             </Box>
+                                            </Tooltip>
                                         </TableCell>
                                     );
                                 })}
@@ -460,8 +497,53 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({ rows, ta
                 <Collapse orientation="horizontal"  in={footerActionExpand}>
                     {footerActionsItems}
                 </Collapse>
-                <Box sx={{display: 'flex', alignItems: 'center',  marginRight: 1}}>
-                    <Tooltip title={`Download ${tableName} as CSV`}>
+                <Box sx={{display: 'flex', alignItems: 'center'}}>
+                    <Typography  className="table-footer-number" sx={{display: 'flex', alignItems: 'center'}}>
+                        {virtual && <CloudQueueIcon sx={{fontSize: 16, mr: 1}}/> }
+                        {virtual ? `${rowCount} rows` : `${rowsToDisplay.length} rows`}
+                    </Typography>
+                    {virtual && (
+                        <>
+                            <Tooltip title="view 1000 random rows from this table">
+                                <IconButton 
+                                    size="small" 
+                                    color="primary" 
+                                    sx={{marginRight: 1}}
+                                    onClick={() => {
+                                        fetch(getUrls().SAMPLE_TABLE, {
+                                            method: 'POST',
+                                            headers: {
+                                                'Content-Type': 'application/json',
+                                            },
+                                            body: JSON.stringify({
+                                                table: tableId,
+                                                size: 1000,
+                                                method: 'random'
+                                            }),
+                                        })
+                                        .then(response => response.json())
+                                        .then(data => {
+                                            if (data.status === 'success') {
+                                                setRowsToDisplay(data.rows);
+                                            }
+                                        })
+                                        .catch(error => {
+                                            console.error('Error sampling table:', error);
+                                        });
+                                    }}
+                                >
+                                    <CasinoIcon sx={{
+                                        fontSize: 18, 
+                                        transition: 'transform 0.5s ease-in-out',
+                                        '&:hover': {
+                                            transform: 'rotate(180deg)'
+                                        }
+                                    }} />
+                                </IconButton>
+                            </Tooltip>
+                        </>
+                    )}
+                    {!virtual && <Tooltip title={`Download ${tableName} as CSV`}>
                         <IconButton size="small" color="primary" sx={{marginRight: 1}}
                             onClick={() => {
                                 // Create CSV content
@@ -489,10 +571,8 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({ rows, ta
                         >
                             <FileDownloadIcon/>
                         </IconButton>
-                    </Tooltip>
-                    <Typography  className="table-footer-number">
-                        {`${rows.length} rows`}
-                    </Typography>
+                    </Tooltip>}
+                    
                 </Box>
             </Paper>
         </Box >

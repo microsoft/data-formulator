@@ -45,14 +45,38 @@ export const createTableFromText = (title: string, text: string): DictTable | un
 
     // Use d3.dsvFormat to create a custom parser that properly handles quoted fields
     // This ensures commas inside quoted fields won't be treated as delimiters
-    const values = isTabSeparated 
-        ? d3.tsvParse(text) 
-        : d3.dsvFormat(',').parse(text, row => {
+    const rows = isTabSeparated 
+        ? d3.tsvParseRows(text) 
+        : d3.dsvFormat(',').parseRows(text, (row, index) => {
             // Process each row to ensure proper type handling
             return row;
           });
     
-    return createTableFromFromObjectArray(title, values, true);
+    // Handle duplicate column names by appending _1, _2, etc.
+    let colNames: string[] = [];
+    for (let i = 0; i < rows[0].length; i++) {
+        let col = rows[0][i];   
+        if (colNames.includes(col)) {
+            let k = 1;
+            while (colNames.includes(`${col}_${k}`)) {
+                k++;
+            }
+            colNames.push(`${col}_${k}`);
+        } else {
+            colNames.push(col);
+        }
+    }
+
+    let values = rows.slice(1);
+    let records = values.map(row => {
+        let record: any = {};
+        for (let i = 0; i < colNames.length; i++) {
+            record[colNames[i]] = row[i];
+        }
+        return record;
+    });
+    
+    return createTableFromFromObjectArray(title, records, true);
 };
 
 export const createTableFromFromObjectArray = (title: string, values: any[], anchored: boolean, derive?: any): DictTable => {

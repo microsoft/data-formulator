@@ -5,11 +5,11 @@ docker
 namedlist
 matplotlib
 flask
-flask-cors
 openai
 azure-identity
 azure-keyvault-secrets
 python-dotenv
 vega_datasets
 litellm
+duckdb
 -e . #also need to install data formulator itself

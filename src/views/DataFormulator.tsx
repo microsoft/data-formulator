@@ -41,6 +41,7 @@ import { DataThread } from './DataThread';
 import dfLogo from '../assets/df-logo.png';
 import exampleImageTable from "../assets/example-image-table.png";
 import { ModelSelectionButton } from './ModelSelectionDialog';
+import { DBTableSelectionDialog } from './DBTableManager';
 
 //type AppProps = ConnectedProps<typeof connector>;
 
@@ -137,7 +138,7 @@ Totals (7 entries)	5	5	5	15
             
             <Typography variant="h4">
                 Load data from
-                <TableSelectionDialog  buttonElement={"Examples"} />, <TableUploadDialog buttonElement={"file"} disabled={false} />, or <TableCopyDialogV2 buttonElement={"clipboard"} disabled={false} /> 
+                <TableSelectionDialog  buttonElement={"Examples"} />, <TableUploadDialog buttonElement={"file"} disabled={false} />, <TableCopyDialogV2 buttonElement={"clipboard"} disabled={false} /> or <DBTableSelectionDialog buttonElement={"Database"} />
             </Typography>
             <Typography sx={{  width: 960, margin: "auto" }} variant="body1">
                 Besides formatted data (csv, tsv or json), you can copy-paste&nbsp;
@@ -167,7 +168,6 @@ Totals (7 entries)	5	5	5	15
                 target="_blank" rel="noopener noreferrer" 
                 href="https://privacy.microsoft.com/en-US/data-privacy-notice">view data privacy notice</Button>
     </Box>;
-
 
     console.log("selected model?")
     console.log(selectedModelId)

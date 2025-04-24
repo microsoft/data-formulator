@@ -58,7 +58,7 @@ function sendEventToSubscribers(action: Action) {
                     let loadDataAction = action as LoadDataAction;
                     let table: undefined | DictTable = undefined;
                     try {
-                        table = createTableFromFromObjectArray(loadDataAction.actionParams.tableName || 'dataset', loadDataAction.actionParams.table);
+                        table = createTableFromFromObjectArray(loadDataAction.actionParams.tableName || 'dataset', loadDataAction.actionParams.table, true);
                     } catch (error) {
                         console.error("ActionQueue: error creating table from message", error);
                     }

@@ -1,4 +1,3 @@
-
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
@@ -8,11 +7,8 @@ import { useSelector, useDispatch } from 'react-redux'
 
 import '../scss/ConceptShelf.scss';
 
-import Prism from 'prismjs'
-import 'prismjs/components/prism-javascript' // Language
+import 'prismjs/components/prism-python' // Language
 import 'prismjs/themes/prism.css'; //Example style, you can use another
-import prettier from "prettier";
-import parserBabel from 'prettier/parser-babel';
 import { useTheme } from '@mui/material/styles';
 
 import {
@@ -34,30 +30,38 @@ import {
     ButtonGroup,
     Tooltip,
     styled,
-    LinearProgress} from '@mui/material';
+    LinearProgress,
+    Dialog,
+    FormControlLabel,
+    DialogActions,
+    DialogTitle,
+    DialogContent,
+    Divider,
+    CircularProgress} from '@mui/material';
 
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 import PrecisionManufacturingIcon from '@mui/icons-material/PrecisionManufacturing';
 import ForkRightIcon from '@mui/icons-material/ForkRight';
 import ZoomInIcon from '@mui/icons-material/ZoomIn';
+import HideSourceIcon from '@mui/icons-material/HideSource';
 
 import AnimateHeight from 'react-animate-height';
 
-import { FieldItem, ConceptTransformation, duplicateField } from '../components/ComponentType';
+import { FieldItem, ConceptTransformation, duplicateField, FieldSource } from '../components/ComponentType';
 
 import {  testType, Type, TypeList } from "../data/types";
 import React from 'react';
 import { DataFormulatorState, dfActions, dfSelectors } from '../app/dfSlice';
-import Editor from 'react-simple-code-editor';
 
-import { DisambiguationDialog, simpleTableView } from './DisambiguationDialog';
 import { getUrls } from '../app/utils';
-import { deriveTransformExamplesV2, getDomains, getIconFromType, processCodeCandidates } from './ViewUtils';
+import { getIconFromType } from './ViewUtils';
 
 
 import _ from 'lodash';
 import { DictTable } from '../components/ComponentType';
+import { CodeBox } from './VisualizationView';
+import { CustomReactTable } from './ReactTable';
 
 export interface ConceptCardProps {
     field: FieldItem,
@@ -77,17 +81,130 @@ export const genFreshDerivedConcept = (parentIDs: string[], tableRef: string) =>
     } as FieldItem
 }
 
+let ConceptReApplyButton: FC<{field: FieldItem, 
+    focusedTable: DictTable, handleLoading: (loading: boolean) => void}> = function ConceptReApplyButton({ field, focusedTable, handleLoading }) {
+    
+    let dispatch = useDispatch();
+
+    let [codePreview, setCodePreview] = useState<string>(field.transform?.code || "");
+    let [tableRowsPreview, setTableRowsPreview] = useState<any[]>([]);
+    let [applicationDialogOpen, setApplicationDialogOpen] = useState<boolean>(false);
+
+    let conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
+    let activeModel = useSelector(dfSelectors.getActiveModel);
+
+    let inputFields = field.transform?.parentIDs.map(pid => {
+        let parentConcept = conceptShelfItems.find(f => f.id == pid) as FieldItem;
+        return {
+            name: parentConcept.name,
+        }
+    })
+
+
+    let handleGeneratePreview = () => {
+        handleLoading(true);
+
+        let requestTimeStamp = Date.now();
+
+        let message = {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', },
+            body: JSON.stringify({  
+                token: requestTimeStamp,
+                description: field.transform?.description || "",
+                input_fields: inputFields,
+                input_data: {name: focusedTable.id, rows: focusedTable.rows},
+                output_name: field.name,
+                model: activeModel
+            }),
+        };
+
+        // timeout the request after 20 seconds
+        const controller = new AbortController()
+        const timeoutId = setTimeout(() => controller.abort(), 20000)
+
+        fetch(getUrls().DERIVE_PY_CONCEPT, {...message, signal: controller.signal })
+            .then((response) => response.json())
+            .then((data) => {
+                console.log("---model output")
+                console.log(data);
+
+                let candidates = data["results"].filter((r: any) => r["status"] == "ok");
+
+                console.log(`[fyi] just received ${candidates.length} candidates`);
+                console.log(candidates);
+
+                if (candidates.length > 0) {
+                    setTableRowsPreview(candidates[0]["content"]['rows']);
+                    setCodePreview(candidates[0]["code"]);
+                    setApplicationDialogOpen(true);
+                }
+                handleLoading(false);    
+            }).catch((error) => {
+                console.log(`[fyi] just received error`);
+                console.log(error);
+                handleLoading(false);
+            });
+    }
+
+    let handleApply = () => {
+        console.log("---apply");
+        console.log(tableRowsPreview);
+        dispatch(dfActions.extendTableWithNewFields({
+            tableId: focusedTable.id,
+            values: tableRowsPreview.map(r => r[field.name]),
+            columnName: field.name,
+            previousName: undefined,
+            parentIDs: field.transform?.parentIDs || []
+        }));
+    }
+
+    let colNames: string[] = tableRowsPreview.length > 0 ? Object.keys(tableRowsPreview[0]) : [];
+    let colDefs = colNames.map(n => ({
+        id: n,
+        label: n,
+        dataType: "string" as Type,
+        source: field.name == n ? "derived" as FieldSource : "original" as FieldSource 
+    }));
+
+    return (
+        <>
+            <Tooltip key="reapply-icon-button" title={`apply to ${focusedTable.displayId}`}>
+                <IconButton size="small" key="reapply-icon-button" color="primary" aria-label="reapply" component="span" onClick={() => { handleGeneratePreview() }}>
+                    <PrecisionManufacturingIcon fontSize="inherit" />
+                </IconButton>
+            </Tooltip>
+            <Dialog open={applicationDialogOpen} onClose={() => { setApplicationDialogOpen(false) }}>
+                <DialogTitle>Preview: apply concept <Typography color="primary" component="span" sx={{ fontSize: "inherit" }}>{field.name}</Typography> to <Typography color="primary" component="span" sx={{ fontSize: "inherit"}}>{focusedTable.displayId}</Typography>
+                </DialogTitle>
+                <DialogContent>
+                    <Typography sx={{ fontSize: 12, marginBottom: 1 }}>transformation code</Typography>
+                    <CodeBox code={codePreview.trim()} language="python" />
+                    <Typography sx={{ fontSize: 12, marginBottom: 1 }}>preview of the applied concept</Typography>
+                    <CustomReactTable rows={tableRowsPreview} columnDefs={colDefs} rowsPerPageNum={15} compact={true} maxCellWidth={100} />
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => { setApplicationDialogOpen(false), setTableRowsPreview([]), setCodePreview("") }}>Cancel</Button>
+                    <Button onClick={() => { 
+                        setApplicationDialogOpen(false), 
+                        setTableRowsPreview([]), 
+                        setCodePreview(""),
+                        handleApply()
+                    }}>Apply</Button>
+                </DialogActions>
+            </Dialog>
+        </>
+    )
+}
 export const ConceptCard: FC<ConceptCardProps> = function ConceptCard({ field }) {
     // concept cards are draggable cards that can be dropped into encoding shelf
-    
     let theme = useTheme();
 
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
-    let tables = useSelector((state: DataFormulatorState) => state.tables);
-    let charts = useSelector((state: DataFormulatorState) => state.charts);
-    let focusedChartId = useSelector((state: DataFormulatorState) => state.focusedChartId);
-    let focusedChart = charts.find(c => c.id == focusedChartId);
-    let focusedChartRefTable = tables.find(t => t.id == focusedChart?.tableRef);
+    const tables = useSelector((state: DataFormulatorState) => state.tables);
+    let focusedTableId = useSelector((state: DataFormulatorState) => state.focusedTableId);
+    
+    let focusedTable = tables.find(t => t.id == focusedTableId);
 
     const [editMode, setEditMode] = useState(field.name == "" ? true : false);
 
@@ -104,16 +221,12 @@ export const ConceptCard: FC<ConceptCardProps> = function ConceptCard({ field })
         }),
     }));
 
-    let notInFocusedTable : boolean;
-    if (field.source == "derived") {
-        let parentConceptNames = (field.transform as ConceptTransformation)
-                .parentIDs.map((parentID) => conceptShelfItems.find(c => c.id == parentID) as FieldItem).map(f => f.name);
-        notInFocusedTable = parentConceptNames.some(name => !focusedChartRefTable?.names.includes(name));
-    } else {
-        notInFocusedTable = !focusedChartRefTable?.names.includes(field.name);
+    let [isLoading, setIsLoading] = useState(false);
+    let handleLoading = (loading: boolean) => {
+        setIsLoading(loading);
     }
     
-    let opacity = isDragging ? 0.3 :(notInFocusedTable ? 0.65 : 1);
+    let opacity = isDragging ? 0.3 : 1;
     let fontStyle = "inherit";
     let border = "hidden";
 
@@ -122,7 +235,10 @@ export const ConceptCard: FC<ConceptCardProps> = function ConceptCard({ field })
         <Tooltip key="edit-icon-button" title="edit">
             <IconButton size="small" key="edit-icon-button"
                 color="primary" aria-label="Edit" component="span"
-                onClick={() => { setEditMode(!editMode) }}>
+                onClick={() => { 
+                    setEditMode(!editMode) 
+                    dispatch(dfActions.setFocusedTable(field.tableRef));
+                }}>
                 <EditIcon fontSize="inherit" />
             </IconButton>
         </Tooltip>);
@@ -131,6 +247,7 @@ export const ConceptCard: FC<ConceptCardProps> = function ConceptCard({ field })
         <Tooltip key="derive-icon-button" title="derive new concept">
             <IconButton size="small"
                 key="derive-icon-button"
+                disabled={tables.find(t => t.id == field.tableRef)?.virtual != undefined}
                 color="primary" aria-label="derive new concept" component="span" onClick={() => {
                     if (conceptShelfItems.filter(f => f.source == "derived" && f.name == ""
                         && f.transform?.parentIDs.includes(field.id)).length > 0) {
@@ -146,10 +263,43 @@ export const ConceptCard: FC<ConceptCardProps> = function ConceptCard({ field })
     let deleteOption = !(field.source == "original") && <IconButton size="small"
             key="delete-icon-button"
             color="primary" aria-label="Delete" component="span"
-            disabled={conceptShelfItems.filter(f => f.source == "derived" && f.transform?.parentIDs.includes(field.id)).length > 0}
+            disabled={
+                conceptShelfItems.filter(f => f.source == "derived" && f.transform?.parentIDs.includes(field.id)).length > 0
+                || focusedTableId != field.tableRef
+            }
             onClick={() => { handleDeleteConcept(field.id); }}>
             <DeleteIcon fontSize="inherit" />
         </IconButton>;
+
+    let reApplyOption = focusedTable && field.source == "derived" 
+        && focusedTable.id != field.tableRef 
+        && !focusedTable.names.includes(field.name)
+        && field.transform?.parentIDs.every(pid => focusedTable.names.includes((conceptShelfItems.find(f => f.id == pid) as FieldItem).name)) 
+        && (
+            <Tooltip key="reapply-icon-button" title={`apply to ${focusedTable.displayId}`}>
+                <ConceptReApplyButton field={field} focusedTable={focusedTable} handleLoading={handleLoading} />
+            </Tooltip>
+        );
+
+    let cleanupOption = focusedTable && field.source == "derived" && focusedTableId != field.tableRef 
+        && field.transform?.parentIDs.every(pid => focusedTable.names.includes((conceptShelfItems.find(f => f.id == pid) as FieldItem).name)) && focusedTable.names.includes(field.name) && (
+        <Tooltip key="cleanup-icon-button" title={
+                <Typography component="span" sx={{ fontSize: "inherit" }}>remove <b>{field.name}</b> from <b>{focusedTable.displayId}</b></Typography>}>
+            <IconButton size="small" key="cleanup-icon-button" color="primary" aria-label="cleanup" component="span" onClick={() => {
+                dispatch(dfActions.removeDerivedField({
+                    tableId: focusedTableId as string,
+                    fieldId: field.id
+                }));
+            }}>
+                <HideSourceIcon fontSize="inherit" />
+            </IconButton>
+        </Tooltip>
+    );
+
+    let specialOptions = [
+        reApplyOption,
+        cleanupOption,
+    ]
 
     let cardHeaderOptions = [
         deleteOption,
@@ -159,7 +309,7 @@ export const ConceptCard: FC<ConceptCardProps> = function ConceptCard({ field })
 
     const editModeCard = field.source == "derived" && (
         <CardContent className="draggable-card-body-edit-mode">
-            <DerivedConceptForm concept={field} handleUpdateConcept={handleUpdateConcept}
+            <DerivedConceptFormV2 concept={field} handleUpdateConcept={handleUpdateConcept}
                 handleDeleteConcept={handleDeleteConcept}
                 turnOffEditMode={() => { setEditMode(false); }} />
         </CardContent>
@@ -231,11 +381,14 @@ export const ConceptCard: FC<ConceptCardProps> = function ConceptCard({ field })
     let boxShadow = editMode ? "0 2px 4px 0 rgb(0 0 0 / 20%), 0 2px 4px 0 rgb(0 0 0 / 19%)" : "";
 
     let cardComponent = (
-        <Card sx={{ minWidth: 60, backgroundColor }}
+        <Card sx={{ minWidth: 60, backgroundColor, position: "relative" }}
             variant="outlined"
-            style={{ opacity, border, boxShadow, fontStyle, marginLeft: field.source == "derived" ? '10px' : '3px' }}
+            style={{ opacity, border, boxShadow, fontStyle, marginLeft: '3px' }}
             color="secondary"
             className={`data-field-list-item draggable-card `}>
+            {isLoading ? <Box sx={{ position: "absolute", zIndex: 20, height: "100%", width: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <LinearProgress sx={{ width: "100%", height: "100%", opacity: 0.2 }} />
+            </Box> : ""}
             <Box ref={field.name ? drag : undefined} sx={{ cursor: cursorStyle }}
                  className={`draggable-card-header draggable-card-inner ${field.source}`}>
                 <Typography className="draggable-card-title" sx={{ fontSize: 13, height: 28, width: "100%" }} component={'span'} gutterBottom>
@@ -244,7 +397,12 @@ export const ConceptCard: FC<ConceptCardProps> = function ConceptCard({ field })
                     {field.semanticType ? <Typography sx={{fontSize: "xx-small", marginLeft: "6px", fontStyle: 'italic', whiteSpace: 'nowrap'}}>-- {field.semanticType}</Typography> : ""}
                     {/* {field.source == "custom" ? exampleToComponent(field.domain.values, 3) : ""} */}
                 </Typography>
-                <Box className='draggable-card-action-button' sx={{ position: "absolute", right: 1, background: 'rgba(255, 255, 255, 0.95)' }}>{cardHeaderOptions}</Box>
+                
+                <Box sx={{ position: "absolute", right: 0, display: "flex", flexDirection: "row", alignItems: "center" }}>
+                    <Box className='draggable-card-action-button' sx={{ background: 'rgba(255, 255, 255, 0.95)'}}>{cardHeaderOptions}</Box>
+                    {reApplyOption || cleanupOption ? <Divider flexItem orientation="vertical" sx={{ my: 1, padding: 0 }} /> : ""}
+                    <Box>{specialOptions}</Box>
+                </Box>
             </Box>
             <AnimateHeight
                 id="example-panel"
@@ -259,12 +417,6 @@ export const ConceptCard: FC<ConceptCardProps> = function ConceptCard({ field })
     return cardComponent;
 }
 
-let formatFunc = (jsCode: string) => prettier.format(jsCode, {
-    parser: "babel",
-    plugins: [parserBabel],
-    printWidth: 40
-}).trim();
-
 export interface ConceptFormProps {
     concept: FieldItem,
     handleUpdateConcept: (conept: FieldItem) => void,
@@ -272,65 +424,15 @@ export interface ConceptFormProps {
     turnOffEditMode?: () => void,
 }
 
-export const CodeEditor: FC<{ code: string; handleSaveCode: (code: string) => void }> = ({ code, handleSaveCode }) => {
-
-    const [localCode, setLocalCode] = useState(code);
-
-    useEffect(() => {
-        setLocalCode(code)
-    }, [code])
-
-    return <Box>
-        <Editor
-            value={localCode}
-            onValueChange={(tempCode: string) => {
-                setLocalCode(tempCode);
-            }}
-            highlight={code => Prism.highlight(code, Prism.languages.javascript, 'javascript')}
-            padding={10}
-            style={{
-                fontFamily: '"Fira code", "Fira Mono", monospace',
-                fontSize: 10,
-                paddingBottom: '24px'
-            }}
-        />
-        <ButtonGroup size="small" disabled={code == localCode} sx={{
-            fontSize: 12, position: "absolute", right: "4px", bottom: "8px", backgroundColor: "rgb(242,249,253)",
-            "& button": { textTransform: "none", padding: "2px 4px" }, flexGrow: 1, justifyContent: "right"
-        }}>
-            <Button
-                variant="text"
-                color="primary" sx={{
-                    "&:hover": { backgroundColor: "rgba(2, 136, 209, 0.3)" }
-                }}
-                size="small" onClick={() => { setLocalCode(code); }}>
-                undo
-            </Button>
-            <Button
-                variant={localCode != code ? "contained" : "text"}
-                color="primary" sx={{
-                    "&:hover": { backgroundColor: "rgba(2, 136, 209, 0.3)" }
-                }}
-                size="small" onClick={() => { handleSaveCode(localCode); }}>
-                save code edits
-            </Button>
-        </ButtonGroup>
-    </Box>
-}
-
-
-export const DerivedConceptForm: FC<ConceptFormProps> = function DerivedConceptForm({ concept, handleUpdateConcept, handleDeleteConcept, turnOffEditMode }) {
+export const DerivedConceptFormV2: FC<ConceptFormProps> = function DerivedConceptFormV2({ concept, handleUpdateConcept, handleDeleteConcept, turnOffEditMode }) {
 
     let theme = useTheme();
+    // use tables for infer domains
+    let tables = useSelector((state: DataFormulatorState) => state.tables);
 
     let conceptTransform = concept.transform as ConceptTransformation;
 
-    useEffect(() => {
-        setTransformCode(formatFunc(conceptTransform.code || ""))
-        setCodeCandidates([formatFunc(conceptTransform.code || "")])
-    }, [conceptTransform.code])
-
-    let formattedCode = formatFunc(conceptTransform.code || "");
+    let formattedCode = conceptTransform.code;
 
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
 
@@ -338,39 +440,21 @@ export const DerivedConceptForm: FC<ConceptFormProps> = function DerivedConceptF
     const handleNameChange = (event: React.ChangeEvent<HTMLInputElement>) => { setName(event.target.value); };
 
     const [dtype, setDtype] = useState(concept.name == "" ? "auto" : concept.type as string);
-    const handleDtypeChange = (event: SelectChangeEvent) => { setDtype(event.target.value); };
-
 
     // states related to transformation functions, they are only valid when the type is "derived"
     const [transformCode, setTransformCode] = useState<string>(formattedCode);
     const [transformDesc, setTransformDesc] = useState<string>(conceptTransform.description || "");
     const [transformParentIDs, setTransformParentIDs] = useState<string[]>(conceptTransform.parentIDs || []);
-    const [transformResult, setTransformResult] = useState<[any[], any][]>([]);
 
-    // use tables for infer domains
-    let tables = useSelector((state: DataFormulatorState) => state.tables);
+    const [derivedFieldRef, setDerivedFieldRef] = useState<string | undefined>(undefined);
+    const [tempExtTable, setTempExtTable] = useState<{tableRef: string, rows: any[]} | undefined>(undefined);
 
-    //const tables = [(baseTable as DictTable).rows, ...synthOutputs.map(t => t.data), ...savedCharts.map(t => t.data)]
-
+    const [codeDialogOpen, setCodeDialogOpen] = useState<boolean>(false);
 
     // if these two fields are changed from other places, update their values
     useEffect(() => { setDtype(concept.type) }, [concept.type]);
 
     let dispatch = useDispatch();
-
-    let [dialogOpen, setDialogOpen] = useState<boolean>(false);
-    let [codeCandidates, setCodeCandidates] = useState<string[]>([]);
-
-    let NUM_SAVED_TRANSFORM_RESULTS = 150;
-
-    useEffect(() => {
-        if (concept.source == "derived") {
-            let result = deriveTransformExamplesV2(transformCode, transformParentIDs, NUM_SAVED_TRANSFORM_RESULTS, conceptShelfItems, tables);
-            setTransformResult(result);
-            // automatically set the data type (the user can still change it)
-            setDtype(testType([...result.map(t => t[1])]));
-        }
-    }, [transformCode]);
 
     const [codeGenInProgress, setCodeGenInProgress] = useState<boolean>(false);
 
@@ -427,7 +511,7 @@ export const DerivedConceptForm: FC<ConceptFormProps> = function DerivedConceptF
                                 sx={{ 
                                     color: chipColor,
                                     borderColor: chipColor, 
-                                    padding: '2px 4px',  margin: '1px 2px', borderRadius: '10px', height: '100%', 
+                                    padding: '0px',  margin: '1px 2px', borderRadius: '4px', height: '100%', 
                                         '& .MuiChip-label': { overflowWrap: 'break-word', whiteSpace: 'normal', textOverflow: 'clip',
                                         fontSize: 11}}} label={conceptShelfItems.find(f => f.id == conceptID)?.name} />
                         })}
@@ -449,24 +533,33 @@ export const DerivedConceptForm: FC<ConceptFormProps> = function DerivedConceptF
         </FormControl>,
     ]
 
-
     let parentConcepts = transformParentIDs.map((parentID) => conceptShelfItems.filter(c => c.id == parentID)[0]);
     let viewExamples: any = "";
 
     //let transformResult = deriveTransformResult(transformCode, parentConcept.domain.values.slice(0, 5));
-    if (transformCode && transformResult.length > 0) {
+    if (transformCode && tempExtTable) {
 
         let colNames: [string[], string] = [parentConcepts.map(f => f.name), name];
+        let colDefs = [...colNames[0], colNames[1]].map(n => ({
+            id: n,
+            label: n,
+            dataType: "string" as Type,
+            source: "original" as FieldSource
+        }));
 
         viewExamples = (<Box key="viewexample--box" width="100%" sx={{ position: "relative", }}>
-            <InputLabel shrink>illustration of the generated function</InputLabel>
             <Box className="GroupItems" sx={{ padding: "0px 0px 6px 0px", margin: 0 }}>
-                {simpleTableView(transformResult, colNames, conceptShelfItems, 5)}
+                <CustomReactTable rows={tempExtTable.rows.map(r => {
+                    let newRow = structuredClone(r);
+                    if (derivedFieldRef && derivedFieldRef != name) {
+                        newRow[name] = r[derivedFieldRef];
+                        delete newRow[derivedFieldRef];
+                    }
+                    return newRow;
+                }).slice(0, 5)} columnDefs={colDefs} rowsPerPageNum={5} compact={true} maxCellWidth={100} />
             </Box>
         </Box>)
     }
-
-    //let codeArea = codeGenInProgress ? <LinearProgress sx={{ color: 'grey.500' }} color="inherit"/> : [codeEditor, viewExamples];
 
     let codeArea = (
         <Box key="code-area-box" sx={{
@@ -479,34 +572,42 @@ export const DerivedConceptForm: FC<ConceptFormProps> = function DerivedConceptF
             }}>
                 <LinearProgress sx={{ width: "100%", height: "100%", opacity: 0.05 }} />
             </Box> : ''}
-            {viewExamples}
+            <Box sx={{ display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
+                {viewExamples ? <Typography style={{ fontSize: "9px", color: "gray" }}>result on sample data </Typography> : ""}
+                {viewExamples}
+                {transformCode ? <Typography style={{ fontSize: "9px", color: "gray" }}>transformation code</Typography> : ""}
+                {transformCode ? <CodeBox code={transformCode.trim()} language="python" fontSize={9}/> : ""}
+            </Box>
         </Box>
     )
 
-    let handleProcessResults = (status: string, rawCodeList: string[]) : string[] => {
+    let handleProcessResults = (status: string, results: {code: string, content: any}[]) : void => {
         setCodeGenInProgress(false);
         if (status == "ok") {
 
-            let candidates = processCodeCandidates(rawCodeList, transformParentIDs, conceptShelfItems, tables)
-            let candidate = candidates[0];
+            console.log(`[fyi] just received results`);
+            console.log(results);
 
-            setCodeCandidates(candidates);
-            setTransformCode(candidate);
+            if (results.length > 0) {
+                let candidate = results[0];
+                setTransformCode(candidate.code);
+                setTempExtTable({
+                    tableRef: parentConcepts[0].tableRef,
+                    rows: candidate.content.rows, 
+                });
 
-            if (candidates.length > 0) {
                 dispatch(dfActions.addMessages({
                     "timestamp": Date.now(),
                     "type": "success",
-                    "value": `Find ${candidates.length} candidate transformations for concept "${name}".`
+                    "value": `Find ${results.length} candidate transformations for concept "${name}".`
                 }));
             } else {
                 dispatch(dfActions.addMessages({
                     "timestamp": Date.now(),
                     "type": "info",
-                    "value": `Find ${candidates.length} candidate transformations for concept "${name}", please try again.`
+                    "value": `Find ${results.length} candidate transformations for concept "${name}", please try again.`
                 }));
             }
-            return candidates;
         } else {
             // TODO: add warnings to show the user
             setTransformCode("");
@@ -515,63 +616,43 @@ export const DerivedConceptForm: FC<ConceptFormProps> = function DerivedConceptF
                 "type": "error",
                 "value": "unable to generate the desired transformation, please try again."
             }));
-            return [];
         }
     }
 
-    let inputFieldsInfo = parentConcepts.map(c => {
-        let values = [];
-        if (c.source == "derived") {
-            // run the transformation function to obtain the results
-            let transform = c.transform as ConceptTransformation;
-            values = deriveTransformExamplesV2(transform.code, transform.parentIDs, 5, conceptShelfItems, tables).map(t => t[1]);
-        } else {
-            values = getDomains(c, tables).map(d => d.slice(0, 5)).flat() //c.domain.values.slice(0, 5);
-        }
+    let inputFields = parentConcepts.map(c => {
         return {
             name: c.name,
-            type: values.length > 0 ? (typeof values[Math.floor((values.length  - 1) / 2)]) : "string",
-            values
         }
     })
 
     // pick the dataset with the right parents  
-    let inputDataCandidates = tables.filter(t => parentConcepts.every(c => t.names.includes(c.name)));
-    let inputData = inputDataCandidates.length > 0 ? inputDataCandidates[0] : tables[0];
+    let inputTable = tables.find(t => parentConcepts[0].tableRef == t.id) || tables[0];
+
+    let inputExtTable = {
+        name: inputTable.id,
+        rows: inputTable.rows
+    };
+
+    let codeDialogBox = <PyCodexDialogBox 
+        key="code-dialog-box"
+        inputData={inputExtTable}
+        inputFields={inputFields}
+        initialDescription={transformDesc}
+        outputName={name}
+        handleProcessResults={handleProcessResults}
+        callWhenSubmit={(desc: string) => {
+            setTransformDesc(desc);
+            setDerivedFieldRef(name);
+            setCodeGenInProgress(true);
+        }}
+        size={'small'}
+    />
 
     cardBottomComponents = [
-        <CodexDialogBox 
-            key="code-dialog-box"
-            inputData={inputData}
-            inputFieldsInfo={inputFieldsInfo}
-            initialDescription={transformDesc}
-            outputName={name}
-            handleProcessResults={handleProcessResults}
-            callWhenSubmit={(desc: string) => {
-                setTransformDesc(desc);
-                setCodeCandidates([]);
-                setCodeGenInProgress(true);
-            }}
-            size={'small'}
-        />,
+        codeDialogBox,
         <Box key="codearea-container" width="100%">
             {codeArea}
-        </Box>,
-        <IconButton key="tune-icon" size="small" color="primary"
-            disabled={codeCandidates.length == 0 || codeGenInProgress}
-            onClick={() => { setDialogOpen(true) }}>
-            <Tooltip title={`inspect transformation code`}>
-                <ZoomInIcon />
-            </Tooltip>
-        </IconButton>,
-        <DisambiguationDialog
-            key="disambiguation-dialog"
-            conceptName={name} parentIDs={transformParentIDs} conceptShelfItems={conceptShelfItems}
-            open={dialogOpen} transformDesc={transformDesc}
-            codeCandidates={codeCandidates}
-            handleUpdate={(code, desc, closeDialog) => { setTransformCode(code); setTransformDesc(desc); setDialogOpen(!closeDialog); }}
-            onClose={() => { setDialogOpen(false) }}
-        />
+        </Box>
     ]
 
     const checkDerivedConceptDiff = () => {
@@ -590,9 +671,6 @@ export const DerivedConceptForm: FC<ConceptFormProps> = function DerivedConceptF
         if (transformCode == "") {
             saveDisabledMsg.push("transformation is not specified")
         }
-        if (transformResult.filter(entry => entry[1] == undefined).length > 0) {
-            //saveDisabledMsg.push("transformation unsuccessful on some inputs");
-        }
     }
 
     return (
@@ -604,6 +682,47 @@ export const DerivedConceptForm: FC<ConceptFormProps> = function DerivedConceptF
                 {cardTopComponents}
                 {cardBottomComponents}
                 <ButtonGroup size="small" sx={{ "& button": { textTransform: "none", padding: "2px 4px", marginLeft: "4px" }, flexGrow: 1, justifyContent: "right" }}>
+                    <IconButton onClick={() => { setCodeDialogOpen(true); }}>
+                        <ZoomInIcon fontSize="inherit" />
+                    </IconButton>
+                    <Dialog open={codeDialogOpen} onClose={() => { setCodeDialogOpen(false); }}>
+                        <DialogTitle sx={{maxWidth: 800}}>
+                            Transformations from <Typography component="span" variant="h6" color="secondary">{parentConcepts.map(c => c.name).join(", ")}
+                            </Typography> to <Typography component="span" variant="h6" color="primary">{name}</Typography></DialogTitle>
+                        <DialogContent>
+                            {codeDialogBox}
+                            <Card sx={{position: "relative", minWidth: "280px", maxWidth: "600px", display: "flex",  flexGrow: 1, margin: "10px",
+                                border: "2px solid rgb(2 136 209 / 0.7)"}}>
+                                {codeGenInProgress ? <Box sx={{
+                                    position: "absolute", height: "100%", width: "100%", zIndex: 20,
+                                    backgroundColor: "rgba(243, 243, 243, 0.8)", display: "flex", alignItems: "center"
+                                }}>
+                                    <LinearProgress sx={{ width: "100%", height: "100%", opacity: 0.05 }} />
+                                </Box> : ''}
+                                <CardContent sx={{display: "flex", flexDirection: "column", flexGrow: 1, overflow: "clip", maxHeight: 800}}>
+                                    <Box width="100%" sx={{}}>
+                                        <Box className="GroupHeader">
+                                            <Typography style={{ fontSize: "12px" }}>transformation result on sample data </Typography>
+                                        </Box>
+                                        <Box className="GroupItems" sx={{padding: "0px 10px", margin: 0}}>
+                                            <Box sx={{maxHeight: 300, minWidth: '200px', width: "100%", overflow: "auto", flexGrow: 1,fontSize: 10 }}>
+                                                {viewExamples}
+                                            </Box>
+                                        </Box>
+                                    </Box>
+                                    <Box className="GroupHeader" sx={{marginTop: 1}}>
+                                        <Typography style={{ fontSize: "12px" }}>transformation code</Typography>
+                                    </Box>
+                                    <Box sx={{maxHeight: 280, width: "100%", overflow: "auto", flexGrow: 1 }}>
+                                        <CodeBox code={transformCode.trim()} language="python" fontSize={9}/>
+                                    </Box>
+                                </CardContent>
+                            </Card>
+                        </DialogContent>
+                        <DialogActions>
+                            <Button onClick={() => { setCodeDialogOpen(false); }}>Ok</Button>
+                        </DialogActions>
+                    </Dialog>
                     <IconButton size="small"
                         color="primary" aria-label="Delete" component="span"
                         disabled={conceptShelfItems.filter(f => f.source == "derived" && f.transform?.parentIDs.includes(concept.id)).length > 0}
@@ -636,6 +755,16 @@ export const DerivedConceptForm: FC<ConceptFormProps> = function DerivedConceptF
                               code: transformCode, 
                               description: transformDesc } as ConceptTransformation : undefined;
 
+                        if (tempExtTable) {
+                            dispatch(dfActions.extendTableWithNewFields({
+                                tableId: tempExtTable.tableRef,
+                                values: tempExtTable.rows.map(r => r[derivedFieldRef || name]),
+                                columnName: name,
+                                previousName: concept.name,
+                                parentIDs: transformParentIDs
+                            }));
+                        }
+
                         if (turnOffEditMode) {
                             turnOffEditMode();
                         }
@@ -653,24 +782,25 @@ export const DerivedConceptForm: FC<ConceptFormProps> = function DerivedConceptF
 
 
 export interface CodexDialogBoxProps {
-    inputData: DictTable,
+    inputData: {name: string, rows: any[]},
     outputName: string,
-    inputFieldsInfo: {name: string, type: string, values: any[]}[],
+    inputFields: {name: string}[],
     initialDescription: string,
     callWhenSubmit: (desc: string) => void,
-    handleProcessResults: (status: string, codeList: string[]) => string[], // return processed cnadidates for the ease of logging
+    handleProcessResults: (status: string, results: {code: string, content: any[]}[]) => void, // return processed cnadidates for the ease of logging
     size: "large" | "small",
 }
 
-export const CodexDialogBox: FC<CodexDialogBoxProps> = function ({ 
-    initialDescription, inputFieldsInfo, inputData, outputName, callWhenSubmit, handleProcessResults, size="small" }) {
+
+export const PyCodexDialogBox: FC<CodexDialogBoxProps> = function ({ 
+    initialDescription, inputFields, inputData, outputName, callWhenSubmit, handleProcessResults, size="small" }) {
 
     let activeModel = useSelector(dfSelectors.getActiveModel);
 
     let [description, setDescription] = useState(initialDescription);
     let [requestTimeStamp, setRequestTimeStamp] = useState<number>(0);
 
-    let defaultInstruction = `Derive ${outputName} from ${inputFieldsInfo.map(f => f.name).join(", ")}`;
+    let defaultInstruction = `Derive ${outputName} from ${inputFields.map(f => f.name).join(", ")}`;
 
     let formulateButton = <Tooltip title="Derived the new concept">
         <IconButton size={size}
@@ -689,8 +819,8 @@ export const CodexDialogBox: FC<CodexDialogBoxProps> = function ({
                     body: JSON.stringify({
                         token: requestTimeStamp,
                         description: description,
-                        input_fields: inputFieldsInfo,
-                        input_data: {name: inputData['id'], rows: inputData['rows']},
+                        input_fields: inputFields,
+                        input_data: inputData,
                         output_name: outputName,
                         model: activeModel
                     }),
@@ -702,20 +832,21 @@ export const CodexDialogBox: FC<CodexDialogBoxProps> = function ({
                 const controller = new AbortController()
                 const timeoutId = setTimeout(() => controller.abort(), 20000)
 
-                fetch(getUrls().DERIVE_CONCEPT_URL, {...message, signal: controller.signal })
+                fetch(getUrls().DERIVE_PY_CONCEPT, {...message, signal: controller.signal })
                     .then((response) => response.json())
                     .then((data) => {
                         console.log("---model output")
                         console.log(data);
 
-                        let status = data["status"];
-                        let codeList: string[] = [];
+                        let candidates = data["results"].filter((r: any) => r["status"] == "ok");
 
-                        if (data["status"] == "ok" && data["token"] == requestTimeStamp) {
-                            codeList = data["result"] as string[];
-                        }
-                        handleProcessResults(status, codeList);
+                        console.log(`[fyi] just received ${candidates.length} candidates`);
+                        console.log(candidates);
+
+                        handleProcessResults(data["status"], candidates);
                     }).catch((error) => {
+                        console.log(`[fyi] just received error`);
+                        console.log(error);
                         handleProcessResults("error", []);
                     });
             }}>
@@ -723,7 +854,8 @@ export const CodexDialogBox: FC<CodexDialogBoxProps> = function ({
         </IconButton>
     </Tooltip>
 
-    let textBox = <Box key="interaction-comp" width='100%' sx={{ display: 'flex' }}>
+    let textBox = <Box key="interaction-comp" width='100%' sx={{ display: 'flex', flexDirection: "column" }}>
+        <Typography style={{ fontSize: "9px", color: "gray" }}>transformation prompt</Typography>
         <TextField 
             size="small"
             sx={{fontSize: 12}}
@@ -748,7 +880,7 @@ export const CodexDialogBox: FC<CodexDialogBoxProps> = function ({
             }}
             value={description}
             placeholder={defaultInstruction} onChange={(event: any) => { setDescription(event.target.value) }}
-            variant="standard"  label={"transformation prompt"} 
+            variant="standard"  
         />
     </Box>
 

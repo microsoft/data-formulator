@@ -26,7 +26,7 @@ import { VegaLite } from 'react-vega'
 import '../scss/VisualizationView.scss';
 import { useDispatch, useSelector } from 'react-redux';
 import { DataFormulatorState, dfActions } from '../app/dfSlice';
-import { assembleVegaChart, baseTableToExtTable, getTriggers } from '../app/utils';
+import { assembleVegaChart, getTriggers } from '../app/utils';
 import { Chart, DictTable, EncodingItem, Trigger } from "../components/ComponentType";
 
 import DeleteIcon from '@mui/icons-material/Delete';
@@ -41,17 +41,17 @@ import CheckIcon from '@mui/icons-material/Check';
 
 import _ from 'lodash';
 import { getChartTemplate } from '../components/ChartTemplates';
-import { findBaseFields } from './ViewUtils';
 
 import 'prismjs/components/prism-python' // Language
 import 'prismjs/components/prism-typescript' // Language
 import 'prismjs/themes/prism.css'; //Example style, you can use another
 
-import { chartAvailabilityCheck, generateChartSkeleton, getDataTable } from './VisualizationView';
+import { checkChartAvailability, generateChartSkeleton, getDataTable } from './VisualizationView';
 import { TriggerCard } from './EncodingShelfCard';
 
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
+import CloudQueueIcon from '@mui/icons-material/CloudQueue';
 
 let buildChartCard = (chartElement: { tableId: string, chartId: string, element: any },
     focusedChartId?: string) => {
@@ -108,7 +108,7 @@ const EditableTableName: FC<{
                         ...nonEditingSx,
                         fontSize: 'inherit',
                         minWidth: '60px',
-                        maxWidth: '100px',
+                        maxWidth: '90px',
                         wordWrap: 'break-word',
                         whiteSpace: 'normal',
                         ml: 0.25,
@@ -157,7 +157,7 @@ const EditableTableName: FC<{
                         padding: 0,
                         '& input': {
                             padding: '2px 24px 2px 8px',
-                            width: '80px',
+                            width: '64px',
                         }
                     }
                 }}
@@ -353,6 +353,14 @@ let SingleThreadView: FC<{
             // only charts without dependency can be deleted
             let tableDeleteEnabled = !tables.some(t => t.derive?.trigger.tableId == tableId);
 
+            let tableCardIcon =  ( table?.anchored ? 
+                <AnchorIcon sx={{ 
+                    fontSize: tableId === focusedTableId ? 20 : 16,
+                    color: tableId === focusedTableId ? theme.palette.primary.main : 'rgba(0,0,0,0.5)',
+                    fontWeight: tableId === focusedTableId ? 'bold' : 'normal',
+                }} /> : 
+                <TableRowsIcon sx={{ fontSize: 16 }} />)
+
             let regularTableBox = <Box ref={relevantCharts.some(c => c.chartId == focusedChartId) ? scrollRef : null} 
                 sx={{ padding: '0px' }}>
                 <Card className={`data-thread-card ${selectedClassName}`} variant="outlined"
@@ -411,19 +419,13 @@ let SingleThreadView: FC<{
                                             event.stopPropagation();
                                             dispatch(dfActions.updateTableAnchored({tableId: tableId, anchored: !table?.anchored}));
                                         }}>
-                                            {table?.anchored ? 
-                                                <AnchorIcon sx={{ 
-                                                    fontSize: tableId === focusedTableId ? 20 : 16,
-                                                    color: tableId === focusedTableId ? theme.palette.primary.main : 'rgba(0,0,0,0.5)',
-                                                    fontWeight: tableId === focusedTableId ? 'bold' : 'normal',
-                                                }} /> : 
-                                                <TableRowsIcon sx={{ fontSize: 16 }} />
-                                            }
+                                            {tableCardIcon}
                                         </IconButton>
                                     </span>
                                 </Tooltip>
                             </IconButton>
-                            <Box sx={{ margin: '4px 8px 4px 2px' }}>
+                            <Box sx={{ margin: '4px 8px 4px 2px', display: 'flex', alignItems: 'center' }}>
+                                {table?.virtual? <CloudQueueIcon sx={{ fontSize: 10, }} /> : ""}
                                 {focusedTableId == tableId ? <EditableTableName
                                     initialValue={table?.displayId || tableId}
                                     tableId={tableId}
@@ -431,7 +433,8 @@ let SingleThreadView: FC<{
                                 /> : <Typography fontSize="inherit" sx={{
                                     textAlign: 'center',
                                     color:  'rgba(0,0,0,0.7)', 
-                                    maxWidth: '100px',
+                                    maxWidth: '90px',
+                                    ml: table?.virtual ? 0.5 : 0,
                                     wordWrap: 'break-word',
                                     whiteSpace: 'normal'
                                 }}>{table?.displayId || tableId}</Typography>}
@@ -588,6 +591,7 @@ const ChartElement = memo<{
 export const DataThread: FC<{}> = function ({ }) {
 
     let tables = useSelector((state: DataFormulatorState) => state.tables);
+
     let charts = useSelector((state: DataFormulatorState) => state.charts);
     let focusedChartId = useSelector((state: DataFormulatorState) => state.focusedChartId);
 
@@ -621,9 +625,7 @@ export const DataThread: FC<{}> = function ({ }) {
 
     let chartElements = useMemo(() => charts.filter(chart => !chart.intermediate).map((chart) => {
         const table = getDataTable(chart, tables, charts, conceptShelfItems);
-
-        let toDeriveFields = derivedFields.filter(f => f.name != "").filter(f => findBaseFields(f, conceptShelfItems).every(f2 => table.names.includes(f2.name)))
-        let extTable = baseTableToExtTable(JSON.parse(JSON.stringify(table.rows)), toDeriveFields, conceptShelfItems);
+        let visTableRows = structuredClone(table.rows);
 
         if (chart.chartType == "Auto") {
             let element = <Box sx={{ position: "relative", width: "fit-content", display: "flex", flexDirection: "column", margin: 'auto', color: 'darkgray' }}>
@@ -632,11 +634,9 @@ export const DataThread: FC<{}> = function ({ }) {
             return { chartId: chart.id, tableId: table.id, element }
         }
 
-        let [available, unfilledFields] = chartAvailabilityCheck(chart.encodingMap, conceptShelfItems, extTable);
+        let available = checkChartAvailability(chart, conceptShelfItems, visTableRows);
 
         if (!available || chart.chartType == "Table") {
-
-            console.log(">>> chart = ", chart)
 
             let chartTemplate = getChartTemplate(chart.chartType);
 
@@ -673,7 +673,7 @@ export const DataThread: FC<{}> = function ({ }) {
         }
 
         // prepare the chart to be rendered
-        let assembledChart = assembleVegaChart(chart.chartType, chart.encodingMap, conceptShelfItems, extTable, 20);
+        let assembledChart = assembleVegaChart(chart.chartType, chart.encodingMap, conceptShelfItems, visTableRows, 20);
         assembledChart["background"] = "transparent";
 
         // Temporary fix, down sample the dataset
@@ -715,12 +715,9 @@ export const DataThread: FC<{}> = function ({ }) {
         return { chartId: chart.id, tableId: table.id, element };
     }), [charts, tables, conceptShelfItems, chartSynthesisInProgress, handleChartClick]);
 
-
     // anchors are considered leaf tables to simplify the view
     let leafTables = [...tables.filter(t => (t.anchored && t.derive)), ...tables.filter(t => !tables.some(t2 => t2.derive?.trigger.tableId == t.id))];
     
-    console.log(`leafTables: ${leafTables.map(t => t.id)}`);
-
     // we want to sort the leaf tables by the order of their ancestors
     // for example if ancestor of list a is [0, 3] and the ancestor of list b is [0, 2] then b should come before a
     let tableOrder = Object.fromEntries(tables.map((table, index) => [table.id, index]));
