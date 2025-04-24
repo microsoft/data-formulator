@@ -158,6 +158,7 @@ def test_model():
                     "message": ""
                 }
         except Exception as e:
+            print(f"Error: {e}")
             logger.info(f"Error: {e}")
             result = {
                 "model": content['model'],

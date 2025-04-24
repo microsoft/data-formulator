@@ -54,6 +54,7 @@ class Client(object):
                 self.model = model
             else:
                 self.model = f"ollama/{model}"
+        
 
     def get_completion(self, messages):
         """
@@ -63,11 +64,27 @@ class Client(object):
         # Configure LiteLLM 
 
         if self.endpoint == "openai":
+
+            print("--------------------------------")
+            print(f"self.params: {self.params}")
+            print(f"self.model: {self.model}")
+            print(f"self.endpoint: {self.endpoint}")
+            print(f"self.params['api_key']: {self.params.get('api_key', 'None')}")
+            print(f"self.params['api_base']: {self.params.get('api_base', 'None')}")
+            print(f"self.params['api_version']: {self.params.get('api_version', 'None')}")
+            print("--------------------------------")
+
+
             client = openai.OpenAI(
-                api_key=self.params["api_key"], 
-                base_url=self.params["api_base"] if "api_base" in self.params else None,
+                base_url=self.params.get("api_base", 'placeholder'),
+                api_key=self.params.get("api_key", 'placeholder'),
                 timeout=120
             )
+
+
+            print("--------------------------------")
+            print(f"client: {client}")
+            print("--------------------------------")
 
             completion_params = {
                 "model": self.model,

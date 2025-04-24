@@ -100,9 +100,9 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
 
     const [newEndpoint, setNewEndpoint] = useState<string>(""); // openai, azure, ollama etc
     const [newModel, setNewModel] = useState<string>("");
-    const [newApiKey, setNewApiKey] = useState<string | undefined>(undefined);
-    const [newApiBase, setNewApiBase] = useState<string | undefined>(undefined);
-    const [newApiVersion, setNewApiVersion] = useState<string | undefined>(undefined);
+    const [newApiKey, setNewApiKey] = useState<string>("");
+    const [newApiBase, setNewApiBase] = useState<string>("");
+    const [newApiVersion, setNewApiVersion] = useState<string>("");
 
     // Fetch available models from the API
     useEffect(() => {
@@ -145,23 +145,6 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
         fetchModelOptions();
     }, []);
 
-    useEffect(() => {
-        if (newEndpoint == 'ollama') {
-            if (!newApiBase) {
-                setNewApiBase('http://localhost:11434');
-            }
-        }
-        if (newEndpoint == "openai") {
-            if (!newModel && providerModelOptions.openai.length > 0) {
-                setNewModel(providerModelOptions.openai[0]);
-            }
-        }
-        if (newEndpoint == "anthropic") {
-            if (!newModel && providerModelOptions.anthropic.length > 0) {
-                setNewModel(providerModelOptions.anthropic[0]);
-            }
-        }
-    }, [newEndpoint, providerModelOptions]);
 
     let modelExists = models.some(m => 
         m.endpoint == newEndpoint && m.model == newModel && m.api_base == newApiBase 
@@ -247,8 +230,8 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
             <TextField fullWidth size="small" type={showKeys ? "text" : "password"} 
                 InputProps={{ style: { fontSize: "0.875rem" } }} 
                 placeholder='leave blank if using keyless access'
-                error={!(newEndpoint == "azure" || newEndpoint == "ollama" || newEndpoint == "") && !newApiKey}
-                value={newApiKey}  onChange={(event: any) => { setNewApiKey(event.target.value); }} 
+                value={newApiKey}  
+                onChange={(event: any) => { setNewApiKey(event.target.value); }} 
                 autoComplete='off'
             />
         </TableCell>
@@ -304,7 +287,6 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
         <TableCell align="right">
             <TextField size="small" type="text" fullWidth
                 placeholder="api_base"
-                error={newEndpoint === "azure" && !newApiBase}
                 InputProps={{ style: { fontSize: "0.875rem" } }}
                 value={newApiBase}  
                 onChange={(event: any) => { setNewApiBase(event.target.value); }} 
@@ -343,9 +325,9 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                         
                         setNewEndpoint("");
                         setNewModel("");
-                        setNewApiKey(undefined);
-                        setNewApiBase(undefined);
-                        setNewApiVersion(undefined);
+                        setNewApiKey("");
+                        setNewApiBase("");
+                        setNewApiVersion("");
                     }}>
                     <AddCircleIcon />
                 </IconButton>
@@ -358,9 +340,9 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                         event.stopPropagation()
                         setNewEndpoint("");
                         setNewModel("");
-                        setNewApiKey(undefined);
-                        setNewApiBase(undefined);
-                        setNewApiVersion(undefined);
+                        setNewApiKey("");
+                        setNewApiBase("");
+                        setNewApiVersion("");
                     }}>
                     <ClearIcon />
                 </IconButton>
@@ -527,7 +509,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                 {modelTable}
             </DialogContent>
             <DialogActions>
-                {appConfig.DISABLE_DISPLAY_KEYS && (
+                {!appConfig.DISABLE_DISPLAY_KEYS && (
                     <Button sx={{marginRight: 'auto'}} endIcon={showKeys ? <VisibilityOffIcon /> : <VisibilityIcon />} onClick={()=>{
                         setShowKeys(!showKeys);}}>
                             {showKeys ? 'hide' : 'show'} keys
