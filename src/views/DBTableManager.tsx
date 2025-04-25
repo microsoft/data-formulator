@@ -53,6 +53,8 @@ import { useDispatch, useSelector } from 'react-redux';
 import { dfActions } from '../app/dfSlice';
 import { alpha } from '@mui/material';
 import { DataFormulatorState } from '../app/dfSlice';
+import { fetchFieldSemanticType } from '../app/dfSlice';
+import { AppDispatch } from '../app/store';
 
 export const handleDBDownload = async (sessionId: string) => {
     try {
@@ -253,7 +255,7 @@ export const DBTableManager: React.FC = () => {
 
 export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function DBTableSelectionDialog({ buttonElement }) {
     
-    const dispatch = useDispatch();
+    const dispatch = useDispatch<AppDispatch>();
     const sessionId = useSelector((state: DataFormulatorState) => state.sessionId);
 
     const [tableDialogOpen, setTableDialogOpen] = useState<boolean>(false);
@@ -471,6 +473,7 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
             anchored: true, // by default, db tables are anchored
         }
        dispatch(dfActions.loadTable(table));
+       dispatch(fetchFieldSemanticType(table));
        setTableDialogOpen(false);
     }
 

@@ -163,7 +163,7 @@ export const fetchFieldSemanticType = createAsyncThunk(
             headers: { 'Content-Type': 'application/json', },
             body: JSON.stringify({
                 token: Date.now(),
-                input_data: {name: table.id, rows: table.rows},
+                input_data: {name: table.id, rows: table.rows, virtual: table.virtual ? true : false},
                 model: dfSelectors.getActiveModel(state)
             }),
         };

@@ -181,7 +181,7 @@ def dedup_data_transform_candidates(candidates):
     return [items[0] for _, items in candidate_groups.items()]
 
 
-def get_field_summary(field_name, df, field_sample_size):
+def get_field_summary(field_name, df, field_sample_size, max_val_chars=100):
     try:
         values = sorted([x for x in list(set(df[field_name].values)) if x != None])
     except:
@@ -196,11 +196,22 @@ def get_field_summary(field_name, df, field_sample_size):
     else:
         val_sample = values[:int(sample_size / 2)] + ["..."] + values[-(sample_size - int(sample_size / 2)):]
 
-    val_str = ', '.join([str(s) if ',' not in str(s) else f'"{str(s)}"' for s in val_sample])
+    def sample_val_cap(val):
+        if len(str(val)) > max_val_chars:
+            s = str(val)[:max_val_chars] + "..."
+        else:
+            s = str(val)
+
+        if ',' in s:
+            s = f'"{s}"'
+
+        return s
+
+    val_str = ', '.join([sample_val_cap(str(s)) for s in val_sample])
 
     return f"{field_name} -- type: {df[field_name].dtype}, values: {val_str}"
 
-def generate_data_summary(input_tables, include_data_samples=True, field_sample_size=7):
+def generate_data_summary(input_tables, include_data_samples=True, field_sample_size=7, max_val_chars=140):
     
     input_table_names = [f'{string_to_py_varname(t["name"])}' for t in input_tables]
 
@@ -209,7 +220,7 @@ def generate_data_summary(input_tables, include_data_samples=True, field_sample_
     field_summaries = []
     for input_data in input_tables:
         df = pd.DataFrame(input_data['rows'])
-        s = '\n\t'.join([get_field_summary(fname, df, field_sample_size)  for fname in list(df.columns.values)])
+        s = '\n\t'.join([get_field_summary(fname, df, field_sample_size, max_val_chars)  for fname in list(df.columns.values)])
         field_summaries.append(s)
 
     table_field_summaries = [f'table_{i} ({input_table_names[i]}) fields:\n\t{s}' for i, s in enumerate(field_summaries)]

@@ -319,10 +319,14 @@ export const assembleVegaChart = (
                     let sortedValues = JSON.parse(encoding.sortBy)['values'];
                     encodingObj['sort'] = sortOrder == "ascending" ? sortedValues : sortedValues.reverse();
 
-                    // // special hack: ensure stack bar and stacked area charts are ordered correctly
-                    // if (channel == 'color' && (vgObj['mark'] == 'bar' || vgObj['mark'] == 'area')) {
-                    //     vgObj['encoding']['order'] = {'values': sortedValues};
-                    // }
+                    // special hack: ensure stack bar and stacked area charts are ordered correctly
+                    if (channel == 'color' && (vgObj['mark'] == 'bar' || vgObj['mark'] == 'area')) {
+                        // this is a very interesting hack, it leverages the hidden derived field name used in compiled Vega script to 
+                        // handle order of stack bar and stacked area charts
+                        vgObj['encoding']['order'] = {
+                            "field": `color_${field?.name}_sort_index`,
+                        }
+                    }
                 } catch {
                     console.warn(`sort error > ${encoding.sortBy}`)
                 }

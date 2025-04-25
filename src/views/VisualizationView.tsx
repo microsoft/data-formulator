@@ -463,10 +463,6 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
             return renderTableChart(chart, conceptShelfItems, visTableRows);
         }
 
-        console.log('assembled chart');
-        console.log(chart.chartType);
-        console.log(chart.encodingMap);
-        console.log(visTableRows.slice(0, 10));
 
         let element = <></>;
         if (!chart || !checkChartAvailabilityOnPreparedData(chart, conceptShelfItems, visTableRows)) {
@@ -478,8 +474,6 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
         element = <Box id={id} key={`focused-chart`} ></Box>    
 
         let assembledChart = assembleVegaChart(chart.chartType, chart.encodingMap, conceptShelfItems, visTableRows, 48, true);
-        console.log('assembled chart');
-        console.log(assembledChart);
         
         assembledChart['resize'] = true;
         assembledChart['config'] = {
