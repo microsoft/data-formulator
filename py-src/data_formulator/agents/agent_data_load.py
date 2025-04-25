@@ -4,6 +4,8 @@
 import json
 
 from data_formulator.agents.agent_utils import extract_json_objects, generate_data_summary
+from data_formulator.agents.agent_sql_data_transform import  sanitize_table_name, get_sql_table_statistics_str
+
 import logging
 
 logger = logging.getLogger(__name__)
@@ -124,12 +126,18 @@ table_0 (weather_seattle_atlanta) sample:
 
 class DataLoadAgent(object):
 
-    def __init__(self, client):
+    def __init__(self, client, conn):
         self.client = client
+        self.conn = conn
 
     def run(self, input_data, n=1):
 
-        data_summary = generate_data_summary([input_data], include_data_samples=True, field_sample_size=30)
+        if input_data['virtual']:
+            table_name = sanitize_table_name(input_data['name'])
+            table_summary_str = get_sql_table_statistics_str(self.conn, table_name, row_sample_size=5, field_sample_size=30)
+            data_summary = f"[TABLE {table_name}]\n\n{table_summary_str}"
+        else:
+            data_summary = generate_data_summary([input_data], include_data_samples=True, field_sample_size=30)
 
         user_query = f"[DATA]\n\n{data_summary}\n\n[OUTPUT]"
 

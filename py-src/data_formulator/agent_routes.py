@@ -181,8 +181,10 @@ def process_data_on_load_request():
         client = get_client(content['model'])
 
         logger.info(f" model: {content['model']}")
+
+        conn = db_manager.get_connection(session['session_id'])
+        agent = DataLoadAgent(client=client, conn=conn)
         
-        agent = DataLoadAgent(client=client)
         candidates = agent.run(content["input_data"])
         
         candidates = [c['content'] for c in candidates if c['status'] == 'ok']

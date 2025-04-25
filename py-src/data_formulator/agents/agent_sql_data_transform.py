@@ -300,20 +300,24 @@ class SQLDataTransformationAgent(object):
         return self.process_gpt_sql_response(response, messages)
         
 
-def get_sql_table_statistics_str(conn, table_name: str) -> str:
+def get_sql_table_statistics_str(conn, table_name: str, 
+        row_sample_size: int = 5, # number of rows to be sampled in the sample data part
+        field_sample_size: int = 7, # number of example values for each field to be sampled
+        max_val_chars: int = 140 # max number of characters to be shown for each example value
+    ) -> str:
     """Get a string representation of the table statistics"""
 
     table_name = sanitize_table_name(table_name)
 
     # Get column information
     columns = conn.execute(f"DESCRIBE {table_name}").fetchall()
-    sample_data = conn.execute(f"SELECT * FROM {table_name} LIMIT 5").fetchall()
+    sample_data = conn.execute(f"SELECT * FROM {table_name} LIMIT {row_sample_size}").fetchall()
     
     # Format sample data as pipe-separated string
     col_names = [col[0] for col in columns]
     formatted_sample_data = "| " + " | ".join(col_names) + " |\n"
     for i, row in enumerate(sample_data):
-        formatted_sample_data += f"{i}| " + " | ".join(str(val) for val in row) + " |\n"
+        formatted_sample_data += f"{i}| " + " | ".join(str(val)[:max_val_chars]+ "..." if len(str(val)) > max_val_chars else str(val) for val in row) + " |\n"
     
     col_metadata_list = []
     for col in columns:
@@ -364,12 +368,12 @@ def get_sql_table_statistics_str(conn, table_name: str) -> str:
             (SELECT DISTINCT {quoted_col_name}
                 FROM {table_name} 
                 WHERE {quoted_col_name} IS NOT NULL 
-                LIMIT 5)
+                LIMIT {field_sample_size})
             """
             
             sample_values = conn.execute(query_for_sample_values).fetchall()
             
-            stats_dict['sample_values'] = sample_values
+            stats_dict['sample_values'] = [str(val)[:max_val_chars]+ "..." if len(str(val)) > max_val_chars else str(val) for val in sample_values]
 
         col_metadata_list.append({
             "column": col_name,
