@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import '../scss/App.scss';
 
 import { useDispatch, useSelector } from "react-redux"; /* code change */
@@ -19,6 +19,11 @@ import {
     Box,
     Tooltip,
     Button,
+    Dialog,
+    DialogTitle,
+    DialogContent,
+    DialogActions,
+    TextField
 } from '@mui/material';
 
 
@@ -45,6 +50,8 @@ import { DBTableSelectionDialog } from './DBTableManager';
 
 //type AppProps = ConnectedProps<typeof connector>;
 
+import axios from 'axios';
+
 export const DataFormulatorFC = ({ }) => {
 
     const displayPanelSize = useSelector((state: DataFormulatorState) => state.displayPanelSize);
@@ -64,9 +71,41 @@ export const DataFormulatorFC = ({ }) => {
         </Box>
     )
 
+    const [isDialogOpen, setDialogOpen] = useState(false);
+    const [insights, setInsights] = useState<string[]>([]);
+    const [loading, setLoading] = useState(false);
+
+    const fetchInsights = async () => {
+        setLoading(true);
+        try {
+            const response = await axios.post('/api/agent/generate-insights', {
+                input_data: [], // Replace with actual input data
+                model: {} // Replace with actual model configuration
+            });
+
+            if (response.data.status === 'ok') {
+                setInsights(response.data.insights);
+            } else {
+                setInsights([`Error: ${response.data.message}`]);
+            }
+        } catch (error) {
+            setInsights([`Error: ${error.message}`]);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleDialogOpen = () => {
+        fetchInsights();
+        setDialogOpen(true);
+    };
+
     const visPaneMain = (
-        <Box sx={{ width: "100%", overflow: "hidden", display: "flex", flexDirection: "row" }}>
+        <Box sx={{ width: "100%", overflow: "hidden", display: "flex", flexDirection: "column" }}>
             <VisualizationViewFC />
+            <Button variant="contained" color="primary" onClick={handleDialogOpen} sx={{ marginTop: 2 }}>
+                Show Insights & Recommendations
+            </Button>
         </Box>);
 
     let $tableRef = React.createRef<SelectableGroup>();
@@ -172,10 +211,90 @@ Totals (7 entries)	5	5	5	15
     console.log("selected model?")
     console.log(selectedModelId)
     
+    const [dialog, setDialog] = useState<string>('');
+    const [prompt, setPrompt] = useState<string>('');
+    const [chart, setChart] = useState<any>(null);
+    const [loadingChart, setLoadingChart] = useState(false);
+
+    const handleGenerateChart = async () => {
+        setLoadingChart(true);
+        try {
+            const response = await axios.post('/api/agent/generate-chart', {
+                dialog: dialog.split('\n'), // Split dialog into lines
+                prompt: prompt
+            });
+
+            if (response.data.status === 'ok') {
+                setChart(response.data.chart);
+            } else {
+                alert(`Error: ${response.data.message}`);
+            }
+        } catch (error) {
+            alert(`Error: ${error.message}`);
+        } finally {
+            setLoadingChart(false);
+        }
+    };
+
     return (
         <Box sx={{ display: 'block', width: "100%", height: 'calc(100% - 49px)' }}>
             <DndProvider backend={HTML5Backend}>
-                {selectedModelId == undefined ? modelSelectionDialogBox : (tables.length > 0 ? fixedSplitPane : dataUploadRequestBox)} 
+                {selectedModelId == undefined ? modelSelectionDialogBox : (tables.length > 0 ? fixedSplitPane : dataUploadRequestBox)}
             </DndProvider>
-        </Box>);
+
+            {/* Input for dialog and prompt */}
+            <Box sx={{ marginTop: 2 }}>
+                <Typography variant="h6">Generate Chart</Typography>
+                <TextField
+                    label="User Dialog"
+                    multiline
+                    rows={4}
+                    fullWidth
+                    value={dialog}
+                    onChange={(e) => setDialog(e.target.value)}
+                    sx={{ marginBottom: 2 }}
+                />
+                <TextField
+                    label="Prompt"
+                    fullWidth
+                    value={prompt}
+                    onChange={(e) => setPrompt(e.target.value)}
+                    sx={{ marginBottom: 2 }}
+                />
+                <Button
+                    variant="contained"
+                    color="primary"
+                    onClick={handleGenerateChart}
+                    disabled={loadingChart}
+                >
+                    {loadingChart ? 'Generating...' : 'Generate Chart'}
+                </Button>
+            </Box>
+
+            {/* Display the generated chart */}
+            {chart && (
+                <Box sx={{ marginTop: 4 }}>
+                    <Typography variant="h6">Generated Chart</Typography>
+                    <pre>{JSON.stringify(chart, null, 2)}</pre>
+                </Box>
+            )}
+
+            {/* Dialog for Insights & Recommendations */}
+            <Dialog open={isDialogOpen} onClose={handleDialogClose} maxWidth="sm" fullWidth>
+                <DialogTitle>Insights & Recommendations</DialogTitle>
+                <DialogContent>
+                    {loading ? (
+                        <Typography>Loading insights and recommendations...</Typography>
+                    ) : (
+                        insights.map((insight, index) => (
+                            <Typography key={index}>{insight}</Typography>
+                        ))
+                    )}
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={handleDialogClose} color="primary">Close</Button>
+                </DialogActions>
+            </Dialog>
+        </Box>
+    );
 }

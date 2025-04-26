@@ -438,3 +438,77 @@ def request_code_expl():
     else:
         expl = ""
     return expl
+
+@agent_bp.route('/generate-insights', methods=['POST'])
+def generate_insights():
+    if request.is_json:
+        logger.info("# Generate insights request")
+        content = request.get_json()
+
+        # Extract input data and model configuration
+        input_data = content.get('input_data', [])
+        model_config = content.get('model', {})
+
+        # Initialize the client using the model configuration
+        client = get_client(model_config)
+
+        try:
+            # Use the client to generate insights (mocked for now)
+            insights = [
+                "Insight 1: Example insight based on the data.",
+                "Insight 2: Another example insight."
+            ]
+
+            response = flask.jsonify({
+                "status": "ok",
+                "insights": insights
+            })
+        except Exception as e:
+            logger.error(f"Error generating insights: {e}")
+            response = flask.jsonify({
+                "status": "error",
+                "message": str(e)
+            })
+    else:
+        response = flask.jsonify({
+            "status": "error",
+            "message": "Invalid request format. JSON expected."
+        })
+
+    response.headers.add('Access-Control-Allow-Origin', '*')
+    return response
+
+@agent_bp.route('/generate-chart', methods=['POST'])
+def generate_chart():
+    """
+    API endpoint to generate a chart based on user dialog and prompt.
+    """
+    if request.is_json:
+        logger.info("# Generate chart request")
+        content = request.get_json()
+
+        # Extract dialog and prompt from the request
+        user_dialog = content.get('dialog', [])
+        user_prompt = content.get('prompt', '')
+
+        # Validate input
+        if not user_prompt:
+            return jsonify({"status": "error", "message": "Prompt is required."}), 400
+
+        try:
+            # Mock chart generation logic (replace with actual implementation)
+            chart = {
+                "chartType": "Bar Chart",
+                "data": [
+                    {"x": "Category A", "y": 10},
+                    {"x": "Category B", "y": 20},
+                    {"x": "Category C", "y": 30}
+                ]
+            }
+
+            return jsonify({"status": "ok", "chart": chart})
+        except Exception as e:
+            logger.error(f"Error generating chart: {e}")
+            return jsonify({"status": "error", "message": str(e)}), 500
+    else:
+        return jsonify({"status": "error", "message": "Invalid request format. JSON expected."}), 400
