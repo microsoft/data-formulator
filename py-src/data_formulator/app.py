@@ -37,6 +37,7 @@ import os
 from data_formulator.tables_routes import tables_bp
 from data_formulator.agent_routes import agent_bp
 
+
 app = Flask(__name__, static_url_path='', static_folder=os.path.join(APP_ROOT, "dist"))
 app.secret_key = secrets.token_hex(16)  # Generate a random secret key for sessions
 

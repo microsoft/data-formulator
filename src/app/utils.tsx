@@ -57,7 +57,6 @@ export function getUrls() {
         UPLOAD_DB_FILE: `/api/tables/upload-db-file`,
         DOWNLOAD_DB_FILE: `/api/tables/download-db-file`,
         RESET_DB_FILE: `/api/tables/reset-db-file`,
-        ATTACH_EXTERNAL_DB: `/api/tables/attach-external-db`,
 
         LIST_TABLES: `/api/tables/list-tables`,
         TABLE_DATA: `/api/tables/get-table`,
@@ -66,6 +65,10 @@ export function getUrls() {
         GET_COLUMN_STATS: `/api/tables/analyze`,
         QUERY_TABLE: `/api/tables/query`,
         SAMPLE_TABLE: `/api/tables/sample-table`,
+
+        DATA_LOADER_LIST_PARAMS: `/api/tables/data-loader/list-params`,
+        DATA_LOADER_LIST_TABLES: `/api/tables/data-loader/list-tables`,
+        DATA_LOADER_INGEST_DATA: `/api/tables/data-loader/ingest-data`,
     };
 }
 
