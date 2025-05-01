@@ -34,6 +34,7 @@ import {
   Chip,
   Collapse
 } from '@mui/material';
+
 import DeleteIcon from '@mui/icons-material/Delete';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 import CloseIcon from '@mui/icons-material/Close';
@@ -570,7 +571,8 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
                             </IconButton>
                         </Tooltip>
                     </Typography>
-                    {dbTables.length == 0 && <Typography variant="caption" sx={{color: "lightgray", p: 2, fontStyle: "italic"}}>no tables available</Typography>}
+                    {dbTables.length == 0 && 
+                        <Typography variant="caption" sx={{color: "lightgray", p: 2, fontStyle: "italic"}}>no tables available</Typography>}
                     {dbTables.map((t, i) => (
                         <Tab 
                             key={t.name} 
@@ -598,7 +600,7 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
                     value={selectedTabKey}
                     sx={{py: 1}}
                 >
-                    <Typography variant="caption" sx={{color: "text.secondary", fontWeight: "bold", px: 1}}>load external data</Typography>
+                    <Typography variant="caption" sx={{color: "text.secondary", fontWeight: "bold", px: 1}}>connect external data</Typography>
                     {["mysql", "kusto", "file upload"].map((dataLoaderType, i) => (
                         <Tab 
                             key={`dataLoader:${dataLoaderType}`} 
@@ -620,8 +622,8 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
             <TabPanel key={""} sx={{width: 960, maxWidth: '100%'}} show={selectedTabKey === ''}>
                 <Typography variant="caption" sx={{color: "text.secondary", fontWeight: "bold", px: 1}}>select a table or import data</Typography>
             </TabPanel>
-            <TabPanel key={`dataLoader:file upload`} sx={{width: 960, maxWidth: '100%'}} show={selectedTabKey === 'dataLoader:file upload'}>
-                {uploadFileButton(<Typography component="span" fontSize={12}>{isUploading ? 'uploading...' : 'upload file'}</Typography>)}
+            <TabPanel key={`dataLoader:file upload`} sx={{width: 960, maxWidth: '100%', }} show={selectedTabKey === 'dataLoader:file upload'}>
+                {uploadFileButton(<Typography component="span" fontSize={18} textTransform="none">{isUploading ? 'uploading...' : 'upload a csv/tsv file to the local database'}</Typography>)} 
             </TabPanel>
             {["mysql", "kusto"].map((dataLoaderType, i) => (
                 <TabPanel key={`dataLoader:${dataLoaderType}`} sx={{width: 960, maxWidth: '100%'}} show={selectedTabKey === 'dataLoader:' + dataLoaderType}>
