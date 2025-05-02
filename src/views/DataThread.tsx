@@ -52,6 +52,7 @@ import { TriggerCard } from './EncodingShelfCard';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import CloudQueueIcon from '@mui/icons-material/CloudQueue';
+import { alpha } from '@mui/material/styles';
 
 let buildChartCard = (chartElement: { tableId: string, chartId: string, element: any },
     focusedChartId?: string) => {
@@ -364,7 +365,7 @@ let SingleThreadView: FC<{
             let regularTableBox = <Box ref={relevantCharts.some(c => c.chartId == focusedChartId) ? scrollRef : null} 
                 sx={{ padding: '0px' }}>
                 <Card className={`data-thread-card ${selectedClassName}`} variant="outlined"
-                    sx={{ width: '100%', background: 'aliceblue',
+                    sx={{ width: '100%', backgroundColor: alpha(theme.palette.primary.light, 0.1),
                         borderLeft: highlightedTableIds.includes(tableId) ? 
                             `3px solid ${theme.palette.primary.light}` : '1px solid lightgray',
                      }}
@@ -502,7 +503,7 @@ let SingleThreadView: FC<{
 
         content = w(tableElementList, triggerCards, "")
 
-        return <Box sx={{ ...sx }} data-thread-index={threadIdx}>
+        return <Box sx={{ ...sx, '& .selected-card': { border: `2px solid ${theme.palette.primary.light}` } }} data-thread-index={threadIdx}>
             <Box sx={{ display: 'flex', direction: 'ltr', margin: 1 }}>
                 <Divider flexItem sx={{
                     margin: 'auto',

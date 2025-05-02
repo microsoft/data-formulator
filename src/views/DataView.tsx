@@ -5,7 +5,7 @@ import React, { FC, useEffect, useMemo } from 'react';
 
 import _ from 'lodash';
 
-import { Typography, Box, Link, Breadcrumbs } from '@mui/material';
+import { Typography, Box, Link, Breadcrumbs, useTheme } from '@mui/material';
 
 import 'ag-grid-enterprise';
 
@@ -33,6 +33,7 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView({  $table
 
     const dispatch = useDispatch();
     const tables = useSelector((state: DataFormulatorState) => state.tables);
+    const theme = useTheme();
     
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
     const focusedTableId = useSelector((state: DataFormulatorState) => state.focusedTableId);
@@ -139,7 +140,7 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView({  $table
 
     let genTableLink =  (t: DictTable) => 
         <Link underline="hover" key={t.id} sx={{cursor: "pointer"}} 
-            color="#1770c7" onClick={()=>{ dispatch(dfActions.setFocusedTable(t.id)) }}>
+            color={theme.palette.primary.main} onClick={()=>{ dispatch(dfActions.setFocusedTable(t.id)) }}>
             <Typography sx={{fontWeight: t.id == focusedTableId? "bold" : "inherit", fontSize: 'inherit'}} component='span'>{t.displayId || t.id}</Typography>
         </Link>;
 
