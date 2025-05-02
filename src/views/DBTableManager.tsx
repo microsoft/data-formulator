@@ -59,7 +59,7 @@ import { CustomReactTable } from './ReactTable';
 import { DictTable } from '../components/ComponentType';
 import { Type } from '../data/types';
 import { useDispatch, useSelector } from 'react-redux';
-import { dfActions } from '../app/dfSlice';
+import { dfActions, getSessionId } from '../app/dfSlice';
 import { alpha } from '@mui/material';
 import { DataFormulatorState } from '../app/dfSlice';
 import { fetchFieldSemanticType } from '../app/dfSlice';
@@ -279,6 +279,12 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
     }, []);
 
     useEffect(() => {
+        if (errorMessage?.content.includes("session_id not found")) {
+            dispatch(getSessionId());
+        }
+    }, [errorMessage])
+
+    useEffect(() => {
         if (dbTables.length == 0) {
             setSelectedTabKey("");
         } else if (!selectedTabKey.startsWith("dataLoader:") && dbTables.find(t => t.name === selectedTabKey) == undefined) {
@@ -295,7 +301,8 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
                 setDbTables(data.tables);
             }
         } catch (error) {
-            console.error('Failed to fetch tables:', error);
+            setErrorMessage({content: 'Failed to fetch tables, please check if the server is running', severity: "error"});
+            setShowError(true);
         }
     };
 
@@ -343,7 +350,7 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
             }
         } catch (error) {
             console.error('Failed to upload table:', error);
-            setErrorMessage({content: 'Failed to upload table. The server may need to be restarted.', severity: "error"});
+            setErrorMessage({content: 'Failed to upload table, please check if the server is running', severity: "error"});
             setShowError(true);
         } finally {
             setIsUploading(false);
@@ -377,7 +384,7 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
             }
         } catch (error) {
             console.error('Failed to upload table:', error);
-            setErrorMessage({content: 'Failed to upload table. The server may need to be restarted.', severity: "error"});
+            setErrorMessage({content: 'Failed to upload table, please check if the server is running', severity: "error"});
             setShowError(true);
         } finally {
             setIsUploading(false);
@@ -423,9 +430,13 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
             if (data.status === 'success') {
                 fetchTables();
                 setSelectedTabKey(dbTables.length > 0 ? dbTables[0].name : "");
+            } else {
+                setErrorMessage({content: data.error || 'Failed to delete table', severity: "error"});
+                setShowError(true);
             }
         } catch (error) {
-            console.error('Failed to delete table:', error);
+            setErrorMessage({content: 'Failed to delete table, please check if the server is running', severity: "error"});
+            setShowError(true);
         }
     };
 
@@ -455,7 +466,7 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
             }
         } catch (error) {
             console.error('Failed to analyze table data:', error);
-            setErrorMessage({content: 'Failed to analyze table data', severity: "error"});
+            setErrorMessage({content: 'Failed to analyze table data, please check if the server is running', severity: "error"});
             setShowError(true);
         }
     };
@@ -572,11 +583,11 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
         <Box sx={{flexGrow: 1, bgcolor: 'background.paper', display: 'flex', flexDirection: 'row', minHeight: 400 }}>
             <Box sx={{display: "flex", flexDirection: "column", width: "180px", borderRight: 1, borderColor: 'divider'}}>
                 <Tabs
+                    value={0} // not used, just to keep MUI happy
                     orientation="vertical"
                     variant="scrollable"
                     scrollButtons={dbTables.length > 8 ? "auto" : false}
                     allowScrollButtonsMobile
-                    value={selectedTabKey}
                     aria-label="Database tables"
                     sx={{ 
                         maxHeight: '360px',
@@ -629,14 +640,13 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
                     orientation="vertical"
                     textColor="secondary"
                     indicatorColor="secondary"
-                    value={selectedTabKey}
+                    value={0} // not used, just to keep MUI happy
                     sx={{px: 0.5}}
                 >
                     <Typography variant="caption" sx={{color: "text.secondary", fontWeight: "bold", px: 1}}>connect external data</Typography>
                     {["file upload", "mysql", "kusto"].map((dataLoaderType, i) => (
                         <Tab 
                             key={`dataLoader:${dataLoaderType}`} 
-                            value={`dataLoader:${dataLoaderType}`}
                             wrapped 
                             label={<Typography variant="caption" 
                                         sx={{textTransform: "none", width: "calc(100% - 4px)", textAlign: 'left', 
@@ -651,7 +661,7 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
                     ))}
                 </Tabs> 
             </Box>
-            <TabPanel key={`dataLoader:file upload`} sx={{width: 960, }} show={selectedTabKey === ''}>
+            <TabPanel key={`dataLoader:note`} sx={{width: 960, }} show={selectedTabKey === ''}>
                 <Typography variant="caption" sx={{color: "text.secondary",  px: 1}}>The database is empty, refresh the table list or import some data to get started.</Typography>
             </TabPanel>
             <TabPanel key={`dataLoader:file upload`} sx={{width: 960, }} show={selectedTabKey === 'dataLoader:file upload'}>
@@ -661,6 +671,7 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
                 <TabPanel key={`dataLoader:${dataLoaderType}`} sx={{width: 960, position: "relative", maxWidth: '100%'}} 
                     show={selectedTabKey === 'dataLoader:' + dataLoaderType}>
                     <DataLoaderForm 
+                        key={`data-loader-form-${dataLoaderType}`}
                         dataLoaderType={dataLoaderType} 
                         paramDefs={paramDefs}
                         onImport={() => {
@@ -998,14 +1009,13 @@ export const DataLoaderForm: React.FC<{
                                     return [table.name, table.metadata];
                                 })));
                             } else {
-                                console.error('Failed to fetch data loader tables:', data.message);
+                                console.error('Failed to fetch data loader tables: {}', data.message);
                                 onFinish("error", `Failed to fetch data loader tables: ${data.message}`);
                             }
                             setIsConnecting(false);
                         })
                         .catch(error => {
-                            console.error('Failed to fetch data loader tables:', error);
-                            onFinish("error", `Failed to fetch data loader tables: ${error}`);
+                            onFinish("error", `Failed to fetch data loader tables, please check the server is running`);
                             setIsConnecting(false);
                         });
                     }}>

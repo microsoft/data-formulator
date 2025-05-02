@@ -701,7 +701,8 @@ def sanitize_db_error_message(error: Exception) -> Tuple[str, int]:
         r"Permission denied": ("Access denied", 403),
 
         # Data loader errors
-        r"Entity ID": ("Entity ID not found", 500),
+        r"Entity ID": ("Entity ID not found, please check the data loader parameters", 500),
+        r"session_id": ("session_id not found, please refresh the page", 500),
     }
     
     # Check if error matches any safe pattern
