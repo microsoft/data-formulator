@@ -11,10 +11,10 @@ class MySQLDataLoader(ExternalDataLoader):
     @staticmethod
     def list_params() -> bool:
         params_list = [
-            {"name": "user", "type": "string", "required": True, "default": "root"}, 
-            {"name": "password", "type": "string", "required": False, "default": ""}, 
-            {"name": "host", "type": "string", "required": True, "default": "localhost"}, 
-            {"name": "database", "type": "string", "required": True, "default": "mysql"}
+            {"name": "user", "type": "string", "required": True, "default": "root", "description": ""}, 
+            {"name": "password", "type": "string", "required": False, "default": "", "description": "leave blank for no password"}, 
+            {"name": "host", "type": "string", "required": True, "default": "localhost", "description": ""}, 
+            {"name": "database", "type": "string", "required": True, "default": "mysql", "description": ""}
         ]
         return params_list
 

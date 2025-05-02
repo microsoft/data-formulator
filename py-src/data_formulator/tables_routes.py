@@ -16,9 +16,7 @@ import string
 from pathlib import Path
 
 from data_formulator.db_manager import db_manager
-from data_formulator.data_loader.external_data_loader import ExternalDataLoader
-from data_formulator.data_loader.mysql_data_loader import MySQLDataLoader
-from data_formulator.data_loader.kusto_data_loader import KustoDataLoader
+from data_formulator.data_loader import DATA_LOADERS
 
 import re
 from typing import Tuple
@@ -701,6 +699,9 @@ def sanitize_db_error_message(error: Exception) -> Tuple[str, int]:
         # File errors
         r"No such file": ("File not found", 404),
         r"Permission denied": ("Access denied", 403),
+
+        # Data loader errors
+        r"Entity ID": ("Entity ID not found", 500),
     }
     
     # Check if error matches any safe pattern
@@ -715,34 +716,20 @@ def sanitize_db_error_message(error: Exception) -> Tuple[str, int]:
     return "An unexpected error occurred", 500
 
 
-
-available_data_loaders = {
-    'mysql': MySQLDataLoader,
-    'kusto': KustoDataLoader
-}
-
-@tables_bp.route('/data-loader/list-params', methods=['POST'])
-def data_loader_list_params():
-    """List params for a data loader"""
+@tables_bp.route('/data-loader/list-data-loaders', methods=['GET'])
+def data_loader_list_data_loaders():
+    """List all available data loaders"""
 
     try:
-        data = request.get_json()
-        data_loader_type = data.get('data_loader_type')
-
-        if data_loader_type not in available_data_loaders:
-            return jsonify({"status": "error", "message": f"Invalid data loader type. Must be one of: {', '.join(available_data_loaders.keys())}"}), 400
-
-        data_loader = available_data_loaders[data_loader_type]
-
-        params = data_loader.list_params()
-
         return jsonify({
             "status": "success",
-            "params": params
+            "data_loaders": {
+                name:  data_loader.list_params()
+                for name, data_loader in DATA_LOADERS.items()
+            }
         })
-        
     except Exception as e:
-        logger.error(f"Error listing params for data loader: {str(e)}")
+        logger.error(f"Error listing data loaders: {str(e)}")
         safe_msg, status_code = sanitize_db_error_message(e)
         return jsonify({
             "status": "error", 
@@ -758,11 +745,11 @@ def data_loader_list_tables():
         data_loader_type = data.get('data_loader_type')
         data_loader_params = data.get('data_loader_params')
 
-        if data_loader_type not in available_data_loaders:
-            return jsonify({"status": "error", "message": f"Invalid data loader type. Must be one of: {', '.join(available_data_loaders.keys())}"}), 400
+        if data_loader_type not in DATA_LOADERS:
+            return jsonify({"status": "error", "message": f"Invalid data loader type. Must be one of: {', '.join(DATA_LOADERS.keys())}"}), 400
 
         with db_manager.connection(session['session_id']) as duck_db_conn:
-            data_loader = available_data_loaders[data_loader_type](data_loader_params, duck_db_conn)
+            data_loader = DATA_LOADERS[data_loader_type](data_loader_params, duck_db_conn)
             tables = data_loader.list_tables()
 
             return jsonify({
@@ -772,7 +759,7 @@ def data_loader_list_tables():
 
     except Exception as e:
         logger.error(f"Error listing tables from data loader: {str(e)}")
-        print(traceback.format_exc())
+        #print(traceback.format_exc())
         safe_msg, status_code = sanitize_db_error_message(e)
         return jsonify({
             "status": "error", 
@@ -790,11 +777,11 @@ def data_loader_ingest_data():
         data_loader_params = data.get('data_loader_params')
         table_name = data.get('table_name')
 
-        if data_loader_type not in available_data_loaders:
-            return jsonify({"status": "error", "message": f"Invalid data loader type. Must be one of: {', '.join(available_data_loaders.keys())}"}), 400
+        if data_loader_type not in DATA_LOADERS:
+            return jsonify({"status": "error", "message": f"Invalid data loader type. Must be one of: {', '.join(DATA_LOADERS.keys())}"}), 400
 
         with db_manager.connection(session['session_id']) as duck_db_conn:
-            data_loader = available_data_loaders[data_loader_type](data_loader_params, duck_db_conn)
+            data_loader = DATA_LOADERS[data_loader_type](data_loader_params, duck_db_conn)
             data_loader.ingest_data(table_name)
 
             return jsonify({

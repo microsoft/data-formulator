@@ -18,11 +18,11 @@ class KustoDataLoader(ExternalDataLoader):
     @staticmethod
     def list_params() -> bool:
         params_list = [
-            {"name": "kusto_cluster", "type": "string", "required": True}, 
-            {"name": "kusto_database", "type": "string", "required": True}, 
-            {"name": "client_id", "type": "string", "required": False}, 
-            {"name": "client_secret", "type": "string", "required": False}, 
-            {"name": "tenant_id", "type": "string", "required": False}
+            {"name": "kusto_cluster", "type": "string", "required": True, "description": ""}, 
+            {"name": "kusto_database", "type": "string", "required": True, "description": ""}, 
+            {"name": "client_id", "type": "string", "required": False, "description": "only necessary for AppKey auth"}, 
+            {"name": "client_secret", "type": "string", "required": False, "description": "only necessary for AppKey auth"}, 
+            {"name": "tenant_id", "type": "string", "required": False, "description": "only necessary for AppKey auth"}
         ]
         return params_list
 
@@ -53,10 +53,47 @@ class KustoDataLoader(ExternalDataLoader):
         return dataframe_from_result_table(result.primary_results[0])
 
     def list_tables(self) -> List[Dict[str, Any]]:
+
+
+        # first list functions (views)
+        query = ".show functions"
+        function_result_df = self.query(query)
+
+        functions = []
+        for func in function_result_df.to_dict(orient="records"):
+            func_name = func['Name']
+            result = self.query(f".show function ['{func_name}'] schema as json").to_dict(orient="records")
+            schema = json.loads(result[0]['Schema'])
+            parameters = schema['InputParameters']
+            columns = [{
+                'name': r["Name"],
+                'type': r["Type"]
+            } for r in schema['OutputColumns']]
+
+            # skip functions with parameters at the moment
+            if len(parameters) > 0:
+                continue
+
+            sample_query = f"['{func_name}'] | take {10}"
+            sample_result = self.query(sample_query).to_dict(orient="records")
+        
+            function_metadata = {
+                "row_count": 0,
+                "columns": columns,
+                "parameters": parameters,
+                "sample_rows": sample_result
+            }
+            functions.append({
+                "type": "function",
+                "name": func_name,
+                "metadata": function_metadata
+            })
+
+        # then list tables
         query = ".show tables"
         tables_df = self.query(query)
 
-        results = []
+        tables = []
         for table in tables_df.to_dict(orient="records"):
             table_name = table['TableName']
             schema_result = self.query(f".show table ['{table_name}'] schema as json").to_dict(orient="records")
@@ -77,12 +114,13 @@ class KustoDataLoader(ExternalDataLoader):
                 "sample_rows": sample_result
             }
 
-            results.append({
+            tables.append({
+                "type": "table",
                 "name": table_name,
                 "metadata": table_metadata
             })
 
-        return results
+        return functions + tables
     
     def ingest_data(self, table_name: str, name_as: str = None, size: int = 5000000) -> pd.DataFrame:
         if name_as is None:

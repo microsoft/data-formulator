@@ -263,6 +263,9 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
     const [tableDialogOpen, setTableDialogOpen] = useState<boolean>(false);
     const [tableAnalysisMap, setTableAnalysisMap] = useState<Record<string, ColumnStatistics[] | null>>({});
     
+    // maps data loader type to list of param defs
+    const [dataLoaderParamDefs, setDataLoaderParamDefs] = useState<Record<string, {name: string, default: string, type: string, required: boolean, description: string}[]>>({});
+
     const [dbTables, setDbTables] = useState<DBTable[]>([]);
     const [selectedTabKey, setSelectedTabKey] = useState("");
 
@@ -272,6 +275,7 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
 
     useEffect(() => {
         fetchTables();
+        fetchDataLoaders();
     }, []);
 
     useEffect(() => {
@@ -294,6 +298,26 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
             console.error('Failed to fetch tables:', error);
         }
     };
+
+    const fetchDataLoaders = async () => {
+        fetch(getUrls().DATA_LOADER_LIST_DATA_LOADERS, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === "success") {
+                setDataLoaderParamDefs(data.data_loaders);
+            } else {
+                console.error('Failed to fetch data loader params:', data.error);
+            }
+        })
+        .catch(error => {
+            console.error('Failed to fetch data loader params:', error);
+        });
+    }
 
     const handleDBUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];
@@ -543,9 +567,7 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
             </Tooltip>
         );
     }
-    // {["mysql", "kusto"].map((dataLoaderType) => (
-    //     <DataLoaderForm dataLoaderType={dataLoaderType} onSubmit={() => {}} />
-    // ))}
+
     let mainContent =  
         <Box sx={{flexGrow: 1, bgcolor: 'background.paper', display: 'flex', flexDirection: 'row', minHeight: 400 }}>
             <Box sx={{display: "flex", flexDirection: "column", width: "180px", borderRight: 1, borderColor: 'divider'}}>
@@ -635,10 +657,12 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
             <TabPanel key={`dataLoader:file upload`} sx={{width: 960, }} show={selectedTabKey === 'dataLoader:file upload'}>
                 {uploadFileButton(<Typography component="span" fontSize={18} textTransform="none">{isUploading ? 'uploading...' : 'upload a csv/tsv file to the local database'}</Typography>)} 
             </TabPanel>
-            {["mysql", "kusto"].map((dataLoaderType, i) => (
+            {dataLoaderParamDefs && Object.entries(dataLoaderParamDefs).map(([dataLoaderType, paramDefs]) => (
                 <TabPanel key={`dataLoader:${dataLoaderType}`} sx={{width: 960, position: "relative", maxWidth: '100%'}} 
                     show={selectedTabKey === 'dataLoader:' + dataLoaderType}>
-                    <DataLoaderForm dataLoaderType={dataLoaderType} 
+                    <DataLoaderForm 
+                        dataLoaderType={dataLoaderType} 
+                        paramDefs={paramDefs}
                         onImport={() => {
                             setIsUploading(true);
                         }} 
@@ -646,7 +670,7 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
                             setIsUploading(false);
                             fetchTables();
                             if (status === "error") {
-                                setErrorMessage({content: message ?? "Failed to ingest data", severity: "error"});
+                                setErrorMessage({content: message, severity: "error"});
                                 setShowError(true);
                             }
                         }} 
@@ -812,14 +836,14 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
 
 export const DataLoaderForm: React.FC<{
     dataLoaderType: string, 
+    paramDefs: {name: string, default: string, type: string, required: boolean, description: string}[],
     onImport: () => void,
-    onFinish: (status: "success" | "error", message?: string) => void
-}> = ({dataLoaderType, onImport, onFinish}) => {
+    onFinish: (status: "success" | "error", message: string) => void
+}> = ({dataLoaderType, paramDefs, onImport, onFinish}) => {
 
     const dispatch = useDispatch();
 
     const params = useSelector((state: DataFormulatorState) => state.dataLoaderConnectParams[dataLoaderType] ?? {});
-    const [paramDefs, setParamDefs] = useState<Record<string, {default: string, type: string, required: boolean}>>({});
 
     const [tableMetadata, setTableMetadata] = useState<Record<string, any>>({});
     let [displaySamples, setDisplaySamples] = useState<Record<string, boolean>>({});
@@ -830,39 +854,9 @@ export const DataLoaderForm: React.FC<{
         setDisplaySamples({...displaySamples, [tableName]: !displaySamples[tableName]});
     }
 
-    useEffect(() => {
-        fetch(getUrls().DATA_LOADER_LIST_PARAMS, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({data_loader_type: dataLoaderType})
-        }).then(response => response.json())
-            .then(data => {
-                if (data.status === "success") {
-                    let paramDefs = Object.fromEntries(data.params.map((param: any) => {
-                        return [param.name, {default: param.default ?? "", type: param.type ?? "string", required: param.required}];
-                    }));
-                    if (Object.keys(params).length == 0) {
-                        dispatch(dfActions.updateDataLoaderConnectParams({
-                            dataLoaderType, params: Object.fromEntries(data.params.map((param: any) => {
-                                return [param.name, param.default ?? ""];
-                            }))
-                        }));
-                    }
-                    setParamDefs(paramDefs);
-                } else {
-                    console.error('Failed to fetch data loader params:', data.error);
-                }
-            })
-            .catch(error => {
-                console.error('Failed to fetch data loader params:', error);
-            });
-    }, [dataLoaderType]);
-
     let tableMetadataBox = [
         <Box sx={{my: 2}}>
-            <Typography variant="body2" sx={{color: "text.secondary", mb: 1,}}>Available Tables</Typography>
+            <Typography variant="body2" sx={{mb: 1,}}>Available Views / Tables</Typography>
         </Box>,
         <TableContainer component={Paper} sx={{maxHeight: 400, overflowY: "auto"}} >
             <Table sx={{ minWidth: 650 }} size="small" aria-label="simple table">
@@ -879,7 +873,9 @@ export const DataLoaderForm: React.FC<{
                             </IconButton>
                         </TableCell>
                         <TableCell sx={{maxWidth: 240, borderBottom: displaySamples[tableName] ? 'none' : '1px solid rgba(0, 0, 0, 0.1)'}} component="th" scope="row">
-                            {tableName} <Typography variant="caption" sx={{color: "text.secondary"}}>({metadata.row_count} rows × {metadata.columns.length} cols)</Typography>
+                            {tableName} <Typography variant="caption" sx={{color: "text.secondary"}} fontSize={10}>
+                                ({metadata.row_count > 0 ? `${metadata.row_count} rows × ` : ""}{metadata.columns.length} cols)
+                            </Typography>
                         </TableCell>
                         <TableCell sx={{maxWidth: 500}}>
                             {metadata.columns.map((column: any) => (
@@ -901,8 +897,9 @@ export const DataLoaderForm: React.FC<{
                                 })
                                 .then(response => response.json())
                                 .then(data => {
+                                    
                                     if (data.status === "success") {
-                                        onFinish("success");
+                                        onFinish("success", "Data ingested successfully");
                                     } else {
                                         onFinish("error", data.error);
                                     }
@@ -947,25 +944,29 @@ export const DataLoaderForm: React.FC<{
             }}>
                 <CircularProgress size={20} />
             </Box>}
-            <Typography variant="body2" sx={{color: "text.secondary"}}>
-                Data Connector: <Typography component="span" sx={{color: "secondary.main"}}>{dataLoaderType}</Typography> 
+            <Typography variant="body2" sx={{}}>
+                Data Connector (<Typography component="span" sx={{color: "secondary.main", fontWeight: "bold"}}>{dataLoaderType}</Typography>)
             </Typography>
             <Box sx={{display: "flex", flexDirection: "row", flexWrap: "wrap", gap: 1, ml: 4, mt: 2}}>
-                {Object.entries(paramDefs).map(([key, value]) => (
-                    <Box key={key}>
+                {paramDefs.map((paramDef) => (
+                    <Box key={paramDef.name}>
                         <TextField
-                            sx={{width: "180px", 
+                            disabled={Object.keys(tableMetadata).length > 0}
+                            sx={{width: "270px", 
                                 '& .MuiInputLabel-root': {fontSize: 14},
-                                '& .MuiInputBase-root': {fontSize: 14}}}
+                                '& .MuiInputBase-root': {fontSize: 14},
+                                '& .MuiInputBase-input::placeholder': {fontSize: 12, fontStyle: "italic"}
+                            }}
                             variant="standard"
                             size="small"
-                            required={value.required}
-                            key={key}
-                            label={key}
-                            value={params[key]}
+                            required={paramDef.required}
+                            key={paramDef.name}
+                            label={paramDef.name}
+                            value={params[paramDef.name]}
+                            placeholder={paramDef.description}
                             onChange={(event) => { 
                                 dispatch(dfActions.updateDataLoaderConnectParam({
-                                    dataLoaderType, paramName: key, 
+                                    dataLoaderType, paramName: paramDef.name, 
                                     paramValue: event.target.value}));
                             }}
                             slotProps={{
@@ -974,41 +975,51 @@ export const DataLoaderForm: React.FC<{
                         />
                     </Box>
                 ))}
-                <Button 
-                    size="small"
-                    color="secondary"
-                    variant="contained"
-                    sx={{textTransform: "none"}}
-                    onClick={() => {
-                        setIsConnecting(true);
-                        fetch(getUrls().DATA_LOADER_LIST_TABLES, {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json',
-                            },
-                            body: JSON.stringify({
-                                data_loader_type: dataLoaderType, 
-                                data_loader_params: params
-                            })
+                {paramDefs.length > 0 && <ButtonGroup sx={{height: 32, mt: 'auto'}} size="small" 
+                 variant="contained" color="primary">
+                    <Button 
+                        sx={{textTransform: "none"}}
+                        onClick={() => {
+                            setIsConnecting(true);
+                            fetch(getUrls().DATA_LOADER_LIST_TABLES, {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                },
+                                body: JSON.stringify({
+                                    data_loader_type: dataLoaderType, 
+                                    data_loader_params: params
+                                })
                         }).then(response => response.json())
-                            .then(data => {
-                                if (data.status === "success") {
-                                    console.log(data.tables);
-                                    setTableMetadata(Object.fromEntries(data.tables.map((table: any) => {
-                                        return [table.name, table.metadata];
-                                    })));
-                                } else {
-                                    console.error('Failed to fetch data loader tables:', data.error);
-                                }
-                                setIsConnecting(false);
-                            })
-                            .catch(error => {
-                                console.error('Failed to fetch data loader tables:', error);
-                                setIsConnecting(false);
-                            });
+                        .then(data => {
+                            if (data.status === "success") {
+                                console.log(data.tables);
+                                setTableMetadata(Object.fromEntries(data.tables.map((table: any) => {
+                                    return [table.name, table.metadata];
+                                })));
+                            } else {
+                                console.error('Failed to fetch data loader tables:', data.message);
+                                onFinish("error", `Failed to fetch data loader tables: ${data.message}`);
+                            }
+                            setIsConnecting(false);
+                        })
+                        .catch(error => {
+                            console.error('Failed to fetch data loader tables:', error);
+                            onFinish("error", `Failed to fetch data loader tables: ${error}`);
+                            setIsConnecting(false);
+                        });
                     }}>
-                        CONNECT
-                </Button>
+                        {Object.keys(tableMetadata).length > 0 ? "refresh" : "connect"}
+                    </Button>
+                    <Button 
+                        disabled={Object.keys(tableMetadata).length === 0}
+                        sx={{textTransform: "none"}}
+                        onClick={() => {
+                            setTableMetadata({});
+                        }}>
+                        disconnect
+                    </Button>
+                </ButtonGroup>}
             </Box>
             {Object.keys(tableMetadata).length > 0 && tableMetadataBox }
         </Box>
