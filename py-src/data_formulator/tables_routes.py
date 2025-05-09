@@ -691,17 +691,20 @@ def sanitize_db_error_message(error: Exception) -> Tuple[str, int]:
     # Define patterns for known safe errors
     safe_error_patterns = {
         # Database table errors
-        r"Table.*does not exist": ("Specified table was not found", 404),
-        r"Table.*already exists": ("A table with this name already exists", 409),
+        r"Table.*does not exist": (error_msg, 404),
+        r"Table.*already exists": (error_msg, 409),
         # Query errors
-        r"syntax error in SQL": ("Invalid SQL query syntax", 400),
-        r"Invalid input syntax": ("Invalid input data format", 400),
+        r"syntax error": (error_msg, 400),
+        r"Catalog Error": (error_msg, 404), 
+        r"Binder Error": (error_msg, 400),
+        r"Invalid input syntax": (error_msg, 400),
+        
         # File errors
-        r"No such file": ("File not found", 404),
+        r"No such file": (error_msg, 404),
         r"Permission denied": ("Access denied", 403),
 
         # Data loader errors
-        r"Entity ID": ("Entity ID not found, please check the data loader parameters", 500),
+        r"Entity ID": (error_msg, 500),
         r"session_id": ("session_id not found, please refresh the page", 500),
     }
     
@@ -784,6 +787,70 @@ def data_loader_ingest_data():
         with db_manager.connection(session['session_id']) as duck_db_conn:
             data_loader = DATA_LOADERS[data_loader_type](data_loader_params, duck_db_conn)
             data_loader.ingest_data(table_name)
+
+            return jsonify({
+                "status": "success",
+                "message": "Successfully ingested data from data loader"
+            })
+
+    except Exception as e:
+        logger.error(f"Error ingesting data from data loader: {str(e)}")
+        safe_msg, status_code = sanitize_db_error_message(e)
+        return jsonify({
+            "status": "error", 
+            "message": safe_msg
+        }), status_code
+    
+
+@tables_bp.route('/data-loader/view-query-sample', methods=['POST'])
+def data_loader_view_query_sample():
+    """View a sample of data from a query"""
+
+    try:
+        data = request.get_json()
+        data_loader_type = data.get('data_loader_type')
+        data_loader_params = data.get('data_loader_params')
+        query = data.get('query')
+
+        if data_loader_type not in DATA_LOADERS:
+            return jsonify({"status": "error", "message": f"Invalid data loader type. Must be one of: {', '.join(DATA_LOADERS.keys())}"}), 400
+        
+        with db_manager.connection(session['session_id']) as duck_db_conn:
+            data_loader = DATA_LOADERS[data_loader_type](data_loader_params, duck_db_conn)
+            sample = data_loader.view_query_sample(query)
+
+            return jsonify({
+                "status": "success",
+                "sample": sample,
+                "message": "Successfully retrieved query sample"
+            })
+    except Exception as e:
+        logger.error(f"Error viewing query sample: {str(e)}")
+        safe_msg, status_code = sanitize_db_error_message(e)
+        return jsonify({
+            "status": "error", 
+            "sample": [],
+            "message": safe_msg
+        }), status_code
+    
+
+@tables_bp.route('/data-loader/ingest-data-from-query', methods=['POST'])
+def data_loader_ingest_data_from_query():
+    """Ingest data from a data loader"""
+
+    try:
+        data = request.get_json()
+        data_loader_type = data.get('data_loader_type')
+        data_loader_params = data.get('data_loader_params')
+        query = data.get('query')
+        name_as = data.get('name_as')
+
+        if data_loader_type not in DATA_LOADERS:
+            return jsonify({"status": "error", "message": f"Invalid data loader type. Must be one of: {', '.join(DATA_LOADERS.keys())}"}), 400
+
+        with db_manager.connection(session['session_id']) as duck_db_conn:
+            data_loader = DATA_LOADERS[data_loader_type](data_loader_params, duck_db_conn)
+            data_loader.ingest_data_from_query(query, name_as)
 
             return jsonify({
                 "status": "success",

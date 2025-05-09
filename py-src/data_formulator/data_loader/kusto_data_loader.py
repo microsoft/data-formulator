@@ -8,10 +8,8 @@ import string
 from azure.kusto.data import KustoClient, KustoConnectionStringBuilder
 from azure.kusto.data.helpers import dataframe_from_result_table
 
-from data_formulator.data_loader.external_data_loader import ExternalDataLoader
+from data_formulator.data_loader.external_data_loader import ExternalDataLoader, sanitize_table_name
 
-def sanitize_table_name(table_name: str) -> str:
-    return table_name.replace(".", "_").replace("-", "_")
 
 class KustoDataLoader(ExternalDataLoader):
 
@@ -53,8 +51,6 @@ class KustoDataLoader(ExternalDataLoader):
         return dataframe_from_result_table(result.primary_results[0])
 
     def list_tables(self) -> List[Dict[str, Any]]:
-
-
         # first list functions (views)
         query = ".show functions"
         function_result_df = self.query(query)
@@ -170,6 +166,8 @@ class KustoDataLoader(ExternalDataLoader):
             
             total_rows_ingested += len(chunk_df)
 
+    def view_query_sample(self, query: str) -> str:
+        return self.query(query).head(10).to_dict(orient="records")
 
     def ingest_data_from_query(self, query: str, name_as: str) -> pd.DataFrame:
         # Sanitize the table name for SQL compatibility

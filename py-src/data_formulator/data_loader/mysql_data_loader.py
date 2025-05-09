@@ -3,7 +3,7 @@ import json
 import pandas as pd
 import duckdb
 
-from data_formulator.data_loader.external_data_loader import ExternalDataLoader
+from data_formulator.data_loader.external_data_loader import ExternalDataLoader, sanitize_table_name
 from typing import Dict, Any
 
 class MySQLDataLoader(ExternalDataLoader):
@@ -31,6 +31,12 @@ class MySQLDataLoader(ExternalDataLoader):
             if value:
                 attatch_string += f"{key}={value} "
 
+        # Detach existing mysqldb connection if it exists
+        try:
+            self.duck_db_conn.execute("DETACH mysqldb;")
+        except:
+            pass  # Ignore if mysqldb doesn't exist
+
         # Register MySQL connection
         self.duck_db_conn.execute(f"ATTACH '{attatch_string}' AS mysqldb (TYPE mysql);")
 
@@ -44,21 +50,21 @@ class MySQLDataLoader(ExternalDataLoader):
         
         for schema, table_name in tables_df.values:
 
-            full_table_name = f"{schema}.{table_name}"
+            full_table_name = f"mysqldb.{schema}.{table_name}"
 
             # Get column information using DuckDB's information schema
-            columns_df = self.duck_db_conn.execute(f"DESCRIBE mysqldb.{full_table_name}").df()
+            columns_df = self.duck_db_conn.execute(f"DESCRIBE {full_table_name}").df()
             columns = [{
                 'name': row['column_name'],
                 'type': row['column_type']
             } for _, row in columns_df.iterrows()]
             
             # Get sample data
-            sample_df = self.duck_db_conn.execute(f"SELECT * FROM mysqldb.{full_table_name} LIMIT 10").df()
+            sample_df = self.duck_db_conn.execute(f"SELECT * FROM {full_table_name} LIMIT 10").df()
             sample_rows = json.loads(sample_df.to_json(orient="records"))
             
             # get row count
-            row_count = self.duck_db_conn.execute(f"SELECT COUNT(*) FROM mysqldb.{full_table_name}").fetchone()[0]
+            row_count = self.duck_db_conn.execute(f"SELECT COUNT(*) FROM {full_table_name}").fetchone()[0]
 
             table_metadata = {
                 "row_count": row_count,
@@ -73,19 +79,24 @@ class MySQLDataLoader(ExternalDataLoader):
             
         return results
 
-    def ingest_data(self, table_name: str, name_as: str = None, size: int = 1000000):
+    def ingest_data(self, table_name: str, name_as: str | None = None, size: int = 1000000):
         # Create table in the main DuckDB database from MySQL data
         if name_as is None:
             name_as = table_name.split('.')[-1]
 
+        name_as = sanitize_table_name(name_as)
+
         self.duck_db_conn.execute(f"""
-            CREATE OR REPLACE TABLE {name_as} AS 
-            SELECT * FROM mysqldb.{table_name} 
+            CREATE OR REPLACE TABLE main.{name_as} AS 
+            SELECT * FROM {table_name} 
             LIMIT {size}
         """)
 
+    def view_query_sample(self, query: str) -> str:
+        return self.duck_db_conn.execute(query).df().head(10).to_dict(orient="records")
+
     def ingest_data_from_query(self, query: str, name_as: str) -> pd.DataFrame:
-        self.duck_db_conn.execute(f"""
-            CREATE OR REPLACE TABLE main.{name_as} AS 
-            SELECT * FROM ({query})
-        """)
+        # Execute the query and get results as a DataFrame
+        df = self.duck_db_conn.execute(query).df()
+        # Use the base class's method to ingest the DataFrame
+        self.ingest_df_to_duckdb(df, name_as)

@@ -69,6 +69,10 @@ export function getUrls() {
         DATA_LOADER_LIST_DATA_LOADERS: `/api/tables/data-loader/list-data-loaders`,
         DATA_LOADER_LIST_TABLES: `/api/tables/data-loader/list-tables`,
         DATA_LOADER_INGEST_DATA: `/api/tables/data-loader/ingest-data`,
+        DATA_LOADER_VIEW_QUERY_SAMPLE: `/api/tables/data-loader/view-query-sample`,
+        DATA_LOADER_INGEST_DATA_FROM_QUERY: `/api/tables/data-loader/ingest-data-from-query`,
+
+        QUERY_COMPLETION: `/api/agent/query-completion`,
     };
 }
 

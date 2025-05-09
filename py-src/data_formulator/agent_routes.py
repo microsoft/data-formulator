@@ -29,7 +29,7 @@ from data_formulator.agents.agent_sort_data import SortDataAgent
 from data_formulator.agents.agent_data_load import DataLoadAgent
 from data_formulator.agents.agent_data_clean import DataCleanAgent
 from data_formulator.agents.agent_code_explanation import CodeExplanationAgent
-
+from data_formulator.agents.agent_query_completion import QueryCompletionAgent
 from data_formulator.agents.client_utils import Client
 
 from data_formulator.db_manager import db_manager
@@ -438,3 +438,24 @@ def request_code_expl():
     else:
         expl = ""
     return expl
+
+@agent_bp.route('/query-completion', methods=['POST'])
+def query_completion():
+    if request.is_json:
+        logger.info("# request data: ")
+        content = request.get_json()        
+
+        client = get_client(content['model'])
+
+        data_source_metadata = content["data_source_metadata"]
+        query = content["query"]
+
+        
+        query_completion_agent = QueryCompletionAgent(client=client)
+        reasoning, query = query_completion_agent.run(data_source_metadata, query)
+        response = flask.jsonify({ "token": "", "status": "ok", "reasoning": reasoning, "query": query })
+    else:
+        response = flask.jsonify({ "token": "", "status": "error", "reasoning": "unable to complete query", "query": "" })
+
+    response.headers.add('Access-Control-Allow-Origin', '*')
+    return response
