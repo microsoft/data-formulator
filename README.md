@@ -22,6 +22,14 @@ Transform data and create rich visualizations iteratively with AI 🪄. Try Data
 
 ## News 🔥🔥🔥
 
+- [04-23-2025] Data Formulator 0.2.1: External Data Loader 
+  - We introduced an external data loader to make import data easier. 
+    - Example data loaders from MySQL and Azure Data Explorer (Kusto) are provided.
+  - Call for action:
+    - Users: let us know which data source you'd like to load data from.
+    - Developers: help us build more data loaders.
+  - Created a discord channel for discussions.
+
 - [04-23-2025] Data Formulator 0.2: working with *large* data 📦📦📦
   - Explore large data by:
     1. Upload large data file to the local database (powered by [DuckDB](https://github.com/duckdb/duckdb)).
