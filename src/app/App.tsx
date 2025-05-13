@@ -13,7 +13,7 @@ import {
     getSessionId,
 } from './dfSlice'
 
-import blue from '@mui/material/colors/blue';
+import { red, purple, blue, brown, yellow, orange, } from '@mui/material/colors';
 
 import _ from 'lodash';
 
@@ -559,11 +559,14 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
             primary: {
                 main: blue[700]
             },
+            secondary: {
+                main: purple[700]
+            },
             derived: {
-                main: "rgb(255,215,0)", // gold
+                main: yellow[700], 
             },
             custom: {
-                main: "rgb(255, 160, 122)", //lightsalmon
+                main: orange[700], //lightsalmon
             },
             warning: {
                 main: '#bf5600', // New accessible color, original (#ed6c02) has insufficient color contrast of 3.11

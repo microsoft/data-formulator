@@ -221,13 +221,11 @@ class PythonDataTransformationAgent(object):
                     result = py_sandbox.run_transform_in_sandbox2020(code_str, [pd.DataFrame.from_records(t['rows']) for t in input_tables], self.exec_python_in_subprocess)
                     result['code'] = code_str
 
-                    print(f"result: {result}")
-
                     if result['status'] == 'ok':
                         # parse the content
                         result_df = result['content']
                         result['content'] = {
-                            'rows': result_df.to_dict(orient='records'),
+                            'rows': json.loads(result_df.to_json(orient='records')),
                         }
                     else:
                         logger.info(result['content'])

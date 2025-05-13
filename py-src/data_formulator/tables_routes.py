@@ -8,7 +8,7 @@ import mimetypes
 mimetypes.add_type('application/javascript', '.js')
 mimetypes.add_type('application/javascript', '.mjs')
 import json
-
+import traceback
 from flask import request, send_from_directory, session, jsonify, Blueprint
 import pandas as pd
 import random
@@ -16,6 +16,7 @@ import string
 from pathlib import Path
 
 from data_formulator.db_manager import db_manager
+from data_formulator.data_loader import DATA_LOADERS
 
 import re
 from typing import Tuple
@@ -44,11 +45,11 @@ def list_tables():
             table_metadata_list = db.execute("""
                 SELECT database_name, schema_name, table_name, schema_name==current_schema() as is_current_schema, 'table' as object_type 
                 FROM duckdb_tables() 
-                WHERE internal=False 
+                WHERE internal=False AND database_name == current_database()
                 UNION ALL 
                 SELECT database_name, schema_name, view_name as table_name, schema_name==current_schema() as is_current_schema, 'view' as object_type 
                 FROM duckdb_views()
-                WHERE view_name NOT LIKE 'duckdb_%' AND view_name NOT LIKE 'sqlite_%' AND view_name NOT LIKE 'pragma_%'
+                WHERE view_name NOT LIKE 'duckdb_%' AND view_name NOT LIKE 'sqlite_%' AND view_name NOT LIKE 'pragma_%' AND database_name == current_database()
             """).fetchall()
         
             
@@ -471,107 +472,6 @@ def upload_db_file():
         }), status_code
 
 
-def validate_db_connection_params(db_type: str, db_host: str, db_port: int, 
-                                db_database: str, db_user: str, db_password: str):
-    """Validate database connection parameters"""
-    # Validate db_type
-    valid_db_types = ['postgresql', 'mysql']
-    if not db_type or db_type.lower() not in valid_db_types:
-        raise ValueError(f"Invalid database type. Must be one of: {', '.join(valid_db_types)}")
-    
-    # Validate host (basic DNS/IP format check)
-    if not db_host or not re.match(r'^[a-zA-Z0-9.-]+$', db_host):
-        raise ValueError("Invalid host format")
-    
-    # Validate port
-    try:
-        port = int(db_port)
-        if not (1 <= port <= 65535):
-            raise ValueError()
-    except (ValueError, TypeError):
-        raise ValueError("Port must be a number between 1 and 65535")
-    
-    # Validate database name (alphanumeric and underscores only)
-    if not db_database or not re.match(r'^[a-zA-Z0-9_]+$', db_database):
-        raise ValueError("Invalid database name format")
-    
-    # Validate username (alphanumeric and some special chars)
-    if not db_user or not re.match(r'^[a-zA-Z0-9@._-]+$', db_user):
-        raise ValueError("Invalid username format")
-    
-    # Validate password exists
-    if not db_password:
-        raise ValueError("Password cannot be empty")
-
-@tables_bp.route('/attach-external-db', methods=['POST'])
-def attach_external_db():
-    """Attach an external db to the session"""
-    try:
-        data = request.get_json()
-        db_type = data.get('db_type')
-        db_host = data.get('db_host')
-        db_port = data.get('db_port')
-        db_database = data.get('db_database')
-        db_user = data.get('db_user')
-        db_password = data.get('db_password')
-
-        # Generate a random suffix for the database name
-        suffix = ''.join(random.choices(string.ascii_letters + string.digits, k=2))
-        db_name = f"{db_type.lower()}_{suffix}"
-
-        if 'session_id' not in session:
-            return jsonify({"status": "error", "message": "No session ID found"}), 400
-        
-        with db_manager.connection(session['session_id']) as conn:
-            # Create secret using parameterized query
-
-            # Install and load the extension
-            if db_type == 'mysql':
-                conn.install_extension("mysql")
-                conn.load_extension("mysql")
-            elif db_type == 'postgresql':
-                conn.install_extension("postgres")
-                conn.load_extension("postgres")
-                
-            connect_query = f"""CREATE SECRET (
-                TYPE {db_type},
-                HOST '{db_host}',
-                PORT '{db_port}',
-                DATABASE '{db_database}',
-                USER '{db_user}',
-                PASSWORD '{db_password}'
-            );"""
-            conn.execute(connect_query)
-            
-            # Attach the database
-            conn.execute(f"ATTACH '' AS {db_name} (TYPE {db_type});")
-            
-            result = conn.execute(f"SELECT * FROM {db_name}.information_schema.tables WHERE table_schema NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys');").fetch_df()
-
-            print(f"result: {result}")
-
-            result = conn.execute(f"SELECT * FROM {db_name}.sakila.actor LIMIT 10;").fetchdf()
-
-            print(f"result: {result}")
-   
-            # Log what we found for debugging
-            logger.info(f"Found {len(result)} tables: {result}")
-
-            return jsonify({
-                "status": "success",
-                "message": "External database attached successfully",
-                "result": result
-            })
-        
-    except Exception as e:
-        logger.error(f"Error attaching external database: {str(e)}")
-        safe_msg, status_code = sanitize_db_error_message(e)
-        return jsonify({
-            "status": "error", 
-            "message": safe_msg
-        }), status_code
-
-
 @tables_bp.route('/download-db-file', methods=['GET'])
 def download_db_file():
     """Download the db file for a session"""
@@ -791,14 +691,21 @@ def sanitize_db_error_message(error: Exception) -> Tuple[str, int]:
     # Define patterns for known safe errors
     safe_error_patterns = {
         # Database table errors
-        r"Table.*does not exist": ("Specified table was not found", 404),
-        r"Table.*already exists": ("A table with this name already exists", 409),
+        r"Table.*does not exist": (error_msg, 404),
+        r"Table.*already exists": (error_msg, 409),
         # Query errors
-        r"syntax error in SQL": ("Invalid SQL query syntax", 400),
-        r"Invalid input syntax": ("Invalid input data format", 400),
+        r"syntax error": (error_msg, 400),
+        r"Catalog Error": (error_msg, 404), 
+        r"Binder Error": (error_msg, 400),
+        r"Invalid input syntax": (error_msg, 400),
+        
         # File errors
-        r"No such file": ("File not found", 404),
+        r"No such file": (error_msg, 404),
         r"Permission denied": ("Access denied", 403),
+
+        # Data loader errors
+        r"Entity ID": (error_msg, 500),
+        r"session_id": ("session_id not found, please refresh the page", 500),
     }
     
     # Check if error matches any safe pattern
@@ -811,3 +718,149 @@ def sanitize_db_error_message(error: Exception) -> Tuple[str, int]:
     
     # Return a generic error message for unknown errors
     return "An unexpected error occurred", 500
+
+
+@tables_bp.route('/data-loader/list-data-loaders', methods=['GET'])
+def data_loader_list_data_loaders():
+    """List all available data loaders"""
+
+    try:
+        return jsonify({
+            "status": "success",
+            "data_loaders": {
+                name:  data_loader.list_params()
+                for name, data_loader in DATA_LOADERS.items()
+            }
+        })
+    except Exception as e:
+        logger.error(f"Error listing data loaders: {str(e)}")
+        safe_msg, status_code = sanitize_db_error_message(e)
+        return jsonify({
+            "status": "error", 
+            "message": safe_msg
+        }), status_code
+
+@tables_bp.route('/data-loader/list-tables', methods=['POST'])
+def data_loader_list_tables():
+    """List tables from a data loader"""
+
+    try:
+        data = request.get_json()
+        data_loader_type = data.get('data_loader_type')
+        data_loader_params = data.get('data_loader_params')
+
+        if data_loader_type not in DATA_LOADERS:
+            return jsonify({"status": "error", "message": f"Invalid data loader type. Must be one of: {', '.join(DATA_LOADERS.keys())}"}), 400
+
+        with db_manager.connection(session['session_id']) as duck_db_conn:
+            data_loader = DATA_LOADERS[data_loader_type](data_loader_params, duck_db_conn)
+            tables = data_loader.list_tables()
+
+            return jsonify({
+                "status": "success",
+                "tables": tables
+            })
+
+    except Exception as e:
+        logger.error(f"Error listing tables from data loader: {str(e)}")
+        #print(traceback.format_exc())
+        safe_msg, status_code = sanitize_db_error_message(e)
+        return jsonify({
+            "status": "error", 
+            "message": safe_msg
+        }), status_code
+
+
+@tables_bp.route('/data-loader/ingest-data', methods=['POST'])
+def data_loader_ingest_data():
+    """Ingest data from a data loader"""
+
+    try:
+        data = request.get_json()
+        data_loader_type = data.get('data_loader_type')
+        data_loader_params = data.get('data_loader_params')
+        table_name = data.get('table_name')
+
+        if data_loader_type not in DATA_LOADERS:
+            return jsonify({"status": "error", "message": f"Invalid data loader type. Must be one of: {', '.join(DATA_LOADERS.keys())}"}), 400
+
+        with db_manager.connection(session['session_id']) as duck_db_conn:
+            data_loader = DATA_LOADERS[data_loader_type](data_loader_params, duck_db_conn)
+            data_loader.ingest_data(table_name)
+
+            return jsonify({
+                "status": "success",
+                "message": "Successfully ingested data from data loader"
+            })
+
+    except Exception as e:
+        logger.error(f"Error ingesting data from data loader: {str(e)}")
+        safe_msg, status_code = sanitize_db_error_message(e)
+        return jsonify({
+            "status": "error", 
+            "message": safe_msg
+        }), status_code
+    
+
+@tables_bp.route('/data-loader/view-query-sample', methods=['POST'])
+def data_loader_view_query_sample():
+    """View a sample of data from a query"""
+
+    try:
+        data = request.get_json()
+        data_loader_type = data.get('data_loader_type')
+        data_loader_params = data.get('data_loader_params')
+        query = data.get('query')
+
+        if data_loader_type not in DATA_LOADERS:
+            return jsonify({"status": "error", "message": f"Invalid data loader type. Must be one of: {', '.join(DATA_LOADERS.keys())}"}), 400
+        
+        with db_manager.connection(session['session_id']) as duck_db_conn:
+            data_loader = DATA_LOADERS[data_loader_type](data_loader_params, duck_db_conn)
+            sample = data_loader.view_query_sample(query)
+
+            return jsonify({
+                "status": "success",
+                "sample": sample,
+                "message": "Successfully retrieved query sample"
+            })
+    except Exception as e:
+        logger.error(f"Error viewing query sample: {str(e)}")
+        safe_msg, status_code = sanitize_db_error_message(e)
+        return jsonify({
+            "status": "error", 
+            "sample": [],
+            "message": safe_msg
+        }), status_code
+    
+
+@tables_bp.route('/data-loader/ingest-data-from-query', methods=['POST'])
+def data_loader_ingest_data_from_query():
+    """Ingest data from a data loader"""
+
+    try:
+        data = request.get_json()
+        data_loader_type = data.get('data_loader_type')
+        data_loader_params = data.get('data_loader_params')
+        query = data.get('query')
+        name_as = data.get('name_as')
+
+        if data_loader_type not in DATA_LOADERS:
+            return jsonify({"status": "error", "message": f"Invalid data loader type. Must be one of: {', '.join(DATA_LOADERS.keys())}"}), 400
+
+        with db_manager.connection(session['session_id']) as duck_db_conn:
+            data_loader = DATA_LOADERS[data_loader_type](data_loader_params, duck_db_conn)
+            data_loader.ingest_data_from_query(query, name_as)
+
+            return jsonify({
+                "status": "success",
+                "message": "Successfully ingested data from data loader"
+            })
+
+    except Exception as e:
+        logger.error(f"Error ingesting data from data loader: {str(e)}")
+        safe_msg, status_code = sanitize_db_error_message(e)
+        return jsonify({
+            "status": "error", 
+            "message": safe_msg
+        }), status_code

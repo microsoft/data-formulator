@@ -1,11 +1,11 @@
 // TableManager.tsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, FC } from 'react';
 import { 
   Card, 
   CardContent, 
   Typography, 
   Button, 
-  Grid, 
+  Grid,
   Box,
   IconButton,
   Paper,
@@ -30,8 +30,14 @@ import {
   CircularProgress,
   ButtonGroup,
   Tooltip,
-  MenuItem
+  MenuItem,
+  Chip,
+  Collapse,
+  styled,
+  ToggleButtonGroup,
+  ToggleButton
 } from '@mui/material';
+
 import DeleteIcon from '@mui/icons-material/Delete';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 import CloseIcon from '@mui/icons-material/Close';
@@ -44,17 +50,29 @@ import UploadIcon from '@mui/icons-material/Upload';
 import DownloadIcon from '@mui/icons-material/Download';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import PolylineIcon from '@mui/icons-material/Polyline';
+import ExpandLessIcon from '@mui/icons-material/ExpandLess';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import TableRowsIcon from '@mui/icons-material/TableRows';
+import RefreshIcon from '@mui/icons-material/Refresh';
+import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
 
 import { getUrls } from '../app/utils';
 import { CustomReactTable } from './ReactTable';
 import { DictTable } from '../components/ComponentType';
 import { Type } from '../data/types';
 import { useDispatch, useSelector } from 'react-redux';
-import { dfActions } from '../app/dfSlice';
+import { dfActions, dfSelectors, getSessionId } from '../app/dfSlice';
 import { alpha } from '@mui/material';
 import { DataFormulatorState } from '../app/dfSlice';
 import { fetchFieldSemanticType } from '../app/dfSlice';
 import { AppDispatch } from '../app/store';
+import Editor from 'react-simple-code-editor';
+
+import Prism from 'prismjs'
+import 'prismjs/components/prism-javascript' // Language
+import 'prismjs/themes/prism.css'; //Example style, you can use another
+import PrecisionManufacturingIcon from '@mui/icons-material/PrecisionManufacturing';
+import CheckIcon from '@mui/icons-material/Check';
 
 export const handleDBDownload = async (sessionId: string) => {
     try {
@@ -102,38 +120,36 @@ interface DBTable {
 
 interface TabPanelProps {
   children?: React.ReactNode;
-  index: number;
-  value: number;
+  key: string;
+  show: boolean;
   sx?: SxProps;
 }
 
 function TabPanel(props: TabPanelProps, sx: SxProps) {
-    const { children, value, index, ...other } = props;
+    const { children, show, key, ...other } = props;
 
     return (
-        <Box role="tabpanel" hidden={value !== index}
-            id={`vertical-tabpanel-${index}`}
-            aria-labelledby={`vertical-tab-${index}`}
+        <Box role="tabpanel" hidden={!show}
+            id={`vertical-tabpanel-${key}`}
+            aria-labelledby={`vertical-tab-${key}`}
             style={{maxWidth: '100%'}}
             sx={sx} {...other}
         >
-            {value === index && (
-                <Box sx={{ p: 2 }}>
-                    {children}
-                </Box>
-            )}
+            <Box sx={{ p: 2 }}>
+                {children}
+            </Box>
         </Box>
     );
 }
 
-function a11yProps(index: number) {
+function a11yProps(key: string) {
     return {
-        id: `vertical-tab-${index}`,
-        'aria-controls': `vertical-tabpanel-${index}`,
+        id: `vertical-tab-${key}`,
+        'aria-controls': `vertical-tabpanel-${key}`,
     };
 }
 
-interface TableStatistics {
+interface ColumnStatistics {
     column: string;
     type: string;
     statistics: {
@@ -148,12 +164,12 @@ interface TableStatistics {
 
 interface TableStatisticsViewProps {
     tableName: string;
-    tableAnalysisMap: Record<string, AnalysisResults | null>;
+    columnStats: ColumnStatistics[];
 }
 
 export class TableStatisticsView extends React.Component<TableStatisticsViewProps> {
     render() {
-        const { tableName, tableAnalysisMap } = this.props;
+        const { tableName, columnStats } = this.props;
         
         // Common styles for header cells
         const headerCellStyle = {
@@ -197,7 +213,7 @@ export class TableStatisticsView extends React.Component<TableStatisticsViewProp
                             </TableRow>
                         </TableHead>
                         <TableBody>
-                            {tableAnalysisMap[tableName]?.statistics.map((stat, idx) => (
+                            {columnStats.map((stat, idx) => (
                                 <TableRow 
                                     key={stat.column} 
                                     hover
@@ -242,11 +258,6 @@ export class TableStatisticsView extends React.Component<TableStatisticsViewProp
     }
 }
 
-interface AnalysisResults {
-    table_name: string;
-    statistics: TableStatistics[];
-}
-
 export const DBTableManager: React.FC = () => {
     return (
         <DBTableSelectionDialog buttonElement={<Button>DB Tables</Button>} />
@@ -259,18 +270,36 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
     const sessionId = useSelector((state: DataFormulatorState) => state.sessionId);
 
     const [tableDialogOpen, setTableDialogOpen] = useState<boolean>(false);
-    const [tableAnalysisMap, setTableAnalysisMap] = useState<Record<string, AnalysisResults | null>>({});
+    const [tableAnalysisMap, setTableAnalysisMap] = useState<Record<string, ColumnStatistics[] | null>>({});
     
+    // maps data loader type to list of param defs
+    const [dataLoaderParamDefs, setDataLoaderParamDefs] = useState<Record<string, {name: string, default: string, type: string, required: boolean, description: string}[]>>({});
+
     const [dbTables, setDbTables] = useState<DBTable[]>([]);
-    const [selectedTabIndex, setSelectedTabIndex] = useState(0);
-    
+    const [selectedTabKey, setSelectedTabKey] = useState("");
+
     const [errorMessage, setErrorMessage] = useState<{content: string, severity: "error" | "warning" | "info" | "success"} | null>(null);
     const [showError, setShowError] = useState(false);
     const [isUploading, setIsUploading] = useState<boolean>(false);
 
     useEffect(() => {
         fetchTables();
+        fetchDataLoaders();
     }, []);
+
+    useEffect(() => {
+        if (errorMessage?.content?.includes("session_id not found")) {
+            dispatch(getSessionId());
+        }
+    }, [errorMessage])
+
+    useEffect(() => {
+        if (dbTables.length == 0) {
+            setSelectedTabKey("");
+        } else if (!selectedTabKey.startsWith("dataLoader:") && dbTables.find(t => t.name === selectedTabKey) == undefined) {
+            setSelectedTabKey(dbTables[0].name);
+        }
+    }, [dbTables]);
 
     // Fetch list of tables
     const fetchTables = async () => {
@@ -281,9 +310,30 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
                 setDbTables(data.tables);
             }
         } catch (error) {
-            console.error('Failed to fetch tables:', error);
+            setErrorMessage({content: 'Failed to fetch tables, please check if the server is running', severity: "error"});
+            setShowError(true);
         }
     };
+
+    const fetchDataLoaders = async () => {
+        fetch(getUrls().DATA_LOADER_LIST_DATA_LOADERS, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === "success") {
+                setDataLoaderParamDefs(data.data_loaders);
+            } else {
+                console.error('Failed to fetch data loader params:', data.error);
+            }
+        })
+        .catch(error => {
+            console.error('Failed to fetch data loader params:', error);
+        });
+    }
 
     const handleDBUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];
@@ -309,7 +359,7 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
             }
         } catch (error) {
             console.error('Failed to upload table:', error);
-            setErrorMessage({content: 'Failed to upload table. The server may need to be restarted.', severity: "error"});
+            setErrorMessage({content: 'Failed to upload table, please check if the server is running', severity: "error"});
             setShowError(true);
         } finally {
             setIsUploading(false);
@@ -343,7 +393,7 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
             }
         } catch (error) {
             console.error('Failed to upload table:', error);
-            setErrorMessage({content: 'Failed to upload table. The server may need to be restarted.', severity: "error"});
+            setErrorMessage({content: 'Failed to upload table, please check if the server is running', severity: "error"});
             setShowError(true);
         } finally {
             setIsUploading(false);
@@ -388,12 +438,14 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
             const data = await response.json();
             if (data.status === 'success') {
                 fetchTables();
-                if (dbTables[selectedTabIndex]?.name === tableName) {
-                    setSelectedTabIndex(selectedTabIndex > 0 ? selectedTabIndex - 1 : 0);
-                }
+                setSelectedTabKey(dbTables.length > 0 ? dbTables[0].name : "");
+            } else {
+                setErrorMessage({content: data.error || 'Failed to delete table', severity: "error"});
+                setShowError(true);
             }
         } catch (error) {
-            console.error('Failed to delete table:', error);
+            setErrorMessage({content: 'Failed to delete table, please check if the server is running', severity: "error"});
+            setShowError(true);
         }
     };
 
@@ -423,7 +475,7 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
             }
         } catch (error) {
             console.error('Failed to analyze table data:', error);
-            setErrorMessage({content: 'Failed to analyze table data', severity: "error"});
+            setErrorMessage({content: 'Failed to analyze table data, please check if the server is running', severity: "error"});
             setShowError(true);
         }
     };
@@ -477,8 +529,8 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
        setTableDialogOpen(false);
     }
 
-    const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
-        setSelectedTabIndex(newValue);
+    const handleTabChange = (event: React.SyntheticEvent, newValue: string) => {
+        setSelectedTabKey(newValue);
     };
 
     const handleCloseError = () => {
@@ -536,44 +588,120 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
         );
     }
 
-    let mainContent = dbTables.length > 0 ? 
-        <Box sx={{ flexGrow: 1, bgcolor: 'background.paper', display: 'flex', flexDirection: 'row', height: '100%' }}>
-            <Box sx={{display: "flex", flexDirection: "column", minWidth: '120px', maxWidth: "300px", borderRight: 1, borderColor: 'divider'}}>
+    let mainContent =  
+        <Box sx={{flexGrow: 1, bgcolor: 'background.paper', display: 'flex', flexDirection: 'row', minHeight: 400 }}>
+            <Box sx={{display: "flex", flexDirection: "column", width: "180px", borderRight: 1, borderColor: 'divider'}}>
                 <Tabs
+                    value={0} // not used, just to keep MUI happy
                     orientation="vertical"
                     variant="scrollable"
-                    scrollButtons="auto"
+                    scrollButtons={dbTables.length > 8 ? "auto" : false}
                     allowScrollButtonsMobile
-                    value={selectedTabIndex}
-                    onChange={handleTabChange}
                     aria-label="Database tables"
-                    sx={{ maxWidth: '300px', maxHeight: '360px',
+                    sx={{ 
+                        maxHeight: '360px',
+                        px: 0.5,
+                        pt: 1,
                         '& .MuiTabs-scrollButtons.Mui-disabled': {
                             opacity: 0.3,
                         },
                     }}
                 >
+                    <Typography variant="caption" sx={{color: "text.secondary", fontWeight: "bold", px: 1 }}>
+                        available tables
+                        <Tooltip title="refresh the table list">
+                            <IconButton size="small" color="primary" sx={{
+                                '&:hover': {
+                                    transform: 'rotate(180deg)',
+                                },
+                                transition: 'transform 0.3s ease-in-out',
+                            }} onClick={() => {
+                                fetchTables();
+                            }}>
+                                <RefreshIcon sx={{fontSize: 14}} />
+                            </IconButton>
+                        </Tooltip>
+                    </Typography>
+                    {dbTables.length == 0 && 
+                        <Typography variant="caption" sx={{color: "lightgray", px: 2, py: 0.5, fontStyle: "italic"}}>no tables available</Typography>}
                     {dbTables.map((t, i) => (
                         <Tab 
-                            key={i} 
+                            key={t.name} 
+                            value={t.name}
                             wrapped 
-                            label={<Typography variant="caption" 
-                                        sx={{textTransform: "none", width: "calc(100% - 4px)", textAlign: 'center', 
-                                            textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap'}}>
-                                    {t.name}</Typography>} 
-                            sx={{textTransform: "none", minHeight: 24, padding: 1}}
-                            {...a11yProps(i)} 
+                            label={
+                                <Typography variant="caption" 
+                                    sx={{textTransform: "none", width: "calc(100% - 4px)", textAlign: 'left', 
+                                         textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap'}}>
+                                    <Typography variant="caption" sx={{fontSize: 12}}>{t.name}</Typography>
+                                </Typography>
+                            } 
+                            onClick={() => {
+                                setSelectedTabKey(t.name);
+                            }}
+                            sx={{textTransform: "none", minHeight: 24, p: 0.5, ml: 2}}
+                            {...a11yProps(t.name)} 
                         />
                     ))}
                 </Tabs>
-                <Divider sx={{my: 1}} textAlign='left'> <TuneIcon sx={{fontSize: 12, color: "text.secondary"}} /></Divider>
-                {uploadFileButton(<Typography component="span" fontSize={12}>{isUploading ? 'uploading...' : 'upload file'}</Typography>)}
+                <Divider sx={{my: 1}} />
+                <Tabs
+                    orientation="vertical"
+                    textColor="secondary"
+                    indicatorColor="secondary"
+                    value={0} // not used, just to keep MUI happy
+                    sx={{px: 0.5}}
+                >
+                    <Typography variant="caption" sx={{color: "text.secondary", fontWeight: "bold", px: 1}}>connect external data</Typography>
+                    {["file upload", "mysql", "kusto"].map((dataLoaderType, i) => (
+                        <Tab 
+                            key={`dataLoader:${dataLoaderType}`} 
+                            wrapped 
+                            label={<Typography variant="caption" 
+                                        sx={{textTransform: "none", width: "calc(100% - 4px)", textAlign: 'left', 
+                                            textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap'}}>
+                                    {dataLoaderType}</Typography>} 
+                            onClick={() => {
+                                setSelectedTabKey('dataLoader:' + dataLoaderType);
+                            }}
+                            sx={{textTransform: "none", minHeight: 24, p: 0.5, ml: 2}}
+                            {...a11yProps(dataLoaderType)} 
+                        />
+                    ))}
+                </Tabs> 
             </Box>
+            <TabPanel key={`dataLoader:note`} sx={{width: 960, }} show={selectedTabKey === ''}>
+                <Typography variant="caption" sx={{color: "text.secondary",  px: 1}}>The database is empty, refresh the table list or import some data to get started.</Typography>
+            </TabPanel>
+            <TabPanel key={`dataLoader:file upload`} sx={{width: 960, }} show={selectedTabKey === 'dataLoader:file upload'}>
+                {uploadFileButton(<Typography component="span" fontSize={18} textTransform="none">{isUploading ? 'uploading...' : 'upload a csv/tsv file to the local database'}</Typography>)} 
+            </TabPanel>
+            {dataLoaderParamDefs && Object.entries(dataLoaderParamDefs).map(([dataLoaderType, paramDefs]) => (
+                <TabPanel key={`dataLoader:${dataLoaderType}`} sx={{width: 960, position: "relative", maxWidth: '100%'}} 
+                    show={selectedTabKey === 'dataLoader:' + dataLoaderType}>
+                    <DataLoaderForm 
+                        key={`data-loader-form-${dataLoaderType}`}
+                        dataLoaderType={dataLoaderType} 
+                        paramDefs={paramDefs}
+                        onImport={() => {
+                            setIsUploading(true);
+                        }} 
+                        onFinish={(status, message) => {
+                            setIsUploading(false);
+                            fetchTables();
+                            if (status === "error") {
+                                setErrorMessage({content: message, severity: "error"});
+                                setShowError(true);
+                            }
+                        }} 
+                    />
+                </TabPanel>
+            ))}
             {dbTables.map((t, i) => {
                 const currentTable = t;
                 const showingAnalysis = tableAnalysisMap[currentTable.name] !== undefined;
                 return (
-                    <TabPanel key={i} sx={{width: 960, maxWidth: '100%'}} value={selectedTabIndex} index={i}>
+                    <TabPanel key={t.name} sx={{width: 960, maxWidth: '100%'}} show={selectedTabKey === t.name}>
                         <Paper variant="outlined" sx={{width: "100%"}}>
                             <Box sx={{ px: 1, display: 'flex', alignItems: 'center', borderBottom: '1px solid rgba(0,0,0,0.1)' }}>
                                 <Typography variant="caption" sx={{  }}>
@@ -608,7 +736,7 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
                             {showingAnalysis ? (
                                 <TableStatisticsView 
                                     tableName={currentTable.name}
-                                    tableAnalysisMap={tableAnalysisMap}
+                                    columnStats={tableAnalysisMap[currentTable.name] ?? []}
                                 />
                             ) : (
                                 <CustomReactTable 
@@ -631,17 +759,7 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
                     </TabPanel>
                 );
             })}
-        </Box> : 
-        <Box sx={{ p: 3, textAlign: 'center', height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center' }}>
-            <StorageIcon sx={{ fontSize: 60, color: 'text.secondary', mb: 2 }} />
-            <Typography variant="caption"> Database is currently empty. </Typography>
-            <Typography>
-                {uploadFileButton(<Typography component="span">Upload a csv dataset </Typography>)}
-                or
-                {importButton(<Typography component="span">Import a db file</Typography>)}
-                <Typography component="span"> to get started.</Typography>
-            </Typography>
-        </Box>
+        </Box>  
 
     return (
         <>
@@ -662,7 +780,6 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
                     {errorMessage?.content}
                 </Alert>
             </Snackbar>
-            
             <Dialog 
                 key="db-table-selection-dialog" 
                 onClose={() => {setTableDialogOpen(false)}} 
@@ -683,9 +800,7 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
                     </IconButton>
                 </DialogTitle>
                 <DialogContent sx={{overflowX: "hidden", padding: 0, width: "100%", position: "relative"}} dividers>
-                    <Box width="100%" height="100%">
-                        {mainContent}
-                    </Box>
+                    {mainContent}
                     {isUploading && (
                         <Box sx={{ 
                             position: 'absolute', 
@@ -720,14 +835,16 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
                         </Button>
                         the backend database
                     </Typography>
-
                     <Button 
                         variant="contained"
                         size="small"
-                        disabled={isUploading || dbTables.length === 0}
+                        disabled={isUploading || dbTables.length === 0 || dbTables.find(t => t.name === selectedTabKey) === undefined}
                         onClick={() => {
-                            handleAddTableToDF(dbTables[selectedTabIndex]);
-                            setTableDialogOpen(false);
+                            let t = dbTables.find(t => t.name === selectedTabKey);
+                            if (t) {
+                                handleAddTableToDF(t);
+                                setTableDialogOpen(false);
+                            }
                         }}>
                         Load Table
                     </Button>
@@ -735,4 +852,462 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
             </Dialog>
         </>
     );
+}
+
+export const DataLoaderForm: React.FC<{
+    dataLoaderType: string, 
+    paramDefs: {name: string, default: string, type: string, required: boolean, description: string}[],
+    onImport: () => void,
+    onFinish: (status: "success" | "error", message: string) => void
+}> = ({dataLoaderType, paramDefs, onImport, onFinish}) => {
+
+    const dispatch = useDispatch();
+
+    const params = useSelector((state: DataFormulatorState) => state.dataLoaderConnectParams[dataLoaderType] ?? {});
+
+    const [tableMetadata, setTableMetadata] = useState<Record<string, any>>({});
+    let [displaySamples, setDisplaySamples] = useState<Record<string, boolean>>({});
+
+    let [isConnecting, setIsConnecting] = useState(false);
+    let [mode, setMode] = useState<"view tables" | "query">("view tables");
+    const toggleDisplaySamples = (tableName: string) => {
+        setDisplaySamples({...displaySamples, [tableName]: !displaySamples[tableName]});
+    }
+
+    const handleModeChange = (event: React.MouseEvent<HTMLElement>, newMode: "view tables" | "query") => {
+        if (newMode != null) {
+            setMode(newMode);
+        }
+    };
+
+    let tableMetadataBox = [
+        <Box sx={{my: 2}}>
+            <ToggleButtonGroup
+                color="primary"
+                value={mode}
+                exclusive
+                size="small"
+                onChange={handleModeChange}
+                aria-label="Platform"
+                sx={{
+                    '& .MuiButtonBase-root': {
+                    lineHeight: 1,
+                    color: "text.primary",
+                    textTransform: 'none',
+                    '&.Mui-selected': {
+                        fontWeight: 'bold',
+                    }
+                }}}
+            >
+                <ToggleButton value="view tables">View Tables</ToggleButton>
+                <ToggleButton value="query">Query Data</ToggleButton>
+            </ToggleButtonGroup>
+            <Typography variant="body2" sx={{mb: 1,}}></Typography>
+        </Box>,
+        mode === "view tables" && <TableContainer component={Paper} sx={{maxHeight: 400, overflowY: "auto"}} >
+            <Table sx={{ minWidth: 650 }} size="small" aria-label="simple table">
+            <TableBody>
+                {Object.entries(tableMetadata).map(([tableName, metadata]) => {
+                    return [
+                    <TableRow
+                        key={tableName}
+                        sx={{ '&:last-child td, &:last-child th': { border: 0 }, '& .MuiTableCell-root': { padding: 0.25 }}}
+                    >
+                        <TableCell sx={{borderBottom: displaySamples[tableName] ? 'none' : '1px solid rgba(0, 0, 0, 0.1)'}}>
+                            <IconButton size="small" onClick={() => toggleDisplaySamples(tableName)}>
+                                {displaySamples[tableName] ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+                            </IconButton>
+                        </TableCell>
+                        <TableCell sx={{maxWidth: 240, borderBottom: displaySamples[tableName] ? 'none' : '1px solid rgba(0, 0, 0, 0.1)'}} component="th" scope="row">
+                            {tableName} <Typography variant="caption" sx={{color: "text.secondary"}} fontSize={10}>
+                                ({metadata.row_count > 0 ? `${metadata.row_count} rows × ` : ""}{metadata.columns.length} cols)
+                            </Typography>
+                        </TableCell>
+                        <TableCell sx={{maxWidth: 500}}>
+                            {metadata.columns.map((column: any) => (
+                                <Chip key={column.name} label={column.name} sx={{fontSize: 11, margin: 0.25, height: 20}} size="small" />
+                            ))}
+                        </TableCell>
+                        <TableCell sx={{width: 60}}>
+                            <Button size="small" onClick={() => {
+                                onImport();
+                                fetch(getUrls().DATA_LOADER_INGEST_DATA, {
+                                    method: 'POST',
+                                    headers: {
+                                        'Content-Type': 'application/json',
+                                    },
+                                    body: JSON.stringify({
+                                        data_loader_type: dataLoaderType, 
+                                        data_loader_params: params, table_name: tableName
+                                    })
+                                })
+                                .then(response => response.json())
+                                .then(data => {
+                                    
+                                    if (data.status === "success") {
+                                        onFinish("success", "Data ingested successfully");
+                                    } else {
+                                        onFinish("error", data.error);
+                                    }
+                                })
+                                .catch(error => {
+                                    console.error('Failed to ingest data:', error);
+                                    onFinish("error", `Failed to ingest data: ${error}`);
+                                });
+                            }}>Import</Button>
+                        </TableCell>
+                    </TableRow>,
+                    <TableRow >
+                        <TableCell sx={{ paddingBottom: 0, paddingTop: 0, px: 0, maxWidth: 800, overflowX: "auto", borderBottom: displaySamples[tableName] ? '1px solid rgba(0, 0, 0, 0.1)' : 'none' }} colSpan={4}>
+                        <Collapse in={displaySamples[tableName]} timeout="auto" unmountOnExit>
+                            <Box sx={{ px: 1, py: 0.5}}>
+                                <CustomReactTable rows={metadata.sample_rows.slice(0, 9).map((row: any) => {
+                                    return Object.fromEntries(Object.entries(row).map(([key, value]: [string, any]) => {
+                                        return [key, String(value)];
+                                    }));
+                                })} 
+                                columnDefs={metadata.columns.map((column: any) => ({id: column.name, label: column.name}))} 
+                                rowsPerPageNum={-1} 
+                                compact={false} 
+                                isIncompleteTable={metadata.row_count > 10}
+                                />
+                            </Box>
+                        </Collapse>
+                        </TableCell>
+                    </TableRow>]
+                })}
+                </TableBody>
+                </Table>
+            </TableContainer>,
+        mode === "query" && <DataQueryForm 
+            dataLoaderType={dataLoaderType} 
+            availableTables={Object.keys(tableMetadata).map(t => ({name: t, fields: tableMetadata[t].columns.map((c: any) => c.name)}))} 
+            dataLoaderParams={params} onImport={onImport} onFinish={onFinish} />
+    ]
+
+    return (
+        <Box sx={{p: 0}}>
+            {isConnecting && <Box sx={{
+                position: "absolute", top: 0, left: 0, width: "100%", height: "100%", 
+                display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000,
+                backgroundColor: "rgba(255, 255, 255, 0.7)"
+            }}>
+                <CircularProgress size={20} />
+            </Box>}
+            <Typography variant="body2" sx={{}}>
+                Data Connector (<Typography component="span" sx={{color: "secondary.main", fontWeight: "bold"}}>{dataLoaderType}</Typography>)
+            </Typography>
+            <Box sx={{display: "flex", flexDirection: "row", flexWrap: "wrap", gap: 1, ml: 4, mt: 2}}>
+                {paramDefs.map((paramDef) => (
+                    <Box key={paramDef.name}>
+                        <TextField
+                            disabled={Object.keys(tableMetadata).length > 0}
+                            sx={{width: "270px", 
+                                '& .MuiInputLabel-root': {fontSize: 14},
+                                '& .MuiInputBase-root': {fontSize: 14},
+                                '& .MuiInputBase-input::placeholder': {fontSize: 12, fontStyle: "italic"}
+                            }}
+                            variant="standard"
+                            size="small"
+                            required={paramDef.required}
+                            key={paramDef.name}
+                            label={paramDef.name}
+                            value={params[paramDef.name]}
+                            placeholder={paramDef.description}
+                            onChange={(event) => { 
+                                dispatch(dfActions.updateDataLoaderConnectParam({
+                                    dataLoaderType, paramName: paramDef.name, 
+                                    paramValue: event.target.value}));
+                            }}
+                            slotProps={{
+                                inputLabel: {shrink: true}
+                            }}
+                        />
+                    </Box>
+                ))}
+                {paramDefs.length > 0 && <ButtonGroup sx={{height: 32, mt: 'auto'}} size="small" 
+                 variant="contained" color="primary">
+                    <Button 
+                        sx={{textTransform: "none"}}
+                        onClick={() => {
+                            setIsConnecting(true);
+                            fetch(getUrls().DATA_LOADER_LIST_TABLES, {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                },
+                                body: JSON.stringify({
+                                    data_loader_type: dataLoaderType, 
+                                    data_loader_params: params
+                                })
+                        }).then(response => response.json())
+                        .then(data => {
+                            if (data.status === "success") {
+                                console.log(data.tables);
+                                setTableMetadata(Object.fromEntries(data.tables.map((table: any) => {
+                                    return [table.name, table.metadata];
+                                })));
+                            } else {
+                                console.error('Failed to fetch data loader tables: {}', data.message);
+                                onFinish("error", `Failed to fetch data loader tables: ${data.message}`);
+                            }
+                            setIsConnecting(false);
+                        })
+                        .catch(error => {
+                            onFinish("error", `Failed to fetch data loader tables, please check the server is running`);
+                            setIsConnecting(false);
+                        });
+                    }}>
+                        {Object.keys(tableMetadata).length > 0 ? "refresh" : "connect"}
+                    </Button>
+                    <Button 
+                        disabled={Object.keys(tableMetadata).length === 0}
+                        sx={{textTransform: "none"}}
+                        onClick={() => {
+                            setTableMetadata({});
+                        }}>
+                        disconnect
+                    </Button>
+                </ButtonGroup>}
+            </Box>
+            {Object.keys(tableMetadata).length > 0 && tableMetadataBox }
+        </Box>
+    );
+}
+
+export const DataQueryForm: React.FC<{
+    dataLoaderType: string,
+    availableTables: {name: string, fields: string[]}[],
+    dataLoaderParams: Record<string, string>,
+    onImport: () => void,
+    onFinish: (status: "success" | "error", message: string) => void
+}> = ({dataLoaderType, availableTables, dataLoaderParams, onImport, onFinish}) => {
+
+    let activeModel = useSelector(dfSelectors.getActiveModel);
+
+    const [selectedTables, setSelectedTables] = useState<string[]>(availableTables.map(t => t.name).slice(0, 5));
+
+    const [waiting, setWaiting] = useState(false);
+
+    const [query, setQuery] = useState("-- query the data source / describe your goal and ask AI to help you write the query\n");
+    const [queryResult, setQueryResult] = useState<{
+        status: string,
+        message: string,
+        sample: any[],
+        code: string,
+    } | undefined>(undefined);
+    const [queryResultName, setQueryResultName] = useState("");
+    
+    const aiCompleteQuery = (query: string) => {
+        if (queryResult?.status === "error") {
+            setQueryResult(undefined);
+        }
+        let data = {
+            data_source_metadata: {
+                data_loader_type: dataLoaderType,
+                tables: availableTables.filter(t => selectedTables.includes(t.name))
+            },
+            query: query,
+            model: activeModel
+        }
+        setWaiting(true);
+        fetch(getUrls().QUERY_COMPLETION, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(data)
+        })
+        .then(response => response.json())
+        .then(data => {
+            setWaiting(false);
+            if (data.status === "ok") {
+                setQuery(data.query);
+            } else {
+                onFinish("error", data.reasoning);
+            }
+        })
+        .catch(error => {
+            setWaiting(false);
+            onFinish("error", `Failed to complete query please try again.`);
+        });
+    }
+
+    const handleViewQuerySample = (query: string) => {
+        setQueryResult(undefined);
+        setWaiting(true);
+        fetch(getUrls().DATA_LOADER_VIEW_QUERY_SAMPLE, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                data_loader_type: dataLoaderType,
+                data_loader_params: dataLoaderParams,
+                query: query
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            setWaiting(false);
+            if (data.status === "success") {
+                setQueryResult({
+                    status: "success",
+                    message: "Data loaded successfully",
+                    sample: data.sample,
+                    code: query
+                });
+                let newName = `r_${Math.random().toString(36).substring(2, 4)}`;
+                setQueryResultName(newName);
+            } else {
+                setQueryResult({
+                    status: "error",
+                    message: data.message,
+                    sample: [],
+                    code: query
+                });
+            }
+        })
+        .catch(error => {
+            setWaiting(false);
+            setQueryResult({
+                status: "error",
+                message: `Failed to view query sample, please try again.`,
+                sample: [],
+                code: query
+            });
+        });
+    }
+
+    const handleImportQueryResult = () => {
+        setWaiting(true);
+        fetch(getUrls().DATA_LOADER_INGEST_DATA_FROM_QUERY, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                data_loader_type: dataLoaderType,
+                data_loader_params: dataLoaderParams,
+                query: queryResult?.code ?? query,
+                name_as: queryResultName
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            setWaiting(false);
+            if (data.status === "success") {
+                onFinish("success", "Data imported successfully");
+            } else {
+                onFinish("error", data.reasoning);
+            }
+        })
+        .catch(error => {
+            setWaiting(false);
+            onFinish("error", `Failed to import data, please try again.`);
+        });
+    }
+
+    let queryResultBox = queryResult?.status === "success" ? [
+         <Box sx={{display: "flex", flexDirection: "row", gap: 1, justifyContent: "space-between"}}>
+            <CustomReactTable rows={queryResult.sample} columnDefs={Object.keys(queryResult.sample[0]).map((t: any) => ({id: t, label: t}))} rowsPerPageNum={-1} compact={false} />
+        </Box>,
+        <Box sx={{display: "flex", flexDirection: "row", gap: 1, alignItems: "center"}}>
+            <Button variant="outlined" color="primary" size="small" sx={{textTransform: "none", minWidth: 120, mr: 'auto'}}
+                onClick={() => {
+                    setQueryResult(undefined);
+                    setQueryResultName("");
+                }}>
+                clear result
+            </Button>
+            <TextField
+                size="small"
+                label="import as"
+                sx={{width: 120, ml: 'auto', '& .MuiInputBase-root': {fontSize: 12, height: 32}, 
+                     '& .MuiInputLabel-root': {fontSize: 12, transform: "translate(14px, -6px) scale(0.75)"}}}
+                slotProps={{
+                    inputLabel: {shrink: true}
+                }}
+                value={queryResultName}
+                onChange={(event) => setQueryResultName(event.target.value)}
+            />
+            <Button variant="contained" color="primary" size="small" disabled={queryResultName === ""} sx={{textTransform: "none", width: 120}}
+                onClick={() => handleImportQueryResult()}>
+            import data
+            </Button> 
+        </Box>
+    ] : [];
+    
+    return (
+        <Paper sx={{display: "flex", flexDirection: "column", gap: 1, p: 1, position: "relative"}}>
+            {waiting && <Box sx={{position: "absolute", top: 0, left: 0, width: "100%", height: "100%",
+                display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000,
+                backgroundColor: "rgba(255, 255, 255, 0.7)"}}>
+                <CircularProgress size={20} />
+            </Box>}
+            <Typography variant="body2" sx={{color: "text.secondary"}}>
+                <Typography variant="caption" sx={{color: "text.primary", fontSize: 11, mx: 0.5}}>
+                    query from tables:
+                </Typography>
+                {availableTables.map((table) => (
+                    <Chip key={table.name} label={table.name} //icon={selectedTables.includes(table.name) ? <CheckIcon /> : undefined}
+                        color={selectedTables.includes(table.name) ? "primary" : "default"} variant="outlined" 
+                        sx={{ fontSize: 11, margin: 0.25, 
+                            height: 20, borderRadius: 0.5, 
+                            borderColor: selectedTables.includes(table.name) ? "primary.main" : "rgba(0, 0, 0, 0.1)",
+                            color: selectedTables.includes(table.name) ? "primary.main" : "text.secondary",
+                            '&:hover': {
+                                backgroundColor: "rgba(0, 0, 0, 0.07)",
+                            }
+                        }}
+                        size="small" 
+                        onClick={() => {
+                            setSelectedTables(selectedTables.includes(table.name) ? selectedTables.filter(t => t !== table.name) : [...selectedTables, table.name]);
+                        }}
+                    />
+                ))}
+            </Typography>
+            <Box sx={{display: "flex", flexDirection: "column", gap: 1, }}>
+                <Box sx={{maxHeight: 300, overflowY: "auto"}}>
+                    <Editor
+                        value={query}
+                        onValueChange={(tempCode: string) => {
+                            setQuery(tempCode);
+                        }}
+                        highlight={code => Prism.highlight(code, Prism.languages.sql, 'sql')}
+                        padding={10}
+                        style={{
+                            minHeight: queryResult ? 60 : 200,
+                            fontFamily: '"Fira code", "Fira Mono", monospace',
+                            fontSize: 12,
+                            paddingBottom: '24px',
+                            backgroundColor: "rgba(0, 0, 0, 0.03)",
+                            
+                            overflowY: "auto"
+                        }}
+                    />
+                </Box>
+                {queryResult?.status === "error" && <Box sx={{display: "flex", flexDirection: "row", gap: 1, alignItems: "center"}}>
+                        <Typography variant="body2" sx={{color: "text.secondary", fontSize: 11, backgroundColor: "rgba(255, 0, 0, 0.1)", p: 0.5, borderRadius: 0.5}}>
+                            {queryResult?.message} 
+                        </Typography>
+                        <Button variant="outlined" color="primary" size="small" sx={{textTransform: "none", height: 24, ml: 1, minWidth: 120}} 
+                            startIcon={<PrecisionManufacturingIcon />} onClick={() => aiCompleteQuery(queryResult.code + "\n error:" + queryResult.message)}>
+                            help me fix it
+                        </Button>
+                    </Box>}
+                <Box sx={{display: "flex", flexDirection: "row", gap: 1, justifyContent: "space-between"}}>
+                    <Button variant="outlined" color="primary" size="small" sx={{textTransform: "none"}} disabled={queryResult?.status === "error"}
+                        startIcon={<PrecisionManufacturingIcon />} onClick={() => aiCompleteQuery(query)}>
+                        help me complete the query from selected tables
+                    </Button>
+                    <Button variant="contained" color="primary" size="small" sx={{textTransform: "none", width: 80}}
+                        onClick={() => handleViewQuerySample(query)}>
+                        run query
+                    </Button>
+                </Box>
+                {queryResult && queryResultBox}
+            </Box>
+        </Paper>
+    )
 }

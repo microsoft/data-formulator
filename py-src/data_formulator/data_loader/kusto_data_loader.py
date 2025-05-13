@@ -1,0 +1,176 @@
+from typing import Dict, Any, List
+import pandas as pd
+import json
+import duckdb
+import random
+import string
+
+from azure.kusto.data import KustoClient, KustoConnectionStringBuilder
+from azure.kusto.data.helpers import dataframe_from_result_table
+
+from data_formulator.data_loader.external_data_loader import ExternalDataLoader, sanitize_table_name
+
+
+class KustoDataLoader(ExternalDataLoader):
+
+    @staticmethod
+    def list_params() -> bool:
+        params_list = [
+            {"name": "kusto_cluster", "type": "string", "required": True, "description": ""}, 
+            {"name": "kusto_database", "type": "string", "required": True, "description": ""}, 
+            {"name": "client_id", "type": "string", "required": False, "description": "only necessary for AppKey auth"}, 
+            {"name": "client_secret", "type": "string", "required": False, "description": "only necessary for AppKey auth"}, 
+            {"name": "tenant_id", "type": "string", "required": False, "description": "only necessary for AppKey auth"}
+        ]
+        return params_list
+
+    def __init__(self, params: Dict[str, Any], duck_db_conn: duckdb.DuckDBPyConnection):
+
+        self.kusto_cluster = params.get("kusto_cluster", None)
+        self.kusto_database = params.get("kusto_database", None)
+        
+        self.client_id = params.get("client_id", None)
+        self.client_secret = params.get("client_secret", None)
+        self.tenant_id = params.get("tenant_id", None)
+
+        try:
+            if self.client_id and self.client_secret and self.tenant_id:
+                # This function provides an interface to Kusto. It uses AAD application key authentication.
+                self.client = KustoClient(KustoConnectionStringBuilder.with_aad_application_key_authentication(
+                    self.kusto_cluster, self.client_id, self.client_secret, self.tenant_id))
+            else:
+                # This function provides an interface to Kusto. It uses Azure CLI auth, but you can also use other auth types.
+                self.client = KustoClient(KustoConnectionStringBuilder.with_az_cli_authentication(self.kusto_cluster))
+        except Exception as e:
+            raise Exception(f"Error creating Kusto client: {e}, please authenticate with Azure CLI when starting the app.")
+        
+        self.duck_db_conn = duck_db_conn
+
+    def query(self, kql: str) -> pd.DataFrame:
+        result = self.client.execute(self.kusto_database, kql)
+        return dataframe_from_result_table(result.primary_results[0])
+
+    def list_tables(self) -> List[Dict[str, Any]]:
+        # first list functions (views)
+        query = ".show functions"
+        function_result_df = self.query(query)
+
+        functions = []
+        for func in function_result_df.to_dict(orient="records"):
+            func_name = func['Name']
+            result = self.query(f".show function ['{func_name}'] schema as json").to_dict(orient="records")
+            schema = json.loads(result[0]['Schema'])
+            parameters = schema['InputParameters']
+            columns = [{
+                'name': r["Name"],
+                'type': r["Type"]
+            } for r in schema['OutputColumns']]
+
+            # skip functions with parameters at the moment
+            if len(parameters) > 0:
+                continue
+
+            sample_query = f"['{func_name}'] | take {10}"
+            sample_result = self.query(sample_query).to_dict(orient="records")
+        
+            function_metadata = {
+                "row_count": 0,
+                "columns": columns,
+                "parameters": parameters,
+                "sample_rows": sample_result
+            }
+            functions.append({
+                "type": "function",
+                "name": func_name,
+                "metadata": function_metadata
+            })
+
+        # then list tables
+        query = ".show tables"
+        tables_df = self.query(query)
+
+        tables = []
+        for table in tables_df.to_dict(orient="records"):
+            table_name = table['TableName']
+            schema_result = self.query(f".show table ['{table_name}'] schema as json").to_dict(orient="records")
+            columns = [{
+                'name': r["Name"],
+                'type': r["Type"]
+            } for r in json.loads(schema_result[0]['Schema'])['OrderedColumns']]
+
+            row_count_result = self.query(f".show table ['{table_name}'] details").to_dict(orient="records")
+            row_count = row_count_result[0]["TotalRowCount"]
+
+            sample_query = f"['{table_name}'] | take {10}"
+            sample_result = self.query(sample_query).to_dict(orient="records")
+
+            table_metadata = {
+                "row_count": row_count,
+                "columns": columns,
+                "sample_rows": sample_result
+            }
+
+            tables.append({
+                "type": "table",
+                "name": table_name,
+                "metadata": table_metadata
+            })
+
+        return functions + tables
+    
+    def ingest_data(self, table_name: str, name_as: str = None, size: int = 5000000) -> pd.DataFrame:
+        if name_as is None:
+            name_as = table_name
+        
+        # Create a subquery that applies random ordering once with a fixed seed
+        total_rows_ingested = 0
+        first_chunk = True
+        chunk_size = 100000
+
+        size_estimate_query = f"['{table_name}'] | take {10000} | summarize Total=sum(estimate_data_size(*))"
+        size_estimate_result = self.query(size_estimate_query)
+        size_estimate = size_estimate_result['Total'].values[0]
+        print(f"size_estimate: {size_estimate}")
+
+        chunk_size = min(64 * 1024 * 1024 / size_estimate * 0.9 * 10000, 5000000)
+        print(f"estimated_chunk_size: {chunk_size}")
+
+        while total_rows_ingested < size:
+            try:
+                query = f"['{table_name}'] | serialize | extend rn=row_number() | where rn >= {total_rows_ingested} and rn < {total_rows_ingested + chunk_size} | project-away rn"
+                chunk_df = self.query(query)
+            except Exception as e:
+                chunk_size = int(chunk_size * 0.8)
+                continue
+
+            print(f"total_rows_ingested: {total_rows_ingested}")
+            print(chunk_df.head())
+            
+            # Stop if no more data
+            if chunk_df.empty:
+                break
+
+             # Sanitize the table name for SQL compatibility
+            name_as = sanitize_table_name(name_as)
+            
+            # For first chunk, create new table; for subsequent chunks, append
+            if first_chunk:
+                self.ingest_df_to_duckdb(chunk_df, name_as)
+                first_chunk = False
+            else:
+                # Append to existing table
+                random_suffix = ''.join(random.choices(string.ascii_letters + string.digits, k=6))
+                self.duck_db_conn.register(f'df_temp_{random_suffix}', chunk_df)
+                self.duck_db_conn.execute(f"INSERT INTO {name_as} SELECT * FROM df_temp_{random_suffix}")
+                self.duck_db_conn.execute(f"DROP VIEW df_temp_{random_suffix}")
+            
+            total_rows_ingested += len(chunk_df)
+
+    def view_query_sample(self, query: str) -> str:
+        return self.query(query).head(10).to_dict(orient="records")
+
+    def ingest_data_from_query(self, query: str, name_as: str) -> pd.DataFrame:
+        # Sanitize the table name for SQL compatibility
+        name_as = sanitize_table_name(name_as)
+        df = self.query(query)
+        self.ingest_df_to_duckdb(df, name_as)

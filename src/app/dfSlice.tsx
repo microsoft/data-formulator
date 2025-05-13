@@ -71,6 +71,8 @@ export interface DataFormulatorState {
         defaultChartWidth: number;
         defaultChartHeight: number;
     }   
+
+    dataLoaderConnectParams: Record<string, Record<string, string>>; // {table_name: {param_name: param_value}}
 }
 
 // Define the initial state using that type
@@ -108,7 +110,9 @@ const initialState: DataFormulatorState = {
         maxRepairAttempts: 1,
         defaultChartWidth: 300,
         defaultChartHeight: 300,
-    }
+    },
+
+    dataLoaderConnectParams: {}
 }
 
 let getUnrefedDerivedTableIds = (state: DataFormulatorState) => {
@@ -278,6 +282,8 @@ export const dataFormulatorSlice = createSlice({
             state.chartSynthesisInProgress = [];
 
             state.config = initialState.config;
+            
+            //state.dataLoaderConnectParams = initialState.dataLoaderConnectParams;
         },
         loadState: (state, action: PayloadAction<any>) => {
 
@@ -305,6 +311,8 @@ export const dataFormulatorSlice = createSlice({
             state.chartSynthesisInProgress = [];
 
             state.config = savedState.config;
+
+            state.dataLoaderConnectParams = savedState.dataLoaderConnectParams || {};
         },
         setConfig: (state, action: PayloadAction<{
             formulateTimeoutSeconds: number, maxRepairAttempts: number, 
@@ -730,6 +738,24 @@ export const dataFormulatorSlice = createSlice({
         setSessionId: (state, action: PayloadAction<string>) => {
             state.sessionId = action.payload;
         },
+        updateDataLoaderConnectParams: (state, action: PayloadAction<{dataLoaderType: string, params: Record<string, string>}>) => {
+            let dataLoaderType = action.payload.dataLoaderType;
+            let params = action.payload.params;
+            state.dataLoaderConnectParams[dataLoaderType] = params;
+        },
+        updateDataLoaderConnectParam: (state, action: PayloadAction<{dataLoaderType: string, paramName: string, paramValue: string}>) => {
+            let dataLoaderType = action.payload.dataLoaderType;
+            if (!state.dataLoaderConnectParams[dataLoaderType]) {
+                state.dataLoaderConnectParams[dataLoaderType] = {};
+            }
+            let paramName = action.payload.paramName;
+            let paramValue = action.payload.paramValue;
+            state.dataLoaderConnectParams[dataLoaderType][paramName] = paramValue;
+        },
+        deleteDataLoaderConnectParams: (state, action: PayloadAction<string>) => {
+            let dataLoaderType = action.payload;
+            delete state.dataLoaderConnectParams[dataLoaderType];
+        }
     },
     extraReducers: (builder) => {
         builder

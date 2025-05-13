@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "data_formulator"
-version = "0.2.1.1"
+version = "0.2.1.2"
 
 requires-python = ">=3.9"
 authors = [

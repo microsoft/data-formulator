@@ -42,7 +42,7 @@ import AnimateOnChange from 'react-animate-on-change'
 
 import '../scss/VisualizationView.scss';
 import { useDispatch, useSelector } from 'react-redux';
-import { DataFormulatorState, dfActions } from '../app/dfSlice';
+import { DataFormulatorState, dfActions, getSessionId } from '../app/dfSlice';
 import { assembleVegaChart, extractFieldsFromEncodingMap, getUrls, prepVisTable  } from '../app/utils';
 import { Chart, EncodingItem, EncodingMap, FieldItem } from '../components/ComponentType';
 import { DictTable } from "../components/ComponentType";
@@ -236,8 +236,6 @@ export let checkChartAvailabilityOnPreparedData = (chart: Chart, conceptShelfIte
                 }
                 return undefined;
             }).filter(f => f != undefined);
-    console.log("visFieldsFinalNames", visFieldsFinalNames);
-    console.log("visTableRows", visTableRows.slice(0, 10));
     return visFieldsFinalNames.length > 0 && visTableRows.length > 0 && visFieldsFinalNames.every(name => Object.keys(visTableRows[0]).includes(name));
 }
 
@@ -364,6 +362,8 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
 
     const [errorMessage, setErrorMessage] = useState<{content: string, severity: "error" | "warning" | "info" | "success"}>({content: "", severity: "error"});
     const [showError, setShowError] = useState<boolean>(false);
+
+    
 
     let createVisTableRowsLocal = (rows: any[]) => {
         if (visFields.length == 0) {

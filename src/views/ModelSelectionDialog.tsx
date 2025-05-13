@@ -91,6 +91,39 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
             });
     }, []);
 
+    useEffect(() => {
+        const findWorkingModel = async () => {
+            for (let i = 0; i < models.length; i++) {
+                if (testedModels.find(t => t.id == models[i].id)) {
+                    continue;
+                }
+                const model = models[i];
+                const message = {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', },
+                    body: JSON.stringify({
+                        model: model,
+                    }),
+                };
+                try {
+                    const response = await fetch(getUrls().TEST_MODEL, {...message });
+                    const data = await response.json();
+                    const status = data["status"] || 'error';
+                    updateModelStatus(model, status, data["message"] || "");
+                    if (status === 'ok') {
+                        break;
+                    }
+                } catch (error) {
+                    updateModelStatus(model, 'error', (error as Error).message || 'Failed to test model');
+                }
+            }
+        };
+
+        if (models.length > 0 && testedModels.filter(t => t.status == 'ok').length == 0) {
+            findWorkingModel();
+        }
+    }, []);
+
     let updateModelStatus = (model: ModelConfig, status: 'ok' | 'error' | 'testing' | 'unknown', message: string) => {
         dispatch(dfActions.updateModelStatus({id: model.id, status, message}));
     }
