@@ -29,7 +29,7 @@ Transform data and create rich visualizations iteratively with AI 🪄. Try Data
   - Call for action:
     - Users: let us know which data source you'd like to load data from.
     - Developers: let's build more data loaders.
-  - Created a discord channel for discussions, data formulator, data analysis & AI and more [![Discord](https://img.shields.io/badge/discord-chat-green?logo=discord)](https://discord.gg/mYCZMQKYZb).
+  - Discord channel for discussions: join here -- [![Discord](https://img.shields.io/badge/discord-chat-green?logo=discord)](https://discord.gg/mYCZMQKYZb).
 
 - [04-23-2025] Data Formulator 0.2: working with *large* data 📦📦📦
   - Explore large data by:
