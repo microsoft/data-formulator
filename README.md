@@ -23,13 +23,13 @@ Transform data and create rich visualizations iteratively with AI 🪄. Try Data
 
 ## News 🔥🔥🔥
 
-- [04-23-2025] Data Formulator 0.2.1: External Data Loader 
+- [05-13-2025] Data Formulator 0.2.1: External Data Loader 
   - We introduced external data loader class to make import data easier. [Readme](https://github.com/microsoft/data-formulator/tree/main/py-src/data_formulator/data_loader) and [Demo](https://github.com/microsoft/data-formulator/pull/155)
     - Example data loaders from MySQL and Azure Data Explorer (Kusto) are provided.
-  - Call for action:
+  - Call for action [link](https://github.com/microsoft/data-formulator/issues/156):
     - Users: let us know which data source you'd like to load data from.
     - Developers: let's build more data loaders.
-  - Discord channel for discussions: join us! [![Discord](https://img.shields.io/badge/discord-chat-green?logo=discord)](https://discord.gg/mYCZMQKYZb).
+  - Discord channel for discussions: join us! [![Discord](https://img.shields.io/badge/discord-chat-green?logo=discord)](https://discord.gg/mYCZMQKYZb)
 
 - [04-23-2025] Data Formulator 0.2: working with *large* data 📦📦📦
   - Explore large data by:
