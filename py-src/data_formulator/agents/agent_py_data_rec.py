@@ -165,7 +165,7 @@ class PythonDataRecAgent(object):
                     if result['status'] == 'ok':
                         result_df = result['content']
                         result['content'] = {
-                            'rows': result_df.to_dict(orient='records'),
+                            'rows': json.loads(result_df.to_json(orient='records')),
                         }
                     else:
                         logger.info(result['content'])

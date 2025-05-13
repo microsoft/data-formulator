@@ -1,8 +1,6 @@
 import duckdb
 import pandas as pd
-from typing import Optional, Dict, List, ContextManager, Any, Tuple
-import time
-from flask import session
+from typing import Dict
 import tempfile
 import os
 from contextlib import contextmanager
@@ -15,7 +13,7 @@ class DuckDBManager:
         self._local_db_dir: str = local_db_dir
 
     @contextmanager
-    def connection(self, session_id: str) -> ContextManager[duckdb.DuckDBPyConnection]:
+    def connection(self, session_id: str):
         """Get a DuckDB connection as a context manager that will be closed when exiting the context"""
         conn = None
         try:
