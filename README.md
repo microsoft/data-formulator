@@ -8,6 +8,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)&ensp;
 [![YouTube](https://img.shields.io/badge/YouTube-white?logo=youtube&logoColor=%23FF0000)](https://youtu.be/3ndlwt0Wi3c)&ensp;
 [![build](https://github.com/microsoft/data-formulator/actions/workflows/python-build.yml/badge.svg)](https://github.com/microsoft/data-formulator/actions/workflows/python-build.yml)
+[![Discord](https://img.shields.io/badge/discord-chat-green?logo=discord)](https://discord.gg/mYCZMQKYZb)
 
 </div>
 
@@ -23,12 +24,12 @@ Transform data and create rich visualizations iteratively with AI 🪄. Try Data
 ## News 🔥🔥🔥
 
 - [04-23-2025] Data Formulator 0.2.1: External Data Loader 
-  - We introduced an external data loader to make import data easier. 
+  - We introduced external data loader to make import data easier. [readme](https://github.com/microsoft/data-formulator/tree/main/py-src/data_formulator/data_loader) [UI demo](https://github.com/microsoft/data-formulator/pull/155)
     - Example data loaders from MySQL and Azure Data Explorer (Kusto) are provided.
   - Call for action:
     - Users: let us know which data source you'd like to load data from.
-    - Developers: help us build more data loaders.
-  - Created a discord channel for discussions.
+    - Developers: let's build more data loaders.
+  - Created a discord channel for discussions, data formulator, data analysis & AI and more [![Discord](https://img.shields.io/badge/discord-chat-green?logo=discord)](https://discord.gg/mYCZMQKYZb).
 
 - [04-23-2025] Data Formulator 0.2: working with *large* data 📦📦📦
   - Explore large data by:
