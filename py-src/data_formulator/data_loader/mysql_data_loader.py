@@ -93,7 +93,7 @@ class MySQLDataLoader(ExternalDataLoader):
         """)
 
     def view_query_sample(self, query: str) -> str:
-        return self.duck_db_conn.execute(query).df().head(10).to_dict(orient="records")
+        return json.loads(self.duck_db_conn.execute(query).df().head(10).to_json(orient="records"))
 
     def ingest_data_from_query(self, query: str, name_as: str) -> pd.DataFrame:
         # Execute the query and get results as a DataFrame

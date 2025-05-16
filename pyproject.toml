@@ -21,7 +21,6 @@ classifiers = [
 ]
 
 dependencies = [  
-    "autopep8",  
     "jupyter",  
     "pandas",  
     "docker",  
@@ -31,6 +30,7 @@ dependencies = [
     "flask-cors",  
     "openai",  
     "azure-identity",  
+    "azure-kusto-data",
     "azure-keyvault-secrets",  
     "python-dotenv",  
     "vega_datasets",

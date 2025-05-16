@@ -294,7 +294,7 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
     }, [errorMessage])
 
     useEffect(() => {
-        if (dbTables.length == 0) {
+        if (!selectedTabKey.startsWith("dataLoader:") && dbTables.length == 0) {
             setSelectedTabKey("");
         } else if (!selectedTabKey.startsWith("dataLoader:") && dbTables.find(t => t.name === selectedTabKey) == undefined) {
             setSelectedTabKey(dbTables[0].name);

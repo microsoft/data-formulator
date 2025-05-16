@@ -2,7 +2,6 @@
 # Licensed under the MIT License.
 
 import json
-import sys
 
 from data_formulator.agents.agent_utils import extract_json_objects, generate_data_summary, extract_code_from_gpt_response
 import data_formulator.py_sandbox as py_sandbox
