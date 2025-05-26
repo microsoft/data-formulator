@@ -109,6 +109,28 @@ Play with Data Formulator with one of the following options:
   
   You can build Data Formulator locally if you prefer full control over your development environment and the ability to customize the setup to your specific needs. For detailed instructions, refer to [DEVELOPMENT.md](DEVELOPMENT.md).
 
+- **Option 4: Docker (Recommended for consistent environments)**
+  
+  Data Formulator can be run in Docker containers for both development and production environments, providing consistent setup across different systems.
+  
+  ```bash
+  # Clone the repository
+  git clone https://github.com/microsoft/data-formulator.git
+  cd data-formulator
+  
+  # Configure API keys
+  cp docker/config/api-keys.env.template docker/config/api-keys.env
+  # Edit docker/config/api-keys.env with your API keys
+  
+  # Start in production mode
+  docker compose -f docker/docker-compose.yml up data-formulator
+  
+  # Or start in development mode (with hot-reloading)
+  docker compose -f docker/docker-compose.yml up data-formulator-dev
+  ```
+  
+  For more detailed instructions and configuration options, refer to [docker/README.md](docker/README.md).
+
 
 ## Using Data Formulator
 
