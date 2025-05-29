@@ -653,7 +653,7 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
                     sx={{px: 0.5}}
                 >
                     <Typography variant="caption" sx={{color: "text.secondary", fontWeight: "bold", px: 1}}>connect external data</Typography>
-                    {["file upload", "mysql", "kusto"].map((dataLoaderType, i) => (
+                    {["file upload", "mysql", "kusto","s3"].map((dataLoaderType, i) => (
                         <Tab 
                             key={`dataLoader:${dataLoaderType}`} 
                             wrapped 
