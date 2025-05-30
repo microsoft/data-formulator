@@ -23,9 +23,9 @@ Transform data and create rich visualizations iteratively with AI 🪄. Try Data
 
 ## News 🔥🔥🔥
 
-- [05-13-2025] Data Formulator 0.2.1: External Data Loader 
+- [05-13-2025] Data Formulator 0.2.3: External Data Loader 
   - We introduced external data loader class to make import data easier. [Readme](https://github.com/microsoft/data-formulator/tree/main/py-src/data_formulator/data_loader) and [Demo](https://github.com/microsoft/data-formulator/pull/155)
-    - Example data loaders from MySQL and Azure Data Explorer (Kusto) are provided.
+    - Current data loaders: MySQL, Azure Data Explorer (Kusto), Azure Blob and Amazon S3 (json, parquet, csv).
   - Call for action [link](https://github.com/microsoft/data-formulator/issues/156):
     - Users: let us know which data source you'd like to load data from.
     - Developers: let's build more data loaders.

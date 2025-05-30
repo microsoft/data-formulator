@@ -23,33 +23,39 @@ class AzureBlobDataLoader(ExternalDataLoader):
     
     @staticmethod
     def auth_instructions() -> str:
-        return """**Authentication Options (choose one)**
+        return """Authentication Options (choose one)
 
-**Option 1 - Connection String (Simplest)**
-- Get connection string from Azure Portal > Storage Account > Access keys
-- Use `connection_string` parameter with full connection string
-- `account_name` can be omitted when using connection string
+Option 1 - Connection String (Simplest)
+    - Get connection string from Azure Portal > Storage Account > Access keys
+    - Use `connection_string` parameter with full connection string
+    - `account_name` can be omitted when using connection string
 
-**Option 2 - Account Key**
-- Get account key from Azure Portal > Storage Account > Access keys
-- Use `account_name` + `account_key` parameters
-- Provides full access to storage account
+Option 2 - Account Key
+    - Get account key from Azure Portal > Storage Account > Access keys
+    - Use `account_name` + `account_key` parameters
+    - Provides full access to storage account
 
-**Option 3 - SAS Token (Recommended for limited access)**
-- Generate SAS token from Azure Portal > Storage Account > Shared access signature
-- Use `account_name` + `sas_token` parameters
-- Can be time-limited and permission-scoped
+Option 3 - SAS Token (Recommended for limited access)
+    - Generate SAS token from Azure Portal > Storage Account > Shared access signature
+    - Use `account_name` + `sas_token` parameters
+    - Can be time-limited and permission-scoped
 
-**Option 4 - Credential Chain (Most Secure)**
-- Use `account_name` + `container_name` only (no explicit credentials)
-- Requires Azure CLI login (`az login`) or Managed Identity
-- Default chain: `cli;managed_identity;env`
-- Customize with `credential_chain` parameter
+Option 4 - Credential Chain (Most Secure)
+    - Use `account_name` + `container_name` only (no explicit credentials)
+    - Requires Azure CLI login (`az login` in terminal) or Managed Identity
+    - Default chain: `cli;managed_identity;env`
+    - Customize with `credential_chain` parameter
 
-**Additional Options**
-- `endpoint`: Custom endpoint (default: `blob.core.windows.net`)
-- For Azure Government: `blob.core.usgovcloudapi.net`
-- For Azure China: `blob.core.chinacloudapi.cn`"""
+Additional Options
+    - `endpoint`: Custom endpoint (default: `blob.core.windows.net`)
+    - For Azure Government: `blob.core.usgovcloudapi.net`
+    - For Azure China: `blob.core.chinacloudapi.cn`
+
+Supported File Formats:
+    - CSV files (.csv)
+    - Parquet files (.parquet) 
+    - JSON files (.json, .jsonl)
+"""
 
     def __init__(self, params: Dict[str, Any], duck_db_conn: duckdb.DuckDBPyConnection):
         self.params = params

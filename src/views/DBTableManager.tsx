@@ -67,12 +67,14 @@ import { DataFormulatorState } from '../app/dfSlice';
 import { fetchFieldSemanticType } from '../app/dfSlice';
 import { AppDispatch } from '../app/store';
 import Editor from 'react-simple-code-editor';
+import Markdown from 'markdown-to-jsx';
 
 import Prism from 'prismjs'
 import 'prismjs/components/prism-javascript' // Language
 import 'prismjs/themes/prism.css'; //Example style, you can use another
 import PrecisionManufacturingIcon from '@mui/icons-material/PrecisionManufacturing';
 import CheckIcon from '@mui/icons-material/Check';
+import MuiMarkdown from 'mui-markdown';
 
 export const handleDBDownload = async (sessionId: string) => {
     try {
@@ -273,7 +275,9 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
     const [tableAnalysisMap, setTableAnalysisMap] = useState<Record<string, ColumnStatistics[] | null>>({});
     
     // maps data loader type to list of param defs
-    const [dataLoaderParamDefs, setDataLoaderParamDefs] = useState<Record<string, {name: string, default: string, type: string, required: boolean, description: string}[]>>({});
+    const [dataLoaderMetadata, setDataLoaderMetadata] = useState<Record<string, {
+        params: {name: string, default: string, type: string, required: boolean, description: string}[], 
+        auth_instructions: string}>>({});
 
     const [dbTables, setDbTables] = useState<DBTable[]>([]);
     const [selectedTabKey, setSelectedTabKey] = useState("");
@@ -325,7 +329,7 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
         .then(response => response.json())
         .then(data => {
             if (data.status === "success") {
-                setDataLoaderParamDefs(data.data_loaders);
+                setDataLoaderMetadata(data.data_loaders);
             } else {
                 console.error('Failed to fetch data loader params:', data.error);
             }
@@ -652,8 +656,22 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
                     value={0} // not used, just to keep MUI happy
                     sx={{px: 0.5}}
                 >
-                    <Typography variant="caption" sx={{color: "text.secondary", fontWeight: "bold", px: 1}}>connect external data</Typography>
-                    {["file upload", ...Object.keys(dataLoaderParamDefs ?? {})].map((dataLoaderType, i) => (
+                    <Typography variant="caption" sx={{color: "text.secondary", fontWeight: "bold", px: 1}}>
+                        connect external data
+                        <Tooltip title="refresh the data loader list">
+                            <IconButton size="small" color="primary" sx={{
+                                '&:hover': {
+                                    transform: 'rotate(180deg)',
+                                },
+                                transition: 'transform 0.3s ease-in-out',
+                            }} onClick={() => {
+                                fetchDataLoaders();
+                            }}>
+                                <RefreshIcon sx={{fontSize: 14}} />
+                            </IconButton>
+                        </Tooltip>
+                    </Typography>
+                    {["file upload", ...Object.keys(dataLoaderMetadata ?? {})].map((dataLoaderType, i) => (
                         <Tab 
                             key={`dataLoader:${dataLoaderType}`} 
                             wrapped 
@@ -676,13 +694,14 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
             <TabPanel key={`dataLoader:file upload`} sx={{width: 960, }} show={selectedTabKey === 'dataLoader:file upload'}>
                 {uploadFileButton(<Typography component="span" fontSize={18} textTransform="none">{isUploading ? 'uploading...' : 'upload a csv/tsv file to the local database'}</Typography>)} 
             </TabPanel>
-            {dataLoaderParamDefs && Object.entries(dataLoaderParamDefs).map(([dataLoaderType, paramDefs]) => (
+            {dataLoaderMetadata && Object.entries(dataLoaderMetadata).map(([dataLoaderType, metadata]) => (
                 <TabPanel key={`dataLoader:${dataLoaderType}`} sx={{width: 960, position: "relative", maxWidth: '100%'}} 
                     show={selectedTabKey === 'dataLoader:' + dataLoaderType}>
                     <DataLoaderForm 
                         key={`data-loader-form-${dataLoaderType}`}
                         dataLoaderType={dataLoaderType} 
-                        paramDefs={paramDefs}
+                        paramDefs={metadata.params}
+                        authInstructions={metadata.auth_instructions}
                         onImport={() => {
                             setIsUploading(true);
                         }} 
@@ -857,9 +876,10 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
 export const DataLoaderForm: React.FC<{
     dataLoaderType: string, 
     paramDefs: {name: string, default: string, type: string, required: boolean, description: string}[],
+    authInstructions: string,
     onImport: () => void,
     onFinish: (status: "success" | "error", message: string) => void
-}> = ({dataLoaderType, paramDefs, onImport, onFinish}) => {
+}> = ({dataLoaderType, paramDefs, authInstructions, onImport, onFinish}) => {
 
     const dispatch = useDispatch();
 
@@ -867,6 +887,8 @@ export const DataLoaderForm: React.FC<{
 
     const [tableMetadata, setTableMetadata] = useState<Record<string, any>>({});
     let [displaySamples, setDisplaySamples] = useState<Record<string, boolean>>({});
+
+    const [displayAuthInstructions, setDisplayAuthInstructions] = useState(false);
 
     let [isConnecting, setIsConnecting] = useState(false);
     let [mode, setMode] = useState<"view tables" | "query">("view tables");
@@ -1031,6 +1053,7 @@ export const DataLoaderForm: React.FC<{
                         sx={{textTransform: "none"}}
                         onClick={() => {
                             setIsConnecting(true);
+                            setDisplayAuthInstructions(false);
                             fetch(getUrls().DATA_LOADER_LIST_TABLES, {
                                 method: 'POST',
                                 headers: {
@@ -1068,8 +1091,26 @@ export const DataLoaderForm: React.FC<{
                         }}>
                         disconnect
                     </Button>
-                </ButtonGroup>}
+                </ButtonGroup>
+                }
+                
             </Box>
+            <Button 
+                variant="text" 
+                size="small" 
+                sx={{textTransform: "none", height: 32, mt: 1}}
+                onClick={() => setDisplayAuthInstructions(!displayAuthInstructions)}>
+                {displayAuthInstructions ? "hide" : "show"} authentication instructions
+            </Button>
+            {<Collapse in={displayAuthInstructions} timeout="auto" unmountOnExit>
+                <Paper sx={{px: 1, py: 0.5}}>
+                    <Typography variant="body2" sx={{color: "text.secondary", fontSize: 12, whiteSpace: "pre-wrap", p: 1}}>
+                        {authInstructions.trim()}
+                    </Typography>
+                </Paper>
+                </Collapse>
+            }
+            
             {Object.keys(tableMetadata).length > 0 && tableMetadataBox }
         </Box>
     );
