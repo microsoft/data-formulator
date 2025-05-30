@@ -67,6 +67,11 @@ class ExternalDataLoader(ABC):
     def list_params() -> List[Dict[str, Any]]:
         pass
 
+    @staticmethod
+    @abstractmethod
+    def auth_instructions() -> str:
+        pass
+
     @abstractmethod
     def __init__(self, params: Dict[str, Any], duck_db_conn: duckdb.DuckDBPyConnection):
         pass

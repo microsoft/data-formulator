@@ -363,8 +363,6 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
     const [errorMessage, setErrorMessage] = useState<{content: string, severity: "error" | "warning" | "info" | "success"}>({content: "", severity: "error"});
     const [showError, setShowError] = useState<boolean>(false);
 
-    
-
     let createVisTableRowsLocal = (rows: any[]) => {
         if (visFields.length == 0) {
             return rows;

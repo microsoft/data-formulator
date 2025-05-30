@@ -23,6 +23,41 @@ class KustoDataLoader(ExternalDataLoader):
             {"name": "tenant_id", "type": "string", "required": False, "description": "only necessary for AppKey auth"}
         ]
         return params_list
+    
+    @staticmethod
+    def auth_instructions() -> str:
+        return """
+Azure Kusto Authentication Instructions:
+
+This data loader supports two authentication methods:
+
+**Method 1: Azure CLI Authentication (Recommended for development)**
+1. Install Azure CLI: https://docs.microsoft.com/en-us/cli/azure/install-azure-cli
+2. Run `az login` in your terminal to authenticate
+3. Ensure you have access to the specified Kusto cluster and database
+4. Leave client_id, client_secret, and tenant_id parameters empty
+
+**Method 2: Application Key Authentication (Recommended for production)**
+1. Register an Azure AD application in your tenant
+2. Generate a client secret for the application
+3. Grant the application appropriate permissions to your Kusto cluster:
+   - Go to your Kusto cluster in Azure Portal
+   - Navigate to Permissions > Add
+   - Add your application as a user with appropriate role (e.g., "AllDatabasesViewer" for read access)
+4. Provide the following parameters:
+   - client_id: Application (client) ID from your Azure AD app registration
+   - client_secret: Client secret value you generated
+   - tenant_id: Directory (tenant) ID from your Azure AD
+
+**Required Parameters:**
+- kusto_cluster: Your Kusto cluster URI (e.g., "https://mycluster.region.kusto.windows.net")
+- kusto_database: Name of the database you want to access
+
+**Troubleshooting:**
+- If authentication fails, ensure you have the correct permissions on the Kusto cluster
+- For CLI auth, make sure you're logged in with `az account show`
+- For app key auth, verify your client_id, client_secret, and tenant_id are correct
+        """
 
     def __init__(self, params: Dict[str, Any], duck_db_conn: duckdb.DuckDBPyConnection):
 

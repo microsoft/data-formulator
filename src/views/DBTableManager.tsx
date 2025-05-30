@@ -653,7 +653,7 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
                     sx={{px: 0.5}}
                 >
                     <Typography variant="caption" sx={{color: "text.secondary", fontWeight: "bold", px: 1}}>connect external data</Typography>
-                    {["file upload", "mysql", "kusto","s3"].map((dataLoaderType, i) => (
+                    {["file upload", ...Object.keys(dataLoaderParamDefs ?? {})].map((dataLoaderType, i) => (
                         <Tab 
                             key={`dataLoader:${dataLoaderType}`} 
                             wrapped 
@@ -911,7 +911,7 @@ export const DataLoaderForm: React.FC<{
                     return [
                     <TableRow
                         key={tableName}
-                        sx={{ '&:last-child td, &:last-child th': { border: 0 }, '& .MuiTableCell-root': { padding: 0.25 }}}
+                        sx={{ '&:last-child td, &:last-child th': { border: 0 }, '& .MuiTableCell-root': { padding: 0.25, wordWrap: 'break-word', whiteSpace: 'normal' }}}
                     >
                         <TableCell sx={{borderBottom: displaySamples[tableName] ? 'none' : '1px solid rgba(0, 0, 0, 0.1)'}}>
                             <IconButton size="small" onClick={() => toggleDisplaySamples(tableName)}>

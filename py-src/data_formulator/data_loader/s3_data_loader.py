@@ -19,6 +19,70 @@ class S3DataLoader(ExternalDataLoader):
         ]
         return params_list
 
+    @staticmethod
+    def auth_instructions() -> str:
+        return """
+To connect to Amazon S3, you'll need the following AWS credentials and configuration:
+
+**Required Parameters:**
+- **AWS Access Key ID**: Your AWS access key identifier
+- **AWS Secret Access Key**: Your AWS secret access key  
+- **Region Name**: The AWS region where your S3 bucket is located (e.g., 'us-east-1', 'us-west-2')
+- **Bucket**: The name of your S3 bucket
+
+**Optional Parameters:**
+- **AWS Session Token**: Required only if using temporary credentials (e.g., from AWS STS or IAM roles)
+
+**How to Get AWS Credentials:**
+
+1. **AWS IAM User (Recommended for programmatic access):**
+   - Go to AWS Console → IAM → Users
+   - Create a new user or select existing user
+   - Go to "Security credentials" tab
+   - Click "Create access key"
+   - Choose "Application running outside AWS"
+   - Save both the Access Key ID and Secret Access Key securely
+
+2. **Required S3 Permissions:**
+   Your IAM user/role needs these permissions for the target bucket:
+   ```json
+   {
+     "Version": "2012-10-17",
+     "Statement": [
+       {
+         "Effect": "Allow",
+         "Action": [
+           "s3:GetObject",
+           "s3:ListBucket"
+         ],
+         "Resource": [
+           "arn:aws:s3:::your-bucket-name",
+           "arn:aws:s3:::your-bucket-name/*"
+         ]
+       }
+     ]
+   }
+   ```
+
+3. **Finding Your Region:**
+   - Go to S3 Console → Select your bucket → Properties
+   - Look for "AWS Region" in the bucket overview
+
+**Security Best Practices:**
+- Never share your secret access key
+- Use IAM roles when possible instead of long-term access keys
+- Consider using temporary credentials with session tokens for enhanced security
+- Regularly rotate your access keys
+- Use the principle of least privilege for S3 permissions
+
+**Supported File Formats:**
+- CSV files (.csv)
+- Parquet files (.parquet) 
+- JSON files (.json, .jsonl)
+
+The connector will automatically detect file types and load them appropriately using DuckDB's S3 integration.
+        """
+
     def __init__(self, params: Dict[str, Any], duck_db_conn: duckdb.DuckDBPyConnection):
         self.params = params
         self.duck_db_conn = duck_db_conn
@@ -120,32 +184,9 @@ class S3DataLoader(ExternalDataLoader):
                 count = self.duck_db_conn.execute(f"SELECT COUNT(*) FROM read_parquet('{s3_url}')").fetchone()[0]
                 return count
             
-            # For CSV files, we'll sample the file to estimate size
-            sample_size = 1000
-            sample_df = self.duck_db_conn.execute(f"SELECT * FROM read_csv_auto('{s3_url}') LIMIT {sample_size}").df()
-            
-            # Get file size from S3
-            import boto3
-            s3_client = boto3.client(
-                's3',
-                aws_access_key_id=self.aws_access_key_id,
-                aws_secret_access_key=self.aws_secret_access_key,
-                aws_session_token=self.aws_session_token if self.aws_session_token else None,
-                region_name=self.region_name
-            )
-            
-            key = s3_url.replace(f"s3://{self.bucket}/", "")
-            response = s3_client.head_object(Bucket=self.bucket, Key=key)
-            file_size = response['ContentLength']
-            
-            # Estimate based on sample size and file size
-            if len(sample_df) > 0:
-                # Calculate average row size in bytes
-                avg_row_size = file_size / len(sample_df)
-                estimated_rows = int(file_size / avg_row_size)
-                return min(estimated_rows, 1000000)  # Cap at 1 million for UI performance
-            
-            return 0
+            # For CSV, JSON, and JSONL files, we'll skip row count
+            if s3_url.lower().endswith('.csv') or s3_url.lower().endswith('.json') or s3_url.lower().endswith('.jsonl'):
+                return 0
         except Exception as e:
             print(f"Error estimating row count for {s3_url}: {e}")
             return 0
