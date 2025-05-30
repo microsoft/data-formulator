@@ -59,6 +59,12 @@ interface AppConfig {
     DISABLE_DISPLAY_KEYS: boolean;
 }
 
+const decodeHtmlEntities = (text: string): string => {
+    const textarea = document.createElement('textarea');
+    textarea.innerHTML = text;
+    return textarea.value;
+};
+
 export const ModelSelectionButton: React.FC<{}> = ({ }) => {
 
     const dispatch = useDispatch();
@@ -410,11 +416,14 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                     if (status == "unknown") {
                         message = "Click the status icon to test again before applying.";
                     } else if (status == "error") {
-                        message = testedModels.find(t => t.id == model.id)?.message || "Unknown error";
+                        const rawMessage = testedModels.find(t => t.id == model.id)?.message || "Unknown error";
+                        message = decodeHtmlEntities(rawMessage);
                     }
 
                     const borderStyle = ['error', 'unknown'].includes(status) ? '1px dashed text.secondary' : undefined;
                     const noBorderStyle = ['error', 'unknown'].includes(status) ? 'none' : undefined;
+
+                    console.log(message)
 
                     return (
                         <>
@@ -498,7 +507,8 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                                 <TableCell colSpan={2} align="right" ></TableCell>
                                 <TableCell colSpan={6}>
                                     <Typography variant="caption" color="#c82c2c">
-                                        {message}
+                                        {message} 
+                                        
                                     </Typography>
                                 </TableCell>
                             </TableRow>
