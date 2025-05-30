@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "data_formulator"
-version = "0.2.1.2"
+version = "0.2.1.3"
 
 requires-python = ">=3.9"
 authors = [
@@ -21,7 +21,6 @@ classifiers = [
 ]
 
 dependencies = [  
-    "autopep8",  
     "jupyter",  
     "pandas",  
     "docker",  
@@ -31,6 +30,7 @@ dependencies = [
     "flask-cors",  
     "openai",  
     "azure-identity",  
+    "azure-kusto-data",
     "azure-keyvault-secrets",  
     "python-dotenv",  
     "vega_datasets",

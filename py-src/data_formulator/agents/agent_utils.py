@@ -6,10 +6,6 @@ import keyword
 import pandas as pd
 import numpy as np
 
-import base64
-
-from pprint import pprint
-
 import re
 
 def string_to_py_varname(var_str): 

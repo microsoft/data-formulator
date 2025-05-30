@@ -18,6 +18,32 @@ class MySQLDataLoader(ExternalDataLoader):
         ]
         return params_list
 
+    @staticmethod
+    def auth_instructions() -> str:
+        return """
+MySQL Connection Instructions:
+
+1. Local MySQL Setup:
+   - Ensure MySQL server is running on your machine
+   - Default connection: host='localhost', user='root'
+   - If you haven't set a root password, leave password field empty
+
+2. Remote MySQL Connection:
+   - Obtain host address, username, and password from your database administrator
+   - Ensure the MySQL server allows remote connections
+   - Check that your IP is whitelisted in MySQL's user permissions
+
+3. Common Connection Parameters:
+   - user: Your MySQL username (default: 'root')
+   - password: Your MySQL password (leave empty if no password set)
+   - host: MySQL server address (default: 'localhost')
+   - database: Target database name to connect to
+
+4. Troubleshooting:
+   - Verify MySQL service is running: `brew services list` (macOS) or `sudo systemctl status mysql` (Linux)
+   - Test connection: `mysql -u [username] -p -h [host] [database]`
+"""
+
     def __init__(self, params: Dict[str, Any], duck_db_conn: duckdb.DuckDBPyConnection):
         self.params = params
         self.duck_db_conn = duck_db_conn
@@ -93,7 +119,7 @@ class MySQLDataLoader(ExternalDataLoader):
         """)
 
     def view_query_sample(self, query: str) -> str:
-        return self.duck_db_conn.execute(query).df().head(10).to_dict(orient="records")
+        return json.loads(self.duck_db_conn.execute(query).df().head(10).to_json(orient="records"))
 
     def ingest_data_from_query(self, query: str, name_as: str) -> pd.DataFrame:
         # Execute the query and get results as a DataFrame

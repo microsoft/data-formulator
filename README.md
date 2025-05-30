@@ -14,22 +14,24 @@
 
 Transform data and create rich visualizations iteratively with AI 🪄. Try Data Formulator now!
 
-[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/microsoft/data-formulator?quickstart=1)
+Any questions? Ask on the Discord channel! [![Discord](https://img.shields.io/badge/discord-chat-green?logo=discord)](https://discord.gg/mYCZMQKYZb)
+
+<!-- [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/microsoft/data-formulator?quickstart=1) -->
 
 <kbd>
   <a target="_blank" rel="noopener noreferrer" href="https://codespaces.new/microsoft/data-formulator?quickstart=1" title="open Data Formulator in GitHub Codespaces"><img src="public/data-formulator-screenshot.png"></a>
 </kbd>
 
 
+
 ## News 🔥🔥🔥
 
-- [05-13-2025] Data Formulator 0.2.1: External Data Loader 
+- [05-13-2025] Data Formulator 0.2.3: External Data Loader 
   - We introduced external data loader class to make import data easier. [Readme](https://github.com/microsoft/data-formulator/tree/main/py-src/data_formulator/data_loader) and [Demo](https://github.com/microsoft/data-formulator/pull/155)
-    - Example data loaders from MySQL and Azure Data Explorer (Kusto) are provided.
+    - Current data loaders: MySQL, Azure Data Explorer (Kusto), Azure Blob and Amazon S3 (json, parquet, csv).
   - Call for action [link](https://github.com/microsoft/data-formulator/issues/156):
     - Users: let us know which data source you'd like to load data from.
     - Developers: let's build more data loaders.
-  - Discord channel for discussions: join us! [![Discord](https://img.shields.io/badge/discord-chat-green?logo=discord)](https://discord.gg/mYCZMQKYZb)
 
 - [04-23-2025] Data Formulator 0.2: working with *large* data 📦📦📦
   - Explore large data by:
@@ -67,8 +69,6 @@ Transform data and create rich visualizations iteratively with AI 🪄. Try Data
   - New experimental feature: load an image or a messy text, and ask AI to parse and clean it for you(!). [[demo]](https://github.com/microsoft/data-formulator/pull/31#issuecomment-2403652717)
   
 - [10-01-2024] Initial release of Data Formulator, check out our [[blog]](https://www.microsoft.com/en-us/research/blog/data-formulator-exploring-how-ai-can-help-analysts-create-rich-data-visualizations/) and [[video]](https://youtu.be/3ndlwt0Wi3c)!
-
-
 
 ## Overview
 

@@ -1,8 +1,7 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
 
-import pandas as pd
-from data_formulator.agents.agent_utils import generate_data_summary, extract_code_from_gpt_response
+from data_formulator.agents.agent_utils import generate_data_summary
 
 import logging
 

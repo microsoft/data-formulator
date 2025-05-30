@@ -1,10 +1,9 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
 
-import pandas as pd
 import json
 
-from data_formulator.agents.agent_utils import extract_code_from_gpt_response, extract_json_objects
+from data_formulator.agents.agent_utils import extract_json_objects
 import re
 import logging
 

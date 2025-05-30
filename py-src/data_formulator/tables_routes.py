@@ -728,7 +728,10 @@ def data_loader_list_data_loaders():
         return jsonify({
             "status": "success",
             "data_loaders": {
-                name:  data_loader.list_params()
+                name: {
+                    "params": data_loader.list_params(),
+                    "auth_instructions": data_loader.auth_instructions()
+                }
                 for name, data_loader in DATA_LOADERS.items()
             }
         })

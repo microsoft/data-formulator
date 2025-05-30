@@ -1,4 +1,3 @@
-autopep8
 jupyter
 pandas
 docker
@@ -7,9 +6,13 @@ matplotlib
 flask
 openai
 azure-identity
+azure-kusto-data
 azure-keyvault-secrets
+azure-kusto-data
+azure-storage-blob
 python-dotenv
 vega_datasets
 litellm
 duckdb
+boto3
 -e . #also need to install data formulator itself

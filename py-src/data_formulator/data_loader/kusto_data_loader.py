@@ -23,6 +23,33 @@ class KustoDataLoader(ExternalDataLoader):
             {"name": "tenant_id", "type": "string", "required": False, "description": "only necessary for AppKey auth"}
         ]
         return params_list
+    
+    @staticmethod
+    def auth_instructions() -> str:
+        return """Azure Kusto Authentication Instructions
+
+Method 1: Azure CLI Authentication
+    1. Install Azure CLI: https://docs.microsoft.com/en-us/cli/azure/install-azure-cli
+    2. Run `az login` in your terminal to authenticate
+    3. Ensure you have access to the specified Kusto cluster and database
+    4. Leave client_id, client_secret, and tenant_id parameters empty
+
+Method 2: Application Key Authentication
+    1. Register an Azure AD application in your tenant
+    2. Generate a client secret for the application
+    3. Grant the application appropriate permissions to your Kusto cluster:
+        - Go to your Kusto cluster in Azure Portal
+        - Navigate to Permissions > Add
+        - Add your application as a user with appropriate role (e.g., "AllDatabasesViewer" for read access)
+    4. Provide the following parameters:
+        - client_id: Application (client) ID from your Azure AD app registration
+        - client_secret: Client secret value you generated
+        - tenant_id: Directory (tenant) ID from your Azure AD
+
+Required Parameters:
+    - kusto_cluster: Your Kusto cluster URI (e.g., "https://mycluster.region.kusto.windows.net")
+    - kusto_database: Name of the database you want to access
+"""
 
     def __init__(self, params: Dict[str, Any], duck_db_conn: duckdb.DuckDBPyConnection):
 
@@ -51,41 +78,6 @@ class KustoDataLoader(ExternalDataLoader):
         return dataframe_from_result_table(result.primary_results[0])
 
     def list_tables(self) -> List[Dict[str, Any]]:
-        # first list functions (views)
-        query = ".show functions"
-        function_result_df = self.query(query)
-
-        functions = []
-        for func in function_result_df.to_dict(orient="records"):
-            func_name = func['Name']
-            result = self.query(f".show function ['{func_name}'] schema as json").to_dict(orient="records")
-            schema = json.loads(result[0]['Schema'])
-            parameters = schema['InputParameters']
-            columns = [{
-                'name': r["Name"],
-                'type': r["Type"]
-            } for r in schema['OutputColumns']]
-
-            # skip functions with parameters at the moment
-            if len(parameters) > 0:
-                continue
-
-            sample_query = f"['{func_name}'] | take {10}"
-            sample_result = self.query(sample_query).to_dict(orient="records")
-        
-            function_metadata = {
-                "row_count": 0,
-                "columns": columns,
-                "parameters": parameters,
-                "sample_rows": sample_result
-            }
-            functions.append({
-                "type": "function",
-                "name": func_name,
-                "metadata": function_metadata
-            })
-
-        # then list tables
         query = ".show tables"
         tables_df = self.query(query)
 
@@ -101,8 +93,8 @@ class KustoDataLoader(ExternalDataLoader):
             row_count_result = self.query(f".show table ['{table_name}'] details").to_dict(orient="records")
             row_count = row_count_result[0]["TotalRowCount"]
 
-            sample_query = f"['{table_name}'] | take {10}"
-            sample_result = self.query(sample_query).to_dict(orient="records")
+            sample_query = f"['{table_name}'] | take {5}"
+            sample_result = json.loads(self.query(sample_query).to_json(orient="records"))
 
             table_metadata = {
                 "row_count": row_count,
@@ -116,7 +108,7 @@ class KustoDataLoader(ExternalDataLoader):
                 "metadata": table_metadata
             })
 
-        return functions + tables
+        return tables
     
     def ingest_data(self, table_name: str, name_as: str = None, size: int = 5000000) -> pd.DataFrame:
         if name_as is None:
@@ -167,7 +159,7 @@ class KustoDataLoader(ExternalDataLoader):
             total_rows_ingested += len(chunk_df)
 
     def view_query_sample(self, query: str) -> str:
-        return self.query(query).head(10).to_dict(orient="records")
+        return json.loads(self.query(query).head(10).to_json(orient="records"))
 
     def ingest_data_from_query(self, query: str, name_as: str) -> pd.DataFrame:
         # Sanitize the table name for SQL compatibility
