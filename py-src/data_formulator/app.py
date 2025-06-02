@@ -29,7 +29,7 @@ from vega_datasets import data as vega_data
 from dotenv import load_dotenv
 import secrets
 import base64
-APP_ROOT = Path(os.path.join(Path(__file__).parent)).absolute()
+APP_ROOT = Path(Path(__file__).parent).absolute()
 
 import os
 
