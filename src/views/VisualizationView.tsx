@@ -184,14 +184,8 @@ const BaseChartCreationMenu: FC<{tableId: string; buttonElement: any}> = functio
             anchorEl={anchorEl}
             open={open}
             onClose={() => { setAnchorEl(null); }}
-            anchorOrigin={{
-                vertical: 'top',
-                horizontal: 'right',
-            }}
-            transformOrigin={{
-                vertical: 'top',
-                horizontal: 'left',
-            }}
+            // anchorOrigin={{vertical: 'bottom', horizontal: 'right'}}
+            // transformOrigin={{vertical: 'top', horizontal: 'left'}}
         >
             {Object.entries(CHART_TEMPLATES).map(([group, templates]) => {
                 return [
@@ -203,9 +197,9 @@ const BaseChartCreationMenu: FC<{tableId: string; buttonElement: any}> = functio
                                                     setAnchorEl(null);  
                                                     e.stopPropagation(); }}>
                             <ListItemIcon>
-                                <img height="24px" width="24px" src={t?.icon} alt="" role="presentation" />
+                                {typeof t?.icon == 'string' ? <img height="24px" width="24px" src={t?.icon} alt="" role="presentation" /> : t?.icon}
                             </ListItemIcon>
-                            <ListItemText primaryTypographyProps={{fontSize: '12px'}}>{t.chart}</ListItemText>
+                            <ListItemText slotProps={{ primary: {fontSize: 12}}} sx={{fontSize: '12px'}}>{t.chart}</ListItemText>
                         </MenuItem>
                     ))
                 ]

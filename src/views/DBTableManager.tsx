@@ -937,7 +937,8 @@ export const DataLoaderForm: React.FC<{
                         </TableCell>
                     </TableRow>,
                     <TableRow >
-                        <TableCell sx={{ paddingBottom: 0, paddingTop: 0, px: 0, maxWidth: 800, overflowX: "auto", borderBottom: displaySamples[tableName] ? '1px solid rgba(0, 0, 0, 0.1)' : 'none' }} colSpan={4}>
+                        <TableCell colSpan={4} sx={{ paddingBottom: 0, paddingTop: 0, px: 0, maxWidth: 800, overflowX: "auto", 
+                                         borderBottom: displaySamples[tableName] ? '1px solid rgba(0, 0, 0, 0.1)' : 'none' }}>
                         <Collapse in={displaySamples[tableName]} timeout="auto" unmountOnExit>
                             <Box sx={{ px: 1, py: 0.5}}>
                                 <CustomReactTable rows={metadata.sample_rows.slice(0, 9).map((row: any) => {
@@ -993,7 +994,7 @@ export const DataLoaderForm: React.FC<{
                             label={paramDef.name}
                             value={params[paramDef.name]}
                             placeholder={paramDef.description}
-                            onChange={(event) => { 
+                            onChange={(event: any) => { 
                                 dispatch(dfActions.updateDataLoaderConnectParam({
                                     dataLoaderType, paramName: paramDef.name, 
                                     paramValue: event.target.value}));
@@ -1224,10 +1225,10 @@ export const DataQueryForm: React.FC<{
                 sx={{width: 120, ml: 'auto', '& .MuiInputBase-root': {fontSize: 12, height: 32}, 
                      '& .MuiInputLabel-root': {fontSize: 12, transform: "translate(14px, -6px) scale(0.75)"}}}
                 slotProps={{
-                    inputLabel: {shrink: true}
+                    inputLabel: {shrink: true},
                 }}
                 value={queryResultName}
-                onChange={(event) => setQueryResultName(event.target.value)}
+                onChange={(event: any) => setQueryResultName(event.target.value)}
             />
             <Button variant="contained" color="primary" size="small" disabled={queryResultName === ""} sx={{textTransform: "none", width: 120}}
                 onClick={() => handleImportQueryResult()}>

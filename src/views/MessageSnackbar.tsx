@@ -8,14 +8,20 @@ import IconButton from '@mui/material/IconButton';
 import CloseIcon from '@mui/icons-material/Close';
 import { DataFormulatorState, dfActions } from '../app/dfSlice';
 import { useDispatch, useSelector } from 'react-redux';
-import { Alert, alpha, Box, Chip, Divider, Paper, Tooltip, Typography } from '@mui/material';
+import { Alert, alpha, Box, Chip, Collapse, Divider, Paper, Tooltip, Typography } from '@mui/material';
 import InfoIcon from '@mui/icons-material/Info';
 import AssignmentIcon from '@mui/icons-material/Assignment';
 import DeleteIcon from '@mui/icons-material/Delete';
 
-import NetworkWifi1BarIcon from '@mui/icons-material/NetworkWifi1Bar';
-import NetworkWifi2BarIcon from '@mui/icons-material/NetworkWifi2Bar';
-import NetworkWifiIcon from '@mui/icons-material/NetworkWifi';
+import SignalCellular1BarIcon from '@mui/icons-material/SignalCellular1Bar';
+import SignalCellular2BarIcon from '@mui/icons-material/SignalCellular2Bar';
+import SignalCellular3BarIcon from '@mui/icons-material/SignalCellular3Bar';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import ExpandLessIcon from '@mui/icons-material/ExpandLess';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
+import WarningIcon from '@mui/icons-material/Warning';
+import InfoOutlineIcon from '@mui/icons-material/InfoOutline';
 
 export interface Message {
     type: "success" | "info" | "error" | "warning",
@@ -40,6 +46,7 @@ export function MessageSnackbar() {
 
     const [openChallenge, setOpenChallenge] = React.useState(true);
     const [openMessages, setOpenMessages] = React.useState(false);
+    const [expandedMessages, setExpandedMessages] = React.useState<string[]>([]);
 
     // Add ref for messages scroll, so that we always scroll to the bottom of the messages list
     const messagesScrollRef = React.useRef<HTMLDivElement>(null);
@@ -194,9 +201,9 @@ export function MessageSnackbar() {
                                     alignItems: 'center'
                                 }}
                             >
-                                {ch.difficulty === 'easy' ? <NetworkWifi1BarIcon sx={{fontSize: 16, mr: 0.5}} /> 
-                                    : ch.difficulty === 'medium' ? <NetworkWifi2BarIcon sx={{fontSize: 16, mr: 0.5}} /> 
-                                    : <NetworkWifiIcon sx={{fontSize: 16, mr: 0.5}} />}
+                                {ch.difficulty === 'easy' ? <SignalCellular1BarIcon sx={{fontSize: 16, mr: 0.5}} /> 
+                                    : ch.difficulty === 'medium' ? <SignalCellular2BarIcon sx={{fontSize: 16, mr: 0.5}} /> 
+                                    : <SignalCellular3BarIcon sx={{fontSize: 16, mr: 0.5}} />}
                                 
                                 [{ch.difficulty}] {ch.text}
                             </Typography>
@@ -256,16 +263,12 @@ export function MessageSnackbar() {
                         {messages.length == 0 && 
                         <Typography fontSize={12} component="span" sx={{margin: "auto", my: 1, opacity: 0.7, fontStyle: 'italic'}}>There are no messages yet</Typography>}
                         {groupedMessages.map((msg, index) => (
-                            <Alert key={index} severity={msg.type} sx={{ 
+                            <Alert icon={false} key={index} severity={msg.type} sx={{ 
                                 mb: 0.5, py: 0, px: 1,
                                
                                 '& .MuiSvgIcon-root ': {
-                                    height: '18px',
-                                    width: '18px'
-                                },
-                                '& .MuiAlert-icon': {
-                                    mr: 0.5,
-                                    py: 0.25
+                                    height: '16px',
+                                    width: '16px'
                                 },
                                 '& .MuiAlert-message': {
                                     py: 0.25
@@ -273,8 +276,12 @@ export function MessageSnackbar() {
                                 backgroundColor: 'rgba(255, 255, 255, 0.5)',
                             } }>
                                 <Box key={`${msg.originalIndex}-${msg.count}`} sx={{ display: 'flex', alignItems: 'center'}}>
+                                    {msg.type == "error" && <ErrorOutlineIcon sx={{fontSize: 16, mr: 0.5, color: 'error.main'}} />}
+                                    {msg.type == "warning" && <WarningIcon sx={{fontSize: 16, mr: 0.5, color: 'warning.main'}} />}
+                                    {msg.type == "info" && <InfoOutlineIcon sx={{fontSize: 16, mr: 0.5, color: 'info.main'}} />}
+                                    {msg.type == "success" && <CheckCircleIcon sx={{fontSize: 16, mr: 0.5, color: 'success.main'}} />}
                                     <Typography fontSize={11} component="span" >
-                                        <b>[{formatTimestamp(msg.timestamp)}] ({msg.component})</b> {msg.value}
+                                        [{formatTimestamp(msg.timestamp)}] ({msg.component}) - {msg.value}
                                     </Typography>
                                     {msg.count > 1 && (
                                         <Chip 
@@ -292,34 +299,45 @@ export function MessageSnackbar() {
                                             }}
                                         />
                                     )}
+                                    {(msg.detail || msg.code) && (!expandedMessages.includes(msg.timestamp.toString()) ? (
+                                        <IconButton sx={{p: 0}} onClick={() => setExpandedMessages([...expandedMessages, msg.timestamp.toString()])}>
+                                            <ExpandMoreIcon sx={{fontSize: 12}} />
+                                        </IconButton>
+                                    ) : (
+                                        <IconButton sx={{p: 0}} onClick={() => setExpandedMessages(expandedMessages.filter(t => t !== msg.timestamp.toString()))}>
+                                            <ExpandLessIcon sx={{fontSize: 12}} />
+                                        </IconButton>
+                                    ))}
                                 </Box>
-                                {msg.detail && (
-                                    <>
-                                        <Divider textAlign="left" sx={{my: 1, fontSize: 12, opacity: 0.7}}>
-                                            [details]
-                                        </Divider>
-                                        <Box sx={{ borderRadius: 1, position: 'relative' }}>
-                                            <Typography fontSize={12}>{msg.detail}</Typography>
-                                        </Box>
-                                    </>
-                                )}
-                                {msg.code && (
-                                    <>
-                                        <Divider textAlign="left" sx={{my: 1, fontSize: 12, opacity: 0.7}}>
-                                            [generated code]
-                                        </Divider>
-                                        <Typography fontSize={10} component="span" sx={{opacity: 0.7}}>
-                                            <pre style={{ 
-                                                whiteSpace: 'pre-wrap', 
-                                                wordBreak: 'break-word', 
-                                                marginTop: 1,
-                                                fontSize: '10px'
-                                            }}>
-                                                {msg.code.split('\n').filter(line => line.trim() !== '').join('\n')}
-                                            </pre>
-                                        </Typography>
-                                    </>
-                                )}
+                                {msg.detail || msg.code && <Collapse in={expandedMessages.includes(msg.timestamp.toString())} >
+                                    {msg.detail && (
+                                        <>
+                                            <Divider textAlign="left" sx={{my: 1, fontSize: 12, opacity: 0.7}}>
+                                                [details]
+                                            </Divider>
+                                            <Box sx={{ borderRadius: 1, position: 'relative' }}>
+                                                <Typography fontSize={12}>{msg.detail}</Typography>
+                                            </Box>
+                                        </>
+                                    )}
+                                    {msg.code && (
+                                        <>
+                                            <Divider textAlign="left" sx={{my: 1, fontSize: 12, opacity: 0.7}}>
+                                                [generated code]
+                                            </Divider>
+                                            <Typography fontSize={10} component="span" sx={{opacity: 0.7}}>
+                                                <pre style={{ 
+                                                    whiteSpace: 'pre-wrap', 
+                                                    wordBreak: 'break-word', 
+                                                    marginTop: 1,
+                                                    fontSize: '10px'
+                                                }}>
+                                                    {msg.code.split('\n').filter(line => line.trim() !== '').join('\n')}
+                                                </pre>
+                                            </Typography>
+                                        </>
+                                    )}
+                                </Collapse>}
                             </Alert>
                         ))}
                     </Box>
