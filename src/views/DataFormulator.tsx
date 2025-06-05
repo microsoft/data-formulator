@@ -42,6 +42,7 @@ import dfLogo from '../assets/df-logo.png';
 import exampleImageTable from "../assets/example-image-table.png";
 import { ModelSelectionButton } from './ModelSelectionDialog';
 import { DBTableSelectionDialog } from './DBTableManager';
+import { connectToSSE } from './SSEClient';
 
 //type AppProps = ConnectedProps<typeof connector>;
 
@@ -56,7 +57,15 @@ export const DataFormulatorFC = ({ }) => {
 
     useEffect(() => {
         document.title = toolName;
-    }, []);
+        
+        // Connect to SSE and pass dispatch to send messages to Redux
+        const sseConnection = connectToSSE(dispatch);
+        
+        // Cleanup on unmount
+        return () => {
+            sseConnection.close();
+        };
+    }, [dispatch]);
 
     let conceptEncodingPanel = (
         <Box sx={{display: "flex", flexDirection: "row", width: '100%', flexGrow: 1, overflow: "hidden"}}>

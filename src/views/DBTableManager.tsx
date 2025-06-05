@@ -17,9 +17,6 @@ import {
   DialogContent,
   DialogTitle,
   Divider,
-  Alert,
-  Snackbar,
-  Fade,
   SxProps,
   Table,
   TableBody,
@@ -39,17 +36,8 @@ import {
 } from '@mui/material';
 
 import DeleteIcon from '@mui/icons-material/Delete';
-import UploadFileIcon from '@mui/icons-material/UploadFile';
 import CloseIcon from '@mui/icons-material/Close';
-import StorageIcon from '@mui/icons-material/Storage';
-import SearchIcon from '@mui/icons-material/Search';
 import AnalyticsIcon from '@mui/icons-material/Analytics';
-import TuneIcon from '@mui/icons-material/Tune';
-import AddIcon from '@mui/icons-material/Add';
-import UploadIcon from '@mui/icons-material/Upload';
-import DownloadIcon from '@mui/icons-material/Download';
-import RestartAltIcon from '@mui/icons-material/RestartAlt';
-import PolylineIcon from '@mui/icons-material/Polyline';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import TableRowsIcon from '@mui/icons-material/TableRows';
@@ -282,20 +270,21 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
     const [dbTables, setDbTables] = useState<DBTable[]>([]);
     const [selectedTabKey, setSelectedTabKey] = useState("");
 
-    const [errorMessage, setErrorMessage] = useState<{content: string, severity: "error" | "warning" | "info" | "success"} | null>(null);
-    const [showError, setShowError] = useState(false);
     const [isUploading, setIsUploading] = useState<boolean>(false);
+
+    let setSystemMessage = (content: string, severity: "error" | "warning" | "info" | "success") => {
+        dispatch(dfActions.addMessages({
+            "timestamp": Date.now(),
+            "component": "DB manager",
+            "type": severity,
+            "value": content
+        }));
+    }
 
     useEffect(() => {
         fetchTables();
         fetchDataLoaders();
     }, []);
-
-    useEffect(() => {
-        if (errorMessage?.content?.includes("session_id not found")) {
-            dispatch(getSessionId());
-        }
-    }, [errorMessage])
 
     useEffect(() => {
         if (!selectedTabKey.startsWith("dataLoader:") && dbTables.length == 0) {
@@ -314,8 +303,7 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
                 setDbTables(data.tables);
             }
         } catch (error) {
-            setErrorMessage({content: 'Failed to fetch tables, please check if the server is running', severity: "error"});
-            setShowError(true);
+            setSystemMessage('Failed to fetch tables, please check if the server is running', "error");
         }
     };
 
@@ -358,13 +346,10 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
                 fetchTables();  // Refresh table list
             } else {
                 // Handle error from server
-                setErrorMessage(data.error || 'Failed to upload table');
-                setShowError(true);
+                setSystemMessage(data.error || 'Failed to upload table', "error");
             }
         } catch (error) {
-            console.error('Failed to upload table:', error);
-            setErrorMessage({content: 'Failed to upload table, please check if the server is running', severity: "error"});
-            setShowError(true);
+            setSystemMessage('Failed to upload table, please check if the server is running', "error");
         } finally {
             setIsUploading(false);
         }
@@ -387,18 +372,14 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
             const data = await response.json();
             if (data.status === 'success') {
                 if (data.is_renamed) {
-                    setErrorMessage({content: `Table ${data.original_name} already exists. Renamed to ${data.table_name}`, severity: "warning"});
-                    setShowError(true);
+                    setSystemMessage(`Table ${data.original_name} already exists. Renamed to ${data.table_name}`, "warning");
                 } 
                 fetchTables();  // Refresh table list
             } else {
-                setErrorMessage({content: data.error || 'Failed to upload table', severity: "error"});
-                setShowError(true);
+                setSystemMessage(data.error || 'Failed to upload table', "error");
             }
         } catch (error) {
-            console.error('Failed to upload table:', error);
-            setErrorMessage({content: 'Failed to upload table, please check if the server is running', severity: "error"});
-            setShowError(true);
+            setSystemMessage('Failed to upload table, please check if the server is running', "error");
         } finally {
             setIsUploading(false);
             // Clear the file input value to allow uploading the same file again
@@ -417,13 +398,10 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
             if (data.status === 'success') {
                 fetchTables();
             } else {
-                setErrorMessage(data.error || 'Failed to reset database');
-                setShowError(true);
+                setSystemMessage(data.error || 'Failed to reset database', "error");
             }
         } catch (error) {
-            console.error('Failed to reset database:', error);
-            setErrorMessage({content: 'Failed to reset database', severity: "error"});
-            setShowError(true);
+            setSystemMessage('Failed to reset database', "error");
         }
     }
 
@@ -444,12 +422,10 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
                 fetchTables();
                 setSelectedTabKey(dbTables.length > 0 ? dbTables[0].name : "");
             } else {
-                setErrorMessage({content: data.error || 'Failed to delete table', severity: "error"});
-                setShowError(true);
+                setSystemMessage(data.error || 'Failed to delete table', "error");
             }
         } catch (error) {
-            setErrorMessage({content: 'Failed to delete table, please check if the server is running', severity: "error"});
-            setShowError(true);
+            setSystemMessage('Failed to delete table, please check if the server is running', "error");
         }
     };
 
@@ -479,8 +455,7 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
             }
         } catch (error) {
             console.error('Failed to analyze table data:', error);
-            setErrorMessage({content: 'Failed to analyze table data, please check if the server is running', severity: "error"});
-            setShowError(true);
+            setSystemMessage('Failed to analyze table data, please check if the server is running', "error");
         }
     };
 
@@ -537,10 +512,6 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
         setSelectedTabKey(newValue);
     };
 
-    const handleCloseError = () => {
-        setShowError(false);
-    };
-
     useEffect(() => {
         if (tableDialogOpen) {
             fetchTables();
@@ -562,8 +533,7 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
                 handleDBDownload(sessionId ?? '')
                     .catch(error => {
                         console.error('Failed to download database:', error);
-                        setErrorMessage({content: 'Failed to download database file', severity: "error"});
-                        setShowError(true);
+                        setSystemMessage('Failed to download database file', "error");
                     });
             }} disabled={isUploading || dbTables.length === 0}>
                 export
@@ -709,8 +679,7 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
                             setIsUploading(false);
                             fetchTables();
                             if (status === "error") {
-                                setErrorMessage({content: message, severity: "error"});
-                                setShowError(true);
+                                setSystemMessage(message, "error");
                             }
                         }} 
                     />
@@ -787,18 +756,6 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
             }}>
                 {buttonElement}
             </Button>
-            
-            {/* Error Snackbar */}
-            <Snackbar 
-                open={showError} 
-                autoHideDuration={6000} 
-                onClose={handleCloseError}
-                anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
-            >
-                <Alert onClose={handleCloseError} severity={errorMessage?.severity} sx={{ width: '100%' }}>
-                    {errorMessage?.content}
-                </Alert>
-            </Snackbar>
             <Dialog 
                 key="db-table-selection-dialog" 
                 onClose={() => {setTableDialogOpen(false)}} 

@@ -489,6 +489,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                             dispatch(dfActions.addMessages({
                                 "timestamp": Date.now(),
                                 "type": "error",
+                                "component": "chart builder",
                                 "value": `Data formulation failed, please try again.`,
                                 "code": code,
                                 "detail": errorMessage
@@ -639,6 +640,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
 
                             dispatch(dfActions.addMessages({
                                 "timestamp": Date.now(),
+                                "component": "chart builder",
                                 "type": "success",
                                 "value": `Data formulation for ${fieldNamesStr} succeeded.`
                             }));
@@ -648,6 +650,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                     // TODO: add warnings to show the user
                     dispatch(dfActions.addMessages({
                         "timestamp": Date.now(),
+                        "component": "chart builder",
                         "type": "error",
                         "value": "No result is returned from the data formulation agent. Please try again."
                     }));
@@ -658,6 +661,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                 if (error.name === 'AbortError') {
                     dispatch(dfActions.addMessages({
                         "timestamp": Date.now(),
+                        "component": "chart builder",
                         "type": "error",
                         "value": `Data formulation timed out after ${config.formulateTimeoutSeconds} seconds. Consider breaking down the task, using a different model or prompt, or increasing the timeout limit.`,
                         "detail": "Request exceeded timeout limit"
@@ -665,6 +669,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                 } else {
                     dispatch(dfActions.addMessages({
                         "timestamp": Date.now(),
+                        "component": "chart builder",
                         "type": "error",
                         "value": `Data formulation failed, please try again.`,
                         "detail": error.message

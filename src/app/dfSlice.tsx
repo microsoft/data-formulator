@@ -26,6 +26,13 @@ export const generateFreshChart = (tableRef: string, chartType?: string) : Chart
     }
 }
 
+export interface SSEMessage {
+    type: "notification" | "action"; 
+    text: string;
+    data?: Record<string, any>;
+    timestamp: number;
+}
+
 export interface ModelConfig {
     id: string; // unique identifier for the model / client combination
     endpoint: string;
@@ -73,6 +80,8 @@ export interface DataFormulatorState {
     }   
 
     dataLoaderConnectParams: Record<string, Record<string, string>>; // {table_name: {param_name: param_value}}
+    
+    lastSSEMessage: SSEMessage | undefined; // Store the last received SSE message
 }
 
 // Define the initial state using that type
@@ -112,7 +121,9 @@ const initialState: DataFormulatorState = {
         defaultChartHeight: 300,
     },
 
-    dataLoaderConnectParams: {}
+    dataLoaderConnectParams: {},
+    
+    lastSSEMessage: undefined,
 }
 
 let getUnrefedDerivedTableIds = (state: DataFormulatorState) => {
@@ -301,7 +312,7 @@ export const dataFormulatorSlice = createSlice({
 
             state.conceptShelfItems = savedState.conceptShelfItems || [];
 
-            state.messages = []; 
+            state.messages = [];
             state.displayedMessageIdx = -1;
 
             state.focusedTableId = savedState.focusedTableId || undefined;
@@ -755,6 +766,29 @@ export const dataFormulatorSlice = createSlice({
         deleteDataLoaderConnectParams: (state, action: PayloadAction<string>) => {
             let dataLoaderType = action.payload;
             delete state.dataLoaderConnectParams[dataLoaderType];
+        },
+        handleSSEMessage: (state, action: PayloadAction<SSEMessage>) => {
+            state.lastSSEMessage = action.payload;
+            if (action.payload.type == "notification") {
+                console.log('SSE message stored in Redux:', action.payload);
+                state.messages = [...state.messages, {
+                    component: "server",
+                    type: "info",
+                    timestamp: action.payload.timestamp,
+                    value: action.payload.text || "Unknown message"
+                }];
+            } else if (action.payload.type == "action") {
+                console.log('SSE message stored in Redux:', action.payload);
+                state.messages = [...state.messages, {
+                    component: "server",
+                    type: "info",
+                    timestamp: action.payload.timestamp,
+                    value: action.payload.text || "Unknown message"
+                }];
+            }
+        },
+        clearMessages: (state) => {
+            state.messages = [];
         }
     },
     extraReducers: (builder) => {

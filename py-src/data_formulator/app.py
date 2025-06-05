@@ -36,7 +36,10 @@ import os
 # blueprints
 from data_formulator.tables_routes import tables_bp
 from data_formulator.agent_routes import agent_bp
+from data_formulator.sse_routes import sse_bp
 
+import queue
+from typing import Dict, Any
 
 app = Flask(__name__, static_url_path='', static_folder=os.path.join(APP_ROOT, "dist"))
 app.secret_key = secrets.token_hex(16)  # Generate a random secret key for sessions
@@ -65,6 +68,7 @@ app.config['CLI_ARGS'] = {
 # register blueprints
 app.register_blueprint(tables_bp)
 app.register_blueprint(agent_bp)
+app.register_blueprint(sse_bp)
 
 print(APP_ROOT)
 
