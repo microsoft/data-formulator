@@ -219,7 +219,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
         }}
     >
         <TableCell align="right">
-            <Radio checked={tempSelectedModelId == undefined} name="radio-buttons" inputProps={{'aria-label': 'Select this model'}}/>
+            <Radio size="small" checked={tempSelectedModelId == undefined} name="radio-buttons" slotProps={{input: {'aria-label': 'Select this model'}}}/>
         </TableCell>
         <TableCell align="left">
             <Autocomplete
@@ -244,30 +244,40 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                     <TextField
                         {...params}
                         placeholder="provider"
-                        InputProps={{
-                            ...params.InputProps,
-                            style: { fontSize: "0.875rem" }
+                        slotProps={{
+                            input: {
+                                ...params.InputProps,
+                                style: { fontSize: "0.875rem" }
+                            }
                         }}
                         size="small"
                         onChange={(event: any) => setNewEndpoint(event.target.value)}
                     />
                 )}
-                ListboxProps={{
-                    style: { padding: 0 }
+                slotProps={{
+                    listbox: {
+                        style: { padding: 0 }
+                    },
                 }}
-                PaperComponent={({ children }) => (
-                    <Paper>
-                        <Typography sx={{ p: 1, color: 'gray', fontStyle: 'italic', fontSize: '0.75rem' }}>
-                            examples
-                        </Typography>
-                        {children}
-                    </Paper>
-                )}
+                slots={{
+                    paper: (props) => {
+                        return <Paper {...props}>
+                            <Typography sx={{ p: 1, color: 'gray', fontStyle: 'italic', fontSize: '0.75rem' }}>
+                                examples
+                            </Typography>
+                            {props.children}
+                        </Paper>
+                    }
+                }}
             />
         </TableCell>
         <TableCell align="left" >
             <TextField fullWidth size="small" type={showKeys ? "text" : "password"} 
-                InputProps={{ style: { fontSize: "0.875rem" } }} 
+                slotProps={{
+                    input: {
+                        style: { fontSize: "0.875rem" }
+                    }
+                }}
                 placeholder='leave blank if using keyless access'
                 value={newApiKey}  
                 onChange={(event: any) => { setNewApiKey(event.target.value); }} 
@@ -290,43 +300,51 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                         error={newEndpoint != "" && !newModel}
                         {...params}
                         placeholder="model name"
-                        InputProps={{ 
-                            ...params.InputProps, 
-                            style: { fontSize: "0.875rem" },
-                            endAdornment: (
-                                <>
-                                    {isLoadingModelOptions ? <CircularProgress color="primary" size={20} /> : null}
-                                    {params.InputProps.endAdornment}
-                                </>
-                            ),
-                        }}
-                        inputProps={{
-                            ...params.inputProps,
-                            'aria-label': 'Select or enter a model',
+                        slotProps={{
+                            input: {
+                                ...params.InputProps,
+                                style: { fontSize: "0.875rem" },
+                                endAdornment: (
+                                    <>
+                                        {isLoadingModelOptions ? <CircularProgress color="primary" size={20} /> : null}
+                                        {params.InputProps.endAdornment}
+                                    </>
+                                ),
+                            },
+                            htmlInput: {
+                                ...params.inputProps,
+                                'aria-label': 'Select or enter a model',
+                            }
                         }}
                         size="small"
                         onChange={(event: any) => { setNewModel(event.target.value); }}
                     />
                 )}
-                ListboxProps={{
-                    style: { padding: 0 }
+                slotProps={{
+                    listbox: {
+                        style: { padding: 0 }
+                    },
                 }}
-                PaperComponent={({ children }) => (
-                    <Paper>
-                        {!isLoadingModelOptions && (
+                slots={{
+                    paper: (props) => {
+                        return <Paper {...props}>
                             <Typography sx={{ p: 1, color: 'gray', fontStyle: 'italic', fontSize: 'small' }}>
                                 examples
                             </Typography>
-                        )}
-                        {children}
-                    </Paper>
-                )}
+                            {props.children}    
+                        </Paper>
+                    }
+                }}
             />
         </TableCell>
         <TableCell align="right">
             <TextField size="small" type="text" fullWidth
                 placeholder="api_base"
-                InputProps={{ style: { fontSize: "0.875rem" } }}
+                slotProps={{
+                    input: {
+                        style: { fontSize: "0.875rem" }
+                    }
+                }}
                 value={newApiBase}  
                 onChange={(event: any) => { setNewApiBase(event.target.value); }} 
                 autoComplete='off'
@@ -334,7 +352,11 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
         </TableCell>
         <TableCell align="right">
             <TextField size="small" type="text" fullWidth
-                InputProps={{ style: { fontSize: "0.875rem" } }}
+                slotProps={{
+                    input: {
+                        style: { fontSize: "0.875rem" }
+                    }
+                }}
                 value={newApiVersion}  onChange={(event: any) => { setNewApiVersion(event.target.value); }} 
                 autoComplete='off'
                 placeholder="api_version"
@@ -347,8 +369,6 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                     sx={{cursor: modelExists ? 'help' : 'pointer'}}
                     onClick={(event) => {
                         event.stopPropagation()
-
-                        console.log("checkpont 1")
 
                         let endpoint = newEndpoint;
 
@@ -397,7 +417,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                     <TableCell align="right"></TableCell>
                     <TableCell sx={{fontWeight: 'bold', width: '120px'}}>provider</TableCell>
                     <TableCell sx={{fontWeight: 'bold', width: '240px'}}>api_key</TableCell>
-                    <TableCell sx={{fontWeight: 'bold', width: '120px'}} align="left">model</TableCell>
+                    <TableCell sx={{fontWeight: 'bold', width: '160px'}} align="left">model</TableCell>
                     <TableCell sx={{fontWeight: 'bold', width: '240px'}} align="left">api_base</TableCell>
                     <TableCell sx={{fontWeight: 'bold', width: '120px'}} align="left">api_version</TableCell>
                     <TableCell sx={{fontWeight: 'bold'}} align="right">Status</TableCell>
@@ -414,35 +434,33 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                     
                     let message = "the model is ready to use";
                     if (status == "unknown") {
-                        message = "Click the status icon to test again before applying.";
+                        message = "click the status icon to test the model availability.";
                     } else if (status == "error") {
                         const rawMessage = testedModels.find(t => t.id == model.id)?.message || "Unknown error";
                         message = decodeHtmlEntities(rawMessage);
                     }
 
-                    const borderStyle = ['error', 'unknown'].includes(status) ? '1px dashed text.secondary' : undefined;
+                    const borderStyle = ['error', 'unknown'].includes(status) ? '1px dashed lightgray' : undefined;
                     const noBorderStyle = ['error', 'unknown'].includes(status) ? 'none' : undefined;
 
-                    console.log(message)
-
                     return (
-                        <>
+                        <React.Fragment key={`${model.id}`}>
                         <TableRow
                             selected={isItemSelected}
                             key={`${model.id}`}
                             onClick={() => { setTempSelectedModelId(model.id) }}
-                            sx={{ cursor: 'pointer'}}
+                            sx={{ cursor: 'pointer', '& .MuiTableCell-root': { p: 0.5, fontSize: 14 }}}
                         >
-                            <TableCell align="right" sx={{ borderBottom: noBorderStyle }}>
-                                <Radio checked={isItemSelected} name="radio-buttons" inputProps={{'aria-label': 'Select this model'}} />
+                            <TableCell align="right" sx={{ borderBottom: noBorderStyle,}}>
+                                <Radio size="small" checked={isItemSelected} name="radio-buttons" slotProps={{input: {'aria-label': 'Select this model'}}} />
                             </TableCell>
-                            <TableCell align="left" sx={{ borderBottom: noBorderStyle }}>
+                            <TableCell align="left" sx={{ borderBottom: noBorderStyle, p: 0 }}>
                                 {model.endpoint}
                             </TableCell>
                             <TableCell component="th" scope="row" sx={{ borderBottom: borderStyle }}>
                                 {model.api_key  ? (showKeys ? 
-                                    <Typography 
-                                        sx={{ 
+                                    <Typography
+                                        sx={{
                                             maxWidth: '240px',
                                             wordBreak: 'break-all',
                                             whiteSpace: 'normal'
@@ -465,8 +483,10 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                                 {model.api_version} 
                             </TableCell>
                             <TableCell sx={{fontWeight: 'bold', borderBottom: borderStyle}} align="right">
-                                <Tooltip title={message}>
+                                <Tooltip title={
+                                    status == 'ok' ? message :  'test model availability'}>
                                     <IconButton
+                                        size="small"
                                         onClick ={() => { testModel(model)  }}
                                     >
                                         {statusIcon}
@@ -476,6 +496,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                             <TableCell sx={{ borderBottom: borderStyle }} align="right">
                                 <Tooltip title="remove model">
                                     <IconButton 
+                                        size="small"
                                         onClick={()=>{
                                             dispatch(dfActions.removeModel(model.id));
                                             if ((tempSelectedModelId) 
@@ -506,14 +527,13 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                             >
                                 <TableCell colSpan={2} align="right" ></TableCell>
                                 <TableCell colSpan={6}>
-                                    <Typography variant="caption" color="#c82c2c">
+                                    <Typography variant="caption" color="#c82c2c" sx={{fontSize: "0.625rem"}}>
                                         {message} 
-                                        
                                     </Typography>
                                 </TableCell>
                             </TableRow>
                         )}
-                        </>
+                        </React.Fragment>
                     )
                 })}
                 {newModelEntry}

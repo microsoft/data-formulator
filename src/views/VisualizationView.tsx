@@ -180,30 +180,46 @@ const BaseChartCreationMenu: FC<{tableId: string; buttonElement: any}> = functio
     };
 
     let menu = <Menu
-            aria-labelledby="demo-positioned-button"
+            aria-labelledby="chart-creation-menu"
             anchorEl={anchorEl}
             open={open}
             onClose={() => { setAnchorEl(null); }}
-            // anchorOrigin={{vertical: 'bottom', horizontal: 'right'}}
-            // transformOrigin={{vertical: 'top', horizontal: 'left'}}
+            slotProps={{
+                paper: {
+                    sx: {
+                        maxWidth: '400px', // Adjust width to accommodate two columns
+                    }
+                }
+            }}
         >
-            {Object.entries(CHART_TEMPLATES).map(([group, templates]) => {
-                return [
-                    <ListSubheader sx={{ color: "darkgray", lineHeight: 2, fontSize: 12 }} key={group}>{group}</ListSubheader>,
-                    ...templates.map((t, i) => (
-                        <MenuItem sx={{ fontSize: 12, paddingLeft: 3, paddingRight: 3 }} 
-                                  value={t.chart} key={`${group}-${i}`} 
-                                  onClick={(e) => { dispatch(dfActions.createNewChart({tableId: tableId, chartType: t.chart})); 
-                                                    setAnchorEl(null);  
-                                                    e.stopPropagation(); }}>
-                            <ListItemIcon>
-                                {typeof t?.icon == 'string' ? <img height="24px" width="24px" src={t?.icon} alt="" role="presentation" /> : t?.icon}
-                            </ListItemIcon>
-                            <ListItemText slotProps={{ primary: {fontSize: 12}}} sx={{fontSize: '12px'}}>{t.chart}</ListItemText>
-                        </MenuItem>
-                    ))
-                ]
-            })}
+            <Box sx={{ 
+                display: 'grid', 
+                gridTemplateColumns: '1fr 1fr',
+                px: 1,
+                gap: 0,
+                minWidth: '240px'
+            }}>
+                {Object.entries(CHART_TEMPLATES).map(([group, templates]) => {
+                    return [
+                        <Divider textAlign='left' sx={{gridColumn: '1 / -1', my: 0, color: "darkgray"}} key={`${group}-divider`}> 
+                            <Typography variant="caption" sx={{fontSize: "0.625rem", color: "darkgray"}}>{group}</Typography> 
+                        </Divider>,
+                        ...templates.map((t, i) => (
+                            <MenuItem sx={{ fontSize: 12, pl: 1 }} 
+                                      value={t.chart} key={`${group}-${i}`} 
+                                      onClick={(e) => { dispatch(dfActions.createNewChart({tableId: tableId, chartType: t.chart})); 
+                                                        setAnchorEl(null);  
+                                                        e.stopPropagation(); }}>
+                                <ListItemIcon>
+                                    {typeof t?.icon == 'string' ? <img height="24px" width="24px" src={t?.icon} alt="" role="presentation" /> : t?.icon}
+                                </ListItemIcon>
+                                <ListItemText slotProps={{ primary: {fontSize: 12}}} sx={{fontSize: '12px'}}>{t.chart}</ListItemText>
+                            </MenuItem>
+                        )),
+                        
+                    ]
+                })}
+            </Box>
         </Menu>
 
     return <>

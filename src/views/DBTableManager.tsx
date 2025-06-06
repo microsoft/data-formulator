@@ -160,7 +160,7 @@ interface TableStatisticsViewProps {
 export class TableStatisticsView extends React.Component<TableStatisticsViewProps> {
     render() {
         const { tableName, columnStats } = this.props;
-        
+
         // Common styles for header cells
         const headerCellStyle = {
             backgroundColor: '#fff',
@@ -450,7 +450,7 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
                 // Update the analysis map with the new results
                 setTableAnalysisMap(prevMap => ({
                     ...prevMap,
-                    [tableName]: data
+                    [tableName]: data.statistics
                 }));
             }
         } catch (error) {
@@ -1208,10 +1208,10 @@ export const DataQueryForm: React.FC<{
     }
 
     let queryResultBox = queryResult?.status === "success" ? [
-         <Box sx={{display: "flex", flexDirection: "row", gap: 1, justifyContent: "space-between"}}>
+         <Box key="query-result-table" sx={{display: "flex", flexDirection: "row", gap: 1, justifyContent: "space-between"}}>
             <CustomReactTable rows={queryResult.sample} columnDefs={Object.keys(queryResult.sample[0]).map((t: any) => ({id: t, label: t}))} rowsPerPageNum={-1} compact={false} />
         </Box>,
-        <Box sx={{display: "flex", flexDirection: "row", gap: 1, alignItems: "center"}}>
+        <Box key="query-result-controls" sx={{display: "flex", flexDirection: "row", gap: 1, alignItems: "center"}}>
             <Button variant="outlined" color="primary" size="small" sx={{textTransform: "none", minWidth: 120, mr: 'auto'}}
                 onClick={() => {
                     setQueryResult(undefined);
@@ -1281,7 +1281,6 @@ export const DataQueryForm: React.FC<{
                             fontSize: 12,
                             paddingBottom: '24px',
                             backgroundColor: "rgba(0, 0, 0, 0.03)",
-                            
                             overflowY: "auto"
                         }}
                     />
