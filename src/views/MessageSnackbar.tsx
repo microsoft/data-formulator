@@ -204,14 +204,12 @@ export function MessageSnackbar() {
                                 {ch.difficulty === 'easy' ? <SignalCellular1BarIcon sx={{fontSize: 16, mr: 0.5}} /> 
                                     : ch.difficulty === 'medium' ? <SignalCellular2BarIcon sx={{fontSize: 16, mr: 0.5}} /> 
                                     : <SignalCellular3BarIcon sx={{fontSize: 16, mr: 0.5}} />}
-                                
                                 [{ch.difficulty}] {ch.text}
                             </Typography>
                         ))}
                     </Box>
                 </Paper>
             </Snackbar> : ""}
-            
             <Snackbar
                 open={openMessages}
                 anchorOrigin={{vertical: 'bottom', horizontal: 'right'}}
@@ -222,13 +220,13 @@ export function MessageSnackbar() {
                     color: 'text.primary',
                     display: 'flex',
                     flexDirection: 'column',
-                    minWidth: '200px',
+                    minWidth: '300px',
                     py: 1,
                 }}>
                     {/* Header */}
                     <Box sx={{display: 'flex', alignItems: 'center', px: 1.5}}>
                         <Typography variant="subtitle1" sx={{fontSize: 12, flexGrow: 1, color: 'text.secondary'}}>
-                            System messages ({messages.length})
+                            system messages ({messages.length})
                         </Typography>
                         <Tooltip title="clear all messages">
                             <IconButton
@@ -261,7 +259,7 @@ export function MessageSnackbar() {
                         }}
                     >
                         {messages.length == 0 && 
-                        <Typography fontSize={12} component="span" sx={{margin: "auto", my: 1, opacity: 0.7, fontStyle: 'italic'}}>There are no messages yet</Typography>}
+                        <Typography fontSize={12} component="span" sx={{margin: "auto", m: 1, opacity: 0.7, fontStyle: 'italic'}}>There are no messages yet</Typography>}
                         {groupedMessages.map((msg, index) => (
                             <Alert icon={false} key={index} severity={msg.type} sx={{ 
                                 mb: 0.5, py: 0, px: 1,

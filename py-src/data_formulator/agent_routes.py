@@ -425,8 +425,6 @@ def request_code_expl():
     if request.is_json:
         logger.info("# request data: ")
         content = request.get_json()        
-        token = content["token"]
-
         client = get_client(content['model'])
 
         # each table is a dict with {"name": xxx, "rows": [...]}

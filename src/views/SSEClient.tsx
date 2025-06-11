@@ -25,7 +25,11 @@ export function connectToSSE(dispatch?: any) {
     };
 
     eventSource.onerror = function(event) {
-        console.error('SSE connection error:', event);
+        if (eventSource.readyState === EventSource.CLOSED) {
+            console.error('SSE connection was closed');
+        } else if (eventSource.readyState === EventSource.CONNECTING) {
+            console.error('SSE connection is reconnecting');
+        }
     };
 
     return eventSource;

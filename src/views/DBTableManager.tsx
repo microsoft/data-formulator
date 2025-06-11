@@ -63,6 +63,7 @@ import 'prismjs/themes/prism.css'; //Example style, you can use another
 import PrecisionManufacturingIcon from '@mui/icons-material/PrecisionManufacturing';
 import CheckIcon from '@mui/icons-material/Check';
 import MuiMarkdown from 'mui-markdown';
+import CleaningServicesIcon from '@mui/icons-material/CleaningServices';
 
 export const handleDBDownload = async (sessionId: string) => {
     try {
@@ -258,6 +259,7 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
     
     const dispatch = useDispatch<AppDispatch>();
     const sessionId = useSelector((state: DataFormulatorState) => state.sessionId);
+    const tables = useSelector((state: DataFormulatorState) => state.tables);
 
     const [tableDialogOpen, setTableDialogOpen] = useState<boolean>(false);
     const [tableAnalysisMap, setTableAnalysisMap] = useState<Record<string, ColumnStatistics[] | null>>({});
@@ -405,9 +407,45 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
         }
     }
 
+    const handleCleanDerivedViews = async () => {
+        let unreferencedViews = dbTables.filter(t => t.view_source !== null && t.view_source !== undefined && !tables.some(t2 => t2.id === t.name));
+
+        if (unreferencedViews.length > 0) {
+            if (confirm(`Are you sure you want to delete the following unreferenced derived views? \n${unreferencedViews.map(v => `- ${v.name}`).join("\n")}`)) {
+                let deletedViews = [];
+                for (let view of unreferencedViews) {
+                    try {
+                        const response = await fetch(getUrls().DELETE_TABLE, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                            },
+                            body: JSON.stringify({ table_name: view.name })
+                        });
+                        const data = await response.json();
+                        if (data.status === 'success') {
+                            deletedViews.push(view.name);
+                        } else {
+                            setSystemMessage(data.error || 'Failed to delete table', "error");
+                        }
+                    } catch (error) {
+                        setSystemMessage('Failed to delete table, please check if the server is running', "error");
+                    }
+                }
+                if (deletedViews.length > 0) {
+                    setSystemMessage(`Deleted ${deletedViews.length} unreferenced derived views: ${deletedViews.join(", ")}`, "success");
+                }
+                fetchTables();
+                setSelectedTabKey(dbTables.length > 0 ? dbTables[0].name : "");
+            }
+        }
+    }
+
     // Delete table
     const handleDropTable = async (tableName: string) => {
-        if (!confirm(`Are you sure you want to delete ${tableName}?`)) return;
+        if (tables.some(t => t.id === tableName)) {
+            if (!confirm(`Are you sure you want to delete ${tableName}? \n ${tableName} is currently loaded into the data formulator and will be removed from the database.`)) return;
+        }
 
         try {
             const response = await fetch(getUrls().DELETE_TABLE, {
@@ -598,7 +636,8 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
                     </Typography>
                     {dbTables.length == 0 && 
                         <Typography variant="caption" sx={{color: "lightgray", px: 2, py: 0.5, fontStyle: "italic"}}>no tables available</Typography>}
-                    {dbTables.map((t, i) => (
+                    {/* <Typography variant="caption" color='text.secondary' sx={{fontStyle: "italic", px: 1, fontSize: 10, opacity: 0.8}}>tables</Typography> */}
+                    {dbTables.filter(t => t.view_source === null).map((t, i) => (
                         <Tab 
                             key={t.name} 
                             value={t.name}
@@ -613,7 +652,47 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
                             onClick={() => {
                                 setSelectedTabKey(t.name);
                             }}
-                            sx={{textTransform: "none", minHeight: 24, p: 0.5, ml: 2}}
+                            sx={{textTransform: "none", minHeight: 24, p: 0.5, ml: 2,
+                                backgroundColor: selectedTabKey === t.name ? (theme) => alpha(theme.palette.primary.light, 0.1) : 'transparent',
+                            }}
+                            {...a11yProps(t.name)} 
+                        />
+                    ))}
+                   {dbTables.filter(t => t.view_source !== null).length > 0 && <Typography variant="caption" color='text.secondary' sx={{fontStyle: "italic", px: 1, fontSize: 10, opacity: 0.8}}>
+                        derived views
+                        <Tooltip title="clean up unreferenced derived views">
+                            <IconButton size="small" color="primary" sx={{
+                                '&:hover': {
+                                    transform: 'rotate(180deg)',
+                                },
+                                transition: 'transform 0.3s ease-in-out',
+                            }} 
+                            disabled={dbTables.filter(t => t.view_source !== null).length === 0}
+                            onClick={() => {
+                                handleCleanDerivedViews();
+                            }}>
+                                <CleaningServicesIcon sx={{fontSize: 14}} />
+                            </IconButton>
+                        </Tooltip>
+                    </Typography>}
+                    {dbTables.filter(t => t.view_source !== null).map((t, i) => (
+                        <Tab 
+                            key={t.name} 
+                            value={t.name}
+                            wrapped 
+                            label={
+                                <Typography variant="caption" 
+                                    sx={{textTransform: "none", width: "calc(100% - 4px)", textAlign: 'left', 
+                                         textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap'}}>
+                                    <Typography variant="caption" sx={{fontSize: 12}}>{t.name}</Typography>
+                                </Typography>
+                            } 
+                            onClick={() => {
+                                setSelectedTabKey(t.name);
+                            }}
+                            sx={{textTransform: "none", minHeight: 24, p: 0.5, ml: 2,
+                                backgroundColor: selectedTabKey === t.name ? (theme) => alpha(theme.palette.primary.light, 0.1) : 'transparent',
+                            }}
                             {...a11yProps(t.name)} 
                         />
                     ))}
@@ -627,7 +706,7 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
                     sx={{px: 0.5}}
                 >
                     <Typography variant="caption" sx={{color: "text.secondary", fontWeight: "bold", px: 1}}>
-                        connect external data
+                        external data loaders
                         <Tooltip title="refresh the data loader list">
                             <IconButton size="small" color="primary" sx={{
                                 '&:hover': {
@@ -652,7 +731,9 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
                             onClick={() => {
                                 setSelectedTabKey('dataLoader:' + dataLoaderType);
                             }}
-                            sx={{textTransform: "none", minHeight: 24, p: 0.5, ml: 2}}
+                            sx={{textTransform: "none", minHeight: 24, p: 0.5, ml: 2,
+                                backgroundColor: selectedTabKey === 'dataLoader:' + dataLoaderType ? (theme) => alpha(theme.palette.secondary.light, 0.1) : 'transparent',
+                            }}
                             {...a11yProps(dataLoaderType)} 
                         />
                     ))}
@@ -689,7 +770,7 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
                 const currentTable = t;
                 const showingAnalysis = tableAnalysisMap[currentTable.name] !== undefined;
                 return (
-                    <TabPanel key={t.name} sx={{width: 960, maxWidth: '100%'}} show={selectedTabKey === t.name}>
+                    <TabPanel key={t.name} sx={{width: 960, maxWidth: '100%', overflowX: 'auto'}} show={selectedTabKey === t.name}>
                         <Paper variant="outlined" sx={{width: "100%"}}>
                             <Box sx={{ px: 1, display: 'flex', alignItems: 'center', borderBottom: '1px solid rgba(0,0,0,0.1)' }}>
                                 <Typography variant="caption" sx={{  }}>

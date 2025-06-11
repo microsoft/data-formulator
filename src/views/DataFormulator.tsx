@@ -57,15 +57,7 @@ export const DataFormulatorFC = ({ }) => {
 
     useEffect(() => {
         document.title = toolName;
-        
-        // Connect to SSE and pass dispatch to send messages to Redux
-        const sseConnection = connectToSSE(dispatch);
-        
-        // Cleanup on unmount
-        return () => {
-            sseConnection.close();
-        };
-    }, [dispatch]);
+    }, []);
 
     let conceptEncodingPanel = (
         <Box sx={{display: "flex", flexDirection: "row", width: '100%', flexGrow: 1, overflow: "hidden"}}>
@@ -178,9 +170,6 @@ Totals (7 entries)	5	5	5	15
                 href="https://privacy.microsoft.com/en-US/data-privacy-notice">view data privacy notice</Button>
     </Box>;
 
-    console.log("selected model?")
-    console.log(selectedModelId)
-    
     return (
         <Box sx={{ display: 'block', width: "100%", height: 'calc(100% - 49px)' }}>
             <DndProvider backend={HTML5Backend}>
