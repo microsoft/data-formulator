@@ -35,7 +35,8 @@ dependencies = [
     "python-dotenv",  
     "vega_datasets",
     "litellm",
-    "duckdb"
+    "duckdb",
+    "pyodbc"
 ]
 
 [project.urls]
