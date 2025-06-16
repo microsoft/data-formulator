@@ -254,7 +254,6 @@ For other platforms, see: https://github.com/mkleehammer/pyodbc/wiki
                 FROM INFORMATION_SCHEMA.TABLES 
                 WHERE TABLE_TYPE = 'BASE TABLE' 
                 AND TABLE_SCHEMA NOT IN ('sys', 'INFORMATION_SCHEMA')
-                AND TABLE_NAME = 'Building'
                 ORDER BY TABLE_SCHEMA, TABLE_NAME
             """
 
