@@ -59,7 +59,6 @@ def list_tables():
                 if database_name in ['system', 'temp']:
                     continue
                 
-                
                 print(f"table_metadata: {table_metadata}")
 
                 try:

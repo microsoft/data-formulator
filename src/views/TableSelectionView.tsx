@@ -239,6 +239,7 @@ export const TableSelectionDialog: React.FC<{ buttonElement: any }> = function T
                                 dispatch(dfActions.addMessages({
                                     "timestamp": Date.now(),
                                     "type": "error",
+                                    "component": "data loader",
                                     "value": `Unable to load the sample dataset ${tableChallenges.table.id}, please try again later or upload your data.`
                                 }));
                             })
@@ -291,6 +292,7 @@ export const TableUploadDialog: React.FC<TableUploadDialogProps> = ({ buttonElem
                         dispatch(dfActions.addMessages({
                             "timestamp": Date.now(),
                             "type": "error",
+                            "component": "data loader",
                             "value": `File ${file.name} is too large (${(file.size / (1024 * 1024)).toFixed(2)}MB), upload it via DATABASE option instead.`
                         }));
                         continue; // Skip this file and process the next one
@@ -322,6 +324,7 @@ export const TableUploadDialog: React.FC<TableUploadDialogProps> = ({ buttonElem
                                 dispatch(dfActions.addMessages({
                                     "timestamp": Date.now(),
                                     "type": "error",
+                                    "component": "data loader",
                                     "value": `Failed to parse Excel file ${file.name}. Please check the file format.`
                                 }));
                             }
@@ -333,6 +336,7 @@ export const TableUploadDialog: React.FC<TableUploadDialogProps> = ({ buttonElem
                     dispatch(dfActions.addMessages({
                         "timestamp": Date.now(),
                         "type": "error",
+                        "component": "data loader",
                         "value": `Unsupported file format: ${file.name}. Please use CSV, TSV, JSON, or Excel files.`
                     }));
                 }
@@ -566,6 +570,7 @@ export const TableCopyDialogV2: React.FC<TableCopyDialogProps> = ({ buttonElemen
                     dispatch(dfActions.addMessages({
                         "timestamp": Date.now(),
                         "type": "error",
+                        "component": "data loader",
                         "value": "unable to perform auto-sort."
                     }));
                     setCleanTableContent(undefined);
@@ -577,6 +582,7 @@ export const TableCopyDialogV2: React.FC<TableCopyDialogProps> = ({ buttonElemen
                 dispatch(dfActions.addMessages({
                     "timestamp": Date.now(),
                     "type": "error",
+                    "component": "data loader",
                     "value": "unable to perform clean data due to server issue."
                 }));
             });
