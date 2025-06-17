@@ -36,6 +36,7 @@ dependencies = [
     "vega_datasets",
     "litellm",
     "duckdb",
+    "pyodbc"
 ]
 
 [project.urls]
