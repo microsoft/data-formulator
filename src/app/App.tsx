@@ -197,10 +197,10 @@ const TableMenu: React.FC = () => {
                 anchorEl={anchorEl}
                 open={open}
                 onClose={() => setAnchorEl(null)}
-                MenuListProps={{
-                    'aria-labelledby': 'add-table-button',
-                    sx: { py: '4px', px: '8px' }
+                slotProps={{
+                    paper: { sx: { py: '4px', px: '8px' } }
                 }}
+                aria-labelledby="add-table-button"
                 sx={{ '& .MuiMenuItem-root': { padding: 0, margin: 0 } }}
             >
                 <MenuItem onClick={(e) => {
@@ -247,16 +247,16 @@ const SessionMenu: React.FC = () => {
                 anchorEl={anchorEl}
                 open={open}
                 onClose={() => setAnchorEl(null)}
-                MenuListProps={{
-                    'aria-labelledby': 'session-menu-button',
-                    sx: { py: '4px', px: '8px' }
+                slotProps={{
+                    paper: { sx: { py: '4px', px: '8px' } }
                 }}
+                aria-labelledby="session-menu-button"
                 sx={{ '& .MuiMenuItem-root': { padding: 0, margin: 0 } }}
             >
                 {sessionId && (
                     <MenuItem disabled>
-                        <Typography sx={{ fontSize: 12, color: 'text.secondary', mx: 2 }}>
-                            ID: {sessionId}
+                        <Typography sx={{ fontSize: 12, color: 'text.secondary'}}>
+                            session id: {sessionId}
                         </Typography>
                     </MenuItem>
                 )}

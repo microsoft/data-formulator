@@ -22,7 +22,6 @@ import {
     TextField,
     FormControl,
     InputLabel,
-    Select,
     SelectChangeEvent,
     MenuItem,
     Checkbox,
@@ -37,7 +36,8 @@ import {
     DialogTitle,
     DialogContent,
     Divider,
-    CircularProgress} from '@mui/material';
+    Select,
+} from '@mui/material';
 
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
@@ -148,8 +148,6 @@ let ConceptReApplyButton: FC<{field: FieldItem,
     }
 
     let handleApply = () => {
-        console.log("---apply");
-        console.log(tableRowsPreview);
         dispatch(dfActions.extendTableWithNewFields({
             tableId: focusedTable.id,
             values: tableRowsPreview.map(r => r[field.name]),
@@ -348,8 +346,10 @@ export const ConceptCard: FC<ConceptCardProps> = function ConceptCard({ field })
                 anchorEl={anchorEl}
                 open={open}
                 onClose={handleDTypeClose}
-                MenuListProps={{
-                    'aria-labelledby': 'basic-button'
+                slotProps={{
+                    list: {
+                        'aria-labelledby': 'basic-button'
+                    }
                 }}
             >
                 {TypeList.map((t, i) => (
@@ -460,8 +460,10 @@ export const DerivedConceptFormV2: FC<ConceptFormProps> = function DerivedConcep
 
     let nameField = (
         <TextField key="name-field" id="name" fullWidth label="concept name" value={name} sx={{ minWidth: 120, flex: 1, paddingBottom: 1 }}
-            FormHelperTextProps={{
-                style: { fontSize: 8, marginTop: 0, marginLeft: "auto" }
+            slotProps={{
+                formHelperText: {
+                    style: { fontSize: 8, marginTop: 0, marginLeft: "auto" }
+                }
             }}
             multiline
             helperText={conceptShelfItems.some(f => f.name == name && f.id != concept.id) ? "this name already exists" : ""}
@@ -517,7 +519,7 @@ export const DerivedConceptFormV2: FC<ConceptFormProps> = function DerivedConcep
                         })}
                     </Typography>
                 }
-                onChange={(event: SelectChangeEvent<typeof transformParentIDs>) => {
+                onChange={(event) => {
                     const { target: { value }, } = event;
                     if (value.length == 0) { return }
                     typeof value === "string" ? setTransformParentIDs([value]) : setTransformParentIDs(value);
@@ -599,12 +601,14 @@ export const DerivedConceptFormV2: FC<ConceptFormProps> = function DerivedConcep
                 dispatch(dfActions.addMessages({
                     "timestamp": Date.now(),
                     "type": "success",
+                    "component": "Field Card",
                     "value": `Find ${results.length} candidate transformations for concept "${name}".`
                 }));
             } else {
                 dispatch(dfActions.addMessages({
                     "timestamp": Date.now(),
                     "type": "info",
+                    "component": "Field Card",
                     "value": `Find ${results.length} candidate transformations for concept "${name}", please try again.`
                 }));
             }
@@ -614,6 +618,7 @@ export const DerivedConceptFormV2: FC<ConceptFormProps> = function DerivedConcep
             dispatch(dfActions.addMessages({
                 "timestamp": Date.now(),
                 "type": "error",
+                "component": "Field Card",
                 "value": "unable to generate the desired transformation, please try again."
             }));
         }
@@ -862,10 +867,10 @@ export const PyCodexDialogBox: FC<CodexDialogBoxProps> = function ({
             color="primary"
             fullWidth
             disabled={outputName == ""}
-            InputProps={{
-                endAdornment: formulateButton,
+            slotProps={{
+                input: { endAdornment: formulateButton, },
+                inputLabel: { shrink: true }
             }}
-            InputLabelProps={{ shrink: true }}
             multiline
             onKeyDown={(event: any) => {
                 if (event.key === "Enter" || event.key === "Tab") {

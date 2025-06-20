@@ -11,7 +11,8 @@ import { getDataTable } from '../views/VisualizationView';
 import { adaptChart, getTriggers, getUrls } from './utils';
 import { Type } from '../data/types';
 import { TableChallenges } from '../views/TableSelectionView';
-import { inferTypeFromValueArray } from '../data/utils';
+import { createTableFromFromObjectArray, inferTypeFromValueArray } from '../data/utils';
+import { handleSSEMessage } from './SSEActions';
 
 enableMapSet();
 
@@ -27,7 +28,7 @@ export const generateFreshChart = (tableRef: string, chartType?: string) : Chart
 }
 
 export interface SSEMessage {
-    type: "notification" | "action"; 
+    type: "heartbeat" | "notification" | "action"; 
     text: string;
     data?: Record<string, any>;
     timestamp: number;
@@ -81,7 +82,7 @@ export interface DataFormulatorState {
 
     dataLoaderConnectParams: Record<string, Record<string, string>>; // {table_name: {param_name: param_value}}
     
-    lastSSEMessage: SSEMessage | undefined; // Store the last received SSE message
+    pendingSSEActions: SSEMessage[]; // Actions taken by the server but not yet completed
 }
 
 // Define the initial state using that type
@@ -123,7 +124,7 @@ const initialState: DataFormulatorState = {
 
     dataLoaderConnectParams: {},
     
-    lastSSEMessage: undefined,
+    pendingSSEActions: [],
 }
 
 let getUnrefedDerivedTableIds = (state: DataFormulatorState) => {
@@ -768,24 +769,7 @@ export const dataFormulatorSlice = createSlice({
             delete state.dataLoaderConnectParams[dataLoaderType];
         },
         handleSSEMessage: (state, action: PayloadAction<SSEMessage>) => {
-            state.lastSSEMessage = action.payload;
-            if (action.payload.type == "notification") {
-                console.log('SSE message stored in Redux:', action.payload);
-                state.messages = [...state.messages, {
-                    component: "server",
-                    type: "info",
-                    timestamp: action.payload.timestamp,
-                    value: action.payload.text || "Unknown message"
-                }];
-            } else if (action.payload.type == "action") {
-                console.log('SSE message stored in Redux:', action.payload);
-                state.messages = [...state.messages, {
-                    component: "server",
-                    type: "info",
-                    timestamp: action.payload.timestamp,
-                    value: action.payload.text || "Unknown message"
-                }];
-            }
+            handleSSEMessage(state, action.payload);
         },
         clearMessages: (state) => {
             state.messages = [];

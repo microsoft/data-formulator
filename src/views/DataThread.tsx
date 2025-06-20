@@ -17,7 +17,8 @@ import {
     useTheme,
     SxProps,
     Button,
-    TextField
+    TextField,
+    CircularProgress
 } from '@mui/material';
 
 import { VegaLite } from 'react-vega'
@@ -25,7 +26,7 @@ import { VegaLite } from 'react-vega'
 
 import '../scss/VisualizationView.scss';
 import { useDispatch, useSelector } from 'react-redux';
-import { DataFormulatorState, dfActions } from '../app/dfSlice';
+import { DataFormulatorState, dfActions, SSEMessage } from '../app/dfSlice';
 import { assembleVegaChart, getTriggers } from '../app/utils';
 import { Chart, DictTable, EncodingItem, Trigger } from "../components/ComponentType";
 
@@ -205,6 +206,7 @@ let SingleThreadView: FC<{
         let charts = useSelector((state: DataFormulatorState) => state.charts);
         let focusedChartId = useSelector((state: DataFormulatorState) => state.focusedChartId);
         let focusedTableId = useSelector((state: DataFormulatorState) => state.focusedTableId);
+        let pendingSSEActions = useSelector((state: DataFormulatorState) => state.pendingSSEActions);
 
         let handleUpdateTableDisplayId = (tableId: string, displayId: string) => {
             dispatch(dfActions.updateTableDisplayId({
@@ -493,6 +495,13 @@ let SingleThreadView: FC<{
                     <Box sx={{ flex: 1, padding: '8px 0px', minHeight: '8px', ...chartElementProps }}>
                         {releventChartElements}
                     </Box>
+                    {pendingSSEActions.some(a => a.data?.source_table_ids[0] == tableId) && 
+                    <Box sx={{ p: 2, display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', width: '100%' }}>
+                        <Typography sx={{ fontSize: '10px', color: 'rgba(0,0,0,0.5)' }}>
+                            agent is deriving data...
+                        </Typography>
+                        <CircularProgress size={16} sx={{ ml: 1, color: 'rgba(0,0,0,0.5)' }} />
+                    </Box>}
                 </Box>,
                 (i == tableIdList.length - 1) ?
                     <Box sx={{ marginLeft: "6px", marginTop: '-10px' }}>

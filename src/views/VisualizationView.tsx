@@ -370,8 +370,14 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
     let visFields = conceptShelfItems.filter(f => visFieldIds.includes(f.id));
     let dataFieldsAllAvailable = visFields.every(f => table.names.includes(f.name));
 
-    const [errorMessage, setErrorMessage] = useState<{content: string, severity: "error" | "warning" | "info" | "success"}>({content: "", severity: "error"});
-    const [showError, setShowError] = useState<boolean>(false);
+    let setSystemMessage = (content: string, severity: "error" | "warning" | "info" | "success") => {
+        dispatch(dfActions.addMessages({
+            "timestamp": Date.now(),
+            "component": "Chart Builder",
+            "type": severity,
+            "value": content
+        }));
+    }
 
     let createVisTableRowsLocal = (rows: any[]) => {
         if (visFields.length == 0) {
@@ -392,6 +398,9 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
         }
         if (table.virtual) {
             let { aggregateFields, groupByFields } = extractFieldsFromEncodingMap(focusedChart.encodingMap, conceptShelfItems);
+            console.log('---')
+            console.log("aggregateFields", aggregateFields);
+            console.log("groupByFields", groupByFields);
             fetch(getUrls().SAMPLE_TABLE, {
                 method: 'POST',
                 headers: {
@@ -414,8 +423,7 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
                 } else {
                     setVisTableRows([]);
                     setVisTableTotalRowCount(0);
-                    setErrorMessage({content: data.message, severity: "error"});
-                    setShowError(true);
+                    setSystemMessage(data.message, "error");
                 }
             })
             .catch(error => {
@@ -850,11 +858,6 @@ export const ChartEditorFC: FC<{  cachedCandidates: DictTable[],
     </Stack>
 
     return <Box ref={componentRef} sx={{overflow: "hidden", display: 'flex', flex: 1}}>
-        {showError ? <Snackbar open={showError} autoHideDuration={6000} onClose={() => setShowError(false)}>
-            <Alert onClose={() => setShowError(false)} severity={errorMessage?.severity} sx={{ width: '100%' }}>
-                {errorMessage?.content}
-            </Alert>
-        </Snackbar> : ""}
         {synthesisRunning ? <Box sx={{
                     position: "absolute", height: "calc(100%)", width: "calc(100%)", zIndex: 1001, 
                     backgroundColor: "rgba(243, 243, 243, 0.8)", display: "flex", alignItems: "center"

@@ -297,6 +297,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
                     // TODO: add warnings to show the user
                     dispatch(dfActions.addMessages({
                         "timestamp": Date.now(),
+                        "component": "EncodingBox",
                         "type": "error",
                         "value": "unable to perform auto-sort."
                     }));
@@ -308,6 +309,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
                
                 dispatch(dfActions.addMessages({
                     "timestamp": Date.now(),
+                    "component": "EncodingBox",
                     "type": "error",
                     "value": "unable to perform auto-sort due to server issue."
                 }));
