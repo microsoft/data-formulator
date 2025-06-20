@@ -1095,7 +1095,7 @@ export const DataLoaderForm: React.FC<{
                 </ButtonGroup>                }
                 
             </Box>            
-            {Object.keys(tableMetadata).length == 0 && (
+            {Object.keys(tableMetadata).length === 0 && (
                 <Box sx={{display: "flex", flexDirection: "row", alignItems: "center", gap: 1, ml: 4, mt: 4}}>
                     <TextField
                         size="small"
