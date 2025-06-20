@@ -10,24 +10,6 @@ import { DictTable } from "../components/ComponentType";
 import { getDType } from "../data/types";
 import * as d3 from 'd3';
 
-export interface AppConfig {
-    popupConfig?: PopupConfig;
-}
-
-export interface PopupConfig {
-    allowPopup?: boolean;
-    jsUrl?: string;
-}
-
-export const appConfig: AppConfig = {
-};
-
-export function assignAppConfig(config: AppConfig) {
-    //assign the new config to the appConfig
-    Object.assign(appConfig, config);
-    console.log('appConfig', appConfig);
-}
-
 export function getUrls() {
     return {
         GET_SESSION_ID: `/api/get-session-id`,
@@ -241,8 +223,8 @@ export const assembleVegaChart = (
         } 
         
         if (field) {
-            console.log("field and channel");
-            console.log(`${field.name} ${channel} ${encoding.aggregate}`);
+            // console.log("field and channel");
+            // console.log(`${field.name} ${channel} ${encoding.aggregate}`);
 
             // create the encoding
             encodingObj["field"] = field.name;

@@ -489,6 +489,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                             dispatch(dfActions.addMessages({
                                 "timestamp": Date.now(),
                                 "type": "error",
+                                "component": "chart builder",
                                 "value": `Data formulation failed, please try again.`,
                                 "code": code,
                                 "detail": errorMessage
@@ -639,6 +640,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
 
                             dispatch(dfActions.addMessages({
                                 "timestamp": Date.now(),
+                                "component": "chart builder",
                                 "type": "success",
                                 "value": `Data formulation for ${fieldNamesStr} succeeded.`
                             }));
@@ -648,6 +650,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                     // TODO: add warnings to show the user
                     dispatch(dfActions.addMessages({
                         "timestamp": Date.now(),
+                        "component": "chart builder",
                         "type": "error",
                         "value": "No result is returned from the data formulation agent. Please try again."
                     }));
@@ -658,6 +661,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                 if (error.name === 'AbortError') {
                     dispatch(dfActions.addMessages({
                         "timestamp": Date.now(),
+                        "component": "chart builder",
                         "type": "error",
                         "value": `Data formulation timed out after ${config.formulateTimeoutSeconds} seconds. Consider breaking down the task, using a different model or prompt, or increasing the timeout limit.`,
                         "detail": "Request exceeded timeout limit"
@@ -665,6 +669,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                 } else {
                     dispatch(dfActions.addMessages({
                         "timestamp": Date.now(),
+                        "component": "chart builder",
                         "type": "error",
                         "value": `Data formulation failed, please try again.`,
                         "detail": error.message
@@ -672,7 +677,6 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                 }
             });
     }
-    let defaultInstruction = chart.chartType == "Auto" ? "" : "" // `the output data should contain fields ${activeBaseFields.map(f => `${f.name}`).join(', ')}`
 
     let createDisabled = false;
 
@@ -681,24 +685,17 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
 
     let formulateInputBox = <Box key='text-input-boxes' sx={{display: 'flex', flexDirection: 'row', flex: 1, padding: '0px 4px'}}>
         <TextField
-            InputLabelProps={{ shrink: true }}
             id="outlined-multiline-flexible"
-            onKeyDown={(event: any) => {
-                if (defaultInstruction && (event.key === "Enter" || event.key === "Tab")) {
-                    // write your functionality here
-                    let target = event.target as HTMLInputElement;
-                    if (target.value == "" && target.placeholder != "") {
-                        target.value = defaultInstruction;
-                        setPrompt(target.value);
-                        event.preventDefault();
-                    }
-                }
-            }}
             sx={{
                 "& .MuiInputLabel-root": { fontSize: '12px' },
                 "& .MuiInput-input": { fontSize: '12px' }
             }}
-            onChange={(event) => { setPrompt(event.target.value) }}
+            onChange={(event: any) => {
+                setPrompt(event.target.value);
+            }}
+            slotProps={{
+                inputLabel: { shrink: true },
+            }}
             value={prompt}
             label=""
             placeholder={chart.chartType == "Auto" ? "what do you want to visualize?" : "formulate data"}
@@ -755,7 +752,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                         labelId="chart-mark-select-label"
                         id="chart-mark-select"
                         value={chart.chartType}
-                        title="Chart Type"
+                        //title="Chart Type"
                         renderValue={(value: string) => {
                             const t = getChartTemplate(value);
                             return (
@@ -763,7 +760,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                                     <ListItemIcon sx={{minWidth: "24px"}}>
                                         {typeof t?.icon == 'string' ? <img height="24px" width="24px" src={t?.icon} alt="" role="presentation" /> : t?.icon}
                                         </ListItemIcon>
-                                    <ListItemText sx={{marginLeft: "2px", whiteSpace: "initial"}} primaryTypographyProps={{fontSize: '12px'}}>{t?.chart}</ListItemText>
+                                    <ListItemText sx={{marginLeft: "2px", whiteSpace: "initial"}} slotProps={{primary: {fontSize: 12}}}>{t?.chart}</ListItemText>
                                 </div>
                             )
                         }}
@@ -776,7 +773,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                                         <ListItemIcon>
                                             {typeof t?.icon == 'string' ? <img height="24px" width="24px" src={t?.icon} alt="" role="presentation" /> : t?.icon}
                                         </ListItemIcon>
-                                        <ListItemText primaryTypographyProps={{fontSize: '12px'}}>{t.chart}</ListItemText>
+                                        <ListItemText slotProps={{primary: {fontSize: 12}}}>{t.chart}</ListItemText>
                                     </MenuItem>
                                 ))
                             ]
