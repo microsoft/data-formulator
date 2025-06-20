@@ -15,4 +15,5 @@ vega_datasets
 litellm
 duckdb
 boto3
+pyodbc
 -e . #also need to install data formulator itself
