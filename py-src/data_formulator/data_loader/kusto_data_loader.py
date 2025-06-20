@@ -1,15 +1,27 @@
+import logging
+import sys
 from typing import Dict, Any, List
 import pandas as pd
 import json
 import duckdb
 import random
 import string
+from datetime import datetime
 
 from azure.kusto.data import KustoClient, KustoConnectionStringBuilder
 from azure.kusto.data.helpers import dataframe_from_result_table
 
 from data_formulator.data_loader.external_data_loader import ExternalDataLoader, sanitize_table_name
 
+# Configure root logger for general application logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[logging.StreamHandler(sys.stdout)]
+)
+
+# Get logger for this module
+logger = logging.getLogger(__name__)
 
 class KustoDataLoader(ExternalDataLoader):
 
@@ -67,23 +79,93 @@ Required Parameters:
                     self.kusto_cluster, self.client_id, self.client_secret, self.tenant_id))
             else:
                 # This function provides an interface to Kusto. It uses Azure CLI auth, but you can also use other auth types.
-                self.client = KustoClient(KustoConnectionStringBuilder.with_az_cli_authentication(self.kusto_cluster))
+                cluster_url = KustoConnectionStringBuilder.with_az_cli_authentication(self.kusto_cluster)
+                logger.info(f"Connecting to Kusto cluster: {self.kusto_cluster}")
+                self.client = KustoClient(cluster_url)
+                logger.info("Using Azure CLI authentication for Kusto client. Ensure you have run `az login` in your terminal.")
         except Exception as e:
-            raise Exception(f"Error creating Kusto client: {e}, please authenticate with Azure CLI when starting the app.")
-        
+            logger.error(f"Error creating Kusto client: {e}")
+            raise Exception(f"Error creating Kusto client: {e}, please authenticate with Azure CLI when starting the app.")        
         self.duck_db_conn = duck_db_conn
 
-    def query(self, kql: str) -> pd.DataFrame:
-        result = self.client.execute(self.kusto_database, kql)
-        return dataframe_from_result_table(result.primary_results[0])
+    def _convert_kusto_datetime_columns(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Convert Kusto datetime columns to proper pandas datetime format"""
+        logger.info(f"Processing DataFrame with columns: {list(df.columns)}")
+        logger.info(f"Column dtypes before conversion: {dict(df.dtypes)}")
+        
+        for col in df.columns:
+            original_dtype = df[col].dtype
+            
+            if df[col].dtype == 'object':
+                # Try to identify datetime columns by checking sample values
+                sample_values = df[col].dropna().head(3)
+                if len(sample_values) > 0:
+                    # Check if values look like datetime strings or timestamp numbers
+                    first_val = sample_values.iloc[0]
+                    
+                    # Handle Kusto datetime format (ISO 8601 strings)
+                    if isinstance(first_val, str) and ('T' in first_val or '-' in first_val):
+                        try:
+                            # Try to parse as datetime
+                            pd.to_datetime(sample_values.iloc[0])
+                            logger.info(f"Converting column '{col}' from string to datetime")
+                            df[col] = pd.to_datetime(df[col], errors='coerce', utc=True).dt.tz_localize(None)
+                        except Exception as e:
+                            logger.debug(f"Failed to convert column '{col}' as string datetime: {e}")
+                    
+                    # Handle numeric timestamps (Unix timestamps in various formats)
+                    elif isinstance(first_val, (int, float)) and first_val > 1000000000:
+                        try:
+                            # Try different timestamp formats
+                            if first_val > 1e15:  # Likely microseconds since epoch
+                                logger.info(f"Converting column '{col}' from microseconds timestamp to datetime")
+                                df[col] = pd.to_datetime(df[col], unit='us', errors='coerce', utc=True).dt.tz_localize(None)
+                            elif first_val > 1e12:  # Likely milliseconds since epoch
+                                logger.info(f"Converting column '{col}' from milliseconds timestamp to datetime")
+                                df[col] = pd.to_datetime(df[col], unit='ms', errors='coerce', utc=True).dt.tz_localize(None)
+                            else:  # Likely seconds since epoch
+                                logger.info(f"Converting column '{col}' from seconds timestamp to datetime")
+                                df[col] = pd.to_datetime(df[col], unit='s', errors='coerce', utc=True).dt.tz_localize(None)
+                        except Exception as e:
+                            logger.debug(f"Failed to convert column '{col}' as numeric timestamp: {e}")
+                            
+            # Handle datetime64 columns that might have timezone info
+            elif pd.api.types.is_datetime64_any_dtype(df[col]):
+                # Ensure timezone-aware datetimes are properly handled
+                if hasattr(df[col].dt, 'tz') and df[col].dt.tz is not None:
+                    logger.info(f"Converting timezone-aware datetime column '{col}' to UTC")
+                    df[col] = df[col].dt.tz_convert('UTC').dt.tz_localize(None)
+            
+            # Log if conversion happened
+            if original_dtype != df[col].dtype:
+                logger.info(f"Column '{col}' converted from {original_dtype} to {df[col].dtype}")
+        
+        logger.info(f"Column dtypes after conversion: {dict(df.dtypes)}")
+        return df
 
-    def list_tables(self) -> List[Dict[str, Any]]:
+    def query(self, kql: str) -> pd.DataFrame:
+        logger.info(f"Executing KQL query: {kql} on database {self.kusto_database}")
+        result = self.client.execute(self.kusto_database, kql)
+        logger.info(f"Query executed successfully, returning results.")
+        df = dataframe_from_result_table(result.primary_results[0])
+        
+        # Convert datetime columns properly
+        df = self._convert_kusto_datetime_columns(df)
+        
+        return df
+
+    def list_tables(self, table_filter: str = None) -> List[Dict[str, Any]]:
         query = ".show tables"
         tables_df = self.query(query)
 
         tables = []
         for table in tables_df.to_dict(orient="records"):
             table_name = table['TableName']
+            
+            # Apply table filter if provided
+            if table_filter and table_filter.lower() not in table_name.lower():
+                continue
+                
             schema_result = self.query(f".show table ['{table_name}'] schema as json").to_dict(orient="records")
             columns = [{
                 'name': r["Name"],
@@ -94,7 +176,10 @@ Required Parameters:
             row_count = row_count_result[0]["TotalRowCount"]
 
             sample_query = f"['{table_name}'] | take {5}"
-            sample_result = json.loads(self.query(sample_query).to_json(orient="records"))
+            sample_df = self.query(sample_query)
+            
+            # Convert sample data to JSON with proper datetime handling
+            sample_result = json.loads(sample_df.to_json(orient="records", date_format='iso'))
 
             table_metadata = {
                 "row_count": row_count,
@@ -159,7 +244,8 @@ Required Parameters:
             total_rows_ingested += len(chunk_df)
 
     def view_query_sample(self, query: str) -> str:
-        return json.loads(self.query(query).head(10).to_json(orient="records"))
+        df = self.query(query).head(10)
+        return json.loads(df.to_json(orient="records", date_format='iso'))
 
     def ingest_data_from_query(self, query: str, name_as: str) -> pd.DataFrame:
         # Sanitize the table name for SQL compatibility

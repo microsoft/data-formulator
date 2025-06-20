@@ -61,12 +61,10 @@ MySQL Connection Instructions:
         try:
             self.duck_db_conn.execute("DETACH mysqldb;")
         except:
-            pass  # Ignore if mysqldb doesn't exist
-
-        # Register MySQL connection
+            pass  # Ignore if mysqldb doesn't exist        # Register MySQL connection
         self.duck_db_conn.execute(f"ATTACH '{attatch_string}' AS mysqldb (TYPE mysql);")
 
-    def list_tables(self):
+    def list_tables(self, table_filter: str = None):
         tables_df = self.duck_db_conn.execute(f"""
             SELECT TABLE_SCHEMA, TABLE_NAME FROM mysqldb.information_schema.tables 
             WHERE table_schema NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys')
@@ -77,6 +75,10 @@ MySQL Connection Instructions:
         for schema, table_name in tables_df.values:
 
             full_table_name = f"mysqldb.{schema}.{table_name}"
+
+            # Apply table filter if provided
+            if table_filter and table_filter.lower() not in table_name.lower():
+                continue
 
             # Get column information using DuckDB's information schema
             columns_df = self.duck_db_conn.execute(f"DESCRIBE {full_table_name}").df()

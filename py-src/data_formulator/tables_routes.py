@@ -77,12 +77,12 @@ def list_tables():
                     except Exception as e:
                         # If the query fails, assume it's a regular table
                         view_source = None
-
+                    
                     result.append({
                         "name": table_name,
                         "columns": [{"name": col[0], "type": col[1]} for col in columns],
                         "row_count": row_count,
-                        "sample_rows": json.loads(sample_rows.to_json(orient='records')),
+                        "sample_rows": json.loads(sample_rows.to_json(orient='records', date_format='iso')),
                         "view_source": view_source
                     })
                 except Exception as e:
@@ -221,10 +221,10 @@ def sample_table():
             result = db.execute(query).fetchdf()
 
             print(f"result: {result}")
-
+        
         return jsonify({
             "status": "success",
-            "rows": json.loads(result.to_json(orient='records')),
+            "rows": json.loads(result.to_json(orient='records', date_format='iso')),
             "total_row_count": total_row_count
         })
     except Exception as e:
@@ -587,7 +587,7 @@ def query_table():
         
             return jsonify({
                 "status": "success",
-                "rows": result.to_dict('records'),
+                "rows": json.loads(result.to_json(orient='records', date_format='iso')),
                 "columns": list(result.columns)
             })
     
@@ -717,7 +717,7 @@ def sanitize_db_error_message(error: Exception) -> Tuple[str, int]:
     logger.error(f"Unexpected error occurred: {error_msg}")
     
     # Return a generic error message for unknown errors
-    return "An unexpected error occurred", 500
+    return f"An unexpected error occurred: {error_msg}", 500
 
 
 @tables_bp.route('/data-loader/list-data-loaders', methods=['GET'])
@@ -751,13 +751,19 @@ def data_loader_list_tables():
         data = request.get_json()
         data_loader_type = data.get('data_loader_type')
         data_loader_params = data.get('data_loader_params')
+        table_filter = data.get('table_filter', None)  # New filter parameter
 
         if data_loader_type not in DATA_LOADERS:
             return jsonify({"status": "error", "message": f"Invalid data loader type. Must be one of: {', '.join(DATA_LOADERS.keys())}"}), 400
 
         with db_manager.connection(session['session_id']) as duck_db_conn:
             data_loader = DATA_LOADERS[data_loader_type](data_loader_params, duck_db_conn)
-            tables = data_loader.list_tables()
+            
+            # Pass table_filter to list_tables if the data loader supports it
+            if hasattr(data_loader, 'list_tables') and 'table_filter' in data_loader.list_tables.__code__.co_varnames:
+                tables = data_loader.list_tables(table_filter=table_filter)
+            else:
+                tables = data_loader.list_tables()
 
             return jsonify({
                 "status": "success",
