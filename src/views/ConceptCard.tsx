@@ -185,7 +185,7 @@ let ConceptReApplyButton: FC<{field: FieldItem,
                     <Button onClick={() => { setApplicationDialogOpen(false), setTableRowsPreview([]), setCodePreview("") }}>Cancel</Button>
                     <Button onClick={() => { 
                         setApplicationDialogOpen(false), 
-                        setTableRowsPreview([]), 
+                        setTableRowsPreview([]),
                         setCodePreview(""),
                         handleApply()
                     }}>Apply</Button>

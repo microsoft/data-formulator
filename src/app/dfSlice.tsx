@@ -144,7 +144,7 @@ let deleteChartsRoutine = (state: DataFormulatorState, chartIds: string[]) => {
 
         state.focusedTableId = charts.find(c => c.id == focusedChartId)?.tableRef;
     }
-    state.chartSynthesisInProgress = state.chartSynthesisInProgress.filter(s => chartIds.includes(s));
+    state.chartSynthesisInProgress = state.chartSynthesisInProgress.filter(s => !chartIds.includes(s));
 
     // update focusedChart and activeThreadChart
     state.charts = charts;

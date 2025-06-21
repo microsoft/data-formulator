@@ -462,8 +462,6 @@ export const assembleVegaChart = (
         }
     }
 
-
-
     return {...vgObj, data: {values: values}}
 }
 

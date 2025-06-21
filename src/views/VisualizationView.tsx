@@ -91,11 +91,11 @@ export interface VisPanelState {
     viewMode: "gallery" | "carousel";
 }
 
-export let generateChartSkeleton = (iconPath: string | undefined, width: number = 160, height: number = 160) => (
+export let generateChartSkeleton = (iconPath: string | undefined, width: number = 160, height: number = 160, opacity: number = 0.5) => (
     <Box width={width} height={height} sx={{ display: "flex" }}>
         {iconPath == undefined ?
             <AddchartIcon sx={{ color: "lightgray", margin: "auto" }} /> :
-            <Box width="100%" sx={{ display: "flex", opacity: 0.5 }}>
+            <Box width="100%" sx={{ display: "flex", opacity: opacity }}>
                 <img height={Math.min(64, height)} width={Math.min(64, width)}
                      style={{ maxHeight: Math.min(height, Math.max(32, 0.5 * height)), maxWidth: Math.min(width, Math.max(32, 0.5 * width)), margin: "auto" }} 
                      src={iconPath} alt="" role="presentation" />
@@ -476,18 +476,19 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
 
         element = <Box id={id} key={`focused-chart`} ></Box>    
 
-        let assembledChart = assembleVegaChart(chart.chartType, chart.encodingMap, conceptShelfItems, visTableRows, 48, true);
+        let assembledChart = assembleVegaChart(chart.chartType, chart.encodingMap, conceptShelfItems, visTableRows, Math.min(config.defaultChartWidth * 2 / 20, 48), true);
         
         assembledChart['resize'] = true;
         assembledChart['config'] = {
             "view": {
                 "continuousWidth": config.defaultChartWidth,
-                "continuousHeight": config.defaultChartHeight
+                "continuousHeight": config.defaultChartHeight,
             }
         }
 
         embed('#' + id, { ...assembledChart }, { actions: true, renderer: "svg" }).then(function (result) {
             // Access the Vega view instance (https://vega.github.io/vega/docs/api/view/) as result.view
+            
 
             // the intermediate data used by vega-lite
             //let data_0 = (result.view as any)._runtime.data.data_0.values.value;

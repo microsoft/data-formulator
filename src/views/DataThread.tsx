@@ -622,18 +622,18 @@ const MemoizedChartObject = memo<{
             className={"vega-thumbnail vega-thumbnail-box"}
             onClick={() => onChartClick(chart.id, table.id)}
             sx={{
-                display: "flex", backgroundColor: "rgba(0,0,0,0.01)", position: 'relative',
+                display: "flex", backgroundColor: "white", position: 'relative',
                 flexDirection: "column"
             }}>
             {status == 'pending' ? <Box sx={{
                 position: "absolute", height: "100%", width: "100%", zIndex: 20,
-                backgroundColor: "rgba(243, 243, 243, 0.8)", display: "flex", alignItems: "center", cursor: "pointer"
+                backgroundColor:  "rgba(243, 243, 243, 0.8)" , display: "flex", alignItems: "center", cursor: "pointer"
             }}>
                 <LinearProgress sx={{ width: "100%", height: "100%", opacity: 0.05 }} />
             </Box> : ''}
             <Box sx={{ display: "flex", flexDirection: "column", margin: "auto" }}>
-                <Box sx={{ margin: "auto" }} >
-                    {generateChartSkeleton(chartTemplate?.icon, 48, 48)}
+                <Box sx={{ margin: "auto", transform: chart.chartType == 'Table' ? "rotate(15deg)" : undefined }} >
+                    {generateChartSkeleton(chartTemplate?.icon, 48, 48, chart.chartType == 'Table' ? 1 : 0.5)} 
                 </Box>
                 <Box className='data-thread-chart-card-action-button'
                     sx={{ zIndex: 10, color: 'blue', position: "absolute", right: 1, background: 'rgba(255, 255, 255, 0.95)' }}>
@@ -735,16 +735,6 @@ export const DataThread: FC<{}> = function ({ }) {
         executeScroll();
     }, [threadDrawerOpen])
 
-    // Create stable callback functions using useCallback
-    const handleChartClick = useCallback((chartId: string, tableId: string) => {
-        dispatch(dfActions.setFocusedChart(chartId));
-        dispatch(dfActions.setFocusedTable(tableId));
-    }, [dispatch]);
-
-    const handleChartDelete = useCallback((chartId: string) => {
-        dispatch(dfActions.deleteChartById(chartId));
-    }, [dispatch]);
-
     // Now use useMemo to memoize the chartElements array
     let chartElements = useMemo(() => {
         return charts.filter(c => c.source == "user").map((chart) => {
@@ -756,12 +746,15 @@ export const DataThread: FC<{}> = function ({ }) {
                 table={table}
                 conceptShelfItems={conceptShelfItems}
                 status={status}
-                onChartClick={handleChartClick}
-                onDelete={handleChartDelete}
+                onChartClick={() => {
+                    dispatch(dfActions.setFocusedChart(chart.id));
+                    dispatch(dfActions.setFocusedTable(table.id));
+                }}
+                onDelete={() => {dispatch(dfActions.deleteChartById(chart.id))}}
             />;
             return { chartId: chart.id, tableId: table.id, element };
         });
-    }, [charts, tables, conceptShelfItems, chartSynthesisInProgress, handleChartClick, handleChartDelete]);
+    }, [charts, tables, conceptShelfItems, chartSynthesisInProgress]);
 
     // anchors are considered leaf tables to simplify the view
     let leafTables = [...tables.filter(t => (t.anchored && t.derive)), ...tables.filter(t => !tables.some(t2 => t2.derive?.trigger.tableId == t.id))];
@@ -889,7 +882,6 @@ export const DataThread: FC<{}> = function ({ }) {
     </ButtonGroup>
 
     let jumpButtons = drawerOpen ? jumpButtonsDrawerOpen : jumpButtonDrawerClosed;
-
 
     let carousel = (
         <Box className="data-thread" sx={{ overflow: 'hidden', }}>

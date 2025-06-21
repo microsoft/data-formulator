@@ -85,7 +85,6 @@ let selectBaseTables = (activeFields: FieldItem[], currentTable: DictTable, tabl
 
 export const TriggerCard: FC<{className?: string, trigger: Trigger, hideFields?: boolean, label?: string}> = function ({ label, className, trigger, hideFields }) {
 
-    const charts = useSelector((state: DataFormulatorState) => state.charts);
     let fieldItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
 
     const dispatch = useDispatch<AppDispatch>();
@@ -135,51 +134,7 @@ export const TriggerCard: FC<{className?: string, trigger: Trigger, hideFields?:
             <Stack direction="row" sx={{marginLeft: 1, marginRight: 'auto', fontSize: 12}} alignItems="center" gap={"2px"}>
                 <PrecisionManufacturing  sx={{color: 'darkgray', width: '14px', height: '14px'}} />
                 <Box sx={{margin: '4px 8px 4px 2px', flex: 1}}>
-                    {hideFields ? "" : <Typography fontSize="inherit" sx={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center',
-                                    color: 'rgba(0,0,0,0.7)', maxWidth: 'calc(100%)'}}>{encodingComp}</Typography>}
-                    <Typography fontSize="inherit" sx={{textAlign: 'center', 
-                                    color: 'rgba(0,0,0,0.7)',  maxWidth: 'calc(100%)'}}>{prompt}</Typography> 
-                </Box>
-            </Stack>
-        </Card>
-    </Box>
-}
-
-export const MiniTriggerCard: FC<{className?: string, trigger: Trigger, hideFields?: boolean, label?: string}> = function ({ label, className, trigger, hideFields }) {
-
-    let fieldItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
-
-    let encodingComp : any = ''
-    let prompt = trigger.instruction ? `"${trigger.instruction}"` : "";
-
-    if (trigger.chart) {
-
-        let chart = trigger.chart;
-        let encodingMap = chart?.encodingMap;
-
-        encodingComp = Object.entries(encodingMap)
-            .filter(([channel, encoding]) => {
-                return encoding.fieldID != undefined;
-            })
-            .map(([channel, encoding], index) => {
-                let field = fieldItems.find(f => f.id == encoding.fieldID) as FieldItem;
-                return [index > 0 ? '⨉' : '', 
-                        <Chip 
-                            key={`trigger-${channel}-${field.id}`}
-                            sx={{color:'inherit', maxWidth: '110px', marginLeft: "2px", height: 16, fontSize: 'inherit', borderRadius: '4px', 
-                                   border: '1px solid rgb(250 235 215)', background: 'rgb(250 235 215 / 70%)',
-                                   '& .MuiChip-label': { paddingLeft: '6px', paddingRight: '6px' }}} 
-                              label={`${field.name}`} />]
-            })
-    }
-
-    return <Box sx={{  }}>
-        <Card className={`${className}`} variant="outlined" 
-                sx={{textTransform: "none",  backgroundColor: 'rgba(255, 160, 122, 0.07)' }} 
-              >
-            <Stack direction="row" sx={{ marginRight: 'auto', fontSize: 11}} alignItems="center" gap={"2px"}>
-                <Box sx={{margin: '4px 2px 4px 2px', flex: 1}}>
-                    {hideFields ? "" : <Typography fontSize="inherit" sx={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center',
+                    {prompt != "" && hideFields ? "" : <Typography fontSize="inherit" sx={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center',
                                     color: 'rgba(0,0,0,0.7)', maxWidth: 'calc(100%)'}}>{encodingComp}</Typography>}
                     <Typography fontSize="inherit" sx={{textAlign: 'center', 
                                     color: 'rgba(0,0,0,0.7)',  maxWidth: 'calc(100%)'}}>{prompt}</Typography> 
