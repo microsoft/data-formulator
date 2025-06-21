@@ -475,14 +475,14 @@ export const dataFormulatorSlice = createSlice({
         updateChartType: (state, action: PayloadAction<{chartId: string, chartType: string}>) => {
             let chartId = action.payload.chartId;
             let chartType = action.payload.chartType;
-            state.charts = state.charts.map(chart => {
-                if (chart.id == chartId) {
-                    return adaptChart(chart, getChartTemplate(chartType) as ChartTemplate);
-                } else {
-                    return chart
-                }
-            })
+
+            let chart = dfSelectors.getAllCharts(state).find(c => c.id == chartId);
+            if (chart) {
+                chart = adaptChart(chart, getChartTemplate(chartType) as ChartTemplate);
+                dfSelectors.replaceChart(state, chart);
+            }
         },
+        
         updateTableRef: (state, action: PayloadAction<{chartId: string, tableRef: string}>) => {
             let chartId = action.payload.chartId;
             let tableRef = action.payload.tableRef;
@@ -494,45 +494,13 @@ export const dataFormulatorSlice = createSlice({
                 }
             })
         },
-        replaceTable: (state, action: PayloadAction<{chartId: string, table: DictTable}>) => {
-            let chartId = action.payload.chartId;
-            let chart = state.charts.find(c => c.id == chartId) as Chart;
-            let table = action.payload.table;
-            let allCharts = dfSelectors.getAllCharts(state);
-            let currentTableRef = getDataTable(chart, state.tables, allCharts, state.conceptShelfItems).id;
-            state.charts = state.charts.map(c => {
-                if (c.id == chartId) {
-                    return { ...c, tableRef: table.id }
-                } else {
-                    return c
-                }
-            })
-
-            if (!state.charts.some(c => c.id != chartId && getDataTable(c, state.tables, allCharts, state.conceptShelfItems).id == currentTableRef)) {
-                state.tables = [...state.tables.filter(t => t.id != currentTableRef), table];
-            } else {
-                state.tables = [...state.tables, table];
-            }
-        },
-        updateChartEncodingMap: (state, action: PayloadAction<{chartId: string, encodingMap: EncodingMap}>) => {
-            let chartId = action.payload.chartId;
-            let encodingMap = action.payload.encodingMap;
-            state.charts = state.charts.map(c => {
-                if (c.id == chartId) {
-                    return { ...c, encodingMap: encodingMap }
-                } else {
-                    return c
-                }
-            })
-        },
         updateChartEncoding: (state, action: PayloadAction<{chartId: string, channel: Channel, encoding: EncodingItem}>) => {
             let chartId = action.payload.chartId;
             let channel = action.payload.channel;
             let encoding = action.payload.encoding;
-            let chart = state.charts.find(chart => chart.id == chartId);
+            let chart = dfSelectors.getAllCharts(state).find(c => c.id == chartId);
             if (chart) {
-                //TODO: check this, finding reference and directly update??
-                (state.charts.find(chart => chart.id == chartId) as Chart).encodingMap[channel] = encoding;
+                chart.encodingMap[channel] = encoding;
             }
         },
         updateChartEncodingProp: (state, action: PayloadAction<{chartId: string, channel: Channel, prop: string, value: any}>) => {
@@ -540,11 +508,11 @@ export const dataFormulatorSlice = createSlice({
             let channel = action.payload.channel;
             let prop = action.payload.prop;
             let value = action.payload.value;
-            let chart = state.charts.find(chart => chart.id == chartId);
+            let chart = dfSelectors.getAllCharts(state).find(c => c.id == chartId);
             
             if (chart) {
                 //TODO: check this, finding reference and directly update??
-                let encoding = (state.charts.find(chart => chart.id == chartId) as Chart).encodingMap[channel];
+                let encoding = chart.encodingMap[channel];
                 if (prop == 'fieldID') {
                     encoding.fieldID = value;
 
@@ -571,7 +539,7 @@ export const dataFormulatorSlice = createSlice({
             let channel1 = action.payload.channel1;
             let channel2 = action.payload.channel2;
 
-            let chart = state.charts.find(chart => chart.id == chartId)
+            let chart = dfSelectors.getAllCharts(state).find(c => c.id == chartId);
             if (chart) {
                 let enc1 = chart.encodingMap[channel1];
                 let enc2 = chart.encodingMap[channel2];
@@ -601,8 +569,9 @@ export const dataFormulatorSlice = createSlice({
         },
         deleteConceptItemByID: (state, action: PayloadAction<string>) => {
             let conceptID = action.payload;
+            let allCharts = dfSelectors.getAllCharts(state);
             // remove concepts from encoding maps
-            if (state.charts.some(chart => chart.saved 
+            if (allCharts.some(chart => chart.saved 
                 && Object.entries(chart.encodingMap).some(([channel, encoding]) => encoding.fieldID && conceptID == encoding.fieldID))) {
                 console.log("cannot delete!")
             } else {
@@ -620,7 +589,7 @@ export const dataFormulatorSlice = createSlice({
                 }
                 state.conceptShelfItems = state.conceptShelfItems.filter(f => f.id != conceptID);
 
-                for (let chart of state.charts)  {
+                for (let chart of allCharts)  {
                     for (let [channel, encoding] of Object.entries(chart.encodingMap)) {
                         if (encoding.fieldID && conceptID == encoding.fieldID) {
                             // clear the encoding
@@ -631,14 +600,15 @@ export const dataFormulatorSlice = createSlice({
             }
         },
         batchDeleteConceptItemByID: (state, action: PayloadAction<string[]>) => {
+            let allCharts = dfSelectors.getAllCharts(state);
             for (let conceptID of action.payload) {
                 // remove concepts from encoding maps
-                if (state.charts.some(chart => chart.saved 
+                if (allCharts.some(chart => chart.saved 
                     && Object.entries(chart.encodingMap).some(([channel, encoding]) => encoding.fieldID && conceptID == encoding.fieldID))) {
                     console.log("cannot delete!")
                 } else {
                     state.conceptShelfItems = state.conceptShelfItems.filter(field => field.id != conceptID);
-                    for (let chart of state.charts)  {
+                    for (let chart of allCharts)  {
                         for (let [channel, encoding] of Object.entries(chart.encodingMap)) {
                             if (encoding.fieldID && conceptID == encoding.fieldID) {
                                 // clear the encoding
@@ -669,7 +639,7 @@ export const dataFormulatorSlice = createSlice({
         },
         clearUnReferencedCustomConcepts: (state) => {
             let fieldNamesFromTables = state.tables.map(t => t.names).flat();
-            let fieldIdsReferredByCharts = state.charts.map(c => Object.values(c.encodingMap).map(enc => enc.fieldID).filter(fid => fid != undefined) as string[]).flat();
+            let fieldIdsReferredByCharts = dfSelectors.getAllCharts(state).map(c => Object.values(c.encodingMap).map(enc => enc.fieldID).filter(fid => fid != undefined) as string[]).flat();
 
             state.conceptShelfItems = state.conceptShelfItems.filter(field => !(field.source == "custom" 
                 && !(fieldNamesFromTables.includes(field.name) || fieldIdsReferredByCharts.includes(field.id))))
@@ -820,6 +790,19 @@ export const dfSelectors = {
             return [...userCharts, ...triggerCharts];
         }
     ),
+
+    replaceChart: (state: DataFormulatorState, chart: Chart) => {
+        if (state.charts.find(c => c.id == chart.id)) {
+            // chart is from charts
+            state.charts = state.charts.map(c => c.id == chart.id ? chart : c);
+        } else {
+            // chart is from tables
+            let table = state.tables.find(t => t.derive?.trigger?.chart?.id == chart.id) as DictTable;
+            if (table.derive?.trigger) {
+                table.derive = { ...table.derive, trigger: { ...table.derive?.trigger, chart: chart } };
+            }
+        }
+    },
 }
 
 // derived field: extra all field items from the table

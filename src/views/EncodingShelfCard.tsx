@@ -27,7 +27,7 @@ import {
 
 import React from 'react';
 
-import { Channel, EncodingItem, ConceptTransformation, Chart, FieldItem, Trigger, duplicateChart } from "../components/ComponentType";
+import { Channel, EncodingItem, ConceptTransformation, Chart, FieldItem, Trigger, duplicateChart, EncodingMap } from "../components/ComponentType";
 
 import _ from 'lodash';
 
@@ -291,6 +291,7 @@ const UserActionTableSelector: FC<{
         </Box>
     );
 };
+
 
 export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId }) {
 
@@ -574,19 +575,21 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                             let needToCreateNewChart = true;
                             
                             // different override strategy -- only override if there exists a chart that share the exact same encoding fields as the planned new chart.
-                            if (chart.chartType != "Auto" &&  overrideTableId != undefined && allCharts.find(c => c.tableRef == overrideTableId)) {
-                                let chartToOverride = allCharts.find(c => c.tableRef == overrideTableId) as Chart
-                                if (Object.values(chartToOverride.encodingMap)
-                                        .map(enc => enc.fieldID)
-                                        .filter(fid => fid != undefined &&  conceptShelfItems.find(f => f.id == fid) != undefined)
-                                        .map(fid => conceptShelfItems.find(f => f.id == fid) as FieldItem)
-                                        .every(f => candidateTable.names.includes(f.name)))
-                                    {
-                                        // find the chart to set as focus
-                                        let cId = allCharts.find(c => c.tableRef == overrideTableId)?.id;
-                                        dispatch(dfActions.setFocusedChart(cId));
-                                        needToCreateNewChart = false;
+                            if (chart.chartType != "Auto" &&  overrideTableId != undefined && allCharts.filter(c => c.source == "user").find(c => c.tableRef == overrideTableId)) {
+                                let chartsFromOverrideTable = allCharts.filter(c => c.source == "user" && c.tableRef == overrideTableId);
+                                let chartsWithSameEncoding = chartsFromOverrideTable.filter(c => {
+                                    let getSimpliedChartEnc = (chart: Chart) => {
+                                        return chart.chartType + ":" + Object.entries(chart.encodingMap).filter(([channel, enc]) => enc.fieldID != undefined).map(([channel, enc]) => {
+                                            return `${channel}:${enc.fieldID}:${enc.aggregate}:${enc.stack}:${enc.sortOrder}:${enc.sortBy}:${enc.scheme}`;
+                                        }).join(";");
                                     }
+                                    return getSimpliedChartEnc(c) == getSimpliedChartEnc(triggerChartSpec);
+                                });
+                                if (chartsWithSameEncoding.length > 0) {
+                                    // find the chart to set as focus
+                                    dispatch(dfActions.setFocusedChart(chartsWithSameEncoding[0].id));
+                                    needToCreateNewChart = false;
+                                }
                             }
                             
                             if (needToCreateNewChart) {
@@ -606,6 +609,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                                     newChart = generateFreshChart(candidateTable.id, 'Table')
                                 } else {
                                     newChart = JSON.parse(JSON.stringify(chart)) as Chart;
+                                    newChart.source = "user";
                                     newChart.id = `chart-${Date.now()- Math.floor(Math.random() * 10000)}`;
                                     newChart.saved = false;
                                     newChart.tableRef = candidateTable.id;

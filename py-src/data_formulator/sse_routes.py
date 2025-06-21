@@ -53,7 +53,7 @@ def sse_connect():
         # Send initial connection confirmation
         yield format_sse_message({
             "type": "notification",
-            "text": "SSE connection established successfully",
+            "text": "agent connection ready",
             "timestamp": time.time()
         })
         
@@ -69,7 +69,7 @@ def sse_connect():
                     if time.time() - last_heartbeat_time > 30:
                         last_heartbeat_time = time.time()
                         yield format_sse_message({
-                            "type": "notification",
+                            "type": "heartbeat",
                             "text": "Heartbeat",
                             "timestamp": time.time()
                         })
