@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-import { createAsyncThunk, createSlice, PayloadAction } from '@reduxjs/toolkit'
+import { createAsyncThunk, createSlice, PayloadAction, createSelector } from '@reduxjs/toolkit'
 import { Channel, Chart, ChartTemplate, EncodingItem, EncodingMap, FieldItem, Trigger } from '../components/ComponentType'
 import { enableMapSet } from 'immer';
 import { DictTable } from "../components/ComponentType";
@@ -16,14 +16,15 @@ import { handleSSEMessage } from './SSEActions';
 
 enableMapSet();
 
-export const generateFreshChart = (tableRef: string, chartType?: string) : Chart => {
+export const generateFreshChart = (tableRef: string, chartType?: string, source: "user" | "trigger" = "user") : Chart => {
     let realChartType = chartType || "?"
     return { 
         id: `chart-${Date.now()- Math.floor(Math.random() * 10000)}`, 
         chartType: realChartType, 
         encodingMap: Object.assign({}, ...getChartChannels(realChartType).map((channel) => ({ [channel]: { channel: channel, bin: false } }))),
         tableRef: tableRef,
-        saved: false
+        saved: false,
+        source: source,
     }
 }
 
@@ -69,7 +70,6 @@ export interface DataFormulatorState {
 
     focusedTableId: string | undefined;
     focusedChartId: string | undefined;
-    activeThreadChartId: string | undefined; // specifying which chartThread is actively viewed
 
     chartSynthesisInProgress: string[];
 
@@ -111,7 +111,6 @@ const initialState: DataFormulatorState = {
 
     focusedTableId: undefined,
     focusedChartId: undefined,
-    activeThreadChartId: undefined,
 
     chartSynthesisInProgress: [],
 
@@ -128,27 +127,20 @@ const initialState: DataFormulatorState = {
 }
 
 let getUnrefedDerivedTableIds = (state: DataFormulatorState) => {
-
     // find tables directly referred by charts
-    let chartRefedTables = state.charts.map(chart => getDataTable(chart, state.tables, state.charts, state.conceptShelfItems));
-    
-    // find tables referred via triggers
-    let triggerRefedTableIds = chartRefedTables.filter(t => t.derive != undefined).map(t => t.derive?.trigger as Trigger);
+    let allCharts = dfSelectors.getAllCharts(state);
+    let chartRefedTables = allCharts.map(chart => getDataTable(chart, state.tables, allCharts, state.conceptShelfItems)).map(t => t.id);
 
-    let allRefedTableIds = [...chartRefedTables.map(t => t.id), ...triggerRefedTableIds];
-
-    return state.tables.filter(table => table.derive && !allRefedTableIds.includes(table.id)).map(t => t.id);
+    return state.tables.filter(table => table.derive && !chartRefedTables.includes(table.id)).map(t => t.id);
 } 
 
 let deleteChartsRoutine = (state: DataFormulatorState, chartIds: string[]) => {
     let charts = state.charts.filter(c => !chartIds.includes(c.id));
     let focusedChartId = state.focusedChartId;
-    let activeThreadChartId = state.activeThreadChartId;
 
     if (focusedChartId && chartIds.includes(focusedChartId)) {
-        let leafCharts = charts.filter(c => c.intermediate == undefined);
+        let leafCharts = charts;
         focusedChartId = leafCharts.length > 0 ? leafCharts[0].id : undefined;
-        activeThreadChartId = focusedChartId;
 
         state.focusedTableId = charts.find(c => c.id == focusedChartId)?.tableRef;
     }
@@ -157,14 +149,10 @@ let deleteChartsRoutine = (state: DataFormulatorState, chartIds: string[]) => {
     // update focusedChart and activeThreadChart
     state.charts = charts;
     state.focusedChartId = focusedChartId;
-    state.activeThreadChartId = activeThreadChartId;
 
     let unrefedDerivedTableIds = getUnrefedDerivedTableIds(state);
     let tableIdsToDelete = state.tables.filter(t => !t.anchored && unrefedDerivedTableIds.includes(t.id)).map(t => t.id);
-    
     state.tables = state.tables.filter(t => !tableIdsToDelete.includes(t.id));
-    // remove intermediate charts that lead to this table
-    state.charts = state.charts.filter(c => !(c.intermediate && tableIdsToDelete.includes(c.intermediate.resultTableId)));
 }
 
 export const fetchFieldSemanticType = createAsyncThunk(
@@ -289,7 +277,6 @@ export const dataFormulatorSlice = createSlice({
 
             state.focusedTableId = undefined;
             state.focusedChartId = undefined;
-            state.activeThreadChartId = undefined;
 
             state.chartSynthesisInProgress = [];
 
@@ -318,7 +305,6 @@ export const dataFormulatorSlice = createSlice({
 
             state.focusedTableId = savedState.focusedTableId || undefined;
             state.focusedChartId = savedState.focusedChartId || undefined;
-            state.activeThreadChartId = savedState.activeThreadChartId || undefined;
 
             state.chartSynthesisInProgress = [];
 
@@ -360,7 +346,6 @@ export const dataFormulatorSlice = createSlice({
 
             state.focusedTableId = table.id;
             state.focusedChartId = undefined;
-            state.activeThreadChartId = undefined;  
         },
         deleteTable: (state, action: PayloadAction<string>) => {
             let tableId = action.payload;
@@ -372,9 +357,6 @@ export const dataFormulatorSlice = createSlice({
             // delete charts that refer to this table and intermediate charts that produce this table
             let chartIdsToDelete = state.charts.filter(c => c.tableRef == tableId).map(c => c.id);
             deleteChartsRoutine(state, chartIdsToDelete);
-
-            // separate this, so that we only delete on tier of table a time
-            state.charts = state.charts.filter(c => !(c.intermediate && c.intermediate.resultTableId == tableId));
         },
         updateTableAnchored: (state, action: PayloadAction<{tableId: string, anchored: boolean}>) => {
             let tableId = action.payload.tableId;
@@ -456,15 +438,15 @@ export const dataFormulatorSlice = createSlice({
         createNewChart: (state, action: PayloadAction<{chartType?: string, tableId?: string}>) => {
             let chartType = action.payload.chartType;
             let tableId = action.payload.tableId || state.tables[0].id;
-            let freshChart = generateFreshChart(tableId, chartType) as Chart;
+            let freshChart = generateFreshChart(tableId, chartType, "user") as Chart;
             state.charts = [ freshChart , ...state.charts];
             state.focusedTableId = tableId;
             state.focusedChartId = freshChart.id;
-            state.activeThreadChartId = freshChart.id;
         },
-        addChart: (state, action: PayloadAction<Chart>) => {
+        addAndFocusChart: (state, action: PayloadAction<Chart>) => {
             let chart = action.payload;
-            state.charts = [chart, ...state.charts]
+            state.charts = [chart, ...state.charts];
+            state.focusedChartId = chart.id;
         },
         duplicateChart: (state, action: PayloadAction<string>) => {
             let chartId = action.payload;
@@ -516,7 +498,8 @@ export const dataFormulatorSlice = createSlice({
             let chartId = action.payload.chartId;
             let chart = state.charts.find(c => c.id == chartId) as Chart;
             let table = action.payload.table;
-            let currentTableRef = getDataTable(chart, state.tables, state.charts, state.conceptShelfItems).id;
+            let allCharts = dfSelectors.getAllCharts(state);
+            let currentTableRef = getDataTable(chart, state.tables, allCharts, state.conceptShelfItems).id;
             state.charts = state.charts.map(c => {
                 if (c.id == chartId) {
                     return { ...c, tableRef: table.id }
@@ -525,7 +508,7 @@ export const dataFormulatorSlice = createSlice({
                 }
             })
 
-            if (!state.charts.some(c => c.id != chartId && getDataTable(c, state.tables, state.charts, state.conceptShelfItems).id == currentTableRef)) {
+            if (!state.charts.some(c => c.id != chartId && getDataTable(c, state.tables, allCharts, state.conceptShelfItems).id == currentTableRef)) {
                 state.tables = [...state.tables.filter(t => t.id != currentTableRef), table];
             } else {
                 state.tables = [...state.tables, table];
@@ -680,8 +663,8 @@ export const dataFormulatorSlice = createSlice({
         },
         clearUnReferencedTables: (state) => {
             // remove all tables that are not referred
-            let charts = state.charts;
-            let referredTableId = charts.map(chart => getDataTable(chart, state.tables, state.charts, state.conceptShelfItems).id);
+            let allCharts = dfSelectors.getAllCharts(state);
+            let referredTableId = allCharts.map(chart => getDataTable(chart, state.tables, allCharts, state.conceptShelfItems).id);
             state.tables = state.tables.filter(t => !(t.derive && !referredTableId.some(tableId => tableId == t.id)));
         },
         clearUnReferencedCustomConcepts: (state) => {
@@ -716,26 +699,6 @@ export const dataFormulatorSlice = createSlice({
             let chartId = action.payload;
             state.focusedChartId = chartId;
             state.visViewMode = "carousel";
-
-            let chart = state.charts.find(c => c.id == chartId)
-
-            // update activeThread based on focused chart
-            if (chart?.intermediate == undefined) {
-                state.activeThreadChartId = chartId;
-            } else {
-                let currentActiveThreadChart = state.charts.find(c => c.id == state.activeThreadChartId);
-                let activeThreadChartTable = state.tables.find(t => t.id == currentActiveThreadChart?.tableRef);
-
-                if (activeThreadChartTable) {
-                    let triggers = getTriggers(activeThreadChartTable, state.tables);
-                    if (triggers.map(tg => tg.tableId).includes(chart?.intermediate?.resultTableId)) {
-                        let nextChart =  state.charts.find(c => c.intermediate == undefined && c.tableRef == chart?.intermediate?.resultTableId);
-                        if (nextChart) {
-                            state.activeThreadChartId = nextChart.id;
-                        }
-                    }
-                }           
-            }
         },
         setVisViewMode: (state, action: PayloadAction<"carousel" | "gallery">) => {
             state.visViewMode = action.payload;
@@ -844,7 +807,19 @@ export const dfSelectors = {
         let focusedTable = tables.find(t => t.id == focusedTableId);
         let sourceTables = focusedTable?.derive?.source || [focusedTable?.id];
         return sourceTables;
-    }
+    },
+    
+    // Memoized chart selector that combines both sources
+    getAllCharts: createSelector(
+        [(state: DataFormulatorState) => state.charts, 
+         (state: DataFormulatorState) => state.tables],
+        (userCharts, tables) => {
+            const triggerCharts = tables
+                .filter(t => t.derive?.trigger?.chart)
+                .map(t => t.derive?.trigger?.chart) as Chart[];
+            return [...userCharts, ...triggerCharts];
+        }
+    ),
 }
 
 // derived field: extra all field items from the table

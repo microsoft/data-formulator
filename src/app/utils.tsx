@@ -525,8 +525,8 @@ export let getTriggers = (leafTable: DictTable, tables: DictTable[]) => {
     // recursively find triggers that ends in leafTable (if the leaf table is anchored, we will find till the previous table is anchored)
     let triggers : Trigger[] = [];
     let t = leafTable;
+    
     while(true) {
-
         // this is when we find an original table
         if (t.derive == undefined) {
             break;
@@ -541,11 +541,12 @@ export let getTriggers = (leafTable: DictTable, tables: DictTable[]) => {
         triggers = [trigger, ...triggers];
         let parentTable = tables.find(x => x.id == trigger.tableId);
         if (parentTable) {
-            t = parentTable
+            t = parentTable;
         } else {
-            break
+            break;
         }
     }
+    
     return triggers;
 }
 

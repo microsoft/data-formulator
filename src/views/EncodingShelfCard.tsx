@@ -93,9 +93,9 @@ export const TriggerCard: FC<{className?: string, trigger: Trigger, hideFields?:
     let encodingComp : any = '';
     let prompt = trigger.instruction ? `"${trigger.instruction}"` : "";
 
-    if (trigger.chartRef && charts.find(c => c.id == trigger.chartRef)) {
+    if (trigger.chart) {
 
-        let chart = charts.find(c => c.id == trigger.chartRef) as Chart;
+        let chart = trigger.chart;
         let encodingMap = chart?.encodingMap;
 
         encodingComp = Object.entries(encodingMap)
@@ -127,9 +127,9 @@ export const TriggerCard: FC<{className?: string, trigger: Trigger, hideFields?:
         <Card className={`${className}`} variant="outlined" 
                 sx={{cursor: 'pointer', backgroundColor: 'rgba(255, 160, 122, 0.07)', '&:hover': { transform: "translate(0px, 1px)",  boxShadow: "0 0 3px rgba(33,33,33,.2)"}}} 
                 onClick={()=>{ 
-                    if (trigger.chartRef) {
-                        dispatch(dfActions.setFocusedChart(trigger.chartRef));
-                        dispatch(dfActions.setFocusedTable((charts.find(c => c.id == trigger.chartRef) as Chart).tableRef));
+                    if (trigger.chart) {
+                        dispatch(dfActions.setFocusedChart(trigger.chart.id));
+                        dispatch(dfActions.setFocusedTable(trigger.chart.tableRef));
                     }
                 }}>
             <Stack direction="row" sx={{marginLeft: 1, marginRight: 'auto', fontSize: 12}} alignItems="center" gap={"2px"}>
@@ -147,15 +147,14 @@ export const TriggerCard: FC<{className?: string, trigger: Trigger, hideFields?:
 
 export const MiniTriggerCard: FC<{className?: string, trigger: Trigger, hideFields?: boolean, label?: string}> = function ({ label, className, trigger, hideFields }) {
 
-    const charts = useSelector((state: DataFormulatorState) => state.charts);
     let fieldItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
 
     let encodingComp : any = ''
     let prompt = trigger.instruction ? `"${trigger.instruction}"` : "";
 
-    if (trigger.chartRef && charts.find(c => c.id == trigger.chartRef)) {
+    if (trigger.chart) {
 
-        let chart = charts.find(c => c.id == trigger.chartRef) as Chart;
+        let chart = trigger.chart;
         let encodingMap = chart?.encodingMap;
 
         encodingComp = Object.entries(encodingMap)
@@ -293,19 +292,21 @@ const UserActionTableSelector: FC<{
     );
 };
 
-export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId, trigger }) {
+export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId }) {
 
     // reference to states
     const tables = useSelector((state: DataFormulatorState) => state.tables);
-    const charts = useSelector((state: DataFormulatorState) => state.charts);
     const config = useSelector((state: DataFormulatorState) => state.config);
     let existMultiplePossibleBaseTables = tables.filter(t => t.derive == undefined || t.anchored).length > 1;
 
     let activeModel = useSelector(dfSelectors.getActiveModel);
+    let allCharts = useSelector(dfSelectors.getAllCharts);
+
+    let chart = allCharts.find(c => c.id == chartId) as Chart;
+    let trigger = chart.source == "trigger" ? tables.find(t => t.derive?.trigger?.chart?.id == chartId)?.derive?.trigger : undefined;
 
     let [prompt, setPrompt] = useState<string>(trigger?.instruction || "");
 
-    let chart = charts.find(chart => chart.id == chartId) as Chart;
     let encodingMap = chart?.encodingMap;
 
     let handleUpdateChartType = (newChartType: string)=>{
@@ -314,7 +315,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
 
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
 
-    let currentTable = getDataTable(chart, tables, charts, conceptShelfItems);
+    let currentTable = getDataTable(chart, tables, allCharts, conceptShelfItems);
 
     const dispatch = useDispatch<AppDispatch>();
     
@@ -374,7 +375,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                 activeFields.every(f => currentTable.names.includes(f.name)))) {
 
             // if there is no additional fields, directly generate
-            let tempTable = getDataTable(chart, tables, charts, conceptShelfItems, true);
+            let tempTable = getDataTable(chart, tables, allCharts, conceptShelfItems, true);
             dispatch(dfActions.updateTableRef({chartId: chartId, tableRef: tempTable.id}))
 
             //dispatch(dfActions.resetDerivedTables([])); //([{code: "", data: inputData.rows}]));
@@ -448,9 +449,6 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                 })
                 engine = getUrls().REFINE_DATA;
             } 
-            
-            console.log("engine");
-            console.log(engine);
         }
 
         let message = {
@@ -460,9 +458,6 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
             },
             body: messageBody,
         };
-
-        console.log("message");
-        console.log(JSON.parse(messageBody));
 
         dispatch(dfActions.changeChartRunningStatus({chartId, status: true}));
 
@@ -526,16 +521,15 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                             // add the intermediate chart that will be referred by triggers
 
                             let triggerChartSpec = duplicateChart(chart);
+                            triggerChartSpec.source = "trigger";
+
                             let currentTrigger: Trigger =  { 
                                 tableId: currentTable.id, 
                                 sourceTableIds: actionTableIds,
                                 instruction: instruction, 
-                                chartRef: triggerChartSpec.id,
+                                chart: triggerChartSpec,
                                 resultTableId: candidateTableId
                             }
-
-                            triggerChartSpec['intermediate'] = currentTrigger;
-                            dispatch(dfActions.addChart(triggerChartSpec));
                         
                             // PART 2: create new table (or override table)
                             let candidateTable = createDictTable(
@@ -553,9 +547,6 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                                     rowCount: candidate["content"]["virtual"]["row_count"]
                                 };
                             }
-
-                            console.log("candidateTable");  
-                            console.log(candidateTable);
 
                             if (overrideTableId) {
                                 dispatch(dfActions.overrideDerivedTables(candidateTable));
@@ -583,8 +574,8 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                             let needToCreateNewChart = true;
                             
                             // different override strategy -- only override if there exists a chart that share the exact same encoding fields as the planned new chart.
-                            if (chart.chartType != "Auto" &&  overrideTableId != undefined && charts.find(c => c.tableRef == overrideTableId)) {
-                                let chartToOverride = [...charts.filter(c => c.intermediate == undefined), ...charts].find(c => c.tableRef == overrideTableId) as Chart
+                            if (chart.chartType != "Auto" &&  overrideTableId != undefined && allCharts.find(c => c.tableRef == overrideTableId)) {
+                                let chartToOverride = allCharts.find(c => c.tableRef == overrideTableId) as Chart
                                 if (Object.values(chartToOverride.encodingMap)
                                         .map(enc => enc.fieldID)
                                         .filter(fid => fid != undefined &&  conceptShelfItems.find(f => f.id == fid) != undefined)
@@ -592,7 +583,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                                         .every(f => candidateTable.names.includes(f.name)))
                                     {
                                         // find the chart to set as focus
-                                        let cId = [...charts.filter(c => c.intermediate == undefined), ...charts].find(c => c.tableRef == overrideTableId)?.id;
+                                        let cId = allCharts.find(c => c.tableRef == overrideTableId)?.id;
                                         dispatch(dfActions.setFocusedChart(cId));
                                         needToCreateNewChart = false;
                                     }
@@ -618,7 +609,6 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                                     newChart.id = `chart-${Date.now()- Math.floor(Math.random() * 10000)}`;
                                     newChart.saved = false;
                                     newChart.tableRef = candidateTable.id;
-                                    newChart.intermediate = undefined;
                                 }
                                 
                                 // there is no need to resolve fields for table chart, just display all fields
@@ -626,12 +616,11 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                                     newChart = resolveChartFields(newChart, currentConcepts, refinedGoal, candidateTable);
                                 }
 
-                                dispatch(dfActions.addChart(newChart));
-                                dispatch(dfActions.setFocusedChart(newChart.id));                                
+                                dispatch(dfActions.addAndFocusChart(newChart));
                             }
 
                             // PART 4: clean up
-                            if (chart.chartType == "Table" || chart.chartType == "Auto" || (existsWorkingTable == false && !chart.intermediate)) {
+                            if (chart.chartType == "Table" || chart.chartType == "Auto" || (existsWorkingTable == false)) {
                                 dispatch(dfActions.deleteChartById(chartId));
                             }
                             dispatch(dfActions.clearUnReferencedTables());
@@ -706,12 +695,12 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
             maxRows={4} 
             minRows={1}
         />
-        {chart.intermediate ? 
+        {trigger ? 
             <Box sx={{display: 'flex'}}>
-                <Tooltip title={<Typography sx={{fontSize: 11}}>formulate and override <TableRowsIcon sx={{fontSize: 10, marginBottom: '-1px'}}/>{chart.intermediate.resultTableId}</Typography>}>
+                <Tooltip title={<Typography sx={{fontSize: 11}}>formulate and override <TableRowsIcon sx={{fontSize: 10, marginBottom: '-1px'}}/>{trigger.resultTableId}</Typography>}>
                     <IconButton sx={{ marginLeft: "0"}} size="small"
                         disabled={createDisabled} color={"warning"} onClick={() => { 
-                            deriveNewData(chart.intermediate?.resultTableId); 
+                            deriveNewData(trigger.resultTableId); 
                         }}>
                         <ChangeCircleOutlinedIcon fontSize="small" />
                     </IconButton>

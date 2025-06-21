@@ -55,6 +55,8 @@ import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import CloudQueueIcon from '@mui/icons-material/CloudQueue';
 import { alpha } from '@mui/material/styles';
 
+import { dfSelectors } from '../app/dfSlice';
+
 let buildChartCard = (chartElement: { tableId: string, chartId: string, element: any },
     focusedChartId?: string) => {
     let selectedClassName = focusedChartId == chartElement.chartId ? 'selected-card' : '';
@@ -203,7 +205,7 @@ let SingleThreadView: FC<{
     sx
 }) {
         let tables = useSelector((state: DataFormulatorState) => state.tables);
-        let charts = useSelector((state: DataFormulatorState) => state.charts);
+        let charts = useSelector(dfSelectors.getAllCharts);
         let focusedChartId = useSelector((state: DataFormulatorState) => state.focusedChartId);
         let focusedTableId = useSelector((state: DataFormulatorState) => state.focusedTableId);
         let pendingSSEActions = useSelector((state: DataFormulatorState) => state.pendingSSEActions);
@@ -217,7 +219,7 @@ let SingleThreadView: FC<{
 
         const theme = useTheme();
 
-        let focusedChart = charts.find(c => c.id == focusedChartId);
+        let focusedChart = useSelector((state: DataFormulatorState) => charts.find(c => c.id == focusedChartId));
 
         const dispatch = useDispatch();
 
@@ -250,10 +252,13 @@ let SingleThreadView: FC<{
 
             triggerCards = triggers.map((trigger, i) => {
 
-                let selectedClassName = trigger.chartRef == focusedChartId ? 'selected-card' : '';
-
+                let selectedClassName = trigger.chart?.id == focusedChartId ? 'selected-card' : '';
+                
                 let extractActiveFields = (t: Trigger) => {
-                    let encodingMap = (charts.find(c => c.id == t.chartRef) as Chart).encodingMap
+                    let encodingMap = t.chart?.encodingMap;
+                    if (!encodingMap) {
+                        return [];
+                    }
                     return Array.from(Object.values(encodingMap)).map((enc: EncodingItem) => enc.fieldID).filter(x => x != undefined);
                 };
 
@@ -267,7 +272,7 @@ let SingleThreadView: FC<{
                     </Box>
                 </div>;
 
-                return <Box sx={{ display: 'flex', flexDirection: 'column' }} key={`trigger-card-${trigger.chartRef}`}>
+                return <Box sx={{ display: 'flex', flexDirection: 'column' }} key={`trigger-card-${trigger.chart?.id}`}>
                     {triggerCard}
                     <ListItemIcon key={'down-arrow'} sx={{ minWidth: 0 }}>
                         <SouthIcon sx={{ fontSize: "inherit", 
@@ -309,13 +314,10 @@ let SingleThreadView: FC<{
                             dispatch(dfActions.setFocusedTable(tableId));
                             
                             // Find and set the first chart associated with this table
-                            let firstRelatedChart = charts.find((c: Chart) => c.tableRef == tableId && c.intermediate == undefined) 
-                                || charts.find((c: Chart) => c.tableRef == tableId);
+                            let firstRelatedChart = charts.find((c: Chart) => c.tableRef == tableId);
                             
                             if (firstRelatedChart) {
-                                if (firstRelatedChart.intermediate == undefined) {
-                                    dispatch(dfActions.setFocusedChart(firstRelatedChart.id));
-                                }
+                                dispatch(dfActions.setFocusedChart(firstRelatedChart.id));
                             }
                         }}
                     >
@@ -362,7 +364,7 @@ let SingleThreadView: FC<{
                     color: tableId === focusedTableId ? theme.palette.primary.main : 'rgba(0,0,0,0.5)',
                     fontWeight: tableId === focusedTableId ? 'bold' : 'normal',
                 }} /> : 
-                <TableRowsIcon sx={{ fontSize: 16 }} />)
+                <TableRowsIcon sx={{ fontSize: 16 }} /> )
 
             let regularTableBox = <Box ref={relevantCharts.some(c => c.chartId == focusedChartId) ? scrollRef : null} 
                 sx={{ padding: '0px' }}>
@@ -374,13 +376,11 @@ let SingleThreadView: FC<{
                     onClick={() => {
                         dispatch(dfActions.setFocusedTable(tableId));
                         if (focusedChart?.tableRef != tableId) {
-                            let firstRelatedChart = charts.find((c: Chart) => c.tableRef == tableId && c.intermediate == undefined) || charts.find((c: Chart) => c.tableRef == tableId);
+                            let firstRelatedChart = charts.find((c: Chart) => c.tableRef == tableId);
                             if (firstRelatedChart) {
-                                if (firstRelatedChart.intermediate == undefined) {
-                                    dispatch(dfActions.setFocusedChart(firstRelatedChart.id));
-                                }
+                                dispatch(dfActions.setFocusedChart(firstRelatedChart.id));
                             } else {
-                                dispatch(dfActions.createNewChart({ tableId: tableId }));
+                                //dispatch(dfActions.createNewChart({ tableId: tableId }));
                             }
                         }
                     }}>
@@ -602,8 +602,7 @@ export const DataThread: FC<{}> = function ({ }) {
 
     let tables = useSelector((state: DataFormulatorState) => state.tables);
 
-    let charts = useSelector((state: DataFormulatorState) => state.charts);
-    let focusedChartId = useSelector((state: DataFormulatorState) => state.focusedChartId);
+    let charts = useSelector(dfSelectors.getAllCharts);
 
     let chartSynthesisInProgress = useSelector((state: DataFormulatorState) => state.chartSynthesisInProgress);
 
@@ -622,18 +621,16 @@ export const DataThread: FC<{}> = function ({ }) {
         executeScroll();
     }, [threadDrawerOpen])
 
-    // excluding base tables or tables from saved charts
-    let derivedFields = conceptShelfItems.filter(f => f.source == "derived");
-
-    // when there is no result and synthesis is running, just show the waiting panel
-
-    // // we don't always render it, so make this a function to enable lazy rendering
+    // we don't always render it, so make this a function to enable lazy rendering
     const handleChartClick = useCallback((chartId: string, tableId: string) => {
         dispatch(dfActions.setFocusedChart(chartId));
         dispatch(dfActions.setFocusedTable(tableId));
     }, [dispatch]);
 
-    let chartElements = useMemo(() => charts.filter(chart => !chart.intermediate).map((chart) => {
+    let chartElements = useMemo(() => charts.filter(c => c.source == "user").map((chart) => {
+
+        console.log("chart is recalculated!!!!!");
+
         const table = getDataTable(chart, tables, charts, conceptShelfItems);
         let visTableRows = structuredClone(table.rows);
 
@@ -655,7 +652,6 @@ export const DataThread: FC<{}> = function ({ }) {
                 onClick={() => handleChartClick(chart.id, table.id)}
                 sx={{
                     display: "flex", backgroundColor: "rgba(0,0,0,0.01)", position: 'relative',
-                    //border: "0.5px dashed lightgray", 
                     flexDirection: "column"
                 }}>
                 {chartSynthesisInProgress.includes(chart.id) ? <Box sx={{
@@ -784,7 +780,6 @@ export const DataThread: FC<{}> = function ({ }) {
                 }} />
         })}
     </Box>
-
 
     let jumpButtonsDrawerOpen = <ButtonGroup size="small" color="primary">
         {_.chunk(Array.from({length: leafTables.length}, (_, i) => i), 3).map((group, groupIdx) => {

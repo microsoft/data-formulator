@@ -274,7 +274,9 @@ def run_app():
         url = "http://localhost:{0}".format(args.port)
         threading.Timer(2, lambda: webbrowser.open(url, new=2)).start()
 
-    app.run(host='0.0.0.0', port=args.port, threaded=True)
+    # Enable debug mode and auto-reload in development mode
+    debug_mode = args.dev
+    app.run(host='0.0.0.0', port=args.port, threaded=True, debug=debug_mode, use_reloader=debug_mode)
 
 if __name__ == '__main__':
     #app.run(debug=True, host='127.0.0.1', port=5000)

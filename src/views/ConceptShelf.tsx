@@ -14,9 +14,11 @@ import {
     Tooltip,
     Button,
     Divider,
+    IconButton,
 } from '@mui/material';
 
 import AddCircleIcon from '@mui/icons-material/AddCircle';
+import CleaningServicesIcon from '@mui/icons-material/CleaningServices';
 
 import { FieldItem, Channel } from '../components/ComponentType';
 
@@ -48,6 +50,11 @@ export const ConceptGroup: FC<{groupName: string, fields: FieldItem[]}> = functi
     const focusedTableId = useSelector((state: DataFormulatorState) => state.focusedTableId);
     const tables = useSelector((state: DataFormulatorState) => state.tables);
     const [expanded, setExpanded] = useState(false);
+    const dispatch = useDispatch();
+
+    const handleCleanUnusedConcepts = () => {
+        dispatch(dfActions.clearUnReferencedCustomConcepts());
+    };
 
     useEffect(() => {
         let focusedTable = tables.find(t => t.id == focusedTableId);
@@ -64,15 +71,37 @@ export const ConceptGroup: FC<{groupName: string, fields: FieldItem[]}> = functi
                 <Box sx={{ 
                     display: 'flex', 
                     alignItems: 'center', 
-                    cursor: 'pointer' 
+                    cursor: 'pointer',
+                    gap: 1
                 }}
                     onClick={() => setExpanded(!expanded)}>
                     <Typography component="h2" sx={{fontSize: "10px"}} color="text.secondary">
                         {groupName}
                     </Typography>
-                    <Typography sx={{fontSize: "10px", ml: 1}} color="text.secondary">
+                    {groupName != "new fields" && <Typography sx={{fontSize: "10px", ml: 1}} color="text.secondary">
                         {expanded ? '▾' : '▸'}
-                    </Typography>
+                    </Typography>}
+                    {groupName === "new fields" && (
+                        <Tooltip title="Clean unused concepts - Remove fields not referenced by any table">
+                            <IconButton
+                                size="small"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleCleanUnusedConcepts();
+                                }}
+                                sx={{
+                                    fontSize: "8px",
+                                    minWidth: "auto",
+                                    px: 0.5,
+                                    py: 0.25,
+                                    height: "16px",
+                                    ml: 0
+                                }}
+                            >
+                                <CleaningServicesIcon sx={{ fontSize: "10px !important" }} />
+                            </IconButton>
+                        </Tooltip>
+                    )}
                 </Box>
             </Divider>
         </Box>
@@ -142,22 +171,22 @@ export const ConceptShelf: FC<ConceptShelfProps> = function ConceptShelf() {
         let focusedTable = tables.find(t => t.id == focusedTableId);
         if (focusedTable) {
             let names = focusedTable.names;
-            let missingNames = names.filter(name => !conceptShelfItems.some(field => field.name == name));
+            // let missingNames = names.filter(name => !conceptShelfItems.some(field => field.name == name));
  
-            let conceptsToAdd = missingNames.map((name) => {
-                return {
-                    id: `concept-${name}-${Date.now()}`, name: name, type: "auto" as Type, 
-                    description: "", source: "custom", tableRef: 'custom', temporary: true, domain: [],
-                } as FieldItem
-            })
-            dispatch(dfActions.addConceptItems(conceptsToAdd));
+            // let conceptsToAdd = missingNames.map((name) => {
+            //     return {
+            //         id: `concept-${name}-${Date.now()}`, name: name, type: "auto" as Type, 
+            //         description: "", source: "custom", tableRef: 'custom', temporary: true, domain: [],
+            //     } as FieldItem
+            // })
+            // dispatch(dfActions.addConceptItems(conceptsToAdd));
 
-            let conceptIdsToDelete = conceptShelfItems.filter(field => field.temporary == true 
-                                    && !charts.some(c => Object.values(c.encodingMap).some(enc => enc.fieldID == field.id)) 
-                                    && !names.includes(field.name)).map(field => field.id);
+            // let conceptIdsToDelete = conceptShelfItems.filter(field => field.temporary == true 
+            //                         && !charts.some(c => Object.values(c.encodingMap).some(enc => enc.fieldID == field.id)) 
+            //                         && !names.includes(field.name)).map(field => field.id);
     
-            // add and delete temporary fields
-            dispatch(dfActions.batchDeleteConceptItemByID(conceptIdsToDelete));
+            // // add and delete temporary fields
+            // dispatch(dfActions.batchDeleteConceptItemByID(conceptIdsToDelete));
 
         } else {
             if (tables.length > 0) {

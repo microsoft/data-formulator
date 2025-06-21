@@ -263,7 +263,7 @@ export const ConceptCard: FC<ConceptCardProps> = function ConceptCard({ field })
             color="primary" aria-label="Delete" component="span"
             disabled={
                 conceptShelfItems.filter(f => f.source == "derived" && f.transform?.parentIDs.includes(field.id)).length > 0
-                || focusedTableId != field.tableRef
+ 
             }
             onClick={() => { handleDeleteConcept(field.id); }}>
             <DeleteIcon fontSize="inherit" />
