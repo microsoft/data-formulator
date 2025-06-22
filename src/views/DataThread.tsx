@@ -53,6 +53,8 @@ import { TriggerCard } from './EncodingShelfCard';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import CloudQueueIcon from '@mui/icons-material/CloudQueue';
+import PrecisionManufacturingIcon from '@mui/icons-material/PrecisionManufacturing';
+
 import { alpha } from '@mui/material/styles';
 
 import { dfSelectors } from '../app/dfSlice';
@@ -348,10 +350,7 @@ let SingleThreadView: FC<{
 
             let releventChartElements = relevantCharts.map((ce, j) =>
                 <Box key={`relevant-chart-${ce.chartId}`}
-                    sx={{
-                        display: 'flex', padding: 0, paddingBottom: j == relevantCharts.length - 1 ? 1 : 0.5,
-                        ...collapsedProps
-                    }}>
+                    sx={{ display: 'flex', padding: 0, pb: j == relevantCharts.length - 1 ? 1 : 0.5, ...collapsedProps }}>
                     {buildChartCard(ce, focusedChartId)}
                 </Box>)
 
@@ -494,15 +493,39 @@ let SingleThreadView: FC<{
                     </Box>
                     <Box sx={{ flex: 1, padding: '8px 0px', minHeight: '8px', ...chartElementProps }}>
                         {releventChartElements}
+                        {(pendingSSEActions.some(a => a.data?.source_table_ids[0] == tableId) )&& 
+                            <Box sx={{ 
+                            py: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', }}>
+                                <Typography sx={{ mr: 1,fontSize: '10px', color: 'rgba(0,0,0,0.5)' }}>
+                                    agent is deriving data...
+                                </Typography>
+                                <PrecisionManufacturingIcon sx={{ 
+                                    fontSize: 16, 
+                                    color: 'rgba(0,0,0,0.5)',
+                                    animation: 'spin 2s linear infinite',
+                                    '@keyframes spin': {
+                                        '0%': {
+                                            transform: 'scale(1)',
+                                        },
+                                        '25%': {
+                                            transform: 'rotate(30deg) scale(1.5)',
+                                        },
+                                        '50%': {
+                                            transform: 'scale(1)',
+                                        },
+                                        '75%': {
+                                            transform: 'rotate(330deg) scale(1.5)',
+                                        },
+                                        '100%': {
+                                            transform: 'rotate(360deg) scale(1)',
+                                        },
+                                    }
+                                }} />
+                            </Box>}
                     </Box>
-                    {pendingSSEActions.some(a => a.data?.source_table_ids[0] == tableId) && 
-                    <Box sx={{ p: 2, display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', width: '100%' }}>
-                        <Typography sx={{ fontSize: '10px', color: 'rgba(0,0,0,0.5)' }}>
-                            agent is deriving data...
-                        </Typography>
-                        <CircularProgress size={16} sx={{ ml: 1, color: 'rgba(0,0,0,0.5)' }} />
-                    </Box>}
                 </Box>,
+                
+                ,
                 (i == tableIdList.length - 1) ?
                     <Box sx={{ marginLeft: "6px", marginTop: '-10px' }}>
                         <PanoramaFishEyeIcon sx={{ fontSize: 5 }} />

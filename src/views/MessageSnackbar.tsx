@@ -299,18 +299,18 @@ export function MessageSnackbar() {
                                     )}
                                     {(msg.detail || msg.code) && (!expandedMessages.includes(msg.timestamp.toString()) ? (
                                         <IconButton sx={{p: 0}} onClick={() => setExpandedMessages([...expandedMessages, msg.timestamp.toString()])}>
-                                            <ExpandMoreIcon sx={{fontSize: 12}} />
+                                            <ExpandMoreIcon sx={{fontSize: 16}} />
                                         </IconButton>
                                     ) : (
                                         <IconButton sx={{p: 0}} onClick={() => setExpandedMessages(expandedMessages.filter(t => t !== msg.timestamp.toString()))}>
-                                            <ExpandLessIcon sx={{fontSize: 12}} />
+                                            <ExpandLessIcon sx={{fontSize: 16}} />
                                         </IconButton>
                                     ))}
                                 </Box>
-                                {msg.detail || msg.code && <Collapse in={expandedMessages.includes(msg.timestamp.toString())} >
+                                {(msg.detail || msg.code) && <Collapse sx={{ml: 2}} in={expandedMessages.includes(msg.timestamp.toString())} >
                                     {msg.detail && (
                                         <>
-                                            <Divider textAlign="left" sx={{my: 1, fontSize: 12, opacity: 0.7}}>
+                                            <Divider textAlign="left" sx={{fontSize: 12, opacity: 0.7}}>
                                                 [details]
                                             </Divider>
                                             <Box sx={{ borderRadius: 1, position: 'relative' }}>
