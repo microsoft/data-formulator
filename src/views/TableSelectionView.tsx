@@ -68,6 +68,24 @@ function a11yProps(index: number) {
   };
 }
 
+function syncTableWithServerDB(table: DictTable) {
+    console.log(`syncing table ${table.id} with server db`)
+    const formData = new FormData();
+    formData.append('table_name', table.id);
+    formData.append('raw_data', JSON.stringify(table.rows));
+
+    fetch(`${getUrls().CREATE_TABLE}`, {
+        method: 'POST',
+        body: formData
+    }).then((response) => {
+        return response.json();
+    }).then((data) => {
+        console.log(data);
+    }).catch((error) => {
+        console.log(error);
+    });
+}
+
 
 export interface TableChallenges {
     name: string;
@@ -182,7 +200,6 @@ export const TableSelectionDialog: React.FC<{ buttonElement: any }> = function T
                 }).filter((t : TableChallenges | undefined) => t != undefined);
                 setDatasetPreviews(tableChallenges);
             });
-      // No variable dependencies means this would run only once after the first render
       }, []);
 
     let dispatch = useDispatch<AppDispatch>();
@@ -213,35 +230,34 @@ export const TableSelectionDialog: React.FC<{ buttonElement: any }> = function T
                     <TableSelectionView tableChallenges={datasetPreviews} hideRowNum
                         handleDeleteTable={undefined}
                         handleSelectTable={(tableChallenges) => {
-                            // request public datasets from the server
-                        console.log(tableChallenges);
-                        console.log(`${getUrls().VEGA_DATASET_REQUEST_PREFIX}${tableChallenges.table.id}`)
-                        fetch(`${getUrls().VEGA_DATASET_REQUEST_PREFIX}${tableChallenges.table.id}`)
-                            .then((response) => {
-                                return response.text()
-                            })
-                            .then((text) => {         
-                                let fullTable = createTableFromFromObjectArray(tableChallenges.table.id, JSON.parse(text), true);
-                                if (fullTable) {
-                                    dispatch(dfActions.loadTable(fullTable));
-                                    dispatch(fetchFieldSemanticType(fullTable));
-                                    dispatch(dfActions.addChallenges({
-                                        tableId: tableChallenges.table.id,
-                                        challenges: tableChallenges.challenges
+                            fetch(`${getUrls().VEGA_DATASET_REQUEST_PREFIX}${tableChallenges.table.id}`)
+                                .then((response) => {
+                                    return response.text()
+                                })
+                                .then((text) => {         
+                                    let fullTable = createTableFromFromObjectArray(tableChallenges.table.id, JSON.parse(text), true);
+                                    if (fullTable) {
+                                        syncTableWithServerDB(fullTable);
+                                        dispatch(dfActions.loadTable(fullTable));
+                                        dispatch(fetchFieldSemanticType(fullTable));
+                                        dispatch(dfActions.addChallenges({
+                                            tableId: tableChallenges.table.id,
+                                            challenges: tableChallenges.challenges
+                                        }));
+                                    } else {
+                                        throw "";
+                                    }
+                                    setTableDialogOpen(false); 
+                                })
+                                .catch((error) => {
+                                    console.log(error)
+                                    dispatch(dfActions.addMessages({
+                                        "timestamp": Date.now(),
+                                        "type": "error",
+                                        "component": "data loader",
+                                        "value": `Unable to load the sample dataset ${tableChallenges.table.id}, please try again later or upload your data.`
                                     }));
-                                } else {
-                                    throw "";
-                                }
-                                setTableDialogOpen(false); 
-                            })
-                            .catch((error) => {
-                                console.log(error)
-                                dispatch(dfActions.addMessages({
-                                    "timestamp": Date.now(),
-                                    "type": "error",
-                                    "value": `Unable to load the sample dataset ${tableChallenges.table.id}, please try again later or upload your data.`
-                                }));
-                            })
+                                })
                         }}/>
                 </ DialogContent>
             </Dialog>
@@ -291,6 +307,7 @@ export const TableUploadDialog: React.FC<TableUploadDialogProps> = ({ buttonElem
                         dispatch(dfActions.addMessages({
                             "timestamp": Date.now(),
                             "type": "error",
+                            "component": "data loader",
                             "value": `File ${file.name} is too large (${(file.size / (1024 * 1024)).toFixed(2)}MB), upload it via DATABASE option instead.`
                         }));
                         continue; // Skip this file and process the next one
@@ -315,6 +332,7 @@ export const TableUploadDialog: React.FC<TableUploadDialogProps> = ({ buttonElem
                         if (arrayBuffer) {
                             let tables = loadBinaryDataWrapper(uniqueName, arrayBuffer);
                             for (let table of tables) {
+                                syncTableWithServerDB(table);
                                 dispatch(dfActions.loadTable(table));
                                 dispatch(fetchFieldSemanticType(table));
                             }
@@ -322,6 +340,7 @@ export const TableUploadDialog: React.FC<TableUploadDialogProps> = ({ buttonElem
                                 dispatch(dfActions.addMessages({
                                     "timestamp": Date.now(),
                                     "type": "error",
+                                    "component": "data loader",
                                     "value": `Failed to parse Excel file ${file.name}. Please check the file format.`
                                 }));
                             }
@@ -333,6 +352,7 @@ export const TableUploadDialog: React.FC<TableUploadDialogProps> = ({ buttonElem
                     dispatch(dfActions.addMessages({
                         "timestamp": Date.now(),
                         "type": "error",
+                        "component": "data loader",
                         "value": `Unsupported file format: ${file.name}. Please use CSV, TSV, JSON, or Excel files.`
                     }));
                 }
@@ -406,6 +426,7 @@ export const TableURLDialog: React.FC<TableURLDialogProps> = ({ buttonElement, d
             }
 
             if (table) {
+                syncTableWithServerDB(table);
                 dispatch(dfActions.loadTable(table));
                 dispatch(fetchFieldSemanticType(table));
             }        
@@ -502,6 +523,7 @@ export const TableCopyDialogV2: React.FC<TableCopyDialogProps> = ({ buttonElemen
             table = createTableFromText(uniqueName, tableStr);
         }
         if (table) {
+            syncTableWithServerDB(table);
             dispatch(dfActions.loadTable(table));
             dispatch(fetchFieldSemanticType(table));
         }        
@@ -566,6 +588,7 @@ export const TableCopyDialogV2: React.FC<TableCopyDialogProps> = ({ buttonElemen
                     dispatch(dfActions.addMessages({
                         "timestamp": Date.now(),
                         "type": "error",
+                        "component": "data loader",
                         "value": "unable to perform auto-sort."
                     }));
                     setCleanTableContent(undefined);
@@ -577,47 +600,11 @@ export const TableCopyDialogV2: React.FC<TableCopyDialogProps> = ({ buttonElemen
                 dispatch(dfActions.addMessages({
                     "timestamp": Date.now(),
                     "type": "error",
+                    "component": "data loader",
                     "value": "unable to perform clean data due to server issue."
                 }));
             });
     }
-
-    const newStyles = {
-        variables: { },
-        line: {
-            '&:hover': {
-                background: alpha(theme.palette.primary.main, 0.2),
-            },
-        },
-        titleBlock: {
-            padding: '4px 8px',
-            borderBottom: 'none'
-        },
-        marker: {
-            width: 'fit-content'
-        },
-        content: {
-            fontSize: 12,
-            width: 'fit-content',
-            maxWidth: "50%",
-            minWidth: 300,
-        },
-        diffContainer: {
-            "pre": { lineHeight: 1.2, fontFamily: 'sans-serif' }
-        },
-        contentText: {
-            
-        },
-        gutter: {
-            minWidth: '12px',
-            fontSize: 12,
-            padding: '0 8px',
-        }
-    };
-
-    let renderLines = (str: string) => (
-        <span style={{ }} >{str}</span>
-    );
 
     let dialog = <Dialog key="table-selection-dialog" onClose={()=>{setDialogOpen(false)}} open={dialogOpen}
             sx={{ '& .MuiDialog-paper': { maxWidth: '80%', maxHeight: 800, minWidth: 800 } }}
@@ -681,7 +668,11 @@ export const TableCopyDialogV2: React.FC<TableCopyDialogProps> = ({ buttonElemen
                             onChange={(event) => { 
                                 setTableContent(event.target.value); 
                             }}
-                            InputLabelProps={{ shrink: true }}
+                            slotProps={{
+                                inputLabel: {
+                                    shrink: true
+                                }
+                            }}
                             placeholder="Paste data (in csv, tsv, or json format), or a text snippet / an image that contains data to get started."
                             onPasteCapture={(e) => {
                                 console.log(e.clipboardData.files);

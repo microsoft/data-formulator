@@ -14,9 +14,12 @@ import {
     Tooltip,
     Button,
     Divider,
+    IconButton,
+    Collapse,
 } from '@mui/material';
 
 import AddCircleIcon from '@mui/icons-material/AddCircle';
+import CleaningServicesIcon from '@mui/icons-material/CleaningServices';
 
 import { FieldItem, Channel } from '../components/ComponentType';
 
@@ -47,7 +50,13 @@ export const ConceptGroup: FC<{groupName: string, fields: FieldItem[]}> = functi
 
     const focusedTableId = useSelector((state: DataFormulatorState) => state.focusedTableId);
     const tables = useSelector((state: DataFormulatorState) => state.tables);
+
     const [expanded, setExpanded] = useState(false);
+    const dispatch = useDispatch();
+
+    const handleCleanUnusedConcepts = () => {
+        dispatch(dfActions.clearUnReferencedCustomConcepts());
+    };
 
     useEffect(() => {
         let focusedTable = tables.find(t => t.id == focusedTableId);
@@ -58,71 +67,114 @@ export const ConceptGroup: FC<{groupName: string, fields: FieldItem[]}> = functi
         }
     }, [focusedTableId])
 
+    // Separate fields for display logic
+    const displayFields = expanded ? fields : fields.slice(0, 6);
+    const hasMoreFields = fields.length > 6;
+
     return <Box>
         <Box sx={{display: "block", width: "100%"}}>
             <Divider orientation="horizontal" textAlign="left">
                 <Box sx={{ 
                     display: 'flex', 
                     alignItems: 'center', 
-                    cursor: 'pointer' 
+                    cursor: 'pointer',
+                    gap: 1
                 }}
                     onClick={() => setExpanded(!expanded)}>
                     <Typography component="h2" sx={{fontSize: "10px"}} color="text.secondary">
                         {groupName}
                     </Typography>
-                    <Typography sx={{fontSize: "10px", ml: 1}} color="text.secondary">
+                    {fields.length > 6 && <Typography sx={{fontSize: "10px", ml: 1}} color="text.secondary">
                         {expanded ? '▾' : '▸'}
-                    </Typography>
+                    </Typography>}
+                    {groupName === "new fields" && (
+                        <Tooltip title="clean fields not referenced by any table">
+                            <IconButton
+                                size="small"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleCleanUnusedConcepts();
+                                }}
+                                sx={{
+                                    fontSize: "8px",
+                                    minWidth: "auto",
+                                    px: 0.5,
+                                    py: 0.25,
+                                    height: "16px",
+                                    ml: '0',
+                                    '&:hover .cleaning-icon': {
+                                        animation: 'spin 0.5s cubic-bezier(0.4, 0, 0.2, 1)',
+                                        transform: 'rotate(360deg)'
+                                    },
+                                    '@keyframes spin': {
+                                        '0%': {
+                                            transform: 'rotate(0deg)'
+                                        },
+                                        '100%': {
+                                            transform: 'rotate(360deg)'
+                                        }
+                                    }
+                                }}
+                            >
+                                <CleaningServicesIcon className="cleaning-icon" sx={{ fontSize: "10px !important" }} />
+                            </IconButton>
+                        </Tooltip>
+                    )}
                 </Box>
             </Divider>
         </Box>
-        <Box
-            sx={{
-                maxHeight: expanded ? 'auto' : '240px',
-                overflow: 'hidden',
-                transition: 'max-height 0.3s ease-in-out',
-                width: '100%'
-            }}
-        >
-            {fields.map((field) => (
+        
+        {/* Always show first 6 fields */}
+        <Box sx={{ width: '100%' }}>
+            {displayFields.map((field) => (
                 <ConceptCard key={`concept-card-${field.id}`} field={field} />
             ))}
-            {fields.length > 6 && !expanded && (
-                <Box sx={{ 
-                    position: 'relative', 
-                    height: '40px',
-                    '&::after': {
-                        content: '""',
-                        position: 'absolute',
-                        bottom: 0,
-                        left: 0,
-                        right: 0,
-                        height: '100%',
-                        background: 'linear-gradient(to bottom, transparent, white)'
-                    }
-                }}>
-                    <ConceptCard field={fields[6]} />
-                </Box>
-            )}
         </Box>
-        {fields.length > 6 && !expanded && (
-            <Button
-                onClick={() => setExpanded(!expanded)}
-                sx={{
-                    fontSize: "10px",
-                    color: "text.secondary",
-                    pl: 2,
-                    py: 0.5,
-                    fontStyle: "italic",
-                    textTransform: 'none',
-                    '&:hover': {
-                        background: 'transparent',
-                        textDecoration: 'underline'
-                    }
-                }}
-            >
-                {`... show all ${fields.length} ${groupName} fields ▾`}
-            </Button>
+
+        {/* Collapsible section for additional fields */}
+        {hasMoreFields && (
+            <>
+                <Collapse in={expanded} timeout={300}>
+                    <Box sx={{ width: '100%' }}>
+                        {fields.slice(6).map((field) => (
+                            <ConceptCard key={`concept-card-${field.id}`} field={field} />
+                        ))}
+                    </Box>
+                </Collapse>
+                
+                {!expanded && (
+                    <Button
+                        onClick={() => setExpanded(true)}
+                        sx={{
+                            fontSize: "10px",
+                            color: "text.secondary",
+                            pl: 2,
+                            py: 0.5,
+                            fontStyle: "italic",
+                            textTransform: 'none',
+                            position: 'relative',
+                            width: '100%',
+                            justifyContent: 'flex-start',
+                            '&:hover': {
+                                background: 'transparent',
+                                textDecoration: 'underline'
+                            },
+                            '&::before': {
+                                content: '""',
+                                position: 'absolute',
+                                top: '-20px',
+                                left: 0,
+                                right: 0,
+                                height: '20px',
+                                background: 'linear-gradient(to bottom, transparent, white)',
+                                pointerEvents: 'none'
+                            }
+                        }}
+                    >
+                        {`... show all ${fields.length} ${groupName} fields ▾`}
+                    </Button>
+                )}
+            </>
         )}
     </Box>;
 }
@@ -132,40 +184,8 @@ export const ConceptShelf: FC<ConceptShelfProps> = function ConceptShelf() {
 
     // reference to states
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
-    const focusedTableId = useSelector((state: DataFormulatorState) => state.focusedTableId);
     const tables = useSelector((state: DataFormulatorState) => state.tables);
-    const charts = useSelector((state: DataFormulatorState) => state.charts);
 
-    const dispatch = useDispatch();
-
-    useEffect(() => { 
-        let focusedTable = tables.find(t => t.id == focusedTableId);
-        if (focusedTable) {
-            let names = focusedTable.names;
-            let missingNames = names.filter(name => !conceptShelfItems.some(field => field.name == name));
- 
-            let conceptsToAdd = missingNames.map((name) => {
-                return {
-                    id: `concept-${name}-${Date.now()}`, name: name, type: "auto" as Type, 
-                    description: "", source: "custom", tableRef: 'custom', temporary: true, domain: [],
-                } as FieldItem
-            })
-            dispatch(dfActions.addConceptItems(conceptsToAdd));
-
-            let conceptIdsToDelete = conceptShelfItems.filter(field => field.temporary == true 
-                                    && !charts.some(c => Object.values(c.encodingMap).some(enc => enc.fieldID == field.id)) 
-                                    && !names.includes(field.name)).map(field => field.id);
-    
-            // add and delete temporary fields
-            dispatch(dfActions.batchDeleteConceptItemByID(conceptIdsToDelete));
-
-        } else {
-            if (tables.length > 0) {
-                dispatch(dfActions.setFocusedTable(tables[0].id))
-            }
-        }
-    }, [focusedTableId])
-    
     // group concepts based on types
     let conceptItemGroups = groupConceptItems(conceptShelfItems, tables);
     let groupNames = [...new Set(conceptItemGroups.map(g => g.group))]

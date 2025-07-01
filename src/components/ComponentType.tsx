@@ -49,9 +49,8 @@ export interface Trigger {
 
     sourceTableIds: string[], // which tables are used in the trigger
 
-    chartRef?: string, // what's the intented chart from the user when running formulation
+    chart?: Chart, // what's the intented chart from the user when running formulation
     instruction: string
-
     resultTableId: string,
 }
 
@@ -106,7 +105,7 @@ export type Chart = {
     encodingMap: EncodingMap, 
     tableRef: string, 
     saved: boolean,
-    intermediate?: Trigger // whether this chart is only an intermediate chart (e.g., only used as a spec for transforming tables)
+    source: "user" | "trigger",
 }
 
 export let duplicateChart = (chart: Chart) : Chart => {
@@ -116,7 +115,7 @@ export let duplicateChart = (chart: Chart) : Chart => {
         encodingMap: JSON.parse(JSON.stringify(chart.encodingMap)) as EncodingMap,
         tableRef: chart.tableRef,
         saved: false,
-        intermediate: undefined
+        source: chart.source,
     }
 }
 

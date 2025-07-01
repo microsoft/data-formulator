@@ -57,12 +57,9 @@ import {
 } from "react-router-dom";
 import { About } from '../views/About';
 import { MessageSnackbar } from '../views/MessageSnackbar';
-import { appConfig, assignAppConfig, PopupConfig } from './utils';
 import { DictTable } from '../components/ComponentType';
 import { AppDispatch } from './store';
-import { ActionSubscription, subscribe, unsubscribe } from './embed';
 import dfLogo from '../assets/df-logo.png';
-import { Popup } from '../components/Popup';
 import { ModelSelectionButton } from '../views/ModelSelectionDialog';
 import { TableCopyDialogV2 } from '../views/TableSelectionView';
 import { TableUploadDialog } from '../views/TableSelectionView';
@@ -72,6 +69,7 @@ import UploadFileIcon from '@mui/icons-material/UploadFile';
 import DownloadIcon from '@mui/icons-material/Download';
 import { DBTableManager, DBTableSelectionDialog, handleDBDownload } from '../views/DBTableManager';
 import CloudQueueIcon from '@mui/icons-material/CloudQueue';
+import { connectToSSE } from '../views/SSEClient';
 
 const AppBar = styled(MuiAppBar)(({ theme }) => ({
     color: 'black',
@@ -199,10 +197,10 @@ const TableMenu: React.FC = () => {
                 anchorEl={anchorEl}
                 open={open}
                 onClose={() => setAnchorEl(null)}
-                MenuListProps={{
-                    'aria-labelledby': 'add-table-button',
-                    sx: { py: '4px', px: '8px' }
+                slotProps={{
+                    paper: { sx: { py: '4px', px: '8px' } }
                 }}
+                aria-labelledby="add-table-button"
                 sx={{ '& .MuiMenuItem-root': { padding: 0, margin: 0 } }}
             >
                 <MenuItem onClick={(e) => {
@@ -249,16 +247,16 @@ const SessionMenu: React.FC = () => {
                 anchorEl={anchorEl}
                 open={open}
                 onClose={() => setAnchorEl(null)}
-                MenuListProps={{
-                    'aria-labelledby': 'session-menu-button',
-                    sx: { py: '4px', px: '8px' }
+                slotProps={{
+                    paper: { sx: { py: '4px', px: '8px' } }
                 }}
+                aria-labelledby="session-menu-button"
                 sx={{ '& .MuiMenuItem-root': { padding: 0, margin: 0 } }}
             >
                 {sessionId && (
                     <MenuItem disabled>
-                        <Typography sx={{ fontSize: 12, color: 'text.secondary', mx: 2 }}>
-                            ID: {sessionId}
+                        <Typography sx={{ fontSize: 12, color: 'text.secondary'}}>
+                            session id: {sessionId}
                         </Typography>
                     </MenuItem>
                 )}
@@ -491,33 +489,19 @@ const ConfigDialog: React.FC = () => {
 export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
 
     const visViewMode = useSelector((state: DataFormulatorState) => state.visViewMode);
-    const config = useSelector((state: DataFormulatorState) => state.config);
     const tables = useSelector((state: DataFormulatorState) => state.tables);
-    const sessionId = useSelector((state: DataFormulatorState) => state.sessionId);
-
-    // if the user has logged in
-    const [userInfo, setUserInfo] = useState<{ name: string, userId: string } | undefined>(undefined);
-
-    const [popupConfig, setPopupConfig] = useState<PopupConfig>({});
-
     const dispatch = useDispatch<AppDispatch>();
 
     useEffect(() => {
-        const subscription: ActionSubscription = {
-            loadData: (table: DictTable) => {
-                dispatch(dfActions.loadTable(table));
-                dispatch(fetchFieldSemanticType(table));
-            },
-            setAppConfig: (config) => {
-                assignAppConfig(config);
-                config.popupConfig && setPopupConfig(config.popupConfig);
-            },
-        };
-        subscribe(subscription);
+        const sseConnection = connectToSSE(dispatch);
         return () => {
-            unsubscribe(subscription);
+            console.log("closing sse connection because of unmount of AppFC")
+            sseConnection.close();
         };
     }, []);
+
+    // if the user has logged in
+    const [userInfo, setUserInfo] = useState<{ name: string, userId: string } | undefined>(undefined);
 
     useEffect(() => {
         fetch('/.auth/me')
@@ -530,10 +514,7 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
                         userId: authInfo['user_id']
                     }
                     setUserInfo(userInfo);
-                    // console.log("logging info")
-                    // console.log(userInfo);
                 }
-
             }).catch(err => {
                 //user is not logged in, do not show logout button
                 //console.error(err)
@@ -644,7 +625,6 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
                     </Typography>
                     <Divider orientation="vertical" variant="middle" flexItem />
                     <ResetDialog />
-                    <Popup popupConfig={popupConfig} appConfig={appConfig} table={tables[0]} />
                 </Box>
             </Toolbar>
         </AppBar>
@@ -654,9 +634,6 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
         {
             path: "/about",
             element: <About />,
-        }, {
-            path: "/test",
-            element: <DBTableManager />,
         }, {
             path: "*",
             element: <DataFormulatorFC />,

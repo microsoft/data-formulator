@@ -14,6 +14,7 @@ import pandas as pd
 import random
 import string
 from pathlib import Path
+import uuid
 
 from data_formulator.db_manager import db_manager
 from data_formulator.data_loader import DATA_LOADERS
@@ -35,6 +36,61 @@ import os
 import tempfile
 
 tables_bp = Blueprint('tables', __name__, url_prefix='/api/tables')
+
+
+def list_tables_util(db_conn):
+    """
+    List all tables in the current session
+    """
+    results = []
+    
+    table_metadata_list = db_conn.execute("""
+        SELECT database_name, schema_name, table_name, schema_name==current_schema() as is_current_schema, 'table' as object_type 
+        FROM duckdb_tables() 
+        WHERE internal=False AND database_name == current_database()
+        UNION ALL 
+        SELECT database_name, schema_name, view_name as table_name, schema_name==current_schema() as is_current_schema, 'view' as object_type 
+        FROM duckdb_views()
+        WHERE view_name NOT LIKE 'duckdb_%' AND view_name NOT LIKE 'sqlite_%' AND view_name NOT LIKE 'pragma_%' AND database_name == current_database()
+    """).fetchall()
+
+    for table_metadata in table_metadata_list:
+        [database_name, schema_name, table_name, is_current_schema, object_type] = table_metadata
+        table_name = table_name if is_current_schema else '.'.join([database_name, schema_name, table_name])
+        if database_name in ['system', 'temp']:
+            continue
+        
+        print(f"table_metadata: {table_metadata}")
+
+        try:
+            # Get column information
+            columns = db_conn.execute(f"DESCRIBE {table_name}").fetchall()
+                
+            # Get row count
+            row_count = db_conn.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()[0]
+            sample_rows = db_conn.execute(f"SELECT * FROM {table_name} LIMIT 1000").fetchdf() if row_count > 0 else pd.DataFrame()
+            
+            # Check if this is a view or a table
+            try:
+                # Get both view existence and source in one query
+                view_info = db_conn.execute(f"SELECT view_name, sql FROM duckdb_views() WHERE view_name = '{table_name}'").fetchone()
+                view_source = view_info[1] if view_info else None
+            except Exception as e:
+                # If the query fails, assume it's a regular table
+                view_source = None
+
+            results.append({
+                "name": table_name,
+                "columns": [{"name": col[0], "type": col[1]} for col in columns],
+                "row_count": row_count,
+                "sample_rows": json.loads(sample_rows.to_json(orient='records')),
+                "view_source": view_source
+            })
+        except Exception as e:
+            logger.error(f"Error getting table metadata for {table_name}: {str(e)}")
+            continue
+
+    return results
 
 @tables_bp.route('/list-tables', methods=['GET'])
 def list_tables():
@@ -85,6 +141,7 @@ def list_tables():
                         "sample_rows": json.loads(sample_rows.to_json(orient='records', date_format='iso')),
                         "view_source": view_source
                     })
+                    
                 except Exception as e:
                     logger.error(f"Error getting table metadata for {table_name}: {str(e)}")
                     continue
@@ -100,6 +157,7 @@ def list_tables():
             "status": "error",
             "message": safe_msg
         }), status_code
+        
 
 def assemble_query(aggregate_fields_and_functions, group_fields, columns, table_name):
     """
@@ -127,7 +185,7 @@ def assemble_query(aggregate_fields_and_functions, group_fields, columns, table_
         elif field in columns:
             if function.lower() == 'count':
                 alias = f'_count'
-                select_parts.append(f'COUNT(*) as {alias}')
+                select_parts.append(f'COUNT(*) as "{alias}"')
                 output_column_names.append(alias)
             else:
                 # Sanitize function name and create alias
@@ -137,7 +195,7 @@ def assemble_query(aggregate_fields_and_functions, group_fields, columns, table_
                     aggregate_function = function.upper()
                 
                 alias = f'{field}_{function}'
-                select_parts.append(f'{aggregate_function}("{field}") as {alias}')
+                select_parts.append(f'{aggregate_function}("{field}") as "{alias}"')
                 output_column_names.append(alias)
 
     # Handle group fields
@@ -289,36 +347,36 @@ def get_table_data():
 def create_table():
     """Create a new table from uploaded data"""
     try:
-        if 'file' not in request.files:
-            return jsonify({"status": "error", "message": "No file provided"}), 400
+        if 'file' not in request.files and 'raw_data' not in request.form:
+            return jsonify({"status": "error", "message": "No file or raw data provided"}), 400
         
-        file = request.files['file']
         table_name = request.form.get('table_name')
-
-        print(f"table_name: {table_name}")
-        print(f"file: {file.filename}")
-        print(f"file: {file}")
-        
         if not table_name:
             return jsonify({"status": "error", "message": "No table name provided"}), 400
-            
-        # Sanitize table name:
-        # 1. Convert to lowercase
-        # 2. Replace hyphens with underscores
-        # 3. Replace spaces with underscores
-        # 4. Remove any other special characters
-        sanitized_table_name = table_name.lower()
-        sanitized_table_name = sanitized_table_name.replace('-', '_')
-        sanitized_table_name = sanitized_table_name.replace(' ', '_')
-        sanitized_table_name = ''.join(c for c in sanitized_table_name if c.isalnum() or c == '_')
         
-        # Ensure table name starts with a letter
-        if not sanitized_table_name or not sanitized_table_name[0].isalpha():
-            sanitized_table_name = 'table_' + sanitized_table_name
-            
-        # Verify we have a valid table name after sanitization
-        if not sanitized_table_name:
-            return jsonify({"status": "error", "message": "Invalid table name"}), 400
+        df = None
+        if 'file' in request.files:
+            file = request.files['file']
+            # Read file based on extension
+            if file.filename.endswith('.csv'):
+                df = pd.read_csv(file)
+            elif file.filename.endswith(('.xlsx', '.xls')):
+                df = pd.read_excel(file)
+            elif file.filename.endswith('.json'):
+                df = pd.read_json(file)
+            else:
+                return jsonify({"status": "error", "message": "Unsupported file format"}), 400
+        else:
+            raw_data = request.form.get('raw_data')
+            try:
+                df = pd.DataFrame(json.loads(raw_data))
+            except Exception as e:
+                return jsonify({"status": "error", "message": f"Invalid JSON data: {str(e)}, it must be in the format of a list of dictionaries"}), 400
+
+        if df is None:
+            return jsonify({"status": "error", "message": "No data provided"}), 400
+
+        sanitized_table_name = sanitize_table_name(table_name)
             
         with db_manager.connection(session['session_id']) as db:
             # Check if table exists and generate unique name if needed
@@ -332,16 +390,6 @@ def create_table():
                 # If exists, append counter to base name
                 sanitized_table_name = f"{base_name}_{counter}"
                 counter += 1
-        
-            # Read file based on extension
-            if file.filename.endswith('.csv'):
-                df = pd.read_csv(file)
-            elif file.filename.endswith(('.xlsx', '.xls')):
-                df = pd.read_excel(file)
-            elif file.filename.endswith('.json'):
-                df = pd.read_json(file)
-            else:
-                return jsonify({"status": "error", "message": "Unsupported file format"}), 400
 
             # Create table
             db.register('df_temp', df)
@@ -364,6 +412,8 @@ def create_table():
             "status": "error",
             "message": safe_msg
         }), status_code
+
+
 
 @tables_bp.route('/delete-table', methods=['POST'])
 def drop_table():
@@ -679,6 +729,29 @@ def analyze_table():
             "status": "error",
             "message": safe_msg
         }), status_code
+
+def sanitize_table_name(table_name: str) -> str:
+    """
+    Sanitize a table name to be a valid DuckDB table name.
+    """
+    # Sanitize table name:
+        # 1. Convert to lowercase
+        # 2. Replace hyphens with underscores
+        # 3. Replace spaces with underscores
+        # 4. Remove any other special characters
+    sanitized_table_name = table_name.lower()
+    sanitized_table_name = sanitized_table_name.replace('-', '_')
+    sanitized_table_name = sanitized_table_name.replace(' ', '_')
+    sanitized_table_name = ''.join(c for c in sanitized_table_name if c.isalnum() or c == '_')
+    
+    # Ensure table name starts with a letter
+    if not sanitized_table_name or not sanitized_table_name[0].isalpha():
+        sanitized_table_name = 'table_' + sanitized_table_name
+        
+    # Verify we have a valid table name after sanitization
+    if not sanitized_table_name:
+        return f'table_{uuid.uuid4()}'
+    return sanitized_table_name
 
 def sanitize_db_error_message(error: Exception) -> Tuple[str, int]:
     """
