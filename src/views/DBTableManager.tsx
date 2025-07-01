@@ -17,9 +17,6 @@ import {
   DialogContent,
   DialogTitle,
   Divider,
-  Alert,
-  Snackbar,
-  Fade,
   SxProps,
   Table,
   TableBody,
@@ -35,26 +32,19 @@ import {
   Collapse,
   styled,
   ToggleButtonGroup,
-  ToggleButton
+  ToggleButton,
+  useTheme
 } from '@mui/material';
 
 import DeleteIcon from '@mui/icons-material/Delete';
-import UploadFileIcon from '@mui/icons-material/UploadFile';
 import CloseIcon from '@mui/icons-material/Close';
-import StorageIcon from '@mui/icons-material/Storage';
-import SearchIcon from '@mui/icons-material/Search';
 import AnalyticsIcon from '@mui/icons-material/Analytics';
-import TuneIcon from '@mui/icons-material/Tune';
-import AddIcon from '@mui/icons-material/Add';
-import UploadIcon from '@mui/icons-material/Upload';
-import DownloadIcon from '@mui/icons-material/Download';
-import RestartAltIcon from '@mui/icons-material/RestartAlt';
-import PolylineIcon from '@mui/icons-material/Polyline';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import TableRowsIcon from '@mui/icons-material/TableRows';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
+import SearchIcon from '@mui/icons-material/Search';
 
 import { getUrls } from '../app/utils';
 import { CustomReactTable } from './ReactTable';
@@ -75,6 +65,7 @@ import 'prismjs/themes/prism.css'; //Example style, you can use another
 import PrecisionManufacturingIcon from '@mui/icons-material/PrecisionManufacturing';
 import CheckIcon from '@mui/icons-material/Check';
 import MuiMarkdown from 'mui-markdown';
+import CleaningServicesIcon from '@mui/icons-material/CleaningServices';
 
 export const handleDBDownload = async (sessionId: string) => {
     try {
@@ -172,7 +163,7 @@ interface TableStatisticsViewProps {
 export class TableStatisticsView extends React.Component<TableStatisticsViewProps> {
     render() {
         const { tableName, columnStats } = this.props;
-        
+
         // Common styles for header cells
         const headerCellStyle = {
             backgroundColor: '#fff',
@@ -270,6 +261,7 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
     
     const dispatch = useDispatch<AppDispatch>();
     const sessionId = useSelector((state: DataFormulatorState) => state.sessionId);
+    const tables = useSelector((state: DataFormulatorState) => state.tables);
 
     const [tableDialogOpen, setTableDialogOpen] = useState<boolean>(false);
     const [tableAnalysisMap, setTableAnalysisMap] = useState<Record<string, ColumnStatistics[] | null>>({});
@@ -282,20 +274,21 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
     const [dbTables, setDbTables] = useState<DBTable[]>([]);
     const [selectedTabKey, setSelectedTabKey] = useState("");
 
-    const [errorMessage, setErrorMessage] = useState<{content: string, severity: "error" | "warning" | "info" | "success"} | null>(null);
-    const [showError, setShowError] = useState(false);
     const [isUploading, setIsUploading] = useState<boolean>(false);
+
+    let setSystemMessage = (content: string, severity: "error" | "warning" | "info" | "success") => {
+        dispatch(dfActions.addMessages({
+            "timestamp": Date.now(),
+            "component": "DB manager",
+            "type": severity,
+            "value": content
+        }));
+    }
 
     useEffect(() => {
         fetchTables();
         fetchDataLoaders();
     }, []);
-
-    useEffect(() => {
-        if (errorMessage?.content?.includes("session_id not found")) {
-            dispatch(getSessionId());
-        }
-    }, [errorMessage])
 
     useEffect(() => {
         if (!selectedTabKey.startsWith("dataLoader:") && dbTables.length == 0) {
@@ -314,8 +307,7 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
                 setDbTables(data.tables);
             }
         } catch (error) {
-            setErrorMessage({content: 'Failed to fetch tables, please check if the server is running', severity: "error"});
-            setShowError(true);
+            setSystemMessage('Failed to fetch tables, please check if the server is running', "error");
         }
     };
 
@@ -358,13 +350,10 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
                 fetchTables();  // Refresh table list
             } else {
                 // Handle error from server
-                setErrorMessage(data.error || 'Failed to upload table');
-                setShowError(true);
+                setSystemMessage(data.error || 'Failed to upload table', "error");
             }
         } catch (error) {
-            console.error('Failed to upload table:', error);
-            setErrorMessage({content: 'Failed to upload table, please check if the server is running', severity: "error"});
-            setShowError(true);
+            setSystemMessage('Failed to upload table, please check if the server is running', "error");
         } finally {
             setIsUploading(false);
         }
@@ -387,18 +376,14 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
             const data = await response.json();
             if (data.status === 'success') {
                 if (data.is_renamed) {
-                    setErrorMessage({content: `Table ${data.original_name} already exists. Renamed to ${data.table_name}`, severity: "warning"});
-                    setShowError(true);
+                    setSystemMessage(`Table ${data.original_name} already exists. Renamed to ${data.table_name}`, "warning");
                 } 
                 fetchTables();  // Refresh table list
             } else {
-                setErrorMessage({content: data.error || 'Failed to upload table', severity: "error"});
-                setShowError(true);
+                setSystemMessage(data.error || 'Failed to upload table', "error");
             }
         } catch (error) {
-            console.error('Failed to upload table:', error);
-            setErrorMessage({content: 'Failed to upload table, please check if the server is running', severity: "error"});
-            setShowError(true);
+            setSystemMessage('Failed to upload table, please check if the server is running', "error");
         } finally {
             setIsUploading(false);
             // Clear the file input value to allow uploading the same file again
@@ -417,19 +402,52 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
             if (data.status === 'success') {
                 fetchTables();
             } else {
-                setErrorMessage(data.error || 'Failed to reset database');
-                setShowError(true);
+                setSystemMessage(data.error || 'Failed to reset database', "error");
             }
         } catch (error) {
-            console.error('Failed to reset database:', error);
-            setErrorMessage({content: 'Failed to reset database', severity: "error"});
-            setShowError(true);
+            setSystemMessage('Failed to reset database', "error");
+        }
+    }
+
+    const handleCleanDerivedViews = async () => {
+        let unreferencedViews = dbTables.filter(t => t.view_source !== null && t.view_source !== undefined && !tables.some(t2 => t2.id === t.name));
+
+        if (unreferencedViews.length > 0) {
+            if (confirm(`Are you sure you want to delete the following unreferenced derived views? \n${unreferencedViews.map(v => `- ${v.name}`).join("\n")}`)) {
+                let deletedViews = [];
+                for (let view of unreferencedViews) {
+                    try {
+                        const response = await fetch(getUrls().DELETE_TABLE, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                            },
+                            body: JSON.stringify({ table_name: view.name })
+                        });
+                        const data = await response.json();
+                        if (data.status === 'success') {
+                            deletedViews.push(view.name);
+                        } else {
+                            setSystemMessage(data.error || 'Failed to delete table', "error");
+                        }
+                    } catch (error) {
+                        setSystemMessage('Failed to delete table, please check if the server is running', "error");
+                    }
+                }
+                if (deletedViews.length > 0) {
+                    setSystemMessage(`Deleted ${deletedViews.length} unreferenced derived views: ${deletedViews.join(", ")}`, "success");
+                }
+                fetchTables();
+                setSelectedTabKey(dbTables.length > 0 ? dbTables[0].name : "");
+            }
         }
     }
 
     // Delete table
     const handleDropTable = async (tableName: string) => {
-        if (!confirm(`Are you sure you want to delete ${tableName}?`)) return;
+        if (tables.some(t => t.id === tableName)) {
+            if (!confirm(`Are you sure you want to delete ${tableName}? \n ${tableName} is currently loaded into the data formulator and will be removed from the database.`)) return;
+        }
 
         try {
             const response = await fetch(getUrls().DELETE_TABLE, {
@@ -444,12 +462,10 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
                 fetchTables();
                 setSelectedTabKey(dbTables.length > 0 ? dbTables[0].name : "");
             } else {
-                setErrorMessage({content: data.error || 'Failed to delete table', severity: "error"});
-                setShowError(true);
+                setSystemMessage(data.error || 'Failed to delete table', "error");
             }
         } catch (error) {
-            setErrorMessage({content: 'Failed to delete table, please check if the server is running', severity: "error"});
-            setShowError(true);
+            setSystemMessage('Failed to delete table, please check if the server is running', "error");
         }
     };
 
@@ -474,13 +490,12 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
                 // Update the analysis map with the new results
                 setTableAnalysisMap(prevMap => ({
                     ...prevMap,
-                    [tableName]: data
+                    [tableName]: data.statistics
                 }));
             }
         } catch (error) {
             console.error('Failed to analyze table data:', error);
-            setErrorMessage({content: 'Failed to analyze table data, please check if the server is running', severity: "error"});
-            setShowError(true);
+            setSystemMessage('Failed to analyze table data, please check if the server is running', "error");
         }
     };
 
@@ -537,10 +552,6 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
         setSelectedTabKey(newValue);
     };
 
-    const handleCloseError = () => {
-        setShowError(false);
-    };
-
     useEffect(() => {
         if (tableDialogOpen) {
             fetchTables();
@@ -562,8 +573,7 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
                 handleDBDownload(sessionId ?? '')
                     .catch(error => {
                         console.error('Failed to download database:', error);
-                        setErrorMessage({content: 'Failed to download database file', severity: "error"});
-                        setShowError(true);
+                        setSystemMessage('Failed to download database file', "error");
                     });
             }} disabled={isUploading || dbTables.length === 0}>
                 export
@@ -628,7 +638,8 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
                     </Typography>
                     {dbTables.length == 0 && 
                         <Typography variant="caption" sx={{color: "lightgray", px: 2, py: 0.5, fontStyle: "italic"}}>no tables available</Typography>}
-                    {dbTables.map((t, i) => (
+                    {/* <Typography variant="caption" color='text.secondary' sx={{fontStyle: "italic", px: 1, fontSize: 10, opacity: 0.8}}>tables</Typography> */}
+                    {dbTables.filter(t => t.view_source === null).map((t, i) => (
                         <Tab 
                             key={t.name} 
                             value={t.name}
@@ -643,7 +654,47 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
                             onClick={() => {
                                 setSelectedTabKey(t.name);
                             }}
-                            sx={{textTransform: "none", minHeight: 24, p: 0.5, ml: 2}}
+                            sx={{textTransform: "none", minHeight: 24, p: 0.5, ml: 2,
+                                backgroundColor: selectedTabKey === t.name ? (theme) => alpha(theme.palette.primary.light, 0.1) : 'transparent',
+                            }}
+                            {...a11yProps(t.name)} 
+                        />
+                    ))}
+                   {dbTables.filter(t => t.view_source !== null).length > 0 && <Typography variant="caption" color='text.secondary' sx={{fontStyle: "italic", px: 1, fontSize: 10, opacity: 0.8}}>
+                        derived views
+                        <Tooltip title="clean up unreferenced derived views">
+                            <IconButton size="small" color="primary" sx={{
+                                '&:hover': {
+                                    transform: 'rotate(180deg)',
+                                },
+                                transition: 'transform 0.3s ease-in-out',
+                            }} 
+                            disabled={dbTables.filter(t => t.view_source !== null).length === 0}
+                            onClick={() => {
+                                handleCleanDerivedViews();
+                            }}>
+                                <CleaningServicesIcon sx={{fontSize: 14}} />
+                            </IconButton>
+                        </Tooltip>
+                    </Typography>}
+                    {dbTables.filter(t => t.view_source !== null).map((t, i) => (
+                        <Tab 
+                            key={t.name} 
+                            value={t.name}
+                            wrapped 
+                            label={
+                                <Typography variant="caption" 
+                                    sx={{textTransform: "none", width: "calc(100% - 4px)", textAlign: 'left', 
+                                         textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap'}}>
+                                    <Typography variant="caption" sx={{fontSize: 12}}>{t.name}</Typography>
+                                </Typography>
+                            } 
+                            onClick={() => {
+                                setSelectedTabKey(t.name);
+                            }}
+                            sx={{textTransform: "none", minHeight: 24, p: 0.5, ml: 2,
+                                backgroundColor: selectedTabKey === t.name ? (theme) => alpha(theme.palette.primary.light, 0.1) : 'transparent',
+                            }}
                             {...a11yProps(t.name)} 
                         />
                     ))}
@@ -657,7 +708,7 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
                     sx={{px: 0.5}}
                 >
                     <Typography variant="caption" sx={{color: "text.secondary", fontWeight: "bold", px: 1}}>
-                        connect external data
+                        external data loaders
                         <Tooltip title="refresh the data loader list">
                             <IconButton size="small" color="primary" sx={{
                                 '&:hover': {
@@ -682,7 +733,9 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
                             onClick={() => {
                                 setSelectedTabKey('dataLoader:' + dataLoaderType);
                             }}
-                            sx={{textTransform: "none", minHeight: 24, p: 0.5, ml: 2}}
+                            sx={{textTransform: "none", minHeight: 24, p: 0.5, ml: 2,
+                                backgroundColor: selectedTabKey === 'dataLoader:' + dataLoaderType ? (theme) => alpha(theme.palette.secondary.light, 0.1) : 'transparent',
+                            }}
                             {...a11yProps(dataLoaderType)} 
                         />
                     ))}
@@ -709,8 +762,7 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
                             setIsUploading(false);
                             fetchTables();
                             if (status === "error") {
-                                setErrorMessage({content: message, severity: "error"});
-                                setShowError(true);
+                                setSystemMessage(message, "error");
                             }
                         }} 
                     />
@@ -720,7 +772,7 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
                 const currentTable = t;
                 const showingAnalysis = tableAnalysisMap[currentTable.name] !== undefined;
                 return (
-                    <TabPanel key={t.name} sx={{width: 960, maxWidth: '100%'}} show={selectedTabKey === t.name}>
+                    <TabPanel key={t.name} sx={{width: 960, maxWidth: '100%', overflowX: 'auto'}} show={selectedTabKey === t.name}>
                         <Paper variant="outlined" sx={{width: "100%"}}>
                             <Box sx={{ px: 1, display: 'flex', alignItems: 'center', borderBottom: '1px solid rgba(0,0,0,0.1)' }}>
                                 <Typography variant="caption" sx={{  }}>
@@ -787,18 +839,6 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
             }}>
                 {buttonElement}
             </Button>
-            
-            {/* Error Snackbar */}
-            <Snackbar 
-                open={showError} 
-                autoHideDuration={6000} 
-                onClose={handleCloseError}
-                anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
-            >
-                <Alert onClose={handleCloseError} severity={errorMessage?.severity} sx={{ width: '100%' }}>
-                    {errorMessage?.content}
-                </Alert>
-            </Snackbar>
             <Dialog 
                 key="db-table-selection-dialog" 
                 onClose={() => {setTableDialogOpen(false)}} 
@@ -882,11 +922,11 @@ export const DataLoaderForm: React.FC<{
 }> = ({dataLoaderType, paramDefs, authInstructions, onImport, onFinish}) => {
 
     const dispatch = useDispatch();
-
+    const theme = useTheme();
     const params = useSelector((state: DataFormulatorState) => state.dataLoaderConnectParams[dataLoaderType] ?? {});
 
-    const [tableMetadata, setTableMetadata] = useState<Record<string, any>>({});
-    let [displaySamples, setDisplaySamples] = useState<Record<string, boolean>>({});
+    const [tableMetadata, setTableMetadata] = useState<Record<string, any>>({});    let [displaySamples, setDisplaySamples] = useState<Record<string, boolean>>({});
+    let [tableFilter, setTableFilter] = useState<string>("");
 
     const [displayAuthInstructions, setDisplayAuthInstructions] = useState(false);
 
@@ -979,8 +1019,9 @@ export const DataLoaderForm: React.FC<{
                             }}>Import</Button>
                         </TableCell>
                     </TableRow>,
-                    <TableRow >
-                        <TableCell sx={{ paddingBottom: 0, paddingTop: 0, px: 0, maxWidth: 800, overflowX: "auto", borderBottom: displaySamples[tableName] ? '1px solid rgba(0, 0, 0, 0.1)' : 'none' }} colSpan={4}>
+                    <TableRow key={`${tableName}-sample`}>
+                        <TableCell colSpan={4} sx={{ paddingBottom: 0, paddingTop: 0, px: 0, maxWidth: 800, overflowX: "auto", 
+                                         borderBottom: displaySamples[tableName] ? '1px solid rgba(0, 0, 0, 0.1)' : 'none' }}>
                         <Collapse in={displaySamples[tableName]} timeout="auto" unmountOnExit>
                             <Box sx={{ px: 1, py: 0.5}}>
                                 <CustomReactTable rows={metadata.sample_rows.slice(0, 9).map((row: any) => {
@@ -1036,7 +1077,7 @@ export const DataLoaderForm: React.FC<{
                             label={paramDef.name}
                             value={params[paramDef.name]}
                             placeholder={paramDef.description}
-                            onChange={(event) => { 
+                            onChange={(event: any) => { 
                                 dispatch(dfActions.updateDataLoaderConnectParam({
                                     dataLoaderType, paramName: paramDef.name, 
                                     paramValue: event.target.value}));
@@ -1047,6 +1088,31 @@ export const DataLoaderForm: React.FC<{
                         />
                     </Box>
                 ))}
+                <TextField
+                    size="small"
+                    color="secondary"
+                    sx={{width: "270px", 
+                        '& .MuiInputLabel-root': {fontSize: 14, color: theme.palette.secondary.main},
+                        '& .MuiInputBase-root': {fontSize: 14},
+                        '& .MuiInputBase-input::placeholder': {fontSize: 12, fontStyle: "italic"},
+                        '&:hover': {
+                            backgroundColor: alpha(theme.palette.secondary.main, 0.03),
+                        },
+                    }}
+                    key="table-filter"
+                    autoComplete="off"
+                    variant="standard"
+                    label={<Box sx={{display: "flex", flexDirection: "row", alignItems: "center", gap: 0.5}}>
+                        <SearchIcon sx={{ fontSize: 16, color: theme.palette.secondary.main }} />
+                        table filter
+                    </Box>}
+                    placeholder="load only tables containing keywords"
+                    value={tableFilter}
+                    onChange={(event) => setTableFilter(event.target.value)}
+                    slotProps={{
+                        inputLabel: {shrink: true},
+                    }}
+                />
                 {paramDefs.length > 0 && <ButtonGroup sx={{height: 32, mt: 'auto'}} size="small" 
                  variant="contained" color="primary">
                     <Button 
@@ -1061,7 +1127,8 @@ export const DataLoaderForm: React.FC<{
                                 },
                                 body: JSON.stringify({
                                     data_loader_type: dataLoaderType, 
-                                    data_loader_params: params
+                                    data_loader_params: params,
+                                    table_filter: tableFilter.trim() || null
                                 })
                         }).then(response => response.json())
                         .then(data => {
@@ -1081,21 +1148,23 @@ export const DataLoaderForm: React.FC<{
                             setIsConnecting(false);
                         });
                     }}>
-                        {Object.keys(tableMetadata).length > 0 ? "refresh" : "connect"}
+                        {Object.keys(tableMetadata).length > 0 ? "refresh" : "connect"} {tableFilter.trim() ? "with filter" : ""}
                     </Button>
                     <Button 
                         disabled={Object.keys(tableMetadata).length === 0}
-                        sx={{textTransform: "none"}}
-                        onClick={() => {
+                        sx={{textTransform: "none"}}                        onClick={() => {
                             setTableMetadata({});
+                            setTableFilter("");
                         }}>
                         disconnect
                     </Button>
-                </ButtonGroup>
-                }
+                </ButtonGroup>}
+
+            </Box>            
+            <Box  sx={{display: "flex", flexDirection: "row", alignItems: "center", gap: 1, ml: 4, mt: 4}}>
                 
             </Box>
-            <Button 
+            <Button
                 variant="text" 
                 size="small" 
                 sx={{textTransform: "none", height: 32, mt: 1}}
@@ -1250,10 +1319,10 @@ export const DataQueryForm: React.FC<{
     }
 
     let queryResultBox = queryResult?.status === "success" ? [
-         <Box sx={{display: "flex", flexDirection: "row", gap: 1, justifyContent: "space-between"}}>
+         <Box key="query-result-table" sx={{display: "flex", flexDirection: "row", gap: 1, justifyContent: "space-between"}}>
             <CustomReactTable rows={queryResult.sample} columnDefs={Object.keys(queryResult.sample[0]).map((t: any) => ({id: t, label: t}))} rowsPerPageNum={-1} compact={false} />
         </Box>,
-        <Box sx={{display: "flex", flexDirection: "row", gap: 1, alignItems: "center"}}>
+        <Box key="query-result-controls" sx={{display: "flex", flexDirection: "row", gap: 1, alignItems: "center"}}>
             <Button variant="outlined" color="primary" size="small" sx={{textTransform: "none", minWidth: 120, mr: 'auto'}}
                 onClick={() => {
                     setQueryResult(undefined);
@@ -1267,10 +1336,10 @@ export const DataQueryForm: React.FC<{
                 sx={{width: 120, ml: 'auto', '& .MuiInputBase-root': {fontSize: 12, height: 32}, 
                      '& .MuiInputLabel-root': {fontSize: 12, transform: "translate(14px, -6px) scale(0.75)"}}}
                 slotProps={{
-                    inputLabel: {shrink: true}
+                    inputLabel: {shrink: true},
                 }}
                 value={queryResultName}
-                onChange={(event) => setQueryResultName(event.target.value)}
+                onChange={(event: any) => setQueryResultName(event.target.value)}
             />
             <Button variant="contained" color="primary" size="small" disabled={queryResultName === ""} sx={{textTransform: "none", width: 120}}
                 onClick={() => handleImportQueryResult()}>
@@ -1323,7 +1392,6 @@ export const DataQueryForm: React.FC<{
                             fontSize: 12,
                             paddingBottom: '24px',
                             backgroundColor: "rgba(0, 0, 0, 0.03)",
-                            
                             overflowY: "auto"
                         }}
                     />

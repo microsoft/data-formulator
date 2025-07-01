@@ -15,6 +15,7 @@ import {
     Collapse,
     Stack,
     Card,
+    ListItemIcon,
 } from '@mui/material';
 
 import React from 'react';
@@ -34,6 +35,7 @@ import { checkChartAvailability, generateChartSkeleton } from './VisualizationVi
 import TableRowsIcon from '@mui/icons-material/TableRowsOutlined';
 import InsightsIcon from '@mui/icons-material/Insights';
 import AnchorIcon from '@mui/icons-material/Anchor';
+import SouthIcon from '@mui/icons-material/South';
 
 import { AppDispatch } from '../app/store';
 
@@ -151,257 +153,21 @@ export let ChartElementFC: FC<{chart: Chart, tableRows: any[], boxWidth?: number
 export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ chartId }) {
 
     const tables = useSelector((state: DataFormulatorState) => state.tables);
-    const charts = useSelector((state: DataFormulatorState) => state.charts);
-    let activeThreadChartId = useSelector((state: DataFormulatorState) => state.activeThreadChartId);
-    let activeModel = useSelector(dfSelectors.getActiveModel);
-    const config = useSelector((state: DataFormulatorState) => state.config);
+    let allCharts = useSelector(dfSelectors.getAllCharts);
 
-    let [reformulateRunning, setReformulteRunning] = useState<boolean>(false);
+    let chart = allCharts.find(c => c.id == chartId) as Chart;
+    let chartTrigger = chart.source == "trigger" ? tables.find(t => t.derive?.trigger?.chart?.id == chartId)?.derive?.trigger : undefined;
 
-    let activeThreadChart = charts.find(c => c.id == activeThreadChartId);
-    let activeTableThread : string[] = [];
-    if (activeThreadChart != undefined) {
-        let t = tables.find(t => t.id == (activeThreadChart as Chart).tableRef) as DictTable;
-        activeTableThread = getTriggers(t, tables).map(tr => tr.tableId);
-        activeTableThread = [...activeTableThread, (activeThreadChart as Chart).tableRef];
-    }
-
-    let chart = charts.find(chart => chart.id == chartId) as Chart;
-
-    const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
-
+    let t = tables.find(t => t.id == chart.tableRef) as DictTable;
+    let activeTableThread = [...getTriggers(t, tables).map(tr => tr.tableId), chart.tableRef];
+    
     const dispatch = useDispatch<AppDispatch>();
 
     const interleaveArrays: any = (a: any[], b: any[], spaceElement?: any) => a.length ? [a[0], spaceElement || '',...interleaveArrays(b, a.slice(1), spaceElement)] : b;
 
     let previousInstructions : any = ""
 
-    let reFormulate = (trigger: Trigger) => {
-
-        let mode = 'formulate';
-
-        let triggerTable = tables.find(t => t.id == trigger.tableId) as DictTable;
-
-        let baseTables = trigger.sourceTableIds.map(id => tables.find(t => t.id == id)).filter(t => t != undefined);
-
-        let overrideTableId = trigger.resultTableId;
-
-        if (baseTables.length == 0) {
-            return;
-        }
-
-        // these two items decides what fields and prompt will be used
-        let triggerChart = charts.find(c => c.id == trigger.chartRef) as Chart;
-        let prompt = trigger.instruction;
-
-        // derive active fields from encoding map so that we can keep the order of which fields will be visualized
-        let activeFields = Object.values(triggerChart.encodingMap).map(enc => enc.fieldID).filter(fieldId => fieldId && conceptShelfItems.map(f => f.id)
-                .includes(fieldId)).map(fieldId => conceptShelfItems.find(f => f.id == fieldId) as FieldItem);
-        let activeBaseFields = activeFields.map(f => f.source == 'derived' ? (f.transform as ConceptTransformation).parentIDs : [f.id])
-                .flat().map(fieldId => conceptShelfItems.find(f => f.id == fieldId) as FieldItem)
-
-        dispatch(dfActions.clearUnReferencedTables());
-        dispatch(dfActions.setVisPaneSize(640));
-
-        let fieldNamesStr = activeFields.map(f => f.name).reduce(
-            (a: string, b: string, i, array) => a + (i < array.length - 1 ? ', ' : ' and ') + b, "")
-
-        let token = String(Date.now());
-
-        // if nothing is specified, just a formulation from the beginning
-        let messageBody = JSON.stringify({
-            token: token,
-            mode,
-            input_tables: baseTables.map(t => {return { name: t.virtual?.tableId || t.id.replace(/\.[^/.]+$/ , ""), rows: t.rows }}),
-            new_fields: activeBaseFields.map(f => { return {name: f.name} }),
-            extra_prompt: prompt,
-            model: activeModel,
-            max_repair_attempts: config.maxRepairAttempts,
-            language: baseTables.some(t => t.virtual) ? "sql" : "python"
-        }) 
-
-        let engine = getUrls().DERIVE_DATA;
-
-        if (triggerTable.derive?.dialog && !triggerTable.anchored) {
-            // make this compact by directly adding previous dialog as part of the message (as opposed to use refine_data)
-            messageBody = JSON.stringify({
-                token: token,
-                mode,
-                input_tables: baseTables.map(t => {return { name: t.virtual?.tableId || t.id.replace(/\.[^/.]+$/ , ""), rows: t.rows }}),
-                new_fields: activeBaseFields.map(f => { return {name: f.name} }),
-                extra_prompt: prompt,
-                additional_messages: triggerTable.derive?.dialog,
-                model: activeModel,
-                max_repair_attempts: config.maxRepairAttempts,
-                language: baseTables.some(t => t.virtual) ? "sql" : "python"
-            }) 
-        }
-
-        let message = {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: messageBody,
-        };
-
-        dispatch(dfActions.changeChartRunningStatus({chartId, status: true}))
-
-        // timeout the request after 30 seconds
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), config.formulateTimeoutSeconds * 1000);
-
-        setReformulteRunning(true);
-    
-        fetch(engine, {...message, signal: controller.signal })
-            .then((response) => response.json())
-            .then((data) => {
-
-                setReformulteRunning(false);
-                dispatch(dfActions.changeChartRunningStatus({chartId, status: false}))
-                console.log(data);
-                console.log(token);
-                if (data.results.length > 0) {
-                    if (data["token"] == token) {
-                        let candidates = data.results.filter((item: any) => {
-                            return item["status"] == "ok" 
-                        });
-
-                        if (candidates.length == 0) {
-                            let errorMessage = data.results[0].content;
-                            let code = data.results[0].code;
-                            dispatch(dfActions.addMessages({
-                                "timestamp": Date.now(),
-                                "type": "error",
-                                "value": `Data formulation failed, please retry.`,
-                                "code": code,
-                                "detail": errorMessage
-                            }));
-                        } else {
-
-                            let candidateTableId = overrideTableId;
-
-                            // process candidate table
-                            let candidate = candidates[0];
-                            let rows = candidate["content"]["rows"];
-                            let code = candidate["code"];
-                            let dialog = candidate["dialog"];
-                            let candidateTable = createDictTable(
-                                candidateTableId, 
-                                rows,
-                                {   code: code, 
-                                    codeExpl: "",
-                                    source: baseTables.map(t => t.id), 
-                                    dialog: dialog, 
-                                    trigger: trigger 
-                                }
-                            )
-
-                            if (candidate["content"]["virtual"]) {
-                                candidateTable.virtual = {
-                                    tableId: candidate["content"]["virtual"]["table_name"],
-                                    rowCount: candidate["content"]["virtual"]["row_count"]
-                                };
-                            }
-
-                            let names = candidateTable.names;
-                            let missingNames = names.filter(name => !conceptShelfItems.some(field => field.name == name));
-                
-                            let conceptsToAdd = missingNames.map((name) => {
-                                return {
-                                    id: `concept-${name}-${Date.now()}`, name: name, type: "auto" as Type, 
-                                    description: "", source: "custom", tableRef: "custom", temporary: true, domain: [],
-                                } as FieldItem
-                            });
-
-                            // concepts from the current table
-                            let currentConcepts = [...conceptShelfItems.filter(c => names.includes(c.name)), ...conceptsToAdd];
-                            
-                            dispatch(dfActions.addConceptItems(conceptsToAdd));
-                            dispatch(dfActions.overrideDerivedTables(candidateTable));
-                            dispatch(fetchFieldSemanticType(candidateTable));
-                            dispatch(fetchCodeExpl(candidateTable));
-
-                            if (triggerChart.chartType != "Auto" && charts.find(c => c.tableRef == overrideTableId)) { 
-                                let cId = [...charts.filter(c => c.intermediate == undefined), ...charts].find(c => c.tableRef == overrideTableId)?.id;
-                                dispatch(dfActions.setFocusedChart(cId));
-                            } else {
-                                let refinedGoal = candidate['refined_goal']
-
-                                let newChart : Chart; 
-                                if (triggerChart.chartType == "Auto") {
-                                    let chartTypeMap : any = {
-                                        "line" : "Line Chart",
-                                        "bar": "Bar Chart",
-                                        "point": "Scatter Plot",
-                                        "boxplot": "Boxplot"
-                                    }
-                                    let chartType = chartTypeMap[refinedGoal['chart_type']] || 'Scatter Plot';
-                                    newChart = generateFreshChart(candidateTable.id, chartType) as Chart;
-                                } else if (chart.chartType == "Table") {
-                                    newChart = generateFreshChart(candidateTable.id, 'Table')
-                                } else {
-                                    newChart = JSON.parse(JSON.stringify(chart)) as Chart;
-                                    newChart.id = `chart-${Date.now()- Math.floor(Math.random() * 10000)}`;
-                                    newChart.saved = false;
-                                    newChart.tableRef = candidateTable.id;
-                                    newChart.intermediate = undefined;
-                                }
-
-                                newChart = resolveChartFields(newChart, currentConcepts, refinedGoal, candidateTable)
-                                
-                                dispatch(dfActions.addChart(newChart));
-                                dispatch(dfActions.setFocusedChart(newChart.id));                                
-                            }
-
-                            // special treatment to clean up "Auto" charts
-                            if (triggerChart.chartType == 'Auto') {
-                                dispatch(dfActions.deleteChartById(chartId));
-                            }
-
-                            dispatch(dfActions.clearUnReferencedTables());
-                            dispatch(dfActions.clearUnReferencedCustomConcepts());
-                            dispatch(dfActions.setFocusedTable(candidateTable.id));
-
-                            dispatch(dfActions.addMessages({
-                                "timestamp": Date.now(),
-                                "type": "success",
-                                "value": `Data formulation for ${fieldNamesStr} succeeded.`
-                            }));
-                        }
-                    }
-                } else {
-                    // TODO: add warnings to show the user
-                    dispatch(dfActions.addMessages({
-                        "timestamp": Date.now(),
-                        "type": "error",
-                        "value": "No result is returned from the data formulation agent. Please try again."
-                    }));
-                }
-            }).catch((error) => {
-                setReformulteRunning(false);
-                dispatch(dfActions.changeChartRunningStatus({chartId, status: false}));
-           
-                // Check if the error was caused by the AbortController
-                if (error.name === 'AbortError') {
-                    dispatch(dfActions.addMessages({
-                        "timestamp": Date.now(),
-                        "type": "error",
-                        "value": `Data formulation timed out after ${config.formulateTimeoutSeconds} seconds. Consider breaking down the task, using a different model or prompt, or increasing the timeout limit.`,
-                        "detail": "Request exceeded timeout limit"
-                    }));
-                } else {
-                    dispatch(dfActions.addMessages({
-                        "timestamp": Date.now(),
-                        "type": "error",
-                        "value": `Data formulation failed, please try again.`,
-                        "detail": error.message
-                    }));
-                }
-            });
-    }
-
-    let tableList = activeTableThread.map((tableId) => {
+    let buildTableCard = (tableId: string) => {
         let table = tables.find(t => t.id == tableId) as DictTable;
         return <div
                 key={`${tableId}-table-list-item`}
@@ -415,15 +181,22 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
                 </Stack>
             </Button>
         </div>
+    }
+
+    let tableList = activeTableThread.map((tableId) => {
+        return buildTableCard(tableId);
     });
 
-
     let leafTable = tables.find(t => t.id == activeTableThread[activeTableThread.length - 1]) as DictTable;
+
     let triggers =  getTriggers(leafTable, tables)
 
     let instructionCards = triggers.map((trigger, i) => {
         let extractActiveFields = (t: Trigger) => {
-            let encodingMap = (charts.find(c => c.id == t.chartRef) as Chart).encodingMap
+            let encodingMap = allCharts.find(c => c.id == t.chart?.id)?.encodingMap;
+            if (!encodingMap) {
+                return [];
+            }
             return Array.from(Object.values(encodingMap)).map((enc: EncodingItem) => enc.fieldID).filter(x => x != undefined)
         };
 
@@ -440,93 +213,69 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
                             backgroundImage: 'linear-gradient(180deg, darkgray, darkgray 75%, transparent 75%, transparent 100%)',
                             backgroundSize: '1px 6px, 3px 100%'}}></Box>
             </Box>
-            <TriggerCard className="encoding-shelf-trigger-card" trigger={trigger} hideFields={fieldsIdentical} />
-            {i == triggers.length - 1 && chart.intermediate == undefined ? 
-                <Tooltip title={`reformulate: override ${chart.tableRef}`}>
-                    <IconButton color="warning" size="small"
-                        onClick={() => {
-                            reFormulate(triggers[triggers.length - 1]);
-                        }}
-                    >{reformulateRunning ? <CircularProgress size={18} color="warning" /> : <ChangeCircleOutlinedIcon />}</IconButton>
-                </Tooltip> 
-                : ""}
+            <TriggerCard className="encoding-shelf-trigger-card" trigger={trigger} hideFields={fieldsIdentical && trigger.instruction != ""} />
         </Box>;
     })
     
     let spaceElement = "" //<Box sx={{padding: '4px 0px', background: 'aliceblue', margin: 'auto', width: '200px', height: '3px', paddingBottom: 0.5}}></Box>;
 
-    let cutIndex = activeTableThread.findIndex((s) => s == chart.tableRef)
-
-    let tableCardsSublist = tableList.slice(0, cutIndex + 1);
-    let instructionCardsSublist = instructionCards.slice(0, cutIndex);
-
     previousInstructions = 
         <Collapse orientation="vertical" in={true} sx={{width: "100%" }}>
             <Box  sx={{padding: '4px 0px', display: 'flex', flexDirection: "column" }}>
-                {interleaveArrays(tableCardsSublist, instructionCardsSublist, spaceElement)}
-                {/* {w(tableList.slice(0, tableList.length - 1), instructionList.slice(0, instructionList.length - 1))}  */}
-                {/* <Button sx={{minWidth: '24px'}}><RestartAlt /></Button> */}
+                {interleaveArrays(tableList, instructionCards, spaceElement)}
             </Box>
         </Collapse>
 
     let postInstruction : any = "";
-    if (chart.intermediate) {
+    if (chartTrigger) {
+        
+        let resultTable = tables.find(t => t.id == chartTrigger.resultTableId) as DictTable;
+        let leafUserCharts = allCharts.filter(c => c.tableRef == resultTable.id).filter(c => c.source == "user");
 
-        let activeThreadChart = (activeThreadChartId ?  charts.find(c => c.id == activeThreadChartId) :
-                                (charts.find(c => c.intermediate == undefined && c.tableRef == activeTableThread[activeTableThread.length - 1]))) as Chart;
-        let endChartId = activeThreadChart.id;
-
-        let activeEndChartTable = tables.find(t => t.id == activeThreadChart.tableRef) as DictTable;
-        let endChartCard = <Card variant="outlined" className={"hover-card"} 
+        let endChartCards = leafUserCharts.map((c) => {
+            return <Card variant="outlined" className={"hover-card"} 
                             onClick={() => { 
-                                dispatch(dfActions.setFocusedChart(endChartId));
-                                dispatch(dfActions.setFocusedTable(activeThreadChart.tableRef));
+                                dispatch(dfActions.setFocusedChart(c.id));
+                                dispatch(dfActions.setFocusedTable(c.tableRef));
                             }}
                 sx={{padding: '2px 0 2px 0', display: 'flex', alignItems: "left", width: 'fit-content', "& canvas": {'margin': 1}}}>
-                <ChartElementFC chart={activeThreadChart} tableRows={activeEndChartTable.rows} boxWidth={200} boxHeight={160}/>
+                <ChartElementFC chart={c} tableRows={resultTable.rows.slice(0, 100)} boxWidth={200} boxHeight={160}/>
             </Card>
+        })
 
-        let postInstructEndPoint = activeTableThread.findIndex(s => s == activeThreadChart.tableRef);
         postInstruction = <Collapse orientation="vertical" in={true} sx={{width: "100%"}}>
-                <Box  sx={{padding: '4px 0px', display: 'flex', flexDirection: "column" }}>
-                    {interleaveArrays([<Box
-                        key="post-instruction"
-                        sx={{width: '17px', height: '12px'}}>
-                            <Box sx={{padding:0, width: '1px', margin:'auto', height: '100%',
-                                                    backgroundImage: 'linear-gradient(180deg, darkgray, darkgray 75%, transparent 75%, transparent 100%)',
-                                                    backgroundSize: '1px 6px, 3px 100%'}}></Box>
-                        </Box>, ...instructionCards.slice(cutIndex+1, postInstructEndPoint)], 
-                        tableList.slice(cutIndex + 1, postInstructEndPoint + 1), spaceElement)}
-                </Box>
-                <Box>
-                    {endChartCard}
-                </Box>
+            <Box key="post-instruction" sx={{width: '17px', height: '12px'}}>
+                <Box sx={{padding:0, width: '1px', margin:'auto', height: '100%',
+                                        backgroundImage: 'linear-gradient(180deg, darkgray, darkgray 75%, transparent 75%, transparent 100%)',
+                                        backgroundSize: '1px 6px, 3px 100%'}}></Box>
+            </Box>
+            {buildTableCard(resultTable.id)}
+            <Box key="post-instruction" sx={{width: '17px', height: '12px'}}>
+                <Box sx={{padding:0, width: '1px', margin:'auto', height: '100%',
+                                        backgroundImage: 'linear-gradient(180deg, darkgray, darkgray 75%, transparent 75%, transparent 100%)',
+                                        backgroundSize: '1px 6px, 3px 100%'}}></Box>
+            </Box>
+            <Box sx={{display: 'flex', flexDirection: 'column', gap: '4px'}}>
+                {endChartCards}
+            </Box>
             </Collapse>
     }
 
-    // console.log(JSON.stringify(visSpec));
-
     const encodingShelf = (
         <Box className="encoding-shelf-compact" sx={{height: '100%'}}>
-            {/* <Box key='view-title' className="view-title-box">
-                <Typography className="view-title" component="h2"  sx={{marginTop: "6px"}}>
-                    Chart Builder - <Typography component="span" color="blueviolet">{chart.id.substr(-4)}</Typography>
-                </Typography>
-            </Box> */}
              {[   
                 <Box
                     key="encoding-shelf" 
                     sx={{display: 'flex'}}> 
                     {previousInstructions}
                 </Box>,
-                // <Box sx={{padding: '4px 0px', background: 'aliceblue', margin: 'auto', width: '200px', height: '6px', paddingBottom: 0.5}}></Box>
             ]}
             <Box sx={{width: '17px', height: '12px'}}>
                 <Box sx={{padding:0, width: '1px', margin:'auto', height: '100%',
                                         backgroundImage: 'linear-gradient(180deg, darkgray, darkgray 75%, transparent 75%, transparent 100%)',
                                         backgroundSize: '1px 6px, 3px 100%'}}></Box>
             </Box>
-            <EncodingShelfCard chartId={chartId} trigger={chart.intermediate} />
+            <EncodingShelfCard chartId={chartId}/>
             {postInstruction}
             <Box sx={{height: '12px'}}></Box>
         </Box>

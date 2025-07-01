@@ -78,7 +78,7 @@ class S3DataLoader(ExternalDataLoader):
         if self.aws_session_token:  # Add this block
             self.duck_db_conn.execute(f"SET s3_session_token='{self.aws_session_token}'")
 
-    def list_tables(self) -> List[Dict[str, Any]]:
+    def list_tables(self, table_filter: str = None) -> List[Dict[str, Any]]:
         # Use boto3 to list objects in the bucket
         import boto3
         
@@ -101,6 +101,10 @@ class S3DataLoader(ExternalDataLoader):
                 
                 # Skip directories and non-data files
                 if key.endswith('/') or not self._is_supported_file(key):
+                    continue
+                
+                # Apply table filter if provided
+                if table_filter and table_filter.lower() not in key.lower():
                     continue
                 
                 # Create S3 URL

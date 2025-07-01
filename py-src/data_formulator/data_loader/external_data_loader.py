@@ -44,6 +44,18 @@ def sanitize_table_name(name_as: str) -> str:
 class ExternalDataLoader(ABC):
     
     def ingest_df_to_duckdb(self, df: pd.DataFrame, table_name: str):
+        # Log DataFrame info before ingestion
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"Ingesting DataFrame to DuckDB table '{table_name}'")
+        logger.info(f"DataFrame shape: {df.shape}")
+        logger.info(f"DataFrame dtypes: {dict(df.dtypes)}")
+        
+        # Log sample of datetime columns
+        for col in df.columns:
+            if pd.api.types.is_datetime64_any_dtype(df[col]):
+                sample_values = df[col].dropna().head(3)
+                logger.info(f"Datetime column '{col}' sample values: {list(sample_values)}")
 
         base_name = table_name
         counter = 1
@@ -59,8 +71,19 @@ class ExternalDataLoader(ABC):
         # Create table
         random_suffix = ''.join(random.choices(string.ascii_letters + string.digits, k=6))
         self.duck_db_conn.register(f'df_temp_{random_suffix}', df)
+        
+        # Log table schema after registration
+        try:
+            schema_info = self.duck_db_conn.execute(f"DESCRIBE df_temp_{random_suffix}").fetchall()
+            logger.info(f"DuckDB table schema: {schema_info}")
+        except Exception as e:
+            logger.warning(f"Could not get schema info: {e}")
+        
         self.duck_db_conn.execute(f"CREATE TABLE {table_name} AS SELECT * FROM df_temp_{random_suffix}")
         self.duck_db_conn.execute(f"DROP VIEW df_temp_{random_suffix}")  # Drop the temporary view after creating the table
+        
+        logger.info(f"Successfully created DuckDB table '{table_name}'")
+    
     
     @staticmethod
     @abstractmethod
@@ -69,15 +92,14 @@ class ExternalDataLoader(ABC):
 
     @staticmethod
     @abstractmethod
-    def auth_instructions() -> str:
-        pass
+    def auth_instructions() -> str:        pass
 
     @abstractmethod
     def __init__(self, params: Dict[str, Any], duck_db_conn: duckdb.DuckDBPyConnection):
         pass
 
     @abstractmethod
-    def list_tables(self) -> List[Dict[str, Any]]:
+    def list_tables(self, table_filter: str = None) -> List[Dict[str, Any]]:
         # should include: table_name, column_names, column_types, sample_data
         pass
 

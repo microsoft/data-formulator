@@ -228,8 +228,8 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({ tableId,
     let footerActionsItems = 
         <Box sx={{display: 'flex', mr: 1}}>
             <Box key="search-box">
-                <OutlinedInput
-                    className="table-search-input"
+                {/* <OutlinedInput
+                    //slotProps={{input: {className: "table-search-input"}}}
                     sx={{paddingLeft: 1, paddingRight: 0}}
                     size="small"
                     value={searchText}
@@ -260,10 +260,10 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({ tableId,
                                     <SearchIcon fontSize='small'/> 
                         </InputAdornment> : ""
                     }
-                    onChange={(event) => {
+                    onChange={(event: any) => {
                         setSearchText(event.target.value);
                     }}
-                />
+                /> */}
                 {searchText.length > 0 ? <Typography component="span" className="table-footer-number" sx={{ margin: "auto 8px" }}>
                     {`${rowsToDisplay.length} matches`}   
                 </Typography>: ''}
@@ -328,7 +328,7 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({ tableId,
                 height: '100%',
                 position: 'relative',
                 "& .MuiTableCell-root": {
-                    fontSize: 12, maxWidth: "120px", padding: "2px 6px", cursor: "default",
+                    fontSize: 12, maxWidth: "120px", py: '2px', cursor: "default",
                     overflow: "clip", textOverflow: "ellipsis", whiteSpace: "nowrap"
                 }
             }}>
@@ -379,13 +379,6 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({ tableId,
                         return (
                             <TableRow key='header-fixed' style={{ paddingRight: 0, marginRight: '17px', height: '24px'}}>
                                 {columnDefs.map((columnDef, index) => {
-                                    const classNames = [
-                                        'data-view-header-cell',
-                                        //columnDef.source
-                                    ]
-                                    .filter(Boolean)
-                                    .join(' ');
-
                                     let backgroundColor = "white";
                                     let borderBottomColor = theme.palette.primary.main;
                                     if (columnDef.source == "derived") {
@@ -401,11 +394,10 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({ tableId,
 
                                     return (
                                         <TableCell
-                                            className={classNames}
+                                            className='data-view-header-cell'
                                             key={columnDef.id}
                                             align={columnDef.align}
-                                            style={{ padding: 0, minWidth: columnDef.minWidth, width: columnDef.width, }}
-                                            sx={{}}
+                                            sx={{p: 0, minWidth: columnDef.minWidth, width: columnDef.width,}}
                                         >
                                             <Tooltip title={`${columnDef.label}`} >
                                                 <Box className="data-view-header-container" 

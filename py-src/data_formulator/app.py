@@ -29,14 +29,17 @@ from vega_datasets import data as vega_data
 from dotenv import load_dotenv
 import secrets
 import base64
-APP_ROOT = Path(os.path.join(Path(__file__).parent)).absolute()
+APP_ROOT = Path(Path(__file__).parent).absolute()
 
 import os
 
 # blueprints
 from data_formulator.tables_routes import tables_bp
 from data_formulator.agent_routes import agent_bp
+from data_formulator.sse_routes import sse_bp
 
+import queue
+from typing import Dict, Any
 
 app = Flask(__name__, static_url_path='', static_folder=os.path.join(APP_ROOT, "dist"))
 app.secret_key = secrets.token_hex(16)  # Generate a random secret key for sessions
@@ -65,6 +68,7 @@ app.config['CLI_ARGS'] = {
 # register blueprints
 app.register_blueprint(tables_bp)
 app.register_blueprint(agent_bp)
+app.register_blueprint(sse_bp)
 
 print(APP_ROOT)
 
@@ -252,6 +256,8 @@ def parse_args() -> argparse.Namespace:
         help="Whether to execute python in subprocess, it makes the app more secure (reducing the chance for the model to access the local machine), but increases the time of response")
     parser.add_argument("-d", "--disable-display-keys", action='store_true', default=False,
         help="Whether disable displaying keys in the frontend UI, recommended to turn on if you host the app not just for yourself.")
+    parser.add_argument("--dev", action='store_true', default=False,
+        help="Launch the app in development mode (prevents the app from opening the browser automatically)")
     return parser.parse_args()
 
 
@@ -264,11 +270,14 @@ def run_app():
         'disable_display_keys': args.disable_display_keys
     }
 
-    url = "http://localhost:{0}".format(args.port)
-    threading.Timer(2, lambda: webbrowser.open(url, new=2)).start()
+    if not args.dev:
+        url = "http://localhost:{0}".format(args.port)
+        threading.Timer(2, lambda: webbrowser.open(url, new=2)).start()
 
-    app.run(host='0.0.0.0', port=args.port, threaded=True)
-    
+    # Enable debug mode and auto-reload in development mode
+    debug_mode = args.dev
+    app.run(host='0.0.0.0', port=args.port, threaded=True, debug=debug_mode, use_reloader=debug_mode)
+
 if __name__ == '__main__':
     #app.run(debug=True, host='127.0.0.1', port=5000)
     #use 0.0.0.0 for public

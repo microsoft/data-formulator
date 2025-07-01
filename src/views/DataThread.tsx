@@ -17,7 +17,8 @@ import {
     useTheme,
     SxProps,
     Button,
-    TextField
+    TextField,
+    CircularProgress
 } from '@mui/material';
 
 import { VegaLite } from 'react-vega'
@@ -25,9 +26,9 @@ import { VegaLite } from 'react-vega'
 
 import '../scss/VisualizationView.scss';
 import { useDispatch, useSelector } from 'react-redux';
-import { DataFormulatorState, dfActions } from '../app/dfSlice';
+import { DataFormulatorState, dfActions, SSEMessage } from '../app/dfSlice';
 import { assembleVegaChart, getTriggers } from '../app/utils';
-import { Chart, DictTable, EncodingItem, Trigger } from "../components/ComponentType";
+import { Chart, DictTable, EncodingItem, FieldItem, Trigger } from "../components/ComponentType";
 
 import DeleteIcon from '@mui/icons-material/Delete';
 import AddchartIcon from '@mui/icons-material/Addchart';
@@ -52,7 +53,11 @@ import { TriggerCard } from './EncodingShelfCard';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import CloudQueueIcon from '@mui/icons-material/CloudQueue';
+import PrecisionManufacturingIcon from '@mui/icons-material/PrecisionManufacturing';
+
 import { alpha } from '@mui/material/styles';
+
+import { dfSelectors } from '../app/dfSlice';
 
 let buildChartCard = (chartElement: { tableId: string, chartId: string, element: any },
     focusedChartId?: string) => {
@@ -202,9 +207,10 @@ let SingleThreadView: FC<{
     sx
 }) {
         let tables = useSelector((state: DataFormulatorState) => state.tables);
-        let charts = useSelector((state: DataFormulatorState) => state.charts);
+        let charts = useSelector(dfSelectors.getAllCharts);
         let focusedChartId = useSelector((state: DataFormulatorState) => state.focusedChartId);
         let focusedTableId = useSelector((state: DataFormulatorState) => state.focusedTableId);
+        let pendingSSEActions = useSelector((state: DataFormulatorState) => state.pendingSSEActions);
 
         let handleUpdateTableDisplayId = (tableId: string, displayId: string) => {
             dispatch(dfActions.updateTableDisplayId({
@@ -215,7 +221,7 @@ let SingleThreadView: FC<{
 
         const theme = useTheme();
 
-        let focusedChart = charts.find(c => c.id == focusedChartId);
+        let focusedChart = useSelector((state: DataFormulatorState) => charts.find(c => c.id == focusedChartId));
 
         const dispatch = useDispatch();
 
@@ -248,10 +254,13 @@ let SingleThreadView: FC<{
 
             triggerCards = triggers.map((trigger, i) => {
 
-                let selectedClassName = trigger.chartRef == focusedChartId ? 'selected-card' : '';
-
+                let selectedClassName = trigger.chart?.id == focusedChartId ? 'selected-card' : '';
+                
                 let extractActiveFields = (t: Trigger) => {
-                    let encodingMap = (charts.find(c => c.id == t.chartRef) as Chart).encodingMap
+                    let encodingMap = t.chart?.encodingMap;
+                    if (!encodingMap) {
+                        return [];
+                    }
                     return Array.from(Object.values(encodingMap)).map((enc: EncodingItem) => enc.fieldID).filter(x => x != undefined);
                 };
 
@@ -261,11 +270,11 @@ let SingleThreadView: FC<{
 
                 let triggerCard = <div key={'thread-card-trigger-box'}>
                     <Box sx={{ flex: 1 }} >
-                        <TriggerCard className={selectedClassName} trigger={trigger} hideFields={fieldsIdentical} />
+                        <TriggerCard className={selectedClassName} trigger={trigger} hideFields={fieldsIdentical && trigger.instruction != ""} />
                     </Box>
                 </div>;
 
-                return <Box sx={{ display: 'flex', flexDirection: 'column' }} key={`trigger-card-${trigger.chartRef}`}>
+                return <Box sx={{ display: 'flex', flexDirection: 'column' }} key={`trigger-card-${trigger.chart?.id}`}>
                     {triggerCard}
                     <ListItemIcon key={'down-arrow'} sx={{ minWidth: 0 }}>
                         <SouthIcon sx={{ fontSize: "inherit", 
@@ -307,13 +316,10 @@ let SingleThreadView: FC<{
                             dispatch(dfActions.setFocusedTable(tableId));
                             
                             // Find and set the first chart associated with this table
-                            let firstRelatedChart = charts.find((c: Chart) => c.tableRef == tableId && c.intermediate == undefined) 
-                                || charts.find((c: Chart) => c.tableRef == tableId);
+                            let firstRelatedChart = charts.find((c: Chart) => c.tableRef == tableId);
                             
                             if (firstRelatedChart) {
-                                if (firstRelatedChart.intermediate == undefined) {
-                                    dispatch(dfActions.setFocusedChart(firstRelatedChart.id));
-                                }
+                                dispatch(dfActions.setFocusedChart(firstRelatedChart.id));
                             }
                         }}
                     >
@@ -344,10 +350,7 @@ let SingleThreadView: FC<{
 
             let releventChartElements = relevantCharts.map((ce, j) =>
                 <Box key={`relevant-chart-${ce.chartId}`}
-                    sx={{
-                        display: 'flex', padding: 0, paddingBottom: j == relevantCharts.length - 1 ? 1 : 0.5,
-                        ...collapsedProps
-                    }}>
+                    sx={{ display: 'flex', padding: 0, pb: j == relevantCharts.length - 1 ? 1 : 0.5, ...collapsedProps }}>
                     {buildChartCard(ce, focusedChartId)}
                 </Box>)
 
@@ -360,7 +363,7 @@ let SingleThreadView: FC<{
                     color: tableId === focusedTableId ? theme.palette.primary.main : 'rgba(0,0,0,0.5)',
                     fontWeight: tableId === focusedTableId ? 'bold' : 'normal',
                 }} /> : 
-                <TableRowsIcon sx={{ fontSize: 16 }} />)
+                <TableRowsIcon sx={{ fontSize: 16 }} /> )
 
             let regularTableBox = <Box ref={relevantCharts.some(c => c.chartId == focusedChartId) ? scrollRef : null} 
                 sx={{ padding: '0px' }}>
@@ -372,13 +375,11 @@ let SingleThreadView: FC<{
                     onClick={() => {
                         dispatch(dfActions.setFocusedTable(tableId));
                         if (focusedChart?.tableRef != tableId) {
-                            let firstRelatedChart = charts.find((c: Chart) => c.tableRef == tableId && c.intermediate == undefined) || charts.find((c: Chart) => c.tableRef == tableId);
+                            let firstRelatedChart = charts.find((c: Chart) => c.tableRef == tableId);
                             if (firstRelatedChart) {
-                                if (firstRelatedChart.intermediate == undefined) {
-                                    dispatch(dfActions.setFocusedChart(firstRelatedChart.id));
-                                }
+                                dispatch(dfActions.setFocusedChart(firstRelatedChart.id));
                             } else {
-                                dispatch(dfActions.createNewChart({ tableId: tableId }));
+                                //dispatch(dfActions.createNewChart({ tableId: tableId }));
                             }
                         }
                     }}>
@@ -492,8 +493,39 @@ let SingleThreadView: FC<{
                     </Box>
                     <Box sx={{ flex: 1, padding: '8px 0px', minHeight: '8px', ...chartElementProps }}>
                         {releventChartElements}
+                        {(pendingSSEActions.some(a => a.data?.source_table_ids[0] == tableId) )&& 
+                            <Box sx={{ 
+                            py: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', }}>
+                                <Typography sx={{ mr: 1,fontSize: '10px', color: 'rgba(0,0,0,0.5)' }}>
+                                    agent is deriving data...
+                                </Typography>
+                                <PrecisionManufacturingIcon sx={{ 
+                                    fontSize: 16, 
+                                    color: 'rgba(0,0,0,0.5)',
+                                    animation: 'spin 2s linear infinite',
+                                    '@keyframes spin': {
+                                        '0%': {
+                                            transform: 'scale(1)',
+                                        },
+                                        '25%': {
+                                            transform: 'rotate(30deg) scale(1.5)',
+                                        },
+                                        '50%': {
+                                            transform: 'scale(1)',
+                                        },
+                                        '75%': {
+                                            transform: 'rotate(330deg) scale(1.5)',
+                                        },
+                                        '100%': {
+                                            transform: 'rotate(360deg) scale(1)',
+                                        },
+                                    }
+                                }} />
+                            </Box>}
                     </Box>
                 </Box>,
+                
+                ,
                 (i == tableIdList.length - 1) ?
                     <Box sx={{ marginLeft: "6px", marginTop: '-10px' }}>
                         <PanoramaFishEyeIcon sx={{ fontSize: 5 }} />
@@ -531,17 +563,16 @@ let SingleThreadView: FC<{
         </Box>
     }
 
-const ChartElement = memo<{
+const VegaLiteChartElement = memo<{
     chart: Chart,
     assembledSpec: any,
     table: any,
-    chartSynthesisInProgress: string[],
+    status: 'available' | 'pending' | 'unavailable',
     isSaved?: boolean,
     onChartClick: (chartId: string, tableId: string) => void,
     onDelete: (chartId: string) => void
-}>(({ chart, assembledSpec, table, chartSynthesisInProgress, isSaved, onChartClick, onDelete }) => {
+}>(({ chart, assembledSpec, table, status, isSaved, onChartClick, onDelete }) => {
     const id = `data-thread-chart-Element-${chart.id}`;
-
     return (
         <Box
             onClick={() => onChartClick(chart.id, table.id)}
@@ -552,7 +583,7 @@ const ChartElement = memo<{
                 {isSaved && <Typography sx={{ position: "absolute", margin: "5px", zIndex: 2 }}>
                     <StarIcon sx={{ color: "gold" }} fontSize="small" />
                 </Typography>}
-                {chartSynthesisInProgress.includes(chart.id) && <Box sx={{
+                {status == 'pending' && <Box sx={{
                     position: "absolute", height: "100%", width: "100%", zIndex: 20,
                     backgroundColor: "rgba(243, 243, 243, 0.8)", display: "flex", alignItems: "center", cursor: "pointer"
                 }}>
@@ -589,12 +620,126 @@ const ChartElement = memo<{
     );
 });
 
+const MemoizedChartObject = memo<{
+    chart: Chart;
+    table: DictTable;
+    conceptShelfItems: FieldItem[];
+    status: 'available' | 'pending' | 'unavailable';
+    onChartClick: (chartId: string, tableId: string) => void;
+    onDelete: (chartId: string) => void;
+}>(({ chart, table, conceptShelfItems, status, onChartClick, onDelete }) => {
+    
+    let visTableRows = structuredClone(table.rows);
+
+    if (chart.chartType == "Auto") {
+        let element = <Box sx={{ position: "relative", width: "fit-content", display: "flex", flexDirection: "column", margin: 'auto', color: 'darkgray' }}>
+            <InsightsIcon fontSize="medium" />
+        </Box>
+        return element;
+    }
+
+    if (status == 'unavailable' || chart.chartType == "Table") {
+        let chartTemplate = getChartTemplate(chart.chartType);
+
+        let element = <Box key={`unavailable-${chart.id}`} width={"100%"}
+            className={"vega-thumbnail vega-thumbnail-box"}
+            onClick={() => onChartClick(chart.id, table.id)}
+            sx={{
+                display: "flex", backgroundColor: "white", position: 'relative',
+                flexDirection: "column"
+            }}>
+            {status == 'pending' ? <Box sx={{
+                position: "absolute", height: "100%", width: "100%", zIndex: 20,
+                backgroundColor:  "rgba(243, 243, 243, 0.8)" , display: "flex", alignItems: "center", cursor: "pointer"
+            }}>
+                <LinearProgress sx={{ width: "100%", height: "100%", opacity: 0.05 }} />
+            </Box> : ''}
+            <Box sx={{ display: "flex", flexDirection: "column", margin: "auto" }}>
+                <Box sx={{ margin: "auto", transform: chart.chartType == 'Table' ? "rotate(15deg)" : undefined }} >
+                    {generateChartSkeleton(chartTemplate?.icon, 48, 48, chart.chartType == 'Table' ? 1 : 0.5)} 
+                </Box>
+                <Box className='data-thread-chart-card-action-button'
+                    sx={{ zIndex: 10, color: 'blue', position: "absolute", right: 1, background: 'rgba(255, 255, 255, 0.95)' }}>
+                    <Tooltip title="delete chart">
+                        <IconButton size="small" color="warning" onClick={(event) => {
+                            event.stopPropagation();
+                            onDelete(chart.id);
+                        }}><DeleteIcon fontSize="small" /></IconButton>
+                    </Tooltip>
+                </Box>
+            </Box>
+        </Box>;
+        return element;
+    }
+
+    // prepare the chart to be rendered
+    let assembledChart = assembleVegaChart(chart.chartType, chart.encodingMap, conceptShelfItems, visTableRows, 20);
+    assembledChart["background"] = "transparent";
+
+    // Temporary fix, down sample the dataset
+    if (assembledChart["data"]["values"].length > 5000) {
+        let values = assembledChart["data"]["values"];
+        assembledChart = (({ data, ...o }) => o)(assembledChart);
+
+        let getRandom = (seed: number) => {
+            let x = Math.sin(seed++) * 10000;
+            return x - Math.floor(x);
+        }
+        let getRandomSubarray = (arr: any[], size: number) => {
+            let shuffled = arr.slice(0), i = arr.length, temp, index;
+            while (i--) {
+                index = Math.floor((i + 1) * getRandom(233 * i + 888));
+                temp = shuffled[index];
+                shuffled[index] = shuffled[i];
+                shuffled[i] = temp;
+            }
+            return shuffled.slice(0, size);
+        }
+        assembledChart["data"] = { "values": getRandomSubarray(values, 5000) };
+    }
+
+    assembledChart['config'] = {
+        "axis": { "labelLimit": 30 }
+    }
+
+    const element = <VegaLiteChartElement
+        chart={chart}
+        assembledSpec={assembledChart}
+        table={table}
+        status={status}
+        isSaved={chart.saved}
+        onChartClick={() => onChartClick(chart.id, table.id)}
+        onDelete={() => onDelete(chart.id)}
+    />;
+
+    return element;
+}, (prevProps, nextProps) => {
+    // Custom comparison function for memoization
+    // Only re-render if the chart or its dependencies have changed
+
+    // when conceptShelfItems change, we only need to re-render the chart if the conceptShelfItems depended by the chart have changed
+    let nextReferredConcepts = Object.values(nextProps.chart.encodingMap).map(e => e.fieldID).filter(f => f != null);
+
+    return (
+        prevProps.chart.id === nextProps.chart.id &&
+        prevProps.chart.chartType === nextProps.chart.chartType &&
+        prevProps.chart.saved === nextProps.chart.saved &&
+        prevProps.status === nextProps.status &&
+        _.isEqual(prevProps.chart.encodingMap, nextProps.chart.encodingMap) &&
+        // Only check tables/charts that this specific chart depends on
+        _.isEqual(prevProps.table, nextProps.table) &&
+        // Check if conceptShelfItems have changed
+        _.isEqual(
+            prevProps.conceptShelfItems.filter(c => nextReferredConcepts.includes(c.id)), 
+            nextProps.conceptShelfItems.filter(c => nextReferredConcepts.includes(c.id)))
+    );
+});
+
 export const DataThread: FC<{}> = function ({ }) {
 
     let tables = useSelector((state: DataFormulatorState) => state.tables);
 
-    let charts = useSelector((state: DataFormulatorState) => state.charts);
-    let focusedChartId = useSelector((state: DataFormulatorState) => state.focusedChartId);
+    let charts = useSelector(dfSelectors.getAllCharts);
 
     let chartSynthesisInProgress = useSelector((state: DataFormulatorState) => state.chartSynthesisInProgress);
 
@@ -613,108 +758,26 @@ export const DataThread: FC<{}> = function ({ }) {
         executeScroll();
     }, [threadDrawerOpen])
 
-    // excluding base tables or tables from saved charts
-    let derivedFields = conceptShelfItems.filter(f => f.source == "derived");
-
-    // when there is no result and synthesis is running, just show the waiting panel
-
-    // // we don't always render it, so make this a function to enable lazy rendering
-    const handleChartClick = useCallback((chartId: string, tableId: string) => {
-        dispatch(dfActions.setFocusedChart(chartId));
-        dispatch(dfActions.setFocusedTable(tableId));
-    }, [dispatch]);
-
-    let chartElements = useMemo(() => charts.filter(chart => !chart.intermediate).map((chart) => {
-        const table = getDataTable(chart, tables, charts, conceptShelfItems);
-        let visTableRows = structuredClone(table.rows);
-
-        if (chart.chartType == "Auto") {
-            let element = <Box sx={{ position: "relative", width: "fit-content", display: "flex", flexDirection: "column", margin: 'auto', color: 'darkgray' }}>
-                <InsightsIcon fontSize="medium" />
-            </Box>
-            return { chartId: chart.id, tableId: table.id, element }
-        }
-
-        let available = checkChartAvailability(chart, conceptShelfItems, visTableRows);
-
-        if (!available || chart.chartType == "Table") {
-
-            let chartTemplate = getChartTemplate(chart.chartType);
-
-            let element = <Box key={`unavailable-${chart.id}`} width={"100%"}
-                className={"vega-thumbnail vega-thumbnail-box"}
-                onClick={() => handleChartClick(chart.id, table.id)}
-                sx={{
-                    display: "flex", backgroundColor: "rgba(0,0,0,0.01)", position: 'relative',
-                    //border: "0.5px dashed lightgray", 
-                    flexDirection: "column"
-                }}>
-                {chartSynthesisInProgress.includes(chart.id) ? <Box sx={{
-                    position: "absolute", height: "100%", width: "100%", zIndex: 20,
-                    backgroundColor: "rgba(243, 243, 243, 0.8)", display: "flex", alignItems: "center", cursor: "pointer"
-                }}>
-                    <LinearProgress sx={{ width: "100%", height: "100%", opacity: 0.05 }} />
-                </Box> : ''}
-                <Box sx={{ display: "flex", flexDirection: "column", margin: "auto" }}>
-                    <Box sx={{ margin: "auto" }} >
-                        {generateChartSkeleton(chartTemplate?.icon, 48, 48)}
-                    </Box>
-                    <Box className='data-thread-chart-card-action-button'
-                        sx={{ zIndex: 10, color: 'blue', position: "absolute", right: 1, background: 'rgba(255, 255, 255, 0.95)' }}>
-                        <Tooltip title="delete chart">
-                            <IconButton size="small" color="warning" onClick={(event) => {
-                                event.stopPropagation();
-                                dispatch(dfActions.deleteChartById(chart.id));
-                            }}><DeleteIcon fontSize="small" /></IconButton>
-                        </Tooltip>
-                    </Box>
-                </Box>
-            </Box>;
-            return { chartId: chart.id, tableId: table.id, element }
-        }
-
-        // prepare the chart to be rendered
-        let assembledChart = assembleVegaChart(chart.chartType, chart.encodingMap, conceptShelfItems, visTableRows, 20);
-        assembledChart["background"] = "transparent";
-
-        // Temporary fix, down sample the dataset
-        if (assembledChart["data"]["values"].length > 5000) {
-            let values = assembledChart["data"]["values"];
-            assembledChart = (({ data, ...o }) => o)(assembledChart);
-
-            let getRandom = (seed: number) => {
-                let x = Math.sin(seed++) * 10000;
-                return x - Math.floor(x);
-            }
-            let getRandomSubarray = (arr: any[], size: number) => {
-                let shuffled = arr.slice(0), i = arr.length, temp, index;
-                while (i--) {
-                    index = Math.floor((i + 1) * getRandom(233 * i + 888));
-                    temp = shuffled[index];
-                    shuffled[index] = shuffled[i];
-                    shuffled[i] = temp;
-                }
-                return shuffled.slice(0, size);
-            }
-            assembledChart["data"] = { "values": getRandomSubarray(values, 5000) };
-        }
-
-        assembledChart['config'] = {
-            "axis": { "labelLimit": 30 }
-        }
-
-        const element = <ChartElement
-            chart={chart}
-            assembledSpec={assembledChart}
-            table={table}
-            chartSynthesisInProgress={chartSynthesisInProgress}
-            isSaved={chart.saved}
-            onChartClick={handleChartClick}
-            onDelete={(chartId) => dispatch(dfActions.deleteChartById(chartId))}
-        />;
-
-        return { chartId: chart.id, tableId: table.id, element };
-    }), [charts, tables, conceptShelfItems, chartSynthesisInProgress, handleChartClick]);
+    // Now use useMemo to memoize the chartElements array
+    let chartElements = useMemo(() => {
+        return charts.filter(c => c.source == "user").map((chart) => {
+            const table = getDataTable(chart, tables, charts, conceptShelfItems);
+            let status: 'available' | 'pending' | 'unavailable' = chartSynthesisInProgress.includes(chart.id) ? 'pending' : 
+                checkChartAvailability(chart, conceptShelfItems, table.rows) ? 'available' : 'unavailable';
+            let element = <MemoizedChartObject
+                chart={chart}
+                table={table}
+                conceptShelfItems={conceptShelfItems}
+                status={status}
+                onChartClick={() => {
+                    dispatch(dfActions.setFocusedChart(chart.id));
+                    dispatch(dfActions.setFocusedTable(table.id));
+                }}
+                onDelete={() => {dispatch(dfActions.deleteChartById(chart.id))}}
+            />;
+            return { chartId: chart.id, tableId: table.id, element };
+        });
+    }, [charts, tables, conceptShelfItems, chartSynthesisInProgress]);
 
     // anchors are considered leaf tables to simplify the view
     let leafTables = [...tables.filter(t => (t.anchored && t.derive)), ...tables.filter(t => !tables.some(t2 => t2.derive?.trigger.tableId == t.id))];
@@ -775,7 +838,6 @@ export const DataThread: FC<{}> = function ({ }) {
                 }} />
         })}
     </Box>
-
 
     let jumpButtonsDrawerOpen = <ButtonGroup size="small" color="primary">
         {_.chunk(Array.from({length: leafTables.length}, (_, i) => i), 3).map((group, groupIdx) => {
@@ -843,7 +905,6 @@ export const DataThread: FC<{}> = function ({ }) {
     </ButtonGroup>
 
     let jumpButtons = drawerOpen ? jumpButtonsDrawerOpen : jumpButtonDrawerClosed;
-
 
     let carousel = (
         <Box className="data-thread" sx={{ overflow: 'hidden', }}>

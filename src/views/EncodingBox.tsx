@@ -133,10 +133,10 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
     // use tables for infer domains
     const tables = useSelector((state: DataFormulatorState) => state.tables);
 
-    const charts = useSelector((state: DataFormulatorState) => state.charts);
+    let allCharts = useSelector(dfSelectors.getAllCharts);
     let activeModel = useSelector(dfSelectors.getActiveModel);
     
-    let chart = charts.find(c => c.id == chartId) as Chart;
+    let chart = allCharts.find(c => c.id == chartId) as Chart;
     
     let encoding = chart.encodingMap[channel]; 
         
@@ -297,6 +297,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
                     // TODO: add warnings to show the user
                     dispatch(dfActions.addMessages({
                         "timestamp": Date.now(),
+                        "component": "EncodingBox",
                         "type": "error",
                         "value": "unable to perform auto-sort."
                     }));
@@ -308,6 +309,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
                
                 dispatch(dfActions.addMessages({
                     "timestamp": Date.now(),
+                    "component": "EncodingBox",
                     "type": "error",
                     "value": "unable to perform auto-sort due to server issue."
                 }));

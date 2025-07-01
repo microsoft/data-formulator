@@ -14,6 +14,7 @@ import pandas as pd
 import random
 import string
 from pathlib import Path
+import uuid
 
 from data_formulator.db_manager import db_manager
 from data_formulator.data_loader import DATA_LOADERS
@@ -67,7 +68,7 @@ def list_tables():
                     columns = db.execute(f"DESCRIBE {table_name}").fetchall()
                     # Get row count
                     row_count = db.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()[0]
-                    sample_rows = db.execute(f"SELECT * FROM {table_name} LIMIT 1000").fetchdf()
+                    sample_rows = db.execute(f"SELECT * FROM {table_name} LIMIT 1000").fetchdf() if row_count > 0 else pd.DataFrame()
                     
                     # Check if this is a view or a table
                     try:
@@ -77,14 +78,15 @@ def list_tables():
                     except Exception as e:
                         # If the query fails, assume it's a regular table
                         view_source = None
-
+                    
                     result.append({
                         "name": table_name,
                         "columns": [{"name": col[0], "type": col[1]} for col in columns],
                         "row_count": row_count,
-                        "sample_rows": json.loads(sample_rows.to_json(orient='records')),
+                        "sample_rows": json.loads(sample_rows.to_json(orient='records', date_format='iso')),
                         "view_source": view_source
                     })
+                    
                 except Exception as e:
                     logger.error(f"Error getting table metadata for {table_name}: {str(e)}")
                     continue
@@ -100,6 +102,7 @@ def list_tables():
             "status": "error",
             "message": safe_msg
         }), status_code
+        
 
 def assemble_query(aggregate_fields_and_functions, group_fields, columns, table_name):
     """
@@ -127,7 +130,7 @@ def assemble_query(aggregate_fields_and_functions, group_fields, columns, table_
         elif field in columns:
             if function.lower() == 'count':
                 alias = f'_count'
-                select_parts.append(f'COUNT(*) as {alias}')
+                select_parts.append(f'COUNT(*) as "{alias}"')
                 output_column_names.append(alias)
             else:
                 # Sanitize function name and create alias
@@ -137,7 +140,7 @@ def assemble_query(aggregate_fields_and_functions, group_fields, columns, table_
                     aggregate_function = function.upper()
                 
                 alias = f'{field}_{function}'
-                select_parts.append(f'{aggregate_function}("{field}") as {alias}')
+                select_parts.append(f'{aggregate_function}("{field}") as "{alias}"')
                 output_column_names.append(alias)
 
     # Handle group fields
@@ -221,10 +224,10 @@ def sample_table():
             result = db.execute(query).fetchdf()
 
             print(f"result: {result}")
-
+        
         return jsonify({
             "status": "success",
-            "rows": json.loads(result.to_json(orient='records')),
+            "rows": json.loads(result.to_json(orient='records', date_format='iso')),
             "total_row_count": total_row_count
         })
     except Exception as e:
@@ -289,36 +292,36 @@ def get_table_data():
 def create_table():
     """Create a new table from uploaded data"""
     try:
-        if 'file' not in request.files:
-            return jsonify({"status": "error", "message": "No file provided"}), 400
+        if 'file' not in request.files and 'raw_data' not in request.form:
+            return jsonify({"status": "error", "message": "No file or raw data provided"}), 400
         
-        file = request.files['file']
         table_name = request.form.get('table_name')
-
-        print(f"table_name: {table_name}")
-        print(f"file: {file.filename}")
-        print(f"file: {file}")
-        
         if not table_name:
             return jsonify({"status": "error", "message": "No table name provided"}), 400
-            
-        # Sanitize table name:
-        # 1. Convert to lowercase
-        # 2. Replace hyphens with underscores
-        # 3. Replace spaces with underscores
-        # 4. Remove any other special characters
-        sanitized_table_name = table_name.lower()
-        sanitized_table_name = sanitized_table_name.replace('-', '_')
-        sanitized_table_name = sanitized_table_name.replace(' ', '_')
-        sanitized_table_name = ''.join(c for c in sanitized_table_name if c.isalnum() or c == '_')
         
-        # Ensure table name starts with a letter
-        if not sanitized_table_name or not sanitized_table_name[0].isalpha():
-            sanitized_table_name = 'table_' + sanitized_table_name
-            
-        # Verify we have a valid table name after sanitization
-        if not sanitized_table_name:
-            return jsonify({"status": "error", "message": "Invalid table name"}), 400
+        df = None
+        if 'file' in request.files:
+            file = request.files['file']
+            # Read file based on extension
+            if file.filename.endswith('.csv'):
+                df = pd.read_csv(file)
+            elif file.filename.endswith(('.xlsx', '.xls')):
+                df = pd.read_excel(file)
+            elif file.filename.endswith('.json'):
+                df = pd.read_json(file)
+            else:
+                return jsonify({"status": "error", "message": "Unsupported file format"}), 400
+        else:
+            raw_data = request.form.get('raw_data')
+            try:
+                df = pd.DataFrame(json.loads(raw_data))
+            except Exception as e:
+                return jsonify({"status": "error", "message": f"Invalid JSON data: {str(e)}, it must be in the format of a list of dictionaries"}), 400
+
+        if df is None:
+            return jsonify({"status": "error", "message": "No data provided"}), 400
+
+        sanitized_table_name = sanitize_table_name(table_name)
             
         with db_manager.connection(session['session_id']) as db:
             # Check if table exists and generate unique name if needed
@@ -332,16 +335,6 @@ def create_table():
                 # If exists, append counter to base name
                 sanitized_table_name = f"{base_name}_{counter}"
                 counter += 1
-        
-            # Read file based on extension
-            if file.filename.endswith('.csv'):
-                df = pd.read_csv(file)
-            elif file.filename.endswith(('.xlsx', '.xls')):
-                df = pd.read_excel(file)
-            elif file.filename.endswith('.json'):
-                df = pd.read_json(file)
-            else:
-                return jsonify({"status": "error", "message": "Unsupported file format"}), 400
 
             # Create table
             db.register('df_temp', df)
@@ -364,6 +357,8 @@ def create_table():
             "status": "error",
             "message": safe_msg
         }), status_code
+
+
 
 @tables_bp.route('/delete-table', methods=['POST'])
 def drop_table():
@@ -587,7 +582,7 @@ def query_table():
         
             return jsonify({
                 "status": "success",
-                "rows": result.to_dict('records'),
+                "rows": json.loads(result.to_json(orient='records', date_format='iso')),
                 "columns": list(result.columns)
             })
     
@@ -680,6 +675,29 @@ def analyze_table():
             "message": safe_msg
         }), status_code
 
+def sanitize_table_name(table_name: str) -> str:
+    """
+    Sanitize a table name to be a valid DuckDB table name.
+    """
+    # Sanitize table name:
+        # 1. Convert to lowercase
+        # 2. Replace hyphens with underscores
+        # 3. Replace spaces with underscores
+        # 4. Remove any other special characters
+    sanitized_table_name = table_name.lower()
+    sanitized_table_name = sanitized_table_name.replace('-', '_')
+    sanitized_table_name = sanitized_table_name.replace(' ', '_')
+    sanitized_table_name = ''.join(c for c in sanitized_table_name if c.isalnum() or c == '_')
+    
+    # Ensure table name starts with a letter
+    if not sanitized_table_name or not sanitized_table_name[0].isalpha():
+        sanitized_table_name = 'table_' + sanitized_table_name
+        
+    # Verify we have a valid table name after sanitization
+    if not sanitized_table_name:
+        return f'table_{uuid.uuid4()}'
+    return sanitized_table_name
+
 def sanitize_db_error_message(error: Exception) -> Tuple[str, int]:
     """
     Sanitize error messages before sending to client.
@@ -717,7 +735,7 @@ def sanitize_db_error_message(error: Exception) -> Tuple[str, int]:
     logger.error(f"Unexpected error occurred: {error_msg}")
     
     # Return a generic error message for unknown errors
-    return "An unexpected error occurred", 500
+    return f"An unexpected error occurred: {error_msg}", 500
 
 
 @tables_bp.route('/data-loader/list-data-loaders', methods=['GET'])
@@ -751,13 +769,19 @@ def data_loader_list_tables():
         data = request.get_json()
         data_loader_type = data.get('data_loader_type')
         data_loader_params = data.get('data_loader_params')
+        table_filter = data.get('table_filter', None)  # New filter parameter
 
         if data_loader_type not in DATA_LOADERS:
             return jsonify({"status": "error", "message": f"Invalid data loader type. Must be one of: {', '.join(DATA_LOADERS.keys())}"}), 400
 
         with db_manager.connection(session['session_id']) as duck_db_conn:
             data_loader = DATA_LOADERS[data_loader_type](data_loader_params, duck_db_conn)
-            tables = data_loader.list_tables()
+            
+            # Pass table_filter to list_tables if the data loader supports it
+            if hasattr(data_loader, 'list_tables') and 'table_filter' in data_loader.list_tables.__code__.co_varnames:
+                tables = data_loader.list_tables(table_filter=table_filter)
+            else:
+                tables = data_loader.list_tables()
 
             return jsonify({
                 "status": "success",
