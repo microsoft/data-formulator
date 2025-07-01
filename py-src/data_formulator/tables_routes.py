@@ -37,61 +37,6 @@ import tempfile
 
 tables_bp = Blueprint('tables', __name__, url_prefix='/api/tables')
 
-
-def list_tables_util(db_conn):
-    """
-    List all tables in the current session
-    """
-    results = []
-    
-    table_metadata_list = db_conn.execute("""
-        SELECT database_name, schema_name, table_name, schema_name==current_schema() as is_current_schema, 'table' as object_type 
-        FROM duckdb_tables() 
-        WHERE internal=False AND database_name == current_database()
-        UNION ALL 
-        SELECT database_name, schema_name, view_name as table_name, schema_name==current_schema() as is_current_schema, 'view' as object_type 
-        FROM duckdb_views()
-        WHERE view_name NOT LIKE 'duckdb_%' AND view_name NOT LIKE 'sqlite_%' AND view_name NOT LIKE 'pragma_%' AND database_name == current_database()
-    """).fetchall()
-
-    for table_metadata in table_metadata_list:
-        [database_name, schema_name, table_name, is_current_schema, object_type] = table_metadata
-        table_name = table_name if is_current_schema else '.'.join([database_name, schema_name, table_name])
-        if database_name in ['system', 'temp']:
-            continue
-        
-        print(f"table_metadata: {table_metadata}")
-
-        try:
-            # Get column information
-            columns = db_conn.execute(f"DESCRIBE {table_name}").fetchall()
-                
-            # Get row count
-            row_count = db_conn.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()[0]
-            sample_rows = db_conn.execute(f"SELECT * FROM {table_name} LIMIT 1000").fetchdf() if row_count > 0 else pd.DataFrame()
-            
-            # Check if this is a view or a table
-            try:
-                # Get both view existence and source in one query
-                view_info = db_conn.execute(f"SELECT view_name, sql FROM duckdb_views() WHERE view_name = '{table_name}'").fetchone()
-                view_source = view_info[1] if view_info else None
-            except Exception as e:
-                # If the query fails, assume it's a regular table
-                view_source = None
-
-            results.append({
-                "name": table_name,
-                "columns": [{"name": col[0], "type": col[1]} for col in columns],
-                "row_count": row_count,
-                "sample_rows": json.loads(sample_rows.to_json(orient='records')),
-                "view_source": view_source
-            })
-        except Exception as e:
-            logger.error(f"Error getting table metadata for {table_name}: {str(e)}")
-            continue
-
-    return results
-
 @tables_bp.route('/list-tables', methods=['GET'])
 def list_tables():
     """List all tables in the current session"""
@@ -123,7 +68,7 @@ def list_tables():
                     columns = db.execute(f"DESCRIBE {table_name}").fetchall()
                     # Get row count
                     row_count = db.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()[0]
-                    sample_rows = db.execute(f"SELECT * FROM {table_name} LIMIT 1000").fetchdf()
+                    sample_rows = db.execute(f"SELECT * FROM {table_name} LIMIT 1000").fetchdf() if row_count > 0 else pd.DataFrame()
                     
                     # Check if this is a view or a table
                     try:

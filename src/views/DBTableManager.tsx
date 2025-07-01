@@ -32,7 +32,8 @@ import {
   Collapse,
   styled,
   ToggleButtonGroup,
-  ToggleButton
+  ToggleButton,
+  useTheme
 } from '@mui/material';
 
 import DeleteIcon from '@mui/icons-material/Delete';
@@ -43,6 +44,7 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import TableRowsIcon from '@mui/icons-material/TableRows';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
+import SearchIcon from '@mui/icons-material/Search';
 
 import { getUrls } from '../app/utils';
 import { CustomReactTable } from './ReactTable';
@@ -920,7 +922,7 @@ export const DataLoaderForm: React.FC<{
 }> = ({dataLoaderType, paramDefs, authInstructions, onImport, onFinish}) => {
 
     const dispatch = useDispatch();
-
+    const theme = useTheme();
     const params = useSelector((state: DataFormulatorState) => state.dataLoaderConnectParams[dataLoaderType] ?? {});
 
     const [tableMetadata, setTableMetadata] = useState<Record<string, any>>({});    let [displaySamples, setDisplaySamples] = useState<Record<string, boolean>>({});
@@ -1017,7 +1019,7 @@ export const DataLoaderForm: React.FC<{
                             }}>Import</Button>
                         </TableCell>
                     </TableRow>,
-                    <TableRow >
+                    <TableRow key={`${tableName}-sample`}>
                         <TableCell colSpan={4} sx={{ paddingBottom: 0, paddingTop: 0, px: 0, maxWidth: 800, overflowX: "auto", 
                                          borderBottom: displaySamples[tableName] ? '1px solid rgba(0, 0, 0, 0.1)' : 'none' }}>
                         <Collapse in={displaySamples[tableName]} timeout="auto" unmountOnExit>
@@ -1086,6 +1088,31 @@ export const DataLoaderForm: React.FC<{
                         />
                     </Box>
                 ))}
+                <TextField
+                    size="small"
+                    color="secondary"
+                    sx={{width: "270px", 
+                        '& .MuiInputLabel-root': {fontSize: 14, color: theme.palette.secondary.main},
+                        '& .MuiInputBase-root': {fontSize: 14},
+                        '& .MuiInputBase-input::placeholder': {fontSize: 12, fontStyle: "italic"},
+                        '&:hover': {
+                            backgroundColor: alpha(theme.palette.secondary.main, 0.03),
+                        },
+                    }}
+                    key="table-filter"
+                    autoComplete="off"
+                    variant="standard"
+                    label={<Box sx={{display: "flex", flexDirection: "row", alignItems: "center", gap: 0.5}}>
+                        <SearchIcon sx={{ fontSize: 16, color: theme.palette.secondary.main }} />
+                        table filter
+                    </Box>}
+                    placeholder="load only tables containing keywords"
+                    value={tableFilter}
+                    onChange={(event) => setTableFilter(event.target.value)}
+                    slotProps={{
+                        inputLabel: {shrink: true},
+                    }}
+                />
                 {paramDefs.length > 0 && <ButtonGroup sx={{height: 32, mt: 'auto'}} size="small" 
                  variant="contained" color="primary">
                     <Button 
@@ -1121,7 +1148,7 @@ export const DataLoaderForm: React.FC<{
                             setIsConnecting(false);
                         });
                     }}>
-                        {Object.keys(tableMetadata).length > 0 ? "refresh" : "connect"}
+                        {Object.keys(tableMetadata).length > 0 ? "refresh" : "connect"} {tableFilter.trim() ? "with filter" : ""}
                     </Button>
                     <Button 
                         disabled={Object.keys(tableMetadata).length === 0}
@@ -1131,66 +1158,12 @@ export const DataLoaderForm: React.FC<{
                         }}>
                         disconnect
                     </Button>
-                </ButtonGroup>                }
-                
+                </ButtonGroup>}
+
             </Box>            
-            {Object.keys(tableMetadata).length === 0 && (
-                <Box sx={{display: "flex", flexDirection: "row", alignItems: "center", gap: 1, ml: 4, mt: 4}}>
-                    <TextField
-                        size="small"
-                        sx={{
-                            width: "200px",
-                            '& .MuiInputLabel-root': {fontSize: 12},
-                            '& .MuiInputBase-root': {fontSize: 12, height: 32},
-                        }}
-                        variant="outlined"
-                        label="Filter tables"
-                        placeholder="Type to filter tables..."
-                        value={tableFilter}
-                        onChange={(event) => setTableFilter(event.target.value)}
-                        InputProps={{
-                            startAdornment: (
-                                <SearchIcon sx={{ fontSize: 16, color: 'text.secondary', mr: 0.5 }} />
-                            ),
-                        }}
-                    />
-                    <Button 
-                        size="small"
-                        sx={{textTransform: "none", height: 32}}
-                        onClick={() => {
-                            setIsConnecting(true);
-                            fetch(getUrls().DATA_LOADER_LIST_TABLES, {
-                                method: 'POST',
-                                headers: {
-                                    'Content-Type': 'application/json',
-                                },
-                                body: JSON.stringify({
-                                    data_loader_type: dataLoaderType, 
-                                    data_loader_params: params,
-                                    table_filter: tableFilter.trim() || null
-                                })
-                            }).then(response => response.json())
-                            .then(data => {
-                                if (data.status === "success") {
-                                    console.log(data.tables);
-                                    setTableMetadata(Object.fromEntries(data.tables.map((table: any) => {
-                                        return [table.name, table.metadata];
-                                    })));
-                                } else {
-                                    console.error('Failed to fetch data loader tables: {}', data.message);
-                                    onFinish("error", `Failed to fetch data loader tables: ${data.message}`);
-                                }
-                                setIsConnecting(false);
-                            })
-                            .catch(error => {
-                                onFinish("error", `Failed to fetch data loader tables, please check the server is running`);
-                                setIsConnecting(false);
-                            });
-                        }}>
-                        apply filter
-                    </Button>
-                </Box>
-            )}
+            <Box  sx={{display: "flex", flexDirection: "row", alignItems: "center", gap: 1, ml: 4, mt: 4}}>
+                
+            </Box>
             <Button
                 variant="text" 
                 size="small" 

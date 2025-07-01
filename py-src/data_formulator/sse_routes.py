@@ -52,7 +52,7 @@ def sse_connect():
         
         # Send initial connection confirmation
         yield format_sse_message({
-            "type": "notification",
+            "type": "heartbeat",
             "text": "agent connection ready",
             "timestamp": time.time()
         })

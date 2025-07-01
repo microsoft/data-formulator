@@ -13,14 +13,14 @@ export function connectToSSE(dispatch?: any) {
     eventSource.onmessage = function(event) {
         try {
             const data = JSON.parse(event.data);
-            console.log('Received SSE message:', data);
+            //console.log('Received SSE message:', data);
             
             // If dispatch is provided, send message to Redux store
             if (dispatch) {
                 dispatch({ type: 'dataFormulatorSlice/handleSSEMessage', payload: data });
             }
         } catch (error) {
-            console.log('Received raw message:', event.data);
+            console.log('Received raw message with error:', event.data);
         }
     };
 
