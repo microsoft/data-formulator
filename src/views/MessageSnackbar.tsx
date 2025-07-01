@@ -263,7 +263,6 @@ export function MessageSnackbar() {
                         {groupedMessages.map((msg, index) => (
                             <Alert icon={false} key={index} severity={msg.type} sx={{ 
                                 mb: 0.5, py: 0, px: 1,
-                               
                                 '& .MuiSvgIcon-root ': {
                                     height: '16px',
                                     width: '16px'
