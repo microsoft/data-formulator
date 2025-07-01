@@ -96,13 +96,60 @@ def list_tables_util(db_conn):
 def list_tables():
     """List all tables in the current session"""
     try:
+        result = []
         with db_manager.connection(session['session_id']) as db:
-            results = list_tables_util(db)
+            table_metadata_list = db.execute("""
+                SELECT database_name, schema_name, table_name, schema_name==current_schema() as is_current_schema, 'table' as object_type 
+                FROM duckdb_tables() 
+                WHERE internal=False AND database_name == current_database()
+                UNION ALL 
+                SELECT database_name, schema_name, view_name as table_name, schema_name==current_schema() as is_current_schema, 'view' as object_type 
+                FROM duckdb_views()
+                WHERE view_name NOT LIKE 'duckdb_%' AND view_name NOT LIKE 'sqlite_%' AND view_name NOT LIKE 'pragma_%' AND database_name == current_database()
+            """).fetchall()
         
-            return jsonify({
-                "status": "success",
-                "tables": results
-            })
+            
+            for table_metadata in table_metadata_list:
+                [database_name, schema_name, table_name, is_current_schema, object_type] = table_metadata
+                table_name = table_name if is_current_schema else '.'.join([database_name, schema_name, table_name])
+                if database_name in ['system', 'temp']:
+                    continue
+                
+                
+                print(f"table_metadata: {table_metadata}")
+
+                try:
+                    # Get column information
+                    columns = db.execute(f"DESCRIBE {table_name}").fetchall()
+                    # Get row count
+                    row_count = db.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()[0]
+                    sample_rows = db.execute(f"SELECT * FROM {table_name} LIMIT 1000").fetchdf()
+                    
+                    # Check if this is a view or a table
+                    try:
+                        # Get both view existence and source in one query
+                        view_info = db.execute(f"SELECT view_name, sql FROM duckdb_views() WHERE view_name = '{table_name}'").fetchone()
+                        view_source = view_info[1] if view_info else None
+                    except Exception as e:
+                        # If the query fails, assume it's a regular table
+                        view_source = None
+                    
+                    result.append({
+                        "name": table_name,
+                        "columns": [{"name": col[0], "type": col[1]} for col in columns],
+                        "row_count": row_count,
+                        "sample_rows": json.loads(sample_rows.to_json(orient='records', date_format='iso')),
+                        "view_source": view_source
+                    })
+                    
+                except Exception as e:
+                    logger.error(f"Error getting table metadata for {table_name}: {str(e)}")
+                    continue
+        
+        return jsonify({
+            "status": "success",
+            "tables": result
+        })
     except Exception as e:
         logger.error(f"Error listing tables: {str(e)}")
         safe_msg, status_code = sanitize_db_error_message(e)
@@ -110,6 +157,7 @@ def list_tables():
             "status": "error",
             "message": safe_msg
         }), status_code
+        
 
 def assemble_query(aggregate_fields_and_functions, group_fields, columns, table_name):
     """
@@ -231,10 +279,10 @@ def sample_table():
             result = db.execute(query).fetchdf()
 
             print(f"result: {result}")
-
+        
         return jsonify({
             "status": "success",
-            "rows": json.loads(result.to_json(orient='records')),
+            "rows": json.loads(result.to_json(orient='records', date_format='iso')),
             "total_row_count": total_row_count
         })
     except Exception as e:
@@ -589,7 +637,7 @@ def query_table():
         
             return jsonify({
                 "status": "success",
-                "rows": result.to_dict('records'),
+                "rows": json.loads(result.to_json(orient='records', date_format='iso')),
                 "columns": list(result.columns)
             })
     
@@ -742,7 +790,7 @@ def sanitize_db_error_message(error: Exception) -> Tuple[str, int]:
     logger.error(f"Unexpected error occurred: {error_msg}")
     
     # Return a generic error message for unknown errors
-    return "An unexpected error occurred", 500
+    return f"An unexpected error occurred: {error_msg}", 500
 
 
 @tables_bp.route('/data-loader/list-data-loaders', methods=['GET'])
@@ -776,13 +824,19 @@ def data_loader_list_tables():
         data = request.get_json()
         data_loader_type = data.get('data_loader_type')
         data_loader_params = data.get('data_loader_params')
+        table_filter = data.get('table_filter', None)  # New filter parameter
 
         if data_loader_type not in DATA_LOADERS:
             return jsonify({"status": "error", "message": f"Invalid data loader type. Must be one of: {', '.join(DATA_LOADERS.keys())}"}), 400
 
         with db_manager.connection(session['session_id']) as duck_db_conn:
             data_loader = DATA_LOADERS[data_loader_type](data_loader_params, duck_db_conn)
-            tables = data_loader.list_tables()
+            
+            # Pass table_filter to list_tables if the data loader supports it
+            if hasattr(data_loader, 'list_tables') and 'table_filter' in data_loader.list_tables.__code__.co_varnames:
+                tables = data_loader.list_tables(table_filter=table_filter)
+            else:
+                tables = data_loader.list_tables()
 
             return jsonify({
                 "status": "success",
