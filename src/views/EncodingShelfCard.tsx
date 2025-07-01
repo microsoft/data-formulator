@@ -134,7 +134,7 @@ export const TriggerCard: FC<{className?: string, trigger: Trigger, hideFields?:
             <Stack direction="row" sx={{marginLeft: 1, marginRight: 'auto', fontSize: 12}} alignItems="center" gap={"2px"}>
                 <PrecisionManufacturing  sx={{color: 'darkgray', width: '14px', height: '14px'}} />
                 <Box sx={{margin: '4px 8px 4px 2px', flex: 1}}>
-                    {prompt != "" && hideFields ? "" : <Typography fontSize="inherit" sx={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center',
+                    {hideFields ? "" : <Typography fontSize="inherit" sx={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center',
                                     color: 'rgba(0,0,0,0.7)', maxWidth: 'calc(100%)'}}>{encodingComp}</Typography>}
                     <Typography fontSize="inherit" sx={{textAlign: 'center', 
                                     color: 'rgba(0,0,0,0.7)',  maxWidth: 'calc(100%)'}}>{prompt}</Typography> 

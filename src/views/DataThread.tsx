@@ -270,7 +270,7 @@ let SingleThreadView: FC<{
 
                 let triggerCard = <div key={'thread-card-trigger-box'}>
                     <Box sx={{ flex: 1 }} >
-                        <TriggerCard className={selectedClassName} trigger={trigger} hideFields={fieldsIdentical} />
+                        <TriggerCard className={selectedClassName} trigger={trigger} hideFields={fieldsIdentical && trigger.instruction != ""} />
                     </Box>
                 </div>;
 

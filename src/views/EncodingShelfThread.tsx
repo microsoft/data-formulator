@@ -213,7 +213,7 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
                             backgroundImage: 'linear-gradient(180deg, darkgray, darkgray 75%, transparent 75%, transparent 100%)',
                             backgroundSize: '1px 6px, 3px 100%'}}></Box>
             </Box>
-            <TriggerCard className="encoding-shelf-trigger-card" trigger={trigger} hideFields={fieldsIdentical} />
+            <TriggerCard className="encoding-shelf-trigger-card" trigger={trigger} hideFields={fieldsIdentical && trigger.instruction != ""} />
         </Box>;
     })
     
