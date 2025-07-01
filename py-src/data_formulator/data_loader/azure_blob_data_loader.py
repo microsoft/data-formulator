@@ -116,7 +116,7 @@ Supported File Formats:
                 )
             """)
 
-    def list_tables(self) -> List[Dict[str, Any]]:
+    def list_tables(self, table_filter: str = None) -> List[Dict[str, Any]]:
         # Use Azure SDK to list blobs in the container
         from azure.storage.blob import BlobServiceClient
         
@@ -145,8 +145,7 @@ Supported File Formats:
         container_client = blob_service_client.get_container_client(self.container_name)
         
         # List blobs in the container
-        blob_list = container_client.list_blobs()
-        
+        blob_list = container_client.list_blobs()        
         results = []
         
         for blob in blob_list:
@@ -154,6 +153,10 @@ Supported File Formats:
             
             # Skip directories and non-data files
             if blob_name.endswith('/') or not self._is_supported_file(blob_name):
+                continue
+            
+            # Apply table filter if provided
+            if table_filter and table_filter.lower() not in blob_name.lower():
                 continue
             
             # Create Azure blob URL

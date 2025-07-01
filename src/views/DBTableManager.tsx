@@ -923,8 +923,8 @@ export const DataLoaderForm: React.FC<{
 
     const params = useSelector((state: DataFormulatorState) => state.dataLoaderConnectParams[dataLoaderType] ?? {});
 
-    const [tableMetadata, setTableMetadata] = useState<Record<string, any>>({});
-    let [displaySamples, setDisplaySamples] = useState<Record<string, boolean>>({});
+    const [tableMetadata, setTableMetadata] = useState<Record<string, any>>({});    let [displaySamples, setDisplaySamples] = useState<Record<string, boolean>>({});
+    let [tableFilter, setTableFilter] = useState<string>("");
 
     const [displayAuthInstructions, setDisplayAuthInstructions] = useState(false);
 
@@ -1100,7 +1100,8 @@ export const DataLoaderForm: React.FC<{
                                 },
                                 body: JSON.stringify({
                                     data_loader_type: dataLoaderType, 
-                                    data_loader_params: params
+                                    data_loader_params: params,
+                                    table_filter: tableFilter.trim() || null
                                 })
                         }).then(response => response.json())
                         .then(data => {
@@ -1124,17 +1125,73 @@ export const DataLoaderForm: React.FC<{
                     </Button>
                     <Button 
                         disabled={Object.keys(tableMetadata).length === 0}
-                        sx={{textTransform: "none"}}
-                        onClick={() => {
+                        sx={{textTransform: "none"}}                        onClick={() => {
                             setTableMetadata({});
+                            setTableFilter("");
                         }}>
                         disconnect
                     </Button>
-                </ButtonGroup>
-                }
+                </ButtonGroup>                }
                 
-            </Box>
-            <Button 
+            </Box>            
+            {Object.keys(tableMetadata).length === 0 && (
+                <Box sx={{display: "flex", flexDirection: "row", alignItems: "center", gap: 1, ml: 4, mt: 4}}>
+                    <TextField
+                        size="small"
+                        sx={{
+                            width: "200px",
+                            '& .MuiInputLabel-root': {fontSize: 12},
+                            '& .MuiInputBase-root': {fontSize: 12, height: 32},
+                        }}
+                        variant="outlined"
+                        label="Filter tables"
+                        placeholder="Type to filter tables..."
+                        value={tableFilter}
+                        onChange={(event) => setTableFilter(event.target.value)}
+                        InputProps={{
+                            startAdornment: (
+                                <SearchIcon sx={{ fontSize: 16, color: 'text.secondary', mr: 0.5 }} />
+                            ),
+                        }}
+                    />
+                    <Button 
+                        size="small"
+                        sx={{textTransform: "none", height: 32}}
+                        onClick={() => {
+                            setIsConnecting(true);
+                            fetch(getUrls().DATA_LOADER_LIST_TABLES, {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                },
+                                body: JSON.stringify({
+                                    data_loader_type: dataLoaderType, 
+                                    data_loader_params: params,
+                                    table_filter: tableFilter.trim() || null
+                                })
+                            }).then(response => response.json())
+                            .then(data => {
+                                if (data.status === "success") {
+                                    console.log(data.tables);
+                                    setTableMetadata(Object.fromEntries(data.tables.map((table: any) => {
+                                        return [table.name, table.metadata];
+                                    })));
+                                } else {
+                                    console.error('Failed to fetch data loader tables: {}', data.message);
+                                    onFinish("error", `Failed to fetch data loader tables: ${data.message}`);
+                                }
+                                setIsConnecting(false);
+                            })
+                            .catch(error => {
+                                onFinish("error", `Failed to fetch data loader tables, please check the server is running`);
+                                setIsConnecting(false);
+                            });
+                        }}>
+                        apply filter
+                    </Button>
+                </Box>
+            )}
+            <Button
                 variant="text" 
                 size="small" 
                 sx={{textTransform: "none", height: 32, mt: 1}}
