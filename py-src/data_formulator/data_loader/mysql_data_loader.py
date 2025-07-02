@@ -54,17 +54,17 @@ MySQL Connection Instructions:
         self.duck_db_conn.install_extension("mysql")
         self.duck_db_conn.load_extension("mysql")
         
-        attatch_string = ""
+        attach_string = ""
         for key, value in self.params.items():
             if value is not None and value != "":
-                attatch_string += f"{key}={value} "
+                attach_string += f"{key}={value} "
 
         # Detach existing mysqldb connection if it exists
         try:
             self.duck_db_conn.execute("DETACH mysqldb;")
         except:
             pass  # Ignore if mysqldb doesn't exist        # Register MySQL connection
-        self.duck_db_conn.execute(f"ATTACH '{attatch_string}' AS mysqldb (TYPE mysql);")
+        self.duck_db_conn.execute(f"ATTACH '{attach_string}' AS mysqldb (TYPE mysql);")
 
     def list_tables(self, table_filter: str = None):
         tables_df = self.duck_db_conn.execute(f"""
