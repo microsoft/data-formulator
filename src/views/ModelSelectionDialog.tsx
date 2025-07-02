@@ -323,7 +323,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                     })}
                 </Box>
                 <Typography variant="caption" sx={{ fontSize: '0.75rem', color: 'text.secondary' }}>
-                    <strong>Note:</strong> Models with strong code generation capabilities is recommended for generation tasks.
+                    <strong>Note:</strong> Models with strong code generation capabilities are recommended for generation tasks.
                 </Typography>
             </Box>
         );
