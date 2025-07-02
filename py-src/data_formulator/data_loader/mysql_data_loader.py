@@ -14,6 +14,7 @@ class MySQLDataLoader(ExternalDataLoader):
             {"name": "user", "type": "string", "required": True, "default": "root", "description": ""}, 
             {"name": "password", "type": "string", "required": False, "default": "", "description": "leave blank for no password"}, 
             {"name": "host", "type": "string", "required": True, "default": "localhost", "description": ""}, 
+            {"name": "port", "type": "int", "required": False, "default": 3306, "description": "MySQL server port (default 3306)"},
             {"name": "database", "type": "string", "required": True, "default": "mysql", "description": ""}
         ]
         return params_list
@@ -25,11 +26,11 @@ MySQL Connection Instructions:
 
 1. Local MySQL Setup:
    - Ensure MySQL server is running on your machine
-   - Default connection: host='localhost', user='root'
+   - Default connection: host='localhost', user='root', port=3306
    - If you haven't set a root password, leave password field empty
 
 2. Remote MySQL Connection:
-   - Obtain host address, username, and password from your database administrator
+   - Obtain host address, port, username, and password from your database administrator
    - Ensure the MySQL server allows remote connections
    - Check that your IP is whitelisted in MySQL's user permissions
 
@@ -37,11 +38,12 @@ MySQL Connection Instructions:
    - user: Your MySQL username (default: 'root')
    - password: Your MySQL password (leave empty if no password set)
    - host: MySQL server address (default: 'localhost')
+   - port: MySQL server port (default: 3306)
    - database: Target database name to connect to
 
 4. Troubleshooting:
    - Verify MySQL service is running: `brew services list` (macOS) or `sudo systemctl status mysql` (Linux)
-   - Test connection: `mysql -u [username] -p -h [host] [database]`
+   - Test connection: `mysql -u [username] -p -h [host] -P [port] [database]`
 """
 
     def __init__(self, params: Dict[str, Any], duck_db_conn: duckdb.DuckDBPyConnection):
@@ -52,17 +54,17 @@ MySQL Connection Instructions:
         self.duck_db_conn.install_extension("mysql")
         self.duck_db_conn.load_extension("mysql")
         
-        attatch_string = ""
+        attach_string = ""
         for key, value in self.params.items():
-            if value:
-                attatch_string += f"{key}={value} "
+            if value is not None and value != "":
+                attach_string += f"{key}={value} "
 
         # Detach existing mysqldb connection if it exists
         try:
             self.duck_db_conn.execute("DETACH mysqldb;")
         except:
             pass  # Ignore if mysqldb doesn't exist        # Register MySQL connection
-        self.duck_db_conn.execute(f"ATTACH '{attatch_string}' AS mysqldb (TYPE mysql);")
+        self.duck_db_conn.execute(f"ATTACH '{attach_string}' AS mysqldb (TYPE mysql);")
 
     def list_tables(self, table_filter: str = None):
         tables_df = self.duck_db_conn.execute(f"""
