@@ -44,11 +44,19 @@ export interface ModelConfig {
     api_version?: string;
 }
 
+// Define model slot types
+export type ModelSlotType = 'generation' | 'hint';
+
+export interface ModelSlots {
+    generation?: string; // model id assigned to generation tasks
+    hint?: string; // model id assigned to hint tasks
+}
+
 // Define a type for the slice state
 export interface DataFormulatorState {
     sessionId: string | undefined;
     models: ModelConfig[];
-    selectedModelId: string | undefined;
+    modelSlots: ModelSlots;
     testedModels: {id: string, status: 'ok' | 'error' | 'testing' | 'unknown', message: string}[];
 
     tables : DictTable[];
@@ -89,7 +97,7 @@ export interface DataFormulatorState {
 const initialState: DataFormulatorState = {
     sessionId: undefined,
     models: [],
-    selectedModelId: undefined,
+    modelSlots: {},
     testedModels: [],
 
     tables: [],
@@ -263,7 +271,7 @@ export const dataFormulatorSlice = createSlice({
             // avoid resetting inputted models
             // state.oaiModels = state.oaiModels.filter((m: any) => m.endpoint != 'default');
 
-            state.selectedModelId = state.models.length > 0 ? state.models[0].id : undefined;
+            state.modelSlots = {};
             state.testedModels = [];
 
             state.tables = [];
@@ -289,7 +297,7 @@ export const dataFormulatorSlice = createSlice({
             let savedState = action.payload;
 
             state.models = savedState.models;
-            state.selectedModelId = savedState.selectedModelId;
+            state.modelSlots = savedState.modelSlots || {};
             state.testedModels = []; // models should be tested again
 
             //state.table = undefined;
@@ -318,16 +326,25 @@ export const dataFormulatorSlice = createSlice({
             state.config = action.payload;
         },
         selectModel: (state, action: PayloadAction<string | undefined>) => {
-            state.selectedModelId = action.payload;
+            state.modelSlots = { ...state.modelSlots, generation: action.payload };
+        },
+        setModelSlot: (state, action: PayloadAction<{slotType: ModelSlotType, modelId: string | undefined}>) => {
+            state.modelSlots = { ...state.modelSlots, [action.payload.slotType]: action.payload.modelId };
+        },
+        setModelSlots: (state, action: PayloadAction<ModelSlots>) => {
+            state.modelSlots = action.payload;
         },
         addModel: (state, action: PayloadAction<ModelConfig>) => {
             state.models = [...state.models, action.payload];
         },
         removeModel: (state, action: PayloadAction<string>) => {
             state.models = state.models.filter(model => model.id != action.payload);
-            if (state.selectedModelId == action.payload) {
-                state.selectedModelId = undefined;
-            }
+            // Remove the model from all slots if it's assigned
+            Object.keys(state.modelSlots).forEach(slotType => {
+                if (state.modelSlots[slotType as ModelSlotType] === action.payload) {
+                    state.modelSlots[slotType as ModelSlotType] = undefined;
+                }
+            });
         },
         updateModelStatus: (state, action: PayloadAction<{id: string, status: 'ok' | 'error' | 'testing' | 'unknown', message: string}>) => {
             let id = action.payload.id;
@@ -743,8 +760,8 @@ export const dataFormulatorSlice = createSlice({
                 ...state.testedModels.filter(t => !defaultModels.map((m: ModelConfig) => m.id).includes(t.id))
             ]
 
-            if (state.selectedModelId == undefined && defaultModels.length > 0) {
-                state.selectedModelId = defaultModels[0].id;
+            if (state.modelSlots.generation == undefined && defaultModels.length > 0) {
+                state.modelSlots.generation = defaultModels[0].id;
             }
 
             // console.log("load model complete");
@@ -769,7 +786,14 @@ export const dataFormulatorSlice = createSlice({
 
 export const dfSelectors = {
     getActiveModel: (state: DataFormulatorState) : ModelConfig => {
-        return state.models.find(m => m.id == state.selectedModelId) || state.models[0];
+        return state.models.find(m => m.id == state.modelSlots.generation) || state.models[0];
+    },
+    getModelBySlot: (state: DataFormulatorState, slotType: ModelSlotType) : ModelConfig | undefined => {
+        const modelId = state.modelSlots[slotType];
+        return modelId ? state.models.find(m => m.id === modelId) : undefined;
+    },
+    getAllSlotTypes: () : ModelSlotType[] => {
+        return ['generation', 'hint'];
     },
     getActiveBaseTableIds: (state: DataFormulatorState) => {
         let focusedTableId = state.focusedTableId;
