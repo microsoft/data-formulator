@@ -752,7 +752,10 @@ export const dataFormulatorSlice = createSlice({
 
             state.models = [
                 ...defaultModels, 
-                ...state.models.filter(e => !defaultModels.map((m: ModelConfig) => m.endpoint).includes(e.endpoint))
+                ...state.models.filter(e => !defaultModels.some((m: ModelConfig) => 
+                    m.endpoint === e.endpoint && m.model === e.model && 
+                    m.api_base === e.api_base && m.api_version === e.api_version
+                ))
             ];
             
             state.testedModels = [ 

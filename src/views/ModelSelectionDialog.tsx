@@ -242,7 +242,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                         const assignedModel = assignedModelId ? models.find(m => m.id === assignedModelId) : undefined;
                         
                         return (
-                            <Box 
+                            <Paper 
                                 key={slotType} 
                                 sx={{ 
                                     flex: '1 1 250px',
@@ -254,8 +254,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                                 }}
                             >
                                 <Typography variant="body2" sx={{ fontWeight: 'bold', mb: 1 }}>
-                                    {slotType} tasks <Typography variant="caption" sx={{ fontSize: '0.75rem', color: 'text.secondary' }}>
-                                        {slotType == 'generation' ? '' : '(small faster model recommended)'}</Typography> 
+                                    {slotType} tasks
                                 </Typography>
                                 
                                 <FormControl fullWidth size="small">
@@ -270,17 +269,36 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                                         sx={{ fontSize: '0.875rem' }}
                                         renderValue={(selected) => {
                                             if (!selected) {
-                                                return <Typography sx={{ color: 'text.secondary', fontSize: '0.875rem' }}>No model assigned</Typography>;
+                                                return <Box sx={{ display: 'flex', alignItems: 'center', width: '100%' }}>
+                                                <Box sx={{ flex: 1 }}>
+                                                    <Typography variant="body2" sx={{ fontSize: '0.875rem' }}>
+                                                        No model assigned
+                                                    </Typography>
+                                                </Box>
+                                                <ErrorOutlineIcon sx={{ color: 'error.main', ml: 1 }} fontSize="small" />
+                                            </Box>;
                                             }
                                             const model = models.find(m => m.id === selected);
-                                            return model ? `${model.endpoint}/${model.model}` : 'Unknown model';
+                                            return model ? <Box sx={{ display: 'flex', alignItems: 'center', width: '100%' }}>
+                                            <Box sx={{ flex: 1 }}>
+                                                <Typography variant="body2" sx={{ fontSize: '0.875rem' }}>
+                                                    {model.endpoint}/{model.model}
+                                                    {model.api_base && (
+                                                        <Typography variant="caption" sx={{ ml: 0.5, color: 'text.secondary', fontSize: '0.75rem' }}>
+                                                            ({model.api_base})
+                                                        </Typography>
+                                                    )}
+                                                </Typography>
+                                            </Box>
+                                            <CheckCircleOutlineIcon sx={{ color: 'success.main', ml: 1 }} fontSize="small" />
+                                        </Box> : 'Unknown model';
                                         }}
                                     >
                                         <MenuItem value="">
                                             <Typography sx={{ color: 'text.secondary', fontSize: '0.875rem' }}>No assignment</Typography>
                                         </MenuItem>
-                                        {models.filter(m => getStatus(m.id) === 'ok').map((model) => (
-                                            <MenuItem key={model.id} value={model.id}>
+                                        {models.map((model) => (
+                                            <MenuItem key={model.id} value={model.id} disabled={getStatus(model.id) !== 'ok'}>
                                                 <Box sx={{ display: 'flex', alignItems: 'center', width: '100%' }}>
                                                     <Box sx={{ flex: 1 }}>
                                                         <Typography variant="body2" sx={{ fontSize: '0.875rem' }}>
@@ -292,28 +310,21 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                                                             </Typography>
                                                         )}
                                                     </Box>
-                                                    <CheckCircleOutlineIcon sx={{ color: 'success.main', ml: 1 }} fontSize="small" />
+                                                    {getStatus(model.id) === 'ok' ? <CheckCircleOutlineIcon sx={{ color: 'success.main', ml: 1 }} fontSize="small" /> 
+                                                        : getStatus(model.id) === 'error' ? <ErrorOutlineIcon sx={{ color: 'error.main', ml: 1 }} fontSize="small" />
+                                                        : <HelpOutlineIcon sx={{ color: 'warning.main', ml: 1 }} fontSize="small" />}
                                                 </Box>
                                             </MenuItem>
                                         ))}
                                     </Select>
                                 </FormControl>
-                                
-                                {assignedModel && (
-                                    <Typography variant="caption" sx={{ 
-                                        display: 'block', 
-                                        color: 'text.secondary', 
-                                        mt: 0.5,
-                                        fontSize: '0.75rem',
-                                        fontStyle: 'italic'
-                                    }}>
-                                        {assignedModel.endpoint}/{assignedModel.model}{assignedModel.api_base && ` (${assignedModel.api_base})`}
-                                    </Typography>
-                                )}
-                            </Box>
+                            </Paper>
                         );
                     })}
                 </Box>
+                <Typography variant="caption" sx={{ fontSize: '0.75rem', color: 'text.secondary' }}>
+                    <strong>Note:</strong> Models with strong code generation capabilities is recommended for generation tasks.
+                </Typography>
             </Box>
         );
     };
@@ -499,7 +510,11 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                                     updateModelStatus(model, status, data["message"] || "");
                                     // Only assign to slot if test is successful
                                     if (status === 'ok') {
-                                        updateTempSlot('generation', id);
+                                        for (let slotType of dfSelectors.getAllSlotTypes()) {
+                                            if (!tempModelSlots[slotType]) {
+                                                updateTempSlot(slotType, id);
+                                            }
+                                        }
                                     }
                                 }).catch((error) => {
                                     updateModelStatus(model, 'error', error.message)
@@ -567,6 +582,9 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
 
                     const borderStyle = ['error'].includes(status) ? '1px dashed lightgray' : undefined;
                     const noBorderStyle = ['error'].includes(status) ? 'none' : undefined;
+                    
+                    // Check if model is assigned to any slot
+                    const isAssignedToAnySlot = dfSelectors.getAllSlotTypes().some(slotType => isModelAssignedToSlot(model.id, slotType));
 
                     return (
                         <React.Fragment key={`${model.id}`}>
@@ -575,7 +593,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                             sx={{ 
                                 '& .MuiTableCell-root': { fontSize: '0.75rem' },
                                 '&:hover': { backgroundColor: '#f8f9fa' },
-                                backgroundColor: status == 'ok' ? alpha(theme.palette.success.main, 0.07) : '#fff'
+                                backgroundColor: isAssignedToAnySlot ? alpha(theme.palette.success.main, 0.07) : '#fff'
                             }}
                         >
                             <TableCell align="left" sx={{ borderBottom: noBorderStyle }}>
@@ -716,9 +734,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                             <strong>Configuration:</strong> Based on LiteLLM. <a href="https://docs.litellm.ai/docs/" target="_blank" rel="noopener noreferrer">See supported providers</a>.
                             Use 'openai' provider for OpenAI-compatible APIs.
                         </Typography>
-                        <Typography variant="caption" sx={{ fontSize: '0.75rem', color: 'warning.main' }}>
-                            <strong>Note:</strong> Models with limited code generation capabilities may fail frequently.
-                        </Typography>
+
                     </TableCell>
                 </TableRow>
                 </TableBody>
