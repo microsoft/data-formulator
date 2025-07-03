@@ -8,6 +8,7 @@ import { useDispatch, useSelector } from "react-redux"; /* code change */
 import { 
     DataFormulatorState,
     dfActions,
+    dfSelectors,
 } from '../app/dfSlice'
 
 import _ from 'lodash';
@@ -43,6 +44,7 @@ import exampleImageTable from "../assets/example-image-table.png";
 import { ModelSelectionButton } from './ModelSelectionDialog';
 import { DBTableSelectionDialog } from './DBTableManager';
 import { connectToSSE } from './SSEClient';
+import { getUrls } from '../app/utils';
 
 //type AppProps = ConnectedProps<typeof connector>;
 
@@ -51,12 +53,60 @@ export const DataFormulatorFC = ({ }) => {
     const displayPanelSize = useSelector((state: DataFormulatorState) => state.displayPanelSize);
     const visPaneSize = useSelector((state: DataFormulatorState) => state.visPaneSize);
     const tables = useSelector((state: DataFormulatorState) => state.tables);
-    const selectedModelId = useSelector((state: DataFormulatorState) => state.selectedModelId);
+
+    const models = useSelector((state: DataFormulatorState) => state.models);
+    const modelSlots = useSelector((state: DataFormulatorState) => state.modelSlots);
+    const testedModels = useSelector((state: DataFormulatorState) => state.testedModels);
+    
+    const noBrokenModelSlots= useSelector((state: DataFormulatorState) => {
+        const slotTypes = dfSelectors.getAllSlotTypes();
+        return slotTypes.every(
+            slotType => state.modelSlots[slotType] !== undefined && state.testedModels.find(t => t.id == state.modelSlots[slotType])?.status != 'error');
+    });
 
     const dispatch = useDispatch();
 
     useEffect(() => {
         document.title = toolName;
+    }, []);
+
+    useEffect(() => {
+        const findWorkingModel = async () => {
+            let assignedModels = models.filter(m => Object.values(modelSlots).includes(m.id));
+            let unassignedModels = models.filter(m => !Object.values(modelSlots).includes(m.id));
+            
+            // Combine both arrays: assigned models first, then unassigned models
+            let allModelsToTest = [...assignedModels, ...unassignedModels];
+
+            for (let i = 0; i < allModelsToTest.length; i++) {
+                let model = allModelsToTest[i];
+                let isAssignedModel = i < assignedModels.length;
+
+                const message = {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', },
+                    body: JSON.stringify({
+                        model: model,
+                    }),
+                };
+                try {
+                    const response = await fetch(getUrls().TEST_MODEL, {...message });
+                    const data = await response.json();
+                    const status = data["status"] || 'error';
+                    dispatch(dfActions.updateModelStatus({id: model.id, status, message: data["message"] || ""}));
+                    // For unassigned models, break when we find a working one
+                    if (!isAssignedModel && status == 'ok') {
+                        break;
+                    }
+                } catch (error) {
+                    dispatch(dfActions.updateModelStatus({id: model.id, status: 'error', message: (error as Error).message || 'Failed to test model'}));
+                }
+            }
+        };
+
+        if (models.length > 0) {
+            findWorkingModel();
+        }
     }, []);
 
     let conceptEncodingPanel = (
@@ -173,7 +223,7 @@ Totals (7 entries)	5	5	5	15
     return (
         <Box sx={{ display: 'block', width: "100%", height: 'calc(100% - 49px)' }}>
             <DndProvider backend={HTML5Backend}>
-                {selectedModelId == undefined ? modelSelectionDialogBox : (tables.length > 0 ? fixedSplitPane : dataUploadRequestBox)} 
+                {!noBrokenModelSlots ? modelSelectionDialogBox : (tables.length > 0 ? fixedSplitPane : dataUploadRequestBox)} 
             </DndProvider>
         </Box>);
 }

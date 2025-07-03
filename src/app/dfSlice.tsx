@@ -45,7 +45,8 @@ export interface ModelConfig {
 }
 
 // Define model slot types
-export type ModelSlotType = 'generation' | 'hint';
+export const MODEL_SLOT_TYPES = ['generation', 'hint'] as const;
+export type ModelSlotType = typeof MODEL_SLOT_TYPES[number];
 
 export interface ModelSlots {
     generation?: string; // model id assigned to generation tasks
@@ -271,7 +272,7 @@ export const dataFormulatorSlice = createSlice({
             // avoid resetting inputted models
             // state.oaiModels = state.oaiModels.filter((m: any) => m.endpoint != 'default');
 
-            state.modelSlots = {};
+            // state.modelSlots = {};
             state.testedModels = [];
 
             state.tables = [];
@@ -763,8 +764,12 @@ export const dataFormulatorSlice = createSlice({
                 ...state.testedModels.filter(t => !defaultModels.map((m: ModelConfig) => m.id).includes(t.id))
             ]
 
-            if (state.modelSlots.generation == undefined && defaultModels.length > 0) {
-                state.modelSlots.generation = defaultModels[0].id;
+            if (defaultModels.length > 0) {
+                for (const slotType of MODEL_SLOT_TYPES) {
+                    if (state.modelSlots[slotType] == undefined) {
+                        state.modelSlots[slotType] = defaultModels[0].id;
+                    }
+                }
             }
 
             // console.log("load model complete");
@@ -796,7 +801,7 @@ export const dfSelectors = {
         return modelId ? state.models.find(m => m.id === modelId) : undefined;
     },
     getAllSlotTypes: () : ModelSlotType[] => {
-        return ['generation', 'hint'];
+        return [...MODEL_SLOT_TYPES];
     },
     getActiveBaseTableIds: (state: DataFormulatorState) => {
         let focusedTableId = state.focusedTableId;

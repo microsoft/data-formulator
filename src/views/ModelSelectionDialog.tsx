@@ -104,11 +104,17 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
 
     useEffect(() => {
         const findWorkingModel = async () => {
-            for (let i = 0; i < models.length; i++) {
-                if (testedModels.find(t => t.id == models[i].id)) {
-                    continue;
-                }
-                const model = models[i];
+            let assignedModels = models.filter(m => Object.values(modelSlots).includes(m.id));
+            let unassignedModels = models.filter(m => !Object.values(modelSlots).includes(m.id));
+            
+            // Combine both arrays: assigned models first, then unassigned models
+            let allModelsToTest = [...assignedModels, ...unassignedModels];
+
+
+            for (let i = 0; i < allModelsToTest.length; i++) {
+                let model = allModelsToTest[i];
+                let isAssignedModel = i < assignedModels.length;
+
                 const message = {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', },
@@ -121,7 +127,9 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                     const data = await response.json();
                     const status = data["status"] || 'error';
                     updateModelStatus(model, status, data["message"] || "");
-                    if (status === 'ok') {
+                    
+                    // For unassigned models, break when we find a working one
+                    if (!isAssignedModel && status == 'ok') {
                         break;
                     }
                 } catch (error) {
@@ -130,7 +138,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
             }
         };
 
-        if (models.length > 0 && testedModels.filter(t => t.status == 'ok').length == 0) {
+        if (models.length > 0) {
             findWorkingModel();
         }
     }, []);
