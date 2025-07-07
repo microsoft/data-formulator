@@ -54,7 +54,7 @@ class QueryCompletionAgent(object):
 
     def run(self, data_source_metadata, query):
 
-        user_query = f"[DATA SOURCE]\n\n{json.dumps(data_source_metadata, indent=2)}\n\n[USER INPUTS]\n\n{query}\n\n[REASONING]\n"
+        user_query = f"[DATA SOURCE]\n\n{json.dumps(data_source_metadata, indent=2)}\n\n[USER INPUTS]\n\n{query}\n\n"
 
         logger.info(user_query)
 
@@ -63,11 +63,11 @@ class QueryCompletionAgent(object):
         
         ###### the part that calls open_ai
         response = self.client.get_completion(messages = messages)
-        response_content = '[REASONING]\n' + response.choices[0].message.content
+        response_content = response.choices[0].message.content
         
         logger.info(f"=== query completion output ===>\n{response_content}\n")
 
-        reasoning = extract_json_objects(response_content.split("[REASONING]")[1].split("[QUERY]")[0].strip())[0]
+        reasoning = extract_json_objects(response_content.split("[QUERY]")[0].strip())[0]
         output_query = response_content.split("[QUERY]")[1].strip()
         
         # Extract the query by removing the language markers

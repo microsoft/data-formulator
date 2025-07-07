@@ -68,25 +68,6 @@ function a11yProps(index: number) {
   };
 }
 
-function syncTableWithServerDB(table: DictTable) {
-    console.log(`syncing table ${table.id} with server db`)
-    const formData = new FormData();
-    formData.append('table_name', table.id);
-    formData.append('raw_data', JSON.stringify(table.rows));
-
-    fetch(`${getUrls().CREATE_TABLE}`, {
-        method: 'POST',
-        body: formData
-    }).then((response) => {
-        return response.json();
-    }).then((data) => {
-        console.log(data);
-    }).catch((error) => {
-        console.log(error);
-    });
-}
-
-
 export interface TableChallenges {
     name: string;
     challenges: { text: string; difficulty: 'easy' | 'medium' | 'hard'; }[];
@@ -237,7 +218,6 @@ export const TableSelectionDialog: React.FC<{ buttonElement: any }> = function T
                                 .then((text) => {         
                                     let fullTable = createTableFromFromObjectArray(tableChallenges.table.id, JSON.parse(text), true);
                                     if (fullTable) {
-                                        syncTableWithServerDB(fullTable);
                                         dispatch(dfActions.loadTable(fullTable));
                                         dispatch(fetchFieldSemanticType(fullTable));
                                         dispatch(dfActions.addChallenges({
@@ -332,7 +312,6 @@ export const TableUploadDialog: React.FC<TableUploadDialogProps> = ({ buttonElem
                         if (arrayBuffer) {
                             let tables = loadBinaryDataWrapper(uniqueName, arrayBuffer);
                             for (let table of tables) {
-                                syncTableWithServerDB(table);
                                 dispatch(dfActions.loadTable(table));
                                 dispatch(fetchFieldSemanticType(table));
                             }
@@ -426,7 +405,6 @@ export const TableURLDialog: React.FC<TableURLDialogProps> = ({ buttonElement, d
             }
 
             if (table) {
-                syncTableWithServerDB(table);
                 dispatch(dfActions.loadTable(table));
                 dispatch(fetchFieldSemanticType(table));
             }        
@@ -523,7 +501,6 @@ export const TableCopyDialogV2: React.FC<TableCopyDialogProps> = ({ buttonElemen
             table = createTableFromText(uniqueName, tableStr);
         }
         if (table) {
-            syncTableWithServerDB(table);
             dispatch(dfActions.loadTable(table));
             dispatch(fetchFieldSemanticType(table));
         }        
