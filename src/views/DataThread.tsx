@@ -236,11 +236,17 @@ let SingleThreadView: FC<{
         let triggers = getTriggers(leafTable, tables);
 
         let highlightedTableIds: string[] = [leafTable.id];
+        
+        let threadOriginalTableId: string | undefined =  leafTable.derive?.trigger.sourceTableIds[0];
+        let triggerToFirstNewTable: Trigger | undefined = undefined;
 
         if (leafTable.derive) {
 
             // find the first table that belongs to this thread, it should not be an intermediate table that has appeared in previous threads
             let firstNewTableIndex = triggers.findIndex(tg => !usedIntermediateTableIds.includes(tg.tableId));
+            let firstNewTableId = firstNewTableIndex != -1 ? triggers[firstNewTableIndex].tableId : leafTable.id;
+
+            triggerToFirstNewTable = triggers.find(t => t.resultTableId == firstNewTableId);
 
             // when firstNewTableIndex is -1, it means the leaf table should be the first one to display at the top of the thread
             if (firstNewTableIndex == -1) {
@@ -287,11 +293,8 @@ let SingleThreadView: FC<{
             highlightedTableIds = focusedTableId && tableIdList.includes(focusedTableId) ? tableIdList : [];
         }
 
-        let originTableIdOfThread  = tables.find(t => t.id == leafTable.id)?.derive?.trigger.sourceTableIds[0];
-        if (originTableIdOfThread == tableIdList[0]) {
-            originTableIdOfThread = undefined;
-        }
-
+        console.log('triggerToFirstNewTable - ', triggerToFirstNewTable)
+    
         let tableElementList = tableIdList.map((tableId, i) => {
 
             if (tableId == leafTable.id && leafTable.anchored && tableIdList.length > 1) {
@@ -316,7 +319,7 @@ let SingleThreadView: FC<{
                             dispatch(dfActions.setFocusedTable(tableId));
                             
                             // Find and set the first chart associated with this table
-                            let firstRelatedChart = charts.find((c: Chart) => c.tableRef == tableId);
+                            let firstRelatedChart = charts.find((c: Chart) => c.tableRef == tableId && c.source != "trigger");
                             
                             if (firstRelatedChart) {
                                 dispatch(dfActions.setFocusedChart(firstRelatedChart.id));
@@ -375,11 +378,11 @@ let SingleThreadView: FC<{
                     onClick={() => {
                         dispatch(dfActions.setFocusedTable(tableId));
                         if (focusedChart?.tableRef != tableId) {
-                            let firstRelatedChart = charts.find((c: Chart) => c.tableRef == tableId);
+                            let firstRelatedChart = charts.find((c: Chart) => c.tableRef == tableId && c.source != 'trigger');
                             if (firstRelatedChart) {
                                 dispatch(dfActions.setFocusedChart(firstRelatedChart.id));
                             } else {
-                                //dispatch(dfActions.createNewChart({ tableId: tableId }));
+                                //dispatch(dfActions.createNewChart({ tableId: tableId, chartType: '?' }));
                             }
                         }
                     }}>
@@ -463,7 +466,7 @@ let SingleThreadView: FC<{
                                     <AddchartIcon fontSize="small" sx={{ fontSize: 18 }} color='primary'
                                         onClick={(event) => {
                                             event.stopPropagation();
-                                            dispatch(dfActions.createNewChart({ tableId: tableId }));
+                                            dispatch(dfActions.createNewChart({ tableId: tableId, chartType: '?' }));
                                         }} />
                                 </IconButton>
                             </Tooltip>
@@ -535,6 +538,8 @@ let SingleThreadView: FC<{
 
         content = w(tableElementList, triggerCards, "")
 
+        let selectedClassName = focusedChartId == triggerToFirstNewTable?.chart?.id ? 'selected-card' : '';
+
         return <Box sx={{ ...sx, '& .selected-card': { border: `2px solid ${theme.palette.primary.light}` } }} data-thread-index={threadIdx}>
             <Box sx={{ display: 'flex', direction: 'ltr', margin: 1 }}>
                 <Divider flexItem sx={{
@@ -548,16 +553,39 @@ let SingleThreadView: FC<{
                 </Divider>
             </Box>
             <div style={{ padding: '2px 4px 2px 4px', marginTop: 0, marginBottom: '8px', direction: 'ltr' }}>
-                {originTableIdOfThread && <Box sx={{ direction: 'ltr' }}>
-                    <Typography sx={{ ml: 0.25, fontSize: "10px", color: 'text.secondary', textTransform: 'none' }}>
-                        {`${tables.find(t => t.id === originTableIdOfThread)?.displayId || originTableIdOfThread}`}
-                    </Typography>
-                    <Box sx={{
-                        height: '14px',
-                        ml: 1,
-                        borderLeft: highlightedTableIds.includes(originTableIdOfThread) ? `3px solid ${theme.palette.primary.light}` : `1px dashed rgba(0, 0, 0, 0.3)`
-                    }}></Box>
-                </Box>}
+                {threadOriginalTableId && !tableIdList.includes(threadOriginalTableId) && 
+                    <Box sx={{ direction: 'ltr' }}>
+                        <Typography sx={{ ml: 0.25, fontSize: "10px", color: 'text.secondary', textTransform: 'none' }}>
+                            {`${tables.find(t => t.id === threadOriginalTableId)?.displayId || threadOriginalTableId}`}
+                        </Typography>
+                        <Box sx={{
+                            height: '14px',
+                            ml: 1,
+                            borderLeft: highlightedTableIds.includes(threadOriginalTableId) ? `3px solid ${theme.palette.primary.light}` : `1px dashed rgba(0, 0, 0, 0.3)`
+                        }}></Box>
+                    {triggerToFirstNewTable && threadOriginalTableId != triggerToFirstNewTable.tableId && <React.Fragment>
+                            <Typography sx={{ ml: 0.25, fontSize: "10px", color: 'text.secondary', textTransform: 'none' }}>
+                                {`${tables.find(t => t.id === triggerToFirstNewTable.tableId)?.displayId || triggerToFirstNewTable.tableId}`}
+                            </Typography>
+                            <Box sx={{
+                                height: '14px',
+                                ml: 1,
+                                borderLeft: highlightedTableIds.includes((triggerToFirstNewTable as Trigger).resultTableId) ? `3px solid ${theme.palette.primary.light}` : `1px dashed rgba(0, 0, 0, 0.3)`
+                            }}></Box>
+                        </React.Fragment>}
+                    {triggerToFirstNewTable && 
+                        <div key={'thread-card-trigger-box'}>
+                            <Box sx={{ flex: 1 }} >
+                                <TriggerCard className={selectedClassName} trigger={triggerToFirstNewTable} hideFields={false} />
+                            </Box>
+                        </div>}
+                        <Box sx={{
+                            height: '14px',
+                            ml: 1,
+                            borderLeft: highlightedTableIds.includes((triggerToFirstNewTable as Trigger).resultTableId) ? `3px solid ${theme.palette.primary.light}` : `1px dashed rgba(0, 0, 0, 0.3)`
+                        }}></Box>
+                    </Box>
+                }
                 {content}
             </div>
         </Box>
@@ -630,10 +658,29 @@ const MemoizedChartObject = memo<{
 }>(({ chart, table, conceptShelfItems, status, onChartClick, onDelete }) => {
     
     let visTableRows = structuredClone(table.rows);
+    let deleteButton = <Box className='data-thread-chart-card-action-button'
+        sx={{ zIndex: 10, color: 'blue', position: "absolute", right: 1, background: 'rgba(255, 255, 255, 0.95)' }}>
+        <Tooltip title="delete chart">
+            <IconButton size="small" color="warning" onClick={(event) => {
+                event.stopPropagation();
+                onDelete(chart.id);
+            }}><DeleteIcon fontSize="small" /></IconButton>
+        </Tooltip>
+    </Box>
 
-    if (chart.chartType == "Auto") {
-        let element = <Box sx={{ position: "relative", width: "fit-content", display: "flex", flexDirection: "column", margin: 'auto', color: 'darkgray' }}>
-            <InsightsIcon fontSize="medium" />
+    if (['Auto', '?'].includes(chart.chartType)) {
+        let element = <Box 
+            className="vega-thumbnail-box"
+            onClick={() => onChartClick(chart.id, table.id)}
+            sx={{ width: "100%", color: 'text.secondary', height: 48, display: "flex", backgroundColor: "white", position: 'relative', flexDirection: "column" }}>
+            {status == 'pending' ? <Box sx={{
+                position: "absolute", height: "100%", width: "100%", zIndex: 20,
+                backgroundColor:  "rgba(243, 243, 243, 0.8)" , display: "flex", alignItems: "center", cursor: "pointer"
+            }}>
+                <LinearProgress sx={{ width: "100%", height: "100%", opacity: 0.05 }} />
+            </Box> : ''}
+            <InsightsIcon sx={{ margin: 'auto', color: 'darkgray' }}  fontSize="medium" />
+            {deleteButton}
         </Box>
         return element;
     }
@@ -658,15 +705,7 @@ const MemoizedChartObject = memo<{
                 <Box sx={{ margin: "auto", transform: chart.chartType == 'Table' ? "rotate(15deg)" : undefined }} >
                     {generateChartSkeleton(chartTemplate?.icon, 48, 48, chart.chartType == 'Table' ? 1 : 0.5)} 
                 </Box>
-                <Box className='data-thread-chart-card-action-button'
-                    sx={{ zIndex: 10, color: 'blue', position: "absolute", right: 1, background: 'rgba(255, 255, 255, 0.95)' }}>
-                    <Tooltip title="delete chart">
-                        <IconButton size="small" color="warning" onClick={(event) => {
-                            event.stopPropagation();
-                            onDelete(chart.id);
-                        }}><DeleteIcon fontSize="small" /></IconButton>
-                    </Tooltip>
-                </Box>
+                {deleteButton}
             </Box>
         </Box>;
         return element;
@@ -810,6 +849,7 @@ export const DataThread: FC<{}> = function ({ }) {
 
     let view = <Box width={drawerOpen ? threadDrawerWidth + 12 : 224} sx={{ 
         overflowY: 'auto',
+        overflowX: drawerOpen ? 'auto' : 'hidden', // Add horizontal scroll when drawer is open
         position: 'relative',
         display: 'flex', 
         flexDirection: drawerOpen ? 'row-reverse' : 'column',
@@ -907,7 +947,7 @@ export const DataThread: FC<{}> = function ({ }) {
     let jumpButtons = drawerOpen ? jumpButtonsDrawerOpen : jumpButtonDrawerClosed;
 
     let carousel = (
-        <Box className="data-thread" sx={{ overflow: 'hidden', }}>
+        <Box className="data-thread" sx={{ overflowY: 'hidden', overflowX: 'auto' }}>
             <Box sx={{
                 direction: 'ltr', display: 'flex',
                 paddingTop: "10px", paddingLeft: '12px', alignItems: 'center', justifyContent: 'space-between'
@@ -926,8 +966,11 @@ export const DataThread: FC<{}> = function ({ }) {
                 </Tooltip>
             </Box>
             <Box sx={{
-                transition: 'width 200ms cubic-bezier(0.4, 0, 0.2, 1) 0ms', overflowY: 'auto',
-                direction: 'rtl', display: 'block', flex: 1
+                transition: 'width 200ms cubic-bezier(0.4, 0, 0.2, 1) 0ms', 
+                overflowX: drawerOpen ? 'auto' : 'hidden', // Only allow scroll when drawer is closed
+                direction: 'rtl', 
+                display: 'block', 
+                flex: 1
             }}
                  className="thread-view-mode">
                 {view}

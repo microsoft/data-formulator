@@ -323,7 +323,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
 
         let actionTables = actionTableIds.map(id => tables.find(t => t.id == id) as DictTable);
 
-        let instruction = (chart.chartType == 'Auto' && prompt == "") ? "let's get started" : prompt;
+        let instruction = (['Auto'].includes(chart.chartType) && prompt == "") ? "let's get started" : prompt;
 
         if (currentTable.derive == undefined && instruction == "" && 
                 (activeFields.length > 0 && activeCustomFields.length == 0) && 
@@ -646,7 +646,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
             }}
             value={prompt}
             label=""
-            placeholder={chart.chartType == "Auto" ? "what do you want to visualize?" : "formulate data"}
+            placeholder={['Auto'].includes(chart.chartType) ? "what do you want to visualize?" : "formulate data"}
             fullWidth
             multiline
             variant="standard"
@@ -728,7 +728,6 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                         })}
                     </Select>
                 </FormControl>
-                
             </Box>
             <Box key='encoding-groups' sx={{ flex: '1 1 auto' }} style={{ height: "calc(100% - 100px)" }} className="encoding-list">
                 {encodingBoxGroups}
@@ -738,10 +737,10 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
 
     const encodingShelfCard = (
         <Card variant='outlined'  key='channel-components' 
-            sx={{ padding: 1, display: 'flex', flexDirection: 'row', alignItems: "center", backgroundColor: trigger ? "rgba(255, 160, 122, 0.07)" : "" }}>
+            sx={{ padding: 1, maxWidth: "400px", display: 'flex', flexDirection: 'row', alignItems: "center", backgroundColor: trigger ? "rgba(255, 160, 122, 0.07)" : "" }}>
             {channelComponent}
         </Card>
     )
 
-    return encodingShelfCard;
+    return encodingShelfCard ;
 }

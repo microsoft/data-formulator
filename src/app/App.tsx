@@ -519,7 +519,7 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
                 //user is not logged in, do not show logout button
                 //console.error(err)
             });
-    }, [])
+    }, []);
 
     useEffect(() => {
         document.title = toolName;

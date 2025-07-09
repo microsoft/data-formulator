@@ -16,12 +16,11 @@ import { handleSSEMessage } from './SSEActions';
 
 enableMapSet();
 
-export const generateFreshChart = (tableRef: string, chartType?: string, source: "user" | "trigger" = "user") : Chart => {
-    let realChartType = chartType || "?"
+export const generateFreshChart = (tableRef: string, chartType: string, source: "user" | "trigger" = "user") : Chart => {
     return { 
         id: `chart-${Date.now()- Math.floor(Math.random() * 10000)}`, 
-        chartType: realChartType, 
-        encodingMap: Object.assign({}, ...getChartChannels(realChartType).map((channel) => ({ [channel]: { channel: channel, bin: false } }))),
+        chartType: chartType, 
+        encodingMap: Object.assign({}, ...getChartChannels(chartType).map((channel) => ({ [channel]: { channel: channel, bin: false } }))),
         tableRef: tableRef,
         saved: false,
         source: source,
@@ -48,10 +47,8 @@ export interface ModelConfig {
 export const MODEL_SLOT_TYPES = ['generation', 'hint'] as const;
 export type ModelSlotType = typeof MODEL_SLOT_TYPES[number];
 
-export interface ModelSlots {
-    generation?: string; // model id assigned to generation tasks
-    hint?: string; // model id assigned to hint tasks
-}
+// Derive ModelSlots interface from the constant
+export type ModelSlots = Partial<Record<ModelSlotType, string>>;
 
 // Define a type for the slice state
 export interface DataFormulatorState {
@@ -359,11 +356,13 @@ export const dataFormulatorSlice = createSlice({
         },
         loadTable: (state, action: PayloadAction<DictTable>) => {
             let table = action.payload;
+            let freshChart = generateFreshChart(table.id, '?') as Chart;
             state.tables = [...state.tables, table];
+            state.charts = [...state.charts, freshChart];
             state.conceptShelfItems = [...state.conceptShelfItems, ...getDataFieldItems(table)];
 
             state.focusedTableId = table.id;
-            state.focusedChartId = undefined;
+            state.focusedChartId = freshChart.id;
         },
         deleteTable: (state, action: PayloadAction<string>) => {
             let tableId = action.payload;
@@ -453,7 +452,7 @@ export const dataFormulatorSlice = createSlice({
                 });
             }
         },
-        createNewChart: (state, action: PayloadAction<{chartType?: string, tableId?: string}>) => {
+        createNewChart: (state, action: PayloadAction<{chartType: string, tableId: string}>) => {
             let chartType = action.payload.chartType;
             let tableId = action.payload.tableId || state.tables[0].id;
             let freshChart = generateFreshChart(tableId, chartType, "user") as Chart;
