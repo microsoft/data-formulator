@@ -363,9 +363,6 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
 
     let table = getDataTable(focusedChart, tables, charts, conceptShelfItems);
 
-    console.log('charts')
-    console.log(charts)
-
     let visFieldIds = Object.keys(focusedChart.encodingMap).filter(key => focusedChart.encodingMap[key as keyof EncodingMap].fieldID != undefined).map(key => focusedChart.encodingMap[key as keyof EncodingMap].fieldID);
     let visFields = conceptShelfItems.filter(f => visFieldIds.includes(f.id));
     let dataFieldsAllAvailable = visFields.every(f => table.names.includes(f.name));
@@ -881,8 +878,8 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
                 {focusedTableId ? <ChartRecBox sx={{margin: 'auto'}} tableId={focusedTableId as string} placeHolderChartId={focusedChartId as string} /> : ""}
                 <Divider sx={{my: 3}} textAlign='left'>
                     <Typography sx={{fontSize: 12, color: "darkgray"}}>
-                        or, select a chart
-                    </Typography> 
+                        or, select a chart type
+                    </Typography>
                 </Divider>
                 {chartSelectionBox}
             </Box>
@@ -890,7 +887,6 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
     }
 
     let chartEditor = <ChartEditorFC key={focusedChartId} />
-
 
     let finalView = <Box></Box>;
 

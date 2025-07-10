@@ -12,7 +12,10 @@ logger = logging.getLogger(__name__)
 
 
 SYSTEM_PROMPT = '''You are a data scientist to help user infer data types based off the table provided by the user.
-Given a dataset provided by the user, identify their type and semantic type, and provide a very short summary of the dataset.
+Given a dataset provided by the user, 
+1. identify their type and semantic type
+2. provide a very short summary of the dataset.
+3. provide a list of (5-10) explorative questions that can help users get started with data visualizations.
 
 Types to consider include: string, number, date
 Semantic types to consider include: Location, Year, Month, Day, Date, Time, DateTime, Range, Duration, Name, Percentage, String, Number
@@ -34,7 +37,8 @@ output should be in the format of:
         "field2": {"type": ..., "semantic_type": ..., "sort_order": null}, 
         ...
     },
-    "data summary": ... // a short summary of the data
+    "data summary": ... // a short summary of the data,
+    "explorative_questions": [...], // a list of explorative questions that can help users get started with data visualizations
 }
 ```
 '''
@@ -76,7 +80,13 @@ table_0 (income_json) sample:
         "total": {"type": "number", "semantic_type": "Number", "sort_order": null},
         "group": {"type": "string", "semantic_type": "Range", "sort_order": ["<10000", "10000 to 14999", "15000 to 24999", "25000 to 34999", "35000 to 49999", "50000 to 74999", "75000 to 99999", "100000 to 149999", "150000 to 199999", "200000+"]}
     },
-    "data summary": "The dataset contains information about income distribution across different states in the USA. It includes fields for state names, regions, state IDs, percentage of total income, total income, and income groups."
+    "data summary": "The dataset contains information about income distribution across different states in the USA. It includes fields for state names, regions, state IDs, percentage of total income, total income, and income groups.",
+    "explorative_questions": [
+        "What is the average income across different states?",
+        "What is the distribution of income across different regions?",
+        "What is the relationship between income and state ID?",
+        "What is the relationship between income and region?"
+    ]
 }
 ```
 
@@ -121,7 +131,13 @@ table_0 (weather_seattle_atlanta) sample:
             "sort_order": null  
         }  
     },  
-    "data_summary": "This dataset contains weather information for the cities of Seattle and Atlanta. The fields include the date, city name, and temperature readings. The 'Date' field represents dates in a string format, the 'City' field represents city names, and the 'Temperature' field represents temperature values in integer format."  
+    "data_summary": "This dataset contains weather information for the cities of Seattle and Atlanta. The fields include the date, city name, and temperature readings. The 'Date' field represents dates in a string format, the 'City' field represents city names, and the 'Temperature' field represents temperature values in integer format.",
+    "explorative_questions": [
+        "What is the average temperature across different cities?",
+        "What is the distribution of temperature across different dates?",
+        "What is the relationship between temperature and city?",
+        "What is the relationship between temperature and date?"
+    ]
 }```'''
 
 class DataLoadAgent(object):

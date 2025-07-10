@@ -169,9 +169,13 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
 
     const [prompt, setPrompt] = useState<string>("");
     const [isFormulating, setIsFormulating] = useState<boolean>(false);
+    // Remove the randomQuestion state since we'll generate it on demand
 
     // Use the provided tableId and find additional available tables for multi-table operations
     const currentTable = tables.find(t => t.id === tableId);
+
+    // Remove the useEffect that sets randomQuestion
+
     const availableTables = tables.filter(t => t.derive === undefined || t.anchored);
     const [additionalTableIds, setAdditionalTableIds] = useState<string[]>([]);
     
@@ -182,6 +186,25 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
         // Filter out the main tableId since it's always included
         const additionalIds = newTableIds.filter(id => id !== tableId);
         setAdditionalTableIds(additionalIds);
+    };
+
+    // Function to get a random question from the list
+    const getQuestion = (random: boolean = false): string => {
+        if (currentTable?.explorativeQuestions && currentTable.explorativeQuestions.length > 0) {
+            const index = random ? Math.floor(Math.random() * currentTable.explorativeQuestions.length) : 0;
+            return currentTable.explorativeQuestions[index];
+        }
+        return "Show something interesting about the data";
+    };
+
+    // Handle tab key press for auto-completion
+    const handleKeyDown = (event: React.KeyboardEvent) => {
+        if (event.key === 'Tab' && !event.shiftKey) {
+            event.preventDefault();
+            if (prompt.trim() === "") {
+                setPrompt(getQuestion(false));
+            }
+        }
     };
 
     const deriveDataFromNL = (instruction: string) => {
@@ -452,6 +475,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                         "& .MuiInput-input": { fontSize: '14px' }
                     }}
                     onChange={(event) => setPrompt(event.target.value)}
+                    onKeyDown={handleKeyDown}
                     slotProps={{
                         inputLabel: { shrink: true },
                         input: {
@@ -471,7 +495,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                     }}
                     value={prompt}
                     label="Describe what you want to visualize"
-                    placeholder="e.g., Show sales trends by region over time"
+                    placeholder={`e.g., ${getQuestion(false)}`}
                     fullWidth
                     multiline
                     variant="standard"
@@ -488,7 +512,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                             size="medium"
                             disabled={isFormulating || !currentTable}
                             color="primary" 
-                            onClick={() => deriveDataFromNL('show me a creative visualization about the data')}
+                            onClick={() => deriveDataFromNL(getQuestion(true))}
                         >
                             <InsightsIcon sx={{fontSize: 24}} />
                         </IconButton>

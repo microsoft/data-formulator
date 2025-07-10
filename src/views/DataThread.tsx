@@ -293,8 +293,6 @@ let SingleThreadView: FC<{
             highlightedTableIds = focusedTableId && tableIdList.includes(focusedTableId) ? tableIdList : [];
         }
 
-        console.log('triggerToFirstNewTable - ', triggerToFirstNewTable)
-    
         let tableElementList = tableIdList.map((tableId, i) => {
 
             if (tableId == leafTable.id && leafTable.anchored && tableIdList.length > 1) {

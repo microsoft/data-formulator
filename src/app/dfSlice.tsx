@@ -745,6 +745,11 @@ export const dataFormulatorSlice = createSlice({
                         return field;
                     }
                 })
+
+                if (data["result"][0]["explorative_questions"] && data["result"][0]["explorative_questions"].length > 0) {
+                    let table = state.tables.find(t => t.id == tableId) as DictTable;
+                    table.explorativeQuestions = data["result"][0]["explorative_questions"] as string[];
+                }
             }
         })
         .addCase(fetchAvailableModels.fulfilled, (state, action) => {
