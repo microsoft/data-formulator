@@ -875,7 +875,7 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
             </Box>
         return (
             <Box sx={{  margin: "auto" }}>
-                {focusedTableId ? <ChartRecBox sx={{margin: 'auto'}} tableId={focusedTableId as string} placeHolderChartId={focusedChartId as string} /> : ""}
+                {focusedTableId ? <ChartRecBox sx={{margin: 'auto'}} tableId={focusedTableId as string} placeHolderChartId={focusedChartId as string} /> : null}
                 <Divider sx={{my: 3}} textAlign='left'>
                     <Typography sx={{fontSize: 12, color: "darkgray"}}>
                         or, select a chart type
