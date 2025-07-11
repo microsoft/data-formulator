@@ -250,8 +250,9 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
             language: actionTables.some(t => t.virtual) ? "sql" : "python"
         });
 
-        console.log("debug: messageBody")
-        console.log(messageBody)
+        if (process.env.NODE_ENV !== 'production') {
+            console.debug("debug: messageBody", messageBody);
+        }
 
         const engine = getUrls().DERIVE_DATA;
         const controller = new AbortController();
