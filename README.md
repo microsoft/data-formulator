@@ -25,8 +25,11 @@ Any questions? Ask on the Discord channel! [![Discord](https://img.shields.io/ba
 
 
 ## News 🔥🔥🔥
+- [07-10-2025] Data Formulator 0.2.2: Start with an analysis goal
+  - Some key frontend performance updates. 
+  - You can start your exploration with a goal, or, tab and see if the agent can recommend some good exploration ideas for you. [Demo](https://github.com/microsoft/data-formulator/pull/176)
 
-- [05-13-2025] Data Formulator 0.2.3 / 0.2.4: External Data Loader 
+- [05-13-2025] Data Formulator 0.2.1.3/4: External Data Loader 
   - We introduced external data loader class to make import data easier. [Readme](https://github.com/microsoft/data-formulator/tree/main/py-src/data_formulator/data_loader) and [Demo](https://github.com/microsoft/data-formulator/pull/155)
     - Current data loaders: MySQL, Azure Data Explorer (Kusto), Azure Blob and Amazon S3 (json, parquet, csv).
     - [07-01-2025] Updated with: Postgresql, mssql.

@@ -16,12 +16,11 @@ import { handleSSEMessage } from './SSEActions';
 
 enableMapSet();
 
-export const generateFreshChart = (tableRef: string, chartType?: string, source: "user" | "trigger" = "user") : Chart => {
-    let realChartType = chartType || "?"
+export const generateFreshChart = (tableRef: string, chartType: string, source: "user" | "trigger" = "user") : Chart => {
     return { 
         id: `chart-${Date.now()- Math.floor(Math.random() * 10000)}`, 
-        chartType: realChartType, 
-        encodingMap: Object.assign({}, ...getChartChannels(realChartType).map((channel) => ({ [channel]: { channel: channel, bin: false } }))),
+        chartType: chartType, 
+        encodingMap: Object.assign({}, ...getChartChannels(chartType).map((channel) => ({ [channel]: { channel: channel, bin: false } }))),
         tableRef: tableRef,
         saved: false,
         source: source,
@@ -45,12 +44,11 @@ export interface ModelConfig {
 }
 
 // Define model slot types
-export type ModelSlotType = 'generation' | 'hint';
+export const MODEL_SLOT_TYPES = ['generation', 'hint'] as const;
+export type ModelSlotType = typeof MODEL_SLOT_TYPES[number];
 
-export interface ModelSlots {
-    generation?: string; // model id assigned to generation tasks
-    hint?: string; // model id assigned to hint tasks
-}
+// Derive ModelSlots interface from the constant
+export type ModelSlots = Partial<Record<ModelSlotType, string>>;
 
 // Define a type for the slice state
 export interface DataFormulatorState {
@@ -271,7 +269,7 @@ export const dataFormulatorSlice = createSlice({
             // avoid resetting inputted models
             // state.oaiModels = state.oaiModels.filter((m: any) => m.endpoint != 'default');
 
-            state.modelSlots = {};
+            // state.modelSlots = {};
             state.testedModels = [];
 
             state.tables = [];
@@ -358,11 +356,13 @@ export const dataFormulatorSlice = createSlice({
         },
         loadTable: (state, action: PayloadAction<DictTable>) => {
             let table = action.payload;
+            let freshChart = generateFreshChart(table.id, '?') as Chart;
             state.tables = [...state.tables, table];
+            state.charts = [...state.charts, freshChart];
             state.conceptShelfItems = [...state.conceptShelfItems, ...getDataFieldItems(table)];
 
             state.focusedTableId = table.id;
-            state.focusedChartId = undefined;
+            state.focusedChartId = freshChart.id;
         },
         deleteTable: (state, action: PayloadAction<string>) => {
             let tableId = action.payload;
@@ -452,7 +452,7 @@ export const dataFormulatorSlice = createSlice({
                 });
             }
         },
-        createNewChart: (state, action: PayloadAction<{chartType?: string, tableId?: string}>) => {
+        createNewChart: (state, action: PayloadAction<{chartType: string, tableId: string}>) => {
             let chartType = action.payload.chartType;
             let tableId = action.payload.tableId || state.tables[0].id;
             let freshChart = generateFreshChart(tableId, chartType, "user") as Chart;
@@ -745,6 +745,11 @@ export const dataFormulatorSlice = createSlice({
                         return field;
                     }
                 })
+
+                if (data["result"][0]["explorative_questions"] && data["result"][0]["explorative_questions"].length > 0) {
+                    let table = state.tables.find(t => t.id == tableId) as DictTable;
+                    table.explorativeQuestions = data["result"][0]["explorative_questions"] as string[];
+                }
             }
         })
         .addCase(fetchAvailableModels.fulfilled, (state, action) => {
@@ -763,8 +768,12 @@ export const dataFormulatorSlice = createSlice({
                 ...state.testedModels.filter(t => !defaultModels.map((m: ModelConfig) => m.id).includes(t.id))
             ]
 
-            if (state.modelSlots.generation == undefined && defaultModels.length > 0) {
-                state.modelSlots.generation = defaultModels[0].id;
+            if (defaultModels.length > 0) {
+                for (const slotType of MODEL_SLOT_TYPES) {
+                    if (state.modelSlots[slotType] == undefined) {
+                        state.modelSlots[slotType] = defaultModels[0].id;
+                    }
+                }
             }
 
             // console.log("load model complete");
@@ -796,7 +805,7 @@ export const dfSelectors = {
         return modelId ? state.models.find(m => m.id === modelId) : undefined;
     },
     getAllSlotTypes: () : ModelSlotType[] => {
-        return ['generation', 'hint'];
+        return [...MODEL_SLOT_TYPES];
     },
     getActiveBaseTableIds: (state: DataFormulatorState) => {
         let focusedTableId = state.focusedTableId;

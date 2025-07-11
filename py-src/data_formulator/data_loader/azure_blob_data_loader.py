@@ -369,4 +369,4 @@ Supported File Formats:
         # Execute the query and get results as a DataFrame
         df = self.duck_db_conn.execute(query).df()
         # Use the base class's method to ingest the DataFrame
-        self.ingest_df_to_duckdb(df, name_as)
+        self.ingest_df_to_duckdb(df, sanitize_table_name(name_as))

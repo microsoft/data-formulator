@@ -445,7 +445,7 @@ For other platforms, see: https://github.com/mkleehammer/pyodbc/wiki
         try:
             df = self._execute_query(query)
             # Use the base class's method to ingest the DataFrame
-            self.ingest_df_to_duckdb(df, name_as)
+            self.ingest_df_to_duckdb(df, sanitize_table_name(name_as))
             log.info(f"Successfully ingested {len(df)} rows from custom query to {name_as}")
             return df
         except Exception as e:

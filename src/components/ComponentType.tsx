@@ -76,6 +76,7 @@ export interface DictTable {
         rowCount: number; // total number of rows in the full table
     };
     anchored: boolean; // whether this table is anchored as a persistent table used to derive other tables
+    explorativeQuestions: string[]; // a list of (3-5) explorative questions that can help users get started with data visualizations
 }
 
 export function createDictTable(
@@ -83,7 +84,8 @@ export function createDictTable(
     derive: {code: string, codeExpl: string, source: string[], dialog: any[], 
              trigger: Trigger} | undefined = undefined,
     virtual: {tableId: string, rowCount: number} | undefined = undefined,
-    anchored: boolean = false) : DictTable {
+    anchored: boolean = false,
+    explorativeQuestions: string[] = []) : DictTable {
     
     let names = Object.keys(rows[0])
 
@@ -95,7 +97,8 @@ export function createDictTable(
         types: names.map(name => inferTypeFromValueArray(rows.map(r => r[name]))),
         derive,
         virtual,
-        anchored
+        anchored,
+        explorativeQuestions
     }
 }
 

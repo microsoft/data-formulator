@@ -102,39 +102,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
             });
     }, []);
 
-    useEffect(() => {
-        const findWorkingModel = async () => {
-            for (let i = 0; i < models.length; i++) {
-                if (testedModels.find(t => t.id == models[i].id)) {
-                    continue;
-                }
-                const model = models[i];
-                const message = {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', },
-                    body: JSON.stringify({
-                        model: model,
-                    }),
-                };
-                try {
-                    const response = await fetch(getUrls().TEST_MODEL, {...message });
-                    const data = await response.json();
-                    const status = data["status"] || 'error';
-                    updateModelStatus(model, status, data["message"] || "");
-                    if (status === 'ok') {
-                        break;
-                    }
-                } catch (error) {
-                    updateModelStatus(model, 'error', (error as Error).message || 'Failed to test model');
-                }
-            }
-        };
-
-        if (models.length > 0 && testedModels.filter(t => t.status == 'ok').length == 0) {
-            findWorkingModel();
-        }
-    }, []);
-
+    
     let updateModelStatus = (model: ModelConfig, status: 'ok' | 'error' | 'testing' | 'unknown', message: string) => {
         dispatch(dfActions.updateModelStatus({id: model.id, status, message}));
     }
@@ -250,7 +218,8 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                                     p: 1.5, 
                                     border: '1px solid #e0e0e0', 
                                     borderRadius: 1,
-                                    borderColor: assignedModel ? theme.palette.success.main : theme.palette.error.main
+                                    borderColor: assignedModel && getStatus(assignedModelId) == 'ok' ? theme.palette.success.main : 
+                                        getStatus(assignedModelId) == 'error' ? theme.palette.error.main : theme.palette.warning.main
                                 }}
                             >
                                 <Typography variant="body2" sx={{ fontWeight: 'bold', mb: 1 }}>
@@ -290,7 +259,9 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                                                     )}
                                                 </Typography>
                                             </Box>
-                                            <CheckCircleOutlineIcon sx={{ color: 'success.main', ml: 1 }} fontSize="small" />
+                                            {getStatus(assignedModelId) === 'ok' ? <CheckCircleOutlineIcon sx={{ color: 'success.main', ml: 1 }} fontSize="small" /> 
+                                                : getStatus(assignedModelId) === 'error' ? <ErrorOutlineIcon sx={{ color: 'error.main', ml: 1 }} fontSize="small" />
+                                                : <HelpOutlineIcon sx={{ color: 'warning.main', ml: 1 }} fontSize="small" />}
                                         </Box> : 'Unknown model';
                                         }}
                                     >
@@ -741,12 +712,14 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
             </Table>
     </TableContainer>
 
+    let notAllSlotsReady = Object.values(tempModelSlots).filter(id => id).length !== dfSelectors.getAllSlotTypes().length 
+    || Object.values(tempModelSlots).filter(id => id).some(id => getStatus(id) !== 'ok');
+
     return <>
         <Tooltip title="Configure model assignments for different task types">
             <Button sx={{fontSize: "inherit", textTransform: "none"}} variant="text" color="primary" onClick={()=>{setModelDialogOpen(true)}}>
-                {Object.entries(modelSlots).some(([slotType, modelId]) => modelId) 
-                    ? `Models: ${Object.entries(modelSlots).filter(([slotType, modelId]) => modelId).map(([slotType, modelId]) => models.find(m => m.id == modelId)?.model).join('/')}`
-                    : 'Configure Model Slots'}
+                {notAllSlotsReady ? 'Configure Model Slots' : 
+                    `Models: ${Object.entries(modelSlots).filter(([slotType, modelId]) => modelId).map(([slotType, modelId]) => models.find(m => m.id == modelId)?.model).join('/')}`}
             </Button>
         </Tooltip>
         <Dialog 
@@ -772,7 +745,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                             {showKeys ? 'hide' : 'show'} keys
                     </Button>
                 )}
-                <Button disabled={Object.values(tempModelSlots).filter(id => id).length !== dfSelectors.getAllSlotTypes().length || Object.values(tempModelSlots).filter(id => id).some(id => getStatus(id) !== 'ok')} 
+                <Button disabled={notAllSlotsReady} 
                     variant={Object.values(tempModelSlots).filter(id => id).length == 0 ? 'text' : 'contained'}
                     onClick={()=>{
                         dispatch(dfActions.setModelSlots(tempModelSlots));

@@ -33,12 +33,10 @@ import {
 
 import ButtonGroup from '@mui/material/ButtonGroup';
 
-
 import { styled } from "@mui/material/styles";
 
 import embed from 'vega-embed';
 import AnimateOnChange from 'react-animate-on-change'
-
 
 import '../scss/VisualizationView.scss';
 import { useDispatch, useSelector } from 'react-redux';
@@ -71,7 +69,6 @@ import 'prismjs/components/prism-markdown' // Language
 import 'prismjs/components/prism-typescript' // Language
 import 'prismjs/themes/prism.css'; //Example style, you can use another
 
-import { DerivedDataDialog } from './DerivedDataDialog';
 import { ChatDialog } from './ChatDialog';
 import { EncodingShelfThread } from './EncodingShelfThread';
 import { CustomReactTable } from './ReactTable';
@@ -82,6 +79,8 @@ import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import { MuiMarkdown, getOverrides } from 'mui-markdown';
 
 import { dfSelectors } from '../app/dfSlice';
+import { EncodingShelfCard } from './EncodingShelfCard';
+import { ChartRecBox } from './ChartRecBox';
 
 export interface VisPanelProps { }
 
@@ -363,7 +362,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
     const [localScaleFactor, setLocalScaleFactor] = useState<number>(1);
 
     let table = getDataTable(focusedChart, tables, charts, conceptShelfItems);
-    
+
     let visFieldIds = Object.keys(focusedChart.encodingMap).filter(key => focusedChart.encodingMap[key as keyof EncodingMap].fieldID != undefined).map(key => focusedChart.encodingMap[key as keyof EncodingMap].fieldID);
     let visFields = conceptShelfItems.filter(f => visFieldIds.includes(f.id));
     let dataFieldsAllAvailable = visFields.every(f => table.names.includes(f.name));
@@ -850,37 +849,44 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
 
     // when there is no result and synthesis is running, just show the waiting panel
     if (!focusedChart || focusedChart?.chartType == "?") {
-        let chartSelectionBox = <Box sx={{display: "flex", flexDirection: "row", width: '720px', flexWrap: "wrap"}}> 
-            {Object.entries(CHART_TEMPLATES).map(([cls, templates])=>templates).flat().filter(t => t.template["name"] != "?").map(t =>
-                <Button 
-                    key={`${t.chart}-btn`}
-                    sx={{margin: '2px', padding:'2px', display:'flex', flexDirection: 'column', 
-                            textTransform: 'none', justifyContent: 'flex-start'}}
-                    onClick={() => { 
-                        let focusedChart = allCharts.find(c => c.id == focusedChartId);
-                        if (focusedChart?.chartType == "?") { 
-                            dispatch(dfActions.updateChartType({chartType: t.chart, chartId: focusedChartId as string}));
-                        } else {
-                            dispatch(dfActions.createNewChart({chartType: t.chart, tableId: focusedTableId}));
-                        }
-                    }}
-                >
-                    <Icon sx={{width: 48, height: 48}} >
-                        {typeof t?.icon == 'string' ? <img height="48px" width="48px" src={t?.icon} alt="" role="presentation" /> : t.icon}
-                    </Icon>
-                    <Typography sx={{marginLeft: "2px", whiteSpace: "initial", fontSize: '10px', width: '64px'}} >{t?.chart}</Typography>
-                </Button>
+        let chartSelectionBox = <Box sx={{display: "flex", flexDirection: "row", width: '666px', flexWrap: "wrap"}}> 
+            {Object.entries(CHART_TEMPLATES).map(([cls, templates])=>templates).flat().filter(t => t.chart != "Auto").map(t =>
+                {
+                    return <Button 
+                        key={`${t.chart}-btn`}
+                        sx={{margin: '2px', padding:'2px', display:'flex', flexDirection: 'column', 
+                                textTransform: 'none', justifyContent: 'flex-start'}}
+                        onClick={() => { 
+                            let focusedChart = allCharts.find(c => c.id == focusedChartId);
+                            if (focusedChart?.chartType == "?") { 
+                                dispatch(dfActions.updateChartType({chartType: t.chart, chartId: focusedChartId as string}));
+                            } else {
+                                dispatch(dfActions.createNewChart({chartType: t.chart, tableId: focusedTableId as string}));
+                            }
+                        }}
+                    >
+                        <Icon sx={{width: 48, height: 48}} >
+                            {typeof t?.icon == 'string' ? <img height="48px" width="48px" src={t?.icon} alt="" role="presentation" /> : t.icon}
+                        </Icon>
+                        <Typography sx={{marginLeft: "2px", whiteSpace: "initial", fontSize: '10px', width: '64px'}} >{t?.chart}</Typography>
+                    </Button>
+                }
             )}
             </Box>
         return (
             <Box sx={{  margin: "auto" }}>
+                {focusedTableId ? <ChartRecBox sx={{margin: 'auto'}} tableId={focusedTableId as string} placeHolderChartId={focusedChartId as string} /> : null}
+                <Divider sx={{my: 3}} textAlign='left'>
+                    <Typography sx={{fontSize: 12, color: "darkgray"}}>
+                        or, select a chart type
+                    </Typography>
+                </Divider>
                 {chartSelectionBox}
             </Box>
         )
     }
 
     let chartEditor = <ChartEditorFC key={focusedChartId} />
-
 
     let finalView = <Box></Box>;
 

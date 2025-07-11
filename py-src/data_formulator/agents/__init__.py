@@ -20,5 +20,5 @@ __all__ = [
     "SQLDataRecAgent",
     "DataLoadAgent",
     "SortDataAgent",
-    "DataCleanAgent"
+    "DataCleanAgent",
 ]

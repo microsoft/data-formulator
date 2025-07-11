@@ -542,6 +542,7 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
                 rowCount: dbTable.row_count,
             },
             anchored: true, // by default, db tables are anchored
+            explorativeQuestions: []
         }
        dispatch(dfActions.loadTable(table));
        dispatch(fetchFieldSemanticType(table));
@@ -1396,21 +1397,21 @@ export const DataQueryForm: React.FC<{
                         }}
                     />
                 </Box>
-                {queryResult?.status === "error" && <Box sx={{display: "flex", flexDirection: "row", gap: 1, alignItems: "center"}}>
+                {queryResult?.status === "error" && <Box sx={{display: "flex", flexDirection: "row", gap: 1, alignItems: "center", overflow: "auto"}}>
                         <Typography variant="body2" sx={{color: "text.secondary", fontSize: 11, backgroundColor: "rgba(255, 0, 0, 0.1)", p: 0.5, borderRadius: 0.5}}>
                             {queryResult?.message} 
                         </Typography>
-                        <Button variant="outlined" color="primary" size="small" sx={{textTransform: "none", height: 24, ml: 1, minWidth: 120}} 
-                            startIcon={<PrecisionManufacturingIcon />} onClick={() => aiCompleteQuery(queryResult.code + "\n error:" + queryResult.message)}>
-                            help me fix it
-                        </Button>
                     </Box>}
-                <Box sx={{display: "flex", flexDirection: "row", gap: 1, justifyContent: "space-between"}}>
+                <Box sx={{display: "flex", flexDirection: "row", gap: 1, justifyContent: "flex-end"}}>
                     <Button variant="outlined" color="primary" size="small" sx={{textTransform: "none"}} disabled={queryResult?.status === "error"}
                         startIcon={<PrecisionManufacturingIcon />} onClick={() => aiCompleteQuery(query)}>
                         help me complete the query from selected tables
                     </Button>
-                    <Button variant="contained" color="primary" size="small" sx={{textTransform: "none", width: 80}}
+                    {queryResult?.status === "error" && <Button variant="contained" color="primary" size="small" sx={{textTransform: "none",minWidth: 120}} 
+                        startIcon={<PrecisionManufacturingIcon />} onClick={() => aiCompleteQuery(queryResult.code + "\n error:" + queryResult.message)}>
+                        help me fix the error
+                    </Button>}
+                    <Button variant="contained" color="primary" size="small" sx={{textTransform: "none", ml: 'auto', width: 80}}
                         onClick={() => handleViewQuerySample(query)}>
                         run query
                     </Button>
