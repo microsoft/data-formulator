@@ -31,7 +31,7 @@ Concretely, you should infer the appropriate data and create a python function i
     "mode": "" // string, one of "infer", "overview", "distribution", "summary"
     "recommendation": "..." // string, explain why this recommendation is made 
     "output_fields": [...] // string[], describe the desired output fields that the output data should have (i.e., the goal of transformed data), it's a good idea to preseve intermediate fields here
-    "chart_type": "" // string, one of "point", "bar", "line", "boxplot". "chart_type" should either be inferred from user instruction, or recommend if the user didn't specify any.
+    "chart_type": "" // string, one of "point", "bar", "line", "area", "heatmap", "group_bar". "chart_type" should either be inferred from user instruction, or recommend if the user didn't specify any.
     "visualization_fields": [] // string[]: select a subset of the output_fields should be visualized (no more than 3 unless the user explicitly mentioned), ordered based on if the field will be used in x,y axes or legends for the recommended chart type, do not include other intermediate fields from "output_fields".
 }
 
@@ -46,8 +46,24 @@ Concretely:
         - based on the recommendation, determine what is an ideal output data. Note, the output data must be in tidy format.
         - then suggest recommendations of visualization fields that should be visualized.
     (3) "visualization_fields" should be ordered based on whether the field will be used in x,y axes or legends, do not include other intermediate fields from "output_fields".
-    (4) "visualization_fields" should be no more than 3 (for x,y,legend).
-    (5) "chart_type" must be one of "point", "bar", "line", or "boxplot"
+    (4) "visualization_fields" should be 2-3 (for x,y,legend) or 4 (if you consider faceted visualization).
+    (5) "chart_type" must be one of "point", "bar", "line", "area", "heatmap", "group_bar"
+        - Consider chart types as follows:
+            - (bar) Bar Charts: X: Categorical (nominal/ordinal), Y: Quantitative, Color: Categorical (optional for group or stacked bar chart), Best for: Comparisons across categories
+                - use (bar) for simple bar chart or stacked bar chart, 
+                - use (group_bar) for grouped bar chart.
+            - (point) Scatter Plots: X,Y: Quantitative/Categorical, Color: Quantitative/Categorical (optional), Size: Quantitative (optional for creating bubble chart), Best for: Relationships, correlations, distributions
+            - (line) Line Charts: X: Temporal (preferred) or ordinal, Y: Quantitative, Color: Categorical (optional for creating multiple lines), Best for: Trends over time, continuous data
+            - (area) Area Charts: X: Temporal (preferred) or ordinal, Y: Quantitative, Color: Categorical (optional for creating stacked areas), Best for: Trends over time, continuous data
+            - (heatmap) Heatmaps: X,Y: Categorical (convert quantitative to nominal), Color: Quantitative intensity, Best for: Pattern discovery in matrix data
+        - all charts have the option to add additional fields for legends (color, size, facet, etc.) to enrich the visualization if applicable.
+    (6) visualization fields should be in tidy format with respect to the chart type to create the visualization, so it does not make sense to have too many or too few fields. 
+        It should follow guidelines like VegaLite and ggplot2 so that each field is mapped to a visualization axis or legend. 
+    (7) consider data transformations if you want to visualize multiple fields together.
+        - exapmle 1: suggest reshaping the data into long format in data transformation description (if these fields are all of the same type, e.g., they are all about sales, price, two columns about min/max-values, etc. don't mix different types of fields in reshaping) so we can visualize multiple fields as categories or in different facets.
+        - exapmle 2: calculate some derived fields from these fields(e.g., correlation, difference, profit etc.) in data transformation description to visualize them in one visualization.
+        - example 3: create a visualization only with a subset of the fields, you don't have to visualize all of them in one chart, you can later create a visualization with the rest of the fields. With the subset of charts, you can also consider reshaping or calculate some derived value.
+        - again, it does not make sense to have five fields like [item, A, B, C, D, E] in visualization fields, you should consider data transformation to reduce the number of fields.
 
     2. Then, write a python function based on the inferred goal, the function input is a dataframe "df" (or multiple dataframes based on tables presented in the [CONTEXT] section) and the output is the transformed dataframe "transformed_df". "transformed_df" should contain all "output_fields" from the refined goal.
 The python function must follow the template provided in [TEMPLATE], do not import any other libraries or modify function name. The function should be as simple as possible and easily readable. 

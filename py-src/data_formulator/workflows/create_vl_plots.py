@@ -210,13 +210,18 @@ def fields_to_encodings(df, chart_type: str, fields: List[str]) -> Dict[str, Dic
                 categorical_field = next((f for f in field_info 
                                         if f["field"] not in used_fields and 
                                         f["type"] in ["nominal", "ordinal"]), None)
-                quantitative_field = next((f for f in field_info 
-                                         if f["field"] not in used_fields and 
-                                         f["type"] == "quantitative"), None)
+                any_available_field = next((f for f in field_info 
+                                          if f["field"] not in used_fields and 
+                                          f["type"] in ["quantitative", "temporal"]), None)
                 
                 if categorical_field:
                     add_encoding("x", categorical_field["field"])
-                
+                elif any_available_field:
+                    add_encoding("x", any_available_field["field"])
+
+                quantitative_field = next((f for f in field_info 
+                                         if f["field"] not in used_fields and 
+                                         f["type"] == "quantitative"), None)
                 if quantitative_field:
                     add_encoding("y", quantitative_field["field"])
             
@@ -569,30 +574,23 @@ def _get_top_values(df: pd.DataFrame, field_name: str, unique_values: list,
     return unique_values[:max_values]
 
 
-def vl_spec_to_png(spec: Dict, output_path: str = None, width: int = None, height: int = None, scale: float = 2.0) -> bytes:
+def vl_spec_to_png(spec: Dict, output_path: str = None, scale: float = 1.0) -> bytes:
     """
     Convert a Vega-Lite specification to a PNG image.
     
     Parameters:
     - spec: Vega-Lite specification dictionary
     - output_path: Optional path to save the PNG file
-    - width: Optional width in pixels (defaults to spec width or 400)
-    - height: Optional height in pixels (defaults to spec height or 300)
-    - scale: Scale factor for higher resolution (default 2.0 for 2x resolution)
+    - scale: Scale factor for higher resolution (default 1.0)
     
     Returns:
     - bytes: PNG image data
     
     Requires: pip install vl-convert-python
     """
-    # Set dimensions if provided
-    if width or height:
-        spec = spec.copy()  # Don't modify original spec
-        spec["width"] = width or 400
-        spec["height"] = height or 300
-    
+
     # Convert directly to PNG bytes using vl-convert with higher scale for better fidelity
-    png_data = vlc.vegalite_to_png(spec, scale=scale)
+    png_data = vlc.vegalite_to_png(spec, scale=scale, ppi=150)
     
     # Save to file if path provided
     if output_path:
@@ -602,7 +600,7 @@ def vl_spec_to_png(spec: Dict, output_path: str = None, width: int = None, heigh
     
     return png_data
 
-def spec_to_base64(spec: Dict, width: int = None, height: int = None, scale: float = 2.0) -> str:
+def spec_to_base64(spec: Dict, scale: float = 1.0) -> str:
     """
     Convert a Vega-Lite specification to a base64 encoded PNG string.
     
@@ -618,7 +616,7 @@ def spec_to_base64(spec: Dict, width: int = None, height: int = None, scale: flo
     Requires: pip install vl-convert-python
     """
     # Get PNG bytes with higher fidelity
-    png_data = vl_spec_to_png(spec, width=width, height=height, scale=scale)
+    png_data = vl_spec_to_png(spec, scale=scale)
     
     # Convert to base64
     base64_string = base64.b64encode(png_data).decode('utf-8')

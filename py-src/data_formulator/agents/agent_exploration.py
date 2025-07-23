@@ -20,18 +20,22 @@ Your task is to analyze the dataset and the question, and suggest a visualizatio
 - The visualization should be a non-trivial visualization build on top of the input data. 
 - It should answer the question in a way that is not obvious from the input data.
 - Consider chart types as follows:
-    - (bar) Bar Charts: X: Categorical (nominal/ordinal), Y: Quantitative, Best for: Comparisons across categories
-        - use (bar) for simple bar chart or stacked bar chart, use (group_bar) for grouped bar chart.
-    - (point) Scatter Plots: X,Y: Quantitative/Categorical, Best for: Relationships, correlations, distributions
-    - (line) Line Charts: X: Temporal (preferred) or ordinal, Y: Quantitative, Best for: Trends over time, continuous data
-    - (area) Area Charts: X: Temporal (preferred) or ordinal, Y: Quantitative, Best for: Trends over time, continuous data
+    - (bar) Bar Charts: X: Categorical (nominal/ordinal), Y: Quantitative, Color: Categorical (optional for group or stacked bar chart), Best for: Comparisons across categories
+        - use (bar) for simple bar chart or stacked bar chart, 
+        - use (group_bar) for grouped bar chart.
+    - (point) Scatter Plots: X,Y: Quantitative/Categorical, Color: Quantitative/Categorical (optional), Size: Quantitative (optional for creating bubble chart), Best for: Relationships, correlations, distributions
+    - (line) Line Charts: X: Temporal (preferred) or ordinal, Y: Quantitative, Color: Categorical (optional for creating multiple lines), Best for: Trends over time, continuous data
+    - (area) Area Charts: X: Temporal (preferred) or ordinal, Y: Quantitative, Color: Categorical (optional for creating stacked areas), Best for: Trends over time, continuous data
     - (heatmap) Heatmaps: X,Y: Categorical (convert quantitative to nominal), Color: Quantitative intensity, Best for: Pattern discovery in matrix data
 - Introduce additional fields for legends (color, size, facet, etc.) for all the above chart types to enrich the visualization if applicable.
 - After pikcing the chart type, consider which fields will be used for the visualization. Recommend to use 2-3 fields to visualize, maybe 4 if you consider faceted visualization.
 - The visualization fields must be in **tidy format** with respect to the chart type to create the visualization, so it does not make sense to have too many or too few fields. 
   It should follow guidelines like VegaLite and ggplot2 so that each field is mapped to a visualization axis or legend. 
 - Consider data transformations if you want to visualize multiple fields together.
-  - exapmle 1: suggest reshaping the data into long format in data transformation description (if these fields are all of the same type, e.g., they are all about sales, price, etc. don't mix different types of fields in reshaping) so we can visualize multiple fields as categories or in different facets.
+  - exapmle 1: suggest reshaping the data into long format in data transformation description 
+        - for example, if you want to visualize sales from regions stored in 5 columns, suggest reshaping the data into long format into 2 columns: region, value.
+        - for example, if you want to visualize max_val, min_val of some value, suggest reshaping the data into long format into 2 columns: value, type (the type column should contain values of "max" or "min").
+        - note: only reshape data to long format for fields of the same type, e.g., they are all about sales, price, etc. don't mix different types of fields (e.g., put sales and price in one column) in reshaping.
   - exapmle 2: calculate some derived fields from these fields(e.g., correlation, difference, profit etc.) in data transformation description to visualize them in one visualization.
   - example 3: create a visualization only with a subset of the fields, you don't have to visualize all of them in one chart, you can later create a visualization with the rest of the fields. With the subset of charts, you can also consider reshaping or calculate some derived value.
   - again, it does not make sense to have five fields like [item, A, B, C, D, E] in one visualization, you should consider data transformation to reduce the number of fields.
@@ -90,11 +94,12 @@ You should follow the following format:
     - avoid transformations that cannot be calculated programmatically based on the input data, e.g., looking up zipcode, get continent
     - for the follow-up visualization, consider the following guidelines:
         - Consider chart types as follows:
-            - (bar) Bar Charts: X: Categorical (nominal/ordinal), Y: Quantitative, Best for: Comparisons across categories
-                - use (bar) for simple bar chart or stacked bar chart, use (group_bar) for grouped bar chart.
-            - (point) Scatter Plots: X,Y: Quantitative/Categorical, Best for: Relationships, correlations, distributions
-            - (line) Line Charts: X: Temporal (preferred) or ordinal, Y: Quantitative, Best for: Trends over time, continuous data
-            - (area) Area Charts: X: Temporal (preferred) or ordinal, Y: Quantitative, Best for: Trends over time, continuous data
+            - (bar) Bar Charts: X: Categorical (nominal/ordinal), Y: Quantitative, Color: Categorical (optional for group or stacked bar chart), Best for: Comparisons across categories
+                - use (bar) for simple bar chart or stacked bar chart, 
+                - use (group_bar) for grouped bar chart.
+            - (point) Scatter Plots: X,Y: Quantitative/Categorical, Color: Quantitative/Categorical (optional), Size: Quantitative (optional for creating bubble chart), Best for: Relationships, correlations, distributions
+            - (line) Line Charts: X: Temporal (preferred) or ordinal, Y: Quantitative, Color: Categorical (optional for creating multiple lines), Best for: Trends over time, continuous data
+            - (area) Area Charts: X: Temporal (preferred) or ordinal, Y: Quantitative, Color: Categorical (optional for creating stacked areas), Best for: Trends over time, continuous data
             - (heatmap) Heatmaps: X,Y: Categorical (convert quantitative to nominal), Color: Quantitative intensity, Best for: Pattern discovery in matrix data
         - Introduce additional fields for legends (color, size, facet, etc.) for all the above chart types to enrich the visualization if applicable.
         - After pikcing the chart type, consider which fields will be used for the visualization. Recommend to use 2-3 fields to visualize, maybe 4 if you consider faceted visualization.

@@ -283,11 +283,11 @@ const barCharts: ChartTemplate[] = [
             "encoding": {
             }
         },
-        "channels": ["x", "y", "group"],
+        "channels": ["x", "y", "color"],
         "paths": {
             "x": ["encoding", "x"],
             "y": ["encoding", "y"],
-            "group": [["encoding", "xOffset"], ["encoding", "color"]],
+            "color": [["encoding", "xOffset"], ["encoding", "color"]],
         }
     },
     {

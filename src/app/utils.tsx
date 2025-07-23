@@ -492,8 +492,6 @@ export const adaptChart = (chart: Chart, targetTemplate: ChartTemplate) => {
     return { ...chart, chartType: targetTemplate.chart, encodingMap: newEncodingMap }
 }
 
-// these two functions are used to handle recommendations/corrections from the AI agents
-
 export const resolveChartFields = (chart: Chart, currentConcepts: FieldItem[], refinedGoal: any, table: DictTable) => {
     // resolve and update chart fields based on refined visualization goal
 
@@ -510,7 +508,6 @@ export const resolveChartFields = (chart: Chart, currentConcepts: FieldItem[], r
 
     let newAdditionFieldIds = targetFieldIds.filter(fid => !ocupiedFieldIds.includes(fid))
     let channelsToUpdate = [...chartChannels.filter(ch => !ocupiedChannels.includes(ch))];
-    
     
     for (let i = 0; i < Math.max(newAdditionFieldIds.length, channelsToUpdate.length); i ++) {
         chart.encodingMap[channelsToUpdate[i] as keyof EncodingMap].fieldID = newAdditionFieldIds[i];

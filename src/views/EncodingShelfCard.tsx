@@ -556,7 +556,10 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                                         "line" : "Line Chart",
                                         "bar": "Bar Chart",
                                         "point": "Scatter Plot",
-                                        "boxplot": "Boxplot"
+                                        "boxplot": "Boxplot",
+                                        "area": "Area Chart",
+                                        "heatmap": "Heatmap",
+                                        "group_bar": "Grouped Bar Chart"
                                     }
                                     let chartType = chartTypeMap[refinedGoal['chart_type']] || 'Scatter Plot';
                                     newChart = generateFreshChart(candidateTable.id, chartType) as Chart;

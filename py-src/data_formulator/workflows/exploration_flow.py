@@ -182,7 +182,7 @@ def run_exploration_flow_streaming(
             chart_type,
             visualization_fields
         )
-        current_visualization = spec_to_base64(chart_spec, width=600, height=400) if chart_spec else None
+        current_visualization = spec_to_base64(chart_spec) if chart_spec else None
         
         yield {
             "iteration": iteration,
