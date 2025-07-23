@@ -88,7 +88,7 @@ export interface DataFormulatorState {
 
     dataLoaderConnectParams: Record<string, Record<string, string>>; // {table_name: {param_name: param_value}}
     
-    pendingSSEActions: SSEMessage[]; // Actions taken by the server but not yet completed
+    agentWorkInProgress: {actionId: string, target: 'chart' | 'table', targetId: string, description: string}[];
 }
 
 // Define the initial state using that type
@@ -129,7 +129,7 @@ const initialState: DataFormulatorState = {
 
     dataLoaderConnectParams: {},
     
-    pendingSSEActions: [],
+    agentWorkInProgress: [],
 }
 
 let getUnrefedDerivedTableIds = (state: DataFormulatorState) => {

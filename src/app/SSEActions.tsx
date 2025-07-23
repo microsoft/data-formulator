@@ -117,15 +117,15 @@ export const handleSSEMessage = (state: DataFormulatorState, message: SSEMessage
         state.focusedTableId = table.id;
     } else if (action.type == "derive_data_in_progress") {
         actionStatus = 'in_progress';
-        state.pendingSSEActions = [...state.pendingSSEActions, message];
+        state.agentWorkInProgress = [...state.agentWorkInProgress, {actionId: action.action_id, target: 'table', targetId: action.source_table_ids[0], description: action.instruction}];
     } else if (action.type == "derive_data_completed") {
         let actionId = action.action_id;
         state.tables = [...state.tables, action.derived_table];
-        state.pendingSSEActions = state.pendingSSEActions.filter(m => m.data?.action_id != actionId);
+        state.agentWorkInProgress = state.agentWorkInProgress.filter(m => m.actionId != actionId);
     } else if (action.type == "derive_data_failed") {
         let actionId = action.action_id;
         actionStatus = 'error';
-        state.pendingSSEActions = state.pendingSSEActions.filter(m => m.data?.action_id != actionId);
+        state.agentWorkInProgress = state.agentWorkInProgress.filter(m => m.actionId != actionId);
     } else {
         actionStatus = 'error';
     }

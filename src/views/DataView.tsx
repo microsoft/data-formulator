@@ -7,10 +7,6 @@ import _ from 'lodash';
 
 import { Typography, Box, Link, Breadcrumbs, useTheme } from '@mui/material';
 
-import 'ag-grid-enterprise';
-
-import 'ag-grid-community/styles/ag-grid.css';
-import 'ag-grid-community/styles/ag-theme-material.css';
 import '../scss/DataView.scss';
 
 import { DictTable } from '../components/ComponentType';

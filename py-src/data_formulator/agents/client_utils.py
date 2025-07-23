@@ -1,6 +1,30 @@
 import litellm
 import openai
 from azure.identity import DefaultAzureCredential, get_bearer_token_provider
+from typing import Dict
+
+def get_client(model_config: Dict[str, str]):
+    """
+    Create a client instance from model configuration.
+    
+    Args:
+        model_config: Dictionary containing endpoint, model, api_key, api_base, api_version
+        
+    Returns:
+        Client instance for making API calls
+    """
+    # Strip whitespace from all values
+    for key in model_config:
+        if isinstance(model_config[key], str):
+            model_config[key] = model_config[key].strip()
+
+    return Client(
+        model_config["endpoint"],
+        model_config["model"],
+        model_config.get("api_key"),
+        model_config.get("api_base"),
+        model_config.get("api_version")
+    )
 
 class Client(object):
     """
@@ -53,7 +77,7 @@ class Client(object):
                 self.model = model
             else:
                 self.model = f"ollama/{model}"
-        
+
 
     def get_completion(self, messages):
         """

@@ -210,7 +210,7 @@ let SingleThreadView: FC<{
         let charts = useSelector(dfSelectors.getAllCharts);
         let focusedChartId = useSelector((state: DataFormulatorState) => state.focusedChartId);
         let focusedTableId = useSelector((state: DataFormulatorState) => state.focusedTableId);
-        let pendingSSEActions = useSelector((state: DataFormulatorState) => state.pendingSSEActions);
+        let agentWorkInProgress = useSelector((state: DataFormulatorState) => state.agentWorkInProgress);
 
         let handleUpdateTableDisplayId = (tableId: string, displayId: string) => {
             dispatch(dfActions.updateTableDisplayId({
@@ -494,7 +494,7 @@ let SingleThreadView: FC<{
                     </Box>
                     <Box sx={{ flex: 1, padding: '8px 0px', minHeight: '8px', ...chartElementProps }}>
                         {releventChartElements}
-                        {(pendingSSEActions.some(a => a.data?.source_table_ids[0] == tableId) )&& 
+                        {(agentWorkInProgress.some(a => a.target == 'table' && a.targetId == tableId) )&& 
                             <Box sx={{ 
                             py: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', }}>
                                 <Typography sx={{ mr: 1,fontSize: '10px', color: 'rgba(0,0,0,0.5)' }}>
@@ -699,9 +699,9 @@ const MemoizedChartObject = memo<{
             }}>
                 <LinearProgress sx={{ width: "100%", height: "100%", opacity: 0.05 }} />
             </Box> : ''}
-            <Box sx={{ display: "flex", flexDirection: "column", margin: "auto" }}>
+            <Box sx={{ display: "flex", flexDirection: "column", margin: "auto", height: 48}}>
                 <Box sx={{ margin: "auto", transform: chart.chartType == 'Table' ? "rotate(15deg)" : undefined }} >
-                    {generateChartSkeleton(chartTemplate?.icon, 48, 48, chart.chartType == 'Table' ? 1 : 0.5)} 
+                    {generateChartSkeleton(chartTemplate?.icon, 32, 32, chart.chartType == 'Table' ? 1 : 0.5)} 
                 </Box>
                 {deleteButton}
             </Box>

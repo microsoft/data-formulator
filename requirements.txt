@@ -16,4 +16,5 @@ litellm
 duckdb
 boto3
 pyodbc
+vl-convert-python
 -e . #also need to install data formulator itself

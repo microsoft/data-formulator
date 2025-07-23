@@ -706,7 +706,8 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                             return (
                                 <div style={{display: 'flex', padding: "0px 0px 0px 4px"}}>
                                     <ListItemIcon sx={{minWidth: "24px"}}>
-                                        {typeof t?.icon == 'string' ? <img height="24px" width="24px" src={t?.icon} alt="" role="presentation" /> : t?.icon}
+                                        {typeof t?.icon == 'string' ? <img height="24px" width="24px" src={t?.icon} alt="" role="presentation" /> : 
+                                         <Box sx={{width: "24px", height: "24px"}}>{t?.icon}</Box>}
                                         </ListItemIcon>
                                     <ListItemText sx={{marginLeft: "2px", whiteSpace: "initial"}} slotProps={{primary: {fontSize: 12}}}>{t?.chart}</ListItemText>
                                 </div>
@@ -718,8 +719,9 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                                 <ListSubheader sx={{ color: "text.secondary", lineHeight: 2, fontSize: 12 }} key={group}>{group}</ListSubheader>,
                                 ...templates.map((t, i) => (
                                     <MenuItem sx={{ fontSize: 12, paddingLeft: 3, paddingRight: 3 }} value={t.chart} key={`${group}-${i}`}>
-                                        <ListItemIcon>
-                                            {typeof t?.icon == 'string' ? <img height="24px" width="24px" src={t?.icon} alt="" role="presentation" /> : t?.icon}
+                                        <ListItemIcon sx={{minWidth: "24px"}}>
+                                            {typeof t?.icon == 'string' ? <img height="24px" width="24px" src={t?.icon} alt="" role="presentation" /> : 
+                                             <Box sx={{width: "24px", height: "24px"}}>{t?.icon}</Box>}
                                         </ListItemIcon>
                                         <ListItemText slotProps={{primary: {fontSize: 12}}}>{t.chart}</ListItemText>
                                     </MenuItem>

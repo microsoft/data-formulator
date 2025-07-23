@@ -37,6 +37,7 @@ import {
     DialogContent,
     Divider,
     Select,
+    SxProps,
 } from '@mui/material';
 
 import EditIcon from '@mui/icons-material/Edit';
@@ -62,9 +63,11 @@ import _ from 'lodash';
 import { DictTable } from '../components/ComponentType';
 import { CodeBox } from './VisualizationView';
 import { CustomReactTable } from './ReactTable';
+import { alpha } from '@mui/material/styles';
 
 export interface ConceptCardProps {
     field: FieldItem,
+    sx?: SxProps
 }
 
 const checkConceptIsEmpty = (field: FieldItem) => {
@@ -194,7 +197,7 @@ let ConceptReApplyButton: FC<{field: FieldItem,
         </>
     )
 }
-export const ConceptCard: FC<ConceptCardProps> = function ConceptCard({ field }) {
+export const ConceptCard: FC<ConceptCardProps> = function ConceptCard({ field, sx }) {
     // concept cards are draggable cards that can be dropped into encoding shelf
     let theme = useTheme();
 
@@ -378,18 +381,25 @@ export const ConceptCard: FC<ConceptCardProps> = function ConceptCard({ field })
         backgroundColor = theme.palette.derived.main;
     }
 
+    let draggleCardHeaderBgOverlay = 'rgba(255, 255, 255, 0.93)';
+
+    // Add subtle tint for non-focused fields
+    if (focusedTable && !focusedTable.names.includes(field.name)) {
+        draggleCardHeaderBgOverlay = 'rgba(255, 255, 255, 0.98)';
+    }
+
     let boxShadow = editMode ? "0 2px 4px 0 rgb(0 0 0 / 20%), 0 2px 4px 0 rgb(0 0 0 / 19%)" : "";
 
     let cardComponent = (
-        <Card sx={{ minWidth: 60, backgroundColor, position: "relative" }}
+        <Card sx={{ minWidth: 60, backgroundColor, position: "relative", ...sx }}
             variant="outlined"
             style={{ opacity, border, boxShadow, fontStyle, marginLeft: '3px' }}
             color="secondary"
-            className={`data-field-list-item draggable-card `}>
+            className={`data-field-list-item draggable-card`}>
             {isLoading ? <Box sx={{ position: "absolute", zIndex: 20, height: "100%", width: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}>
                 <LinearProgress sx={{ width: "100%", height: "100%", opacity: 0.2 }} />
             </Box> : ""}
-            <Box ref={field.name ? drag : undefined} sx={{ cursor: cursorStyle }}
+            <Box ref={field.name ? drag : undefined} sx={{ cursor: cursorStyle, background: draggleCardHeaderBgOverlay }}
                  className={`draggable-card-header draggable-card-inner ${field.source}`}>
                 <Typography className="draggable-card-title" sx={{ fontSize: 13, height: 28, width: "100%" }} component={'span'} gutterBottom>
                     {typeIconMenu}

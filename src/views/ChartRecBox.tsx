@@ -213,9 +213,17 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
             return;
         }
 
+        let originateChartId: string;
+
         if (placeHolderChartId) {
-            dispatch(dfActions.updateChartType({chartType: "Auto", chartId: placeHolderChartId}));
+            //dispatch(dfActions.updateChartType({chartType: "Auto", chartId: placeHolderChartId}));
             dispatch(dfActions.changeChartRunningStatus({chartId: placeHolderChartId, status: true}));
+            originateChartId = placeHolderChartId;
+        } else {
+            let newChart = generateFreshChart(tableId, "?") as Chart;
+            dispatch(dfActions.addAndFocusChart(newChart));
+            dispatch(dfActions.changeChartRunningStatus({chartId: newChart.id, status: true}));
+            originateChartId = newChart.id;
         }
 
         const actionTables = selectedTableIds.map(id => tables.find(t => t.id === id) as DictTable);
@@ -270,9 +278,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
         .then((data) => {
             setIsFormulating(false);
 
-            if (placeHolderChartId) {
-                dispatch(dfActions.changeChartRunningStatus({chartId: placeHolderChartId, status: false}));
-            }
+            dispatch(dfActions.changeChartRunningStatus({chartId: originateChartId, status: false}));
 
             if (data.results.length > 0) {
                 if (data["token"] === token) {
@@ -346,9 +352,6 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
 
                         dispatch(dfActions.insertDerivedTables(candidateTable));
 
-                        console.log("debug: candidateTable")
-                        console.log(candidateTable)
-
                         // Add missing concept items
                         const names = candidateTable.names;
                         const missingNames = names.filter(name => 
@@ -384,9 +387,6 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                         let newChart = generateFreshChart(candidateTable.id, chartType) as Chart;
                         newChart = resolveChartFields(newChart, currentConcepts, refinedGoal, candidateTable);
 
-                        console.log("debug: newChart")
-                        console.log(newChart)
-
                         // Create and focus the new chart directly
                         dispatch(dfActions.addAndFocusChart(newChart));
 
@@ -404,9 +404,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                         // Clear the prompt after successful formulation
                         setPrompt("");
 
-                        if (placeHolderChartId) {
-                            dispatch(dfActions.deleteChartById(placeHolderChartId));
-                        }
+                        dispatch(dfActions.deleteChartById(originateChartId));
                     }
                 }
             } else {
@@ -452,8 +450,21 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
             maxWidth: "600px", 
             display: 'flex', 
             flexDirection: 'column',
-            gap: 1
+            gap: 1,
+            position: 'relative'
         }}>
+            {isFormulating && (
+                <LinearProgress 
+                    sx={{ 
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        zIndex: 1000,
+                        height: '4px'
+                    }} 
+                />
+            )}
             {showTableSelector && (
                 <Box>
                     <Typography sx={{ fontSize: 12, color: "text.secondary", marginBottom: 0.5 }}>

@@ -90,15 +90,25 @@ export interface VisPanelState {
     viewMode: "gallery" | "carousel";
 }
 
-export let generateChartSkeleton = (iconPath: string | undefined, width: number = 160, height: number = 160, opacity: number = 0.5) => (
+export let generateChartSkeleton = (icon: any, width: number = 160, height: number = 160, opacity: number = 0.5) => (
     <Box width={width} height={height} sx={{ display: "flex" }}>
-        {iconPath == undefined ?
+        {icon == undefined ?
             <AddchartIcon sx={{ color: "lightgray", margin: "auto" }} /> :
-            <Box width="100%" sx={{ display: "flex", opacity: opacity }}>
-                <img height={Math.min(64, height)} width={Math.min(64, width)}
-                     style={{ maxHeight: Math.min(height, Math.max(32, 0.5 * height)), maxWidth: Math.min(width, Math.max(32, 0.5 * width)), margin: "auto" }} 
-                     src={iconPath} alt="" role="presentation" />
-            </Box>}
+            typeof icon == 'string' ?
+                <Box width="100%" sx={{ display: "flex", opacity: opacity }}>
+                    <img height={Math.min(64, height)} width={Math.min(64, width)}
+                         style={{ maxHeight: Math.min(height, Math.max(32, 0.5 * height)), maxWidth: Math.min(width, Math.max(32, 0.5 * width)), margin: "auto" }} 
+                         src={icon} alt="" role="presentation" />
+                </Box> :
+                <Box width="100%" sx={{ display: "flex", opacity: opacity }}>
+                    {React.cloneElement(icon, {
+                        style: { 
+                            maxHeight: Math.min(height, 32),
+                            maxWidth: Math.min(width, 32), 
+                            margin: "auto" 
+                        }
+                    })}
+                </Box>}
     </Box>
 )
 
@@ -468,7 +478,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
 
         let element = <></>;
         if (!chart || !checkChartAvailabilityOnPreparedData(chart, conceptShelfItems, visTableRows)) {
-            return   generateChartSkeleton(chartTemplate?.icon);
+            return   generateChartSkeleton(chartTemplate?.icon, 48, 48);
         }
 
         chartUnavailable = false;
@@ -838,6 +848,7 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
     let allCharts = useSelector(dfSelectors.getAllCharts);
     let focusedChartId = useSelector((state: DataFormulatorState) => state.focusedChartId);
     let focusedTableId = useSelector((state: DataFormulatorState) => state.focusedTableId);
+    let chartSynthesisInProgress = useSelector((state: DataFormulatorState) => state.chartSynthesisInProgress);
 
     let visViewMode = useSelector((state: DataFormulatorState) => state.visViewMode);
 
@@ -846,6 +857,7 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
     const dispatch = useDispatch();
 
     let focusedChart = allCharts.find(c => c.id == focusedChartId) as Chart;
+    let synthesisRunning = focusedChartId ? chartSynthesisInProgress.includes(focusedChartId) : false;
 
     // when there is no result and synthesis is running, just show the waiting panel
     if (!focusedChart || focusedChart?.chartType == "?") {
@@ -853,6 +865,7 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
             {Object.entries(CHART_TEMPLATES).map(([cls, templates])=>templates).flat().filter(t => t.chart != "Auto").map(t =>
                 {
                     return <Button 
+                        disabled={synthesisRunning}
                         key={`${t.chart}-btn`}
                         sx={{margin: '2px', padding:'2px', display:'flex', flexDirection: 'column', 
                                 textTransform: 'none', justifyContent: 'flex-start'}}
@@ -865,9 +878,9 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
                             }
                         }}
                     >
-                        <Icon sx={{width: 48, height: 48}} >
+                        <Box sx={{opacity: synthesisRunning ? 0.5 : 1, width: 48, height: 48, display: 'flex', alignItems: 'center', justifyContent: 'center'}} >
                             {typeof t?.icon == 'string' ? <img height="48px" width="48px" src={t?.icon} alt="" role="presentation" /> : t.icon}
-                        </Icon>
+                        </Box>
                         <Typography sx={{marginLeft: "2px", whiteSpace: "initial", fontSize: '10px', width: '64px'}} >{t?.chart}</Typography>
                     </Button>
                 }

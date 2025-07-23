@@ -76,6 +76,7 @@ export interface DictTable {
         rowCount: number; // total number of rows in the full table
     };
     anchored: boolean; // whether this table is anchored as a persistent table used to derive other tables
+    createdBy: 'user' | 'agent'; // whether this table is created by the user or the agent
     explorativeQuestions: string[]; // a list of (3-5) explorative questions that can help users get started with data visualizations
 }
 
@@ -85,6 +86,7 @@ export function createDictTable(
              trigger: Trigger} | undefined = undefined,
     virtual: {tableId: string, rowCount: number} | undefined = undefined,
     anchored: boolean = false,
+    createdBy: 'user' | 'agent' = 'user', // by default, all tables are created by the user
     explorativeQuestions: string[] = []) : DictTable {
     
     let names = Object.keys(rows[0])
@@ -98,6 +100,7 @@ export function createDictTable(
         derive,
         virtual,
         anchored,
+        createdBy,
         explorativeQuestions
     }
 }

@@ -178,10 +178,18 @@ def dedup_data_transform_candidates(candidates):
 
 
 def get_field_summary(field_name, df, field_sample_size, max_val_chars=100):
+    # Convert lists to strings to make them hashable
+    def make_hashable(val):
+        if val is None:
+            return None
+        if isinstance(val, list):
+            return str(val)
+        return val
+    
     try:
-        values = sorted([x for x in list(set(df[field_name].values)) if x != None])
+        values = sorted([make_hashable(x) for x in list(set([make_hashable(x) for x in df[field_name].values])) if x is not None])
     except:
-        values = [x for x in list(set(df[field_name].values)) if x != None]
+        values = [make_hashable(x) for x in list(set([make_hashable(x) for x in df[field_name].values])) if x is not None]
 
     val_sample = ""
 
