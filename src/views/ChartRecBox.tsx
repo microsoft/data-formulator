@@ -169,12 +169,11 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
 
     const [prompt, setPrompt] = useState<string>("");
     const [isFormulating, setIsFormulating] = useState<boolean>(false);
-    // Remove the randomQuestion state since we'll generate it on demand
+    // Add state for cycling through questions
+    const [currentQuestionIndex, setCurrentQuestionIndex] = useState<number>(0);
 
     // Use the provided tableId and find additional available tables for multi-table operations
     const currentTable = tables.find(t => t.id === tableId);
-
-    // Remove the useEffect that sets randomQuestion
 
     const availableTables = tables.filter(t => t.derive === undefined || t.anchored);
     const [additionalTableIds, setAdditionalTableIds] = useState<string[]>([]);
@@ -188,14 +187,34 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
         setAdditionalTableIds(additionalIds);
     };
 
-    // Function to get a random question from the list
+    // Function to get a question from the list with cycling
     const getQuestion = (random: boolean = false): string => {
         if (currentTable?.explorativeQuestions && currentTable.explorativeQuestions.length > 0) {
-            const index = random ? Math.floor(Math.random() * currentTable.explorativeQuestions.length) : 0;
-            return currentTable.explorativeQuestions[index];
+            if (random) {
+                const index = Math.floor(Math.random() * currentTable.explorativeQuestions.length);
+                return currentTable.explorativeQuestions[index];
+            } else {
+                // Cycle through questions sequentially
+                return currentTable.explorativeQuestions[currentQuestionIndex];
+            }
         }
         return "Show something interesting about the data";
     };
+
+    // Effect to cycle through questions every 3 seconds
+    useEffect(() => {
+        if (!currentTable?.explorativeQuestions || currentTable.explorativeQuestions.length <= 1) {
+            return;
+        }
+
+        const interval = setInterval(() => {
+            setCurrentQuestionIndex((prevIndex) => 
+                (prevIndex + 1) % currentTable.explorativeQuestions.length
+            );
+        }, 5000); // 3 seconds
+
+        return () => clearInterval(interval);
+    }, [currentTable?.explorativeQuestions]);
 
     // Handle tab key press for auto-completion
     const handleKeyDown = (event: React.KeyboardEvent) => {
@@ -380,7 +399,10 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                             "line": "Line Chart",
                             "bar": "Bar Chart", 
                             "point": "Scatter Plot",
-                            "boxplot": "Boxplot"
+                            "boxplot": "Boxplot",
+                            "area": "Area Chart",
+                            "heatmap": "Heatmap",
+                            "group_bar": "Grouped Bar Chart"
                         };
                         
                         const chartType = chartTypeMap[refinedGoal?.['chart_type']] || 'Scatter Plot';

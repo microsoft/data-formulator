@@ -9,7 +9,7 @@ import numpy as np
 import re
 
 def string_to_py_varname(var_str): 
-    var_name = re.sub('\W|^(?=\d)','_', var_str)
+    var_name = re.sub(r'\W|^(?=\d)', '_', var_str)
     if keyword.iskeyword(var_name):
         var_name = f"__{var_name}"
     return var_name

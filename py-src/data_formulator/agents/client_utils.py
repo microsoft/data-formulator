@@ -1,30 +1,38 @@
 import litellm
 import openai
 from azure.identity import DefaultAzureCredential, get_bearer_token_provider
-from typing import Dict
+from typing import Dict, Optional, Union
 
-def get_client(model_config: Dict[str, str]):
+class OpenAIClientAdapter(object):
     """
-    Create a client instance from model configuration.
-    
-    Args:
-        model_config: Dictionary containing endpoint, model, api_key, api_base, api_version
+    Wrapper around OpenAI or AzureOpenAI client that provides the same interface as Client.
+    """
+    def __init__(self, openai_client: Union[openai.OpenAI, openai.AzureOpenAI], model: str):
+        self._openai_client = openai_client
+        self.model = model
         
-    Returns:
-        Client instance for making API calls
-    """
-    # Strip whitespace from all values
-    for key in model_config:
-        if isinstance(model_config[key], str):
-            model_config[key] = model_config[key].strip()
+        # Default params
+        self.params = {
+            "temperature": 0.7,
+        }
+        
+        if not (model == "o3-mini" or model == "o1"):
+            self.params["max_completion_tokens"] = 1200
 
-    return Client(
-        model_config["endpoint"],
-        model_config["model"],
-        model_config.get("api_key"),
-        model_config.get("api_base"),
-        model_config.get("api_version")
-    )
+    def get_completion(self, messages):
+        """
+        Returns a completion using the wrapped OpenAI client.
+        """
+        completion_params = {
+            "model": self.model,
+            "messages": messages,
+        }
+        
+        if not (self.model == "o3-mini" or self.model == "o1"):
+            completion_params["temperature"] = self.params["temperature"]
+            completion_params["max_tokens"] = self.params["max_completion_tokens"]
+            
+        return self._openai_client.chat.completions.create(**completion_params)
 
 class Client(object):
     """
@@ -78,6 +86,29 @@ class Client(object):
             else:
                 self.model = f"ollama/{model}"
 
+    @classmethod
+    def from_config(cls, model_config: Dict[str, str]):
+        """
+        Create a client instance from model configuration.
+        
+        Args:
+            model_config: Dictionary containing endpoint, model, api_key, api_base, api_version
+            
+        Returns:
+            Client instance for making API calls
+        """
+        # Strip whitespace from all values
+        for key in model_config:
+            if isinstance(model_config[key], str):
+                model_config[key] = model_config[key].strip()
+
+        return cls(
+            model_config["endpoint"],
+            model_config["model"],
+            model_config.get("api_key"),
+            model_config.get("api_base"),
+            model_config.get("api_version")
+        )
 
     def get_completion(self, messages):
         """

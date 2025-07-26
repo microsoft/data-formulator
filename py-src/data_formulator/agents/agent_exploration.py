@@ -13,8 +13,8 @@ INITIAL_PROMPT = '''
 You are a data exploration expert to suggest a visualization to help the user to get started exploring their data.
 The user will provide you in [CONTEXT] section:
 * The dataset (name, description, fields)
-* A data analysis question
-* (optional) previous explorations from the user (if any)
+* A data analysis question (if the user doesn't provide a question, you infer the question from the dataset and based on previous explorations)
+* previous explorations from the user (if any)
 
 Your task is to analyze the dataset and the question, and suggest a visualization to help the user to get started exploring their data.
 - The visualization should be a non-trivial visualization build on top of the input data. 

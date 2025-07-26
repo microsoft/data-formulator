@@ -34,14 +34,7 @@ from data_formulator.agents.client_utils import Client
 
 from data_formulator.db_manager import db_manager
 
-# Configure root logger for general application logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[logging.StreamHandler(sys.stdout)]
-)
-
-# Get logger for this module
+# Get logger for this module (logging config done in app.py)
 logger = logging.getLogger(__name__)
 
 agent_bp = Blueprint('agent', __name__, url_prefix='/api/agent')

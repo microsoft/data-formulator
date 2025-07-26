@@ -808,7 +808,11 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
 
     let [scaleMin, scaleMax] = [0.2, 2.4]
 
-    let chartResizer = <Stack spacing={1} direction="row" sx={{ padding: '8px', width: 160, position: "absolute", zIndex: 10, color: 'darkgray' }} alignItems="center">
+    let chartResizer = <Stack spacing={1} direction="row" sx={{ 
+        margin: 1, width: 160, position: "absolute", zIndex: 10, 
+        backgroundColor: 'rgba(255, 255, 255, 0.9)',
+        borderRadius: '4px',
+    }} alignItems="center">
         <Tooltip title="zoom out">
             <IconButton color="primary" size='small' disabled={localScaleFactor <= scaleMin} onClick={() => {
                 setLocalScaleFactor(prev => Math.max(scaleMin, prev - 0.1));

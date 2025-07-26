@@ -9,7 +9,7 @@ from typing import Dict, List, Any, Optional, Tuple, Generator
 from data_formulator.agents.agent_exploration import ExplorationAgent
 from data_formulator.agents.agent_py_data_transform import PythonDataTransformationAgent
 from data_formulator.agents.agent_sql_data_transform import SQLDataTransformationAgent
-from data_formulator.agents.client_utils import get_client, Client
+from data_formulator.agents.client_utils import Client
 from data_formulator.db_manager import db_manager
 from data_formulator.workflows.create_vl_plots import assemble_vegailte_chart, spec_to_base64, fields_to_encodings
 
@@ -88,7 +88,7 @@ def run_exploration_flow_streaming(
     current_visualization = None
     
     # Initialize client and agents
-    client = get_client(model_config)
+    client = Client.from_config(model_config)
     exploration_agent = ExplorationAgent(client)
     
     # Track iteration and dialog context

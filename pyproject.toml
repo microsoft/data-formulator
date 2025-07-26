@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "data_formulator"
-version = "0.2.2"
+version = "0.2.2.1"
 
 requires-python = ">=3.9"
 authors = [
@@ -12,7 +12,7 @@ authors = [
   {name = "Dan Marshall", email = "danmar@microsoft.com"},
 ]
 readme = "README.md"
-license = {file = "LICENSE"}
+license = "MIT"
 description = "Data Formulator is research protoype data visualization tool powered by AI."
 keywords = ["data visualization", "LLM", "AI"]
 classifiers = [
@@ -23,20 +23,21 @@ classifiers = [
 dependencies = [  
     "jupyter",  
     "pandas",  
-    "docker",  
-    "namedlist",  
-    "matplotlib",  
     "flask",  
     "flask-cors",  
     "openai",  
     "azure-identity",  
     "azure-kusto-data",
     "azure-keyvault-secrets",  
+    "azure-storage-blob",
     "python-dotenv",  
     "vega_datasets",
     "litellm",
     "duckdb",
-    "pyodbc"
+    "pyodbc",
+    "numpy",                    
+    "vl-convert-python", 
+    "boto3",
 ]
 
 [project.urls]

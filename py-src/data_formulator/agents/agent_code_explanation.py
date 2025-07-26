@@ -72,7 +72,7 @@ class CodeExplanationAgent(object):
 
         data_summary = generate_data_summary(input_tables, include_data_samples=True)
 
-        user_query = f"[CONTEXT]\n\n{data_summary}\n\n[CODE]\n\here is the transformation code: {code}\n\n[EXPLANATION]\n"
+        user_query = f"[CONTEXT]\n\n{data_summary}\n\n[CODE]\n\nhere is the transformation code: {code}\n\n[EXPLANATION]\n"
 
         logger.info(user_query)
 

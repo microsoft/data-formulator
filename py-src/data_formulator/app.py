@@ -70,30 +70,30 @@ app.register_blueprint(tables_bp)
 app.register_blueprint(agent_bp)
 app.register_blueprint(sse_bp)
 
-print(APP_ROOT)
-
-# Configure root logger for general application logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[logging.StreamHandler(sys.stdout)]
-)
-
-# Get logger for this module
+# Get logger for this module (logging config moved to run_app function)
 logger = logging.getLogger(__name__)
 
-# Configure Flask app logger to use the same settings
-app.logger.handlers = []
-for handler in logging.getLogger().handlers:
-    app.logger.addHandler(handler)
-
-# Example usage:
-logger.info("Application level log")  # General application logging
-app.logger.info("Flask specific log") # Web request related logging
+def configure_logging():
+    """Configure logging for the Flask application."""
+    # Configure root logger for general application logging
+    logging.basicConfig(
+        level=logging.ERROR,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        handlers=[logging.StreamHandler(sys.stdout)]
+    )
+    
+    # Suppress verbose logging from third-party libraries
+    logging.getLogger('httpx').setLevel(logging.WARNING)
+    logging.getLogger('litellm').setLevel(logging.WARNING)
+    logging.getLogger('openai').setLevel(logging.WARNING)
+    
+    # Configure Flask app logger to use the same settings
+    app.logger.handlers = []
+    for handler in logging.getLogger().handlers:
+        app.logger.addHandler(handler)
 
 @app.route('/api/vega-datasets')
 def get_example_dataset_list():
-    dataset_names = vega_data.list_datasets()
     example_datasets = [
         {"name": "gapminder", "challenges": [
             {"text": "Create a line chart to show the life expectancy trend of each country over time.", "difficulty": "easy"},
@@ -127,7 +127,6 @@ def get_example_dataset_list():
         ]}
     ]
     dataset_info = []
-    print(dataset_names)
     for dataset in example_datasets:
         name = dataset["name"]
         challenges = dataset["challenges"]
@@ -148,8 +147,6 @@ def get_datasets(path):
         # to_json is necessary for handle NaN issues
         data_object = df.to_json(None, 'records')
     except Exception as err:
-        print(path)
-        print(err)
         data_object = "[]"
     response = data_object
     return response
@@ -262,6 +259,9 @@ def parse_args() -> argparse.Namespace:
 
 
 def run_app():
+    # Configure logging only when actually running the app
+    configure_logging()
+    
     args = parse_args()
     # Add this line to make args available to routes
     # override the args from the env file

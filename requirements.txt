@@ -1,14 +1,12 @@
 jupyter
 pandas
-docker
-namedlist
-matplotlib
+numpy
 flask
+flask-cors
 openai
 azure-identity
 azure-kusto-data
 azure-keyvault-secrets
-azure-kusto-data
 azure-storage-blob
 python-dotenv
 vega_datasets

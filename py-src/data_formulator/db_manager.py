@@ -8,6 +8,9 @@ import tempfile
 import os
 from contextlib import contextmanager
 from dotenv import load_dotenv
+import logging
+
+logger = logging.getLogger(__name__)
 
 class DuckDBManager:
     def __init__(self, local_db_dir: str):
@@ -34,10 +37,10 @@ class DuckDBManager:
             if not os.path.exists(db_dir):
                 db_dir = tempfile.gettempdir()
             db_file = os.path.join(db_dir, f"df_{session_id}.duckdb")
-            print(f"=== Creating new db file: {db_file}")
+            logger.debug(f"=== Creating new db file: {db_file}")
             self._db_files[session_id] = db_file
         else:
-            print(f"=== Using existing db file: {self._db_files[session_id]}")
+            logger.debug(f"=== Using existing db file: {self._db_files[session_id]}")
             db_file = self._db_files[session_id]
             
         # Create a fresh connection to the database file
