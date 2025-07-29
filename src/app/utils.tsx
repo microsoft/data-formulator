@@ -45,7 +45,6 @@ export function getUrls() {
         CREATE_TABLE: `/api/tables/create-table`,
         DELETE_TABLE: `/api/tables/delete-table`,
         GET_COLUMN_STATS: `/api/tables/analyze`,
-        QUERY_TABLE: `/api/tables/query`,
         SAMPLE_TABLE: `/api/tables/sample-table`,
 
         DATA_LOADER_LIST_DATA_LOADERS: `/api/tables/data-loader/list-data-loaders`,

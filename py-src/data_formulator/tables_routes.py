@@ -53,8 +53,6 @@ def list_tables():
                 if database_name in ['system', 'temp']:
                     continue
                 
-                
-
                 try:
                     # Get column information
                     columns = db.execute(f"DESCRIBE {table_name}").fetchall()
@@ -550,36 +548,6 @@ def reset_db_file():
             "message": safe_msg
         }), status_code
 
-
-@tables_bp.route('/query', methods=['POST'])
-def query_table():
-    """Execute a query on a table"""
-    try:
-        data = request.get_json()
-
-        query = data.get('query')
-
-        if not query:
-            return jsonify({"status": "error", "message": "No query provided"}), 400
-        
-        with db_manager.connection(session['session_id']) as db:
-            result = db.execute(query).fetch_df()
-        
-            return jsonify({
-                "status": "success",
-                "rows": json.loads(result.to_json(orient='records', date_format='iso')),
-                "columns": list(result.columns)
-            })
-    
-    except Exception as e:
-        logger.error(f"Error querying table: {str(e)}")
-        safe_msg, status_code = sanitize_db_error_message(e)
-        return jsonify({
-            "status": "error",
-            "message": safe_msg
-        }), status_code
-
-
 # Example of a more complex query endpoint
 @tables_bp.route('/analyze', methods=['POST'])
 def analyze_table():
@@ -775,7 +743,6 @@ def data_loader_list_tables():
 
     except Exception as e:
         logger.error(f"Error listing tables from data loader: {str(e)}")
-        #print(traceback.format_exc())
         safe_msg, status_code = sanitize_db_error_message(e)
         return jsonify({
             "status": "error", 

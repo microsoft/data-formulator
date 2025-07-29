@@ -1320,7 +1320,7 @@ export const DataQueryForm: React.FC<{
         });
     }
 
-    let queryResultBox = queryResult?.status === "success" ? [
+    let queryResultBox = queryResult?.status === "success" && queryResult.sample.length > 0 ? [
          <Box key="query-result-table" sx={{display: "flex", flexDirection: "row", gap: 1, justifyContent: "space-between"}}>
             <CustomReactTable rows={queryResult.sample} columnDefs={Object.keys(queryResult.sample[0]).map((t: any) => ({id: t, label: t}))} rowsPerPageNum={-1} compact={false} />
         </Box>,
