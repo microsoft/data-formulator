@@ -81,6 +81,7 @@ import { MuiMarkdown, getOverrides } from 'mui-markdown';
 import { dfSelectors } from '../app/dfSlice';
 import { EncodingShelfCard } from './EncodingShelfCard';
 import { ChartRecBox } from './ChartRecBox';
+import { ConceptShelf } from './ConceptShelf';
 
 export interface VisPanelProps { }
 
@@ -804,6 +805,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                 <EncodingShelfThread key='encoding-shelf' chartId={focusedChart.id} />
             </Box>
         </Collapse>,
+        
     ]
 
     let [scaleMin, scaleMax] = [0.2, 2.4]

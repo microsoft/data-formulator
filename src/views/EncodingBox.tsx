@@ -25,6 +25,7 @@ import {
     FormControlLabel,
     CardContent,
     ClickAwayListener,
+    Popper,
 } from '@mui/material';
 
 import Autocomplete, { createFilterOptions } from '@mui/material/Autocomplete';
@@ -132,11 +133,13 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
 
     // use tables for infer domains
     const tables = useSelector((state: DataFormulatorState) => state.tables);
+    const focusedTableId = useSelector((state: DataFormulatorState) => state.focusedTableId);
 
     let allCharts = useSelector(dfSelectors.getAllCharts);
     let activeModel = useSelector(dfSelectors.getActiveModel);
     
     let chart = allCharts.find(c => c.id == chartId) as Chart;
+    let focusedTable = tables.find(t => t.id == focusedTableId);
     
     let encoding = chart.encodingMap[channel]; 
         
@@ -500,7 +503,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
             //console.log(`yah-haha: ${option}`);
             updateEncProp("fieldID", (conceptShelfItems.find(f => f.name == option) as FieldItem).id);
         } else {
-            if (option == "...") {
+            if (option == "") {
                 console.log("nothing happens")
             } else {
                 console.log(`about to add ${option}`)
@@ -517,8 +520,62 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
 
     let conceptGroups = groupConceptItems(conceptShelfItems, tables);
 
+    // Custom Popper component with bottom-end alignment - Alternative CSS approach
+    const CustomPopperCSS = (props: any) => {
+        return (
+            <Popper 
+                {...props} 
+                style={{
+                    ...props.style,
+                    zIndex: 1300,
+                    transform: 'translateX(-100%) translateY(4px) !important', // Force right alignment
+                }}
+            />
+        );
+    };
+
+    // Smart Popper component that switches between bottom-end and top-end
+    const CustomPopper = (props: any) => {
+        console.log('CustomPopper props:', props); // Debug log
+        return (
+            <Popper 
+                {...props} 
+                placement="bottom-end"
+                modifiers={[
+                    {
+                        name: 'flip',
+                        enabled: true,
+                        options: {
+                            fallbackPlacements: ['top-end'], // Only flip to top-end
+                        },
+                    },
+                    {
+                        name: 'preventOverflow',
+                        enabled: true,
+                        options: {
+                            boundary: 'viewport',
+                            padding: 8,
+                        },
+                    },
+                    {
+                        name: 'offset',
+                        options: {
+                            offset: [0, 8], // [horizontal, vertical] offset
+                        },
+                    },
+                ]}
+                style={{
+                    zIndex: 1300, // Ensure it's above other elements
+                }}
+            />
+        );
+    };
+
     let createConceptInputBox = <Autocomplete
         key="concept-create-input-box"
+        slots={{
+            popper: CustomPopper // Try changing to: CustomPopperCSS
+        }}
         onChange={(event, value) => {
             console.log(`change: ${value}`)
             if (value != null) {
@@ -531,13 +588,20 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
             const { inputValue } = params;
             // Suggest the creation of a new value
             const isExisting = options.some((option) => inputValue === option);
-            if (inputValue !== '' && !isExisting) {
+            if (!isExisting) {
                 return [`${inputValue}`, ...filtered,  ]
             } else {
                 return [...filtered];
             }
         }}
-        sx={{ flexGrow: 1, flexShrink: 1, "& .MuiInput-input": { padding: "0px 8px !important"}}}
+        sx={{ 
+            flexGrow: 1, 
+            flexShrink: 1, 
+            "& .MuiInput-input": { padding: "0px 8px !important"},
+            "& .MuiAutocomplete-listbox": {
+                maxHeight: '600px !important'
+            }
+        }}
         fullWidth
         selectOnFocus
         clearOnBlur
@@ -552,7 +616,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
         groupBy={(option) => {
             let groupItem = conceptGroups.find(item => item.field.name == option);
             if (groupItem && groupItem.field.name != "") {
-                return `from ${groupItem.group}`;
+                return `${groupItem.group}`;
             } else {
                 return "create a new field"
             }         
@@ -560,22 +624,138 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
         renderGroup={(params) => (
             <Box>
               <Box className="GroupHeader">{params.group}</Box>
-              <Box className="GroupItems">{params.children}</Box>
+              <Box className="GroupItems" sx={{ 
+                display: 'grid', 
+                gridTemplateColumns: 'repeat(2, 1fr)', 
+                gap: '4px',
+                padding: '4px'
+              }}>
+                {params.children}
+              </Box>
             </Box>
-          )}
+        )}
         renderOption={(props, option) => {
-            let renderOption = (conceptShelfItems.map(f => f.name).includes(option) || option == "...") ? option : `"${option}"`;
-            let otherStyle = option == `...` ? {color: "darkgray"} : {}
+            let renderOption = (conceptShelfItems.map(f => f.name).includes(option)) ? option : `${option}`;
+            let otherStyle = option == `` ? {color: "darkgray", fontStyle: "italic"} : {}
 
-            return <Typography {...props} onClick={()=>{
-                handleSelectOption(option);
-            }} sx={{fontSize: "small", ...otherStyle}}>{renderOption}</Typography>
+            // Find the field item for this option
+            const fieldItem = conceptShelfItems.find(f => f.name === option);
+            
+            if (fieldItem) {
+                // Create a mini concept card
+                let backgroundColor = theme.palette.primary.main;
+                if (fieldItem.source == "original") {
+                    backgroundColor = theme.palette.primary.light;
+                } else if (fieldItem.source == "custom") {
+                    backgroundColor = theme.palette.custom.main;
+                } else if (fieldItem.source == "derived") {
+                    backgroundColor = theme.palette.derived.main;
+                }
+
+                // Add overlay logic similar to ConceptCard - make fields not in focused table more transparent
+                let draggleCardHeaderBgOverlay = 'rgba(255, 255, 255, 0.93)';
+                
+                // Add subtle tint for non-focused fields
+                if (focusedTable && !focusedTable.names.includes(fieldItem.name)) {
+                    draggleCardHeaderBgOverlay = 'rgba(255, 255, 255, 0.98)';
+                }
+
+                // Extract only the compatible props for Card
+                const { key, ...cardProps } = props;
+
+                return (
+                    <Card 
+                        key={key}
+                        onClick={() => handleSelectOption(option)}
+                        sx={{ 
+                            minWidth: 80, 
+                            backgroundColor, 
+                            position: "relative",
+                            border: "none",
+                            fontSize: "10px",
+                            cursor: "pointer",
+                            margin: '2px 4px',
+                            "&:hover": {
+                                boxShadow: "0 2px 4px 0 rgb(0 0 0 / 20%)"
+                            }
+                        }}
+                        variant="outlined"
+                        className={`data-field-list-item draggable-card`}
+                    >
+                        <Box sx={{ 
+                            cursor: "pointer", 
+                            background: draggleCardHeaderBgOverlay,
+                            padding: '4px 6px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            minHeight: '20px'
+                        }}
+                            className={`draggable-card-header draggable-card-inner ${fieldItem.source}`}>
+                            <Typography sx={{
+                                margin: '0px 4px',
+                                fontSize: 10, 
+                                width: "100%",
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '4px'
+                            }} component={'span'}>
+                                {getIconFromType(fieldItem.type)}
+                                <span style={{
+                                    whiteSpace: "nowrap",
+                                    overflow: "hidden", 
+                                    textOverflow: "ellipsis",
+                                    flexShrink: 1
+                                }}>
+                                    {fieldItem.name}
+                                </span>
+                            </Typography>
+                        </Box>
+                    </Card>
+                );
+            } else {
+                // For non-existing options (like new field creation)
+                return (
+                    <Typography 
+                        {...props} 
+                        onClick={() => handleSelectOption(option)}
+                        sx={{
+                            fontSize: "10px", 
+                            padding: '4px 6px',
+                            margin: '2px 4px',
+                            cursor: 'pointer',
+                            border: '1px dashed #ccc',
+                            borderRadius: '4px',
+                            backgroundColor: 'rgba(0,0,0,0.02)',
+                            height: '24px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            "&:hover": {
+                                backgroundColor: 'rgba(0,0,0,0.05)'
+                            },
+                            ...otherStyle
+                        }}
+                    >
+                        {renderOption || "type a new field name"}
+                    </Typography>
+                );
+            }
         }}
         freeSolo
         renderInput={(params) => (
             <TextField {...params} variant="standard" autoComplete='off' placeholder='field'
                 sx={{height: "24px", "& .MuiInput-root": {height: "24px", fontSize: "small"}}} />
         )}
+        slotProps={{
+            paper: { // Use paper instead of popper for styling
+                sx: {
+                    width: '300px',
+                    maxWidth: '300px',
+                    '& .MuiAutocomplete-listbox': {
+                        maxHeight: '600px !important'
+                    },
+                }
+            }
+        }}
     />
 
     const filter = createFilterOptions<string>();

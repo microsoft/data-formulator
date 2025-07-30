@@ -323,6 +323,25 @@ const barCharts: ChartTemplate[] = [
             "row": ["encoding", "row"]
         }
     },
+    {
+        "chart": "Heat Map",
+        "icon": <LazyChartIcon iconPath="../assets/chart-icon-heat-map.png" />,
+        "template": {
+            "mark": "rect",
+            "encoding": {  }
+        },
+        "channels": ["x", "y", "color", "column", "row"],
+        "paths": Object.fromEntries(["x", "y", "color", "column", "row"].map(channel => [channel, ["encoding", channel]])),
+        "postProcessor": (vgSpec: any, table: any[]) => {
+            if (vgSpec.encoding.y && vgSpec.encoding.y.type != "nominal") {
+                vgSpec.encoding.y.type = "nominal";
+            } 
+            if (vgSpec.encoding.x && vgSpec.encoding.x.type != "nominal") {
+                vgSpec.encoding.x.type = "nominal";
+            } 
+            return vgSpec;
+        }
+    }
 ]
 
 let lineCharts = [
@@ -418,33 +437,11 @@ let customCharts = [
     }
 ]
 
-let tableCharts : ChartTemplate[] = [
-    {
-        "chart": "Heat Map",
-        "icon": <LazyChartIcon iconPath="../assets/chart-icon-heat-map.png" />,
-        "template": {
-            "mark": "rect",
-            "encoding": {  }
-        },
-        "channels": ["x", "y", "color", "column", "row"],
-        "paths": Object.fromEntries(["x", "y", "color", "column", "row"].map(channel => [channel, ["encoding", channel]])),
-        "postProcessor": (vgSpec: any, table: any[]) => {
-            if (vgSpec.encoding.y && vgSpec.encoding.y.type != "nominal") {
-                vgSpec.encoding.y.type = "nominal";
-            } 
-            if (vgSpec.encoding.x && vgSpec.encoding.x.type != "nominal") {
-                vgSpec.encoding.x.type = "nominal";
-            } 
-            return vgSpec;
-        }
-    },
-]
 
 export const CHART_TEMPLATES : {[key: string] : ChartTemplate[]} = {
     "table": tablePlots,
     "scatter": scatterPlots,
     "bar": barCharts,
     "line": lineCharts,
-    "table-based": tableCharts,
     "custom": customCharts,
 }

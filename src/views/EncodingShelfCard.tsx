@@ -265,16 +265,19 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
 
     let encodingMap = chart?.encodingMap;
 
-    let handleUpdateChartType = (newChartType: string)=>{
+    const dispatch = useDispatch<AppDispatch>();
+
+    const [chartTypeMenuOpen, setChartTypeMenuOpen] = useState<boolean>(false);
+
+    let handleUpdateChartType = (newChartType: string) => {
         dispatch(dfActions.updateChartType({chartId, chartType: newChartType}));
+        // Close the menu after selection
+        setChartTypeMenuOpen(false);
     }
 
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
 
     let currentTable = getDataTable(chart, tables, allCharts, conceptShelfItems);
-
-    const dispatch = useDispatch<AppDispatch>();
-    
 
     // Add this state
     const [userSelectedActionTableIds, setUserSelectedActionTableIds] = useState<string[]>([]);
@@ -703,7 +706,20 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                         labelId="chart-mark-select-label"
                         id="chart-mark-select"
                         value={chart.chartType}
-                        //title="Chart Type"
+                        // Add these props to control the open state
+                        open={chartTypeMenuOpen}
+                        onOpen={() => setChartTypeMenuOpen(true)}
+                        onClose={() => setChartTypeMenuOpen(false)}
+                        MenuProps={{
+                            anchorOrigin: {
+                                vertical: 'bottom',
+                                horizontal: 'left',
+                            },
+                            transformOrigin: {
+                                vertical: 'top',
+                                horizontal: 'left',
+                            },
+                        }}
                         renderValue={(value: string) => {
                             const t = getChartTemplate(value);
                             return (
@@ -716,19 +732,48 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                                 </div>
                             )
                         }}
-                        onChange={(event) => { handleUpdateChartType(event.target.value) }}>
+                        onChange={(event) => { }}>
                         {Object.entries(CHART_TEMPLATES).map(([group, templates]) => {
                             return [
                                 <ListSubheader sx={{ color: "text.secondary", lineHeight: 2, fontSize: 12 }} key={group}>{group}</ListSubheader>,
-                                ...templates.map((t, i) => (
-                                    <MenuItem sx={{ fontSize: 12, paddingLeft: 3, paddingRight: 3 }} value={t.chart} key={`${group}-${i}`}>
-                                        <ListItemIcon sx={{minWidth: "24px"}}>
-                                            {typeof t?.icon == 'string' ? <img height="24px" width="24px" src={t?.icon} alt="" role="presentation" /> : 
-                                             <Box sx={{width: "24px", height: "24px"}}>{t?.icon}</Box>}
-                                        </ListItemIcon>
-                                        <ListItemText slotProps={{primary: {fontSize: 12}}}>{t.chart}</ListItemText>
-                                    </MenuItem>
-                                ))
+                                <Box key={`${group}-container`} sx={{ 
+                                    display: 'grid', 
+                                    gridTemplateColumns: '1fr 1fr', 
+                                    gap: 0,
+                                    padding: '0 8px'
+                                }}>
+                                    {templates.map((t, i) => (
+                                        <MenuItem 
+                                            sx={{ 
+                                                fontSize: 12, 
+                                                paddingLeft: 2, 
+                                                paddingRight: 2,
+                                                minHeight: '32px',
+                                                margin: '1px 0'
+                                            }} 
+                                            value={t.chart} 
+                                            key={`${group}-${i}`}
+                                            onClick={(e) => {
+                                                console.log('MenuItem clicked:', t.chart);
+                                                // Manually trigger the chart type update (this will also close the menu)
+                                                handleUpdateChartType(t.chart);
+                                            }}
+                                        >
+                                            <ListItemIcon sx={{minWidth: "20px"}}>
+                                                {typeof t?.icon == 'string' ? 
+                                                    <img height="20px" width="20px" src={t?.icon} alt="" role="presentation" /> : 
+                                                    <Box sx={{width: "20px", height: "20px"}}>{t?.icon}</Box>
+                                                }
+                                            </ListItemIcon>
+                                            <ListItemText 
+                                                slotProps={{primary: {fontSize: 11}}} 
+                                                sx={{ margin: 0 }}
+                                            >
+                                                {t.chart}
+                                            </ListItemText>
+                                        </MenuItem>
+                                    ))}
+                                </Box>
                             ]
                         })}
                     </Select>
@@ -747,5 +792,5 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
         </Card>
     )
 
-    return encodingShelfCard ;
+    return encodingShelfCard;
 }

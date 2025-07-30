@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import '../scss/App.scss';
 
 import { useDispatch, useSelector } from "react-redux"; /* code change */
@@ -20,8 +20,13 @@ import {
     Box,
     Tooltip,
     Button,
+    Collapse,
+    IconButton,  // Add this
 } from '@mui/material';
 
+// Add these icon imports
+import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
+import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 
 
 import { styled } from '@mui/material/styles';
@@ -53,7 +58,7 @@ export const DataFormulatorFC = ({ }) => {
     const displayPanelSize = useSelector((state: DataFormulatorState) => state.displayPanelSize);
     const visPaneSize = useSelector((state: DataFormulatorState) => state.visPaneSize);
     const tables = useSelector((state: DataFormulatorState) => state.tables);
-
+    
     const models = useSelector((state: DataFormulatorState) => state.models);
     const modelSlots = useSelector((state: DataFormulatorState) => state.modelSlots);
     const testedModels = useSelector((state: DataFormulatorState) => state.testedModels);
@@ -63,6 +68,8 @@ export const DataFormulatorFC = ({ }) => {
         return slotTypes.every(
             slotType => state.modelSlots[slotType] !== undefined && state.testedModels.find(t => t.id == state.modelSlots[slotType])?.status != 'error');
     });
+
+    const [conceptPanelOpen, setConceptPanelOpen] = useState(true); 
 
     const dispatch = useDispatch();
 
@@ -109,12 +116,6 @@ export const DataFormulatorFC = ({ }) => {
         }
     }, []);
 
-    let conceptEncodingPanel = (
-        <Box sx={{display: "flex", flexDirection: "row", width: '100%', flexGrow: 1, overflow: "hidden"}}>
-            <ConceptShelf />
-        </Box>
-    )
-
     const visPaneMain = (
         <Box sx={{ width: "100%", overflow: "hidden", display: "flex", flexDirection: "row" }}>
             <VisualizationViewFC />
@@ -135,39 +136,59 @@ export const DataFormulatorFC = ({ }) => {
             </Box>
         </SplitPane>);
 
-    const splitPane = ( // @ts-ignore
-        <SplitPane split="vertical"
-            maxSize={440}
-            minSize={320}
-            primary="second"
-            size={displayPanelSize}
-            style={{width: "100%", height: '100%', position: 'relative'}}
-            onDragFinished={size => { dispatch(dfActions.setDisplayPanelSize(size)) }}>
-            <Box sx={{display: 'flex', width: `100%`, height: '100%'}}>
-                {tables.length > 0 ? 
-                        <DataThread />   //<Carousel />
-                        : ""} 
-                    {visPane}
-            </Box>
-            <Box className="data-editor">
-                {conceptEncodingPanel}
-                {/* <InfoPanelFC $tableRef={$tableRef}/> */}
-            </Box>
-        </SplitPane>);
-
     const fixedSplitPane = ( 
         <Box sx={{display: 'flex', flexDirection: 'row', height: '100%'}}>
-            <Box sx={{display: 'flex', width: `calc(100% - ${280}px)`}}>
-            {tables.length > 0 ? 
+            {/* Main content area - takes remaining space */}
+            <Box sx={{
+                display: 'flex', 
+                flex: 1,
+                minWidth: 0, // Important: allows flex item to shrink below content size
+                overflow: 'hidden'
+            }}>
+                {tables.length > 0 ? 
                     <DataThread />   //<Carousel />
                     : ""} 
                 {visPane}
             </Box>
-            <Box className="data-editor" sx={{width: 280, borderLeft: '1px solid lightgray'}}>
-                {conceptEncodingPanel}
-                {/* <InfoPanelFC $tableRef={$tableRef}/> */}
+            
+            {/* Concept panel with toggle */}
+            <Box sx={{
+                display: 'flex',
+                flexDirection: 'row',
+                flexShrink: 0, // Prevent panel from shrinking
+                width: conceptPanelOpen ? 304 : 48,
+                transition: 'width 0.3s ease', // Smooth transition
+                
+                position: 'relative'
+            }}>
+                <Tooltip placement="left" title={conceptPanelOpen ? "hide concept panel" : "open concept panel"}>
+                    <IconButton 
+                        color="primary"
+                        sx={{
+                            width: 24, 
+                            minWidth: 24,
+                            height: '100%',
+                            borderRadius: 0,
+                            flexShrink: 0,
+                            backgroundColor: 'rgba(0,0,0,0.01)'
+                        }}
+                        onClick={() => setConceptPanelOpen(!conceptPanelOpen)}
+                    >
+                        {conceptPanelOpen ? <ChevronRightIcon /> : <ChevronLeftIcon />}
+                    </IconButton>
+                </Tooltip>
+                
+                <Box 
+                onClick={() => !conceptPanelOpen && setConceptPanelOpen(!conceptPanelOpen)}
+                sx={{
+                    width: 280, 
+                    overflow: 'visible'
+                }}>
+                    <ConceptShelf />
+                </Box>
             </Box>
-        </Box>);
+        </Box>
+    );
 
     let exampleMessyText=`Rank	NOC	Gold	Silver	Bronze	Total
 1	 South Korea	5	1	1	7
