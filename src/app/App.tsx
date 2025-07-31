@@ -73,8 +73,8 @@ import { connectToSSE } from '../views/SSEClient';
 
 const AppBar = styled(MuiAppBar)(({ theme }) => ({
     color: 'black',
-    backgroundColor: "white",
-    borderBottom: "1px solid #C3C3C3",
+    backgroundColor: "transparent",
+    //borderBottom: "1px solid #C3C3C3",
     boxShadow: "none",
     transition: theme.transitions.create(['margin', 'width'], {
         easing: theme.transitions.easing.sharp,
@@ -286,10 +286,11 @@ const ResetDialog: React.FC = () => {
         <>
             <Button 
                 variant="text" 
+                sx={{textTransform: 'none'}}
                 onClick={() => setOpen(true)} 
                 endIcon={<PowerSettingsNewIcon />}
             >
-                Reset session
+                Reset
             </Button>
             <Dialog onClose={() => setOpen(false)} open={open}>
                 <DialogTitle sx={{ display: "flex", alignItems: "center" }}>Reset Session?</DialogTitle>
@@ -488,8 +489,6 @@ const ConfigDialog: React.FC = () => {
 
 export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
 
-    const visViewMode = useSelector((state: DataFormulatorState) => state.visViewMode);
-    const tables = useSelector((state: DataFormulatorState) => state.tables);
     const dispatch = useDispatch<AppDispatch>();
 
     useEffect(() => {
@@ -555,41 +554,10 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
         },
     });
 
-    let switchers = (
-        <Box sx={{ display: "flex" }} key="switchers">
-            <ToggleButtonGroup
-                color="primary"
-                value={visViewMode}
-                exclusive
-                size="small"
-                onChange={(
-                    event: React.MouseEvent<HTMLElement>,
-                    newViewMode: string | null,
-                ) => {
-                    if (newViewMode === "gallery" || newViewMode === "carousel") {
-                        dispatch(dfActions.setVisViewMode(newViewMode));
-                    }
-                }}
-                aria-label="View Mode"
-                sx={{ marginRight: "8px", height: 32, padding: "4px 0px", marginTop: "2px", "& .MuiToggleButton-root": { padding: "0px 6px" } }}
-            >
-                <ToggleButton value="carousel" aria-label="view list">
-                    <Tooltip title="view list">
-                        <ViewSidebarIcon fontSize="small" sx={{ transform: "scaleX(-1)" }} />
-                    </Tooltip>
-                </ToggleButton>
-                <ToggleButton value="gallery" aria-label="view grid">
-                    <Tooltip title="view grid">
-                        <GridViewIcon fontSize="small" />
-                    </Tooltip>
-                </ToggleButton>
-            </ToggleButtonGroup>
-        </Box>
-    )
 
     let appBar = [
-        <AppBar className="app-bar" position="static" key="app-bar-main">
-            <Toolbar variant="dense">
+        <AppBar position="static" key="app-bar-main" >
+            <Toolbar variant="dense" sx={{height: 40, minHeight: 36}}>
                 <Button href={"/"} sx={{
                     display: "flex", flexDirection: "row", textTransform: "none",
                     backgroundColor: 'transparent',
@@ -597,15 +565,12 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
                         backgroundColor: "transparent"
                     }
                 }} color="inherit">
-                    <Box component="img" sx={{ height: 32, marginRight: "12px" }} alt="" src={dfLogo} />
-                    <Typography variant="h6" noWrap component="h1" sx={{ fontWeight: 300, display: { xs: 'none', sm: 'block' } }}>
+                    <Box component="img" sx={{ height: 24, marginRight: "12px" }} alt="" src={dfLogo} />
+                    <Typography noWrap component="h1" sx={{ fontWeight: 300, display: { xs: 'none', sm: 'block' } }}>
                         {toolName} {process.env.NODE_ENV == "development" ? "" : ""}
                     </Typography>
                 </Button>
-                <Box sx={{ flexGrow: 1, textAlign: 'center', display: 'flex', justifyContent: 'center' }} >
-                    {switchers}
-                </Box>
-                <Box sx={{ display: 'flex', fontSize: 14 }}>
+                <Box sx={{ display: 'flex', ml: 'auto', fontSize: 14 }}>
                     <ConfigDialog />
                     <Divider orientation="vertical" variant="middle" flexItem />
                     <DBTableSelectionDialog buttonElement={
@@ -646,6 +611,7 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
     let app =
         <Box sx={{ 
             position: 'absolute',
+            backgroundColor: 'rgba(255, 255, 255, 0.3)',
             top: 0,
             left: 0,
             right: 0,

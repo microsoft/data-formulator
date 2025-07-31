@@ -848,8 +848,7 @@ export const getDataFieldItems = (baseTable: DictTable): FieldItem[] => {
         const columnValues = baseTable.rows.map((r) => r[name]);
         const type = baseTable.types[index];
         const uniqueValues = Array.from(new Set(columnValues));
-        const domain = uniqueValues; //Array.from(columnValues);
-        return { id, name, type, source: "original", domain, description: "", tableRef: baseTable.id };
+        return { id, name, type, source: "original", description: "", tableRef: baseTable.id };
     }) || [];
 }
 

@@ -772,7 +772,7 @@ const MemoizedChartObject = memo<{
     );
 });
 
-export const DataThread: FC<{}> = function ({ }) {
+export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
 
     let tables = useSelector((state: DataFormulatorState) => state.tables);
 
@@ -945,7 +945,7 @@ export const DataThread: FC<{}> = function ({ }) {
     let jumpButtons = drawerOpen ? jumpButtonsDrawerOpen : jumpButtonDrawerClosed;
 
     let carousel = (
-        <Box className="data-thread" sx={{ overflowY: 'hidden', overflowX: 'auto' }}>
+        <Box className="data-thread" sx={{ overflow: 'hidden', }}>
             <Box sx={{
                 direction: 'ltr', display: 'flex',
                 paddingTop: "10px", paddingLeft: '12px', alignItems: 'center', justifyContent: 'space-between'
@@ -965,10 +965,12 @@ export const DataThread: FC<{}> = function ({ }) {
             </Box>
             <Box sx={{
                 transition: 'width 200ms cubic-bezier(0.4, 0, 0.2, 1) 0ms', 
-                overflowX: drawerOpen ? 'auto' : 'hidden', // Only allow scroll when drawer is closed
+                overflowY: 'auto', 
+                overflowX: 'hidden',
                 direction: 'rtl', 
                 display: 'block', 
-                flex: 1
+                flex: 1,
+                height: 'calc(100% - 40px)'
             }}
                  className="thread-view-mode">
                 {view}
@@ -976,7 +978,7 @@ export const DataThread: FC<{}> = function ({ }) {
         </Box>
     );
 
-    return <Box sx={{ display: 'flex', flexDirection: 'row' }}>
+    return <Box sx={{ display: 'flex', flexDirection: 'row', ...sx }}>
         {carousel}
     </Box>;
 }

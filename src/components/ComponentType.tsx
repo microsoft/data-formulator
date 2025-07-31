@@ -19,7 +19,6 @@ export interface FieldItem {
     name: string;
     type: Type;
     source: FieldSource;
-    domain: any[];
     tableRef: string; // which table it belongs to, it matters when it's an original field or a derived field
 
     transform?: ConceptTransformation;
@@ -34,7 +33,6 @@ export const duplicateField = (field: FieldItem) => {
         name: field.name,
         type: field.type,
         source: field.source,
-        domain: field.domain,
         transform: field.transform,
         tableRef: field.tableRef,
         temporary: field.temporary,

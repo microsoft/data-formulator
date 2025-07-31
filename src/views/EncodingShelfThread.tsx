@@ -42,6 +42,10 @@ import { AppDispatch } from '../app/store';
 import { EncodingShelfCard, TriggerCard } from './EncodingShelfCard';
 import ChangeCircleOutlinedIcon from '@mui/icons-material/ChangeCircleOutlined';
 import { Type } from '../data/types';
+import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
+import ChevronRightIcon from '@mui/icons-material/ChevronRight';
+import { alpha } from '@mui/material/styles';
+import { useTheme } from '@mui/material/styles';
 
 // Property and state of an encoding shelf
 export interface EncodingShelfThreadProps { 
@@ -151,7 +155,8 @@ export let ChartElementFC: FC<{chart: Chart, tableRows: any[], boxWidth?: number
 }
 
 export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ chartId }) {
-
+    const theme = useTheme();
+    const [collapseEditor, setCollapseEditor] = useState(false);
     const tables = useSelector((state: DataFormulatorState) => state.tables);
     let allCharts = useSelector(dfSelectors.getAllCharts);
 
@@ -262,7 +267,13 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
     }
 
     const encodingShelf = (
-        <Box className="encoding-shelf-compact" sx={{height: '100%'}}>
+        <Box className="encoding-shelf-compact" sx={{height: '100%',
+            width: 236,
+            overflowY: 'auto',
+            transition: 'height 300ms cubic-bezier(0.4, 0, 0.2, 1) 0ms',
+            alignItems: 'flex-start',
+            paddingRight: '8px',
+        }}>
              {[   
                 <Box
                     key="encoding-shelf" 
@@ -281,5 +292,20 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
         </Box>
     )
 
-    return encodingShelf;
+    return <Collapse 
+        key='encoding-shelf'
+        collapsedSize={64} in={!collapseEditor} orientation='horizontal' 
+        sx={{position: 'relative'}}>
+        <Box sx={{display: 'flex', flexDirection: 'row', height: '100%', 
+            position: 'relative',
+        }}>
+            <Tooltip placement="left" title={collapseEditor ? "open editor" : "hide editor"}>
+                <Button color="primary"
+                        sx={{width: 18, minWidth: 18, p: 0}}
+                    onClick={()=>{setCollapseEditor(!collapseEditor)}}
+                >{collapseEditor ? <ChevronLeftIcon sx={{fontSize: 18}} /> : <ChevronRightIcon sx={{fontSize: 18}} />}</Button>
+            </Tooltip>
+            {encodingShelf}
+        </Box>
+    </Collapse>;
 }

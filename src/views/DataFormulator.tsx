@@ -29,7 +29,7 @@ import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 
 
-import { styled } from '@mui/material/styles';
+import { alpha, styled, useTheme } from '@mui/material/styles';
 
 import { FreeDataViewFC } from './DataView';
 import { VisualizationViewFC } from './VisualizationView';
@@ -72,6 +72,7 @@ export const DataFormulatorFC = ({ }) => {
     const [conceptPanelOpen, setConceptPanelOpen] = useState(true); 
 
     const dispatch = useDispatch();
+    const theme = useTheme();
 
     useEffect(() => {
         document.title = toolName;
@@ -136,57 +137,70 @@ export const DataFormulatorFC = ({ }) => {
             </Box>
         </SplitPane>);
 
+    let conceptPanel = <Box sx={{
+        display: 'flex',
+        flexDirection: 'row',
+        flexShrink: 0, // Prevent panel from shrinking
+        width: conceptPanelOpen ? 304 : 64,
+        transition: 'width 0.3s ease', // Smooth transition
+        overflow: 'hidden',
+        position: 'relative'
+    }}>
+        <Tooltip placement="left" title={conceptPanelOpen ? "hide concept panel" : "open concept panel"}>
+            <IconButton 
+                color="primary"
+                sx={{
+                    width: 16, 
+                    minWidth: 16,
+                    alignSelf: 'stretch', // Add this to match the height of the ConceptShelf box
+                    borderRadius: 0,
+                    flexShrink: 0,
+                    position: 'relative',
+                    backgroundColor: 'rgba(0,0,0,0.01)'
+                }}
+                onClick={() => setConceptPanelOpen(!conceptPanelOpen)}
+            >
+                <Box sx={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    zIndex: 1,
+                }}>
+                    {conceptPanelOpen ?  <ChevronRightIcon sx={{fontSize: 18}} /> : <ChevronLeftIcon sx={{fontSize: 18}} />}
+                </Box>
+            </IconButton>
+        </Tooltip>
+        <Box 
+            onClick={() => !conceptPanelOpen && setConceptPanelOpen(!conceptPanelOpen)}
+            sx={{
+                width: 280, 
+                overflow: 'hidden'
+        }}>
+            <ConceptShelf />
+        </Box>
+    </Box>;
+
     const fixedSplitPane = ( 
         <Box sx={{display: 'flex', flexDirection: 'row', height: '100%'}}>
-            {/* Main content area - takes remaining space */}
+            <Box sx={{border: '1px solid lightgray', borderRadius: '4px', margin: '4px', backgroundColor: 'white',
+                 display: 'flex', height: '100%', width: 'fit-content', flexDirection: 'column'}}>
+                {tables.length > 0 ?  <DataThread sx={{
+                    minWidth: 201,
+                    display: 'flex', 
+                    flexDirection: 'column',
+                    overflow: 'hidden',
+                    //borderRight: '1px solid lightgray',
+                    alignContent: 'flex-start',
+                    height: '100%',
+                }}/>  : ""} 
+            </Box>
             <Box sx={{
-                display: 'flex', 
-                flex: 1,
-                minWidth: 0, // Important: allows flex item to shrink below content size
-                overflow: 'hidden'
-            }}>
-                {tables.length > 0 ? 
-                    <DataThread />   //<Carousel />
-                    : ""} 
+                border: '1px solid lightgray', borderRadius: '4px', margin: '4px', backgroundColor: 'white',
+                display: 'flex', height: '100%', flex: 1, overflow: 'hidden', flexDirection: 'row'}}>
                 {visPane}
+                {conceptPanel}
             </Box>
             
-            {/* Concept panel with toggle */}
-            <Box sx={{
-                display: 'flex',
-                flexDirection: 'row',
-                flexShrink: 0, // Prevent panel from shrinking
-                width: conceptPanelOpen ? 304 : 48,
-                transition: 'width 0.3s ease', // Smooth transition
-                
-                position: 'relative'
-            }}>
-                <Tooltip placement="left" title={conceptPanelOpen ? "hide concept panel" : "open concept panel"}>
-                    <IconButton 
-                        color="primary"
-                        sx={{
-                            width: 24, 
-                            minWidth: 24,
-                            height: '100%',
-                            borderRadius: 0,
-                            flexShrink: 0,
-                            backgroundColor: 'rgba(0,0,0,0.01)'
-                        }}
-                        onClick={() => setConceptPanelOpen(!conceptPanelOpen)}
-                    >
-                        {conceptPanelOpen ? <ChevronRightIcon /> : <ChevronLeftIcon />}
-                    </IconButton>
-                </Tooltip>
-                
-                <Box 
-                onClick={() => !conceptPanelOpen && setConceptPanelOpen(!conceptPanelOpen)}
-                sx={{
-                    width: 280, 
-                    overflow: 'visible'
-                }}>
-                    <ConceptShelf />
-                </Box>
-            </Box>
         </Box>
     );
 
@@ -242,7 +256,7 @@ Totals (7 entries)	5	5	5	15
     </Box>;
 
     return (
-        <Box sx={{ display: 'block', width: "100%", height: 'calc(100% - 49px)' }}>
+        <Box sx={{ display: 'block', width: "100%", height: 'calc(100% - 54px)' }}>
             <DndProvider backend={HTML5Backend}>
                 {!noBrokenModelSlots ? modelSelectionDialogBox : (tables.length > 0 ? fixedSplitPane : dataUploadRequestBox)} 
             </DndProvider>

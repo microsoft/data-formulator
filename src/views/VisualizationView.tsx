@@ -17,7 +17,6 @@ import {
     MenuItem,
     LinearProgress,
     Card,
-    Collapse,
     ListSubheader,
     Menu,
     CardContent,
@@ -29,6 +28,7 @@ import {
     Popover,
     Snackbar,
     Alert,
+    Collapse,
 } from '@mui/material';
 
 import ButtonGroup from '@mui/material/ButtonGroup';
@@ -73,8 +73,6 @@ import { ChatDialog } from './ChatDialog';
 import { EncodingShelfThread } from './EncodingShelfThread';
 import { CustomReactTable } from './ReactTable';
 import InsightsIcon from '@mui/icons-material/Insights';
-import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
-import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 
 import { MuiMarkdown, getOverrides } from 'mui-markdown';
 
@@ -367,8 +365,6 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
 
     const [chatDialogOpen, setChatDialogOpen] = useState<boolean>(false);
     const [focusUpdated, setFocusUpdated] = useState<boolean>(true);
-
-    let [collapseEditor, setCollapseEditor] = useState<boolean>(false);
 
     const [localScaleFactor, setLocalScaleFactor] = useState<number>(1);
 
@@ -791,21 +787,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
         <Box key='focused-box' className="vega-focused" sx={{ display: "flex", overflow: 'auto', flexDirection: 'column', position: 'relative' }}>
             {focusedComponent}
         </Box>,
-        <Collapse 
-            key='encoding-shelf'
-            collapsedSize={48} in={!collapseEditor} orientation='horizontal' 
-            sx={{position: 'relative'}}>
-            <Box sx={{display: 'flex', flexDirection: 'row', height: '100%'}}>
-                <Tooltip placement="left" title={collapseEditor ? "open editor" : "hide editor"}>
-                    <Button color="primary"
-                            sx={{width: 24, minWidth: 24}}
-                        onClick={()=>{setCollapseEditor(!collapseEditor)}}
-                    >{collapseEditor ? <ChevronLeftIcon /> : <ChevronRightIcon />}</Button>
-                </Tooltip>
-                <EncodingShelfThread key='encoding-shelf' chartId={focusedChart.id} />
-            </Box>
-        </Collapse>,
-        
+         <EncodingShelfThread key='encoding-shelf' chartId={focusedChart.id} />
     ]
 
     let [scaleMin, scaleMax] = [0.2, 2.4]
@@ -856,10 +838,6 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
     let focusedTableId = useSelector((state: DataFormulatorState) => state.focusedTableId);
     let chartSynthesisInProgress = useSelector((state: DataFormulatorState) => state.chartSynthesisInProgress);
 
-    let visViewMode = useSelector((state: DataFormulatorState) => state.visViewMode);
-
-    const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
-
     const dispatch = useDispatch();
 
     let focusedChart = allCharts.find(c => c.id == focusedChartId) as Chart;
@@ -907,87 +885,11 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
 
     let chartEditor = <ChartEditorFC key={focusedChartId} />
 
-    let finalView = <Box></Box>;
-
-    if (visViewMode == "gallery") {
-
-        let chartElements = allCharts.map((chart, index) => {
-
-            let table = getDataTable(chart, tables, allCharts, conceptShelfItems);
-    
-            let visTableRows = structuredClone(table.rows);
-
-            let chartTemplate = getChartTemplate(chart.chartType);
-
-            let setIndexFunc = () => {
-                dispatch(dfActions.setFocusedChart(chart.id));
-                dispatch(dfActions.setFocusedTable(table.id));
-                dispatch(dfActions.setVisViewMode('carousel'));
-            }
-
-            if (chart.chartType == "Table") {
-                return <Box key={`animateOnChange-${index}`}
-                     className="vega-thumbnail-box"
-                     onClick={setIndexFunc}
-                     sx={{  position: 'relative', backgroundColor: chart.saved ? "rgba(255,215,0,0.05)" : "white",
-                            border: chart.saved ? '2px solid gold' : '1px solid lightgray', margin: 1, 
-                            display: 'flex', flexDirection: 'column', maxWidth: '800px', maxHeight: '600px', overflow:'hidden'}}
-                >{renderTableChart(chart, conceptShelfItems, visTableRows)}</Box>
-            }
-
-            if (!checkChartAvailability(chart, conceptShelfItems, table.rows)) {
-                return <Box className={"vega-thumbnail" + (focusedChartId === chart.id ? " focused-vega-thumbnail" : "")} 
-                            key="skeleton" onClick={setIndexFunc}>{generateChartSkeleton(chartTemplate?.icon)}</Box>;
-            }
-
-            let assembledChart = assembleVegaChart(chart.chartType, chart.encodingMap, conceptShelfItems, visTableRows);
-
-            const id = `chart-element-${index}`;
-
-            let element =
-                <Box key={`animateOnChange-${index}`}
-                     className="vega-thumbnail-box"
-                     onClick={setIndexFunc}
-                     sx={{  position: 'relative', backgroundColor: chart.saved ? "rgba(255,215,0,0.05)" : "white",
-                            border: chart.saved ? '2px solid gold' : '1px solid lightgray', margin: 1, 
-                            display: 'flex', flexDirection: 'column', maxWidth: '800px', maxHeight: '600px', overflow:'hidden'}}
-                >
-                    {/* <Box className="vega-thumbnail" id={id} key={`chart-${index}`} sx={{ margin: "auto" }}
-                        onClick={setIndexFunc}></Box> */}
-                    {chart.saved ? <Typography key='chart-saved-star-icon' sx={{ position: "absolute", margin: "5px", zIndex: 2, right: 0 }}>
-                                        <StarIcon sx={{ color: "gold" }} fontSize="small" />
-                                    </Typography> : ""}
-                    <Typography fontSize="small">data: {chart.tableRef}</Typography>
-                    <Box className={"vega-thumbnail" + (focusedChartId == chart.id ? " focused-vega-thumbnail" : "")}
-                        id={id} key={`chart-gallery-${index}`} sx={{ margin: "auto",  }}
-                        >
-                    </Box>
-                </Box>;
-
-            embed('#' + id, assembledChart, { actions: false, renderer: "canvas", defaultStyle: true, }); //, config: powerbi
-
-            return element;
-        });
-
-        finalView = (
-            <Box className="visualization-gallery">
-                <Box className="vega-container" key="vega-container">
-                    {chartElements}
-                </Box>
-            </Box>
-        );
-    } else if (visViewMode == "carousel") {
-
-        finalView = (
-            <Box sx={{ width: "100%", overflow: "hidden", display: "flex", flexDirection: "row" }}>
-                <Box className="visualization-carousel" sx={{display: "contents"}} >
-                    {chartEditor}
-                </Box>
-            </Box>
-        );
-    }
-
-    let visPanel = finalView;
+    let visPanel = <Box sx={{ width: "100%", overflow: "hidden", display: "flex", flexDirection: "row" }}>
+        <Box className="visualization-carousel" sx={{display: "contents"}} >
+            {chartEditor}
+        </Box>
+    </Box>
 
     return visPanel;
 }

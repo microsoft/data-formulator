@@ -22,6 +22,7 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import WarningIcon from '@mui/icons-material/Warning';
 import InfoOutlineIcon from '@mui/icons-material/InfoOutline';
+import { useTheme } from '@mui/material/styles';
 
 export interface Message {
     type: "success" | "info" | "error" | "warning",
@@ -33,6 +34,7 @@ export interface Message {
 }
 
 export function MessageSnackbar() {
+    const theme = useTheme();
   
     const challenges = useSelector((state: DataFormulatorState) => state.activeChallenges);
     const messages = useSelector((state: DataFormulatorState) => state.messages);
@@ -128,35 +130,42 @@ export function MessageSnackbar() {
     }
 
     return (
-        <Box>
+        <Box sx={{ '& .snackbar-button': {
+            width: 36,
+            height: 36,
+            zIndex: 10,
+            backgroundColor: 'white',
+            '&:hover': {
+                transform: 'scale(1.1)',
+                backgroundColor: 'white',
+            },
+            border: '1px solid',
+            
+            boxShadow: '0 0 10px rgba(0,0,0,0.1)',
+            transition: 'all 0.3s ease'
+        }}}>
             {challenges.length > 0 && <Tooltip placement="left" title="view challenges">
                 <IconButton 
+                    className='snackbar-button'
                     color="warning"
                     sx={{
                         position: "absolute", 
                         bottom: 56, 
+                        borderColor: theme.palette.warning.light,
                         right: 8,
-                        animation: challenges.length > 0 ? 'glow 1.5s ease-in-out infinite alternate' : 'none',
-                        '@keyframes glow': {
-                            from: {
-                                boxShadow: '0 0 5px #fff, 0 0 10px #fff, 0 0 15px #ed6c02'
-                            },
-                            to: {
-                                boxShadow: '0 0 10px #fff, 0 0 20px #fff, 0 0 30px #ed6c02'
-                            }
-                        }
                     }}
                     onClick={() => setOpenChallenge(true)}
                 >
-                    <AssignmentIcon />
+                    <AssignmentIcon sx={{fontSize: 24}}/>
                 </IconButton>
             </Tooltip>}
             <Tooltip placement="left" title="view system messages">
                 <IconButton 
-                    sx={{position: "absolute", bottom: 16, right: 8}}
+                    className='snackbar-button'
+                    sx={{position: "absolute", bottom: 16, right: 8, borderColor: theme.palette.info.light, }}
                     onClick={() => setOpenMessages(true)}
                 >
-                    <InfoIcon />
+                    <InfoIcon sx={{fontSize: 32}}/>
                 </IconButton>
             </Tooltip>
             
@@ -256,6 +265,7 @@ export function MessageSnackbar() {
                             overflow: 'auto',
                             flexGrow: 1,
                             maxHeight: '50vh',
+                            minHeight: '100px',
                         }}
                     >
                         {messages.length == 0 && 

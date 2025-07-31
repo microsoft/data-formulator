@@ -79,7 +79,7 @@ const checkConceptIsEmpty = (field: FieldItem) => {
 export const genFreshDerivedConcept = (parentIDs: string[], tableRef: string) => {
     return {
         id: `concept-${Date.now()}`, name: "", type: "string" as Type,
-        source: "derived", domain:[], tableRef: tableRef,
+        source: "derived", tableRef: tableRef,
         transform: { parentIDs: parentIDs, code: "", description: ""}
     } as FieldItem
 }
@@ -102,7 +102,6 @@ let ConceptReApplyButton: FC<{field: FieldItem,
             name: parentConcept.name,
         }
     })
-
 
     let handleGeneratePreview = () => {
         handleLoading(true);
@@ -405,7 +404,6 @@ export const ConceptCard: FC<ConceptCardProps> = function ConceptCard({ field, s
                     {typeIconMenu}
                     {fieldNameEntry}
                     {field.semanticType ? <Typography sx={{fontSize: "xx-small", marginLeft: "6px", fontStyle: 'italic', whiteSpace: 'nowrap'}}>-- {field.semanticType}</Typography> : ""}
-                    {/* {field.source == "custom" ? exampleToComponent(field.domain.values, 3) : ""} */}
                 </Typography>
                 
                 <Box sx={{ position: "absolute", right: 0, display: "flex", flexDirection: "row", alignItems: "center" }}>
@@ -548,7 +546,6 @@ export const DerivedConceptFormV2: FC<ConceptFormProps> = function DerivedConcep
     let parentConcepts = transformParentIDs.map((parentID) => conceptShelfItems.filter(c => c.id == parentID)[0]);
     let viewExamples: any = "";
 
-    //let transformResult = deriveTransformResult(transformCode, parentConcept.domain.values.slice(0, 5));
     if (transformCode && tempExtTable) {
 
         let colNames: [string[], string] = [parentConcepts.map(f => f.name), name];

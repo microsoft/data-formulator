@@ -170,7 +170,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
         if (field?.levels) {
             updateEncProp('sortBy', JSON.stringify(field?.levels));
         }
-    }, [encoding.fieldID, field])
+    }, [encoding.fieldID, field?.levels])
 
     // make this a drop element for concepts
     const [{ canDrop, isOver }, drop] = useDrop(() => ({
@@ -276,18 +276,13 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
             .then((response) => response.json())
             .then((data) => {
                 setAutoSortInferRunning(false);
-                console.log(data);
-                console.log(token);
 
                 if (data["status"] == "ok") {
                     if (data["token"] == token) {
                         let candidate = data["result"][0];
-                        console.log(candidate)
-                        console.log(candidate['status'])
                         
                         if (candidate['status'] == 'ok') {
                             let sortRes = {values: candidate['content']['sorted_values'], reason: candidate['content']['reason']}
-                            console.log(sortRes)
                             setAutoSortResult(sortRes);
 
                             let tmpConcept = duplicateField(field as FieldItem);
@@ -509,7 +504,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
                 console.log(`about to add ${option}`)
                 let newConept = {
                     id: `concept-${Date.now()}`, name: option, type: "auto" as Type, 
-                    description: "", source: "custom", domain: [], tableRef: "custom",
+                    description: "", source: "custom", tableRef: "custom",
                 } as FieldItem;
                 dispatch(dfActions.updateConceptItems(newConept));
                 updateEncProp("fieldID", newConept.id);
@@ -536,7 +531,6 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
 
     // Smart Popper component that switches between bottom-end and top-end
     const CustomPopper = (props: any) => {
-        console.log('CustomPopper props:', props); // Debug log
         return (
             <Popper 
                 {...props} 

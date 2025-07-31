@@ -385,7 +385,6 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                             source: "custom",
                             tableRef: "custom",
                             temporary: true,
-                            domain: [],
                         } as FieldItem));
 
                         dispatch(dfActions.addConceptItems(conceptsToAdd));

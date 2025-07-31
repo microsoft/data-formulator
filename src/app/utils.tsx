@@ -265,18 +265,18 @@ export const assembleVegaChart = (
 
                 // special case, unify
                 let actualDomain = [...new Set(workingTable.map(r => r[field.name]))];
-                if (actualDomain.every(v => field.domain.includes(v)) && field.domain.length > actualDomain.length) {
+                // if (actualDomain.every(v => field.domain.includes(v)) && field.domain.length > actualDomain.length) {
 
-                    let scaleValues = [...new Set(field.domain)].sort();
-                    let legendValues = actualDomain.sort();
+                //     let scaleValues = [...new Set(field.domain)].sort();
+                //     let legendValues = actualDomain.sort();
 
-                    encodingObj["scale"] = {
-                        domain: scaleValues,
-                    }
-                    encodingObj["legend"] = {
-                        "values": legendValues,
-                    }
-                }
+                //     encodingObj["scale"] = {
+                //         domain: scaleValues,
+                //     }
+                //     encodingObj["legend"] = {
+                //         "values": legendValues,
+                //     }
+                // }
 
                 if (actualDomain.length >= 16) {
                     if (encodingObj["legend"] == undefined) {
@@ -286,12 +286,12 @@ export const assembleVegaChart = (
                     encodingObj["legend"]["labelFontSize"] = 8;
                 }
 
-                if ([...new Set(field.domain)].length >= 16) {
-                    if (encodingObj["scale"] == undefined) {
-                        encodingObj["scale"] = {}
-                    }
-                    encodingObj["scale"]['scheme'] = "tableau20";
-                }
+                // if ([...new Set(field.domain)].length >= 16) {
+                //     if (encodingObj["scale"] == undefined) {
+                //         encodingObj["scale"] = {}
+                //     }
+                //     encodingObj["scale"]['scheme'] = "tableau20";
+                // }
             }
         }
         

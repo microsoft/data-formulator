@@ -33,7 +33,7 @@ import { OperatorCard } from './OperatorCard';
 
 export const genFreshCustomConcept : () => FieldItem = () => {
     return {
-        id: `concept-${Date.now()}`, name: "", type: "auto" as Type, domain: [],
+        id: `concept-${Date.now()}`, name: "", type: "auto" as Type,
         description: "", source: "custom", tableRef: "custom",
     }
 }
@@ -191,7 +191,10 @@ export const ConceptShelf: FC<ConceptShelfProps> = function ConceptShelf() {
     let groupNames = [...new Set(conceptItemGroups.map(g => g.group))]
 
     return (
-        <Box className="concept-shelf">
+        <Box className="concept-shelf" sx={{
+            height: 'calc(100% - 16px)',
+            overflow: 'auto'
+        }}>
             <Box className="view-title-box" sx={{display: "flex", justifyContent: "space-between"}}>
                 <Typography className="view-title" component="h2" sx={{marginTop: "6px"}}>
                     Data Fields

@@ -99,7 +99,7 @@ export const handleSSEMessage = (state: DataFormulatorState, message: SSEMessage
                 chart.encodingMap[channel as Channel] = { fieldID: field.id };
             } else {
                 let newField = { id: `custom--${fieldName}--${Date.now()}`, name: fieldName as string,
-                    type: "auto", source: "custom", domain: [], tableRef: 'custom' } as FieldItem;
+                    type: "auto", source: "custom", tableRef: 'custom' } as FieldItem;
                 state.conceptShelfItems = [newField, ...state.conceptShelfItems];
                 chart.encodingMap[channel as Channel] = { fieldID: newField.id };
             }

@@ -517,8 +517,13 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                 
                             let conceptsToAdd = missingNames.map((name) => {
                                 return {
-                                    id: `concept-${name}-${Date.now()}`, name: name, type: "auto" as Type, 
-                                    description: "", source: "custom", tableRef: "custom", temporary: true, domain: [],
+                                    id: `concept-${name}-${Date.now()}`, 
+                                    name: name, 
+                                    type: "auto" as Type, 
+                                    description: "", 
+                                    source: "custom", 
+                                    tableRef: "custom", 
+                                    temporary: true, 
                                 } as FieldItem
                             })
                             dispatch(dfActions.addConceptItems(conceptsToAdd));
