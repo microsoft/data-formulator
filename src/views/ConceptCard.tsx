@@ -46,7 +46,7 @@ import PrecisionManufacturingIcon from '@mui/icons-material/PrecisionManufacturi
 import ForkRightIcon from '@mui/icons-material/ForkRight';
 import ZoomInIcon from '@mui/icons-material/ZoomIn';
 import HideSourceIcon from '@mui/icons-material/HideSource';
-
+import ArrowRightIcon from '@mui/icons-material/ArrowRight';
 import AnimateHeight from 'react-animate-height';
 
 import { FieldItem, ConceptTransformation, duplicateField, FieldSource } from '../components/ComponentType';
@@ -128,13 +128,7 @@ let ConceptReApplyButton: FC<{field: FieldItem,
         fetch(getUrls().DERIVE_PY_CONCEPT, {...message, signal: controller.signal })
             .then((response) => response.json())
             .then((data) => {
-                console.log("---model output")
-                console.log(data);
-
                 let candidates = data["results"].filter((r: any) => r["status"] == "ok");
-
-                console.log(`[fyi] just received ${candidates.length} candidates`);
-                console.log(candidates);
 
                 if (candidates.length > 0) {
                     setTableRowsPreview(candidates[0]["content"]['rows']);
@@ -143,8 +137,6 @@ let ConceptReApplyButton: FC<{field: FieldItem,
                 }
                 handleLoading(false);    
             }).catch((error) => {
-                console.log(`[fyi] just received error`);
-                console.log(error);
                 handleLoading(false);
             });
     }
@@ -400,10 +392,13 @@ export const ConceptCard: FC<ConceptCardProps> = function ConceptCard({ field, s
             </Box> : ""}
             <Box ref={field.name ? drag : undefined} sx={{ cursor: cursorStyle, background: draggleCardHeaderBgOverlay }}
                  className={`draggable-card-header draggable-card-inner ${field.source}`}>
-                <Typography className="draggable-card-title" sx={{ fontSize: 13, height: 28, width: "100%" }} component={'span'} gutterBottom>
+                <Typography className="draggable-card-title" color="text.primary"
+                    sx={{ fontSize: 12, height: 24, width: "100%"}} component={'span'} gutterBottom>
                     {typeIconMenu}
                     {fieldNameEntry}
-                    {field.semanticType ? <Typography sx={{fontSize: "xx-small", marginLeft: "6px", fontStyle: 'italic', whiteSpace: 'nowrap'}}>-- {field.semanticType}</Typography> : ""}
+                    {field.semanticType ? 
+                        <Typography sx={{fontSize: "xx-small", color: "text.secondary", marginLeft: "6px", fontStyle: 'italic', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center' }}>
+                            <ArrowRightIcon sx={{fontSize: "12px"}} /> {field.semanticType}</Typography> : ""}
                 </Typography>
                 
                 <Box sx={{ position: "absolute", right: 0, display: "flex", flexDirection: "row", alignItems: "center" }}>
@@ -847,18 +842,9 @@ export const PyCodexDialogBox: FC<CodexDialogBoxProps> = function ({
                 fetch(getUrls().DERIVE_PY_CONCEPT, {...message, signal: controller.signal })
                     .then((response) => response.json())
                     .then((data) => {
-                        console.log("---model output")
-                        console.log(data);
-
                         let candidates = data["results"].filter((r: any) => r["status"] == "ok");
-
-                        console.log(`[fyi] just received ${candidates.length} candidates`);
-                        console.log(candidates);
-
                         handleProcessResults(data["status"], candidates);
                     }).catch((error) => {
-                        console.log(`[fyi] just received error`);
-                        console.log(error);
                         handleProcessResults("error", []);
                     });
             }}>

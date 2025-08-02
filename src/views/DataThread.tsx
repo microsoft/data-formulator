@@ -23,7 +23,6 @@ import {
 
 import { VegaLite } from 'react-vega'
 
-
 import '../scss/VisualizationView.scss';
 import { useDispatch, useSelector } from 'react-redux';
 import { DataFormulatorState, dfActions, SSEMessage } from '../app/dfSlice';
@@ -237,7 +236,15 @@ let SingleThreadView: FC<{
 
         let highlightedTableIds: string[] = [leafTable.id];
         
-        let threadOriginalTableId: string | undefined =  leafTable.derive?.trigger.sourceTableIds[0];
+        // Recursively find the original table ID by using the triggers array
+        let threadOriginalTableId: string | undefined = undefined;
+        if (triggers.length > 0) {
+            // The first trigger in the array points to the original table
+            threadOriginalTableId = triggers[0].tableId;
+        } else if (leafTable.derive) {
+            // If no triggers but table is derived, use the immediate source
+            threadOriginalTableId = leafTable.derive.trigger.sourceTableIds[0];
+        }
         let triggerToFirstNewTable: Trigger | undefined = undefined;
 
         if (leafTable.derive) {
@@ -553,36 +560,40 @@ let SingleThreadView: FC<{
             <div style={{ padding: '2px 4px 2px 4px', marginTop: 0, marginBottom: '8px', direction: 'ltr' }}>
                 {threadOriginalTableId && !tableIdList.includes(threadOriginalTableId) && 
                     <Box sx={{ direction: 'ltr' }}>
-                        <Typography sx={{ ml: 0.25, fontSize: "10px", color: 'text.secondary', textTransform: 'none' }}>
-                            {`${tables.find(t => t.id === threadOriginalTableId)?.displayId || threadOriginalTableId}`}
-                        </Typography>
-                        <Box sx={{
-                            height: '14px',
-                            ml: 1,
-                            borderLeft: highlightedTableIds.includes(threadOriginalTableId) ? `3px solid ${theme.palette.primary.light}` : `1px dashed rgba(0, 0, 0, 0.3)`
-                        }}></Box>
-                    {triggerToFirstNewTable && threadOriginalTableId != triggerToFirstNewTable.tableId && <React.Fragment>
-                            <Typography sx={{ ml: 0.25, fontSize: "10px", color: 'text.secondary', textTransform: 'none' }}>
-                                {`${tables.find(t => t.id === triggerToFirstNewTable.tableId)?.displayId || triggerToFirstNewTable.tableId}`}
-                            </Typography>
+                        {triggerToFirstNewTable && threadOriginalTableId != triggerToFirstNewTable.tableId && 
+                            <React.Fragment>
+                                <Typography sx={{ ml: 0.25, fontSize: "10px", color: 'darkgray', textTransform: 'none' }}>
+                                    {`${tables.find(t => t.id === threadOriginalTableId)?.displayId || threadOriginalTableId}`}
+                                </Typography>
+                                <Box sx={{
+                                    height: '14px',
+                                    ml: 1,
+                                    borderLeft: highlightedTableIds.includes(threadOriginalTableId) ? `3px solid ${theme.palette.primary.light}` : `1px dashed rgba(0, 0, 0, 0.1)`,
+                                }}>
+                                </Box>
+                            </React.Fragment>}
+                        {triggerToFirstNewTable && <React.Fragment>
+                                <Typography sx={{ ml: 0.25, fontSize: "10px", color: 'text.secondary', textTransform: 'none' }}>
+                                    {`${tables.find(t => t.id === triggerToFirstNewTable.tableId)?.displayId || triggerToFirstNewTable.tableId}`}
+                                </Typography>
+                                <Box sx={{
+                                    height: '14px',
+                                    ml: 1,
+                                    borderLeft: highlightedTableIds.includes((triggerToFirstNewTable as Trigger).resultTableId) ? `3px solid ${theme.palette.primary.light}` : `1px dashed rgba(0, 0, 0, 0.3)`
+                                }}></Box>
+                            </React.Fragment>}
+                        {triggerToFirstNewTable && 
+                            <div key={'thread-card-trigger-box'}>
+                                <Box sx={{ flex: 1 }} >
+                                    <TriggerCard className={selectedClassName} trigger={triggerToFirstNewTable} hideFields={false} />
+                                </Box>
+                            </div>}
                             <Box sx={{
                                 height: '14px',
                                 ml: 1,
                                 borderLeft: highlightedTableIds.includes((triggerToFirstNewTable as Trigger).resultTableId) ? `3px solid ${theme.palette.primary.light}` : `1px dashed rgba(0, 0, 0, 0.3)`
                             }}></Box>
-                        </React.Fragment>}
-                    {triggerToFirstNewTable && 
-                        <div key={'thread-card-trigger-box'}>
-                            <Box sx={{ flex: 1 }} >
-                                <TriggerCard className={selectedClassName} trigger={triggerToFirstNewTable} hideFields={false} />
-                            </Box>
-                        </div>}
-                        <Box sx={{
-                            height: '14px',
-                            ml: 1,
-                            borderLeft: highlightedTableIds.includes((triggerToFirstNewTable as Trigger).resultTableId) ? `3px solid ${theme.palette.primary.light}` : `1px dashed rgba(0, 0, 0, 0.3)`
-                        }}></Box>
-                    </Box>
+                        </Box>
                 }
                 {content}
             </div>
@@ -843,16 +854,17 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
     });
 
     let drawerOpen = leafTables.length > 1 && threadDrawerOpen;
-    let threadDrawerWidth = Math.max(Math.min(600, leafTables.length * 200), 212)
+    let threadDrawerWidth = Math.max(Math.min(680, leafTables.length * 216), 232)
 
-    let view = <Box width={drawerOpen ? threadDrawerWidth + 12 : 224} sx={{ 
-        overflowY: 'auto',
-        overflowX: drawerOpen ? 'auto' : 'hidden', // Add horizontal scroll when drawer is open
+    let view = <Box width={drawerOpen ? threadDrawerWidth + 16 : 232} sx={{ 
+        overflow: 'auto', // Add horizontal scroll when drawer is open
         position: 'relative',
         display: 'flex', 
-        flexDirection: drawerOpen ? 'row-reverse' : 'column',
-        minHeight: '100%',
+        flexDirection: 'column',
         transition: 'all 0.3s ease',
+        direction: 'ltr',
+        height: '100%',
+        flexWrap: drawerOpen ? 'wrap' : 'nowrap',
     }}>
         {leafTables.map((lt, i) => {
             let usedIntermediateTableIds = leafTables.slice(0, i)
@@ -866,12 +878,12 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
                 usedIntermediateTableIds={usedIntermediateTableIds} 
                 sx={{
                     backgroundColor: (i % 2 == 1 ? "rgba(0, 0, 0, 0.03)" : 'white'), 
-                    padding: '8px 8px',
-                    flex: drawerOpen ? 1 : 'none',
+                    padding: 1,
+                    flex:  'none',
                     display: 'flex',
                     flexDirection: 'column',
-                    height: 'calc(100% - 16px)',
-                    width: '208px', 
+                    height: 'fit-content',
+                    width: '200px', 
                     transition: 'all 0.3s ease',
                 }} />
         })}
@@ -945,7 +957,7 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
     let jumpButtons = drawerOpen ? jumpButtonsDrawerOpen : jumpButtonDrawerClosed;
 
     let carousel = (
-        <Box className="data-thread" sx={{ overflow: 'hidden', }}>
+        <Box className="data-thread" sx={{ ...sx }}>
             <Box sx={{
                 direction: 'ltr', display: 'flex',
                 paddingTop: "10px", paddingLeft: '12px', alignItems: 'center', justifyContent: 'space-between'
@@ -964,23 +976,18 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
                 </Tooltip>
             </Box>
             <Box sx={{
-                transition: 'width 200ms cubic-bezier(0.4, 0, 0.2, 1) 0ms', 
-                overflowY: 'auto', 
-                overflowX: 'hidden',
-                direction: 'rtl', 
-                display: 'block', 
-                flex: 1,
-                height: 'calc(100% - 40px)'
-            }}
-                 className="thread-view-mode">
+                    transition: 'width 200ms cubic-bezier(0.4, 0, 0.2, 1) 0ms', 
+                    overflow: 'hidden', 
+                    direction: 'rtl', 
+                    display: 'block', 
+                    flex: 1,
+                    height: 'calc(100% - 40px)',
+                }}>
                 {view}
             </Box>
         </Box>
     );
 
-    return <Box sx={{ display: 'flex', flexDirection: 'row', ...sx }}>
-        {carousel}
-    </Box>;
+    return carousel;
 }
-
 

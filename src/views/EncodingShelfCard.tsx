@@ -23,6 +23,8 @@ import {
     Chip,
     Autocomplete,
     Menu,
+    alpha,
+    useTheme,
 } from '@mui/material';
 
 import React from 'react';
@@ -83,11 +85,22 @@ let selectBaseTables = (activeFields: FieldItem[], currentTable: DictTable, tabl
     return baseTables;
 }
 
-export const TriggerCard: FC<{className?: string, trigger: Trigger, hideFields?: boolean, label?: string}> = function ({ label, className, trigger, hideFields }) {
+export const TriggerCard: FC<{
+    className?: string, 
+    trigger: Trigger, 
+    hideFields?: boolean, 
+    mini?: boolean}> = function ({ className, trigger, hideFields, mini = false }) {
 
     let fieldItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
 
     const dispatch = useDispatch<AppDispatch>();
+
+    let handleClick = () => {
+        if (trigger.chart) {
+            dispatch(dfActions.setFocusedChart(trigger.chart.id));
+            dispatch(dfActions.setFocusedTable(trigger.chart.tableRef));
+        }
+    }
 
     let encodingComp : any = '';
     let prompt = trigger.instruction ? `"${trigger.instruction}"` : "";
@@ -106,42 +119,53 @@ export const TriggerCard: FC<{className?: string, trigger: Trigger, hideFields?:
                 return [index > 0 ? '⨉' : '', 
                         <Chip 
                             key={`trigger-${channel}-${field?.id}`}
-                            sx={{color:'inherit', maxWidth: '110px', marginLeft: "2px", height: 18, fontSize: 12, borderRadius: '4px', 
+                            sx={{color:'inherit', maxWidth: '110px', m: 0.25,
+                                   height: 18, fontSize: 12, borderRadius: '4px', 
                                    border: '1px solid rgb(250 235 215)', background: 'rgb(250 235 215 / 70%)',
-                                   '& .MuiChip-label': { paddingLeft: '6px', paddingRight: '6px' }}} 
+                                   '& .MuiChip-label': { px: 0.5 }}} 
                               label={`${field?.name}`} />]
             })
     }
 
-    return <Box sx={{ }}>
-            <InputLabel sx={{
-                position: "absolute",
-                background: "white",
-                fontSize: "8px",
-                transform: "translate(6px, -6px)",
-                width: "50px",
-                textAlign: "center",
-                zIndex: 2,
-            }}>{label}</InputLabel>
-        <Card className={`${className}`} variant="outlined" 
-                sx={{cursor: 'pointer', backgroundColor: 'rgba(255, 160, 122, 0.07)', '&:hover': { transform: "translate(0px, 1px)",  boxShadow: "0 0 3px rgba(33,33,33,.2)"}}} 
-                onClick={()=>{ 
-                    if (trigger.chart) {
-                        dispatch(dfActions.setFocusedChart(trigger.chart.id));
-                        dispatch(dfActions.setFocusedTable(trigger.chart.tableRef));
-                    }
-                }}>
-            <Stack direction="row" sx={{marginLeft: 1, marginRight: 'auto', fontSize: 12}} alignItems="center" gap={"2px"}>
-                <PrecisionManufacturing  sx={{color: 'darkgray', width: '14px', height: '14px'}} />
-                <Box sx={{margin: '4px 8px 4px 2px', flex: 1}}>
+    if (mini) {
+        let theme = useTheme();
+        return <Typography sx={{
+            ml: '7px', borderLeft: '3px solid', 
+            borderColor: alpha(theme.palette.custom.main, 0.5), 
+            paddingLeft: '8px', 
+            fontSize: '10px', color: theme.palette.text.secondary,
+            my: '2px', textWrap: 'balance',
+            '&:hover': {
+                borderLeft: '3px solid',
+                borderColor: theme.palette.custom.main,
+                cursor: 'pointer',
+                color: theme.palette.text.primary,
+            },
+            '& .MuiChip-label': { px: 0.5, fontSize: "10px"},
+        }} onClick={handleClick}>
+            {trigger.instruction} 
+            {hideFields ? "" : encodingComp}
+        </Typography> 
+    }
+
+    return  <Card className={`${className}`} variant="outlined" 
+                sx={{
+                    cursor: 'pointer', backgroundColor: 'rgba(255, 160, 122, 0.07)', 
+                    fontSize: '12px', display: 'flex', flexDirection: 'row', alignItems: 'center', gap: '2px',
+                    '&:hover': { transform: "translate(0px, 1px)",  boxShadow: "0 0 3px rgba(33,33,33,.2)"},
+                    '& .MuiChip-label': { px: 0.5, fontSize: "10px"}
+                }} 
+                onClick={handleClick}>
+                <PrecisionManufacturing  sx={{ml: 1, color: 'darkgray', width: '14px', height: '14px'}} />
+                <Box sx={{margin: "4px 8px 4px 2px",}}>
                     {hideFields ? "" : <Typography fontSize="inherit" sx={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center',
-                                    color: 'rgba(0,0,0,0.7)', maxWidth: 'calc(100%)'}}>{encodingComp}</Typography>}
-                    <Typography fontSize="inherit" sx={{textAlign: 'center', 
-                                    color: 'rgba(0,0,0,0.7)',  maxWidth: 'calc(100%)'}}>{prompt}</Typography> 
+                                    color: 'rgba(0,0,0,0.7)'}}>{encodingComp}</Typography>}
+                    <Typography fontSize="inherit" sx={{
+                        textAlign: 'center', width: 'fit-content', textWrap: 'balance',
+                        minWidth: '40px',
+                        color: 'rgba(0,0,0,0.7)'}}>{prompt}</Typography> 
                 </Box>
-            </Stack>
         </Card>
-    </Box>
 }
 
 // Add this component before EncodingShelfCard

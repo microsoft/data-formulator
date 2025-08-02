@@ -29,6 +29,10 @@ import { ConceptCard } from './ConceptCard';
 import { Type } from '../data/types';
 import { groupConceptItems } from './ViewUtils';
 import { OperatorCard } from './OperatorCard';
+import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
+import ChevronRightIcon from '@mui/icons-material/ChevronRight';
+import ExpandLessIcon from '@mui/icons-material/ExpandLess';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 
 
 export const genFreshCustomConcept : () => FieldItem = () => {
@@ -53,7 +57,7 @@ export const ConceptGroup: FC<{groupName: string, fields: FieldItem[]}> = functi
 
     const [expanded, setExpanded] = useState(false);
     const dispatch = useDispatch();
-
+    const theme = useTheme();   
     const handleCleanUnusedConcepts = () => {
         dispatch(dfActions.clearUnReferencedCustomConcepts());
     };
@@ -78,17 +82,24 @@ export const ConceptGroup: FC<{groupName: string, fields: FieldItem[]}> = functi
                     display: 'flex', 
                     alignItems: 'center', 
                     cursor: 'pointer',
-                    gap: 1
                 }}
                     onClick={() => setExpanded(!expanded)}>
-                    <Typography component="h2" sx={{fontSize: "10px"}} color="text.secondary">
+                    <Typography component="h2" sx={{fontSize: "10px", display: 'flex', alignItems: 'center',
+                        '&:hover': {
+                        backgroundColor: 'rgba(0, 0, 0, 0.04)',
+                        '& .expand-icon': {
+                            transition: 'transform 0.3s ease',
+                            transform: 'rotate(180deg)',
+                        }
+                    }
+                    }} color="text.secondary">
                         {groupName}
+                        {fields.length > 6 && <Typography className="expand-icon" sx={{ml: 0.5, borderRadius: '4px', fontSize: "10px", display: 'flex', alignItems: 'center'}} color="text.secondary">
+                            {expanded ? <ExpandMoreIcon sx={{fontSize: "12px"}} /> : <ExpandLessIcon sx={{fontSize: "12px"}} />}
+                        </Typography>}
                     </Typography>
-                    {fields.length > 6 && <Typography sx={{fontSize: "10px", ml: 1}} color="text.secondary">
-                        {expanded ? '▾' : '▸'}
-                    </Typography>}
                     {groupName === "new fields" && (
-                        <Tooltip title="clean fields not referenced by any table">
+                        <Tooltip title="clean up unused fields">
                             <IconButton
                                 size="small"
                                 onClick={(e) => {
@@ -102,9 +113,13 @@ export const ConceptGroup: FC<{groupName: string, fields: FieldItem[]}> = functi
                                     py: 0.25,
                                     height: "16px",
                                     ml: '0',
+                                    '&:hover': {
+                                        color: theme.palette.warning.main,
+                                        backgroundColor: alpha(theme.palette.warning.light, 0.1),
+                                    },
                                     '&:hover .cleaning-icon': {
                                         animation: 'spin 0.5s cubic-bezier(0.4, 0, 0.2, 1)',
-                                        transform: 'rotate(360deg)'
+                                        transform: 'rotate(360deg)',
                                     },
                                     '@keyframes spin': {
                                         '0%': {
@@ -150,9 +165,9 @@ export const ConceptGroup: FC<{groupName: string, fields: FieldItem[]}> = functi
                             color: "text.secondary",
                             pl: 2,
                             py: 0.5,
-                            fontStyle: "italic",
                             textTransform: 'none',
                             position: 'relative',
+                            textWrap: 'nowrap',
                             width: '100%',
                             justifyContent: 'flex-start',
                             '&:hover': {
@@ -182,6 +197,8 @@ export const ConceptGroup: FC<{groupName: string, fields: FieldItem[]}> = functi
 
 export const ConceptShelf: FC<ConceptShelfProps> = function ConceptShelf() {
 
+    const [conceptPanelOpen, setConceptPanelOpen] = useState(false);
+
     // reference to states
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
     const tables = useSelector((state: DataFormulatorState) => state.tables);
@@ -190,13 +207,13 @@ export const ConceptShelf: FC<ConceptShelfProps> = function ConceptShelf() {
     let conceptItemGroups = groupConceptItems(conceptShelfItems, tables);
     let groupNames = [...new Set(conceptItemGroups.map(g => g.group))]
 
-    return (
+    let conceptShelf = (
         <Box className="concept-shelf" sx={{
             height: 'calc(100% - 16px)',
-            overflow: 'auto'
+            overflow: conceptPanelOpen ? 'auto' : 'hidden',
         }}>
-            <Box className="view-title-box" sx={{display: "flex", justifyContent: "space-between"}}>
-                <Typography className="view-title" component="h2" sx={{marginTop: "6px"}}>
+            <Box sx={{my: 0.25}}>
+                <Typography className="view-title" component="h2" sx={{textWrap: "nowrap"}}>
                     Data Fields
                 </Typography>
             </Box>
@@ -226,4 +243,46 @@ export const ConceptShelf: FC<ConceptShelfProps> = function ConceptShelf() {
             </Box>
         </Box>
     );
+
+    return <Box sx={{
+        display: 'flex',
+        flexDirection: 'row',
+        flexShrink: 0, // Prevent panel from shrinking
+        width: conceptPanelOpen ? 296 : 64,
+        transition: 'width 0.3s ease', // Smooth transition
+        overflow: 'hidden',
+        position: 'relative'
+    }}>
+        <Tooltip placement="left" title={conceptPanelOpen ? "hide concept panel" : "open concept panel"}>
+            <IconButton 
+                color="primary"
+                sx={{
+                    width: 16, 
+                    minWidth: 16,
+                    alignSelf: 'stretch', // Add this to match the height of the ConceptShelf box
+                    borderRadius: 0,
+                    flexShrink: 0,
+                    position: 'relative',
+                    backgroundColor: 'rgba(0,0,0,0.01)'
+                }}
+                onClick={() => setConceptPanelOpen(!conceptPanelOpen)}
+            >
+                <Box sx={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    zIndex: 1,
+                }}>
+                    {conceptPanelOpen ?  <ChevronRightIcon sx={{fontSize: 18}} /> : <ChevronLeftIcon sx={{fontSize: 18}} />}
+                </Box>
+            </IconButton>
+        </Tooltip>
+        <Box 
+            onClick={() => !conceptPanelOpen && setConceptPanelOpen(!conceptPanelOpen)}
+            sx={{
+                overflow: 'hidden'
+        }}>
+            {conceptShelf}
+        </Box>
+    </Box>
 }

@@ -24,13 +24,6 @@ import {
     IconButton,  // Add this
 } from '@mui/material';
 
-// Add these icon imports
-import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
-import ChevronRightIcon from '@mui/icons-material/ChevronRight';
-
-
-import { alpha, styled, useTheme } from '@mui/material/styles';
-
 import { FreeDataViewFC } from './DataView';
 import { VisualizationViewFC } from './VisualizationView';
 
@@ -48,20 +41,15 @@ import dfLogo from '../assets/df-logo.png';
 import exampleImageTable from "../assets/example-image-table.png";
 import { ModelSelectionButton } from './ModelSelectionDialog';
 import { DBTableSelectionDialog } from './DBTableManager';
-import { connectToSSE } from './SSEClient';
 import { getUrls } from '../app/utils';
-
-//type AppProps = ConnectedProps<typeof connector>;
 
 export const DataFormulatorFC = ({ }) => {
 
-    const displayPanelSize = useSelector((state: DataFormulatorState) => state.displayPanelSize);
     const visPaneSize = useSelector((state: DataFormulatorState) => state.visPaneSize);
     const tables = useSelector((state: DataFormulatorState) => state.tables);
     
     const models = useSelector((state: DataFormulatorState) => state.models);
     const modelSlots = useSelector((state: DataFormulatorState) => state.modelSlots);
-    const testedModels = useSelector((state: DataFormulatorState) => state.testedModels);
     
     const noBrokenModelSlots= useSelector((state: DataFormulatorState) => {
         const slotTypes = dfSelectors.getAllSlotTypes();
@@ -69,10 +57,8 @@ export const DataFormulatorFC = ({ }) => {
             slotType => state.modelSlots[slotType] !== undefined && state.testedModels.find(t => t.id == state.modelSlots[slotType])?.status != 'error');
     });
 
-    const [conceptPanelOpen, setConceptPanelOpen] = useState(true); 
 
     const dispatch = useDispatch();
-    const theme = useTheme();
 
     useEffect(() => {
         document.title = toolName;
@@ -137,65 +123,23 @@ export const DataFormulatorFC = ({ }) => {
             </Box>
         </SplitPane>);
 
-    let conceptPanel = <Box sx={{
-        display: 'flex',
-        flexDirection: 'row',
-        flexShrink: 0, // Prevent panel from shrinking
-        width: conceptPanelOpen ? 304 : 64,
-        transition: 'width 0.3s ease', // Smooth transition
-        overflow: 'hidden',
-        position: 'relative'
-    }}>
-        <Tooltip placement="left" title={conceptPanelOpen ? "hide concept panel" : "open concept panel"}>
-            <IconButton 
-                color="primary"
-                sx={{
-                    width: 16, 
-                    minWidth: 16,
-                    alignSelf: 'stretch', // Add this to match the height of the ConceptShelf box
-                    borderRadius: 0,
-                    flexShrink: 0,
-                    position: 'relative',
-                    backgroundColor: 'rgba(0,0,0,0.01)'
-                }}
-                onClick={() => setConceptPanelOpen(!conceptPanelOpen)}
-            >
-                <Box sx={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    zIndex: 1,
-                }}>
-                    {conceptPanelOpen ?  <ChevronRightIcon sx={{fontSize: 18}} /> : <ChevronLeftIcon sx={{fontSize: 18}} />}
-                </Box>
-            </IconButton>
-        </Tooltip>
-        <Box 
-            onClick={() => !conceptPanelOpen && setConceptPanelOpen(!conceptPanelOpen)}
-            sx={{
-                width: 280, 
-                overflow: 'hidden'
-        }}>
-            <ConceptShelf />
-        </Box>
-    </Box>;
+    let conceptPanel = <ConceptShelf />;
 
     const fixedSplitPane = ( 
         <Box sx={{display: 'flex', flexDirection: 'row', height: '100%'}}>
-            <Box sx={{border: '1px solid lightgray', borderRadius: '4px', margin: '4px', backgroundColor: 'white',
+            <Box sx={{border: '1px solid lightgray', borderRadius: '4px', margin: '4px 4px 4px 8px', backgroundColor: 'white',
                  display: 'flex', height: '100%', width: 'fit-content', flexDirection: 'column'}}>
                 {tables.length > 0 ?  <DataThread sx={{
                     minWidth: 201,
                     display: 'flex', 
                     flexDirection: 'column',
                     overflow: 'hidden',
-                    //borderRight: '1px solid lightgray',
                     alignContent: 'flex-start',
                     height: '100%',
                 }}/>  : ""} 
             </Box>
             <Box sx={{
-                border: '1px solid lightgray', borderRadius: '4px', margin: '4px', backgroundColor: 'white',
+                border: '1px solid lightgray', borderRadius: '4px', margin: '4px 8px 4px 4px', backgroundColor: 'white',
                 display: 'flex', height: '100%', flex: 1, overflow: 'hidden', flexDirection: 'row'}}>
                 {visPane}
                 {conceptPanel}

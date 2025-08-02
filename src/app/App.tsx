@@ -342,10 +342,7 @@ const ConfigDialog: React.FC = () => {
     return (
         <>
             <Button variant="text" sx={{textTransform: 'none'}} onClick={() => setOpen(true)} startIcon={<SettingsIcon />}>
-                 <Box component="span" sx={{lineHeight: 1.2, display: 'flex', flexDirection: 'column', alignItems: 'left'}}>
-                    <Box component="span" sx={{py: 0, my: 0, fontSize: '10px', mr: 'auto'}}>default_timeout={config.formulateTimeoutSeconds}s</Box>
-                    <Box component="span" sx={{py: 0, my: 0, fontSize: '10px', mr: 'auto'}}>chart_size={config.defaultChartWidth}x{config.defaultChartHeight}</Box>
-                </Box>
+                Config
             </Button>
             <Dialog onClose={() => setOpen(false)} open={open}>
                 <DialogTitle>Data Formulator Configuration</DialogTitle>
@@ -574,18 +571,18 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
                     <ConfigDialog />
                     <Divider orientation="vertical" variant="middle" flexItem />
                     <DBTableSelectionDialog buttonElement={
-                        <Typography sx={{ display: 'flex', fontSize: 14, alignItems: 'center', gap: 1, textTransform: 'none' }}>
+                        <Typography fontSize="inherit" sx={{ display: 'flex', alignItems: 'center', gap: 1, textTransform: 'none' }}>
                             <CloudQueueIcon fontSize="small" /> Database
                         </Typography>
                     } />
                     <Divider orientation="vertical" variant="middle" flexItem />
                     <ModelSelectionButton />
                     <Divider orientation="vertical" variant="middle" flexItem />
-                    <Typography sx={{ display: 'flex', fontSize: 14, alignItems: 'center', gap: 1 }}>
+                    <Typography fontSize="inherit" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                         <TableMenu />
                     </Typography>
                     <Divider orientation="vertical" variant="middle" flexItem />
-                    <Typography sx={{ display: 'flex', fontSize: 14, alignItems: 'center', gap: 1 }}>
+                    <Typography fontSize="inherit" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                         <SessionMenu />
                     </Typography>
                     <Divider orientation="vertical" variant="middle" flexItem />
@@ -619,7 +616,7 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
             '& > *': {
                 minWidth: '1000px',
                 minHeight: '800px'
-            }
+            },
         }}>
             <Box sx={{ 
                 display: 'flex',
