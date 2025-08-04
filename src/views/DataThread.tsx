@@ -205,400 +205,414 @@ let SingleThreadView: FC<{
     usedIntermediateTableIds, // tables that have been used
     sx
 }) {
-        let tables = useSelector((state: DataFormulatorState) => state.tables);
-        let charts = useSelector(dfSelectors.getAllCharts);
-        let focusedChartId = useSelector((state: DataFormulatorState) => state.focusedChartId);
-        let focusedTableId = useSelector((state: DataFormulatorState) => state.focusedTableId);
-        let agentWorkInProgress = useSelector((state: DataFormulatorState) => state.agentWorkInProgress);
+    let tables = useSelector((state: DataFormulatorState) => state.tables);
+    let charts = useSelector(dfSelectors.getAllCharts);
+    let focusedChartId = useSelector((state: DataFormulatorState) => state.focusedChartId);
+    let focusedTableId = useSelector((state: DataFormulatorState) => state.focusedTableId);
+    let agentWorkInProgress = useSelector((state: DataFormulatorState) => state.agentWorkInProgress);
 
-        let handleUpdateTableDisplayId = (tableId: string, displayId: string) => {
-            dispatch(dfActions.updateTableDisplayId({
-                tableId: tableId,
-                displayId: displayId
-            }));
-        }   
+    let handleUpdateTableDisplayId = (tableId: string, displayId: string) => {
+        dispatch(dfActions.updateTableDisplayId({
+            tableId: tableId,
+            displayId: displayId
+        }));
+    }   
 
-        const theme = useTheme();
+    const theme = useTheme();
 
-        let focusedChart = useSelector((state: DataFormulatorState) => charts.find(c => c.id == focusedChartId));
+    let focusedChart = useSelector((state: DataFormulatorState) => charts.find(c => c.id == focusedChartId));
 
-        const dispatch = useDispatch();
+    const dispatch = useDispatch();
 
-        let [collapsed, setCollapsed] = useState<boolean>(false);
+    let [collapsed, setCollapsed] = useState<boolean>(false);
 
-        const w: any = (a: any[], b: any[], spaceElement?: any) => a.length ? [a[0], b.length == 0 ? "" : (spaceElement || ""), ...w(b, a.slice(1), spaceElement)] : b;
+    const w: any = (a: any[], b: any[], spaceElement?: any) => a.length ? [a[0], b.length == 0 ? "" : (spaceElement || ""), ...w(b, a.slice(1), spaceElement)] : b;
 
-        let content: any = ""
+    let content: any = ""
 
-        let tableIdList = [leafTable.id]
-        let triggerCards: any[] = []
-        let triggers = getTriggers(leafTable, tables);
+    let tableIdList = [leafTable.id]
+    let triggerCards: any[] = []
+    let triggers = getTriggers(leafTable, tables);
 
-        let highlightedTableIds: string[] = [leafTable.id];
-        
-        // Recursively find the original table ID by using the triggers array
-        let threadOriginalTableId: string | undefined = undefined;
-        if (triggers.length > 0) {
-            // The first trigger in the array points to the original table
-            threadOriginalTableId = triggers[0].tableId;
-        } else if (leafTable.derive) {
-            // If no triggers but table is derived, use the immediate source
-            threadOriginalTableId = leafTable.derive.trigger.sourceTableIds[0];
-        }
-        let triggerToFirstNewTable: Trigger | undefined = undefined;
+    let highlightedTableIds: string[] = [leafTable.id];
 
-        if (leafTable.derive) {
+    let isThreadFocused: boolean = false;
+    
+    // Recursively find the original table ID by using the triggers array
+    let threadOriginalTableId: string | undefined = undefined;
+    if (triggers.length > 0) {
+        // The first trigger in the array points to the original table
+        threadOriginalTableId = triggers[0].tableId;
+    } else if (leafTable.derive) {
+        // If no triggers but table is derived, use the immediate source
+        threadOriginalTableId = leafTable.derive.trigger.sourceTableIds[0];
+    }
+    let triggerToFirstNewTable: Trigger | undefined = undefined;
 
-            // find the first table that belongs to this thread, it should not be an intermediate table that has appeared in previous threads
-            let firstNewTableIndex = triggers.findIndex(tg => !usedIntermediateTableIds.includes(tg.tableId));
-            let firstNewTableId = firstNewTableIndex != -1 ? triggers[firstNewTableIndex].tableId : leafTable.id;
+    if (leafTable.derive) {
 
-            triggerToFirstNewTable = triggers.find(t => t.resultTableId == firstNewTableId);
+        // find the first table that belongs to this thread, it should not be an intermediate table that has appeared in previous threads
+        let firstNewTableIndex = triggers.findIndex(tg => !usedIntermediateTableIds.includes(tg.tableId));
+        let firstNewTableId = firstNewTableIndex != -1 ? triggers[firstNewTableIndex].tableId : leafTable.id;
 
-            // when firstNewTableIndex is -1, it means the leaf table should be the first one to display at the top of the thread
-            if (firstNewTableIndex == -1) {
-                triggers = [];
-            } else {
-                triggers = triggers.slice(firstNewTableIndex);
-            }
+        triggerToFirstNewTable = triggers.find(t => t.resultTableId == firstNewTableId);
 
-            tableIdList = [...triggers.map((trigger) => trigger.tableId), leafTable.id];
-            highlightedTableIds = focusedTableId && tableIdList.includes(focusedTableId) ? tableIdList : [];
-
-            triggerCards = triggers.map((trigger, i) => {
-
-                let selectedClassName = trigger.chart?.id == focusedChartId ? 'selected-card' : '';
-                
-                let extractActiveFields = (t: Trigger) => {
-                    let encodingMap = t.chart?.encodingMap;
-                    if (!encodingMap) {
-                        return [];
-                    }
-                    return Array.from(Object.values(encodingMap)).map((enc: EncodingItem) => enc.fieldID).filter(x => x != undefined);
-                };
-
-                let previousActiveFields = new Set(i == 0 ? [] : extractActiveFields(triggers[i - 1]))
-                let currentActiveFields = new Set(extractActiveFields(trigger))
-                let fieldsIdentical = _.isEqual(previousActiveFields, currentActiveFields)
-
-                let triggerCard = <div key={'thread-card-trigger-box'}>
-                    <Box sx={{ flex: 1 }} >
-                        <TriggerCard className={selectedClassName} trigger={trigger} hideFields={fieldsIdentical && trigger.instruction != ""} />
-                    </Box>
-                </div>;
-
-                return <Box sx={{ display: 'flex', flexDirection: 'column' }} key={`trigger-card-${trigger.chart?.id}`}>
-                    {triggerCard}
-                    <ListItemIcon key={'down-arrow'} sx={{ minWidth: 0 }}>
-                        <SouthIcon sx={{ fontSize: "inherit", 
-                            color: highlightedTableIds.includes(trigger.tableId) ? theme.palette.primary.light : 'darkgray' }} />
-                    </ListItemIcon>
-                </Box>;
-            });
-
+        // when firstNewTableIndex is -1, it means the leaf table should be the first one to display at the top of the thread
+        if (firstNewTableIndex == -1) {
+            triggers = [];
         } else {
-            highlightedTableIds = focusedTableId && tableIdList.includes(focusedTableId) ? tableIdList : [];
+            triggers = triggers.slice(firstNewTableIndex);
         }
 
-        let tableElementList = tableIdList.map((tableId, i) => {
+        tableIdList = [...triggers.map((trigger) => trigger.tableId), leafTable.id];
+        highlightedTableIds = focusedTableId && tableIdList.includes(focusedTableId) ? tableIdList : [];
+        isThreadFocused = Boolean(focusedTableId && tableIdList.includes(focusedTableId));
 
-            if (tableId == leafTable.id && leafTable.anchored && tableIdList.length > 1) {
-                let table = tables.find(t => t.id == tableId);
-                return <Typography sx={{ background: 'transparent', }} >
-                    <Box 
-                        sx={{ 
-                            margin: '0px', 
-                            width: 'fit-content',
-                            display: 'flex', 
-                            cursor: 'pointer',
-                            padding: '2px 4px',
-                            borderRadius: '4px',
-                            transition: 'all 0.2s ease',
-                            '&:hover': {
-                                backgroundColor: 'rgba(0, 0, 0, 0.04)',
-                                boxShadow: '0 2px 4px rgba(0,0,0,0.05)'
-                            }
-                        }}
-                        onClick={(event) => {
-                            event.stopPropagation();
-                            dispatch(dfActions.setFocusedTable(tableId));
-                            
-                            // Find and set the first chart associated with this table
-                            let firstRelatedChart = charts.find((c: Chart) => c.tableRef == tableId && c.source != "trigger");
-                            
-                            if (firstRelatedChart) {
-                                dispatch(dfActions.setFocusedChart(firstRelatedChart.id));
-                            }
-                        }}
-                    >
-                        <Stack direction="row" sx={{ marginLeft: 0.25, marginRight: 'auto', fontSize: 12 }} alignItems="center" gap={"2px"}>
-                            <AnchorIcon sx={{ fontSize: 14, color: 'rgba(0,0,0,0.5)' }} />
-                            <Typography fontSize="inherit" sx={{
-                                textAlign: 'center',
-                                color: 'rgba(0,0,0,0.7)', 
-                                maxWidth: '100px',
-                                wordWrap: 'break-word',
-                                whiteSpace: 'normal'
-                            }}>
-                                {table?.displayId || tableId}
-                            </Typography>
-                        </Stack>
-                    </Box>
-                </Typography>
-            }
+        triggerCards = triggers.map((trigger, i) => {
 
-            // filter charts relavent to this
-            let relevantCharts = chartElements.filter(ce => ce.tableId == tableId && !usedIntermediateTableIds.includes(tableId));
+            let selectedClassName = trigger.chart?.id == focusedChartId ? 'selected-card' : '';
+            
+            let extractActiveFields = (t: Trigger) => {
+                let encodingMap = t.chart?.encodingMap;
+                if (!encodingMap) {
+                    return [];
+                }
+                return Array.from(Object.values(encodingMap)).map((enc: EncodingItem) => enc.fieldID).filter(x => x != undefined);
+            };
 
-            let table = tables.find(t => t.id == tableId);
+            let previousActiveFields = new Set(i == 0 ? [] : extractActiveFields(triggers[i - 1]))
+            let currentActiveFields = new Set(extractActiveFields(trigger))
+            let fieldsIdentical = _.isEqual(previousActiveFields, currentActiveFields)
 
-            let selectedClassName = tableId == focusedTableId ? 'selected-card' : '';
+            let triggerCard = <div key={'thread-card-trigger-box'}>
+                <Box sx={{ flex: 1 }} >
+                    <TriggerCard className={selectedClassName} trigger={trigger} 
+                        hideFields={fieldsIdentical && trigger.instruction != ""} 
+                    />
+                </Box>
+            </div>;
 
-            let collapsedProps = collapsed ? { width: '50%', "& canvas": { width: 60, maxHeight: 50 } } : { width: '100%' }
-
-            let releventChartElements = relevantCharts.map((ce, j) =>
-                <Box key={`relevant-chart-${ce.chartId}`}
-                    sx={{ display: 'flex', padding: 0, pb: j == relevantCharts.length - 1 ? 1 : 0.5, ...collapsedProps }}>
-                    {buildChartCard(ce, focusedChartId)}
-                </Box>)
-
-            // only charts without dependency can be deleted
-            let tableDeleteEnabled = !tables.some(t => t.derive?.trigger.tableId == tableId);
-
-            let tableCardIcon =  ( table?.anchored ? 
-                <AnchorIcon sx={{ 
-                    fontSize: tableId === focusedTableId ? 20 : 16,
-                    color: tableId === focusedTableId ? theme.palette.primary.main : 'rgba(0,0,0,0.5)',
-                    fontWeight: tableId === focusedTableId ? 'bold' : 'normal',
-                }} /> : 
-                <TableRowsIcon sx={{ fontSize: 16 }} /> )
-
-            let regularTableBox = <Box ref={relevantCharts.some(c => c.chartId == focusedChartId) ? scrollRef : null} 
-                sx={{ padding: '0px' }}>
-                <Card className={`data-thread-card ${selectedClassName}`} variant="outlined"
-                    sx={{ width: '100%', backgroundColor: alpha(theme.palette.primary.light, 0.1),
-                        borderLeft: highlightedTableIds.includes(tableId) ? 
-                            `3px solid ${theme.palette.primary.light}` : '1px solid lightgray',
-                     }}
-                    onClick={() => {
-                        dispatch(dfActions.setFocusedTable(tableId));
-                        if (focusedChart?.tableRef != tableId) {
-                            let firstRelatedChart = charts.find((c: Chart) => c.tableRef == tableId && c.source != 'trigger');
-                            if (firstRelatedChart) {
-                                dispatch(dfActions.setFocusedChart(firstRelatedChart.id));
-                            } else {
-                                //dispatch(dfActions.createNewChart({ tableId: tableId, chartType: '?' }));
-                            }
-                        }
-                    }}>
-                    <Box sx={{ margin: '0px', display: 'flex' }}>
-                        <Stack direction="row" sx={{ marginLeft: 0.5, marginRight: 'auto', fontSize: 12 }} alignItems="center" gap={"2px"}>
-                            <IconButton color="primary" sx={{
-                                minWidth: 0, 
-                                padding: 0.25,
-                                '&:hover': {
-                                    transform: 'scale(1.3)',
-                                    transition: 'all 0.2s ease'
-                                },
-                                '&.Mui-disabled': {
-                                    color: 'rgba(0, 0, 0, 0.5)'
-                                }
-                            }} 
-                            size="small" 
-                            disabled={table?.derive == undefined || tables.some(t => t.derive?.trigger.tableId == tableId)}
-                            onClick={(event) => {
-                                event.stopPropagation();
-                                dispatch(dfActions.updateTableAnchored({tableId: tableId, anchored: !table?.anchored}));
-                            }}>
-                                <Tooltip title={table?.anchored ? "unanchor table" : "anchor table"}>
-                                    <span>  {/* Wrapper span needed for disabled IconButton tooltip */}
-                                        <IconButton color="primary" sx={{
-                                            minWidth: 0, 
-                                            padding: 0.25,
-                                            '&:hover': {
-                                                transform: 'scale(1.1)',
-                                                transition: 'all 0.2s ease',
-                                            },
-                                            '&.Mui-disabled': {
-                                                color: 'rgba(0, 0, 0, 0.5)'
-                                            }
-                                        }} 
-                                        size="small" 
-                                        disabled={table?.derive == undefined || tables.some(t => t.derive?.trigger.tableId == tableId)}
-                                        onClick={(event) => {
-                                            event.stopPropagation();
-                                            dispatch(dfActions.updateTableAnchored({tableId: tableId, anchored: !table?.anchored}));
-                                        }}>
-                                            {tableCardIcon}
-                                        </IconButton>
-                                    </span>
-                                </Tooltip>
-                            </IconButton>
-                            <Box sx={{ margin: '4px 8px 4px 2px', display: 'flex', alignItems: 'center' }}>
-                                {table?.virtual? <CloudQueueIcon sx={{ fontSize: 10, }} /> : ""}
-                                {focusedTableId == tableId ? <EditableTableName
-                                    initialValue={table?.displayId || tableId}
-                                    tableId={tableId}
-                                    handleUpdateTableDisplayId={handleUpdateTableDisplayId}
-                                /> : <Typography fontSize="inherit" sx={{
-                                    textAlign: 'center',
-                                    color:  'rgba(0,0,0,0.7)', 
-                                    maxWidth: '90px',
-                                    ml: table?.virtual ? 0.5 : 0,
-                                    wordWrap: 'break-word',
-                                    whiteSpace: 'normal'
-                                }}>{table?.displayId || tableId}</Typography>}
-                            </Box>
-                        </Stack>
-                        <ButtonGroup aria-label="Basic button group" variant="text" sx={{ textAlign: 'end', margin: "auto 2px auto auto" }}>
-                            {tableDeleteEnabled && <Tooltip title="delete table">
-                                <IconButton aria-label="share" size="small" sx={{ padding: 0.25, '&:hover': {
-                                    transform: 'scale(1.2)',
-                                    transition: 'all 0.2s ease'
-                                } }}>
-                                    <DeleteIcon fontSize="small" sx={{ fontSize: 18 }} color='warning'
-                                        onClick={(event) => {
-                                            event.stopPropagation();
-                                            dispatch(dfActions.deleteTable(tableId));
-                                        }} />
-                                </IconButton>
-                            </Tooltip>}
-                            <Tooltip title="create a new chart">
-                                <IconButton aria-label="share" size="small" sx={{ padding: 0.25, '&:hover': {
-                                    transform: 'scale(1.2)',
-                                    transition: 'all 0.2s ease'
-                                } }}>
-                                    <AddchartIcon fontSize="small" sx={{ fontSize: 18 }} color='primary'
-                                        onClick={(event) => {
-                                            event.stopPropagation();
-                                            dispatch(dfActions.createNewChart({ tableId: tableId, chartType: '?' }));
-                                        }} />
-                                </IconButton>
-                            </Tooltip>
-                        </ButtonGroup>
-                    </Box>
-                </Card>
-            </Box>
-
-            let chartElementProps = collapsed ? { display: 'flex', flexWrap: 'wrap' } : {}
-
-            return [
-                regularTableBox,
-                <Box
-                    key={`table-${tableId}`}
-                    sx={{ display: 'flex', flexDirection: 'row' }}>
-                    <Box sx={{
-                        minWidth: '1px', padding: '0px', width: '8px', flex: 'none', display: 'flex',
-                        marginLeft: highlightedTableIds.includes(tableId) ? '7px' : '8px',
-                        borderLeft: highlightedTableIds.includes(tableId) ? 
-                            `3px solid ${theme.palette.primary.light}` : '1px dashed darkgray',
-                    }}>
-                        <Box sx={{
-                            padding: 0, width: '1px', margin: 'auto',
-                            backgroundImage: 'linear-gradient(180deg, darkgray, darkgray 75%, transparent 75%, transparent 100%)',
-                            backgroundSize: '1px 6px, 3px 100%'
-                        }}></Box>
-                    </Box>
-                    <Box sx={{ flex: 1, padding: '8px 0px', minHeight: '8px', ...chartElementProps }}>
-                        {releventChartElements}
-                        {(agentWorkInProgress.some(a => a.target == 'table' && a.targetId == tableId) )&& 
-                            <Box sx={{ 
-                            py: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', }}>
-                                <Typography sx={{ mr: 1,fontSize: '10px', color: 'rgba(0,0,0,0.5)' }}>
-                                    agent is deriving data...
-                                </Typography>
-                                <PrecisionManufacturingIcon sx={{ 
-                                    fontSize: 16, 
-                                    color: 'rgba(0,0,0,0.5)',
-                                    animation: 'spin 2s linear infinite',
-                                    '@keyframes spin': {
-                                        '0%': {
-                                            transform: 'scale(1)',
-                                        },
-                                        '25%': {
-                                            transform: 'rotate(30deg) scale(1.5)',
-                                        },
-                                        '50%': {
-                                            transform: 'scale(1)',
-                                        },
-                                        '75%': {
-                                            transform: 'rotate(330deg) scale(1.5)',
-                                        },
-                                        '100%': {
-                                            transform: 'rotate(360deg) scale(1)',
-                                        },
-                                    }
-                                }} />
-                            </Box>}
-                    </Box>
-                </Box>,
-                
-                ,
-                (i == tableIdList.length - 1) ?
-                    <Box sx={{ marginLeft: "6px", marginTop: '-10px' }}>
-                        <PanoramaFishEyeIcon sx={{ fontSize: 5 }} />
-                    </Box> : ""
-            ]
+            return <Box sx={{ display: 'flex', flexDirection: 'column' }} key={`trigger-card-${trigger.chart?.id}`}>
+                {triggerCard}
+                <ListItemIcon key={'down-arrow'} sx={{ minWidth: 0 }}>
+                    <SouthIcon sx={{ fontSize: "inherit", 
+                        color: highlightedTableIds.includes(trigger.tableId) ? theme.palette.primary.light : 'darkgray' }} />
+                </ListItemIcon>
+            </Box>;
         });
 
-        content = w(tableElementList, triggerCards, "")
+    } else {
+        highlightedTableIds = focusedTableId && tableIdList.includes(focusedTableId) ? tableIdList : [];
+        isThreadFocused = Boolean(focusedTableId && tableIdList.includes(focusedTableId));
+    }
 
-        let selectedClassName = focusedChartId == triggerToFirstNewTable?.chart?.id ? 'selected-card' : '';
+    let tableElementList = tableIdList.map((tableId, i) => {
 
-        return <Box sx={{ ...sx, '& .selected-card': { border: `2px solid ${theme.palette.primary.light}` } }} data-thread-index={threadIdx}>
-            <Box sx={{ display: 'flex', direction: 'ltr', margin: 1 }}>
-                <Divider flexItem sx={{
-                    margin: 'auto',
-                    "& .MuiDivider-wrapper": { display: 'flex', flexDirection: 'row' },
-                    "&::before, &::after": { borderColor: 'darkgray', borderWidth: '2px', width: 50 },
+        if (tableId == leafTable.id && leafTable.anchored && tableIdList.length > 1) {
+            let table = tables.find(t => t.id == tableId);
+            return <Typography sx={{ background: 'transparent', }} >
+                <Box 
+                    sx={{ 
+                        margin: '0px', 
+                        width: 'fit-content',
+                        display: 'flex', 
+                        cursor: 'pointer',
+                        padding: '2px 4px',
+                        borderRadius: '4px',
+                        transition: 'all 0.2s ease',
+                        '&:hover': {
+                            backgroundColor: 'rgba(0, 0, 0, 0.04)',
+                            boxShadow: '0 2px 4px rgba(0,0,0,0.05)'
+                        }
+                    }}
+                    onClick={(event) => {
+                        event.stopPropagation();
+                        dispatch(dfActions.setFocusedTable(tableId));
+                        
+                        // Find and set the first chart associated with this table
+                        let firstRelatedChart = charts.find((c: Chart) => c.tableRef == tableId && c.source != "trigger");
+                        
+                        if (firstRelatedChart) {
+                            dispatch(dfActions.setFocusedChart(firstRelatedChart.id));
+                        }
+                    }}
+                >
+                    <Stack direction="row" sx={{ marginLeft: 0.25, marginRight: 'auto', fontSize: 12 }} alignItems="center" gap={"2px"}>
+                        <AnchorIcon sx={{ fontSize: 14, color: 'rgba(0,0,0,0.5)' }} />
+                        <Typography fontSize="inherit" sx={{
+                            textAlign: 'center',
+                            color: 'rgba(0,0,0,0.7)', 
+                            maxWidth: '100px',
+                            wordWrap: 'break-word',
+                            whiteSpace: 'normal'
+                        }}>
+                            {table?.displayId || tableId}
+                        </Typography>
+                    </Stack>
+                </Box>
+            </Typography>
+        }
+
+        // filter charts relavent to this
+        let relevantCharts = chartElements.filter(ce => ce.tableId == tableId && !usedIntermediateTableIds.includes(tableId));
+
+        let table = tables.find(t => t.id == tableId);
+
+        let selectedClassName = tableId == focusedTableId ? 'selected-card' : '';
+
+        let collapsedProps = collapsed ? { width: '50%', "& canvas": { width: 60, maxHeight: 50 } } : { width: '100%' }
+
+        let releventChartElements = relevantCharts.map((ce, j) =>
+            <Box key={`relevant-chart-${ce.chartId}`}
+                sx={{ display: 'flex', padding: 0, pb: j == relevantCharts.length - 1 ? 1 : 0.5, ...collapsedProps }}>
+                {buildChartCard(ce, focusedChartId)}
+            </Box>)
+
+        // only charts without dependency can be deleted
+        let tableDeleteEnabled = !tables.some(t => t.derive?.trigger.tableId == tableId);
+
+        let tableCardIcon =  ( table?.anchored ? 
+            <AnchorIcon sx={{ 
+                fontSize: tableId === focusedTableId ? 20 : 16,
+                color: tableId === focusedTableId ? theme.palette.primary.main : 'rgba(0,0,0,0.5)',
+                fontWeight: tableId === focusedTableId ? 'bold' : 'normal',
+            }} /> : 
+            <TableRowsIcon sx={{ fontSize: 16 }} /> )
+
+        let regularTableBox = <Box ref={relevantCharts.some(c => c.chartId == focusedChartId) ? scrollRef : null} 
+            sx={{ padding: '0px' }}>
+            <Card className={`data-thread-card ${selectedClassName}`} variant="outlined"
+                sx={{ width: '100%', backgroundColor: alpha(theme.palette.primary.light, 0.1),
+                    borderLeft: highlightedTableIds.includes(tableId) ? 
+                        `3px solid ${theme.palette.primary.light}` : '1px solid lightgray',
+                    }}
+                onClick={() => {
+                    dispatch(dfActions.setFocusedTable(tableId));
+                    if (focusedChart?.tableRef != tableId) {
+                        let firstRelatedChart = charts.find((c: Chart) => c.tableRef == tableId && c.source != 'trigger');
+                        if (firstRelatedChart) {
+                            dispatch(dfActions.setFocusedChart(firstRelatedChart.id));
+                        } else {
+                            //dispatch(dfActions.createNewChart({ tableId: tableId, chartType: '?' }));
+                        }
+                    }
                 }}>
-                    <Typography sx={{ fontSize: "10px", fontWeight: 'bold', color: 'text.secondary', textTransform: 'none' }}>
-                        {`thread - ${threadIdx + 1}`}
-                    </Typography>
-                </Divider>
-            </Box>
-            <div style={{ padding: '2px 4px 2px 4px', marginTop: 0, marginBottom: '8px', direction: 'ltr' }}>
-                {threadOriginalTableId && !tableIdList.includes(threadOriginalTableId) && 
-                    <Box sx={{ direction: 'ltr' }}>
-                        {triggerToFirstNewTable && threadOriginalTableId != triggerToFirstNewTable.tableId && 
-                            <React.Fragment>
-                                <Typography sx={{ ml: 0.25, fontSize: "10px", color: 'darkgray', textTransform: 'none' }}>
-                                    {`${tables.find(t => t.id === threadOriginalTableId)?.displayId || threadOriginalTableId}`}
-                                </Typography>
-                                <Box sx={{
-                                    height: '14px',
-                                    ml: 1,
-                                    borderLeft: highlightedTableIds.includes(threadOriginalTableId) ? `3px solid ${theme.palette.primary.light}` : `1px dashed rgba(0, 0, 0, 0.1)`,
-                                }}>
-                                </Box>
-                            </React.Fragment>}
-                        {triggerToFirstNewTable && <React.Fragment>
-                                <Typography sx={{ ml: 0.25, fontSize: "10px", color: 'text.secondary', textTransform: 'none' }}>
-                                    {`${tables.find(t => t.id === triggerToFirstNewTable.tableId)?.displayId || triggerToFirstNewTable.tableId}`}
-                                </Typography>
-                                <Box sx={{
-                                    height: '14px',
-                                    ml: 1,
-                                    borderLeft: highlightedTableIds.includes((triggerToFirstNewTable as Trigger).resultTableId) ? `3px solid ${theme.palette.primary.light}` : `1px dashed rgba(0, 0, 0, 0.3)`
-                                }}></Box>
-                            </React.Fragment>}
-                        {triggerToFirstNewTable && 
-                            <div key={'thread-card-trigger-box'}>
-                                <Box sx={{ flex: 1 }} >
-                                    <TriggerCard className={selectedClassName} trigger={triggerToFirstNewTable} hideFields={false} />
-                                </Box>
-                            </div>}
+                <Box sx={{ margin: '0px', display: 'flex' }}>
+                    <Stack direction="row" sx={{ marginLeft: 0.5, marginRight: 'auto', fontSize: 12 }} alignItems="center" gap={"2px"}>
+                        <IconButton color="primary" sx={{
+                            minWidth: 0, 
+                            padding: 0.25,
+                            '&:hover': {
+                                transform: 'scale(1.3)',
+                                transition: 'all 0.2s ease'
+                            },
+                            '&.Mui-disabled': {
+                                color: 'rgba(0, 0, 0, 0.5)'
+                            }
+                        }} 
+                        size="small" 
+                        disabled={table?.derive == undefined || tables.some(t => t.derive?.trigger.tableId == tableId)}
+                        onClick={(event) => {
+                            event.stopPropagation();
+                            dispatch(dfActions.updateTableAnchored({tableId: tableId, anchored: !table?.anchored}));
+                        }}>
+                            <Tooltip title={table?.anchored ? "unanchor table" : "anchor table"}>
+                                <span>  {/* Wrapper span needed for disabled IconButton tooltip */}
+                                    <IconButton color="primary" sx={{
+                                        minWidth: 0, 
+                                        padding: 0.25,
+                                        '&:hover': {
+                                            transform: 'scale(1.1)',
+                                            transition: 'all 0.2s ease',
+                                        },
+                                        '&.Mui-disabled': {
+                                            color: 'rgba(0, 0, 0, 0.5)'
+                                        }
+                                    }} 
+                                    size="small" 
+                                    disabled={table?.derive == undefined || tables.some(t => t.derive?.trigger.tableId == tableId)}
+                                    onClick={(event) => {
+                                        event.stopPropagation();
+                                        dispatch(dfActions.updateTableAnchored({tableId: tableId, anchored: !table?.anchored}));
+                                    }}>
+                                        {tableCardIcon}
+                                    </IconButton>
+                                </span>
+                            </Tooltip>
+                        </IconButton>
+                        <Box sx={{ margin: '4px 8px 4px 2px', display: 'flex', alignItems: 'center' }}>
+                            {table?.virtual? <CloudQueueIcon sx={{ fontSize: 10, }} /> : ""}
+                            {focusedTableId == tableId ? <EditableTableName
+                                initialValue={table?.displayId || tableId}
+                                tableId={tableId}
+                                handleUpdateTableDisplayId={handleUpdateTableDisplayId}
+                            /> : <Typography fontSize="inherit" sx={{
+                                textAlign: 'center',
+                                color:  'rgba(0,0,0,0.7)', 
+                                maxWidth: '90px',
+                                ml: table?.virtual ? 0.5 : 0,
+                                wordWrap: 'break-word',
+                                whiteSpace: 'normal'
+                            }}>{table?.displayId || tableId}</Typography>}
+                        </Box>
+                    </Stack>
+                    <ButtonGroup aria-label="Basic button group" variant="text" sx={{ textAlign: 'end', margin: "auto 2px auto auto" }}>
+                        {tableDeleteEnabled && <Tooltip title="delete table">
+                            <IconButton aria-label="share" size="small" sx={{ padding: 0.25, '&:hover': {
+                                transform: 'scale(1.2)',
+                                transition: 'all 0.2s ease'
+                            } }}>
+                                <DeleteIcon fontSize="small" sx={{ fontSize: 18 }} color='warning'
+                                    onClick={(event) => {
+                                        event.stopPropagation();
+                                        dispatch(dfActions.deleteTable(tableId));
+                                    }} />
+                            </IconButton>
+                        </Tooltip>}
+                        <Tooltip title="create a new chart">
+                            <IconButton aria-label="share" size="small" sx={{ padding: 0.25, '&:hover': {
+                                transform: 'scale(1.2)',
+                                transition: 'all 0.2s ease'
+                            } }}>
+                                <AddchartIcon fontSize="small" sx={{ fontSize: 18 }} color='primary'
+                                    onClick={(event) => {
+                                        event.stopPropagation();
+                                        dispatch(dfActions.createNewChart({ tableId: tableId, chartType: '?' }));
+                                    }} />
+                            </IconButton>
+                        </Tooltip>
+                    </ButtonGroup>
+                </Box>
+            </Card>
+        </Box>
+
+        let chartElementProps = collapsed ? { display: 'flex', flexWrap: 'wrap' } : {}
+
+        return [
+            regularTableBox,
+            <Box
+                key={`table-${tableId}`}
+                sx={{ display: 'flex', flexDirection: 'row' }}>
+                <Box sx={{
+                    minWidth: '1px', padding: '0px', width: '8px', flex: 'none', display: 'flex',
+                    marginLeft: highlightedTableIds.includes(tableId) ? '7px' : '8px',
+                    borderLeft: highlightedTableIds.includes(tableId) ? 
+                        `3px solid ${theme.palette.primary.light}` : '1px dashed darkgray',
+                }}>
+                    <Box sx={{
+                        padding: 0, width: '1px', margin: 'auto',
+                        backgroundImage: 'linear-gradient(180deg, darkgray, darkgray 75%, transparent 75%, transparent 100%)',
+                        backgroundSize: '1px 6px, 3px 100%'
+                    }}></Box>
+                </Box>
+                <Box sx={{ flex: 1, padding: '8px 0px', minHeight: '8px', ...chartElementProps }}>
+                    {releventChartElements}
+                    {(agentWorkInProgress.some(a => a.target == 'table' && a.targetId == tableId) )&& 
+                        <Box sx={{ 
+                        py: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', }}>
+                            <Typography sx={{ mr: 1,fontSize: '10px', color: 'rgba(0,0,0,0.5)' }}>
+                                agent is deriving data...
+                            </Typography>
+                            <PrecisionManufacturingIcon sx={{ 
+                                fontSize: 16, 
+                                color: 'rgba(0,0,0,0.5)',
+                                animation: 'spin 2s linear infinite',
+                                '@keyframes spin': {
+                                    '0%': {
+                                        transform: 'scale(1)',
+                                    },
+                                    '25%': {
+                                        transform: 'rotate(30deg) scale(1.5)',
+                                    },
+                                    '50%': {
+                                        transform: 'scale(1)',
+                                    },
+                                    '75%': {
+                                        transform: 'rotate(330deg) scale(1.5)',
+                                    },
+                                    '100%': {
+                                        transform: 'rotate(360deg) scale(1)',
+                                    },
+                                }
+                            }} />
+                        </Box>}
+                </Box>
+            </Box>,
+            
+            ,
+            (i == tableIdList.length - 1) ?
+                <Box sx={{ marginLeft: "6px", marginTop: '-10px' }}>
+                    <PanoramaFishEyeIcon sx={{ fontSize: 5 }} />
+                </Box> : ""
+        ]
+    });
+
+    content = w(tableElementList, triggerCards, "")
+
+    let selectedClassName = focusedChartId == triggerToFirstNewTable?.chart?.id ? 'selected-card' : '';
+
+    return <Box sx={{ ...sx, 
+                '& .selected-card': { border: `2px solid ${theme.palette.primary.light}` },
+                '& .MuiTypography-root': {
+                    color: isThreadFocused ? theme.palette.text.primary : theme.palette.text.secondary,
+                },
+                boxShadow: isThreadFocused ? "0 2px 8px rgba(0,0,0,0.08), 0 1px 3px rgba(0,0,0,0.12)" : "none",
+                transition: "box-shadow 0.3s ease-in-out",
+            }} 
+        data-thread-index={threadIdx}>
+        <Box sx={{ display: 'flex', direction: 'ltr', margin: '2px 2px 8px 2px' }}>
+            <Divider flexItem sx={{
+                margin: 'auto',
+                "& .MuiDivider-wrapper": { display: 'flex', flexDirection: 'row' },
+                "&::before, &::after": { borderColor: alpha(theme.palette.custom.main, 0.2), borderWidth: '2px', width: 60 },
+            }}>
+                <Typography sx={{ fontSize: "10px",  color: 'text.secondary', textTransform: 'none' }}>
+                    {`thread - ${threadIdx + 1}`}
+                </Typography>
+            </Divider>
+        </Box>
+        <div style={{ padding: '2px 4px 2px 4px', marginTop: 0, direction: 'ltr' }}>
+            {threadOriginalTableId && !tableIdList.includes(threadOriginalTableId) && 
+                <Box sx={{ direction: 'ltr' }}>
+                    {triggerToFirstNewTable && threadOriginalTableId != triggerToFirstNewTable.tableId && 
+                        <React.Fragment>
+                            <Typography sx={{ ml: 0.25, fontSize: "10px", color: 'darkgray', textTransform: 'none' }}>
+                                {`${tables.find(t => t.id === threadOriginalTableId)?.displayId || threadOriginalTableId}`}
+                            </Typography>
+                            <Box sx={{
+                                height: '14px',
+                                ml: 1,
+                                borderLeft: highlightedTableIds.includes(threadOriginalTableId) ? `3px solid ${theme.palette.primary.light}` : `1px dashed rgba(0, 0, 0, 0.1)`,
+                            }}>
+                            </Box>
+                        </React.Fragment>}
+                    {triggerToFirstNewTable && <React.Fragment>
+                            <Typography sx={{ ml: 0.25, fontSize: "10px", color: 'text.secondary', textTransform: 'none' }}>
+                                {`${tables.find(t => t.id === triggerToFirstNewTable.tableId)?.displayId || triggerToFirstNewTable.tableId}`}
+                            </Typography>
                             <Box sx={{
                                 height: '14px',
                                 ml: 1,
                                 borderLeft: highlightedTableIds.includes((triggerToFirstNewTable as Trigger).resultTableId) ? `3px solid ${theme.palette.primary.light}` : `1px dashed rgba(0, 0, 0, 0.3)`
                             }}></Box>
-                        </Box>
-                }
-                {content}
-            </div>
-        </Box>
-    }
+                        </React.Fragment>}
+                    {triggerToFirstNewTable && 
+                        <div key={'thread-card-trigger-box'}>
+                            <Box sx={{ flex: 1 }} >
+                                <TriggerCard className={selectedClassName} trigger={triggerToFirstNewTable} hideFields={false} />
+                            </Box>
+                        </div>}
+                        <Box sx={{
+                            height: '14px',
+                            ml: 1,
+                            borderLeft: highlightedTableIds.includes((triggerToFirstNewTable as Trigger).resultTableId) ? `3px solid ${theme.palette.primary.light}` : `1px dashed rgba(0, 0, 0, 0.3)`
+                        }}></Box>
+                    </Box>
+            }
+            {content}
+        </div>
+    </Box>
+}
 
 const VegaLiteChartElement = memo<{
     chart: Chart,
@@ -854,17 +868,19 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
     });
 
     let drawerOpen = leafTables.length > 1 && threadDrawerOpen;
-    let threadDrawerWidth = Math.max(Math.min(680, leafTables.length * 216), 232)
+    // let threadDrawerWidth = Math.max(Math.min(696, leafTables.length * 216), 232)
 
-    let view = <Box width={drawerOpen ? threadDrawerWidth + 16 : 232} sx={{ 
+    let view = <Box maxWidth={drawerOpen ? 720 : 232} sx={{ 
         overflow: 'auto', // Add horizontal scroll when drawer is open
         position: 'relative',
         display: 'flex', 
         flexDirection: 'column',
         transition: 'all 0.3s ease',
         direction: 'ltr',
-        height: '100%',
+        height: 'calc(100% - 16px)',
         flexWrap: drawerOpen ? 'wrap' : 'nowrap',
+        gap: 1,
+        p: 1,
     }}>
         {leafTables.map((lt, i) => {
             let usedIntermediateTableIds = leafTables.slice(0, i)
@@ -877,8 +893,10 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
                 chartElements={chartElements} 
                 usedIntermediateTableIds={usedIntermediateTableIds} 
                 sx={{
-                    backgroundColor: (i % 2 == 1 ? "rgba(0, 0, 0, 0.03)" : 'white'), 
+                    backgroundColor: 'white', 
+                    borderRadius: 4,
                     padding: 1,
+                    my: 0.5,
                     flex:  'none',
                     display: 'flex',
                     flexDirection: 'column',
@@ -960,7 +978,7 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
         <Box className="data-thread" sx={{ ...sx }}>
             <Box sx={{
                 direction: 'ltr', display: 'flex',
-                paddingTop: "10px", paddingLeft: '12px', alignItems: 'center', justifyContent: 'space-between'
+                paddingLeft: '12px', alignItems: 'center', justifyContent: 'space-between',
             }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                     <Typography className="view-title" component="h2" sx={{ marginTop: "6px" }}>
@@ -976,12 +994,13 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
                 </Tooltip>
             </Box>
             <Box sx={{
-                    transition: 'width 200ms cubic-bezier(0.4, 0, 0.2, 1) 0ms', 
+                    transition: 'width 200ms cubic-bezier(0.4, 0, 0.2, 1) 0ms',
                     overflow: 'hidden', 
                     direction: 'rtl', 
                     display: 'block', 
                     flex: 1,
-                    height: 'calc(100% - 40px)',
+                    height: 'calc(100% - 48px)',
+                    backgroundColor: 'rgba(0, 0, 0, 0.03)',
                 }}>
                 {view}
             </Box>

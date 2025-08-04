@@ -25,6 +25,8 @@ import {
     Menu,
     alpha,
     useTheme,
+    SxProps,
+    Theme,
 } from '@mui/material';
 
 import React from 'react';
@@ -89,7 +91,10 @@ export const TriggerCard: FC<{
     className?: string, 
     trigger: Trigger, 
     hideFields?: boolean, 
-    mini?: boolean}> = function ({ className, trigger, hideFields, mini = false }) {
+    mini?: boolean,
+    sx?: SxProps<Theme>}> = function ({ className, trigger, hideFields, mini = false, sx }) {
+
+    let theme = useTheme();
 
     let fieldItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
 
@@ -153,7 +158,8 @@ export const TriggerCard: FC<{
                     cursor: 'pointer', backgroundColor: 'rgba(255, 160, 122, 0.07)', 
                     fontSize: '12px', display: 'flex', flexDirection: 'row', alignItems: 'center', gap: '2px',
                     '&:hover': { transform: "translate(0px, 1px)",  boxShadow: "0 0 3px rgba(33,33,33,.2)"},
-                    '& .MuiChip-label': { px: 0.5, fontSize: "10px"}
+                    '& .MuiChip-label': { px: 0.5, fontSize: "10px"},
+                    ...sx,
                 }} 
                 onClick={handleClick}>
                 <PrecisionManufacturing  sx={{ml: 1, color: 'darkgray', width: '14px', height: '14px'}} />
