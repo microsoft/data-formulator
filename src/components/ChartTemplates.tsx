@@ -324,7 +324,7 @@ const barCharts: ChartTemplate[] = [
         }
     },
     {
-        "chart": "Heat Map",
+        "chart": "Heatmap",
         "icon": <LazyChartIcon iconPath="../assets/chart-icon-heat-map.png" />,
         "template": {
             "mark": "rect",

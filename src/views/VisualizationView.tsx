@@ -831,8 +831,6 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
 
 export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView({ }) {
 
-    let tables = useSelector((state: DataFormulatorState) => state.tables);
-
     let allCharts = useSelector(dfSelectors.getAllCharts);
     let focusedChartId = useSelector((state: DataFormulatorState) => state.focusedChartId);
     let focusedTableId = useSelector((state: DataFormulatorState) => state.focusedTableId);
@@ -883,11 +881,9 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
         )
     }
 
-    let chartEditor = <ChartEditorFC key={focusedChartId} />
-
     let visPanel = <Box sx={{ width: "100%", overflow: "hidden", display: "flex", flexDirection: "row" }}>
         <Box className="visualization-carousel" sx={{display: "contents"}} >
-            {chartEditor}
+            <ChartEditorFC key={focusedChartId} />
         </Box>
     </Box>
 

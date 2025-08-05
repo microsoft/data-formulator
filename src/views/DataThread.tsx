@@ -868,7 +868,7 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
     });
 
     let drawerOpen = leafTables.length > 1 && threadDrawerOpen;
-    // let threadDrawerWidth = Math.max(Math.min(696, leafTables.length * 216), 232)
+    //let threadDrawerWidth = Math.max(Math.min(696, leafTables.length * 216), 232)
 
     let view = <Box maxWidth={drawerOpen ? 720 : 232} sx={{ 
         overflow: 'auto', // Add horizontal scroll when drawer is open
@@ -894,7 +894,7 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
                 usedIntermediateTableIds={usedIntermediateTableIds} 
                 sx={{
                     backgroundColor: 'white', 
-                    borderRadius: 4,
+                    borderRadius: 2,
                     padding: 1,
                     my: 0.5,
                     flex:  'none',

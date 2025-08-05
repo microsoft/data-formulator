@@ -13,7 +13,9 @@ import {
 
 import _ from 'lodash';
 
-import SplitPane from "react-split-pane";
+import { Allotment } from "allotment";
+import "allotment/dist/style.css";
+
 import {
 
     Typography,
@@ -21,7 +23,7 @@ import {
     Tooltip,
     Button,
     Collapse,
-    IconButton,  // Add this
+    IconButton,
 } from '@mui/material';
 
 import { FreeDataViewFC } from './DataView';
@@ -45,7 +47,6 @@ import { getUrls } from '../app/utils';
 
 export const DataFormulatorFC = ({ }) => {
 
-    const visPaneSize = useSelector((state: DataFormulatorState) => state.visPaneSize);
     const tables = useSelector((state: DataFormulatorState) => state.tables);
     
     const models = useSelector((state: DataFormulatorState) => state.models);
@@ -110,20 +111,23 @@ export const DataFormulatorFC = ({ }) => {
 
     let $tableRef = React.createRef<SelectableGroup>();
 
-    const visPane = (// @ts-ignore
-        <SplitPane split="horizontal"
-            minSize={100} size={visPaneSize}
-            className={'vis-split-pane'}
-            style={{}}
-            pane2Style={{overflowY: "hidden"}}
-            onDragFinished={size => { dispatch(dfActions.setVisPaneSize(size)) }}>
-            {visPaneMain}
-            <Box className="table-box">
-                <FreeDataViewFC $tableRef={$tableRef}/>
-            </Box>
-        </SplitPane>);
-
-    let conceptPanel = <ConceptShelf />;
+    const visPane = (
+        <Box sx={{width: '100%', height: '100%', 
+            "& .split-view-view:first-child": {
+                display: 'flex',
+                overflow: 'hidden',
+        }}}>
+            <Allotment vertical>
+                <Allotment.Pane minSize={200} >
+                {visPaneMain}
+                </Allotment.Pane>
+                <Allotment.Pane minSize={120} preferredSize={200}>
+                    <Box className="table-box">
+                        <FreeDataViewFC $tableRef={$tableRef}/>
+                    </Box>
+                </Allotment.Pane>
+            </Allotment>
+        </Box>);
 
     const fixedSplitPane = ( 
         <Box sx={{display: 'flex', flexDirection: 'row', height: '100%'}}>
@@ -140,9 +144,10 @@ export const DataFormulatorFC = ({ }) => {
             </Box>
             <Box sx={{
                 border: '1px solid lightgray', borderRadius: '4px', margin: '4px 8px 4px 4px', backgroundColor: 'white',
-                display: 'flex', height: '100%', flex: 1, overflow: 'hidden', flexDirection: 'row'}}>
+                display: 'flex', height: '100%', flex: 1, overflow: 'hidden', flexDirection: 'row'
+            }}>
                 {visPane}
-                {conceptPanel}
+                <ConceptShelf />
             </Box>
             
         </Box>
@@ -159,8 +164,8 @@ export const DataFormulatorFC = ({ }) => {
 Totals (7 entries)	5	5	5	15
 `
 
-    let dataUploadRequestBox = <Box sx={{width: '100vw'}}>
-        <Box sx={{paddingTop: "8%", display: "flex", flexDirection: "column", textAlign: "center"}}>
+    let dataUploadRequestBox = <Box sx={{width: '100vw', display: 'flex', flexDirection: 'column', height: '100%'}}>
+        <Box sx={{margin:'auto', pb: '5%', display: "flex", flexDirection: "column", textAlign: "center"}}>
             <Box component="img" sx={{  width: 256, margin: "auto" }} alt="" src={dfLogo} />
             <Typography variant="h3" sx={{marginTop: "20px"}}>
                 {toolName}
@@ -182,8 +187,8 @@ Totals (7 entries)	5	5	5	15
                 href="https://privacy.microsoft.com/en-US/data-privacy-notice">view data privacy notice</Button>
     </Box>;
 
-    let modelSelectionDialogBox = <Box sx={{width: '100vw'}}>
-        <Box sx={{paddingTop: "8%", display: "flex", flexDirection: "column", textAlign: "center"}}>
+    let modelSelectionDialogBox = <Box sx={{width: '100vw', display: 'flex', flexDirection: 'column', height: '100%'}}>
+        <Box sx={{margin:'auto', pb: '5%', display: "flex", flexDirection: "column", textAlign: "center"}}>
             <Box component="img" sx={{  width: 256, margin: "auto" }} alt="" src={dfLogo} />
             <Typography variant="h3" sx={{marginTop: "20px"}}>
                 {toolName}

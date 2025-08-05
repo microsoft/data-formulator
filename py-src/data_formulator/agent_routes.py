@@ -30,6 +30,7 @@ from data_formulator.agents.agent_data_load import DataLoadAgent
 from data_formulator.agents.agent_data_clean import DataCleanAgent
 from data_formulator.agents.agent_code_explanation import CodeExplanationAgent
 from data_formulator.agents.agent_query_completion import QueryCompletionAgent
+from data_formulator.agents.agent_interactive_explore import InteractiveExploreAgent
 from data_formulator.agents.client_utils import Client
 
 from data_formulator.db_manager import db_manager
@@ -447,6 +448,37 @@ def query_completion():
         response = flask.jsonify({ "token": "", "status": "ok", "reasoning": reasoning, "query": query })
     else:
         response = flask.jsonify({ "token": "", "status": "error", "reasoning": "unable to complete query", "query": "" })
+
+    response.headers.add('Access-Control-Allow-Origin', '*')
+    return response
+
+@agent_bp.route('/get-recommendation-questions', methods=['GET', 'POST'])
+def get_recommendation_questions():
+    if request.is_json:
+        logger.info("# get recommendation questions request")
+        content = request.get_json()
+        token = content.get("token", "")
+
+        client = get_client(content['model'])
+
+        logger.info(f" model: {content['model']}")
+        
+        agent = InteractiveExploreAgent(client=client)
+
+        # Get input tables from the request
+        input_tables = content.get("input_tables", [])
+        
+        # Get exploration thread if provided (for context from previous explorations)
+        exploration_thread = content.get("exploration_thread", None)
+
+        results = agent.run(input_tables, exploration_thread)
+        
+        # Filter out any failed results
+        valid_results = [r for r in results if r['status'] == 'ok']
+
+        response = flask.jsonify({ "status": "ok", "token": token, "results": valid_results })
+    else:
+        response = flask.jsonify({ "token": "", "status": "error", "results": [] })
 
     response.headers.add('Access-Control-Allow-Origin', '*')
     return response

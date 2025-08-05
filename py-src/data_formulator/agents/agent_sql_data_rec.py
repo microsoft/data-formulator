@@ -10,7 +10,7 @@ import random
 import string
 
 import traceback
-
+import duckdb
 
 import logging
 
@@ -84,6 +84,17 @@ note:
 some notes:
 - in DuckDB, you escape a single quote within a string by doubling it ('') rather than using a backslash (\').
 - in DuckDB, you need to use proper date functions to perform date operations.
+- Critical: When using date/time functions in DuckDB, always cast date columns to explicit types to avoid function overload ambiguity:
+  * Use `CAST(date_column AS DATE)` for date operations
+  * Use `CAST(datetime_column AS TIMESTAMP)` for timestamp operations
+  * Use `CAST(datetime_column AS TIMESTAMP_NS)` for nanosecond precision timestamps
+  * Common patterns:
+    - Extract year: `CAST(strftime('%Y', CAST(date_column AS DATE)) AS INTEGER) AS year`
+    - Extract month: `CAST(strftime('%m', CAST(date_column AS DATE)) AS INTEGER) AS month`
+    - Format date: `strftime('%Y-%m-%d', CAST(date_column AS DATE)) AS formatted_date`
+    - Date arithmetic: `CAST(date_column AS DATE) + INTERVAL 1 DAY`
+  * This prevents "Could not choose a best candidate function" errors in DuckDB
+
 '''
 
 example = """
@@ -200,6 +211,22 @@ class SQLDataRecAgent(object):
                             }
                         },
                     }
+                except duckdb.BinderException as e:
+                    error_str = str(e)
+                    if "Could not choose a best candidate function" in error_str:
+                        logger.warning(f"DuckDB type ambiguity error: {error_str}")
+                        result = {
+                            'status': 'sql_error', 
+                            'code': code_str, 
+                            'content': f"SQL type casting required. DuckDB needs explicit type casting for date/time functions. Error: {error_str}. Please cast date columns to specific types (DATE, TIMESTAMP, etc.) before using date functions."
+                        }
+                    else:
+                        logger.warning(f"DuckDB binder error: {error_str}")
+                        result = {
+                            'status': 'sql_error', 
+                            'code': code_str, 
+                            'content': f"SQL error: {error_str}"
+                        }
                 except Exception as e:
                     logger.warning('other error:')
                     error_message = traceback.format_exc()

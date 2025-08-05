@@ -251,7 +251,18 @@ export const ConceptShelf: FC<ConceptShelfProps> = function ConceptShelf() {
         width: conceptPanelOpen ? 296 : 64,
         transition: 'width 0.3s ease', // Smooth transition
         overflow: 'hidden',
-        position: 'relative'
+        position: 'relative',
+        '&::after': {
+            content: '""',
+            position: 'absolute',
+            top: 0,
+            right: 0,
+            width: '50px',
+            height: '100%',
+            background: 'linear-gradient(to right, transparent, rgba(255,255,255,1))',
+            pointerEvents: 'none',
+            zIndex: 1
+        }
     }}>
         <Tooltip placement="left" title={conceptPanelOpen ? "hide concept panel" : "open concept panel"}>
             <IconButton 

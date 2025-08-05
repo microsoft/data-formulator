@@ -70,7 +70,7 @@ function a11yProps(index: number) {
 
 export interface TableChallenges {
     name: string;
-    challenges: { text: string; difficulty: 'easy' | 'medium' | 'hard'; }[];
+    challenges: { text: string; difficulty: 'easy' | 'hard'; }[];
     table: DictTable;
 }
 
@@ -124,9 +124,7 @@ export const TableSelectionView: React.FC<TableSelectionViewProps> = function Ta
             let challengeView = <Box sx={{margin: "6px 0px"}}>
                 <Typography variant="subtitle2" sx={{marginLeft: "6px", fontSize: 12}}>Try these data visualization challenges with this dataset:</Typography>
                 {tc.challenges.map((c, j) => <Box key={j} sx={{display: 'flex', alignItems: 'flex-start', pl: 1}}>
-                    <Typography sx={{fontSize: 11, color: c.difficulty === 'easy' ? 'success.main' : 
-                                                        c.difficulty === 'medium' ? 'warning.main' : 
-                                                        'error.main'}}>[{c.difficulty}] {c.text}</Typography>
+                    <Typography sx={{fontSize: 11, color: c.difficulty === 'easy' ? 'success.main' : 'warning.main'}}>[{c.difficulty}] {c.text}</Typography>
                 </Box>)}
             </Box>  
 

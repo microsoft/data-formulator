@@ -314,7 +314,24 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
     return <Collapse 
         key='encoding-shelf'
         collapsedSize={64} in={!collapseEditor} orientation='horizontal' 
-        sx={{position: 'relative'}}>
+        sx={{
+            position: 'relative',
+            '& .MuiCollapse-wrapper': {
+                '& .MuiCollapse-wrapperInner': {
+                    '&::after': collapseEditor ? {
+                        content: '""',
+                        position: 'absolute',
+                        top: 0,
+                        right: 0,
+                        width: '20px',
+                        height: '100%',
+                        background: 'linear-gradient(to right, transparent, rgba(255,255,255,1))',
+                        pointerEvents: 'none',
+                        zIndex: 1
+                    } : {}
+                }
+            }
+        }}>
         <Box sx={{display: 'flex', flexDirection: 'row', height: '100%', 
             position: 'relative',
         }}>

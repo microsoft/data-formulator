@@ -54,6 +54,7 @@ export function getUrls() {
         DATA_LOADER_INGEST_DATA_FROM_QUERY: `/api/tables/data-loader/ingest-data-from-query`,
 
         QUERY_COMPLETION: `/api/agent/query-completion`,
+        GET_RECOMMENDATION_QUESTIONS: `/api/agent/get-recommendation-questions`,
     };
 }
 
@@ -507,8 +508,13 @@ export const resolveChartFields = (chart: Chart, currentConcepts: FieldItem[], r
 
     let newAdditionFieldIds = targetFieldIds.filter(fid => !ocupiedFieldIds.includes(fid))
     let channelsToUpdate = [...chartChannels.filter(ch => !ocupiedChannels.includes(ch))];
+
+    console.log("targetFieldIds", targetFieldIds);
+    console.log("ocupiedFieldIds", ocupiedFieldIds);
+    console.log("newAdditionFieldIds", newAdditionFieldIds);
+    console.log("channelsToUpdate", channelsToUpdate);
     
-    for (let i = 0; i < Math.max(newAdditionFieldIds.length, channelsToUpdate.length); i ++) {
+    for (let i = 0; i < Math.min(newAdditionFieldIds.length, channelsToUpdate.length); i ++) {
         chart.encodingMap[channelsToUpdate[i] as keyof EncodingMap].fieldID = newAdditionFieldIds[i];
     }
     

@@ -374,14 +374,11 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                 dispatch(dfActions.changeChartRunningStatus({chartId, status: false}));
                 dispatch(dfActions.clearUnReferencedTables());
             }, 400);
-            dispatch(dfActions.setVisPaneSize(640));
             return
         }
 
         dispatch(dfActions.clearUnReferencedTables());
-        dispatch(dfActions.setVisPaneSize(640));
-        //handleRunSynthesisStream(example);
-
+        
         let fieldNamesStr = activeFields.map(f => f.name).reduce(
             (a: string, b: string, i, array) => a + (i == 0 ? "" : (i < array.length - 1 ? ', ' : ' and ')) + b, "")
 
@@ -595,7 +592,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                                         "bar": "Bar Chart",
                                         "point": "Scatter Plot",
                                         "boxplot": "Boxplot",
-                                        "area": "Area Chart",
+                                        "area": "Custom Area",
                                         "heatmap": "Heatmap",
                                         "group_bar": "Grouped Bar Chart"
                                     }

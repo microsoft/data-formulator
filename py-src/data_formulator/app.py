@@ -96,34 +96,38 @@ def configure_logging():
 def get_example_dataset_list():
     example_datasets = [
         {"name": "gapminder", "challenges": [
-            {"text": "Create a line chart to show the life expectancy trend of each country over time.", "difficulty": "easy"},
-            {"text": "Visualize the top 10 countries with highest life expectancy in 2005.", "difficulty": "medium"},
-            {"text": "Find top 10 countries that have the biggest difference of life expectancy in 1955 and 2005.", "difficulty": "hard"},
-            {"text": "Rank countries by their average population per decade. Then only show countries with population over 50 million in 2005.", "difficulty": "hard"}
+            {"text": "Show life expectancy trends for the 5 most populous countries.", "difficulty": "easy"},
+            {"text": "Which countries experienced the most dramatic life expectancy improvements between 1955 and 2005? Show the top 10 countries with the largest percentage increase.", "difficulty": "easy"},
+            {"text": "Show the relationship between fertility rate and life expectancy in 2005. Highlight countries with population over 100 million.", "difficulty": "easy"},
+            {"text": "Identify countries that consistently ranked in the top 10 for life expectancy across all decades (1955-2005). Visualize their life expectancy trends over time.", "difficulty": "hard"},
+            {"text": "Find countries that completed the demographic transition (high life expectancy, low fertility) most quickly. Calculate the speed of transition for each country and show the top 15 fastest transitions.", "difficulty": "hard"}
         ]},
         {"name": "income", "challenges": [
-            {"text": "Create a line chart to show the income trend of each state over time.", "difficulty": "easy"},
-            {"text": "Only show washington and california's percentage of population in each income group each year.", "difficulty": "medium"},
-            {"text": "Find the top 5 states with highest percentage of high income group in 2016.", "difficulty": "hard"}
+            {"text": "Compare income distribution between California and Texas over groups.", "difficulty": "easy"},
+            {"text": "Which states showed the most volatile income distribution changes between 2000-2016? Calculate the standard deviation of income group percentages for each state.", "difficulty": "easy"},
+            {"text": "Create a stacked bar chart showing how the middle class (middle income groups) has changed as a percentage of total population across all states over time.", "difficulty": "easy"},
+            {"text": "Identify states that experienced a 'middle class squeeze' - where middle income groups decreased while both low and high income groups increased. Visualize these trends.", "difficulty": "hard"},
+            {"text": "Calculate the Gini coefficient equivalent for each state in 2016 using income group data. Show the 10 states with highest and lowest income inequality.", "difficulty": "hard"}
         ]},
         {"name": "disasters", "challenges": [
-            {"text": "Create a scatter plot to show the number of death from each disaster type each year.", "difficulty": "easy"},
-            {"text": "Filter the data and show the number of death caused by flood or drought each year.", "difficulty": "easy"},
-            {"text": "Create a heatmap to show the total number of death caused by each disaster type each decade.", "difficulty": "hard"},
-            {"text": "Exclude 'all natural disasters' from the previous chart.", "difficulty": "medium"}
+            {"text": "Show deaths by disaster type for the last 10 years.", "difficulty": "easy"},
+            {"text": "Which disaster types have become more or less deadly over time? Calculate the 10-year moving average of deaths for each disaster type.", "difficulty": "easy"},
+            {"text": "Create a heatmap showing the correlation between different disaster types - which disasters tend to occur together in the same year?", "difficulty": "easy"},
+            {"text": "Identify years with 'disaster clusters' - when multiple disaster types had above-average death tolls. Visualize these high-impact years.", "difficulty": "hard"},
         ]},
         {"name": "movies", "challenges": [
-            {"text": "Create a scatter plot to show the relationship between budget and worldwide gross.", "difficulty": "easy"},
-            {"text": "Find the top 10 movies with highest profit after 2000 and visualize them in a bar chart.", "difficulty": "easy"},
-            {"text": "Visualize the median profit ratio of movies in each genre", "difficulty": "medium"},
-            {"text": "Create a scatter plot to show the relationship between profit and IMDB rating.", "difficulty": "medium"},
-            {"text": "Turn the above plot into a heatmap by bucketing IMDB rating and profit, color tiles by the number of movies in each bucket.", "difficulty": "hard"}
+            {"text": "Show the top 20 highest-grossing movies by genre.", "difficulty": "easy"},
+            {"text": "Which movie genres have the highest 'return on investment' (worldwide gross / production budget)? Show the top 10 genres by average ROI.", "difficulty": "easy"},
+            {"text": "Create a scatter plot of budget vs worldwide gross, colored by genre. Highlight movies that overperformed relative to their budget.", "difficulty": "easy"},
+            {"text": "Identify 'sleeper hits' - movies with low budgets but high ratings and gross. Show the top 20 movies that exceeded expectations.", "difficulty": "hard"},
+            {"text": "Calculate the 'critical-commercial success' score (normalized rating × normalized gross) for each movie. Visualize how this score varies by genre and decade.", "difficulty": "hard"}
         ]},
         {"name": "unemployment-across-industries", "challenges": [
-            {"text": "Create a scatter plot to show the relationship between unemployment rate and year.", "difficulty": "easy"},
-            {"text": "Create a line chart to show the average unemployment per year for each industry.", "difficulty": "medium"},
-            {"text": "Find the 5 most stable industries (least change in unemployment rate between 2000 and 2010) and visualize their trend over time using line charts.", "difficulty": "medium"},
-            {"text": "Create a bar chart to show the unemployment rate change between 2000 and 2010, and highlight the top 5 most stable industries with least change.", "difficulty": "hard"}
+            {"text": "Show unemployment trends for the 5 largest industries.", "difficulty": "easy"},
+            {"text": "Which industries are most sensitive to economic cycles? Calculate the correlation between each industry's unemployment rate and the overall average.", "difficulty": "easy"},
+            {"text": "Create a line chart showing the 'unemployment gap' (industry rate minus overall average) for each industry over time. Highlight industries that consistently outperform or underperform.", "difficulty": "easy"},
+            {"text": "Identify 'recession-proof' industries - those with the smallest unemployment rate increases during economic downturns (2000-2003, 2008-2010).", "difficulty": "hard"},
+            {"text": "Calculate the 'volatility index' (standard deviation of unemployment rate) for each industry. Show which industries have the most stable vs volatile employment patterns.", "difficulty": "hard"}
         ]}
     ]
     dataset_info = []

@@ -60,19 +60,13 @@ export interface DataFormulatorState {
     tables : DictTable[];
     charts: Chart[];
     
-    activeChallenges: {tableId: string, challenges: { text: string; difficulty: 'easy' | 'medium' | 'hard'; }[]}[];
+    activeChallenges: {tableId: string, challenges: { text: string; difficulty: 'easy' | 'hard'; }[]}[];
 
     conceptShelfItems: FieldItem[];
-
-    displayPanelSize: number;
-    visPaneSize: number;
-    conceptShelfPaneSize: number;
 
     // controls logs and message index
     messages: Message[];
     displayedMessageIdx: number;
-
-    visViewMode: "gallery" | "carousel";
 
     focusedTableId: string | undefined;
     focusedChartId: string | undefined;
@@ -105,15 +99,8 @@ const initialState: DataFormulatorState = {
     
     conceptShelfItems: [],
 
-    //synthesizerRunning: false,
-    displayPanelSize: 550,
-    visPaneSize: 640,
-    conceptShelfPaneSize: 240, // 300 is a good number for derived concept cards
-
     messages: [],
     displayedMessageIdx: -1,
-
-    visViewMode: "carousel",
 
     focusedTableId: undefined,
     focusedChartId: undefined,
@@ -266,9 +253,6 @@ export const dataFormulatorSlice = createSlice({
         resetState: (state, action: PayloadAction<undefined>) => {
             //state.table = undefined;
             
-            // avoid resetting inputted models
-            // state.oaiModels = state.oaiModels.filter((m: any) => m.endpoint != 'default');
-
             // state.modelSlots = {};
             state.testedModels = [];
 
@@ -385,7 +369,7 @@ export const dataFormulatorSlice = createSlice({
             let displayId = action.payload.displayId;
             state.tables = state.tables.map(t => t.id == tableId ? {...t, displayId} : t);
         },
-        addChallenges: (state, action: PayloadAction<{tableId: string, challenges: { text: string; difficulty: 'easy' | 'medium' | 'hard'; }[]}>) => {
+        addChallenges: (state, action: PayloadAction<{tableId: string, challenges: { text: string; difficulty: 'easy' | 'hard'; }[]}>) => {
             state.activeChallenges = [...state.activeChallenges, action.payload];
         },
         extendTableWithNewFields: (state, action: PayloadAction<{tableId: string, columnName: string, values: any[], previousName: string | undefined, parentIDs: string[]}>) => {
@@ -664,15 +648,6 @@ export const dataFormulatorSlice = createSlice({
             // consider cleaning up other fields if 
 
         },
-        setVisPaneSize: (state, action: PayloadAction<number>) => {
-            state.visPaneSize = action.payload;
-        },
-        setDisplayPanelSize: (state, action: PayloadAction<number>) => {
-            state.displayPanelSize = action.payload;
-        },
-        setConceptShelfPaneSize: (state, action: PayloadAction<number>) => {
-            state.conceptShelfPaneSize = action.payload;
-        },
         addMessages: (state, action: PayloadAction<Message>) => {
             state.messages = [...state.messages, action.payload];
         },
@@ -685,10 +660,6 @@ export const dataFormulatorSlice = createSlice({
         setFocusedChart: (state, action: PayloadAction<string | undefined>) => {
             let chartId = action.payload;
             state.focusedChartId = chartId;
-            state.visViewMode = "carousel";
-        },
-        setVisViewMode: (state, action: PayloadAction<"carousel" | "gallery">) => {
-            state.visViewMode = action.payload;
         },
         changeChartRunningStatus: (state, action: PayloadAction<{chartId: string, status: boolean}>) => {
             if (action.payload.status) {
