@@ -251,17 +251,12 @@ export class TableStatisticsView extends React.Component<TableStatisticsViewProp
     }
 }
 
-export const DBTableManager: React.FC = () => {
-    return (
-        <DBTableSelectionDialog buttonElement={<Button>DB Tables</Button>} />
-    );
-}
-
 export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function DBTableSelectionDialog({ buttonElement }) {
     
     const dispatch = useDispatch<AppDispatch>();
     const sessionId = useSelector((state: DataFormulatorState) => state.sessionId);
     const tables = useSelector((state: DataFormulatorState) => state.tables);
+    const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
 
     const [tableDialogOpen, setTableDialogOpen] = useState<boolean>(false);
     const [tableAnalysisMap, setTableAnalysisMap] = useState<Record<string, ColumnStatistics[] | null>>({});
@@ -836,11 +831,18 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
 
     return (
         <>
-            <Button sx={{fontSize: "inherit"}} onClick={() => {
-                setTableDialogOpen(true);
-            }}>
-                {buttonElement}
-            </Button>
+            <Tooltip 
+                title={serverConfig.DISABLE_DATABASE ? "Launch Data Formulator locally to enable database access" : ""}
+                placement="top"
+            >
+                <span style={{cursor: serverConfig.DISABLE_DATABASE ? 'help' : 'pointer'}}>
+                    <Button sx={{fontSize: "inherit"}} disabled={serverConfig.DISABLE_DATABASE} onClick={() => {
+                        setTableDialogOpen(true);
+                    }}>
+                        {buttonElement}
+                    </Button>
+                </span>
+            </Tooltip>
             <Dialog 
                 key="db-table-selection-dialog" 
                 onClose={() => {setTableDialogOpen(false)}} 

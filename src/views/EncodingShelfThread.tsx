@@ -215,7 +215,7 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
             <TriggerCard 
                 className="encoding-shelf-trigger-card" 
                 trigger={trigger} 
-                hideFields={fieldsIdentical && trigger.instruction != ""} 
+                hideFields={trigger.instruction != ""} 
                 mini={true} />
             <Box sx={{ml: '8px', height: '4px', borderLeft: '1px solid darkgray'}}></Box>
         </Box>
@@ -223,7 +223,7 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
     
     let spaceElement = "" //<Box sx={{padding: '4px 0px', background: 'aliceblue', margin: 'auto', width: '200px', height: '3px', paddingBottom: 0.5}}></Box>;
 
-    let truncated = tableList.length > 4;
+    let truncated = tableList.length > 3;
 
     previousInstructions = truncated ? 
         <Box  sx={{padding: '4px 0px', display: 'flex', flexDirection: "column" }}>

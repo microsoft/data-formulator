@@ -61,7 +61,13 @@ export interface DictTable {
     derive?: { // how is this table derived
         source: string[], // which tables are this table computed from
         code: string,
-        codeExpl: string,
+        explanation?: {
+            code: string, // explanation of the code
+            concepts: {
+                field: string,
+                explanation: string
+            }[]
+        },
         dialog: any[], // the log of how the data is derived with LLM (the LLM conversation log)
         // tracks how this derivation is triggered, as we as user instruction used to do the formulation,
         // there is a subtle difference between trigger and source, trigger identifies the occasion when the derivision is called,
@@ -80,7 +86,7 @@ export interface DictTable {
 
 export function createDictTable(
     id: string, rows: any[], 
-    derive: {code: string, codeExpl: string, source: string[], dialog: any[], 
+    derive: {code: string, explanation?: {code: string, concepts: {field: string, explanation: string}[]}, source: string[], dialog: any[], 
              trigger: Trigger} | undefined = undefined,
     virtual: {tableId: string, rowCount: number} | undefined = undefined,
     anchored: boolean = false,

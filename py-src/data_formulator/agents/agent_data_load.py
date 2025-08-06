@@ -13,9 +13,13 @@ logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = '''You are a data scientist to help user infer data types based off the table provided by the user.
 Given a dataset provided by the user, 
-1. identify their type and semantic type
-2. provide a very short summary of the dataset.
-3. provide a list of (5-10) explorative questions that can help users get started with data visualizations.
+1. suggest a descriptive name for the table if the table name is a generic name like table-xx, the suggested name should best capture meaning of the table but also very concise.
+    - if the table name is already descriptive, do not change it.
+    - table name should be of format "table-name" (e.g., "income", "weather-seattle-atlanta")
+    - the suggested table name should be similar to variable names that are very descriptive and concise, try to avoid more than 3 words.
+2. identify their type and semantic type
+3. provide a very short summary of the dataset.
+4. provide a list of 5 explorative questions that can help users get started with data visualizations.
 
 Types to consider include: string, number, date
 Semantic types to consider include: Location, Year, Month, Day, Date, Time, DateTime, Range, Duration, Name, Percentage, String, Number
@@ -32,6 +36,7 @@ output should be in the format of:
 
 ```json
 {
+    "suggested_table_name": ..., // the name of the table
     "fields": {
         "field1": {"type": ..., "semantic_type": ..., "sort_order": [...]}, // replace field1 field2 with actual field names, if the field is string type and is ordinal, provide the natural sort order of the fields here 
         "field2": {"type": ..., "semantic_type": ..., "sort_order": null}, 
@@ -48,7 +53,7 @@ EXAMPLES = '''
 
 Here are our datasets, here are their field summaries and samples:
 
-table_0 (income_json) fields:
+table_0 (table_0) fields:
 	name -- type: object, values: Alabama, Alaska, Arizona, Arkansas, California, Colorado, Connecticut, Delaware, District of Columbia, Florida, ..., South Dakota, Tennessee, Texas, Utah, Vermont, Virginia, Washington, West Virginia, Wisconsin, Wyoming
 	region -- type: object, values: midwest, northeast, other, south, west
 	state_id -- type: int64, values: 1, 2, 4, 5, 6, 8, 9, 10, 11, 12, ..., 47, 48, 49, 50, 51, 53, 54, 55, 56, 72
@@ -56,7 +61,7 @@ table_0 (income_json) fields:
 	total -- type: int64, values: 222679, 250875, 256563, 268015, 291468, 326086, 337245, 405504, 410347, 449296, ..., 3522934, 3721358, 3815532, 4551497, 4763457, 4945140, 7168502, 7214163, 8965352, 12581722
 	group -- type: object, values: 10000 to 14999, 100000 to 149999, 15000 to 24999, 150000 to 199999, 200000+, 25000 to 34999, 35000 to 49999, 50000 to 74999, 75000 to 99999, <10000
 
-table_0 (income_json) sample:
+table_0 (table_0) sample:
 
 ```
 |name|region|state_id|pct|total|group
@@ -73,6 +78,7 @@ table_0 (income_json) sample:
 ```json
 {
     "fields": {
+        "suggested_table_name": "income_json",
         "name": {"type": "string", "semantic_type": "Location", "sort_order": null},
         "region": {"type": "string", "semantic_type": "String", "sort_order": ["northeast", "midwest", "south", "west", "other"]},
         "state_id": {"type": "number", "semantic_type": "Number", "sort_order": null},
@@ -114,6 +120,7 @@ table_0 (weather_seattle_atlanta) sample:
 
 ```
 {  
+    "suggested_table_name": "weather_seattle_atlanta",
     "fields": {  
         "Date": {  
             "type": "string",  
@@ -162,10 +169,7 @@ class DataLoadAgent(object):
         messages = [{"role":"system", "content": SYSTEM_PROMPT},
                     {"role":"user","content": user_query}]
         
-        ###### the part that calls open_ai
         response = self.client.get_completion(messages = messages)
-
-        #log = {'messages': messages, 'response': response.model_dump(mode='json')}
 
         candidates = []
         for choice in response.choices:

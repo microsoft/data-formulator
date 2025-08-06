@@ -34,6 +34,12 @@ export interface SSEMessage {
     timestamp: number;
 }
 
+// Add interface for app configuration
+export interface ServerConfig {
+    DISABLE_DISPLAY_KEYS: boolean;
+    DISABLE_DATABASE: boolean;
+}
+
 export interface ModelConfig {
     id: string; // unique identifier for the model / client combination
     endpoint: string;
@@ -60,7 +66,7 @@ export interface DataFormulatorState {
     tables : DictTable[];
     charts: Chart[];
     
-    activeChallenges: {tableId: string, challenges: { text: string; difficulty: 'easy' | 'hard'; }[]}[];
+    activeChallenges: {tableId: string, challenges: { text: string; goal: string; difficulty: 'easy' | 'hard'; }[]}[];
 
     conceptShelfItems: FieldItem[];
 
@@ -72,6 +78,8 @@ export interface DataFormulatorState {
     focusedChartId: string | undefined;
 
     chartSynthesisInProgress: string[];
+
+    serverConfig: ServerConfig;
 
     config: {
         formulateTimeoutSeconds: number;
@@ -106,6 +114,11 @@ const initialState: DataFormulatorState = {
     focusedChartId: undefined,
 
     chartSynthesisInProgress: [],
+
+    serverConfig: {
+        DISABLE_DISPLAY_KEYS: false,
+        DISABLE_DATABASE: false,
+    },
 
     config: {
         formulateTimeoutSeconds: 30,
@@ -201,7 +214,7 @@ export const fetchCodeExpl = createAsyncThunk(
 
         let response = await fetch(getUrls().CODE_EXPL_URL, {...message, signal: controller.signal })
 
-        return response.text();
+        return response.json();
     }
 );
 
@@ -270,6 +283,8 @@ export const dataFormulatorSlice = createSlice({
 
             state.chartSynthesisInProgress = [];
 
+            state.serverConfig = initialState.serverConfig;
+
             state.config = initialState.config;
             
             //state.dataLoaderConnectParams = initialState.dataLoaderConnectParams;
@@ -298,9 +313,14 @@ export const dataFormulatorSlice = createSlice({
 
             state.chartSynthesisInProgress = [];
 
+            state.serverConfig = initialState.serverConfig;
+
             state.config = savedState.config;
 
             state.dataLoaderConnectParams = savedState.dataLoaderConnectParams || {};
+        },
+        setServerConfig: (state, action: PayloadAction<ServerConfig>) => {
+            state.serverConfig = action.payload;
         },
         setConfig: (state, action: PayloadAction<{
             formulateTimeoutSeconds: number, maxRepairAttempts: number, 
@@ -369,7 +389,7 @@ export const dataFormulatorSlice = createSlice({
             let displayId = action.payload.displayId;
             state.tables = state.tables.map(t => t.id == tableId ? {...t, displayId} : t);
         },
-        addChallenges: (state, action: PayloadAction<{tableId: string, challenges: { text: string; difficulty: 'easy' | 'hard'; }[]}>) => {
+        addChallenges: (state, action: PayloadAction<{tableId: string, challenges: { text: string; goal: string; difficulty: 'easy' | 'hard'; }[]}>) => {
             state.activeChallenges = [...state.activeChallenges, action.payload];
         },
         extendTableWithNewFields: (state, action: PayloadAction<{tableId: string, columnName: string, values: any[], previousName: string | undefined, parentIDs: string[]}>) => {
@@ -721,6 +741,11 @@ export const dataFormulatorSlice = createSlice({
                     let table = state.tables.find(t => t.id == tableId) as DictTable;
                     table.explorativeQuestions = data["result"][0]["explorative_questions"] as string[];
                 }
+
+                if (data["result"][0]["suggested_table_name"]) {
+                    let table = state.tables.find(t => t.id == tableId) as DictTable;
+                    table.displayId = data["result"][0]["suggested_table_name"] as string;
+                }
             }
         })
         .addCase(fetchAvailableModels.fulfilled, (state, action) => {
@@ -751,11 +776,12 @@ export const dataFormulatorSlice = createSlice({
             // console.log("state.models", state.models);
         })
         .addCase(fetchCodeExpl.fulfilled, (state, action) => {
-            let codeExpl = action.payload;
+            let codeExplResponse = action.payload;
             let derivedTableId = action.meta.arg.id;
             let derivedTable = state.tables.find(t => t.id == derivedTableId)
             if (derivedTable?.derive) {
-                derivedTable.derive.codeExpl = codeExpl;
+                // The response is now an object with code and concepts
+                derivedTable.derive.explanation = codeExplResponse;
             }
             console.log("fetched codeExpl");
             console.log(action.payload);

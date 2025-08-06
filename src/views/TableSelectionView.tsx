@@ -70,7 +70,7 @@ function a11yProps(index: number) {
 
 export interface TableChallenges {
     name: string;
-    challenges: { text: string; difficulty: 'easy' | 'hard'; }[];
+    challenges: { text: string; goal: string; difficulty: 'easy' | 'hard'; }[];
     table: DictTable;
 }
 

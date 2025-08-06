@@ -67,9 +67,10 @@ import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import ContentPasteIcon from '@mui/icons-material/ContentPaste';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 import DownloadIcon from '@mui/icons-material/Download';
-import { DBTableManager, DBTableSelectionDialog, handleDBDownload } from '../views/DBTableManager';
+import { DBTableSelectionDialog, handleDBDownload } from '../views/DBTableManager';
 import CloudQueueIcon from '@mui/icons-material/CloudQueue';
 import { connectToSSE } from '../views/SSEClient';
+import { getUrls } from './utils';
 
 const AppBar = styled(MuiAppBar)(({ theme }) => ({
     color: 'black',
@@ -494,6 +495,14 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
             console.log("closing sse connection because of unmount of AppFC")
             sseConnection.close();
         };
+    }, []);
+
+    useEffect(() => {
+        fetch(getUrls().APP_CONFIG)
+            .then(response => response.json())
+            .then(data => {
+                dispatch(dfActions.setServerConfig(data));
+            });
     }, []);
 
     // if the user has logged in

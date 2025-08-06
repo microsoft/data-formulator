@@ -94,7 +94,11 @@ some notes:
     - Format date: `strftime('%Y-%m-%d', CAST(date_column AS DATE)) AS formatted_date`
     - Date arithmetic: `CAST(date_column AS DATE) + INTERVAL 1 DAY`
   * This prevents "Could not choose a best candidate function" errors in DuckDB
-
+- Critical: DuckDB regex limitations:
+  * Does NOT support Unicode escape sequences like \\u0400-\\u04FF
+  * For Unicode character detection, use character ranges directly: [а-яА-Я] for Cyrillic, [一-龥] for Chinese, etc.
+  * Alternative: Use ASCII ranges or specific character sets that DuckDB supports
+  * Example: Instead of quote ~ '[\\u0400-\\u04FF]', use quote ~ '[а-яА-ЯёЁ]'
 '''
 
 example = """
@@ -251,7 +255,7 @@ class SQLDataRecAgent(object):
         return candidates
     
 
-    def run(self, input_tables, description, n=1):
+    def run(self, input_tables, description, n=1, prev_messages: list[dict] = []):
         data_summary = ""
         for table in input_tables:
             table_name = sanitize_table_name(table['name'])
@@ -259,10 +263,19 @@ class SQLDataRecAgent(object):
             data_summary += f"[TABLE {table_name}]\n\n{table_summary_str}\n\n"
 
         user_query = f"[CONTEXT]\n\n{data_summary}\n\n[GOAL]\n\n{description}\n\n[OUTPUT]\n"
+        if len(prev_messages) > 0:
+            logger.info("=== Previous messages ===>")
+            formatted_prev_messages = ""
+            for m in prev_messages:
+                if m['role'] != 'system':
+                    formatted_prev_messages += f"{m['role']}: \n\n\t{m['content']}\n\n"
+            logger.info(formatted_prev_messages)
+            prev_messages = [{"role": "user", "content": '[Previous Messages] Here are the previous messages for your reference:\n\n' + formatted_prev_messages}]
 
         logger.info(user_query)
 
         messages = [{"role":"system", "content": self.system_prompt},
+                    *prev_messages,
                     {"role":"user","content": user_query}]
         
         response = self.client.get_completion(messages = messages)

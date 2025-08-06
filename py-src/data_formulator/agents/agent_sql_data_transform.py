@@ -63,6 +63,21 @@ note:
 some notes:
 - in DuckDB, you escape a single quote within a string by doubling it ('') rather than using a backslash (\').
 - in DuckDB, you need to use proper date functions to perform date operations.
+- Critical: When using date/time functions in DuckDB, always cast date columns to explicit types to avoid function overload ambiguity:
+  * Use `CAST(date_column AS DATE)` for date operations
+  * Use `CAST(datetime_column AS TIMESTAMP)` for timestamp operations
+  * Use `CAST(datetime_column AS TIMESTAMP_NS)` for nanosecond precision timestamps
+  * Common patterns:
+    - Extract year: `CAST(strftime('%Y', CAST(date_column AS DATE)) AS INTEGER) AS year`
+    - Extract month: `CAST(strftime('%m', CAST(date_column AS DATE)) AS INTEGER) AS month`
+    - Format date: `strftime('%Y-%m-%d', CAST(date_column AS DATE)) AS formatted_date`
+    - Date arithmetic: `CAST(date_column AS DATE) + INTERVAL 1 DAY`
+  * This prevents "Could not choose a best candidate function" errors in DuckDB
+- Critical: DuckDB regex limitations:
+  * Does NOT support Unicode escape sequences like \\u0400-\\u04FF
+  * For Unicode character detection, use character ranges directly: [а-яА-Я] for Cyrillic, [一-龥] for Chinese, etc.
+  * Alternative: Use ASCII ranges or specific character sets that DuckDB supports
+  * Example: Instead of quote ~ '[\\u0400-\\u04FF]', use quote ~ '[а-яА-ЯёЁ]'
 '''
 
 EXAMPLE='''

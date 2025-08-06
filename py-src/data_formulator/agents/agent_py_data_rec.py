@@ -209,15 +209,25 @@ class PythonDataRecAgent(object):
         return candidates
     
 
-    def run(self, input_tables, description, n=1):
+    def run(self, input_tables, description, n=1, prev_messages: list[dict] = []):
 
         data_summary = generate_data_summary(input_tables, include_data_samples=True)
 
         user_query = f"[CONTEXT]\n\n{data_summary}\n\n[GOAL]\n\n{description}\n\n[OUTPUT]\n"
+        if len(prev_messages) > 0:
+            logger.info("=== Previous messages ===>")
+            formatted_prev_messages = ""
+            for m in prev_messages:
+                if m['role'] != 'system':
+                    formatted_prev_messages += f"{m['role']}: \n\n\t{m['content']}\n\n"
+            logger.info(formatted_prev_messages)
+            prev_messages = [{"role": "user", "content": '[Previous Messages] Here are the previous messages for your reference:\n\n' + formatted_prev_messages}]
+
 
         logger.info(user_query)
 
         messages = [{"role":"system", "content": self.system_prompt},
+                    *prev_messages,
                     {"role":"user","content": user_query}]
         
         response = self.client.get_completion(messages = messages)

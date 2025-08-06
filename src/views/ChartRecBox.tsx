@@ -23,6 +23,9 @@ import {
     Divider,
     List,
     ListItem,
+    alpha,
+    useTheme,
+    Theme,
 } from '@mui/material';
 
 import React from 'react';
@@ -155,9 +158,56 @@ const NLTableSelector: FC<{
     );
 };
 
+
+
+export const IdeaChip: FC<{
+    mini?: boolean,
+    idea: {text: string, goal: string, difficulty: 'easy' | 'medium' | 'hard'}, 
+    theme: Theme, 
+    onClick: () => void, 
+    sx?: SxProps,
+    disabled?: boolean
+}> = function ({mini, idea, theme, onClick, sx, disabled}) {
+    const getDifficultyColor = (difficulty: 'easy' | 'medium' | 'hard') => {
+        switch (difficulty) {
+            case 'easy':
+                return 'success';
+            case 'medium':
+                return 'warning';
+            case 'hard':
+                return 'warning';
+            default:
+                return 'default';
+        }
+    };
+    return (
+        <Chip
+            label={mini ? idea.goal : idea.text}
+            size={mini ? "small" : "medium"}
+            color={getDifficultyColor(idea.difficulty) as any}
+            variant="outlined"
+            sx={{
+                fontSize: '11px',
+                minHeight: '24px',
+                height: 'auto',
+                borderRadius: 2,
+                '& .MuiChip-label': {
+                    whiteSpace: 'normal',
+                    wordBreak: 'break-word',
+                    lineHeight: 1.1,
+                    padding: '4px 8px'
+                },
+                ...sx
+            }}
+            onClick={onClick}
+            disabled={disabled}
+        />
+    );
+};
+
 export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolderChartId, sx }) {
     const dispatch = useDispatch<AppDispatch>();
-    
+    const theme = useTheme();
     // reference to states
     const tables = useSelector((state: DataFormulatorState) => state.tables);
     const config = useSelector((state: DataFormulatorState) => state.config);
@@ -167,7 +217,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
 
     const [prompt, setPrompt] = useState<string>("");
     const [isFormulating, setIsFormulating] = useState<boolean>(false);
-    const [ideas, setIdeas] = useState<{text: string, difficulty: 'easy' | 'medium' | 'hard'}[]>(
+    const [ideas, setIdeas] = useState<{text: string, goal: string, difficulty: 'easy' | 'medium' | 'hard'}[]>(
         activeChallenges.find(ac => ac.tableId === tableId)?.challenges || []);
     
     // Add state for cycling through questions
@@ -196,20 +246,6 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
         setPrompt(challengeText);
         // Automatically start the data formulation process
         deriveDataFromNL(challengeText);
-    };
-
-    // Function to get difficulty color
-    const getDifficultyColor = (difficulty: 'easy' | 'medium' | 'hard') => {
-        switch (difficulty) {
-            case 'easy':
-                return 'success';
-            case 'medium':
-                return 'warning';
-            case 'hard':
-                return 'warning';
-            default:
-                return 'default';
-        }
     };
 
     // Function to get a question from the list with cycling
@@ -292,8 +328,9 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                 const result = data.results[0];
                 if (result.status === 'ok' && result.content.exploration_questions) {
                     // Convert questions to ideas with 'easy' difficulty
-                    const newIdeas = result.content.exploration_questions.map((question: {text: string, difficulty: 'easy' | 'medium' | 'hard'}) => ({
+                    const newIdeas = result.content.exploration_questions.map((question: {text: string, goal: string, difficulty: 'easy' | 'medium' | 'hard'}) => ({
                         text: question.text,
+                        goal: question.goal,
                         difficulty: question.difficulty
                     }));
                     setIdeas(newIdeas);
@@ -469,7 +506,6 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                         // Add derive info manually since ChartRecBox doesn't use triggers
                         candidateTable.derive = {
                             code: code,
-                            codeExpl: "",
                             source: selectedTableIds,
                             dialog: dialog,
                             trigger: {
@@ -694,32 +730,16 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                         marginBottom: 1
                     }}>
                         {ideas.map((challenge, index) => (
-                            <Chip
+                            <IdeaChip
+                                mini
                                 key={index}
-                                label={challenge.text}
-                                size="small"
-                                color={getDifficultyColor(challenge.difficulty) as any}
-                                variant="outlined"
-                                sx={{
-                                    fontSize: '11px',
-                                    minHeight: '24px',
-                                    height: 'auto',
-                                    width: '48%',
-                                    cursor: 'pointer',
-                                    borderRadius: 2,
-                                    '& .MuiChip-label': {
-                                        whiteSpace: 'normal',
-                                        wordBreak: 'break-word',
-                                        lineHeight: 1.1,
-                                        padding: '4px 8px'
-                                    },
-                                    '&:hover': {
-                                        backgroundColor: `${getDifficultyColor(challenge.difficulty)}.light`,
-                                        transform: 'translateY(-1px)',
-                                    }
-                                }}
+                                idea={challenge}
+                                theme={theme}
                                 onClick={() => handleChallengeClick(challenge.text)}
                                 disabled={isFormulating}
+                                sx={{
+                                    width: '48%',
+                                }}
                             />
                         ))}
                     </Box>

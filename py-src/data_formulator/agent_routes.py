@@ -176,7 +176,11 @@ def process_data_on_load_request():
 
         logger.info(f" model: {content['model']}")
 
-        conn = db_manager.get_connection(session['session_id'])
+        try:
+            conn = db_manager.get_connection(session['session_id'])
+        except Exception as e:
+            conn = None
+
         agent = DataLoadAgent(client=client, conn=conn)
         
         candidates = agent.run(content["input_data"])
@@ -332,7 +336,7 @@ def derive_data():
         if mode == "recommendation":
             # now it's in recommendation mode
             agent = SQLDataRecAgent(client=client, conn=conn) if language == "sql" else PythonDataRecAgent(client=client, exec_python_in_subprocess=current_app.config['CLI_ARGS']['exec_python_in_subprocess'])
-            results = agent.run(input_tables, instruction)
+            results = agent.run(input_tables, instruction, prev_messages=prev_messages)
         else:
             agent = SQLDataTransformationAgent(client=client, conn=conn) if language == "sql" else PythonDataTransformationAgent(client=client, exec_python_in_subprocess=current_app.config['CLI_ARGS']['exec_python_in_subprocess'])
             results = agent.run(input_tables, instruction, [field['name'] for field in new_fields], prev_messages)
@@ -426,10 +430,19 @@ def request_code_expl():
         code = content["code"]
         
         code_expl_agent = CodeExplanationAgent(client=client)
-        expl = code_expl_agent.run(input_tables, code)
+        candidates = code_expl_agent.run(input_tables, code)
+        
+        # Return the first candidate's content as JSON
+        if candidates and len(candidates) > 0:
+            result = candidates[0]
+            if result['status'] == 'ok':
+                return jsonify(result['content'])
+            else:
+                return jsonify({'error': result['content']}), 400
+        else:
+            return jsonify({'error': 'No explanation generated'}), 400
     else:
-        expl = ""
-    return expl
+        return jsonify({'error': 'Invalid request format'}), 400
 
 @agent_bp.route('/query-completion', methods=['POST'])
 def query_completion():
@@ -470,8 +483,9 @@ def get_recommendation_questions():
         
         # Get exploration thread if provided (for context from previous explorations)
         exploration_thread = content.get("exploration_thread", None)
+        current_chart = content.get("current_chart", None)
 
-        results = agent.run(input_tables, exploration_thread)
+        results = agent.run(input_tables, exploration_thread, current_chart)
         
         # Filter out any failed results
         valid_results = [r for r in results if r['status'] == 'ok']

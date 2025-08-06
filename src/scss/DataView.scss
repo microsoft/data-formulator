@@ -37,24 +37,12 @@
 
 .table-container-small {
 
-    .ag-cell,
-    .ag-header-cell {
-        line-height: 18px;
-        padding-left: 4px;
-        padding-right: 4px;
-    }
-
     .derived-column-header {
         background-color: rgba(255, 215, 0, 0.1);
     }
 
     .highlighted-column-header {
         background-color:rgba(88, 24, 69, 0.05);
-    }
-
-    .ag-row,
-    .ag-header-row {
-        height: 18px;
     }
 
     .data-view-header-label {
@@ -120,38 +108,6 @@ table .item.selecting {
 .selectable-selectbox {
     background: none;
     border: 1px dashed grey;
-}
-
-.ag-theme-material {
-    .ag-header {
-        font-style: italic;
-    }
-
-    .ag-cell,
-    .ag-header-cell {
-        line-height: 30px;
-        padding-left: 6px;
-        padding-right: 6px;
-    }
-
-    .derived-column-header {
-        background-color: rgba(255, 215, 0, 0.1);
-    }
-
-    .ag-row,
-    .ag-header-row {
-        height: 30px;
-    }
-
-    .ag-paging-panel {
-        justify-content: flex-start;
-        height: 24px;
-    }
-
-    .ag-header-group-cell-label,
-    .ag-header-cell-label {
-        display: block;
-    }
 }
 
 .data-view-header-cell.MuiTableCell-root {
