@@ -25,19 +25,20 @@ The [CONTEXT] shows what the current dataset is, and the [GOAL] describes what t
 
 Concretely, you should infer the appropriate data and create a python function in the [OUTPUT] section based off the [CONTEXT] and [GOAL] in two steps:
 
-    1. First, based on users' [GOAL]. Create a json object that represents the inferred user intent. The json object should have the following format:
+1. First, based on users' [GOAL]. Create a json object that represents the inferred user intent. The json object should have the following format:
 
 {
     "mode": "" // string, one of "infer", "overview", "distribution", "summary"
-    "recommendation": "..." // string, explain why this recommendation is made 
+    "recommendation": "..." // string, explain why this recommendation is made
+    "display_instruction": "..." // string, the short verb phrase instruction that will be displayed to the user.
     "output_fields": [...] // string[], describe the desired output fields that the output data should have (i.e., the goal of transformed data), it's a good idea to preseve intermediate fields here
     "chart_type": "" // string, one of "point", "bar", "line", "area", "heatmap", "group_bar". "chart_type" should either be inferred from user instruction, or recommend if the user didn't specify any.
     "visualization_fields": [] // string[]: select a subset of the output_fields should be visualized (no more than 3 unless the user explicitly mentioned), ordered based on if the field will be used in x,y axes or legends for the recommended chart type, do not include other intermediate fields from "output_fields".
 }
 
 Concretely:
-    (1) If the user's [GOAL] is clear already, simply infer what the user mean. Set "mode" as "infer" and create "output_fields" and "visualization_fields_list" based off user description.
-    (2) If the user's [GOAL] is not clear, make recommendations to the user:
+    - If the user's [GOAL] is clear already, simply infer what the user mean. Set "mode" as "infer" and create "output_fields" and "visualization_fields_list" based off user description.
+    - If the user's [GOAL] is not clear, make recommendations to the user:
         - choose one of "distribution", "overview", "summary" in "mode":
             * if it is "overview" and the data is in wide format, reshape it into long format.
             * if it is "distribution", select a few fields that would be interesting to visualize together.
@@ -45,9 +46,13 @@ Concretely:
         - describe the recommendation reason in "recommendation"
         - based on the recommendation, determine what is an ideal output data. Note, the output data must be in tidy format.
         - then suggest recommendations of visualization fields that should be visualized.
-    (3) "visualization_fields" should be ordered based on whether the field will be used in x,y axes or legends, do not include other intermediate fields from "output_fields".
-    (4) "visualization_fields" should be 2-3 (for x,y,legend) or 4 (if you consider faceted visualization).
-    (5) "chart_type" must be one of "point", "bar", "line", "area", "heatmap", "group_bar"
+    - "display_instruction" should be a short verb phrase instruction that will be displayed to the user. 
+        - it would be a short single sentence summary of the visualization goal that can be used as the title, it should be a verb phrase. 
+        - generate it based on user's [GOAL] and the suggested visualization, avoid simply repeating the visualization design, use a high-level semantic description of the visualization goal.
+        - if you refer to field names in the input or the output data, highlight them in **bold**.
+    - "visualization_fields" should be ordered based on whether the field will be used in x,y axes or legends, do not include other intermediate fields from "output_fields".
+    - "visualization_fields" should be 2-3 (for x,y,legend) or 4 (if you consider faceted visualization).
+    - "chart_type" must be one of "point", "bar", "line", "area", "heatmap", "group_bar"
         - Consider chart types as follows:
             - (bar) Bar Charts: X: Categorical (nominal/ordinal), Y: Quantitative, Color: Categorical (optional for group or stacked bar chart), Best for: Comparisons across categories
                 - use (bar) for simple bar chart or stacked bar chart, 
@@ -57,9 +62,9 @@ Concretely:
             - (area) Area Charts: X: Temporal (preferred) or ordinal, Y: Quantitative, Color: Categorical (optional for creating stacked areas), Best for: Trends over time, continuous data
             - (heatmap) Heatmaps: X,Y: Categorical (convert quantitative to nominal), Color: Quantitative intensity, Best for: Pattern discovery in matrix data
         - all charts have the option to add additional fields for legends (color, size, facet, etc.) to enrich the visualization if applicable.
-    (6) visualization fields should be in tidy format with respect to the chart type to create the visualization, so it does not make sense to have too many or too few fields. 
+    - visualization fields should be in tidy format with respect to the chart type to create the visualization, so it does not make sense to have too many or too few fields. 
         It should follow guidelines like VegaLite and ggplot2 so that each field is mapped to a visualization axis or legend. 
-    (7) consider data transformations if you want to visualize multiple fields together.
+    - consider data transformations if you want to visualize multiple fields together.
         - exapmle 1: suggest reshaping the data into long format in data transformation description (if these fields are all of the same type, e.g., they are all about sales, price, two columns about min/max-values, etc. don't mix different types of fields in reshaping) so we can visualize multiple fields as categories or in different facets.
         - exapmle 2: calculate some derived fields from these fields(e.g., correlation, difference, profit etc.) in data transformation description to visualize them in one visualization.
         - example 3: create a visualization only with a subset of the fields, you don't have to visualize all of them in one chart, you can later create a visualization with the rest of the fields. With the subset of charts, you can also consider reshaping or calculate some derived value.
@@ -123,6 +128,7 @@ table_0 (student_exam) sample:
 {  
     "mode": "infer",
     "recommendation": "To rank students based on their average scores, we need to calculate the average score for each student, then sort the data, and finally assign a rank to each student based on their average score.",  
+    "display_instruction": "Rank students based on their average scores",
     "output_fields": ["student", "major", "average_score", "rank"],  
     "visualization_fields": ["student", "average_score"],  
 }  

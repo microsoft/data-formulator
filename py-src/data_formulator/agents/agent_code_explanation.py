@@ -19,14 +19,19 @@ Your goal:
 2. Generate a list of explanations for new fields (fields not from the input data) that introduce metrics/concepts that are not obvious from the code.
     - provide a declarative definition that explains the new field, use a mathematical notation if applicable.
     - only include new fields explanation of new metrics that are involved in computation (e.g., ROI, commerical_success_score)
-    - *do not* explain trivial new fields like "Decade" or "Avg_Rating", "US_Sales" that is self-explanatory.
+    - *DO NOT* explain trivial new fields like "Decade" or "Avg_Rating", "US_Sales" that are self-explanatory.
+        - Avoid explaining fields that are simple aggregate of fields in the original data (min_score, avg_value, count, etc.)
     - When a field involves mathematical computation, you can use LaTeX math notation in the explanation. Format mathematical expressions using:
         - Inline math: `\( ... \)` for formulas within text
         - Block math: `\[ ... \]` for standalone formulas
         - Examples: `\( \frac{\text{Revenue}}{\text{Cost}} \)` for ratios, `\[ \text{Score} = \text{Rating} \times \text{Gross} \]` for formulas
     - Note: don't use math notation for fields whose computation is trivial (use plain english), it will likely be confusing to the reader. 
       Only use math notation for fields that can not be easilyexplained in plain english. Use it sparingly.
-        
+3. If there are multiple fields that have the similar computation, you can explain them together in one explanation.
+    - in "field", you can provide a list of fields in format of "field1, field2, ..."
+    - in "explanation", you can provide a single explanation for the computation of the fields.
+    - for example, if you have fields like "Norm_Rating", "Norm_Gross", "Critical_Commercial_Score", you can explain Norm_Rating, Norm_Gross together in one explanation and explain Critical_Commercial_Score in another explanation.
+    
 The focus is to explain how new fields are computed, don't generate explanation for low-level actions like "return", "load data" etc. 
 
 Provide the result in the following json format:

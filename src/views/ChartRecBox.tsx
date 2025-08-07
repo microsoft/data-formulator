@@ -30,7 +30,7 @@ import {
 
 import React from 'react';
 
-import { Channel, EncodingItem, ConceptTransformation, Chart, FieldItem, Trigger, duplicateChart, EncodingMap } from "../components/ComponentType";
+import { Chart, FieldItem } from "../components/ComponentType";
 
 import _ from 'lodash';
 
@@ -45,7 +45,6 @@ import { AppDispatch } from '../app/store';
 import PrecisionManufacturing from '@mui/icons-material/PrecisionManufacturing';
 import { Type } from '../data/types';
 import CloseIcon from '@mui/icons-material/Close';
-import InsightsIcon from '@mui/icons-material/Insights';
 import EmojiEventsIcon from '@mui/icons-material/EmojiEvents';
 import TipsAndUpdatesIcon from '@mui/icons-material/TipsAndUpdates';
 
@@ -362,7 +361,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
             setCurrentQuestionIndex((prevIndex) => 
                 (prevIndex + 1) % currentTable.explorativeQuestions.length
             );
-        }, 5000); // 3 seconds
+        }, 5000); // 5 seconds
 
         return () => clearInterval(interval);
     }, [currentTable?.explorativeQuestions]);
@@ -477,6 +476,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                         const rows = candidate["content"]["rows"];
                         const dialog = candidate["dialog"];
                         const refinedGoal = candidate['refined_goal'];
+                        const displayInstruction = refinedGoal['display_instruction'];
 
                         // Generate table ID
                         const genTableId = () => {
@@ -512,6 +512,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                                 tableId: firstTableId,
                                 sourceTableIds: selectedTableIds,
                                 instruction: instruction,
+                                displayInstruction: displayInstruction,
                                 chart: refChart, // No upfront chart reference
                                 resultTableId: candidateTableId
                             }
@@ -577,7 +578,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                             "timestamp": Date.now(),
                             "component": "chart builder",
                             "type": "success",
-                            "value": `Data formulation succeeded for: "${instruction}"`
+                            "value": `Data formulation: "${displayInstruction}"`
                         }));
 
                         // Clear the prompt after successful formulation

@@ -24,9 +24,13 @@ The users' instruction includes "expected fields" that the user want for visuali
 Concretely, you should first refine users' goal and then create a python function in the [OUTPUT] section based off the [CONTEXT] and [GOAL]:
 
     1. First, refine users' [GOAL]. The main objective in this step is to check if "visualization_fields" provided by the user are sufficient to achieve their "goal". Concretely:
-        (1) based on the user's "goal", elaborate the goal into a "detailed_instruction".
-        (2) determine "output_fields", the desired fields that the output data should have to achieve the user's goal, it's a good idea to include intermediate fields here.
-        (2) now, determine whether the user has provided sufficient fields in "visualization_fields" that are needed to achieve their goal:
+        - based on the user's "goal", elaborate the goal into a "detailed_instruction".
+        - "display_instruction" should be a short verb phrase instruction that will be displayed to the user. 
+            - it would be a short single sentence summary of the visualization goal that can be used as the title, it should be a verb phrase. 
+            - generate it based on user's [GOAL] and the suggested visualization, avoid simply repeating the visualization design, use a high-level semantic description of the visualization goal.
+            - if you refer to field names in the input or the output data, highlight them in **bold**.
+        - determine "output_fields", the desired fields that the output data should have to achieve the user's goal, it's a good idea to include intermediate fields here.
+        - now, determine whether the user has provided sufficient fields in "visualization_fields" that are needed to achieve their goal:
             - if the user's "visualization_fields" are sufficient, simply copy it.
             - if the user didn't provide sufficient fields in "visualization_fields", add missing fields in "visualization_fields" (ordered them based on whether the field will be used in x,y axes or legends);
                 - "visualization_fields" should only include fields that will be visualized (do not include other intermediate fields from "output_fields")  
@@ -37,6 +41,7 @@ Concretely, you should first refine users' goal and then create a python functio
 ```
 {
     "detailed_instruction": "..." // string, elaborate user instruction with details if the user
+    "display_instruction": "..." // string, the short verb phrase instruction that will be displayed to the user.
     "output_fields": [...] // string[], describe the desired output fields that the output data should have based on the user's goal, it's a good idea to preserve intermediate fields here (i.e., the goal of transformed data)
     "visualization_fields": [] // string[]: a subset of fields from "output_fields" that will be visualized, ordered based on if the field will be used in x,y axes or legends, do not include other intermediate fields from "output_fields".
     "reason": "..." // string, explain why this refinement is made
@@ -103,6 +108,7 @@ table_0 (us_covid_cases) sample:
 
 {  
     "detailed_instruction": "Calculate the 7-day moving average of COVID-19 cases over time.",  
+    "display_instruction": "Calculate 7-day moving average of COVID-19 cases",
     "output_fields": ["Date", "Cases", "7-day average cases"],  
     "visualization_fields": ["Date", "7-day average cases"],  
     "reason": "To calculate the 7-day moving average, the 'Cases' field is required, but it is not needed for visualization. The provided fields are sufficient to achieve the goal."  

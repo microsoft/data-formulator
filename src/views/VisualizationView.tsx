@@ -771,9 +771,6 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
             </Box>
         </Box> :
         <>
-            {table.derive ? <Typography component="span" fontSize="small" color="text.secondary" sx={{textAlign:'center'}}>
-                AI generated results can be inaccurate, inspect it!
-            </Typography> : ""}
             {table.virtual ? (
                 <Box sx={{ display: 'flex', flexDirection: "row", margin: "auto", justifyContent: 'center', alignItems: 'center'}}>
                     
@@ -795,6 +792,9 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
             <Box key='chart=action-buttons' sx={{ display: 'flex', flexDirection: "row", margin: "auto", paddingTop: 1 }}>
                 {chartActionButtons}
             </Box>
+            {table.derive ? <Typography component="span" fontSize="small" color="text.secondary" sx={{textAlign:'center', my: 2}}>
+                AI generated results can be inaccurate, inspect it!
+            </Typography> : ""}
         </>
     
     let codeExplComp = <MuiMarkdown

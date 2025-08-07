@@ -48,7 +48,10 @@ export interface Trigger {
     sourceTableIds: string[], // which tables are used in the trigger
 
     chart?: Chart, // what's the intented chart from the user when running formulation
-    instruction: string
+    instruction: string,
+    goal: string,
+
+
     resultTableId: string,
 }
 

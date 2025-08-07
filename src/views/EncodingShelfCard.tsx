@@ -113,7 +113,7 @@ export const TriggerCard: FC<{
     }
 
     let encodingComp : any = '';
-    let prompt = trigger.instruction ? `"${trigger.instruction}"` : "";
+    let prompt = trigger.displayInstruction ? `"${trigger.displayInstruction}"` : trigger.instruction;
 
     if (trigger.chart) {
 
@@ -153,7 +153,7 @@ export const TriggerCard: FC<{
             },
             '& .MuiChip-label': { px: 0.5, fontSize: "10px"},
         }} onClick={handleClick}>
-            {trigger.instruction} 
+            {trigger.displayInstruction} 
             {hideFields ? "" : encodingComp}
         </Typography> 
     }
@@ -458,7 +458,11 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
 
     
 
-    let deriveNewData = (instruction: string, mode: 'formulate' | 'ideate' = 'formulate', overrideTableId?: string) => {
+    let deriveNewData = (
+        instruction: string, 
+        mode: 'formulate' | 'ideate' = 'formulate', 
+        overrideTableId?: string,
+    ) => {
 
         if (actionTableIds.length == 0) {
             return;
@@ -595,6 +599,8 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                             let code = candidate["code"];
                             let rows = candidate["content"]["rows"];
                             let dialog = candidate["dialog"];
+                            let refinedGoal = candidate['refined_goal']
+                            let displayInstruction = refinedGoal["display_instruction"];
 
                             // determine the table id for the new table
                             let candidateTableId;
@@ -627,6 +633,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                                 tableId: currentTable.id, 
                                 sourceTableIds: actionTableIds,
                                 instruction: instruction, 
+                                displayInstruction: displayInstruction,
                                 chart: triggerChartSpec,
                                 resultTableId: candidateTableId
                             }
@@ -698,7 +705,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                             }
                             
                             if (needToCreateNewChart) {
-                                let refinedGoal = candidate['refined_goal']
+                                
 
                                 let newChart : Chart; 
                                 if (mode == "ideate" || chart.chartType == "Auto") {
@@ -818,8 +825,8 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                     </IconButton>
                 </Tooltip>
             </Box>
-         : 
-             <Tooltip title={`Formulate`}>
+            : 
+            <Tooltip title={`Formulate`}>
                 <IconButton sx={{ marginLeft: "0"}} 
                     disabled={createDisabled} color={"primary"} onClick={() => { deriveNewData(prompt, 'formulate'); }}>
                     <PrecisionManufacturing />

@@ -16,14 +16,17 @@ Guidelines for question suggestions:
 1. Suggest interesting analytical questions that are not obvious that can uncover nontrivial insights
 2. Use a diverse language style to display the questions (can be questions, statements etc)
 3. If there are multiple datasets in a thread, consider relationships between them
-4. the questions should be diverse in difficulty (easy / medium / hard) and the four questions should cover different aspects of the data analysis to expand the user's horizon
+4. DIVERSITY: the questions should be diverse in difficulty (easy / medium / hard) and the four questions should cover different aspects of the data analysis to expand the user's horizon
     - simple questions should be short -- single sentence explorative questions
     - medium questions can be 1-2 sentences explorative questions
     - hard questions should introduce some new analysis concept but still make it concise
-5. the questions should be concise and to the point
-6. the question should follow the thread of exploration (either a followup question, or a new question that is related to the thread), do not suggest questions that are not related to the thread
-7. the question should be visualizable with a chart
-8. for each question, include a goal version that provides the high-level goal of the question that can be used as a subtitle for a chart. The goal should all be a short single sentence.
+5. CONCISENESS: the questions should be concise and to the point
+6. NEW QUESTION: the question should be a new question based on the thread of exploration:
+    - either a followup question, or a new question that is related to the thread
+    - do not repeat questions that have already been explored in the thread
+    - do not suggest questions that are not related to the thread (e.g. questions that are completely unrelated to the exploration direction in the thread)
+7. VISUALIZABILITY: the question should be visualizable with a chart
+8. FORMATTING: for each question, include a goal version that provides the high-level goal of the question that can be used as a subtitle for a chart. The goal should all be a short single sentence.
 
 Examples questions:
 ```json
