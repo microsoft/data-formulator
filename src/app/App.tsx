@@ -560,7 +560,6 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
         },
     });
 
-
     let appBar = [
         <AppBar position="static" key="app-bar-main" >
             <Toolbar variant="dense" sx={{height: 40, minHeight: 36}}>
@@ -583,7 +582,7 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
                         <Typography fontSize="inherit" sx={{ display: 'flex', alignItems: 'center', gap: 1, textTransform: 'none' }}>
                             <CloudQueueIcon fontSize="small" /> Database
                         </Typography>
-                    } />
+                    } component="dialog" />
                     <Divider orientation="vertical" variant="middle" flexItem />
                     <ModelSelectionButton />
                     <Divider orientation="vertical" variant="middle" flexItem />

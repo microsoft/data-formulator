@@ -10,7 +10,6 @@ import { getChartTemplate, getChartChannels } from "../components/ChartTemplates
 import { getDataTable } from '../views/VisualizationView';
 import { adaptChart, getTriggers, getUrls } from './utils';
 import { Type } from '../data/types';
-import { TableChallenges } from '../views/TableSelectionView';
 import { createTableFromFromObjectArray, inferTypeFromValueArray } from '../data/utils';
 import { handleSSEMessage } from './SSEActions';
 
@@ -57,6 +56,21 @@ export type ModelSlotType = typeof MODEL_SLOT_TYPES[number];
 export type ModelSlots = Partial<Record<ModelSlotType, string>>;
 
 // Define a type for the slice state
+// Define data cleaning message types
+export interface DataCleanMessage {
+    type: 'input' | 'output';
+    timestamp: number;
+    // For input messages
+    prompt?: string;
+    imageData?: string;
+    // For output messages  
+    modelResponse?: string;
+    cleaningReason?: string;
+    suggestedName?: string;
+    outputCsvData?: string;
+    dialogItem?: any; // Store the dialog item from the model response
+}
+
 export interface DataFormulatorState {
     sessionId: string | undefined;
     models: ModelConfig[];
@@ -91,6 +105,9 @@ export interface DataFormulatorState {
     dataLoaderConnectParams: Record<string, Record<string, string>>; // {table_name: {param_name: param_value}}
     
     agentWorkInProgress: {actionId: string, target: 'chart' | 'table', targetId: string, description: string}[];
+
+    // Data cleaning dialog state
+    dataCleanMessages: DataCleanMessage[];
 }
 
 // Define the initial state using that type
@@ -130,6 +147,8 @@ const initialState: DataFormulatorState = {
     dataLoaderConnectParams: {},
     
     agentWorkInProgress: [],
+
+    dataCleanMessages: [],
 }
 
 let getUnrefedDerivedTableIds = (state: DataFormulatorState) => {
@@ -286,6 +305,8 @@ export const dataFormulatorSlice = createSlice({
             state.serverConfig = initialState.serverConfig;
 
             state.config = initialState.config;
+
+            state.dataCleanMessages = [];
             
             //state.dataLoaderConnectParams = initialState.dataLoaderConnectParams;
         },
@@ -318,6 +339,7 @@ export const dataFormulatorSlice = createSlice({
             state.config = savedState.config;
 
             state.dataLoaderConnectParams = savedState.dataLoaderConnectParams || {};
+            state.dataCleanMessages = savedState.dataCleanMessages || [];
         },
         setServerConfig: (state, action: PayloadAction<ServerConfig>) => {
             state.serverConfig = action.payload;
@@ -714,6 +736,22 @@ export const dataFormulatorSlice = createSlice({
         },
         clearMessages: (state) => {
             state.messages = [];
+        },
+        // Data cleaning dialog actions
+        addDataCleanMessage: (state, action: PayloadAction<DataCleanMessage>) => {
+            state.dataCleanMessages = [...state.dataCleanMessages, action.payload];
+        },
+        resetDataCleanMessages: (state) => {
+            state.dataCleanMessages = [];
+        },
+        updateLastDataCleanMessage: (state, action: PayloadAction<Partial<DataCleanMessage>>) => {
+            if (state.dataCleanMessages.length > 0) {
+                const lastIndex = state.dataCleanMessages.length - 1;
+                state.dataCleanMessages[lastIndex] = { 
+                    ...state.dataCleanMessages[lastIndex], 
+                    ...action.payload 
+                };
+            }
         }
     },
     extraReducers: (builder) => {

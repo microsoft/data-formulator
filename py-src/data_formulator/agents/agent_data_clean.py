@@ -22,12 +22,13 @@ Create [OUTPUT] based on [RAW DATA] provided. The output should have two compone
 .....
 ```
 
-2. a json object that explains the mode and cleaning rationale (wrap in a json block):
+2. a json object that explains the mode, cleaning rationale, and suggests a descriptive name for the dataset (wrap in a json block):
 
 ```json
 {
     "mode": ..., // one of "data generation" or "data cleaning" based on the provided task
-    "reason": ... // explain the cleaning reason here
+    "reason": ..., // explain the cleaning reason here
+    "suggested_name": ... // suggest a descriptive, meaningful name for this dataset (e.g., "sales_data_2024", "customer_survey_results", "weather_forecast_data")
 }
 ```
 
@@ -147,6 +148,45 @@ class DataCleanAgent(object):
                 }
             else:
                 result = {'status': 'other error', 'content': 'unable to extract code from response'}
+
+            result['dialog'] = [*messages, {"role": choice.message.role, "content": choice.message.content}]
+            result['agent'] = 'DataCleanAgent'
+            candidates.append(result)
+
+        return candidates
+
+    def followup(self, dialog, new_instruction: str, n=1):
+        """Follow up with additional cleaning instruction based on previous dialog"""
+        
+        logger.info(f"=== Data Clean Agent Followup ===")
+        logger.info(f"New instruction: {new_instruction}")
+        
+        # Rebuild the dialog with system prompt and previous messages, then add the new instruction
+        updated_dialog = [{"role": "system", "content": [{'type': 'text', 'text': SYSTEM_PROMPT}]}, *dialog[1:]]
+        
+        # Add the new instruction as a user message
+        messages = [*updated_dialog, {"role": "user", 
+                                    "content": [{'type': 'text', 'text': f"Based on the previous data cleaning output, please apply the following additional instruction and provide updated CSV and reason:\n\n{new_instruction}\n\n[OUTPUT]\n"}]}]
+        
+        response = self.client.get_completion(messages=messages)
+        
+        candidates = []
+        for choice in response.choices:
+            
+            logger.info("\n=== Data Clean Agent Followup ===>\n")
+            logger.info(choice.message.content + "\n")
+
+            code_blocks = extract_code_from_gpt_response(choice.message.content + "\n", "csv")
+            reason_blocks = extract_json_objects(choice.message.content + "\n")
+
+            if len(code_blocks) > 0:
+                result = {
+                    'status': 'ok', 
+                    'content': code_blocks[-1], 
+                    'info': reason_blocks[-1] if len(reason_blocks) > 0 else {"reason": "no reason presented", "mode": "data cleaning"}
+                }
+            else:
+                result = {'status': 'other error', 'content': 'unable to extract CSV from response'}
 
             result['dialog'] = [*messages, {"role": choice.message.role, "content": choice.message.content}]
             result['agent'] = 'DataCleanAgent'

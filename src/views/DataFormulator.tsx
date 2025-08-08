@@ -24,6 +24,8 @@ import {
     Button,
     Collapse,
     IconButton,
+    Paper,
+    Divider,
 } from '@mui/material';
 
 import { FreeDataViewFC } from './DataView';
@@ -44,6 +46,8 @@ import exampleImageTable from "../assets/example-image-table.png";
 import { ModelSelectionButton } from './ModelSelectionDialog';
 import { DBTableSelectionDialog } from './DBTableManager';
 import { getUrls } from '../app/utils';
+import { CloudQueue } from '@mui/icons-material';
+import { DataLoadingChat } from './DataLoadingChat';
 
 export const DataFormulatorFC = ({ }) => {
 
@@ -51,6 +55,8 @@ export const DataFormulatorFC = ({ }) => {
     
     const models = useSelector((state: DataFormulatorState) => state.models);
     const modelSlots = useSelector((state: DataFormulatorState) => state.modelSlots);
+
+    let [dbPanelOpen, setDbPanelOpen] = useState<boolean>(false);
     
     const noBrokenModelSlots= useSelector((state: DataFormulatorState) => {
         const slotTypes = dfSelectors.getAllSlotTypes();
@@ -164,21 +170,104 @@ export const DataFormulatorFC = ({ }) => {
 Totals (7 entries)	5	5	5	15
 `
 
-    let dataUploadRequestBox = <Box sx={{width: '100vw', display: 'flex', flexDirection: 'column', height: '100%'}}>
+    // Add state for rotating text with typing effect
+    const [currentTextIndex, setCurrentTextIndex] = useState(0);
+    const [isTransitioning, setIsTransitioning] = useState(false);
+    const [displayedText, setDisplayedText] = useState('');
+    const [isTyping, setIsTyping] = useState(false);
+    
+    const rotatingTexts = [
+        "parse data from text",
+        "extract data from image", 
+        "search data online",
+        "generate synthetic data",
+    ];
+
+    // Effect for typing animation
+    useEffect(() => {
+        if (isTransitioning) {
+            setDisplayedText('');
+            setIsTyping(false);
+            return;
+        }
+
+        const currentText = rotatingTexts[currentTextIndex];
+        if (displayedText.length < currentText.length) {
+            setIsTyping(true);
+            const timer = setTimeout(() => {
+                setDisplayedText(currentText.slice(0, displayedText.length + 1));
+            }, 50); // Typing speed - adjust as needed
+
+            return () => clearTimeout(timer);
+        } else {
+            setIsTyping(false);
+        }
+    }, [displayedText, currentTextIndex, isTransitioning, rotatingTexts]);
+
+    // Effect for rotating text every 3 seconds
+    useEffect(() => {
+        const interval = setInterval(() => {
+            setIsTransitioning(true);
+            setTimeout(() => {
+                setCurrentTextIndex((prevIndex) => (prevIndex + 1) % rotatingTexts.length);
+                setIsTransitioning(false);
+            }, 300); // Half second transition
+        }, 5000);
+
+        return () => clearInterval(interval);
+    }, []);
+
+    let rotatingTextBlock = (
+        <Box
+            component="span"
+            sx={{
+                opacity: isTransitioning ? 0 : 1,
+                transform: isTransitioning ? 'translateY(-10px)' : 'translateY(0)',
+                transition: 'opacity 0.3s ease-in-out, transform 0.3s ease-in-out',
+                fontWeight: 500,
+                display: 'inline'
+            }}
+        >
+            {displayedText}
+            {isTyping && (
+                <Box
+                    component="span"
+                    sx={{
+                        display: 'inline-block',
+                        width: '2px',
+                        height: '1.2em',
+                        backgroundColor: 'currentColor',
+                        marginLeft: '2px',
+                        animation: 'blink 1s infinite',
+                        '@keyframes blink': {
+                            '0%, 50%': { opacity: 1 },
+                            '51%, 100%': { opacity: 0 }
+                        }
+                    }}
+                />
+            )}
+        </Box>
+    );
+
+    let dataUploadRequestBox = <Box sx={{width: '100vw', overflow: 'auto', display: 'flex', flexDirection: 'column', height: '100%'}}>
         <Box sx={{margin:'auto', pb: '5%', display: "flex", flexDirection: "column", textAlign: "center"}}>
-            <Box component="img" sx={{  width: 256, margin: "auto" }} alt="" src={dfLogo} />
-            <Typography variant="h3" sx={{marginTop: "20px"}}>
+            <Box component="img" sx={{  width: 196, margin: "auto" }} alt="" src={dfLogo} />
+            <Typography variant="h3" sx={{marginTop: "20px", fontWeight: 200, letterSpacing: '0.05em'}}>
                 {toolName}
             </Typography>
-            
-            <Typography variant="h4">
+            <Typography  variant="h4" sx={{mt: 3, fontSize: 28, letterSpacing: '0.02em'}}>
+                <TableCopyDialogV2 buttonElement={"Ask AI"} disabled={false} /> to {rotatingTextBlock}
+                <Box sx={{width: '100%', display: 'flex', justifyContent: 'center'}}>
+                    <DataLoadingChat />
+                </Box>
+                <Divider sx={{width: '100%', margin: '10px 0', fontSize: '1.2rem', color: 'text.secondary'}}> or </Divider>
                 Load data from
-                <TableSelectionDialog  buttonElement={"Examples"} />, <TableUploadDialog buttonElement={"file"} disabled={false} />, <TableCopyDialogV2 buttonElement={"clipboard"} disabled={false} /> or <DBTableSelectionDialog buttonElement={"Database"} />
+                <TableSelectionDialog  buttonElement={"Examples"} />, <TableUploadDialog buttonElement={"file"} disabled={false} />, <TableCopyDialogV2 buttonElement={"clipboard"} disabled={false} />, or <DBTableSelectionDialog buttonElement={"Database"} component="dialog" />
             </Typography>
             <Typography sx={{  width: 960, margin: "auto" }} variant="body1">
-                Besides formatted data (csv, tsv or json), you can copy-paste&nbsp;
-                <Tooltip title={<Box>Example of a messy text block: <Typography sx={{fontSize: 10, marginTop: '6px'}} component={"pre"}>{exampleMessyText}</Typography></Box>}><Typography color="secondary" display="inline" sx={{cursor: 'help', "&:hover": {textDecoration: 'underline'}}}>a text block</Typography></Tooltip> or&nbsp;
-                <Tooltip title={<Box>Example of a table in image format: <Box component="img" sx={{ width: '100%',  marginTop: '6px' }} alt="" src={exampleImageTable} /></Box>}><Typography color="secondary"  display="inline" sx={{cursor: 'help', "&:hover": {textDecoration: 'underline'}}}>an image</Typography></Tooltip> that contain data into clipboard to get started.
+                Besides formatted data (csv, tsv, xlsx, json or database tables), you can ask AI to extract data from&nbsp;
+                <Tooltip title={<Box>Example of a messy text block: <Typography sx={{fontSize: 10, marginTop: '6px'}} component={"pre"}>{exampleMessyText}</Typography></Box>}><Box component="span" sx={{color: 'secondary.main', cursor: 'help', "&:hover": {textDecoration: 'underline'}}}>a text block</Box></Tooltip> or&nbsp;
+                <Tooltip title={<Box>Example of a table in image format: <Box component="img" sx={{ width: '100%',  marginTop: '6px' }} alt="" src={exampleImageTable} /></Box>}><Box component="span" sx={{color: 'secondary.main', cursor: 'help', "&:hover": {textDecoration: 'underline'}}}>an image</Box></Tooltip>.
             </Typography>
         </Box>
         <Button size="small" color="inherit" 
@@ -189,14 +278,14 @@ Totals (7 entries)	5	5	5	15
 
     let modelSelectionDialogBox = <Box sx={{width: '100vw', display: 'flex', flexDirection: 'column', height: '100%'}}>
         <Box sx={{margin:'auto', pb: '5%', display: "flex", flexDirection: "column", textAlign: "center"}}>
-            <Box component="img" sx={{  width: 256, margin: "auto" }} alt="" src={dfLogo} />
-            <Typography variant="h3" sx={{marginTop: "20px"}}>
+            <Box component="img" sx={{  width: 196, margin: "auto" }} alt="" src={dfLogo} />
+            <Typography variant="h3" sx={{marginTop: "20px", fontWeight: 200, letterSpacing: '0.05em'}}>
                 {toolName}
             </Typography>
-            <Typography variant="h4">
+            <Typography  variant="h4" sx={{mt: 3, fontSize: 28, letterSpacing: '0.02em'}}>
                 Let's <ModelSelectionButton />
             </Typography>
-            <Typography variant="body1">Specify an OpenAI or Azure OpenAI endpoint to run {toolName}.</Typography>
+            <Typography variant="body1">Specify an AI endpoint to run {toolName}.</Typography>
         </Box>
         <Button size="small" color="inherit" 
                 sx={{position: "absolute", color:'darkgray', bottom: 0, right: 0, textTransform: 'none'}} 
@@ -207,7 +296,7 @@ Totals (7 entries)	5	5	5	15
     return (
         <Box sx={{ display: 'block', width: "100%", height: 'calc(100% - 54px)' }}>
             <DndProvider backend={HTML5Backend}>
-                {!noBrokenModelSlots ? modelSelectionDialogBox : (tables.length > 0 ? fixedSplitPane : dataUploadRequestBox)} 
+                {!noBrokenModelSlots ? modelSelectionDialogBox : (tables.length > 0 ? fixedSplitPane : dataUploadRequestBox)}
             </DndProvider>
         </Box>);
 }

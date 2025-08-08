@@ -92,6 +92,36 @@ let selectBaseTables = (activeFields: FieldItem[], currentTable: DictTable, tabl
     return baseTables;
 }
 
+// Add this utility function before the TriggerCard component
+const processPromptWithHighlighting = (prompt: string) => {
+    // Split the prompt by ** patterns and create an array of text and highlighted segments
+    const parts = prompt.split(/(\*\*.*?\*\*)/g);
+    
+    return parts.map((part, index) => {
+        if (part.startsWith('**') && part.endsWith('**')) {
+            // This is a highlighted part - remove the ** and wrap with styled component
+            const content = part.slice(2, -2);
+            return (
+                <Box
+                    key={index}
+                    component="span"
+                    sx={{
+                        borderRadius: '2px', 
+                        border: '1px solid rgb(250 235 215)', 
+                        background: 'rgb(250 235 215 / 80%)',
+                        padding: '0px 4px',
+                        margin: '0 1px',
+                        fontWeight: 500,
+                    }}
+                >
+                    {content}
+                </Box>
+            );
+        }
+        return part;
+    });
+};
+
 export const TriggerCard: FC<{
     className?: string, 
     trigger: Trigger, 
@@ -113,7 +143,10 @@ export const TriggerCard: FC<{
     }
 
     let encodingComp : any = '';
-    let prompt = trigger.displayInstruction ? `"${trigger.displayInstruction}"` : trigger.instruction;
+    let prompt = trigger.displayInstruction ? `${trigger.displayInstruction}` : trigger.instruction;
+    
+    // Process the prompt to highlight content in ** **
+    const processedPrompt = processPromptWithHighlighting(prompt);
 
     if (trigger.chart) {
 
@@ -153,7 +186,7 @@ export const TriggerCard: FC<{
             },
             '& .MuiChip-label': { px: 0.5, fontSize: "10px"},
         }} onClick={handleClick}>
-            {trigger.displayInstruction} 
+            {processedPrompt} 
             {hideFields ? "" : encodingComp}
         </Typography> 
     }
@@ -174,7 +207,7 @@ export const TriggerCard: FC<{
                     <Typography fontSize="inherit" sx={{
                         textAlign: 'center', width: 'fit-content', textWrap: 'balance',
                         minWidth: '40px',
-                        color: 'rgba(0,0,0,0.7)'}}>{prompt}</Typography> 
+                        color: 'rgba(0,0,0,0.7)'}}>{processedPrompt}</Typography> 
                 </Box>
         </Card>
 }

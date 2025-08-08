@@ -251,8 +251,18 @@ export class TableStatisticsView extends React.Component<TableStatisticsViewProp
     }
 }
 
-export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function DBTableSelectionDialog({ buttonElement }) {
+export const DBTableSelectionDialog: React.FC<{ 
+    buttonElement: any, 
+    component: 'dialog' | 'box',
+    sx?: SxProps
+}> = function DBTableSelectionDialog({ 
+    buttonElement,
+    component,
+    sx,
+}) {
     
+    const theme = useTheme();
+
     const dispatch = useDispatch<AppDispatch>();
     const sessionId = useSelector((state: DataFormulatorState) => state.sessionId);
     const tables = useSelector((state: DataFormulatorState) => state.tables);
@@ -601,7 +611,7 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
 
     let hasDerivedViews = dbTables.filter(t => t.view_source !== null).length > 0;
 
-    let dataLoaderPanel = <Box sx={{ p: 1, display: 'flex', flexDirection: 'column' }}>
+    let dataLoaderPanel = <Box sx={{ p: 1, display: 'flex', flexDirection: 'column', backgroundColor: alpha(theme.palette.secondary.main, 0.02) }}>
         <Box sx={{ display: 'flex', alignItems: 'center', px: 1, mb: 1 }}>
             <Typography variant="caption" sx={{
                 color: "text.disabled", 
@@ -609,7 +619,7 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
                 flexGrow: 1,
                 fontSize: "0.75rem",
             }}>
-                Data Loader
+                Data Connectors
             </Typography>
         </Box>
         
@@ -623,7 +633,7 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
                 }}
                 sx={{
                     textTransform: "none",
-                    width: 100,
+                    width: 120,
                     justifyContent: 'flex-start',
                     textAlign: 'left',
                     borderRadius: 0,
@@ -922,8 +932,8 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
                 <Box sx={{ 
                     minWidth: 180, 
                     display: 'flex',
-                    flexDirection: hasDerivedViews ? 'row' : 'column',
-                    maxHeight: '600px',
+                    flexDirection: 'row',
+                    flexWrap: 'nowrap',
                     overflowY: 'auto',
                     flexGrow: 1
                 }}>
@@ -953,61 +963,85 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
             {tableView}
         </Box>  
 
-    return (
-        <>
-            <Tooltip 
-                title={serverConfig.DISABLE_DATABASE ? "Launch Data Formulator locally to enable database access" : ""}
-                placement="top"
-            >
-                <span style={{cursor: serverConfig.DISABLE_DATABASE ? 'help' : 'pointer'}}>
-                    <Button sx={{fontSize: "inherit"}} disabled={serverConfig.DISABLE_DATABASE} onClick={() => {
-                        setTableDialogOpen(true);
-                    }}>
-                        {buttonElement}
-                    </Button>
-                </span>
-            </Tooltip>
-            <Dialog 
-                key="db-table-selection-dialog" 
-                onClose={() => {setTableDialogOpen(false)}} 
-                open={tableDialogOpen}
-                sx={{ '& .MuiDialog-paper': { maxWidth: '100%', maxHeight: 800, minWidth: 800 } }}
-            >
-                <DialogTitle sx={{display: "flex", bgcolor: 'grey.50' }} >
-                    Database
-                    <IconButton
-                        sx={{marginLeft: "auto"}}
-                        edge="start"
-                        size="small"
-                        color="inherit"
-                        aria-label="close"
-                        onClick={() => setTableDialogOpen(false)}
-                    >
-                        <CloseIcon fontSize="inherit"/>
-                    </IconButton>
-                </DialogTitle>
-                <DialogContent  sx={{p: 1, bgcolor: 'grey.100', position: "relative"}}>
-                    {mainContent}
-                    {isUploading && (
-                        <Box sx={{ 
-                            position: 'absolute', 
-                            top: 0, 
-                            left: 0, 
-                            width: '100%', 
-                            height: '100%', 
-                            display: 'flex', 
-                            alignItems: 'center', 
-                            justifyContent: 'center',
-                            backgroundColor: 'rgba(255, 255, 255, 0.7)',
-                            zIndex: 1000
+    if (component === 'dialog') {
+        return (
+            <>
+                <Tooltip 
+                    title={serverConfig.DISABLE_DATABASE ? "Launch Data Formulator locally to enable database access" : ""}
+                    placement="top"
+                >
+                    <span style={{cursor: serverConfig.DISABLE_DATABASE ? 'help' : 'pointer'}}>
+                        <Button sx={{fontSize: "inherit"}} disabled={serverConfig.DISABLE_DATABASE} onClick={() => {
+                            setTableDialogOpen(true);
                         }}>
-                            <CircularProgress size={60} thickness={5} />
-                        </Box>
-                    )}
-                </DialogContent>
-            </Dialog>
-        </>
-    );
+                            {buttonElement}
+                        </Button>
+                    </span>
+                </Tooltip>
+                <Dialog 
+                    key="db-table-selection-dialog" 
+                    onClose={() => {setTableDialogOpen(false)}} 
+                    open={tableDialogOpen}
+                    sx={{ '& .MuiDialog-paper': { maxWidth: '100%', maxHeight: 800, minWidth: 800 } }}
+                >
+                    <DialogTitle sx={{display: "flex", bgcolor: 'grey.50' }} >
+                        Database
+                        <IconButton
+                            sx={{marginLeft: "auto"}}
+                            edge="start"
+                            size="small"
+                            color="inherit"
+                            aria-label="close"
+                            onClick={() => setTableDialogOpen(false)}
+                        >
+                            <CloseIcon fontSize="inherit"/>
+                        </IconButton>
+                    </DialogTitle>
+                    <DialogContent  sx={{p: 1, bgcolor: 'grey.100', position: "relative"}}>
+                        {mainContent}
+                        {isUploading && (
+                            <Box sx={{ 
+                                position: 'absolute', 
+                                top: 0, 
+                                left: 0, 
+                                width: '100%', 
+                                height: '100%', 
+                                display: 'flex', 
+                                alignItems: 'center', 
+                                justifyContent: 'center',
+                                backgroundColor: 'rgba(255, 255, 255, 0.7)',
+                                zIndex: 1000
+                            }}>
+                                <CircularProgress size={60} thickness={5} />
+                            </Box>
+                        )}
+                    </DialogContent>
+                </Dialog>
+            </>
+        );
+    } else {
+        return (
+            <Box sx={{...sx}}>
+                {mainContent}
+                {isUploading && (
+                    <Box sx={{ 
+                        position: 'absolute', 
+                        top: 0, 
+                        left: 0, 
+                        width: '100%', 
+                        height: '100%', 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        justifyContent: 'center',
+                        backgroundColor: 'rgba(255, 255, 255, 0.7)',
+                        zIndex: 1000
+                    }}>
+                        <CircularProgress size={60} thickness={5} />
+                    </Box>
+                )}
+            </Box>
+        );
+    }
 }
 
 export const DataLoaderForm: React.FC<{
@@ -1063,7 +1097,7 @@ export const DataLoaderForm: React.FC<{
             </ToggleButtonGroup>
             <Typography variant="body2" sx={{mb: 1,}}></Typography>
         </Box>,
-        mode === "view tables" && <TableContainer component={Paper} sx={{maxHeight: 400, overflowY: "auto"}} >
+        mode === "view tables" && <TableContainer component={Paper} sx={{maxHeight: 360, overflowY: "auto"}} >
             <Table sx={{ minWidth: 650 }} size="small" aria-label="simple table">
             <TableBody>
                 {Object.entries(tableMetadata).map(([tableName, metadata]) => {

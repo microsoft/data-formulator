@@ -32,9 +32,10 @@ Concretely, you should first refine users' goal and then create a sql query in t
                 * note: try to distinguish whether the user wants to fitler the data with some conditions, or they want to aggregate data based on some fields.
                 * e.g., filter data to show all items from top 20 categories based on their average values, is different from showing the top 20 categories with their average values
          - "display_instruction" should be a short verb phrase instruction that will be displayed to the user. 
-            - it would be a short single sentence summary of the visualization goal that can be used as the title, it should be a verb phrase. 
+            - it would be a short single sentence summary of the user intent as a verb phrase, it should be very short and on point.
             - generate it based on user's [GOAL] and the suggested visualization, avoid simply repeating the visualization design, use a high-level semantic description of the visualization goal.
-            - if you refer to field names in the input or the output data, highlight them in **bold**.
+            - if the user's [GOAL] is a follow-up question like "filter to show top 10", you don't need to repeat the whole question, just describe the follow-up question in a high-level semantic way.
+            - if you mention column names from the input or the output data (either exact or semantically matching), highlight the text in **bold**.
         - determine "output_fields", the desired fields that the output data should have to achieve the user's goal, it's a good idea to include intermediate fields here.
             - note: when the user asks for filtering the data, include all fields that are needed to filter the data in "output_fields" (as well as other fields the user asked for or necessary in computation).
         - now, determine whether the user has provided sufficient fields in "visualization_fields" that are needed to achieve their goal:

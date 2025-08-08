@@ -262,7 +262,15 @@ def clean_data_request():
         
         agent = DataCleanAgent(client=client)
 
-        candidates = agent.run(content['content_type'], content["raw_data"], content["image_cleaning_instruction"])
+        # Check if this is a followup request (has dialog) or initial request
+        if 'dialog' in content and content['dialog']:
+            logger.info("Processing followup data clean request")
+            dialog = content['dialog']
+            new_instruction = content['new_instruction']
+            candidates = agent.followup(dialog, new_instruction)
+        else:
+            logger.info("Processing initial data clean request")
+            candidates = agent.run(content['content_type'], content["raw_data"], content["image_cleaning_instruction"])
         
         candidates = [c for c in candidates if c['status'] == 'ok']
 
