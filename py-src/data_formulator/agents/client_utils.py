@@ -10,15 +10,8 @@ class OpenAIClientAdapter(object):
     def __init__(self, openai_client: Union[openai.OpenAI, openai.AzureOpenAI], model: str):
         self._openai_client = openai_client
         self.model = model
+        self.params = {}
         
-        # Default params
-        self.params = {
-            "temperature": 0.7,
-        }
-        
-        if not (model == "o3-mini" or model == "o1"):
-            self.params["max_completion_tokens"] = 1200
-
     def get_completion(self, messages):
         """
         Returns a completion using the wrapped OpenAI client.
@@ -30,7 +23,6 @@ class OpenAIClientAdapter(object):
         
         if not (self.model == "o3-mini" or self.model == "o1"):
             completion_params["temperature"] = self.params["temperature"]
-            completion_params["max_tokens"] = self.params["max_completion_tokens"]
             
         return self._openai_client.chat.completions.create(**completion_params)
 
@@ -43,14 +35,7 @@ class Client(object):
         
         self.endpoint = endpoint
         self.model = model
-
-        # other params, including temperature, max_completion_tokens, api_base, api_version
-        self.params = {
-            "temperature": 0.7,
-        }
-
-        if not (model == "o3-mini" or model == "o1"):
-            self.params["max_completion_tokens"] = 1200
+        self.params = {}
 
         if api_key is not None and api_key != "":
             self.params["api_key"] = api_key
@@ -138,6 +123,31 @@ class Client(object):
             return litellm.completion(
                 model=self.model,
                 messages=messages,
+                drop_params=True,
+                **self.params
+            )
+        
+    def get_response(self, messages: list[dict], tools: Optional[list] = None):
+        """
+        Returns a response using OpenAI's Response API approach.
+        """
+        if self.endpoint == "openai":
+            client = openai.OpenAI(
+                base_url=self.params.get("api_base", None),
+                api_key=self.params.get("api_key", ""),
+                timeout=120
+            )
+            return client.responses.create(
+                model=self.model,
+                input=messages,
+                tools=tools,
+                **self.params
+            )
+        else:
+            return litellm.responses(
+                model=self.model,
+                input=messages,
+                tools=tools,
                 drop_params=True,
                 **self.params
             )

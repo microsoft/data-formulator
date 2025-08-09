@@ -196,7 +196,7 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({ tableId,
     const TableComponents = {
         Scroller: TableContainer,
         Table: Table,
-        TableHead: (props: any) => <TableHead {...props} className='table-header-container' />,
+        TableHead: React.forwardRef<HTMLTableSectionElement, any>((props, ref) => <TableHead {...props} ref={ref} className='table-header-container' />) as any,
         TableRow: (props: any) => {
             const index = props['data-index'];
             return <TableRow {...props} style={{backgroundColor: index % 2 == 0 ? "rgba(255, 255, 255, 0.05)" : "rgba(0, 0, 0, 0.02)"}}/>

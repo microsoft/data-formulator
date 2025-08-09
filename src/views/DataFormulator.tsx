@@ -47,7 +47,8 @@ import { ModelSelectionButton } from './ModelSelectionDialog';
 import { DBTableSelectionDialog } from './DBTableManager';
 import { getUrls } from '../app/utils';
 import { CloudQueue } from '@mui/icons-material';
-import { DataLoadingChat } from './DataLoadingChat';
+import { DataLoadingChatDialog } from './DataLoadingChat';
+import { RotatingTextBlock } from '../components/RotatingTextBlock';
 
 export const DataFormulatorFC = ({ }) => {
 
@@ -119,7 +120,7 @@ export const DataFormulatorFC = ({ }) => {
 
     const visPane = (
         <Box sx={{width: '100%', height: '100%', 
-            "& .split-view-view:first-child": {
+            "& .split-view-view:first-of-type": {
                 display: 'flex',
                 overflow: 'hidden',
         }}}>
@@ -170,84 +171,12 @@ export const DataFormulatorFC = ({ }) => {
 Totals (7 entries)	5	5	5	15
 `
 
-    // Add state for rotating text with typing effect
-    const [currentTextIndex, setCurrentTextIndex] = useState(0);
-    const [isTransitioning, setIsTransitioning] = useState(false);
-    const [displayedText, setDisplayedText] = useState('');
-    const [isTyping, setIsTyping] = useState(false);
-    
     const rotatingTexts = [
-        "parse data from text",
-        "extract data from image", 
-        "search data online",
-        "generate synthetic data",
+        "data from an image",
+        "data from a text block", 
+        "a synthetic dataset",
     ];
 
-    // Effect for typing animation
-    useEffect(() => {
-        if (isTransitioning) {
-            setDisplayedText('');
-            setIsTyping(false);
-            return;
-        }
-
-        const currentText = rotatingTexts[currentTextIndex];
-        if (displayedText.length < currentText.length) {
-            setIsTyping(true);
-            const timer = setTimeout(() => {
-                setDisplayedText(currentText.slice(0, displayedText.length + 1));
-            }, 50); // Typing speed - adjust as needed
-
-            return () => clearTimeout(timer);
-        } else {
-            setIsTyping(false);
-        }
-    }, [displayedText, currentTextIndex, isTransitioning, rotatingTexts]);
-
-    // Effect for rotating text every 3 seconds
-    useEffect(() => {
-        const interval = setInterval(() => {
-            setIsTransitioning(true);
-            setTimeout(() => {
-                setCurrentTextIndex((prevIndex) => (prevIndex + 1) % rotatingTexts.length);
-                setIsTransitioning(false);
-            }, 300); // Half second transition
-        }, 5000);
-
-        return () => clearInterval(interval);
-    }, []);
-
-    let rotatingTextBlock = (
-        <Box
-            component="span"
-            sx={{
-                opacity: isTransitioning ? 0 : 1,
-                transform: isTransitioning ? 'translateY(-10px)' : 'translateY(0)',
-                transition: 'opacity 0.3s ease-in-out, transform 0.3s ease-in-out',
-                fontWeight: 500,
-                display: 'inline'
-            }}
-        >
-            {displayedText}
-            {isTyping && (
-                <Box
-                    component="span"
-                    sx={{
-                        display: 'inline-block',
-                        width: '2px',
-                        height: '1.2em',
-                        backgroundColor: 'currentColor',
-                        marginLeft: '2px',
-                        animation: 'blink 1s infinite',
-                        '@keyframes blink': {
-                            '0%, 50%': { opacity: 1 },
-                            '51%, 100%': { opacity: 0 }
-                        }
-                    }}
-                />
-            )}
-        </Box>
-    );
 
     let dataUploadRequestBox = <Box sx={{width: '100vw', overflow: 'auto', display: 'flex', flexDirection: 'column', height: '100%'}}>
         <Box sx={{margin:'auto', pb: '5%', display: "flex", flexDirection: "column", textAlign: "center"}}>
@@ -256,14 +185,17 @@ Totals (7 entries)	5	5	5	15
                 {toolName}
             </Typography>
             <Typography  variant="h4" sx={{mt: 3, fontSize: 28, letterSpacing: '0.02em'}}>
-                <TableCopyDialogV2 buttonElement={"Ask AI"} disabled={false} /> to {rotatingTextBlock}
-                <Box sx={{width: '100%', display: 'flex', justifyContent: 'center'}}>
-                    <DataLoadingChat />
-                </Box>
-                <Divider sx={{width: '100%', margin: '10px 0', fontSize: '1.2rem', color: 'text.secondary'}}> or </Divider>
+                <DataLoadingChatDialog buttonElement={"Vibe"}/> with <RotatingTextBlock 
+                    texts={rotatingTexts}
+                    typingSpeed={50}
+                    rotationInterval={5000}
+                    transitionDuration={300}
+                />
+                <Divider sx={{width: '80px', margin: '10px auto', fontSize: '1.2rem', color: 'text.disabled'}}> or </Divider>
                 Load data from
                 <TableSelectionDialog  buttonElement={"Examples"} />, <TableUploadDialog buttonElement={"file"} disabled={false} />, <TableCopyDialogV2 buttonElement={"clipboard"} disabled={false} />, or <DBTableSelectionDialog buttonElement={"Database"} component="dialog" />
             </Typography>
+            
             <Typography sx={{  width: 960, margin: "auto" }} variant="body1">
                 Besides formatted data (csv, tsv, xlsx, json or database tables), you can ask AI to extract data from&nbsp;
                 <Tooltip title={<Box>Example of a messy text block: <Typography sx={{fontSize: 10, marginTop: '6px'}} component={"pre"}>{exampleMessyText}</Typography></Box>}><Box component="span" sx={{color: 'secondary.main', cursor: 'help', "&:hover": {textDecoration: 'underline'}}}>a text block</Box></Tooltip> or&nbsp;

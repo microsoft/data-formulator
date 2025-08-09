@@ -62,7 +62,7 @@ export interface DataCleanMessage {
     timestamp: number;
     // For input messages
     prompt?: string;
-    imageData?: string;
+    imageData?: string[]; // Changed from string to string[] to support multiple images
     // For output messages  
     modelResponse?: string;
     cleaningReason?: string;

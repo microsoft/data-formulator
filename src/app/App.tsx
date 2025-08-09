@@ -579,9 +579,9 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
                     <ConfigDialog />
                     <Divider orientation="vertical" variant="middle" flexItem />
                     <DBTableSelectionDialog buttonElement={
-                        <Typography fontSize="inherit" sx={{ display: 'flex', alignItems: 'center', gap: 1, textTransform: 'none' }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, textTransform: 'none' }}>
                             <CloudQueueIcon fontSize="small" /> Database
-                        </Typography>
+                        </Box>
                     } component="dialog" />
                     <Divider orientation="vertical" variant="middle" flexItem />
                     <ModelSelectionButton />

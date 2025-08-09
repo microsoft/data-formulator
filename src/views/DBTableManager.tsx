@@ -971,7 +971,7 @@ export const DBTableSelectionDialog: React.FC<{
                     placement="top"
                 >
                     <span style={{cursor: serverConfig.DISABLE_DATABASE ? 'help' : 'pointer'}}>
-                        <Button sx={{fontSize: "inherit"}} disabled={serverConfig.DISABLE_DATABASE} onClick={() => {
+                        <Button variant="text"   sx={{fontSize: "inherit", gap: 1}} disabled={serverConfig.DISABLE_DATABASE} onClick={() => {
                             setTableDialogOpen(true);
                         }}>
                             {buttonElement}

@@ -82,51 +82,57 @@ class DataCleanAgent(object):
     def __init__(self, client):
         self.client = client
 
-    def run(self, content_type, raw_data, image_cleaning_instruction):
+    def run(self, prompt, artifacts=None, dialog=None):
         """derive a new concept based on the raw input data
         """
    
-        if content_type == "text":
-            user_prompt = {
-                "role": "user",
-                "content": [{
-                    'type': 'text',
-                    'text': f"[DATA]\n\n{raw_data}\n\n[OUTPUT]\n"
-                }]
-            }
-        elif content_type == "image":
-            # add additional cleaning instructions if provided
-            if image_cleaning_instruction:
-                cleaning_prompt = f"\n\n[CLEANING INSTRUCTION]\n\n{image_cleaning_instruction}\n\n"
-            else:
-                cleaning_prompt = ""
+        # Handle both single image (string) and multiple images (list)
+        if isinstance(artifacts, str):
+            # Single image - convert to list for consistent processing
+            image_urls = [artifacts]
+        elif isinstance(artifacts, list):
+            # Multiple images
+            image_urls = artifacts
+        else:
+            # Fallback to empty list
+            image_urls = []
 
-            user_prompt = {
-                'role': 'user',
-                'content': [ {
-                    'type': 'text',
-                    'text': '''[RAW_DATA]\n\n'''},
-                    {
-                        'type': 'image_url',
-                        'image_url': {
-                            "url": raw_data,
-                            "detail": "high"
-                        }
-                    },
-                    {
-                        'type': 'text',
-                        'text': f'''{cleaning_prompt}[OUTPUT]\n\n'''
-                    }, 
-                ]
-            }
+        # Build content array with text and images
+        content = [{'type': 'text', 'text': '''[RAW_DATA]\n\n'''}]
+        
+        # Add all images
+        for image_url in image_urls:
+            content.append({
+                'type': 'image_url',
+                'image_url': {
+                    "url": image_url,
+                    "detail": "high"
+                }
+            })
+        
+        # Add closing text
+        content.append({
+            'type': 'text',
+            'text': f'''[INSTRUCTION]\n\n{prompt}\n\n[OUTPUT]\n'''
+        })
+
+        user_prompt = {
+            'role': 'user',
+            'content': content
+        }
 
         logger.info(user_prompt)
 
         system_message = {
             'role': 'system',
-            'content': [ {'type': 'text', 'text': SYSTEM_PROMPT}]}
+            'content': [ {'type': 'text', 'text': SYSTEM_PROMPT}]
+        }
 
-        messages = [system_message, user_prompt]
+        messages = [
+            system_message, 
+            *[message for message in dialog if message['role'] != 'system'],
+            user_prompt
+        ]
         
         ###### the part that calls open_ai
         response = self.client.get_completion(messages = messages)
@@ -148,45 +154,6 @@ class DataCleanAgent(object):
                 }
             else:
                 result = {'status': 'other error', 'content': 'unable to extract code from response'}
-
-            result['dialog'] = [*messages, {"role": choice.message.role, "content": choice.message.content}]
-            result['agent'] = 'DataCleanAgent'
-            candidates.append(result)
-
-        return candidates
-
-    def followup(self, dialog, new_instruction: str, n=1):
-        """Follow up with additional cleaning instruction based on previous dialog"""
-        
-        logger.info(f"=== Data Clean Agent Followup ===")
-        logger.info(f"New instruction: {new_instruction}")
-        
-        # Rebuild the dialog with system prompt and previous messages, then add the new instruction
-        updated_dialog = [{"role": "system", "content": [{'type': 'text', 'text': SYSTEM_PROMPT}]}, *dialog[1:]]
-        
-        # Add the new instruction as a user message
-        messages = [*updated_dialog, {"role": "user", 
-                                    "content": [{'type': 'text', 'text': f"Based on the previous data cleaning output, please apply the following additional instruction and provide updated CSV and reason:\n\n{new_instruction}\n\n[OUTPUT]\n"}]}]
-        
-        response = self.client.get_completion(messages=messages)
-        
-        candidates = []
-        for choice in response.choices:
-            
-            logger.info("\n=== Data Clean Agent Followup ===>\n")
-            logger.info(choice.message.content + "\n")
-
-            code_blocks = extract_code_from_gpt_response(choice.message.content + "\n", "csv")
-            reason_blocks = extract_json_objects(choice.message.content + "\n")
-
-            if len(code_blocks) > 0:
-                result = {
-                    'status': 'ok', 
-                    'content': code_blocks[-1], 
-                    'info': reason_blocks[-1] if len(reason_blocks) > 0 else {"reason": "no reason presented", "mode": "data cleaning"}
-                }
-            else:
-                result = {'status': 'other error', 'content': 'unable to extract CSV from response'}
 
             result['dialog'] = [*messages, {"role": choice.message.role, "content": choice.message.content}]
             result['agent'] = 'DataCleanAgent'

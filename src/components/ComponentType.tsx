@@ -49,7 +49,7 @@ export interface Trigger {
 
     chart?: Chart, // what's the intented chart from the user when running formulation
     instruction: string,
-    goal: string,
+    displayInstruction: string, // the short instruction that will be displayed to the user
 
 
     resultTableId: string,

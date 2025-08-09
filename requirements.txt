@@ -15,4 +15,5 @@ duckdb
 boto3
 pyodbc
 vl-convert-python
+backoff
 -e . #also need to install data formulator itself

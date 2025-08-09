@@ -56,7 +56,7 @@ Concretely:
         - it would be a short single sentence summary of the user intent as a verb phrase, it should be very short and on point.
         - generate it based on user's [GOAL] and the suggested visualization, avoid simply repeating the visualization design, use a high-level semantic description of the visualization goal.
         - if the user's [GOAL] is a follow-up question like "filter to show top 10", you don't need to repeat the whole question, just describe the follow-up question in a high-level semantic way.
-        - if you refer to column names from the input or the output data, highlight them in **bold**.
+        - if you mention column names from the input or the output data (either exact or semantically matching), highlight the text in **bold**.
     - "visualization_fields" should be ordered based on whether the field will be used in x,y axes or legends, do not include other intermediate fields from "output_fields".
     - "visualization_fields" should be 2-3 (for x,y,legend) or 4 (if you consider faceted visualization).
     - "chart_type" must be one of "point", "bar", "line", "area", "heatmap", "group_bar"
