@@ -38,7 +38,8 @@ dependencies = [
     "numpy",                    
     "vl-convert-python", 
     "boto3",
-    "backoff"
+    "backoff",
+    "weasyprint"
 ]
 
 [project.urls]

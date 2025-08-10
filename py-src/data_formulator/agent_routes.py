@@ -264,7 +264,7 @@ def clean_data_request():
 
         # Check if this is a followup request (has dialog) or initial request
 
-        logger.info("Processing initial data clean request")
+        logger.info("Processing data clean request")
         candidates = agent.run(content.get('prompt', ''), content.get('artifacts', []), content.get('dialog', []))
         
         candidates = [c for c in candidates if c['status'] == 'ok']

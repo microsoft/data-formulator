@@ -16,4 +16,6 @@ boto3
 pyodbc
 vl-convert-python
 backoff
+weasyprint
+beautifulsoup4
 -e . #also need to install data formulator itself

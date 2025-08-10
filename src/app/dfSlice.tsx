@@ -55,8 +55,18 @@ export type ModelSlotType = typeof MODEL_SLOT_TYPES[number];
 // Derive ModelSlots interface from the constant
 export type ModelSlots = Partial<Record<ModelSlotType, string>>;
 
-// Define a type for the slice state
 // Define data cleaning message types
+export type DataCleanTableOutput = {
+    name: string;
+    description?: string;
+    reason?: string;
+    content: {
+        type: 'csv' | 'image_url' | 'data_url';
+        value: string;
+        incomplete?: boolean;
+    };
+};
+
 export interface DataCleanMessage {
     type: 'input' | 'output';
     timestamp: number;
@@ -64,10 +74,7 @@ export interface DataCleanMessage {
     prompt?: string;
     imageData?: string[]; // Changed from string to string[] to support multiple images
     // For output messages  
-    modelResponse?: string;
-    cleaningReason?: string;
-    suggestedName?: string;
-    outputCsvData?: string;
+    outputTables?: DataCleanTableOutput[];
     dialogItem?: any; // Store the dialog item from the model response
 }
 
