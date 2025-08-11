@@ -61,7 +61,7 @@ export type DataCleanTableOutput = {
     description?: string;
     reason?: string;
     content: {
-        type: 'csv' | 'image_url' | 'data_url';
+        type: 'csv' | 'image_url' | 'web_url';
         value: string;
         incomplete?: boolean;
     };
@@ -72,7 +72,7 @@ export interface DataCleanMessage {
     timestamp: number;
     // For input messages
     prompt?: string;
-    imageData?: string[]; // Changed from string to string[] to support multiple images
+    imageData?: string[]; //support multiple images
     // For output messages  
     outputTables?: DataCleanTableOutput[];
     dialogItem?: any; // Store the dialog item from the model response
@@ -747,6 +747,9 @@ export const dataFormulatorSlice = createSlice({
         // Data cleaning dialog actions
         addDataCleanMessage: (state, action: PayloadAction<DataCleanMessage>) => {
             state.dataCleanMessages = [...state.dataCleanMessages, action.payload];
+        },
+        removeDataCleanMessage: (state, action: PayloadAction<{messageIds: number[]}>) => {
+            state.dataCleanMessages = state.dataCleanMessages.filter(message => !action.payload.messageIds.includes(message.timestamp));
         },
         resetDataCleanMessages: (state) => {
             state.dataCleanMessages = [];

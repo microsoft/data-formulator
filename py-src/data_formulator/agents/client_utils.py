@@ -56,7 +56,7 @@ class Client(object):
                 self.model = f"anthropic/{model}"
         elif self.endpoint == "azure":
             self.params["api_base"] = api_base
-            self.params["api_version"] = api_version if api_version else "2024-02-15-preview"
+            self.params["api_version"] = api_version if api_version else "2025-04-01-preview"
             if api_key is None or api_key == "":
                 token_provider = get_bearer_token_provider(
                     DefaultAzureCredential(), "https://cognitiveservices.azure.com/.default"

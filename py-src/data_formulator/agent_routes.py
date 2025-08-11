@@ -265,7 +265,15 @@ def clean_data_request():
         # Check if this is a followup request (has dialog) or initial request
 
         logger.info("Processing data clean request")
-        candidates = agent.run(content.get('prompt', ''), content.get('artifacts', []), content.get('dialog', []))
+        try:
+            candidates = agent.run(content.get('prompt', ''), content.get('artifacts', []), content.get('dialog', []))
+        except Exception as e:
+            logger.error(e)
+            if 'unable to download html from url' in str(e):
+                return flask.jsonify({ "token": token, "status": "error", "result":  'this website doesn\'t allow us to download html from url :(' })
+            else:
+                return flask.jsonify({ "token": token, "status": "error", "result": 'unable to process data clean request' })
+
         
         candidates = [c for c in candidates if c['status'] == 'ok']
 

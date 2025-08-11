@@ -17,7 +17,7 @@ The output should contain the rationale for the extraction and cleaning process.
 Each table can either be a csv block or a url (image url or file url of an image).
 - csv block: a string of csv content (if the content is already available from the input)
 - image url: link to an image that contains the table (if the data exists but cannot be directly obtained from raw input text, which will be converted to a csv block later)
-- data url: link to a file, which can be a csv, tsv, or a json file (which will be converted to a csv block later)
+- web url: link to a file, which can be a csv, tsv, txt, or a json file that contains the data (which will be converted to a csv block later), it should not be another html page.
 
 Create [OUTPUT] based on [RAW DATA] provided. The output should be in the following formats:
 
@@ -32,8 +32,8 @@ a json object that explains tables in the raw data, the mode, cleaning rationale
             "description": ..., // describe the table in a few sentences, including the table structure, the cleaning process, and the rationale for the cleaning.
             "reason": ..., // explain the extraction reason here, including the table structure, the cleaning process, and the rationale for the cleaning.
             "content": {
-                "type": "csv" | "image_url" | "data_url",
-                "value": ... // the csv block as a string or image url
+                "type": "csv" | "image_url" | "web_url",
+                "value": ... // the csv block as a string or image url or web url
                 "incomplete": ... // if the csv block is too large, only extract first few rows and indicate that it is incomplete.
             }
         }
@@ -54,22 +54,20 @@ a json object that explains tables in the raw data, the mode, cleaning rationale
 **Instructions for creating csv blocks:**
 * the output should be a structured csv table: 
     - if the raw data is unstructured, structure it into a csv table. If the table is in other formats, transform it into a csv table.
-    - if the raw data contain other informations other than the table, remove surrounding texts that does not belong to the table. 
+    - if the raw data contain other informations other than the table (e.g., title, subtitle, footer, summary, etc.), remove surrounding texts that does not belong to the table, so that the table conforms to csv format. 
     - if the raw data contains multiple levels of header, make it a flat table. It's ok to combine multiple levels of headers to form the new header to not lose information.
-    - if the table has footer or summary row, remove them, since they would not be compatible with the csv table format.
-    - the csv table should have the same number of cells for each line, according to the title. If there are some rows with missing values, patch them with empty cells.
-    - if the raw data has some rows that do not belong to the table, also remove them (e.g., subtitles in between rows) 
+    - the csv table should have the same number of cells for each line, according to the header. If there are some rows with missing values, patch them with empty values.
     - if the header row misses some columns, add their corresponding column names. E.g., when the header doesn't have an index column, but every row has an index value, add the missing column header.
 * clean up messy column names:
     - if the column name contains special characters like "*", "?", "#", "." remove them.
-* clean up columns with messy information
+* csv value format:
     - if a column is number but some cells has annotations like "*" "?" or brackets, clean them up.
-    - if a column is number but has units like ($, %, s), convert them to number (make sure unit conversion is correct when multiple units exist like minute and second) and include unit in the header.
+    - if values of a column is all numbers but has units like ($, %, s), remove the unit in the value cells, convert them to number, note unit in the header of this column.
     - you don't need to convert format of the cell.
 
-**Instructions for creating image url or data url:**
+**Instructions for creating image url or web url:**
 - based on the context provided in the prompt and raw input material, decide which url in the raw data may cotain the data we would like to extract. put the url of the data in the "image_url" field.
-- similarly, if the raw data contains link to a website that directly contains the data (e.g., it points to a csv file), put the url of the data in the "data_url" field.
+- similarly, if the raw data contains link to a website that directly contains the data (e.g., it points to a csv file), put the url of the data in the "web_url" field.
 
 **Instructions for generating synthetic data:**
 - NEVER generate data that has implicit bias as noted above, if that happens, return a dummy data consisting of dummy columns with 'a, b, c' and numbers.
@@ -106,7 +104,7 @@ class DataCleanAgent(object):
         Args:
             prompt (str): the prompt to the agent
             artifacts (list): the artifacts to the agent of format 
-            [{"type": "image_url", "content": ...}, {"type": "url", "content": ...}, ...]
+            [{"type": "image_url", "content": ...}, {"type": "web_url", "content": ...}, ...]
             dialog (list): the dialog history
         Returns:
             dict: the result of the agent
@@ -123,12 +121,15 @@ class DataCleanAgent(object):
                         "detail": "high"
                     }
                 })
-            elif artifact['type'] == 'url':
-                content.append({
-                    'type': 'text',
-                    'text': f"[HTML CONTENT]\n\n{download_html_content(artifact['content'])}"
-                })
-
+            elif artifact['type'] == 'web_url':
+                try:
+                    content.append({
+                        'type': 'text',
+                        'text': f"[HTML CONTENT]\n\n{download_html_content(artifact['content'])}"
+                    })
+                except Exception as e:
+                    raise Exception('unable to download html from url ' + artifact['content'])
+        
         content.append({
             'type': 'text',
             'text': f'''[INSTRUCTION]\n\n{prompt}\n\n[OUTPUT]\n'''

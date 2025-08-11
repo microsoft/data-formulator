@@ -286,7 +286,7 @@ class PythonDataTransformationAgent(object):
 
         messages = [{"role":"system", "content": self.system_prompt},
                     *prev_messages,
-                    {"role":"user","content": user_query}]
+                    {"role":"user", "content": user_query}]
         
         response = self.client.get_completion(messages = messages)
 

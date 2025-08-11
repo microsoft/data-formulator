@@ -14,6 +14,9 @@ import CloseIcon from '@mui/icons-material/Close';
 import CircleIcon from '@mui/icons-material/Circle';
 import TableIcon from '@mui/icons-material/TableChart';
 import LinkIcon from '@mui/icons-material/Link';
+import DeleteIcon from '@mui/icons-material/Delete';
+
+import exampleImageTable from "../assets/example-image-table.png";
 
 import { useDispatch, useSelector } from 'react-redux';
 import { AppDispatch } from '../app/store';
@@ -78,6 +81,8 @@ const DataPreviewBox: React.FC<{rawTable: DataCleanTableOutput, sx?: SxProps}> =
         </Paper>
     }
     
+    console.log(rawTable);
+
     // Handle image_url content type
     if (rawTable.content.type === 'image_url') {
         return <Paper variant="outlined" sx={{ p: 1, display: 'flex', flexDirection: 'column', gap: 1, ...sx }}>
@@ -100,7 +105,7 @@ const DataPreviewBox: React.FC<{rawTable: DataCleanTableOutput, sx?: SxProps}> =
     }
     
     // Handle data_url content type
-    if (rawTable.content.type === 'data_url') {
+    if (rawTable.content.type === 'web_url') {
         return <Paper variant="outlined" sx={{ p: 1, display: 'flex', flexDirection: 'column', gap: 1, ...sx }}>
             <Typography variant="body2" sx={{ fontSize: '12px', color: 'text.primary', fontWeight: 500 }}>
                 Data URL
@@ -127,7 +132,7 @@ export const DataLoadingChat: React.FC = () => {
     const dataCleanMessages = useSelector((state: DataFormulatorState) => state.dataCleanMessages);
     const existingNames = new Set(existingTables.map(t => t.id));
 
-    const [imageData, setImageData] = useState<string[]>([]);
+    const [userImages, setUserImages] = useState<string[]>([]);
     const [prompt, setPrompt] = useState('');
 
     const [loading, setLoading] = useState(false);
@@ -135,11 +140,7 @@ export const DataLoadingChat: React.FC = () => {
 
     const [datasetName, setDatasetName] = useState('');
 
-    
-
     const textAreaRef = useRef<HTMLDivElement | null>(null);
-
-    
 
     let existOutputMessages = dataCleanMessages.filter(m => m.type === 'output').length > 0;
 
@@ -185,7 +186,7 @@ export const DataLoadingChat: React.FC = () => {
     // Add rotating placeholder state
     const [placeholderIndex, setPlaceholderIndex] = useState(0);
     const placeholders = existOutputMessages ? [
-        selectedTable && selectedTable.content.type === 'image_url' ? "extract data from this image" : "follow-up instruction (e.g., fix headers, remove totals, generate 15 rows, etc.)"
+            selectedTable && selectedTable.content.type === 'image_url' ? "extract data from this image" : "follow-up instruction (e.g., fix headers, remove totals, generate 15 rows, etc.)"
     ] : [
         "get Claude performance data from https://www.anthropic.com/news/claude-opus-4-1",
         "help me extract data from this image",
@@ -195,16 +196,55 @@ export const DataLoadingChat: React.FC = () => {
     // Rotate placeholders every 3 seconds
     useEffect(() => {
         const interval = setInterval(() => {
-            setPlaceholderIndex((prevIndex) => (prevIndex + 1) % placeholders.length);
-        }, 3000);
+            if (userImages.length > 0 || additionalImages.length > 0) {
+                setPlaceholderIndex(0);
+            } else {
+                setPlaceholderIndex((prevIndex) => (prevIndex + 1) % placeholders.length);
+            }
+        }, 3600);
 
         return () => clearInterval(interval);
     }, []);
 
+    // Add this utility function to convert the image to base64
+    const convertImageToBase64 = async (imageUrl: string): Promise<string> => {
+        try {
+            const response = await fetch(imageUrl);
+            const blob = await response.blob();
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => {
+                    const result = reader.result as string;
+                    resolve(result);
+                };
+                reader.onerror = reject;
+                reader.readAsDataURL(blob);
+            });
+        } catch (error) {
+            console.error('Error converting image to base64:', error);
+            return imageUrl; // fallback to original URL
+        }
+    };
+
+    // Create a memoized base64 version of the example image
+    const [exampleImageTableBase64, setExampleImageTableBase64] = useState<string>('');
+
+    useEffect(() => {
+        // Convert the image to base64 only once when component mounts
+        convertImageToBase64(exampleImageTable).then(setExampleImageTableBase64);
+    }, []);
+
+    let additionalImages = (() => {
+        if (selectedTable && selectedTable.content.type === 'image_url') {
+            return [selectedTable.content.value];
+        }
+        return [];
+    })();
+
     const canSend = (() => {
         // Allow sending if there's prompt text or image data
         const hasPrompt = prompt.trim().length > 0;
-        const hasImageData = imageData.length > 0 || (selectedTable && selectedTable.content.type === 'image_url');
+        const hasImageData = userImages.length > 0 || additionalImages.length > 0;
         return (hasPrompt || hasImageData) && !loading;
     })();
 
@@ -234,7 +274,7 @@ export const DataLoadingChat: React.FC = () => {
                         processedCount++;
                         
                         if (processedCount === imageFiles.length) {
-                            setImageData(prev => [...prev, ...newImages]);
+                            setUserImages(prev => [...prev, ...newImages]);
                         }
                     };
                     reader.readAsDataURL(file);
@@ -244,11 +284,11 @@ export const DataLoadingChat: React.FC = () => {
     };
 
     const removeImage = (index: number) => {
-        setImageData(prev => prev.filter((_, i) => i !== index));
+        setUserImages(prev => prev.filter((_, i) => i !== index));
     };
 
     const resetAll = () => {
-        setImageData([]);
+        setUserImages([]);
         setPrompt('');
         setDatasetName('');
         setSelectedTableIndex({outputIndex: -1, tableIndex: -1});
@@ -260,7 +300,8 @@ export const DataLoadingChat: React.FC = () => {
         setLoading(true);
         const token = String(Date.now());
 
-        let prompt_to_send = prompt.trim() || (selectedTable && selectedTable.content.type === 'image_url' ? 'extract data from the image' : '');
+        let prompt_to_send = prompt.trim() || (additionalImages.length > 0 ? 'extract data from the image' : '');
+        let images_to_send = [...additionalImages, ...userImages];
 
         // Construct payload - simplified to match backend API
         const payload: any = {
@@ -268,9 +309,8 @@ export const DataLoadingChat: React.FC = () => {
             model: activeModel,
             prompt: prompt_to_send,
             artifacts: [
-                ...(selectedTable && selectedTable.content.type === 'image_url' ? [{ type: 'image_url', content: selectedTable.content.value }] : []), // image the user is viewing
-                ...imageData.map(image => ({ type: 'image_url', content: image })),
-                ...extractedUrls.map(url => ({ type: 'url', content: url })),
+                ...images_to_send.map(image => ({ type: 'image_url', content: image })),
+                ...extractedUrls.map(url => ({ type: 'web_url', content: url })),
             ],
             dialog: dialog
         };
@@ -279,8 +319,10 @@ export const DataLoadingChat: React.FC = () => {
             type: 'input',
             timestamp: Date.now(),
             prompt: prompt_to_send,
-            imageData: imageData.length > 0 ? imageData : undefined,
+            imageData: images_to_send.length > 0 ? images_to_send : undefined,
         };
+
+
 
         fetch(getUrls().CLEAN_DATA_URL, {
             method: 'POST',
@@ -291,6 +333,7 @@ export const DataLoadingChat: React.FC = () => {
             .then(data => {
                 setLoading(false);
                 if (data && data.status === 'ok' && data.result && data.result.length > 0) {
+
                     // Only add input message to history if generation succeeds
                     dispatch(dfActions.addDataCleanMessage(inputMessage));
                     
@@ -315,19 +358,18 @@ export const DataLoadingChat: React.FC = () => {
                     
                     // Clear input fields only after successful completion
                     setPrompt('');
-                    setImageData([]);
+                    setUserImages([]);
                 } else {
                     // Generation failed - don't add input message to history
                     dispatch(dfActions.addMessages({
                         timestamp: Date.now(),
                         type: 'error',
                         component: 'data loader',
-                        value: 'Unable to process data. Please try again.',
+                        value: data.result,
                     }));
-                    
                     // Clear input fields only after failed completion
                     setPrompt('');
-                    setImageData([]);
+                    setUserImages([]);
                 }
             })
             .catch(() => {
@@ -342,7 +384,7 @@ export const DataLoadingChat: React.FC = () => {
                 
                 // Clear input fields only after failed completion
                 setPrompt('');
-                setImageData([]);
+                setUserImages([]);
             });
     };
 
@@ -372,6 +414,24 @@ export const DataLoadingChat: React.FC = () => {
         }
     }, [dataCleanMessages]);
 
+    // Function to remove the last output message and its corresponding input
+    const removeLastOutput = () => {
+        const outputMessages = dataCleanMessages.filter(msg => msg.type === 'output');
+        if (outputMessages.length === 0) return;
+        
+        const lastOutputIndex = dataCleanMessages.findIndex(msg => msg === outputMessages[outputMessages.length - 1]);
+        const lastInputIndex = lastOutputIndex - 1;
+        
+        // Remove both the output and input messages
+        const messageIdsToRemove = [];
+        if (lastInputIndex >= 0 && dataCleanMessages[lastInputIndex].type === 'input') {
+            messageIdsToRemove.push(dataCleanMessages[lastInputIndex].timestamp);
+        }
+        messageIdsToRemove.push(dataCleanMessages[lastOutputIndex].timestamp);
+        
+        dispatch(dfActions.removeDataCleanMessage({ messageIds: messageIdsToRemove }));
+    };
+
     let threadDisplay = <Box sx={{ 
         flex: 1,  display: 'flex', flexDirection: 'column', maxHeight: '400px', 
         overflowY: 'auto', overflowX: 'hidden'
@@ -380,6 +440,7 @@ export const DataLoadingChat: React.FC = () => {
         {dataCleanMessages.map((msg, i) => {
             const outputMessages = dataCleanMessages.filter(m => m.type === 'output');
             const outputIndex = outputMessages.findIndex(m => m === msg);
+            const isLastOutput = msg.type === 'output' && outputIndex === outputMessages.length - 1;
             
             return (
                 <Box key={i} sx={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
@@ -449,12 +510,12 @@ export const DataLoadingChat: React.FC = () => {
                     
                     {/* Output Card (only for output messages) */}
                     {msg.type === 'output' && (
-                        <Box sx={{ display: 'flex', flexDirection: 'row', gap: 0, alignItems: 'center', pl: 0.5 }}>
-                            
+                        <Box sx={{ display: 'flex', flexDirection: 'row', gap: 0, alignItems: 'center', pl: 0.5, position: 'relative' }}>
                             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0, alignItems: 'flex-start' }}>
                                 {msg.outputTables?.map((table, tableIndex) => {
                                     const isSelected = msg.type === 'output' && outputIndex === selectedTableIndex.outputIndex && tableIndex === selectedTableIndex.tableIndex;
                                     return <Box
+                                        key={tableIndex}
                                         onClick={() => setSelectedTableIndex({outputIndex: outputIndex, tableIndex: tableIndex})}
                                         sx={{
                                             py: 0,  pr: 1, gap: 1,
@@ -475,7 +536,7 @@ export const DataLoadingChat: React.FC = () => {
                                     >
                                         {table.content.type === 'csv' && <TableIcon color="primary" sx={{ fontSize: 12 }} />}
                                         {table.content.type === 'image_url' && <LinkIcon color="primary" sx={{ fontSize: 12 }} />}
-                                        {table.content.type === 'data_url' && <LinkIcon color="primary" sx={{ fontSize: 12 }} />}
+                                        {table.content.type === 'web_url' && <LinkIcon color="primary" sx={{ fontSize: 12 }} />}
                                         <Typography variant="body2" sx={{ 
                                             fontSize: '10px', fontWeight: isSelected ? 600 : 400,
                                             whiteSpace: 'nowrap',
@@ -485,8 +546,35 @@ export const DataLoadingChat: React.FC = () => {
                                         }}>
                                             {table.name}
                                         </Typography>
+                                        
                                     </Box>
                                 })}
+                                {/* Delete button for the last output message */}
+                                {isLastOutput &&  (
+                                    <Tooltip title="Remove this message">
+                                        <IconButton
+                                            size="small"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                removeLastOutput();
+                                            }}
+                                            sx={{
+                                                position: 'absolute',
+                                                right: 0,
+                                                top: 0,
+                                                ml: 0, 
+                                                width: 16,
+                                                height: 16,
+                                                color: 'warning.main',
+                                                '&:hover': {
+                                                    backgroundColor: alpha(theme.palette.error.main, 0.1),
+                                                }
+                                            }}
+                                        >
+                                            <DeleteIcon sx={{ fontSize: 12 }} />
+                                        </IconButton>
+                                    </Tooltip>
+                                )}
                             </Box>
                         </Box>
                     )}
@@ -505,7 +593,7 @@ export const DataLoadingChat: React.FC = () => {
         )}
     </Box>
 
-    let inputImages = [...imageData, ...(selectedTable && selectedTable.content.type === 'image_url' ? [selectedTable.content.value] : [])];
+    let inputImages = [...userImages, ...additionalImages];
 
     let inputBox = 
         <Stack sx={{ py: 1, position: 'relative' }} direction="row" spacing={1} alignItems="flex-end">
@@ -551,27 +639,29 @@ export const DataLoadingChat: React.FC = () => {
             {inputImages.length > 0 && (
                 <Box sx={{ display: 'flex', flexDirection: 'row', flexWrap: 'wrap', gap: 0.5, mt: 0.5, position: 'relative' }}>
                     {inputImages.map((imageUrl, index) => (
-                        <Box key={index} sx={{ display: 'block' }}>
+                        <Box key={index} sx={{ display: 'block', position: 'relative' }}>
                             <Box 
                                 component="img"
                                 src={imageUrl}
                                 alt={`Pasted image ${index + 1}`}
                                 sx={{
                                     maxHeight: existOutputMessages ? 60 : 600,
-                                    maxWidth: inputImages.length > 1 ? '30%' : '100%',
+                                    maxWidth: inputImages.length > 1 ? '30%' : 400,
                                     objectFit: 'cover',
                                     borderRadius: 1,
                                     border: '1px solid',
                                     borderColor: 'divider'
                                 }}
                             />
-                            <IconButton 
-                                sx={{position: 'absolute'}}
+                            {userImages.includes(imageUrl) ? <IconButton 
+                                sx={{position: 'absolute', top: 0, right: 0}}
                                 size="small" 
                                 onClick={() => removeImage(index)}
                             >
                                 <CancelIcon fontSize="small" />
-                            </IconButton>
+                            </IconButton> : <Typography sx={{fontSize: '10px', color: 'text.secondary', position: 'absolute', top: 0, right: 0, width: 16, height: 16, display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
+                                ➤
+                            </Typography>}
                         </Box>
                     ))}
                 </Box>
@@ -600,6 +690,7 @@ export const DataLoadingChat: React.FC = () => {
                 fullWidth
                 disabled={loading}
                 autoComplete="off"
+                maxRows={4}
                 onKeyDown={(e) => {
                     if (e.key === 'Enter' && !e.shiftKey) {
                         e.preventDefault();
@@ -607,7 +698,7 @@ export const DataLoadingChat: React.FC = () => {
                     }
                     if (e.key === 'Tab') {
                         e.preventDefault();
-                        setPrompt(placeholders[placeholderIndex] + '\t');
+                        setPrompt(placeholders[placeholderIndex]);
                     }
                 }}
                 slotProps={{
@@ -657,7 +748,7 @@ export const DataLoadingChat: React.FC = () => {
             </Box>
 
             {/* Right: Data preview panel */}
-            {(existOutputMessages || imageData.length > 0) && (
+            {existOutputMessages && (
                 <Box
                     sx={{
                         flex: 1.4,
@@ -705,14 +796,14 @@ export const DataLoadingChat: React.FC = () => {
 
                         {/* Bottom submit bar */}
                         <Box sx={{ mt: 'auto', pt: 1, display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 1 }}>
-                            {selectedTable && selectedTable.content.type === 'image_url' && (
+                            {additionalImages.length > 0 && (
                                 <Button
                                     variant="contained"
                                     sx={{  textTransform: 'none' }}
                                     onClick={() => {
                                         sendRequest();
                                     }}
-                                    disabled={!selectedTable || selectedTable.content.type !== 'image_url' || loading}
+                                    disabled={loading}
                                     size="small"
                                 >
                                     Extract data from image
