@@ -551,7 +551,7 @@ export const DataLoadingChat: React.FC = () => {
                                 })}
                                 {/* Delete button for the last output message */}
                                 {isLastOutput &&  (
-                                    <Tooltip title="Remove this message">
+                                    <Tooltip title="delete this artifact">
                                         <IconButton
                                             size="small"
                                             onClick={(e) => {
@@ -653,7 +653,7 @@ export const DataLoadingChat: React.FC = () => {
                                     borderColor: 'divider'
                                 }}
                             />
-                            {userImages.includes(imageUrl) ? <IconButton 
+                            {userImages.includes(imageUrl) ? <IconButton  
                                 sx={{position: 'absolute', top: 0, right: 0}}
                                 size="small" 
                                 onClick={() => removeImage(index)}
