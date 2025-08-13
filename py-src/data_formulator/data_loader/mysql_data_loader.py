@@ -4,7 +4,7 @@ import pandas as pd
 import duckdb
 
 from data_formulator.data_loader.external_data_loader import ExternalDataLoader, sanitize_table_name
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 class MySQLDataLoader(ExternalDataLoader):
 
@@ -111,7 +111,7 @@ MySQL Connection Instructions:
             
         return results
 
-    def ingest_data(self, table_name: str, name_as: str | None = None, size: int = 1000000):
+    def ingest_data(self, table_name: str, name_as: Optional[str] = None, size: int = 1000000):
         # Create table in the main DuckDB database from MySQL data
         if name_as is None:
             name_as = table_name.split('.')[-1]

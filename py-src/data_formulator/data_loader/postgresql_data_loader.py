@@ -4,7 +4,7 @@ import pandas as pd
 import duckdb
 
 from data_formulator.data_loader.external_data_loader import ExternalDataLoader, sanitize_table_name
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 class PostgreSQLDataLoader(ExternalDataLoader):
 
@@ -108,7 +108,7 @@ class PostgreSQLDataLoader(ExternalDataLoader):
             print(f"Error listing tables: {e}")
             return []
 
-    def ingest_data(self, table_name: str, name_as: str | None = None, size: int = 1000000):
+    def ingest_data(self, table_name: str, name_as: Optional[str] = None, size: int = 1000000):
         # Create table in the main DuckDB database from Postgres data
         if name_as is None:
             name_as = table_name.split('.')[-1]

@@ -1,6 +1,6 @@
 import json
 import logging
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 import duckdb
 import pandas as pd
@@ -391,7 +391,7 @@ For other platforms, see: https://github.com/mkleehammer/pyodbc/wiki
 
         return results
 
-    def ingest_data(self, table_name: str, name_as: str | None = None, size: int = 1000000):
+    def ingest_data(self, table_name: str, name_as: Optional[str] = None, size: int = 1000000):
         """Ingest data from SQL Server table into DuckDB"""
         # Parse table name (assuming format: schema.table)
         if "." in table_name:
