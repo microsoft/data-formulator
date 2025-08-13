@@ -12,6 +12,7 @@ except ImportError:
     PYODBC_AVAILABLE = False
 
 from data_formulator.data_loader.external_data_loader import ExternalDataLoader, sanitize_table_name
+from data_formulator.security import validate_sql_query
 
 log = logging.getLogger(__name__)
 
@@ -429,6 +430,10 @@ For other platforms, see: https://github.com/mkleehammer/pyodbc/wiki
             ):  # Check first 50 chars
                 modified_query = modified_query.replace("SELECT", "SELECT TOP 10", 1)
 
+            result, error_message = validate_sql_query(modified_query)
+            if not result:
+                raise ValueError(error_message)
+            
             df = self._execute_query(modified_query)
 
             # Handle NaN values for JSON serialization
@@ -443,6 +448,10 @@ For other platforms, see: https://github.com/mkleehammer/pyodbc/wiki
     def ingest_data_from_query(self, query: str, name_as: str) -> pd.DataFrame:
         """Execute a custom query and ingest results into DuckDB"""
         try:
+            result, error_message = validate_sql_query(query)
+            if not result:
+                raise ValueError(error_message)
+            
             df = self._execute_query(query)
             # Use the base class's method to ingest the DataFrame
             self.ingest_df_to_duckdb(df, sanitize_table_name(name_as))

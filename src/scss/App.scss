@@ -1,27 +1,6 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-.main-split {
-    height: calc(100% - 49px);
-}
-
-.data-editor {
-    height: 100%;
-    display: flex;
-    flex-direction: column;
-    justify-content: space-between;
-    //border-left: 1px solid rgba(0, 0, 0, 0.2);
-}
-
-.info-panel {
-    height: 100%;
-    background: white;
-}
-
-.tabpanel {
-    flex: 1;
-}
-
 h2.view-title {
     margin: 0;
     line-height: 1.75;
@@ -31,14 +10,6 @@ h2.view-title {
     //text-transform: uppercase;
     font-size: 14px;
     display: inline-block;
-}
-
-.view-title-box {
-  margin-bottom: 6px;
-}
-
-.encodings-container {
-    flex: 0 1 200px;
 }
 
 .Resizer {
@@ -102,4 +73,56 @@ h2.view-title {
 
 .GroupItems {
     padding: 0;
+}
+
+// Custom scrollbar styling with hover effects
+* {
+    // Webkit browsers (Chrome, Safari, Edge)
+    &::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+    }
+
+    &::-webkit-scrollbar-track {
+        background: #f1f1f1;
+        border-radius: 4px;
+    }
+
+    &::-webkit-scrollbar-thumb {
+        background: #c1c1c1;
+        border-radius: 4px;
+        transition: background-color 0.3s ease;
+    }
+
+    &::-webkit-scrollbar-thumb:hover {
+        background: #a8a8a8;
+    }
+
+    &::-webkit-scrollbar-corner {
+        background: #f1f1f1;
+    }
+
+    // Firefox
+    scrollbar-width: auto;
+    scrollbar-color: lightgray transparent;
+
+    // Firefox hover effect (limited support)
+    &:hover {
+        scrollbar-color: #c6c6c6 transparent;
+    }
+}
+
+// Specific styling for main scrollable containers
+.encoding-shelf,
+.vega-container,
+.data-fields-group {
+    &::-webkit-scrollbar-thumb {
+        background: #d1d1d1;
+        border-radius: 4px;
+        transition: background-color 0.3s ease;
+    }
+
+    &::-webkit-scrollbar-thumb:hover {
+        background: #b8b8b8;
+    }
 }

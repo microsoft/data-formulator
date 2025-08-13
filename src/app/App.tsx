@@ -67,14 +67,15 @@ import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import ContentPasteIcon from '@mui/icons-material/ContentPaste';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 import DownloadIcon from '@mui/icons-material/Download';
-import { DBTableManager, DBTableSelectionDialog, handleDBDownload } from '../views/DBTableManager';
+import { DBTableSelectionDialog, handleDBDownload } from '../views/DBTableManager';
 import CloudQueueIcon from '@mui/icons-material/CloudQueue';
 import { connectToSSE } from '../views/SSEClient';
+import { getUrls } from './utils';
 
 const AppBar = styled(MuiAppBar)(({ theme }) => ({
     color: 'black',
-    backgroundColor: "white",
-    borderBottom: "1px solid #C3C3C3",
+    backgroundColor: "transparent",
+    //borderBottom: "1px solid #C3C3C3",
     boxShadow: "none",
     transition: theme.transitions.create(['margin', 'width'], {
         easing: theme.transitions.easing.sharp,
@@ -286,10 +287,11 @@ const ResetDialog: React.FC = () => {
         <>
             <Button 
                 variant="text" 
+                sx={{textTransform: 'none'}}
                 onClick={() => setOpen(true)} 
                 endIcon={<PowerSettingsNewIcon />}
             >
-                Reset session
+                Reset
             </Button>
             <Dialog onClose={() => setOpen(false)} open={open}>
                 <DialogTitle sx={{ display: "flex", alignItems: "center" }}>Reset Session?</DialogTitle>
@@ -341,10 +343,7 @@ const ConfigDialog: React.FC = () => {
     return (
         <>
             <Button variant="text" sx={{textTransform: 'none'}} onClick={() => setOpen(true)} startIcon={<SettingsIcon />}>
-                 <Box component="span" sx={{lineHeight: 1.2, display: 'flex', flexDirection: 'column', alignItems: 'left'}}>
-                    <Box component="span" sx={{py: 0, my: 0, fontSize: '10px', mr: 'auto'}}>default_timeout={config.formulateTimeoutSeconds}s</Box>
-                    <Box component="span" sx={{py: 0, my: 0, fontSize: '10px', mr: 'auto'}}>chart_size={config.defaultChartWidth}x{config.defaultChartHeight}</Box>
-                </Box>
+                Config
             </Button>
             <Dialog onClose={() => setOpen(false)} open={open}>
                 <DialogTitle>Data Formulator Configuration</DialogTitle>
@@ -488,8 +487,6 @@ const ConfigDialog: React.FC = () => {
 
 export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
 
-    const visViewMode = useSelector((state: DataFormulatorState) => state.visViewMode);
-    const tables = useSelector((state: DataFormulatorState) => state.tables);
     const dispatch = useDispatch<AppDispatch>();
 
     useEffect(() => {
@@ -498,6 +495,14 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
             console.log("closing sse connection because of unmount of AppFC")
             sseConnection.close();
         };
+    }, []);
+
+    useEffect(() => {
+        fetch(getUrls().APP_CONFIG)
+            .then(response => response.json())
+            .then(data => {
+                dispatch(dfActions.setServerConfig(data));
+            });
     }, []);
 
     // if the user has logged in
@@ -555,41 +560,9 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
         },
     });
 
-    let switchers = (
-        <Box sx={{ display: "flex" }} key="switchers">
-            <ToggleButtonGroup
-                color="primary"
-                value={visViewMode}
-                exclusive
-                size="small"
-                onChange={(
-                    event: React.MouseEvent<HTMLElement>,
-                    newViewMode: string | null,
-                ) => {
-                    if (newViewMode === "gallery" || newViewMode === "carousel") {
-                        dispatch(dfActions.setVisViewMode(newViewMode));
-                    }
-                }}
-                aria-label="View Mode"
-                sx={{ marginRight: "8px", height: 32, padding: "4px 0px", marginTop: "2px", "& .MuiToggleButton-root": { padding: "0px 6px" } }}
-            >
-                <ToggleButton value="carousel" aria-label="view list">
-                    <Tooltip title="view list">
-                        <ViewSidebarIcon fontSize="small" sx={{ transform: "scaleX(-1)" }} />
-                    </Tooltip>
-                </ToggleButton>
-                <ToggleButton value="gallery" aria-label="view grid">
-                    <Tooltip title="view grid">
-                        <GridViewIcon fontSize="small" />
-                    </Tooltip>
-                </ToggleButton>
-            </ToggleButtonGroup>
-        </Box>
-    )
-
     let appBar = [
-        <AppBar className="app-bar" position="static" key="app-bar-main">
-            <Toolbar variant="dense">
+        <AppBar position="static" key="app-bar-main" >
+            <Toolbar variant="dense" sx={{height: 40, minHeight: 36}}>
                 <Button href={"/"} sx={{
                     display: "flex", flexDirection: "row", textTransform: "none",
                     backgroundColor: 'transparent',
@@ -597,30 +570,27 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
                         backgroundColor: "transparent"
                     }
                 }} color="inherit">
-                    <Box component="img" sx={{ height: 32, marginRight: "12px" }} alt="" src={dfLogo} />
-                    <Typography variant="h6" noWrap component="h1" sx={{ fontWeight: 300, display: { xs: 'none', sm: 'block' } }}>
+                    <Box component="img" sx={{ height: 24, marginRight: "12px" }} alt="" src={dfLogo} />
+                    <Typography noWrap component="h1" sx={{ fontWeight: 300, display: { xs: 'none', sm: 'block' } }}>
                         {toolName} {process.env.NODE_ENV == "development" ? "" : ""}
                     </Typography>
                 </Button>
-                <Box sx={{ flexGrow: 1, textAlign: 'center', display: 'flex', justifyContent: 'center' }} >
-                    {switchers}
-                </Box>
-                <Box sx={{ display: 'flex', fontSize: 14 }}>
+                <Box sx={{ display: 'flex', ml: 'auto', fontSize: 14 }}>
                     <ConfigDialog />
                     <Divider orientation="vertical" variant="middle" flexItem />
                     <DBTableSelectionDialog buttonElement={
-                        <Typography sx={{ display: 'flex', fontSize: 14, alignItems: 'center', gap: 1, textTransform: 'none' }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, textTransform: 'none' }}>
                             <CloudQueueIcon fontSize="small" /> Database
-                        </Typography>
-                    } />
+                        </Box>
+                    } component="dialog" />
                     <Divider orientation="vertical" variant="middle" flexItem />
                     <ModelSelectionButton />
                     <Divider orientation="vertical" variant="middle" flexItem />
-                    <Typography sx={{ display: 'flex', fontSize: 14, alignItems: 'center', gap: 1 }}>
+                    <Typography fontSize="inherit" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                         <TableMenu />
                     </Typography>
                     <Divider orientation="vertical" variant="middle" flexItem />
-                    <Typography sx={{ display: 'flex', fontSize: 14, alignItems: 'center', gap: 1 }}>
+                    <Typography fontSize="inherit" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                         <SessionMenu />
                     </Typography>
                     <Divider orientation="vertical" variant="middle" flexItem />
@@ -646,6 +616,7 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
     let app =
         <Box sx={{ 
             position: 'absolute',
+            backgroundColor: 'rgba(255, 255, 255, 0.3)',
             top: 0,
             left: 0,
             right: 0,
@@ -653,7 +624,7 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
             '& > *': {
                 minWidth: '1000px',
                 minHeight: '800px'
-            }
+            },
         }}>
             <Box sx={{ 
                 display: 'flex',

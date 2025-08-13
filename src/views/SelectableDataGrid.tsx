@@ -196,7 +196,7 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({ tableId,
     const TableComponents = {
         Scroller: TableContainer,
         Table: Table,
-        TableHead: (props: any) => <TableHead {...props} className='table-header-container' />,
+        TableHead: React.forwardRef<HTMLTableSectionElement, any>((props, ref) => <TableHead {...props} ref={ref} className='table-header-container' />) as any,
         TableRow: (props: any) => {
             const index = props['data-index'];
             return <TableRow {...props} style={{backgroundColor: index % 2 == 0 ? "rgba(255, 255, 255, 0.05)" : "rgba(0, 0, 0, 0.02)"}}/>
@@ -224,51 +224,6 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({ tableId,
 
         onSelectionFinished(columns, values);
     }
-
-    let footerActionsItems = 
-        <Box sx={{display: 'flex', mr: 1}}>
-            <Box key="search-box">
-                {/* <OutlinedInput
-                    //slotProps={{input: {className: "table-search-input"}}}
-                    sx={{paddingLeft: 1, paddingRight: 0}}
-                    size="small"
-                    value={searchText}
-                    placeholder="Search in table"
-                    startAdornment={
-                        searchText.length > 0 ?
-                            (
-                                <InputAdornment position="start">
-                                    <IconButton
-                                        aria-label="toggle search"
-                                        size="small"
-                                        color="primary"
-                                        onClick={() => {
-                                            setSearchText('');
-                                        }}
-                                    >
-                                        <ArrowBack fontSize='small' />
-                                    </IconButton>
-                                </InputAdornment>
-                            ) : (
-                                <InputAdornment position="start">
-                                    <SearchIcon fontSize='small' sx={{ padding: '2px' }} />
-                                </InputAdornment>
-                            )
-                    }
-                    endAdornment={
-                        searchText.length > 0 ? <InputAdornment position="end">
-                                    <SearchIcon fontSize='small'/> 
-                        </InputAdornment> : ""
-                    }
-                    onChange={(event: any) => {
-                        setSearchText(event.target.value);
-                    }}
-                /> */}
-                {searchText.length > 0 ? <Typography component="span" className="table-footer-number" sx={{ margin: "auto 8px" }}>
-                    {`${rowsToDisplay.length} matches`}   
-                </Typography>: ''}
-            </Box>
-        </Box>
 
     React.useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
@@ -464,32 +419,9 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({ tableId,
                     }}
                 />
             </SelectableGroup>
-            <Paper className="table-footer-container"
-                sx={{ borderTop: '1px solid', borderColor: 'rgba(0, 0, 0, 0.12)', padding: '6px', 
-                      display: 'flex', flexDirection: 'row',  position: 'absolute', bottom: 0, right: 15 }}>
-                <Tooltip title="Table options">
-                    <ToggleButton
-                        color="primary"
-                        size="small"
-                        value="check"
-                        sx={{ margin: "0px 6px 0px 0px", padding: "0px 2px", border: 'none', color: theme.palette.primary.main }}
-                        selected={footerActionExpand}
-                        onChange={() => {
-                            if (footerActionExpand) {
-                                setSearchText("");
-                            }
-                            setFooterActionExpand(!footerActionExpand);
-                        }}
-                        >
-                        {footerActionExpand ? <ChevronLeftIcon sx={{transform: footerActionExpand ? 'rotate(180deg)' : 'rotate(0)'}} /> : <ChevronLeftIcon /> }
-                    </ToggleButton>
-                </Tooltip>
-                {/* <Button variant="text" sx={{padding: '0px 4px', margin:'0px 2px', minWidth: 0}} size="small" 
-                        onClick={() => { setFooterActionExpand(!footerActionExpand) }}>{"<"}</Button> */}
-                <Collapse orientation="horizontal"  in={footerActionExpand}>
-                    {footerActionsItems}
-                </Collapse>
-                <Box sx={{display: 'flex', alignItems: 'center'}}>
+            <Paper className="table-footer-container" variant="outlined"
+                sx={{ display: 'flex', flexDirection: 'row',  position: 'absolute', bottom: 6, right: 6 }}>
+                <Box sx={{display: 'flex', alignItems: 'center', ml: 1}}>
                     <Typography  className="table-footer-number" sx={{display: 'flex', alignItems: 'center'}}>
                         {virtual && <CloudQueueIcon sx={{fontSize: 16, mr: 1}}/> }
                         {virtual ? `${rowCount} rows` : `${rowsToDisplay.length} rows`}
@@ -536,7 +468,7 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({ tableId,
                         </>
                     )}
                     {!virtual && <Tooltip title={`Download ${tableName} as CSV`}>
-                        <IconButton size="small" color="primary" sx={{marginRight: 1}}
+                        <IconButton size="small" color="primary" 
                             onClick={() => {
                                 // Create CSV content
                                 const csvContent = [
@@ -561,10 +493,9 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({ tableId,
                                 document.body.removeChild(link);
                             }}
                         >
-                            <FileDownloadIcon/>
+                            <FileDownloadIcon sx={{fontSize: 18}} />
                         </IconButton>
                     </Tooltip>}
-                    
                 </Box>
             </Paper>
         </Box >

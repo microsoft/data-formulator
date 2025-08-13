@@ -5,29 +5,39 @@ import json
 import pandas as pd
 
 from data_formulator.agents.agent_utils import extract_json_objects, generate_data_summary, extract_code_from_gpt_response, field_name_to_ts_variable_name, infer_ts_datatype
+from data_formulator.agents.web_utils import download_html_content
 
 import logging
 
 logger = logging.getLogger(__name__)
 
 
-SYSTEM_PROMPT = '''You are a data scientist to help user to generate or clean the raw input into a *csv block* (or tsv if that's the original format). 
-The output csv format should be readable into a python pandas dataframe directly.
+SYSTEM_PROMPT = '''You are a data scientist to help user to generate, extract data from image or clean a text input into a structured csv table. 
+The output should contain the rationale for the extraction and cleaning process. If there are multiple tables in the raw data, you should extract them all and return them as a list of csv blocks.
+Each table can either be a csv block or a url (image url or file url of an image).
+- csv block: a string of csv content (if the content is already available from the input)
+- image url: link to an image that contains the table (if the data exists but cannot be directly obtained from raw input text, which will be converted to a csv block later)
+- web url: link to a file, which can be a csv, tsv, txt, or a json file that contains the data (which will be converted to a csv block later), it should not be another html page.
 
-Create [OUTPUT] based on [RAW DATA] provided. The output should have two components:
+Create [OUTPUT] based on [RAW DATA] provided. The output should be in the following formats:
 
-1. a csv codeblock that represents the cleaned data, as follows:
-
-```csv
-.....
-```
-
-2. a json object that explains the mode and cleaning rationale (wrap in a json block):
+a json object that explains tables in the raw data, the mode, cleaning rationale, and suggests a descriptive name for each dataset (wrap in a json block):
 
 ```json
 {
     "mode": ..., // one of "data generation" or "data cleaning" based on the provided task
-    "reason": ... // explain the cleaning reason here
+    "tables": [
+        {
+            "name": ..., // suggest a descriptive, meaningful but short name for this dataset (e.g., "sales_data_2024", "customer_survey_results", "weather_forecast_data")
+            "description": ..., // describe the table in a few sentences, including the table structure, the cleaning process, and the rationale for the cleaning.
+            "reason": ..., // explain the extraction reason here, including the table structure, the cleaning process, and the rationale for the cleaning.
+            "content": {
+                "type": "csv" | "image_url" | "web_url",
+                "value": ... // the csv block as a string or image url or web url
+                "incomplete": ... // if the csv block is too large, only extract first few rows and indicate that it is incomplete.
+            }
+        }
+    ],
 }
 ```
 
@@ -36,25 +46,33 @@ Create [OUTPUT] based on [RAW DATA] provided. The output should have two compone
 - NEVER create formulas that could be used to discriminate based on age. Ageism of any form (explicit and implicit) is strictly prohibited.
 - If above issue occurs, just copy the original data and return in the block
 
-The cleaning process must follow instructions below:
+**Multiple tables:**
+- if the raw data contains multiple tables, based on the user's instruction to decide which table to extract.
+- if the user doesn't specify which tables to extract, extract all tables.
+- if there are multiple tables yet they can be too large, only extract the first few rows and indicate that it is incomplete.
+
+**Instructions for creating csv blocks:**
 * the output should be a structured csv table: 
     - if the raw data is unstructured, structure it into a csv table. If the table is in other formats, transform it into a csv table.
-    - if the raw data contain other informations other than the table, remove surrounding texts that does not belong to the table. 
+    - if the raw data contain other informations other than the table (e.g., title, subtitle, footer, summary, etc.), remove surrounding texts that does not belong to the table, so that the table conforms to csv format. 
     - if the raw data contains multiple levels of header, make it a flat table. It's ok to combine multiple levels of headers to form the new header to not lose information.
-    - if the table has footer or summary row, remove them, since they would not be compatible with the csv table format.
-    - the csv table should have the same number of cells for each line, according to the title. If there are some rows with missing values, patch them with empty cells.
-    - if the raw data has some rows that do not belong to the table, also remove them (e.g., subtitles in between rows) 
+    - the csv table should have the same number of cells for each line, according to the header. If there are some rows with missing values, patch them with empty values.
     - if the header row misses some columns, add their corresponding column names. E.g., when the header doesn't have an index column, but every row has an index value, add the missing column header.
 * clean up messy column names:
     - if the column name contains special characters like "*", "?", "#", "." remove them.
-* clean up columns with messy information
+* csv value format:
     - if a column is number but some cells has annotations like "*" "?" or brackets, clean them up.
-    - if a column is number but has units like ($, %, s), convert them to number (make sure unit conversion is correct when multiple units exist like minute and second) and include unit in the header.
+    - if values of a column is all numbers but has units like ($, %, s), remove the unit in the value cells, convert them to number, note unit in the header of this column.
     - you don't need to convert format of the cell.
-* if the user asks about generating synthetic data:
-    - NEVER generate data that has implicit bias as noted above, if that happens, return a dummy data consisting of dummy columns with 'a, b, c' and numbers.
-    - NEVER generate data contain people's names, use "A" , "B", "C"... instead. 
-    - If the user doesn't indicate how many rows to be generated, plan in generating a dataset with 10-20 rows depending on the content.
+
+**Instructions for creating image url or web url:**
+- based on the context provided in the prompt and raw input material, decide which url in the raw data may cotain the data we would like to extract. put the url of the data in the "image_url" field.
+- similarly, if the raw data contains link to a website that directly contains the data (e.g., it points to a csv file), put the url of the data in the "web_url" field.
+
+**Instructions for generating synthetic data:**
+- NEVER generate data that has implicit bias as noted above, if that happens, return a dummy data consisting of dummy columns with 'a, b, c' and numbers.
+- NEVER generate data contain people's names, use "A" , "B", "C"... instead. 
+- If the user doesn't indicate how many rows to be generated, plan in generating a dataset with 10-20 rows depending on the content.
 '''
 
 
@@ -81,51 +99,59 @@ class DataCleanAgent(object):
     def __init__(self, client):
         self.client = client
 
-    def run(self, content_type, raw_data, image_cleaning_instruction):
+    def run(self, prompt, artifacts=[], dialog=[]):
         """derive a new concept based on the raw input data
+        Args:
+            prompt (str): the prompt to the agent
+            artifacts (list): the artifacts to the agent of format 
+            [{"type": "image_url", "content": ...}, {"type": "web_url", "content": ...}, ...]
+            dialog (list): the dialog history
+        Returns:
+            dict: the result of the agent
         """
-   
-        if content_type == "text":
-            user_prompt = {
-                "role": "user",
-                "content": [{
-                    'type': 'text',
-                    'text': f"[DATA]\n\n{raw_data}\n\n[OUTPUT]\n"
-                }]
-            }
-        elif content_type == "image":
-            # add additional cleaning instructions if provided
-            if image_cleaning_instruction:
-                cleaning_prompt = f"\n\n[CLEANING INSTRUCTION]\n\n{image_cleaning_instruction}\n\n"
-            else:
-                cleaning_prompt = ""
 
-            user_prompt = {
-                'role': 'user',
-                'content': [ {
-                    'type': 'text',
-                    'text': '''[RAW_DATA]\n\n'''},
-                    {
-                        'type': 'image_url',
-                        'image_url': {
-                            "url": raw_data,
-                            "detail": "high"
-                        }
-                    },
-                    {
+        content = []
+
+        for artifact in artifacts:
+            if artifact['type'] == 'image_url':
+                content.append({
+                    'type': 'image_url',
+                    'image_url': {
+                        "url": artifact['content'],
+                        "detail": "high"
+                    }
+                })
+            elif artifact['type'] == 'web_url':
+                try:
+                    content.append({
                         'type': 'text',
-                        'text': f'''{cleaning_prompt}[OUTPUT]\n\n'''
-                    }, 
-                ]
-            }
+                        'text': f"[HTML CONTENT]\n\n{download_html_content(artifact['content'])}"
+                    })
+                except Exception as e:
+                    raise Exception('unable to download html from url ' + artifact['content'])
+        
+        content.append({
+            'type': 'text',
+            'text': f'''[INSTRUCTION]\n\n{prompt}\n\n[OUTPUT]\n'''
+        })
+
+        user_prompt = {
+            'role': 'user',
+            'content': content
+        }
 
         logger.info(user_prompt)
 
         system_message = {
             'role': 'system',
-            'content': [ {'type': 'text', 'text': SYSTEM_PROMPT}]}
+            'content': [ {'type': 'text', 'text': SYSTEM_PROMPT}]
+        }
 
-        messages = [system_message, user_prompt]
+        messages = [
+            system_message, 
+            *[message for message in dialog if message['role'] != 'system'],
+            user_prompt
+        ]
         
         ###### the part that calls open_ai
         response = self.client.get_completion(messages = messages)
@@ -136,14 +162,13 @@ class DataCleanAgent(object):
             logger.info("\n=== Python Data Clean Agent ===>\n")
             logger.info(choice.message.content + "\n")
 
-            code_blocks = extract_code_from_gpt_response(choice.message.content + "\n", "csv")
-            reason_blocks = extract_json_objects(choice.message.content + "\n")
+            data_blocks = extract_json_objects(choice.message.content + "\n")
 
-            if len(code_blocks) > 0:
+            if len(data_blocks) > 0:
+                data_block = data_blocks[-1]
                 result = {
                     'status': 'ok', 
-                    'content': code_blocks[-1], 
-                    'info': reason_blocks[-1] if len(reason_blocks) > 0 else {"reason": "no reason presented", "mode": "data cleaning"}
+                    'content': data_block, 
                 }
             else:
                 result = {'status': 'other error', 'content': 'unable to extract code from response'}

@@ -10,6 +10,7 @@ from data_formulator.agents.agent_sort_data import SortDataAgent
 from data_formulator.agents.agent_data_clean import DataCleanAgent
 from data_formulator.agents.agent_py_data_rec import PythonDataRecAgent
 from data_formulator.agents.agent_sql_data_rec import SQLDataRecAgent
+from data_formulator.agents.agent_interactive_explore import InteractiveExploreAgent
 
 __all__ = [
     "ConceptDeriveAgent",
@@ -21,4 +22,5 @@ __all__ = [
     "DataLoadAgent",
     "SortDataAgent",
     "DataCleanAgent",
+    "InteractiveExploreAgent",
 ]

@@ -24,9 +24,14 @@ The users' instruction includes "expected fields" that the user want for visuali
 Concretely, you should first refine users' goal and then create a python function in the [OUTPUT] section based off the [CONTEXT] and [GOAL]:
 
     1. First, refine users' [GOAL]. The main objective in this step is to check if "visualization_fields" provided by the user are sufficient to achieve their "goal". Concretely:
-        (1) based on the user's "goal", elaborate the goal into a "detailed_instruction".
-        (2) determine "output_fields", the desired fields that the output data should have to achieve the user's goal, it's a good idea to include intermediate fields here.
-        (2) now, determine whether the user has provided sufficient fields in "visualization_fields" that are needed to achieve their goal:
+        - based on the user's "goal", elaborate the goal into a "detailed_instruction".
+        - "display_instruction" should be a short verb phrase instruction that will be displayed to the user. 
+            - it would be a short single sentence summary of the user intent as a verb phrase, it should be very short and on point.
+            - generate it based on user's [GOAL] and the suggested visualization, avoid simply repeating the visualization design, use a high-level semantic description of the visualization goal.
+            - if the user's [GOAL] is a follow-up question like "filter to show top 10", you don't need to repeat the whole question, just describe the follow-up question in a high-level semantic way.
+            - if you mention column names from the input or the output data (either exact or semantically matching), highlight the text in **bold**.
+        - determine "output_fields", the desired fields that the output data should have to achieve the user's goal, it's a good idea to include intermediate fields here.
+        - now, determine whether the user has provided sufficient fields in "visualization_fields" that are needed to achieve their goal:
             - if the user's "visualization_fields" are sufficient, simply copy it.
             - if the user didn't provide sufficient fields in "visualization_fields", add missing fields in "visualization_fields" (ordered them based on whether the field will be used in x,y axes or legends);
                 - "visualization_fields" should only include fields that will be visualized (do not include other intermediate fields from "output_fields")  
@@ -37,6 +42,7 @@ Concretely, you should first refine users' goal and then create a python functio
 ```
 {
     "detailed_instruction": "..." // string, elaborate user instruction with details if the user
+    "display_instruction": "..." // string, the short verb phrase instruction that will be displayed to the user.
     "output_fields": [...] // string[], describe the desired output fields that the output data should have based on the user's goal, it's a good idea to preserve intermediate fields here (i.e., the goal of transformed data)
     "visualization_fields": [] // string[]: a subset of fields from "output_fields" that will be visualized, ordered based on if the field will be used in x,y axes or legends, do not include other intermediate fields from "output_fields".
     "reason": "..." // string, explain why this refinement is made
@@ -62,6 +68,9 @@ def transform_data(df1, df2, ...):
 note: 
 - if the user provided one table, then it should be def transform_data(df1), if the user provided multiple tables, then it should be def transform_data(df1, df2, ...) and you should consider the join between tables to derive the output.
 - try to use table names to refer to the input dataframes, for example, if the user provided two tables city and weather, you can use `transform_data(df_city, df_weather)` to refer to the two dataframes.
+- datetime objects handling:
+    - if the output field is year, convert it to number, if it is year-month / year-month-day, convert it to string object (e.g., "2020-01" / "2020-01-01").
+    - if the output is time only: convert hour to number if it's just the hour (e.g., 10), but convert hour:min or h:m:s to string object (e.g., "10:30", "10:30:45")
 
     3. The [OUTPUT] must only contain a json object representing the refined goal (including "detailed_instruction", "output_fields", "visualization_fields" and "reason") and a python code block representing the transformation code, do not add any extra text explanation.
 '''
@@ -100,6 +109,7 @@ table_0 (us_covid_cases) sample:
 
 {  
     "detailed_instruction": "Calculate the 7-day moving average of COVID-19 cases over time.",  
+    "display_instruction": "Calculate 7-day moving average of COVID-19 cases",
     "output_fields": ["Date", "Cases", "7-day average cases"],  
     "visualization_fields": ["Date", "7-day average cases"],  
     "reason": "To calculate the 7-day moving average, the 'Cases' field is required, but it is not needed for visualization. The provided fields are sufficient to achieve the goal."  
@@ -276,7 +286,7 @@ class PythonDataTransformationAgent(object):
 
         messages = [{"role":"system", "content": self.system_prompt},
                     *prev_messages,
-                    {"role":"user","content": user_query}]
+                    {"role":"user", "content": user_query}]
         
         response = self.client.get_completion(messages = messages)
 

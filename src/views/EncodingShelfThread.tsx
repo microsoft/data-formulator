@@ -20,28 +20,32 @@ import {
 
 import React from 'react';
 
-import { EncodingItem, ConceptTransformation, Chart, FieldItem, Trigger } from "../components/ComponentType";
+import { EncodingItem, Chart, Trigger } from "../components/ComponentType";
 
 import _ from 'lodash';
 
 import '../scss/EncodingShelf.scss';
-import { createDictTable, DictTable } from "../components/ComponentType";
+import { DictTable } from "../components/ComponentType";
 import embed from 'vega-embed';
 
-import { getTriggers, getUrls, assembleVegaChart, resolveChartFields } from '../app/utils';
+import { getTriggers, assembleVegaChart } from '../app/utils';
 
 import { getChartTemplate } from '../components/ChartTemplates';
 import { checkChartAvailability, generateChartSkeleton } from './VisualizationView';
+
 import TableRowsIcon from '@mui/icons-material/TableRowsOutlined';
 import InsightsIcon from '@mui/icons-material/Insights';
 import AnchorIcon from '@mui/icons-material/Anchor';
-import SouthIcon from '@mui/icons-material/South';
+import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
+import ChevronRightIcon from '@mui/icons-material/ChevronRight';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 
 import { AppDispatch } from '../app/store';
 
 import { EncodingShelfCard, TriggerCard } from './EncodingShelfCard';
-import ChangeCircleOutlinedIcon from '@mui/icons-material/ChangeCircleOutlined';
-import { Type } from '../data/types';
+
+import { useTheme } from '@mui/material/styles';
 
 // Property and state of an encoding shelf
 export interface EncodingShelfThreadProps { 
@@ -151,7 +155,8 @@ export let ChartElementFC: FC<{chart: Chart, tableRows: any[], boxWidth?: number
 }
 
 export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ chartId }) {
-
+    const theme = useTheme();
+    const [collapseEditor, setCollapseEditor] = useState(false);
     const tables = useSelector((state: DataFormulatorState) => state.tables);
     let allCharts = useSelector(dfSelectors.getAllCharts);
 
@@ -199,32 +204,51 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
             }
             return Array.from(Object.values(encodingMap)).map((enc: EncodingItem) => enc.fieldID).filter(x => x != undefined)
         };
-
         let previousActiveFields = new Set(i == 0 ? [] : extractActiveFields(triggers[i - 1]))
         let currentActiveFields = new Set(extractActiveFields(trigger))
         let fieldsIdentical = _.isEqual(previousActiveFields, currentActiveFields)
-
-        return  <Box 
+        return <Box 
             key={`${trigger.tableId}-trigger-card`}
-            sx={{padding: 0, display: 'flex'}}>
-            <Box sx={{minWidth: '1px', padding: '0px', width: '17px',  flex: 'none', display: 'flex', flexDirection: 'column'
-                    }}>
-                <Box sx={{padding:0, width: '1px', margin:'auto', height: '100%',
-                            backgroundImage: 'linear-gradient(180deg, darkgray, darkgray 75%, transparent 75%, transparent 100%)',
-                            backgroundSize: '1px 6px, 3px 100%'}}></Box>
-            </Box>
-            <TriggerCard className="encoding-shelf-trigger-card" trigger={trigger} hideFields={fieldsIdentical && trigger.instruction != ""} />
-        </Box>;
+            sx={{padding: 0, display: 'flex', flexDirection: 'column'}}>
+            <Box sx={{ml: '8px', height: '4px', borderLeft: '1px solid lightgray'}}></Box>
+
+            <TriggerCard 
+                className="encoding-shelf-trigger-card" 
+                trigger={trigger} 
+                hideFields={trigger.instruction != ""} 
+                mini={true} />
+            <Box sx={{ml: '8px', height: '4px', borderLeft: '1px solid darkgray'}}></Box>
+        </Box>
     })
     
     let spaceElement = "" //<Box sx={{padding: '4px 0px', background: 'aliceblue', margin: 'auto', width: '200px', height: '3px', paddingBottom: 0.5}}></Box>;
 
-    previousInstructions = 
-        <Collapse orientation="vertical" in={true} sx={{width: "100%" }}>
-            <Box  sx={{padding: '4px 0px', display: 'flex', flexDirection: "column" }}>
-                {interleaveArrays(tableList, instructionCards, spaceElement)}
+    let truncated = tableList.length > 3;
+
+    previousInstructions = truncated ? 
+        <Box  sx={{padding: '4px 0px', display: 'flex', flexDirection: "column" }}>
+            {tableList[0]}
+            <Box sx={{height: '24px', borderLeft: '1px dashed darkgray', 
+                position: 'relative',
+                ml: '8px', display: 'flex', alignItems: 'center', cursor: 'pointer',
+                '&:hover': {
+                    ml: '7px',
+                    borderLeft: '3px solid darkgray',
+                }}}>
+                <Typography sx={{fontSize: '12px', color: 'darkgray', ml: 2}}>
+                    ...
+                </Typography>
             </Box>
-        </Collapse>
+            {tableList[tableList.length - 3]}
+            {instructionCards[instructionCards.length - 2]}
+            {tableList[tableList.length - 2]}
+            {instructionCards[instructionCards.length - 1]}
+            {tableList[tableList.length - 1]}
+        </Box> 
+    :
+        <Box  sx={{padding: '4px 0px', display: 'flex', flexDirection: "column" }}>
+            {interleaveArrays(tableList, instructionCards, spaceElement)}
+        </Box>;
 
     let postInstruction : any = "";
     if (chartTrigger) {
@@ -262,7 +286,13 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
     }
 
     const encodingShelf = (
-        <Box className="encoding-shelf-compact" sx={{height: '100%'}}>
+        <Box className="encoding-shelf-compact" sx={{height: '100%',
+            width: 236,
+            overflowY: 'auto',
+            transition: 'height 300ms cubic-bezier(0.4, 0, 0.2, 1) 0ms',
+            alignItems: 'flex-start',
+            paddingRight: '8px',
+        }}>
              {[   
                 <Box
                     key="encoding-shelf" 
@@ -281,5 +311,37 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
         </Box>
     )
 
-    return encodingShelf;
+    return <Collapse 
+        key='encoding-shelf'
+        collapsedSize={64} in={!collapseEditor} orientation='horizontal' 
+        sx={{
+            position: 'relative',
+            '& .MuiCollapse-wrapper': {
+                '& .MuiCollapse-wrapperInner': {
+                    '&::after': collapseEditor ? {
+                        content: '""',
+                        position: 'absolute',
+                        top: 0,
+                        right: 0,
+                        width: '20px',
+                        height: '100%',
+                        background: 'linear-gradient(to right, transparent, rgba(255,255,255,1))',
+                        pointerEvents: 'none',
+                        zIndex: 1
+                    } : {}
+                }
+            }
+        }}>
+        <Box sx={{display: 'flex', flexDirection: 'row', height: '100%', 
+            position: 'relative',
+        }}>
+            <Tooltip placement="left" title={collapseEditor ? "open editor" : "hide editor"}>
+                <Button color="primary"
+                        sx={{width: 18, minWidth: 18, p: 0}}
+                    onClick={()=>{setCollapseEditor(!collapseEditor)}}
+                >{collapseEditor ? <ChevronLeftIcon sx={{fontSize: 18}} /> : <ChevronRightIcon sx={{fontSize: 18}} />}</Button>
+            </Tooltip>
+            {encodingShelf}
+        </Box>
+    </Collapse>;
 }

@@ -8,13 +8,7 @@ import { DataFormulatorState, dfActions, dfSelectors, fetchCodeExpl, fetchFieldS
 import {
     Box,
     Typography,
-    FormControl,
-    InputLabel,
-    Select,
     MenuItem,
-    ListSubheader,
-    ListItemIcon,
-    ListItemText,
     IconButton,
     Tooltip,
     TextField,
@@ -27,18 +21,23 @@ import {
     LinearProgress,
     CircularProgress,
     Divider,
+    List,
+    ListItem,
+    alpha,
+    useTheme,
+    Theme,
 } from '@mui/material';
 
 import React from 'react';
 
-import { Channel, EncodingItem, ConceptTransformation, Chart, FieldItem, Trigger, duplicateChart, EncodingMap } from "../components/ComponentType";
+import { Chart, FieldItem } from "../components/ComponentType";
 
 import _ from 'lodash';
 
 import '../scss/EncodingShelf.scss';
 import { createDictTable, DictTable } from "../components/ComponentType";
 
-import { getUrls, resolveChartFields } from '../app/utils';
+import { getUrls, resolveChartFields, getTriggers } from '../app/utils';
 
 import AddIcon from '@mui/icons-material/Add';
 
@@ -46,7 +45,8 @@ import { AppDispatch } from '../app/store';
 import PrecisionManufacturing from '@mui/icons-material/PrecisionManufacturing';
 import { Type } from '../data/types';
 import CloseIcon from '@mui/icons-material/Close';
-import InsightsIcon from '@mui/icons-material/Insights';
+import EmojiEventsIcon from '@mui/icons-material/EmojiEvents';
+import TipsAndUpdatesIcon from '@mui/icons-material/TipsAndUpdates';
 
 export interface ChartRecBoxProps {
     tableId: string;
@@ -157,30 +157,82 @@ const NLTableSelector: FC<{
     );
 };
 
+
+
+export const IdeaChip: FC<{
+    mini?: boolean,
+    idea: {text: string, goal: string, difficulty: 'easy' | 'medium' | 'hard'}, 
+    theme: Theme, 
+    onClick: () => void, 
+    sx?: SxProps,
+    disabled?: boolean
+}> = function ({mini, idea, theme, onClick, sx, disabled}) {
+    const getDifficultyColor = (difficulty: 'easy' | 'medium' | 'hard') => {
+        switch (difficulty) {
+            case 'easy':
+                return 'success';
+            case 'medium':
+                return 'warning';
+            case 'hard':
+                return 'warning';
+            default:
+                return 'default';
+        }
+    };
+    return (
+        <Chip
+            label={mini ? idea.goal : idea.text}
+            size={mini ? "small" : "medium"}
+            color={getDifficultyColor(idea.difficulty) as any}
+            variant="outlined"
+            sx={{
+                fontSize: '11px',
+                minHeight: '24px',
+                height: 'auto',
+                borderRadius: 2,
+                '& .MuiChip-label': {
+                    whiteSpace: 'normal',
+                    wordBreak: 'break-word',
+                    lineHeight: 1.1,
+                    padding: '4px 8px'
+                },
+                ...sx
+            }}
+            onClick={onClick}
+            disabled={disabled}
+        />
+    );
+};
+
 export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolderChartId, sx }) {
     const dispatch = useDispatch<AppDispatch>();
-    
+    const theme = useTheme();
     // reference to states
     const tables = useSelector((state: DataFormulatorState) => state.tables);
     const config = useSelector((state: DataFormulatorState) => state.config);
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
-    const allCharts = useSelector(dfSelectors.getAllCharts);
     const activeModel = useSelector(dfSelectors.getActiveModel);
+    const activeChallenges = useSelector((state: DataFormulatorState) => state.activeChallenges);
 
     const [prompt, setPrompt] = useState<string>("");
     const [isFormulating, setIsFormulating] = useState<boolean>(false);
-    // Remove the randomQuestion state since we'll generate it on demand
+    const [ideas, setIdeas] = useState<{text: string, goal: string, difficulty: 'easy' | 'medium' | 'hard'}[]>(
+        activeChallenges.find(ac => ac.tableId === tableId)?.challenges || []);
+    
+    // Add state for cycling through questions
+    const [currentQuestionIndex, setCurrentQuestionIndex] = useState<number>(0);
+    
+    // Add state for loading ideas
+    const [isLoadingIdeas, setIsLoadingIdeas] = useState<boolean>(false);
 
     // Use the provided tableId and find additional available tables for multi-table operations
     const currentTable = tables.find(t => t.id === tableId);
-
-    // Remove the useEffect that sets randomQuestion
 
     const availableTables = tables.filter(t => t.derive === undefined || t.anchored);
     const [additionalTableIds, setAdditionalTableIds] = useState<string[]>([]);
     
     // Combine the main tableId with additional selected tables
-    const selectedTableIds = currentTable ? [tableId, ...additionalTableIds] : [];
+    const selectedTableIds = currentTable?.derive ? [...currentTable.derive.source, ...additionalTableIds] : [tableId];
 
     const handleTableSelectionChange = (newTableIds: string[]) => {
         // Filter out the main tableId since it's always included
@@ -188,14 +240,136 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
         setAdditionalTableIds(additionalIds);
     };
 
-    // Function to get a random question from the list
+    // Function to handle challenge chip click
+    const handleChallengeClick = (challengeText: string) => {
+        setPrompt(challengeText);
+        // Automatically start the data formulation process
+        deriveDataFromNL(challengeText);
+    };
+
+    // Function to get a question from the list with cycling
     const getQuestion = (random: boolean = false): string => {
         if (currentTable?.explorativeQuestions && currentTable.explorativeQuestions.length > 0) {
-            const index = random ? Math.floor(Math.random() * currentTable.explorativeQuestions.length) : 0;
-            return currentTable.explorativeQuestions[index];
+            if (random) {
+                const index = Math.floor(Math.random() * currentTable.explorativeQuestions.length);
+                return currentTable.explorativeQuestions[index];
+            } else {
+                // Cycle through questions sequentially
+                return currentTable.explorativeQuestions[currentQuestionIndex];
+            }
         }
         return "Show something interesting about the data";
     };
+
+    // Function to get ideas from the interactive explore agent
+    const getIdeasFromAgent = async () => {
+        if (!currentTable || isLoadingIdeas) {
+            return;
+        }
+
+        setIsLoadingIdeas(true);
+
+        try {
+            // Determine the root table and derived tables context
+            let explorationThread: any[] = [];
+            let sourceTables = [currentTable];
+
+            // If current table is derived, find the root table and build exploration thread
+            if (currentTable.derive && !currentTable.anchored) {
+                // Find the root table (first source table that is anchored or not derived)
+                const sourceTableIds = currentTable.derive.source;
+                sourceTables = sourceTableIds.map(id => tables.find(t => t.id === id)).filter(Boolean) as DictTable[];
+                
+                // Find the root table (anchored or not derived)
+                let triggers = getTriggers(currentTable, tables);
+                
+                // Build exploration thread with all derived tables in the chain
+                explorationThread = triggers
+                    .map(trigger => ({
+                        name: trigger.resultTableId,
+                        rows: tables.find(t2 => t2.id === trigger.resultTableId)?.rows,
+                        description: `Derive from ${trigger.sourceTableIds} with instruction: ${trigger.instruction}`,
+                    }));
+            }
+
+            const messageBody = JSON.stringify({
+                token: String(Date.now()),
+                model: activeModel,
+                input_tables: [{
+                    name: sourceTables[0].virtual?.tableId || sourceTables[0].id.replace(/\.[^/.]+$/, ""),
+                    rows: sourceTables[0].rows
+                }],
+                exploration_thread: explorationThread
+            });
+
+            const engine = getUrls().GET_RECOMMENDATION_QUESTIONS;
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+
+            const response = await fetch(engine, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: messageBody,
+                signal: controller.signal
+            });
+
+            clearTimeout(timeoutId);
+
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            const data = await response.json();
+
+            if (data.status === 'ok' && data.results.length > 0) {
+                const result = data.results[0];
+                if (result.status === 'ok' && result.content.exploration_questions) {
+                    // Convert questions to ideas with 'easy' difficulty
+                    const newIdeas = result.content.exploration_questions.map((question: {text: string, goal: string, difficulty: 'easy' | 'medium' | 'hard'}) => ({
+                        text: question.text,
+                        goal: question.goal,
+                        difficulty: question.difficulty
+                    }));
+                    setIdeas(newIdeas);
+                }
+            } else {
+                throw new Error('No valid results returned from agent');
+            }
+        } catch (error) {
+            console.error('Error getting ideas from agent:', error);
+            dispatch(dfActions.addMessages({
+                "timestamp": Date.now(),
+                "type": "error",
+                "component": "chart builder",
+                "value": "Failed to get ideas from the exploration agent. Please try again.",
+                "detail": error instanceof Error ? error.message : 'Unknown error'
+            }));
+        } finally {
+            setIsLoadingIdeas(false);
+        }
+    };
+
+    // Effect to cycle through questions every 3 seconds
+    useEffect(() => {
+        if (!currentTable?.explorativeQuestions || currentTable.explorativeQuestions.length <= 1) {
+            return;
+        }
+
+        const interval = setInterval(() => {
+            setCurrentQuestionIndex((prevIndex) => 
+                (prevIndex + 1) % currentTable.explorativeQuestions.length
+            );
+        }, 5000); // 5 seconds
+
+        return () => clearInterval(interval);
+    }, [currentTable?.explorativeQuestions]);
+
+    useEffect(() => {
+        let defaultIdeas = activeChallenges.find(ac => ac.tableId === tableId)?.challenges;
+        setIdeas(defaultIdeas || []);
+    }, [tableId]);
 
     // Handle tab key press for auto-completion
     const handleKeyDown = (event: React.KeyboardEvent) => {
@@ -213,9 +387,17 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
             return;
         }
 
+        let originateChartId: string;
+
         if (placeHolderChartId) {
-            dispatch(dfActions.updateChartType({chartType: "Auto", chartId: placeHolderChartId}));
+            //dispatch(dfActions.updateChartType({chartType: "Auto", chartId: placeHolderChartId}));
             dispatch(dfActions.changeChartRunningStatus({chartId: placeHolderChartId, status: true}));
+            originateChartId = placeHolderChartId;
+        } else {
+            let newChart = generateFreshChart(tableId, "?") as Chart;
+            dispatch(dfActions.addAndFocusChart(newChart));
+            dispatch(dfActions.changeChartRunningStatus({chartId: newChart.id, status: true}));
+            originateChartId = newChart.id;
         }
 
         const actionTables = selectedTableIds.map(id => tables.find(t => t.id === id) as DictTable);
@@ -270,9 +452,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
         .then((data) => {
             setIsFormulating(false);
 
-            if (placeHolderChartId) {
-                dispatch(dfActions.changeChartRunningStatus({chartId: placeHolderChartId, status: false}));
-            }
+            dispatch(dfActions.changeChartRunningStatus({chartId: originateChartId, status: false}));
 
             if (data.results.length > 0) {
                 if (data["token"] === token) {
@@ -296,6 +476,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                         const rows = candidate["content"]["rows"];
                         const dialog = candidate["dialog"];
                         const refinedGoal = candidate['refined_goal'];
+                        const displayInstruction = refinedGoal['display_instruction'];
 
                         // Generate table ID
                         const genTableId = () => {
@@ -325,13 +506,13 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                         // Add derive info manually since ChartRecBox doesn't use triggers
                         candidateTable.derive = {
                             code: code,
-                            codeExpl: "",
                             source: selectedTableIds,
                             dialog: dialog,
                             trigger: {
                                 tableId: firstTableId,
                                 sourceTableIds: selectedTableIds,
                                 instruction: instruction,
+                                displayInstruction: displayInstruction,
                                 chart: refChart, // No upfront chart reference
                                 resultTableId: candidateTableId
                             }
@@ -345,9 +526,6 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                         }
 
                         dispatch(dfActions.insertDerivedTables(candidateTable));
-
-                        console.log("debug: candidateTable")
-                        console.log(candidateTable)
 
                         // Add missing concept items
                         const names = candidateTable.names;
@@ -363,7 +541,6 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                             source: "custom",
                             tableRef: "custom",
                             temporary: true,
-                            domain: [],
                         } as FieldItem));
 
                         dispatch(dfActions.addConceptItems(conceptsToAdd));
@@ -377,36 +554,37 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                             "line": "Line Chart",
                             "bar": "Bar Chart", 
                             "point": "Scatter Plot",
-                            "boxplot": "Boxplot"
+                            "boxplot": "Boxplot",
+                            "area": "Custom Area",
+                            "heatmap": "Heatmap",
+                            "group_bar": "Grouped Bar Chart"
                         };
                         
+
+                        console.log("refinedGoal", refinedGoal);
+
                         const chartType = chartTypeMap[refinedGoal?.['chart_type']] || 'Scatter Plot';
                         let newChart = generateFreshChart(candidateTable.id, chartType) as Chart;
                         newChart = resolveChartFields(newChart, currentConcepts, refinedGoal, candidateTable);
 
-                        console.log("debug: newChart")
-                        console.log(newChart)
-
+                        console.log("newChart", newChart);
                         // Create and focus the new chart directly
                         dispatch(dfActions.addAndFocusChart(newChart));
 
                         // Clean up
                         dispatch(dfActions.setFocusedTable(candidateTable.id));
-                        dispatch(dfActions.setVisPaneSize(640));
 
                         dispatch(dfActions.addMessages({
                             "timestamp": Date.now(),
                             "component": "chart builder",
                             "type": "success",
-                            "value": `Data formulation succeeded for: "${instruction}"`
+                            "value": `Data formulation: "${displayInstruction}"`
                         }));
 
                         // Clear the prompt after successful formulation
                         setPrompt("");
 
-                        if (placeHolderChartId) {
-                            dispatch(dfActions.deleteChartById(placeHolderChartId));
-                        }
+                        dispatch(dfActions.deleteChartById(originateChartId));
                     }
                 }
             } else {
@@ -422,6 +600,8 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
         })
         .catch((error) => {
             setIsFormulating(false);
+
+            console.log("error", error);
             
             if (error.name === 'AbortError') {
                 dispatch(dfActions.addMessages({
@@ -452,8 +632,21 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
             maxWidth: "600px", 
             display: 'flex', 
             flexDirection: 'column',
-            gap: 1
+            gap: 1,
+            position: 'relative'
         }}>
+            {isFormulating && (
+                <LinearProgress 
+                    sx={{ 
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        zIndex: 1000,
+                        height: '4px'
+                    }} 
+                />
+            )}
             {showTableSelector && (
                 <Box>
                     <Typography sx={{ fontSize: 12, color: "text.secondary", marginBottom: 0.5 }}>
@@ -506,20 +699,53 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                 <Divider orientation="vertical" flexItem />
                 <Box sx={{display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 0.5, my: 1}}>
                     <Typography sx={{ fontSize: 10, color: "text.secondary", marginBottom: 0.5 }}>
-                        surprise?
+                        ideas?
                     </Typography>
-                    <Tooltip title="Generate some chart that might surprise you">   
+                    <Tooltip title="Get some ideas!">   
                         <IconButton 
                             size="medium"
-                            disabled={isFormulating || !currentTable}
+                            disabled={isFormulating || !currentTable || isLoadingIdeas}
                             color="primary" 
-                            onClick={() => deriveDataFromNL(getQuestion(true))}
+                            onClick={getIdeasFromAgent}
                         >
-                            <InsightsIcon sx={{fontSize: 24}} />
+                            {isLoadingIdeas ? <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
+                                <CircularProgress size={24} />
+                            </Box> : <TipsAndUpdatesIcon sx={{fontSize: 24}} />}
                         </IconButton>
                     </Tooltip>
                 </Box>
             </Box>
+            {/* Challenge Chips Section */}
+            {ideas.length > 0 && (
+                <Box>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, marginBottom: 1 }}>
+                        <EmojiEventsIcon sx={{ fontSize: 16, color: 'primary.main' }} />
+                        <Typography sx={{ fontSize: 12, color: "text.secondary" }}>
+                            Ideas
+                        </Typography>
+                    </Box>
+                    <Box sx={{
+                        display: 'flex', 
+                        flexWrap: 'wrap', 
+                        gap: 0.5,
+                        marginBottom: 1
+                    }}>
+                        {ideas.map((challenge, index) => (
+                            <IdeaChip
+                                mini
+                                key={index}
+                                idea={challenge}
+                                theme={theme}
+                                onClick={() => handleChallengeClick(challenge.text)}
+                                disabled={isFormulating}
+                                sx={{
+                                    width: '48%',
+                                }}
+                            />
+                        ))}
+                    </Box>
+                </Box>
+            )}
         </Card>
     );
 };

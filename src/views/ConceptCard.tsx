@@ -37,6 +37,7 @@ import {
     DialogContent,
     Divider,
     Select,
+    SxProps,
 } from '@mui/material';
 
 import EditIcon from '@mui/icons-material/Edit';
@@ -45,7 +46,7 @@ import PrecisionManufacturingIcon from '@mui/icons-material/PrecisionManufacturi
 import ForkRightIcon from '@mui/icons-material/ForkRight';
 import ZoomInIcon from '@mui/icons-material/ZoomIn';
 import HideSourceIcon from '@mui/icons-material/HideSource';
-
+import ArrowRightIcon from '@mui/icons-material/ArrowRight';
 import AnimateHeight from 'react-animate-height';
 
 import { FieldItem, ConceptTransformation, duplicateField, FieldSource } from '../components/ComponentType';
@@ -62,9 +63,11 @@ import _ from 'lodash';
 import { DictTable } from '../components/ComponentType';
 import { CodeBox } from './VisualizationView';
 import { CustomReactTable } from './ReactTable';
+import { alpha } from '@mui/material/styles';
 
 export interface ConceptCardProps {
     field: FieldItem,
+    sx?: SxProps
 }
 
 const checkConceptIsEmpty = (field: FieldItem) => {
@@ -76,7 +79,7 @@ const checkConceptIsEmpty = (field: FieldItem) => {
 export const genFreshDerivedConcept = (parentIDs: string[], tableRef: string) => {
     return {
         id: `concept-${Date.now()}`, name: "", type: "string" as Type,
-        source: "derived", domain:[], tableRef: tableRef,
+        source: "derived", tableRef: tableRef,
         transform: { parentIDs: parentIDs, code: "", description: ""}
     } as FieldItem
 }
@@ -99,7 +102,6 @@ let ConceptReApplyButton: FC<{field: FieldItem,
             name: parentConcept.name,
         }
     })
-
 
     let handleGeneratePreview = () => {
         handleLoading(true);
@@ -126,13 +128,7 @@ let ConceptReApplyButton: FC<{field: FieldItem,
         fetch(getUrls().DERIVE_PY_CONCEPT, {...message, signal: controller.signal })
             .then((response) => response.json())
             .then((data) => {
-                console.log("---model output")
-                console.log(data);
-
                 let candidates = data["results"].filter((r: any) => r["status"] == "ok");
-
-                console.log(`[fyi] just received ${candidates.length} candidates`);
-                console.log(candidates);
 
                 if (candidates.length > 0) {
                     setTableRowsPreview(candidates[0]["content"]['rows']);
@@ -141,8 +137,6 @@ let ConceptReApplyButton: FC<{field: FieldItem,
                 }
                 handleLoading(false);    
             }).catch((error) => {
-                console.log(`[fyi] just received error`);
-                console.log(error);
                 handleLoading(false);
             });
     }
@@ -194,7 +188,7 @@ let ConceptReApplyButton: FC<{field: FieldItem,
         </>
     )
 }
-export const ConceptCard: FC<ConceptCardProps> = function ConceptCard({ field }) {
+export const ConceptCard: FC<ConceptCardProps> = function ConceptCard({ field, sx }) {
     // concept cards are draggable cards that can be dropped into encoding shelf
     let theme = useTheme();
 
@@ -378,24 +372,33 @@ export const ConceptCard: FC<ConceptCardProps> = function ConceptCard({ field })
         backgroundColor = theme.palette.derived.main;
     }
 
+    let draggleCardHeaderBgOverlay = 'rgba(255, 255, 255, 0.93)';
+
+    // Add subtle tint for non-focused fields
+    if (focusedTable && !focusedTable.names.includes(field.name)) {
+        draggleCardHeaderBgOverlay = 'rgba(255, 255, 255, 0.98)';
+    }
+
     let boxShadow = editMode ? "0 2px 4px 0 rgb(0 0 0 / 20%), 0 2px 4px 0 rgb(0 0 0 / 19%)" : "";
 
     let cardComponent = (
-        <Card sx={{ minWidth: 60, backgroundColor, position: "relative" }}
+        <Card sx={{ minWidth: 60, backgroundColor, position: "relative", ...sx }}
             variant="outlined"
             style={{ opacity, border, boxShadow, fontStyle, marginLeft: '3px' }}
             color="secondary"
-            className={`data-field-list-item draggable-card `}>
+            className={`data-field-list-item draggable-card`}>
             {isLoading ? <Box sx={{ position: "absolute", zIndex: 20, height: "100%", width: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}>
                 <LinearProgress sx={{ width: "100%", height: "100%", opacity: 0.2 }} />
             </Box> : ""}
-            <Box ref={field.name ? drag : undefined} sx={{ cursor: cursorStyle }}
+            <Box ref={field.name ? drag : undefined} sx={{ cursor: cursorStyle, background: draggleCardHeaderBgOverlay }}
                  className={`draggable-card-header draggable-card-inner ${field.source}`}>
-                <Typography className="draggable-card-title" sx={{ fontSize: 13, height: 28, width: "100%" }} component={'span'} gutterBottom>
+                <Typography className="draggable-card-title" color="text.primary"
+                    sx={{ fontSize: 12, height: 24, width: "100%"}} component={'span'} gutterBottom>
                     {typeIconMenu}
                     {fieldNameEntry}
-                    {field.semanticType ? <Typography sx={{fontSize: "xx-small", marginLeft: "6px", fontStyle: 'italic', whiteSpace: 'nowrap'}}>-- {field.semanticType}</Typography> : ""}
-                    {/* {field.source == "custom" ? exampleToComponent(field.domain.values, 3) : ""} */}
+                    {field.semanticType ? 
+                        <Typography sx={{fontSize: "xx-small", color: "text.secondary", marginLeft: "6px", fontStyle: 'italic', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center' }}>
+                            <ArrowRightIcon sx={{fontSize: "12px"}} /> {field.semanticType}</Typography> : ""}
                 </Typography>
                 
                 <Box sx={{ position: "absolute", right: 0, display: "flex", flexDirection: "row", alignItems: "center" }}>
@@ -538,7 +541,6 @@ export const DerivedConceptFormV2: FC<ConceptFormProps> = function DerivedConcep
     let parentConcepts = transformParentIDs.map((parentID) => conceptShelfItems.filter(c => c.id == parentID)[0]);
     let viewExamples: any = "";
 
-    //let transformResult = deriveTransformResult(transformCode, parentConcept.domain.values.slice(0, 5));
     if (transformCode && tempExtTable) {
 
         let colNames: [string[], string] = [parentConcepts.map(f => f.name), name];
@@ -840,18 +842,9 @@ export const PyCodexDialogBox: FC<CodexDialogBoxProps> = function ({
                 fetch(getUrls().DERIVE_PY_CONCEPT, {...message, signal: controller.signal })
                     .then((response) => response.json())
                     .then((data) => {
-                        console.log("---model output")
-                        console.log(data);
-
                         let candidates = data["results"].filter((r: any) => r["status"] == "ok");
-
-                        console.log(`[fyi] just received ${candidates.length} candidates`);
-                        console.log(candidates);
-
                         handleProcessResults(data["status"], candidates);
                     }).catch((error) => {
-                        console.log(`[fyi] just received error`);
-                        console.log(error);
                         handleProcessResults("error", []);
                     });
             }}>

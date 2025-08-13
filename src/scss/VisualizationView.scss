@@ -201,24 +201,13 @@ $accelerate-ease: cubic-bezier(0.4, 0.0, 1, 1);
 
 }
 
-.vis-split-pane {
-    position: relative !important;
-}
-
 .data-thread {
-    min-width: 201px;
-    display: flex;
-    flex-direction: column;
-    overflow-y: scroll;
-    border-right: 1px lightgray solid;
-    align-content: flex-start;
-    height: calc(100vh - 50px);
+    
 
     .thread-view-animation {
         transform-origin: bottom left;
         animation: appear 0.5s ease-out
     }
-
 
     .vega-thumbnail {
 

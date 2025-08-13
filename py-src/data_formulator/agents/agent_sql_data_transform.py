@@ -26,14 +26,19 @@ Concretely, you should first refine users' goal and then create a sql query in t
 
     1. First, refine users' [GOAL]. The main objective in this step is to decide data transformation based on the user's goal. 
         Concretely:
-        (1) based on the user's "goal" and provided "visualization_fields", elaborate the goal into a "detailed_instruction".
+        - based on the user's "goal" and provided "visualization_fields", elaborate the goal into a "detailed_instruction".
             - first elaborate which fields the user wants to visualize based on "visualization_fields";
             - then, elaborate the goal into a "detailed_instruction" contextualized with the provided "visualization_fields".
                 * note: try to distinguish whether the user wants to fitler the data with some conditions, or they want to aggregate data based on some fields.
                 * e.g., filter data to show all items from top 20 categories based on their average values, is different from showing the top 20 categories with their average values
-        (2) determine "output_fields", the desired fields that the output data should have to achieve the user's goal, it's a good idea to include intermediate fields here.
+         - "display_instruction" should be a short verb phrase instruction that will be displayed to the user. 
+            - it would be a short single sentence summary of the user intent as a verb phrase, it should be very short and on point.
+            - generate it based on user's [GOAL] and the suggested visualization, avoid simply repeating the visualization design, use a high-level semantic description of the visualization goal.
+            - if the user's [GOAL] is a follow-up question like "filter to show top 10", you don't need to repeat the whole question, just describe the follow-up question in a high-level semantic way.
+            - if you mention column names from the input or the output data (either exact or semantically matching), highlight the text in **bold**.
+        - determine "output_fields", the desired fields that the output data should have to achieve the user's goal, it's a good idea to include intermediate fields here.
             - note: when the user asks for filtering the data, include all fields that are needed to filter the data in "output_fields" (as well as other fields the user asked for or necessary in computation).
-        (3) now, determine whether the user has provided sufficient fields in "visualization_fields" that are needed to achieve their goal:
+        - now, determine whether the user has provided sufficient fields in "visualization_fields" that are needed to achieve their goal:
             - if the user's "visualization_fields" are sufficient, simply copy it from user input.
             - if the user didn't provide sufficient fields in "visualization_fields", add missing fields in "visualization_fields" (ordered them based on whether the field will be used in x,y axes or legends);
                 - "visualization_fields" should only include fields that will be visualized (do not include other intermediate fields from "output_fields")  
@@ -45,6 +50,7 @@ Concretely, you should first refine users' goal and then create a sql query in t
 ```
 {
     "detailed_instruction": "..." // string, elaborate user instruction with details if the user
+    "display_instruction": "..." // string, the short verb phrase instruction that will be displayed to the user.
     "output_fields": [...] // string[], describe the desired output fields that the output data should have based on the user's goal, it's a good idea to preserve intermediate fields here (i.e., the goal of transformed data)
     "visualization_fields": [] // string[]: a subset of fields from "output_fields" that will be visualized, ordered based on if the field will be used in x,y axes or legends, do not include other intermediate fields from "output_fields".
     "reason": "..." // string, explain why this refinement is made
@@ -63,6 +69,21 @@ note:
 some notes:
 - in DuckDB, you escape a single quote within a string by doubling it ('') rather than using a backslash (\').
 - in DuckDB, you need to use proper date functions to perform date operations.
+- Critical: When using date/time functions in DuckDB, always cast date columns to explicit types to avoid function overload ambiguity:
+  * Use `CAST(date_column AS DATE)` for date operations
+  * Use `CAST(datetime_column AS TIMESTAMP)` for timestamp operations
+  * Use `CAST(datetime_column AS TIMESTAMP_NS)` for nanosecond precision timestamps
+  * Common patterns:
+    - Extract year: `CAST(strftime('%Y', CAST(date_column AS DATE)) AS INTEGER) AS year`
+    - Extract month: `CAST(strftime('%m', CAST(date_column AS DATE)) AS INTEGER) AS month`
+    - Format date: `strftime('%Y-%m-%d', CAST(date_column AS DATE)) AS formatted_date`
+    - Date arithmetic: `CAST(date_column AS DATE) + INTERVAL 1 DAY`
+  * This prevents "Could not choose a best candidate function" errors in DuckDB
+- Critical: DuckDB regex limitations:
+  * Does NOT support Unicode escape sequences like \\u0400-\\u04FF
+  * For Unicode character detection, use character ranges directly: [а-яА-Я] for Cyrillic, [一-龥] for Chinese, etc.
+  * Alternative: Use ASCII ranges or specific character sets that DuckDB supports
+  * Example: Instead of quote ~ '[\\u0400-\\u04FF]', use quote ~ '[а-яА-ЯёЁ]'
 '''
 
 EXAMPLE='''
@@ -97,10 +118,11 @@ table_0 (weather_seattle_atlanta) sample:
 
 {  
     "detailed_instruction": "Create a scatter plot to compare Seattle and Atlanta temperatures with Seattle temperatures on the x-axis and Atlanta temperatures on the y-axis. Color the points by which city is warmer.",  
+    "display_instruction": "Create a scatter plot to compare Seattle and Atlanta temperatures",
     "output_fields": ["Date", "Seattle Temperature", "Atlanta Temperature", "Warmer City"],  
     "visualization_fields": ["Seattle Temperature", "Atlanta Temperature", "Warmer City"],  
     "reason": "To compare Seattle and Atlanta temperatures with Seattle temperatures on the x-axis and Atlanta temperatures on the y-axis, and color points by which city is warmer, separate temperature fields for Seattle and Atlanta are required. Additionally, a new field 'Warmer City' is needed to indicate which city is warmer."  
-}  
+}
 
 ```sql
 WITH MovingAverage AS (  

@@ -22,6 +22,7 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import WarningIcon from '@mui/icons-material/Warning';
 import InfoOutlineIcon from '@mui/icons-material/InfoOutline';
+import { useTheme } from '@mui/material/styles';
 
 export interface Message {
     type: "success" | "info" | "error" | "warning",
@@ -33,8 +34,8 @@ export interface Message {
 }
 
 export function MessageSnackbar() {
+    const theme = useTheme();
   
-    const challenges = useSelector((state: DataFormulatorState) => state.activeChallenges);
     const messages = useSelector((state: DataFormulatorState) => state.messages);
     const displayedMessageIdx = useSelector((state: DataFormulatorState) => state.displayedMessageIdx);
     
@@ -99,7 +100,6 @@ export function MessageSnackbar() {
         </React.Fragment>
     );
 
-    let challenge = challenges.find(c => tables.find(t => t.id == c.tableId));
 
     const groupedMessages = [];
                             
@@ -128,88 +128,31 @@ export function MessageSnackbar() {
     }
 
     return (
-        <Box>
-            {challenges.length > 0 && <Tooltip placement="left" title="view challenges">
-                <IconButton 
-                    color="warning"
-                    sx={{
-                        position: "absolute", 
-                        bottom: 56, 
-                        right: 8,
-                        animation: challenges.length > 0 ? 'glow 1.5s ease-in-out infinite alternate' : 'none',
-                        '@keyframes glow': {
-                            from: {
-                                boxShadow: '0 0 5px #fff, 0 0 10px #fff, 0 0 15px #ed6c02'
-                            },
-                            to: {
-                                boxShadow: '0 0 10px #fff, 0 0 20px #fff, 0 0 30px #ed6c02'
-                            }
-                        }
-                    }}
-                    onClick={() => setOpenChallenge(true)}
-                >
-                    <AssignmentIcon />
-                </IconButton>
-            </Tooltip>}
+        <Box sx={{ '& .snackbar-button': {
+            width: 36,
+            height: 36,
+            zIndex: 10,
+            backgroundColor: 'white',
+            '&:hover': {
+                transform: 'scale(1.1)',
+                backgroundColor: 'white',
+            },
+            border: '1px solid',
+            
+            boxShadow: '0 0 10px rgba(0,0,0,0.1)',
+            transition: 'all 0.3s ease'
+        }}}>
+            
             <Tooltip placement="left" title="view system messages">
                 <IconButton 
-                    sx={{position: "absolute", bottom: 16, right: 8}}
+                    className='snackbar-button'
+                    color="warning"
+                    sx={{position: "absolute", bottom: 16, right: 8 }}
                     onClick={() => setOpenMessages(true)}
                 >
-                    <InfoIcon />
+                    <InfoIcon sx={{fontSize: 32}}/>
                 </IconButton>
             </Tooltip>
-            
-            {/* Challenges Snackbar */}
-            {challenge != undefined ? <Snackbar
-                open={openChallenge}
-                anchorOrigin={{vertical: 'bottom', horizontal: 'right'}}
-                sx={{maxWidth: '400px'}}
-            >
-                <Paper elevation={3} sx={{
-                    width: '100%',
-                    color: 'text.primary',
-                    px: 2, py: 1,
-                    borderRadius: 1,
-                    border: '1px solid #e0e0e0',
-                    display: 'flex',
-                    flexDirection: 'column'
-                }}>
-                    <Box sx={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
-                        <Typography sx={{fontSize: 12, color: 'text.secondary'}}>
-                            Visualization challenges for <Box component="span" sx={{color: 'primary.main', fontWeight: 'bold'}}>{challenge.tableId}</Box>
-                        </Typography>
-                        <IconButton
-                            size="small"
-                            aria-label="close"
-                            onClick={() => setOpenChallenge(false)}
-                        >
-                            <CloseIcon fontSize="small" />
-                        </IconButton>
-                    </Box>
-                    <Box >
-                        {challenge.challenges.map((ch, j) => (
-                            <Typography 
-                                key={j} 
-                                sx={{
-                                    fontSize: 12,
-                                    marginBottom: 1,
-                                    color: ch.difficulty === 'easy' ? 'success.main'
-                                        : ch.difficulty === 'medium' ? 'warning.main' 
-                                        : 'error.main',
-                                    display: 'flex',
-                                    alignItems: 'center'
-                                }}
-                            >
-                                {ch.difficulty === 'easy' ? <SignalCellular1BarIcon sx={{fontSize: 16, mr: 0.5}} /> 
-                                    : ch.difficulty === 'medium' ? <SignalCellular2BarIcon sx={{fontSize: 16, mr: 0.5}} /> 
-                                    : <SignalCellular3BarIcon sx={{fontSize: 16, mr: 0.5}} />}
-                                [{ch.difficulty}] {ch.text}
-                            </Typography>
-                        ))}
-                    </Box>
-                </Paper>
-            </Snackbar> : ""}
             <Snackbar
                 open={openMessages}
                 anchorOrigin={{vertical: 'bottom', horizontal: 'right'}}
@@ -256,6 +199,7 @@ export function MessageSnackbar() {
                             overflow: 'auto',
                             flexGrow: 1,
                             maxHeight: '50vh',
+                            minHeight: '100px',
                         }}
                     >
                         {messages.length == 0 && 

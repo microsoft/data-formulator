@@ -58,10 +58,7 @@ import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
 
 import { getUrls } from '../app/utils';
 
-// Add interface for app configuration
-interface AppConfig {
-    DISABLE_DISPLAY_KEYS: boolean;
-}
+
 
 const decodeHtmlEntities = (text: string): string => {
     const textarea = document.createElement('textarea');
@@ -88,21 +85,8 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
         'ollama': []
     });
     const [isLoadingModelOptions, setIsLoadingModelOptions] = useState<boolean>(false);
-    const [appConfig, setAppConfig] = useState<AppConfig>({ DISABLE_DISPLAY_KEYS: false });
+    const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
 
-    // Fetch app configuration
-    useEffect(() => {
-        fetch(getUrls().APP_CONFIG)
-            .then(response => response.json())
-            .then(data => {
-                setAppConfig(data);
-            })
-            .catch(error => {
-                console.error("Failed to fetch app configuration:", error);
-            });
-    }, []);
-
-    
     let updateModelStatus = (model: ModelConfig, status: 'ok' | 'error' | 'testing' | 'unknown', message: string) => {
         dispatch(dfActions.updateModelStatus({id: model.id, status, message}));
     }
@@ -739,7 +723,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                 {modelTable}
             </DialogContent>
             <DialogActions>
-                {!appConfig.DISABLE_DISPLAY_KEYS && (
+                {!serverConfig.DISABLE_DISPLAY_KEYS && (
                     <Button sx={{marginRight: 'auto'}} endIcon={showKeys ? <VisibilityOffIcon /> : <VisibilityIcon />} onClick={()=>{
                         setShowKeys(!showKeys);}}>
                             {showKeys ? 'hide' : 'show'} keys

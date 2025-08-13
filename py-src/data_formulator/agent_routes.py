@@ -30,18 +30,12 @@ from data_formulator.agents.agent_data_load import DataLoadAgent
 from data_formulator.agents.agent_data_clean import DataCleanAgent
 from data_formulator.agents.agent_code_explanation import CodeExplanationAgent
 from data_formulator.agents.agent_query_completion import QueryCompletionAgent
+from data_formulator.agents.agent_interactive_explore import InteractiveExploreAgent
 from data_formulator.agents.client_utils import Client
 
 from data_formulator.db_manager import db_manager
 
-# Configure root logger for general application logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[logging.StreamHandler(sys.stdout)]
-)
-
-# Get logger for this module
+# Get logger for this module (logging config done in app.py)
 logger = logging.getLogger(__name__)
 
 agent_bp = Blueprint('agent', __name__, url_prefix='/api/agent')
@@ -182,7 +176,11 @@ def process_data_on_load_request():
 
         logger.info(f" model: {content['model']}")
 
-        conn = db_manager.get_connection(session['session_id'])
+        try:
+            conn = db_manager.get_connection(session['session_id'])
+        except Exception as e:
+            conn = None
+
         agent = DataLoadAgent(client=client, conn=conn)
         
         candidates = agent.run(content["input_data"])
@@ -264,7 +262,18 @@ def clean_data_request():
         
         agent = DataCleanAgent(client=client)
 
-        candidates = agent.run(content['content_type'], content["raw_data"], content["image_cleaning_instruction"])
+        # Check if this is a followup request (has dialog) or initial request
+
+        logger.info("Processing data clean request")
+        try:
+            candidates = agent.run(content.get('prompt', ''), content.get('artifacts', []), content.get('dialog', []))
+        except Exception as e:
+            logger.error(e)
+            if 'unable to download html from url' in str(e):
+                return flask.jsonify({ "token": token, "status": "error", "result":  'this website doesn\'t allow us to download html from url :(' })
+            else:
+                return flask.jsonify({ "token": token, "status": "error", "result": 'unable to process data clean request' })
+
         
         candidates = [c for c in candidates if c['status'] == 'ok']
 
@@ -338,7 +347,7 @@ def derive_data():
         if mode == "recommendation":
             # now it's in recommendation mode
             agent = SQLDataRecAgent(client=client, conn=conn) if language == "sql" else PythonDataRecAgent(client=client, exec_python_in_subprocess=current_app.config['CLI_ARGS']['exec_python_in_subprocess'])
-            results = agent.run(input_tables, instruction)
+            results = agent.run(input_tables, instruction, prev_messages=prev_messages)
         else:
             agent = SQLDataTransformationAgent(client=client, conn=conn) if language == "sql" else PythonDataTransformationAgent(client=client, exec_python_in_subprocess=current_app.config['CLI_ARGS']['exec_python_in_subprocess'])
             results = agent.run(input_tables, instruction, [field['name'] for field in new_fields], prev_messages)
@@ -432,10 +441,19 @@ def request_code_expl():
         code = content["code"]
         
         code_expl_agent = CodeExplanationAgent(client=client)
-        expl = code_expl_agent.run(input_tables, code)
+        candidates = code_expl_agent.run(input_tables, code)
+        
+        # Return the first candidate's content as JSON
+        if candidates and len(candidates) > 0:
+            result = candidates[0]
+            if result['status'] == 'ok':
+                return jsonify(result['content'])
+            else:
+                return jsonify({'error': result['content']}), 400
+        else:
+            return jsonify({'error': 'No explanation generated'}), 400
     else:
-        expl = ""
-    return expl
+        return jsonify({'error': 'Invalid request format'}), 400
 
 @agent_bp.route('/query-completion', methods=['POST'])
 def query_completion():
@@ -454,6 +472,38 @@ def query_completion():
         response = flask.jsonify({ "token": "", "status": "ok", "reasoning": reasoning, "query": query })
     else:
         response = flask.jsonify({ "token": "", "status": "error", "reasoning": "unable to complete query", "query": "" })
+
+    response.headers.add('Access-Control-Allow-Origin', '*')
+    return response
+
+@agent_bp.route('/get-recommendation-questions', methods=['GET', 'POST'])
+def get_recommendation_questions():
+    if request.is_json:
+        logger.info("# get recommendation questions request")
+        content = request.get_json()
+        token = content.get("token", "")
+
+        client = get_client(content['model'])
+
+        logger.info(f" model: {content['model']}")
+        
+        agent = InteractiveExploreAgent(client=client)
+
+        # Get input tables from the request
+        input_tables = content.get("input_tables", [])
+        
+        # Get exploration thread if provided (for context from previous explorations)
+        exploration_thread = content.get("exploration_thread", None)
+        current_chart = content.get("current_chart", None)
+
+        results = agent.run(input_tables, exploration_thread, current_chart)
+        
+        # Filter out any failed results
+        valid_results = [r for r in results if r['status'] == 'ok']
+
+        response = flask.jsonify({ "status": "ok", "token": token, "results": valid_results })
+    else:
+        response = flask.jsonify({ "token": "", "status": "error", "results": [] })
 
     response.headers.add('Access-Control-Allow-Origin', '*')
     return response

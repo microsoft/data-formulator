@@ -23,6 +23,12 @@ import {
     Chip,
     Autocomplete,
     Menu,
+    alpha,
+    useTheme,
+    SxProps,
+    Theme,
+    CircularProgress,
+    Button,
 } from '@mui/material';
 
 import React from 'react';
@@ -34,7 +40,7 @@ import _ from 'lodash';
 import '../scss/EncodingShelf.scss';
 import { createDictTable, DictTable } from "../components/ComponentType";
 
-import { getUrls, resolveChartFields } from '../app/utils';
+import { getUrls, resolveChartFields, getTriggers } from '../app/utils';
 import { EncodingBox } from './EncodingBox';
 
 import { ChannelGroups, CHART_TEMPLATES, getChartTemplate } from '../components/ChartTemplates';
@@ -49,6 +55,9 @@ import PrecisionManufacturing from '@mui/icons-material/PrecisionManufacturing';
 import { Type } from '../data/types';
 import DeleteIcon from '@mui/icons-material/Delete';
 import CloseIcon from '@mui/icons-material/Close';
+import LightbulbOutlinedIcon from '@mui/icons-material/LightbulbOutlined';
+import TipsAndUpdatesIcon from '@mui/icons-material/TipsAndUpdates';
+import { IdeaChip } from './ChartRecBox';
 
 // Property and state of an encoding shelf
 export interface EncodingShelfCardProps { 
@@ -83,14 +92,61 @@ let selectBaseTables = (activeFields: FieldItem[], currentTable: DictTable, tabl
     return baseTables;
 }
 
-export const TriggerCard: FC<{className?: string, trigger: Trigger, hideFields?: boolean, label?: string}> = function ({ label, className, trigger, hideFields }) {
+// Add this utility function before the TriggerCard component
+const processPromptWithHighlighting = (prompt: string) => {
+    // Split the prompt by ** patterns and create an array of text and highlighted segments
+    const parts = prompt.split(/(\*\*.*?\*\*)/g);
+    
+    return parts.map((part, index) => {
+        if (part.startsWith('**') && part.endsWith('**')) {
+            // This is a highlighted part - remove the ** and wrap with styled component
+            const content = part.slice(2, -2);
+            return (
+                <Box
+                    key={index}
+                    component="span"
+                    sx={{
+                        borderRadius: '2px', 
+                        border: '1px solid rgb(250 235 215)', 
+                        background: 'rgb(250 235 215 / 80%)',
+                        padding: '0px 4px',
+                        margin: '0 1px',
+                        fontWeight: 500,
+                    }}
+                >
+                    {content}
+                </Box>
+            );
+        }
+        return part;
+    });
+};
+
+export const TriggerCard: FC<{
+    className?: string, 
+    trigger: Trigger, 
+    hideFields?: boolean, 
+    mini?: boolean,
+    sx?: SxProps<Theme>}> = function ({ className, trigger, hideFields, mini = false, sx }) {
+
+    let theme = useTheme();
 
     let fieldItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
 
     const dispatch = useDispatch<AppDispatch>();
 
+    let handleClick = () => {
+        if (trigger.chart) {
+            dispatch(dfActions.setFocusedChart(trigger.chart.id));
+            dispatch(dfActions.setFocusedTable(trigger.chart.tableRef));
+        }
+    }
+
     let encodingComp : any = '';
-    let prompt = trigger.instruction ? `"${trigger.instruction}"` : "";
+    let prompt = trigger.displayInstruction ? `${trigger.displayInstruction}` : trigger.instruction;
+    
+    // Process the prompt to highlight content in ** **
+    const processedPrompt = processPromptWithHighlighting(prompt);
 
     if (trigger.chart) {
 
@@ -106,42 +162,54 @@ export const TriggerCard: FC<{className?: string, trigger: Trigger, hideFields?:
                 return [index > 0 ? '⨉' : '', 
                         <Chip 
                             key={`trigger-${channel}-${field?.id}`}
-                            sx={{color:'inherit', maxWidth: '110px', marginLeft: "2px", height: 18, fontSize: 12, borderRadius: '4px', 
+                            sx={{color:'inherit', maxWidth: '110px', m: 0.25,
+                                   height: 18, fontSize: 12, borderRadius: '4px', 
                                    border: '1px solid rgb(250 235 215)', background: 'rgb(250 235 215 / 70%)',
-                                   '& .MuiChip-label': { paddingLeft: '6px', paddingRight: '6px' }}} 
+                                   '& .MuiChip-label': { px: 0.5 }}} 
                               label={`${field?.name}`} />]
             })
     }
 
-    return <Box sx={{ }}>
-            <InputLabel sx={{
-                position: "absolute",
-                background: "white",
-                fontSize: "8px",
-                transform: "translate(6px, -6px)",
-                width: "50px",
-                textAlign: "center",
-                zIndex: 2,
-            }}>{label}</InputLabel>
-        <Card className={`${className}`} variant="outlined" 
-                sx={{cursor: 'pointer', backgroundColor: 'rgba(255, 160, 122, 0.07)', '&:hover': { transform: "translate(0px, 1px)",  boxShadow: "0 0 3px rgba(33,33,33,.2)"}}} 
-                onClick={()=>{ 
-                    if (trigger.chart) {
-                        dispatch(dfActions.setFocusedChart(trigger.chart.id));
-                        dispatch(dfActions.setFocusedTable(trigger.chart.tableRef));
-                    }
-                }}>
-            <Stack direction="row" sx={{marginLeft: 1, marginRight: 'auto', fontSize: 12}} alignItems="center" gap={"2px"}>
-                <PrecisionManufacturing  sx={{color: 'darkgray', width: '14px', height: '14px'}} />
-                <Box sx={{margin: '4px 8px 4px 2px', flex: 1}}>
+    if (mini) {
+        let theme = useTheme();
+        return <Typography sx={{
+            ml: '7px', borderLeft: '3px solid', 
+            borderColor: alpha(theme.palette.custom.main, 0.5), 
+            paddingLeft: '8px', 
+            fontSize: '10px', color: theme.palette.text.secondary,
+            my: '2px', textWrap: 'balance',
+            '&:hover': {
+                borderLeft: '3px solid',
+                borderColor: theme.palette.custom.main,
+                cursor: 'pointer',
+                color: theme.palette.text.primary,
+            },
+            '& .MuiChip-label': { px: 0.5, fontSize: "10px"},
+        }} onClick={handleClick}>
+            {processedPrompt} 
+            {hideFields ? "" : encodingComp}
+        </Typography> 
+    }
+
+    return  <Card className={`${className}`} variant="outlined" 
+                sx={{
+                    cursor: 'pointer', backgroundColor: 'rgba(255, 160, 122, 0.07)', 
+                    fontSize: '12px', display: 'flex', flexDirection: 'row', alignItems: 'center', gap: '2px',
+                    '&:hover': { transform: "translate(0px, 1px)",  boxShadow: "0 0 3px rgba(33,33,33,.2)"},
+                    '& .MuiChip-label': { px: 0.5, fontSize: "10px"},
+                    ...sx,
+                }} 
+                onClick={handleClick}>
+                <PrecisionManufacturing  sx={{ml: 1, color: 'darkgray', width: '14px', height: '14px'}} />
+                <Box sx={{margin: "4px 8px 4px 2px",}}>
                     {hideFields ? "" : <Typography fontSize="inherit" sx={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center',
-                                    color: 'rgba(0,0,0,0.7)', maxWidth: 'calc(100%)'}}>{encodingComp}</Typography>}
-                    <Typography fontSize="inherit" sx={{textAlign: 'center', 
-                                    color: 'rgba(0,0,0,0.7)',  maxWidth: 'calc(100%)'}}>{prompt}</Typography> 
+                                    color: 'rgba(0,0,0,0.7)'}}>{encodingComp}</Typography>}
+                    <Typography fontSize="inherit" sx={{
+                        textAlign: 'center', width: 'fit-content', textWrap: 'balance',
+                        minWidth: '40px',
+                        color: 'rgba(0,0,0,0.7)'}}>{processedPrompt}</Typography> 
                 </Box>
-            </Stack>
         </Card>
-    </Box>
 }
 
 // Add this component before EncodingShelfCard
@@ -249,6 +317,7 @@ const UserActionTableSelector: FC<{
 
 
 export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId }) {
+    const theme = useTheme();
 
     // reference to states
     const tables = useSelector((state: DataFormulatorState) => state.tables);
@@ -261,23 +330,31 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
     let chart = allCharts.find(c => c.id == chartId) as Chart;
     let trigger = chart.source == "trigger" ? tables.find(t => t.derive?.trigger?.chart?.id == chartId)?.derive?.trigger : undefined;
 
+    let [ideateMode, setIdeateMode] = useState<boolean>(false);
     let [prompt, setPrompt] = useState<string>(trigger?.instruction || "");
 
     let encodingMap = chart?.encodingMap;
 
-    let handleUpdateChartType = (newChartType: string)=>{
+    const dispatch = useDispatch<AppDispatch>();
+
+    const [chartTypeMenuOpen, setChartTypeMenuOpen] = useState<boolean>(false);
+
+    let handleUpdateChartType = (newChartType: string) => {
         dispatch(dfActions.updateChartType({chartId, chartType: newChartType}));
+        // Close the menu after selection
+        setChartTypeMenuOpen(false);
     }
 
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
 
     let currentTable = getDataTable(chart, tables, allCharts, conceptShelfItems);
 
-    const dispatch = useDispatch<AppDispatch>();
-    
-
     // Add this state
     const [userSelectedActionTableIds, setUserSelectedActionTableIds] = useState<string[]>([]);
+    
+    // Add state for ideas and loading
+    const [ideas, setIdeas] = useState<{text: string, goal: string, difficulty: 'easy' | 'medium' | 'hard'}[]>([]);
+    const [isLoadingIdeas, setIsLoadingIdeas] = useState<boolean>(false);
     
     
     // Update the handler to use state
@@ -314,16 +391,117 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
         ...userSelectedActionTableIds.filter(id => !requiredActionTables.map(t => t.id).includes(id))
     ];
 
-    let deriveNewData = (overrideTableId?: string) => {
+    let getIdeasForVisualization = async () => {
+        if (!currentTable || isLoadingIdeas) {
+            return;
+        }
 
-        let mode = 'formulate';
+        setIsLoadingIdeas(true);
+
+        try {
+            // Build exploration thread from current table to root
+            let explorationThread: any[] = [];
+            
+            // If current table is derived, build the exploration thread
+            if (currentTable.derive && !currentTable.anchored) {
+                let triggers = getTriggers(currentTable, tables);
+                
+                // Build exploration thread with all derived tables in the chain
+                explorationThread = triggers
+                    .map(trigger => ({
+                        name: trigger.resultTableId,
+                        rows: tables.find(t2 => t2.id === trigger.resultTableId)?.rows,
+                        description: `Derive from ${trigger.sourceTableIds} with instruction: ${trigger.instruction}`,
+                    }));
+            }
+
+            // Get the root table (first table in actionTableIds)
+            const rootTable = tables.find(t => t.id === actionTableIds[0]);
+            if (!rootTable) {
+                throw new Error('No root table found');
+            }
+
+            const messageBody = JSON.stringify({
+                token: String(Date.now()),
+                model: activeModel,
+                input_tables: [{
+                    name: rootTable.virtual?.tableId || rootTable.id.replace(/\.[^/.]+$/, ""),
+                    rows: rootTable.rows
+                }],
+                exploration_thread: explorationThread,
+                current_chart: ""
+            });
+
+            const engine = getUrls().GET_RECOMMENDATION_QUESTIONS;
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+
+            const response = await fetch(engine, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: messageBody,
+                signal: controller.signal
+            });
+
+            clearTimeout(timeoutId);
+
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            const data = await response.json();
+
+            if (data.status === 'ok' && data.results.length > 0) {
+                const result = data.results[0];
+                if (result.status === 'ok' && result.content.exploration_questions) {
+                    // Convert questions to ideas with difficulty
+                    const newIdeas = result.content.exploration_questions.map((question: {text: string, goal: string, difficulty: 'easy' | 'medium' | 'hard'}) => ({
+                        text: question.text,
+                        goal: question.goal,
+                        difficulty: question.difficulty
+                    }));
+                    setIdeas(newIdeas);
+                }
+            } else {
+                throw new Error('No valid results returned from agent');
+            }
+        } catch (error) {
+            console.error('Error getting ideas from agent:', error);
+            dispatch(dfActions.addMessages({
+                "timestamp": Date.now(),
+                "type": "error",
+                "component": "encoding shelf",
+                "value": "Failed to get ideas from the exploration agent. Please try again.",
+                "detail": error instanceof Error ? error.message : 'Unknown error'
+            }));
+        } finally {
+            setIsLoadingIdeas(false);
+        }
+    }   
+
+    // Function to handle idea chip click
+    const handleIdeaClick = (ideaText: string) => {
+        setIdeateMode(true);
+        setPrompt(ideaText);
+        // Automatically start the data formulation process
+        deriveNewData(ideaText, 'ideate');
+    };
+
+    
+
+    let deriveNewData = (
+        instruction: string, 
+        mode: 'formulate' | 'ideate' = 'formulate', 
+        overrideTableId?: string,
+    ) => {
+
         if (actionTableIds.length == 0) {
             return;
         }
 
         let actionTables = actionTableIds.map(id => tables.find(t => t.id == id) as DictTable);
-
-        let instruction = (['Auto'].includes(chart.chartType) && prompt == "") ? "let's get started" : prompt;
 
         if (currentTable.derive == undefined && instruction == "" && 
                 (activeFields.length > 0 && activeCustomFields.length == 0) && 
@@ -341,14 +519,11 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                 dispatch(dfActions.changeChartRunningStatus({chartId, status: false}));
                 dispatch(dfActions.clearUnReferencedTables());
             }, 400);
-            dispatch(dfActions.setVisPaneSize(640));
             return
         }
 
         dispatch(dfActions.clearUnReferencedTables());
-        dispatch(dfActions.setVisPaneSize(640));
-        //handleRunSynthesisStream(example);
-
+        
         let fieldNamesStr = activeFields.map(f => f.name).reduce(
             (a: string, b: string, i, array) => a + (i == 0 ? "" : (i < array.length - 1 ? ', ' : ' and ')) + b, "")
 
@@ -360,7 +535,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
             mode,
             input_tables: actionTables.map(t => {
                 return { name: t.virtual?.tableId || t.id.replace(/\.[^/.]+$/ , ""), rows: t.rows }}),
-            new_fields: activeFields.map(f => { return {name: f.name} }),
+            new_fields: mode == 'formulate' ? activeFields.map(f => { return {name: f.name} }) : [],
             extra_prompt: instruction,
             model: activeModel,
             max_repair_attempts: config.maxRepairAttempts,
@@ -372,18 +547,24 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
         if (currentTable.derive?.dialog && !currentTable.anchored) {
             let sourceTableIds = currentTable.derive?.source;
 
+            let startNewDialog = (!sourceTableIds.every(id => actionTableIds.includes(id)) || 
+                !actionTableIds.every(id => sourceTableIds.includes(id))) || mode == 'ideate';
+
             // Compare if source and base table IDs are different
-            if (!sourceTableIds.every(id => actionTableIds.includes(id)) || 
-                !actionTableIds.every(id => sourceTableIds.includes(id))) {
+            if (startNewDialog) {
+
+                console.log("start new dialog", startNewDialog);
                 
                 let additionalMessages = currentTable.derive.dialog;
+
+                console.log("additional messages", additionalMessages);
 
                 // in this case, because table ids has changed, we need to use the additional messages and reformulate
                 messageBody = JSON.stringify({
                     token: token,
                     mode,
                     input_tables: actionTables.map(t => {return { name: t.virtual?.tableId || t.id.replace(/\.[^/.]+$/ , ""), rows: t.rows }}),
-                    new_fields: activeFields.map(f => { return {name: f.name} }),
+                    new_fields: mode == 'formulate' ? activeFields.map(f => { return {name: f.name} }) : [],
                     extra_prompt: instruction,
                     model: activeModel,
                     additional_messages: additionalMessages,
@@ -396,7 +577,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                     token: token,
                     mode,
                     input_tables: actionTables.map(t => {return { name: t.virtual?.tableId || t.id.replace(/\.[^/.]+$/ , ""), rows: t.rows }}),
-                    output_fields: activeFields.map(f => { return {name: f.name} }),
+                    output_fields: mode == 'formulate' ? activeFields.map(f => { return {name: f.name} }) : [],
                     dialog: currentTable.derive?.dialog,
                     new_instruction: instruction,
                     model: activeModel,
@@ -451,6 +632,8 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                             let code = candidate["code"];
                             let rows = candidate["content"]["rows"];
                             let dialog = candidate["dialog"];
+                            let refinedGoal = candidate['refined_goal']
+                            let displayInstruction = refinedGoal["display_instruction"];
 
                             // determine the table id for the new table
                             let candidateTableId;
@@ -483,6 +666,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                                 tableId: currentTable.id, 
                                 sourceTableIds: actionTableIds,
                                 instruction: instruction, 
+                                displayInstruction: displayInstruction,
                                 chart: triggerChartSpec,
                                 resultTableId: candidateTableId
                             }
@@ -491,11 +675,12 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                             let candidateTable = createDictTable(
                                 candidateTableId, 
                                 rows, 
-                                { code: code, 
-                                    codeExpl: "",
+                                { 
+                                    code: code, 
                                     source: actionTableIds, 
                                     dialog: dialog, 
-                                    trigger: currentTrigger }
+                                    trigger: currentTrigger 
+                                }
                             )
                             if (candidate["content"]["virtual"] != null) {
                                 candidateTable.virtual = {
@@ -514,8 +699,13 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                 
                             let conceptsToAdd = missingNames.map((name) => {
                                 return {
-                                    id: `concept-${name}-${Date.now()}`, name: name, type: "auto" as Type, 
-                                    description: "", source: "custom", tableRef: "custom", temporary: true, domain: [],
+                                    id: `concept-${name}-${Date.now()}`, 
+                                    name: name, 
+                                    type: "auto" as Type, 
+                                    description: "", 
+                                    source: "custom", 
+                                    tableRef: "custom", 
+                                    temporary: true, 
                                 } as FieldItem
                             })
                             dispatch(dfActions.addConceptItems(conceptsToAdd));
@@ -530,7 +720,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                             let needToCreateNewChart = true;
                             
                             // different override strategy -- only override if there exists a chart that share the exact same encoding fields as the planned new chart.
-                            if (chart.chartType != "Auto" &&  overrideTableId != undefined && allCharts.filter(c => c.source == "user").find(c => c.tableRef == overrideTableId)) {
+                            if (mode != "ideate" && chart.chartType != "Auto" &&  overrideTableId != undefined && allCharts.filter(c => c.source == "user").find(c => c.tableRef == overrideTableId)) {
                                 let chartsFromOverrideTable = allCharts.filter(c => c.source == "user" && c.tableRef == overrideTableId);
                                 let chartsWithSameEncoding = chartsFromOverrideTable.filter(c => {
                                     let getSimpliedChartEnc = (chart: Chart) => {
@@ -548,15 +738,18 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                             }
                             
                             if (needToCreateNewChart) {
-                                let refinedGoal = candidate['refined_goal']
+                                
 
                                 let newChart : Chart; 
-                                if (chart.chartType == "Auto") {
+                                if (mode == "ideate" || chart.chartType == "Auto") {
                                     let chartTypeMap : any = {
                                         "line" : "Line Chart",
                                         "bar": "Bar Chart",
                                         "point": "Scatter Plot",
-                                        "boxplot": "Boxplot"
+                                        "boxplot": "Boxplot",
+                                        "area": "Custom Area",
+                                        "heatmap": "Heatmap",
+                                        "group_bar": "Grouped Bar Chart"
                                     }
                                     let chartType = chartTypeMap[refinedGoal['chart_type']] || 'Scatter Plot';
                                     newChart = generateFreshChart(candidateTable.id, chartType) as Chart;
@@ -568,7 +761,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                                     newChart.id = `chart-${Date.now()- Math.floor(Math.random() * 10000)}`;
                                     newChart.saved = false;
                                     newChart.tableRef = candidateTable.id;
-                                }
+                                }   
                                 
                                 // there is no need to resolve fields for table chart, just display all fields
                                 if (chart.chartType != "Table") {   
@@ -659,21 +852,106 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                 <Tooltip title={<Typography sx={{fontSize: 11}}>formulate and override <TableRowsIcon sx={{fontSize: 10, marginBottom: '-1px'}}/>{trigger.resultTableId}</Typography>}>
                     <IconButton sx={{ marginLeft: "0"}} size="small"
                         disabled={createDisabled} color={"warning"} onClick={() => { 
-                            deriveNewData(trigger.resultTableId); 
+                            deriveNewData(trigger.instruction, 'formulate', trigger.resultTableId); 
                         }}>
                         <ChangeCircleOutlinedIcon fontSize="small" />
                     </IconButton>
                 </Tooltip>
             </Box>
-         : 
-             <Tooltip title={`Formulate`}>
+            : 
+            <Tooltip title={`Formulate`}>
                 <IconButton sx={{ marginLeft: "0"}} 
-                disabled={createDisabled} color={"primary"} onClick={() => { deriveNewData(); }}>
+                    disabled={createDisabled} color={"primary"} onClick={() => { deriveNewData(prompt, 'formulate'); }}>
                     <PrecisionManufacturing />
                 </IconButton>
             </Tooltip>
         }
+        
     </Box>
+
+    // Ideas display section
+    let ideasSection = ideas.length > 0 ? (
+        <Box key='ideas-section' sx={{ padding: '4px 8px'}}>
+            <Box sx={{
+                display: 'flex', 
+                flexWrap: 'wrap', 
+                gap: 0.5,
+                marginBottom: 1
+            }}>
+                {ideas.map((idea, index) => (
+                    <IdeaChip
+                        mini={true}
+                        key={index}
+                        idea={idea}
+                        theme={theme}
+                        onClick={() => handleIdeaClick(idea.text)}
+                        disabled={createDisabled}
+                    />
+                ))}
+            </Box>
+        </Box>
+    ) : null;
+
+    // Mode toggle header component
+    const ModeToggleHeader = () => (
+        <Box sx={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            gap: 1, 
+            padding: '4px 8px',
+            borderBottom: '1px solid rgba(0, 0, 0, 0.08)',
+            backgroundColor: 'rgba(0, 0, 0, 0.02)'
+        }}>
+            <Typography 
+                sx={{ 
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 0.5,
+                    fontSize: 11, 
+                    cursor: 'pointer',
+                    padding: '2px 6px',
+                    borderRadius: 1,
+                    backgroundColor: ideateMode ? 'rgba(25, 118, 210, 0.08)' : 'transparent',
+                    color: ideateMode ? 'primary.main' : 'text.secondary',
+                    fontWeight: ideateMode ? 500 : 400,
+                    transition: 'all 0.2s ease',
+                    '&:hover': {
+                        backgroundColor: ideateMode ? 'rgba(25, 118, 210, 0.12)' : 'rgba(0, 0, 0, 0.04)'
+                    }
+                }}
+                onClick={() => {
+                    if (ideas.length > 0) {
+                        setIdeateMode(true);
+                        setPrompt("");
+                    } else {
+                        setIdeateMode(true);
+                        getIdeasForVisualization();
+                    }
+                }}
+            >
+                {ideas.length > 0 ? "Ideas" : "Get Ideas"}
+                {ideas.length == 0 && <LightbulbOutlinedIcon sx={{fontSize: 12}} />}
+            </Typography>
+            <Typography 
+                sx={{ 
+                    fontSize: 11, 
+                    cursor: 'pointer',
+                    padding: '2px 6px',
+                    borderRadius: 1,
+                    backgroundColor: !ideateMode ? 'rgba(25, 118, 210, 0.08)' : 'transparent',
+                    color: !ideateMode ? 'primary.main' : 'text.secondary',
+                    fontWeight: !ideateMode ? 500 : 400,
+                    transition: 'all 0.2s ease',
+                    '&:hover': {
+                        backgroundColor: !ideateMode ? 'rgba(25, 118, 210, 0.12)' : 'rgba(0, 0, 0, 0.04)'
+                    }
+                }}
+                onClick={() => setIdeateMode(false)}
+            >
+                Editor
+            </Typography>
+        </Box>
+    );
 
     let channelComponent = (
         <Box sx={{ width: "100%", minWidth: "210px", height: '100%', display: "flex", flexDirection: "column" }}>
@@ -686,7 +964,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
             />}
             <Box key='mark-selector-box' sx={{ flex: '0 0 auto' }}>
                 <FormControl sx={{ m: 1, minWidth: 120, width: "100%", margin: "0px 0"}} size="small">
-                    {!existMultiplePossibleBaseTables && <InputLabel 
+                    {/* {!existMultiplePossibleBaseTables && <InputLabel 
                         id="chart-mark-select-label"
                         sx={{
                             color: "text.secondary",
@@ -694,36 +972,80 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                             fontSize: "10px",
                             margin: "-2px 0px 0px 4px",
                         }}
-                    >Chart Type</InputLabel>}   
+                    >Chart Type</InputLabel>}    */}
                     <Select
                         variant="standard"
                         labelId="chart-mark-select-label"
                         id="chart-mark-select"
                         value={chart.chartType}
-                        //title="Chart Type"
+                        // Add these props to control the open state
+                        open={chartTypeMenuOpen}
+                        onOpen={() => setChartTypeMenuOpen(true)}
+                        onClose={() => setChartTypeMenuOpen(false)}
+                        MenuProps={{
+                            anchorOrigin: {
+                                vertical: 'bottom',
+                                horizontal: 'left',
+                            },
+                            transformOrigin: {
+                                vertical: 'top',
+                                horizontal: 'left',
+                            },
+                        }}
                         renderValue={(value: string) => {
                             const t = getChartTemplate(value);
                             return (
                                 <div style={{display: 'flex', padding: "0px 0px 0px 4px"}}>
                                     <ListItemIcon sx={{minWidth: "24px"}}>
-                                        {typeof t?.icon == 'string' ? <img height="24px" width="24px" src={t?.icon} alt="" role="presentation" /> : t?.icon}
+                                        {typeof t?.icon == 'string' ? <img height="24px" width="24px" src={t?.icon} alt="" role="presentation" /> : 
+                                         <Box sx={{width: "24px", height: "24px"}}>{t?.icon}</Box>}
                                         </ListItemIcon>
                                     <ListItemText sx={{marginLeft: "2px", whiteSpace: "initial"}} slotProps={{primary: {fontSize: 12}}}>{t?.chart}</ListItemText>
                                 </div>
                             )
                         }}
-                        onChange={(event) => { handleUpdateChartType(event.target.value) }}>
+                        onChange={(event) => { }}>
                         {Object.entries(CHART_TEMPLATES).map(([group, templates]) => {
                             return [
                                 <ListSubheader sx={{ color: "text.secondary", lineHeight: 2, fontSize: 12 }} key={group}>{group}</ListSubheader>,
-                                ...templates.map((t, i) => (
-                                    <MenuItem sx={{ fontSize: 12, paddingLeft: 3, paddingRight: 3 }} value={t.chart} key={`${group}-${i}`}>
-                                        <ListItemIcon>
-                                            {typeof t?.icon == 'string' ? <img height="24px" width="24px" src={t?.icon} alt="" role="presentation" /> : t?.icon}
-                                        </ListItemIcon>
-                                        <ListItemText slotProps={{primary: {fontSize: 12}}}>{t.chart}</ListItemText>
-                                    </MenuItem>
-                                ))
+                                <Box key={`${group}-container`} sx={{ 
+                                    display: 'grid', 
+                                    gridTemplateColumns: '1fr 1fr', 
+                                    gap: 0,
+                                    padding: '0 8px'
+                                }}>
+                                    {templates.map((t, i) => (
+                                        <MenuItem 
+                                            sx={{ 
+                                                fontSize: 12, 
+                                                paddingLeft: 2, 
+                                                paddingRight: 2,
+                                                minHeight: '32px',
+                                                margin: '1px 0'
+                                            }} 
+                                            value={t.chart} 
+                                            key={`${group}-${i}`}
+                                            onClick={(e) => {
+                                                console.log('MenuItem clicked:', t.chart);
+                                                // Manually trigger the chart type update (this will also close the menu)
+                                                handleUpdateChartType(t.chart);
+                                            }}
+                                        >
+                                            <ListItemIcon sx={{minWidth: "20px"}}>
+                                                {typeof t?.icon == 'string' ? 
+                                                    <img height="20px" width="20px" src={t?.icon} alt="" role="presentation" /> : 
+                                                    <Box sx={{width: "20px", height: "20px"}}>{t?.icon}</Box>
+                                                }
+                                            </ListItemIcon>
+                                            <ListItemText 
+                                                slotProps={{primary: {fontSize: 11}}} 
+                                                sx={{ margin: 0 }}
+                                            >
+                                                {t.chart}
+                                            </ListItemText>
+                                        </MenuItem>
+                                    ))}
+                                </Box>
                             ]
                         })}
                     </Select>
@@ -733,14 +1055,45 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                 {encodingBoxGroups}
             </Box>
             {formulateInputBox}
+            
         </Box>);
 
     const encodingShelfCard = (
-        <Card variant='outlined'  key='channel-components' 
-            sx={{ padding: 1, maxWidth: "400px", display: 'flex', flexDirection: 'row', alignItems: "center", backgroundColor: trigger ? "rgba(255, 160, 122, 0.07)" : "" }}>
-            {channelComponent}
+        <Card variant='outlined' sx={{ 
+            padding: 0, 
+            maxWidth: "400px", 
+            display: 'flex', 
+            flexDirection: 'column', 
+            backgroundColor: trigger ? "rgba(255, 160, 122, 0.07)" : "" 
+        }}>
+            <ModeToggleHeader />
+            {ideateMode ? (
+                <Box sx={{ padding: 1 }}>
+                    <Tooltip title={`get ideas for visualization`}>
+                        <Button 
+                            variant="text"
+                            disabled={createDisabled || isLoadingIdeas} 
+                            color={"primary"} 
+                            size="small"
+                            onClick={() => { getIdeasForVisualization(); }}
+                            startIcon={isLoadingIdeas ? <CircularProgress size={16} /> : <LightbulbOutlinedIcon sx={{fontSize: 10}} />}
+                            sx={{
+                                fontSize: 12,
+                                textTransform: 'none',
+                            }}
+                        >
+                            {isLoadingIdeas ? "Ideating..." : "Different ideas?"} 
+                        </Button>
+                    </Tooltip>
+                    {ideasSection}
+                </Box>
+            ) : (
+                <Box sx={{ padding: 1 }}>
+                    {channelComponent}
+                </Box>
+            )}
         </Card>
-    )
+    );
 
-    return encodingShelfCard ;
+    return encodingShelfCard;
 }

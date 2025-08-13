@@ -2,29 +2,44 @@
 // Licensed under the MIT License.
 
 import { ChartTemplate } from "./ComponentType";
-
-import chartIconBoxPlot from "../assets/chart-icon-box-plot.png";
-import chartIconColumnGrouped from "../assets/chart-icon-column-grouped.png";
-import chartIconColumnStacked from "../assets/chart-icon-column-stacked.png";
-import chartIconColumn from "../assets/chart-icon-column.png";
-import chartIconCustomArea from "../assets/chart-icon-custom-area.png";
-import chartIconCustomBar from "../assets/chart-icon-custom-bar.png";
-import chartIconCustomLine from "../assets/chart-icon-custom-line.png";
-import chartIconCustomPoint from "../assets/chart-icon-custom-point.png";
-import chartIconCustomRect from "../assets/chart-icon-custom-rect.png";
-import chartIconDotPlotHorizontal from "../assets/chart-icon-dot-plot-horizontal.png";
-import chartIconDottedLine from "../assets/chart-icon-dotted-line.png";
-import chartIconHeatMap from "../assets/chart-icon-heat-map.png";
-import chartIconHistogram from "../assets/chart-icon-histogram.png";
-import chartIconLine from "../assets/chart-icon-line.png";
-import chartIconLinearRegression from "../assets/chart-icon-linear-regression.png";
-import chartIconScatter from "../assets/chart-icon-scatter.png";
-import chartIconTable from "../assets/chart-icon-table.png";
-
 import InsightsIcon from '@mui/icons-material/Insights';
-import React from "react";
+import React, { useState, useEffect } from "react";
 
-export function  getChartTemplate(chartType: string): ChartTemplate | undefined {
+// Simple lazy loading for chart icons
+const useLazyIcon = (iconPath: string) => {
+  const [icon, setIcon] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    import(/* @vite-ignore */ iconPath)
+      .then(module => {
+        setIcon(module.default);
+        setLoading(false);
+      })
+      .catch(() => {
+        setLoading(false);
+      });
+  }, [iconPath]);
+
+  return { icon, loading };
+};
+
+// Lazy Icon Component
+const LazyChartIcon: React.FC<{ iconPath: string; alt?: string }> = ({ iconPath, alt = "" }) => {
+  const { icon, loading } = useLazyIcon(iconPath);
+
+  if (loading) {
+    return <div style={{ width: '100%', height: '100%', backgroundColor: 'white' }} />;
+  }
+
+  if (!icon) {
+    return <div style={{ width: '100%', height: '100%' }} />;
+  }
+
+  return <img src={icon} alt={alt} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />;
+};
+
+export function getChartTemplate(chartType: string): ChartTemplate | undefined {
     return Object.values(CHART_TEMPLATES).flat().find(t => t.chart === chartType);
 }
 
@@ -32,7 +47,7 @@ export const getChartChannels = (chartType: string) => {
     return getChartTemplate(chartType)?.channels || []
 }
 
-export const CHANNEL_LIST =  ["x", "x2", "y", "y2", "id", "color", "opacity", "size", "shape", "column", 
+export const CHANNEL_LIST =  ["x", "y", "x2", "y2", "id", "color", "opacity", "size", "shape", "column", 
                               "row", "latitude", "longitude", "theta", "radius", "detail", "group",
                               "field 1", "field 2", "field 3", "field 4", "field 5", 'field 6'] as const;
 
@@ -53,7 +68,7 @@ const tablePlots: ChartTemplate[] = [
     },
     {
         "chart": "Table",
-        "icon": chartIconTable,
+        "icon": <LazyChartIcon iconPath="../assets/chart-icon-table.png" />,
         "template": { },
         "channels": [], //"field 1", "field 2", "field 3", "field 4", "field 5", 'field 6'
         "paths": { }
@@ -63,7 +78,7 @@ const tablePlots: ChartTemplate[] = [
 const scatterPlots: ChartTemplate[] = [
     {
         "chart": "Scatter Plot",
-        "icon": chartIconScatter,
+        "icon": <LazyChartIcon iconPath="../assets/chart-icon-scatter.png" />,
         "template": {
             "mark": "circle",
             "encoding": { }
@@ -96,7 +111,7 @@ const scatterPlots: ChartTemplate[] = [
     // },
     {
         "chart": "Linear Regression",
-        "icon": chartIconLinearRegression,
+        "icon": <LazyChartIcon iconPath="../assets/chart-icon-linear-regression.png" />,
         "template": {
             "layer": [
                 {
@@ -131,7 +146,7 @@ const scatterPlots: ChartTemplate[] = [
     },
     {
         "chart": "Ranged Dot Plot",
-        "icon": chartIconDotPlotHorizontal,
+        "icon": <LazyChartIcon iconPath="../assets/chart-icon-dot-plot-horizontal.png" />,
         "template": {
             "encoding": { },
             "layer": [
@@ -155,7 +170,7 @@ const scatterPlots: ChartTemplate[] = [
         "channels": ["x", "y", "color"],
         "paths": {
             "x": ["encoding", "x"],
-            "y": ["encoding", "y"], // a object can have multiple destinations
+            "y": ["encoding", "y"],
             "color": ["layer", 1, "encoding", "color"]
         },
         "postProcessor": (vgSpec: any,  table: any[]) => {
@@ -171,7 +186,7 @@ const scatterPlots: ChartTemplate[] = [
     }, 
     {
         "chart": "Boxplot",
-        "icon": chartIconBoxPlot,
+        "icon": <LazyChartIcon iconPath="../assets/chart-icon-box-plot.png" />,
         "template": {
             "mark": "boxplot",
             "encoding": { }
@@ -190,7 +205,7 @@ const scatterPlots: ChartTemplate[] = [
 const barCharts: ChartTemplate[] = [
     {
         "chart": "Bar Chart",
-        "icon": chartIconColumn,
+        "icon": <LazyChartIcon iconPath="../assets/chart-icon-column.png" />,
         "template": {
             "mark": "bar",
             "encoding": { }
@@ -206,7 +221,7 @@ const barCharts: ChartTemplate[] = [
     },
     {
         "chart": "Pyramid Chart",
-        "icon": chartIconColumn,
+        "icon": <LazyChartIcon iconPath="../assets/chart-icon-column.png" />,
         "template": {
             "spacing": 0,
             
@@ -262,22 +277,22 @@ const barCharts: ChartTemplate[] = [
     },
     {
         "chart": "Grouped Bar Chart",
-        "icon": chartIconColumnGrouped,
+        "icon": <LazyChartIcon iconPath="../assets/chart-icon-column-grouped.png" />,
         "template": {
             "mark": "bar",
             "encoding": {
             }
         },
-        "channels": ["x", "y", "group"],
+        "channels": ["x", "y", "color"],
         "paths": {
             "x": ["encoding", "x"],
             "y": ["encoding", "y"],
-            "group": [["encoding", "xOffset"], ["encoding", "color"]],
+            "color": [["encoding", "xOffset"], ["encoding", "color"]],
         }
     },
     {
         "chart": "Stacked Bar Chart",
-        "icon": chartIconColumnStacked,
+        "icon": <LazyChartIcon iconPath="../assets/chart-icon-column-stacked.png" />,
         "template": {
             "mark": "bar",
             "encoding": { }
@@ -293,7 +308,7 @@ const barCharts: ChartTemplate[] = [
     },
     {
         "chart": "Histogram",
-        "icon": chartIconHistogram,
+        "icon": <LazyChartIcon iconPath="../assets/chart-icon-histogram.png" />,
         "template": {
             "mark": "bar",
             "encoding": {
@@ -308,12 +323,31 @@ const barCharts: ChartTemplate[] = [
             "row": ["encoding", "row"]
         }
     },
+    {
+        "chart": "Heatmap",
+        "icon": <LazyChartIcon iconPath="../assets/chart-icon-heat-map.png" />,
+        "template": {
+            "mark": "rect",
+            "encoding": {  }
+        },
+        "channels": ["x", "y", "color", "column", "row"],
+        "paths": Object.fromEntries(["x", "y", "color", "column", "row"].map(channel => [channel, ["encoding", channel]])),
+        "postProcessor": (vgSpec: any, table: any[]) => {
+            if (vgSpec.encoding.y && vgSpec.encoding.y.type != "nominal") {
+                vgSpec.encoding.y.type = "nominal";
+            } 
+            if (vgSpec.encoding.x && vgSpec.encoding.x.type != "nominal") {
+                vgSpec.encoding.x.type = "nominal";
+            } 
+            return vgSpec;
+        }
+    }
 ]
 
 let lineCharts = [
     {
         "chart": "Line Chart",
-        "icon": chartIconLine,
+        "icon": <LazyChartIcon iconPath="../assets/chart-icon-line.png" />,
         "template": {
             "mark": "line",
             "encoding": { }
@@ -329,7 +363,7 @@ let lineCharts = [
     },
     {
         "chart": "Dotted Line Chart",
-        "icon": chartIconDottedLine,
+        "icon": <LazyChartIcon iconPath="../assets/chart-icon-dotted-line.png" />,
         "template": {
             "mark": {"type": "line", "point": true},
             "encoding": { }
@@ -348,7 +382,7 @@ let lineCharts = [
 let customCharts = [
     {
         "chart": "Custom Point",
-        "icon": chartIconCustomPoint,
+        "icon": <LazyChartIcon iconPath="../assets/chart-icon-custom-point.png" />,
         "template": {
             "mark": "circle",
             "encoding": { }
@@ -358,7 +392,7 @@ let customCharts = [
     },
     {
         "chart": "Custom Line",
-        "icon": chartIconCustomLine,
+        "icon": <LazyChartIcon iconPath="../assets/chart-icon-custom-line.png" />,
         "template": {
             "mark": "line",
             "encoding": {  }
@@ -373,7 +407,7 @@ let customCharts = [
     },
     {
         "chart": "Custom Bar",
-        "icon": chartIconCustomBar,
+        "icon": <LazyChartIcon iconPath="../assets/chart-icon-custom-bar.png" />,
         "template": {
             "mark": "bar",
             "encoding": { }
@@ -383,7 +417,7 @@ let customCharts = [
     }, 
     {
         "chart": "Custom Rect",
-        "icon": chartIconCustomRect,
+        "icon": <LazyChartIcon iconPath="../assets/chart-icon-custom-rect.png" />,
         "template": {
             "mark": "rect",
             "encoding": { }
@@ -393,7 +427,7 @@ let customCharts = [
     },
     {
         "chart": "Custom Area",
-        "icon": chartIconCustomArea,
+        "icon": <LazyChartIcon iconPath="../assets/chart-icon-custom-area.png" />,
         "template": {
             "mark": "area",
             "encoding": { }
@@ -403,33 +437,11 @@ let customCharts = [
     }
 ]
 
-let tableCharts : ChartTemplate[] = [
-    {
-        "chart": "Heat Map",
-        "icon": chartIconHeatMap,
-        "template": {
-            "mark": "rect",
-            "encoding": {  }
-        },
-        "channels": ["x", "y", "color", "column", "row"],
-        "paths": Object.fromEntries(["x", "y", "color", "column", "row"].map(channel => [channel, ["encoding", channel]])),
-        "postProcessor": (vgSpec: any, table: any[]) => {
-            if (vgSpec.encoding.y && vgSpec.encoding.y.type != "nominal") {
-                vgSpec.encoding.y.type = "nominal";
-            } 
-            if (vgSpec.encoding.x && vgSpec.encoding.x.type != "nominal") {
-                vgSpec.encoding.x.type = "nominal";
-            } 
-            return vgSpec;
-        }
-    },
-]
 
 export const CHART_TEMPLATES : {[key: string] : ChartTemplate[]} = {
     "table": tablePlots,
     "scatter": scatterPlots,
     "bar": barCharts,
     "line": lineCharts,
-    "table-based": tableCharts,
     "custom": customCharts,
 }

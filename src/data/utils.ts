@@ -124,7 +124,9 @@ export const createTableFromFromObjectArray = (title: string, values: any[], anc
         types: columnTable.names().map(name => (columnTable.column(name) as Column).type),
         rows: columnTable.objects(),
         derive: derive,
-        anchored: anchored
+        anchored: anchored,
+        createdBy: "user",
+        explorativeQuestions: []
     }
 };
 

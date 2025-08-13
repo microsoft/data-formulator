@@ -13,14 +13,7 @@ from azure.kusto.data.helpers import dataframe_from_result_table
 
 from data_formulator.data_loader.external_data_loader import ExternalDataLoader, sanitize_table_name
 
-# Configure root logger for general application logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[logging.StreamHandler(sys.stdout)]
-)
-
-# Get logger for this module
+# Get logger for this module (logging config done in app.py)
 logger = logging.getLogger(__name__)
 
 class KustoDataLoader(ExternalDataLoader):

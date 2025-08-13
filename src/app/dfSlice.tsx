@@ -10,7 +10,6 @@ import { getChartTemplate, getChartChannels } from "../components/ChartTemplates
 import { getDataTable } from '../views/VisualizationView';
 import { adaptChart, getTriggers, getUrls } from './utils';
 import { Type } from '../data/types';
-import { TableChallenges } from '../views/TableSelectionView';
 import { createTableFromFromObjectArray, inferTypeFromValueArray } from '../data/utils';
 import { handleSSEMessage } from './SSEActions';
 
@@ -34,6 +33,12 @@ export interface SSEMessage {
     timestamp: number;
 }
 
+// Add interface for app configuration
+export interface ServerConfig {
+    DISABLE_DISPLAY_KEYS: boolean;
+    DISABLE_DATABASE: boolean;
+}
+
 export interface ModelConfig {
     id: string; // unique identifier for the model / client combination
     endpoint: string;
@@ -50,7 +55,29 @@ export type ModelSlotType = typeof MODEL_SLOT_TYPES[number];
 // Derive ModelSlots interface from the constant
 export type ModelSlots = Partial<Record<ModelSlotType, string>>;
 
-// Define a type for the slice state
+// Define data cleaning message types
+export type DataCleanTableOutput = {
+    name: string;
+    description?: string;
+    reason?: string;
+    content: {
+        type: 'csv' | 'image_url' | 'web_url';
+        value: string;
+        incomplete?: boolean;
+    };
+};
+
+export interface DataCleanMessage {
+    type: 'input' | 'output';
+    timestamp: number;
+    // For input messages
+    prompt?: string;
+    imageData?: string[]; //support multiple images
+    // For output messages  
+    outputTables?: DataCleanTableOutput[];
+    dialogItem?: any; // Store the dialog item from the model response
+}
+
 export interface DataFormulatorState {
     sessionId: string | undefined;
     models: ModelConfig[];
@@ -60,24 +87,20 @@ export interface DataFormulatorState {
     tables : DictTable[];
     charts: Chart[];
     
-    activeChallenges: {tableId: string, challenges: { text: string; difficulty: 'easy' | 'medium' | 'hard'; }[]}[];
+    activeChallenges: {tableId: string, challenges: { text: string; goal: string; difficulty: 'easy' | 'hard'; }[]}[];
 
     conceptShelfItems: FieldItem[];
-
-    displayPanelSize: number;
-    visPaneSize: number;
-    conceptShelfPaneSize: number;
 
     // controls logs and message index
     messages: Message[];
     displayedMessageIdx: number;
 
-    visViewMode: "gallery" | "carousel";
-
     focusedTableId: string | undefined;
     focusedChartId: string | undefined;
 
     chartSynthesisInProgress: string[];
+
+    serverConfig: ServerConfig;
 
     config: {
         formulateTimeoutSeconds: number;
@@ -88,7 +111,10 @@ export interface DataFormulatorState {
 
     dataLoaderConnectParams: Record<string, Record<string, string>>; // {table_name: {param_name: param_value}}
     
-    pendingSSEActions: SSEMessage[]; // Actions taken by the server but not yet completed
+    agentWorkInProgress: {actionId: string, target: 'chart' | 'table', targetId: string, description: string}[];
+
+    // Data cleaning dialog state
+    dataCleanMessages: DataCleanMessage[];
 }
 
 // Define the initial state using that type
@@ -105,20 +131,18 @@ const initialState: DataFormulatorState = {
     
     conceptShelfItems: [],
 
-    //synthesizerRunning: false,
-    displayPanelSize: 550,
-    visPaneSize: 640,
-    conceptShelfPaneSize: 240, // 300 is a good number for derived concept cards
-
     messages: [],
     displayedMessageIdx: -1,
-
-    visViewMode: "carousel",
 
     focusedTableId: undefined,
     focusedChartId: undefined,
 
     chartSynthesisInProgress: [],
+
+    serverConfig: {
+        DISABLE_DISPLAY_KEYS: false,
+        DISABLE_DATABASE: false,
+    },
 
     config: {
         formulateTimeoutSeconds: 30,
@@ -129,7 +153,9 @@ const initialState: DataFormulatorState = {
 
     dataLoaderConnectParams: {},
     
-    pendingSSEActions: [],
+    agentWorkInProgress: [],
+
+    dataCleanMessages: [],
 }
 
 let getUnrefedDerivedTableIds = (state: DataFormulatorState) => {
@@ -214,7 +240,7 @@ export const fetchCodeExpl = createAsyncThunk(
 
         let response = await fetch(getUrls().CODE_EXPL_URL, {...message, signal: controller.signal })
 
-        return response.text();
+        return response.json();
     }
 );
 
@@ -266,9 +292,6 @@ export const dataFormulatorSlice = createSlice({
         resetState: (state, action: PayloadAction<undefined>) => {
             //state.table = undefined;
             
-            // avoid resetting inputted models
-            // state.oaiModels = state.oaiModels.filter((m: any) => m.endpoint != 'default');
-
             // state.modelSlots = {};
             state.testedModels = [];
 
@@ -286,7 +309,11 @@ export const dataFormulatorSlice = createSlice({
 
             state.chartSynthesisInProgress = [];
 
+            state.serverConfig = initialState.serverConfig;
+
             state.config = initialState.config;
+
+            state.dataCleanMessages = [];
             
             //state.dataLoaderConnectParams = initialState.dataLoaderConnectParams;
         },
@@ -314,9 +341,15 @@ export const dataFormulatorSlice = createSlice({
 
             state.chartSynthesisInProgress = [];
 
+            state.serverConfig = initialState.serverConfig;
+
             state.config = savedState.config;
 
             state.dataLoaderConnectParams = savedState.dataLoaderConnectParams || {};
+            state.dataCleanMessages = savedState.dataCleanMessages || [];
+        },
+        setServerConfig: (state, action: PayloadAction<ServerConfig>) => {
+            state.serverConfig = action.payload;
         },
         setConfig: (state, action: PayloadAction<{
             formulateTimeoutSeconds: number, maxRepairAttempts: number, 
@@ -385,7 +418,7 @@ export const dataFormulatorSlice = createSlice({
             let displayId = action.payload.displayId;
             state.tables = state.tables.map(t => t.id == tableId ? {...t, displayId} : t);
         },
-        addChallenges: (state, action: PayloadAction<{tableId: string, challenges: { text: string; difficulty: 'easy' | 'medium' | 'hard'; }[]}>) => {
+        addChallenges: (state, action: PayloadAction<{tableId: string, challenges: { text: string; goal: string; difficulty: 'easy' | 'hard'; }[]}>) => {
             state.activeChallenges = [...state.activeChallenges, action.payload];
         },
         extendTableWithNewFields: (state, action: PayloadAction<{tableId: string, columnName: string, values: any[], previousName: string | undefined, parentIDs: string[]}>) => {
@@ -664,15 +697,6 @@ export const dataFormulatorSlice = createSlice({
             // consider cleaning up other fields if 
 
         },
-        setVisPaneSize: (state, action: PayloadAction<number>) => {
-            state.visPaneSize = action.payload;
-        },
-        setDisplayPanelSize: (state, action: PayloadAction<number>) => {
-            state.displayPanelSize = action.payload;
-        },
-        setConceptShelfPaneSize: (state, action: PayloadAction<number>) => {
-            state.conceptShelfPaneSize = action.payload;
-        },
         addMessages: (state, action: PayloadAction<Message>) => {
             state.messages = [...state.messages, action.payload];
         },
@@ -685,10 +709,6 @@ export const dataFormulatorSlice = createSlice({
         setFocusedChart: (state, action: PayloadAction<string | undefined>) => {
             let chartId = action.payload;
             state.focusedChartId = chartId;
-            state.visViewMode = "carousel";
-        },
-        setVisViewMode: (state, action: PayloadAction<"carousel" | "gallery">) => {
-            state.visViewMode = action.payload;
         },
         changeChartRunningStatus: (state, action: PayloadAction<{chartId: string, status: boolean}>) => {
             if (action.payload.status) {
@@ -723,6 +743,25 @@ export const dataFormulatorSlice = createSlice({
         },
         clearMessages: (state) => {
             state.messages = [];
+        },
+        // Data cleaning dialog actions
+        addDataCleanMessage: (state, action: PayloadAction<DataCleanMessage>) => {
+            state.dataCleanMessages = [...state.dataCleanMessages, action.payload];
+        },
+        removeDataCleanMessage: (state, action: PayloadAction<{messageIds: number[]}>) => {
+            state.dataCleanMessages = state.dataCleanMessages.filter(message => !action.payload.messageIds.includes(message.timestamp));
+        },
+        resetDataCleanMessages: (state) => {
+            state.dataCleanMessages = [];
+        },
+        updateLastDataCleanMessage: (state, action: PayloadAction<Partial<DataCleanMessage>>) => {
+            if (state.dataCleanMessages.length > 0) {
+                const lastIndex = state.dataCleanMessages.length - 1;
+                state.dataCleanMessages[lastIndex] = { 
+                    ...state.dataCleanMessages[lastIndex], 
+                    ...action.payload 
+                };
+            }
         }
     },
     extraReducers: (builder) => {
@@ -749,6 +788,11 @@ export const dataFormulatorSlice = createSlice({
                 if (data["result"][0]["explorative_questions"] && data["result"][0]["explorative_questions"].length > 0) {
                     let table = state.tables.find(t => t.id == tableId) as DictTable;
                     table.explorativeQuestions = data["result"][0]["explorative_questions"] as string[];
+                }
+
+                if (data["result"][0]["suggested_table_name"]) {
+                    let table = state.tables.find(t => t.id == tableId) as DictTable;
+                    table.displayId = data["result"][0]["suggested_table_name"] as string;
                 }
             }
         })
@@ -780,11 +824,12 @@ export const dataFormulatorSlice = createSlice({
             // console.log("state.models", state.models);
         })
         .addCase(fetchCodeExpl.fulfilled, (state, action) => {
-            let codeExpl = action.payload;
+            let codeExplResponse = action.payload;
             let derivedTableId = action.meta.arg.id;
             let derivedTable = state.tables.find(t => t.id == derivedTableId)
             if (derivedTable?.derive) {
-                derivedTable.derive.codeExpl = codeExpl;
+                // The response is now an object with code and concepts
+                derivedTable.derive.explanation = codeExplResponse;
             }
             console.log("fetched codeExpl");
             console.log(action.payload);
@@ -848,8 +893,7 @@ export const getDataFieldItems = (baseTable: DictTable): FieldItem[] => {
         const columnValues = baseTable.rows.map((r) => r[name]);
         const type = baseTable.types[index];
         const uniqueValues = Array.from(new Set(columnValues));
-        const domain = uniqueValues; //Array.from(columnValues);
-        return { id, name, type, source: "original", domain, description: "", tableRef: baseTable.id };
+        return { id, name, type, source: "original", description: "", tableRef: baseTable.id };
     }) || [];
 }
 

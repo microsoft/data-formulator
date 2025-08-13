@@ -17,7 +17,6 @@ import {
     MenuItem,
     LinearProgress,
     Card,
-    Collapse,
     ListSubheader,
     Menu,
     CardContent,
@@ -29,6 +28,7 @@ import {
     Popover,
     Snackbar,
     Alert,
+    Collapse,
 } from '@mui/material';
 
 import ButtonGroup from '@mui/material/ButtonGroup';
@@ -59,7 +59,7 @@ import TextSnippetIcon from '@mui/icons-material/TextSnippet';
 import FilterAltIcon from '@mui/icons-material/FilterAlt';
 import CheckIcon from '@mui/icons-material/Check';
 import CloudQueueIcon from '@mui/icons-material/CloudQueue';
-
+import InfoIcon from '@mui/icons-material/Info';
 import { CHART_TEMPLATES, getChartTemplate } from '../components/ChartTemplates';
 
 import Prism from 'prismjs'
@@ -73,14 +73,17 @@ import { ChatDialog } from './ChatDialog';
 import { EncodingShelfThread } from './EncodingShelfThread';
 import { CustomReactTable } from './ReactTable';
 import InsightsIcon from '@mui/icons-material/Insights';
-import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
-import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 
 import { MuiMarkdown, getOverrides } from 'mui-markdown';
 
 import { dfSelectors } from '../app/dfSlice';
 import { EncodingShelfCard } from './EncodingShelfCard';
 import { ChartRecBox } from './ChartRecBox';
+import { ConceptShelf } from './ConceptShelf';
+import { CodeExplanationCard, ConceptExplCards, extractConceptExplanations } from './ExplComponents';
+import CodeIcon from '@mui/icons-material/Code';
+import ToggleButton from '@mui/material/ToggleButton';
+import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 
 export interface VisPanelProps { }
 
@@ -90,15 +93,25 @@ export interface VisPanelState {
     viewMode: "gallery" | "carousel";
 }
 
-export let generateChartSkeleton = (iconPath: string | undefined, width: number = 160, height: number = 160, opacity: number = 0.5) => (
+export let generateChartSkeleton = (icon: any, width: number = 160, height: number = 160, opacity: number = 0.5) => (
     <Box width={width} height={height} sx={{ display: "flex" }}>
-        {iconPath == undefined ?
+        {icon == undefined ?
             <AddchartIcon sx={{ color: "lightgray", margin: "auto" }} /> :
-            <Box width="100%" sx={{ display: "flex", opacity: opacity }}>
-                <img height={Math.min(64, height)} width={Math.min(64, width)}
-                     style={{ maxHeight: Math.min(height, Math.max(32, 0.5 * height)), maxWidth: Math.min(width, Math.max(32, 0.5 * width)), margin: "auto" }} 
-                     src={iconPath} alt="" role="presentation" />
-            </Box>}
+            typeof icon == 'string' ?
+                <Box width="100%" sx={{ display: "flex", opacity: opacity }}>
+                    <img height={Math.min(64, height)} width={Math.min(64, width)}
+                         style={{ maxHeight: Math.min(height, Math.max(32, 0.5 * height)), maxWidth: Math.min(width, Math.max(32, 0.5 * width)), margin: "auto" }} 
+                         src={icon} alt="" role="presentation" />
+                </Box> :
+                <Box width="100%" sx={{ display: "flex", opacity: opacity }}>
+                    {React.cloneElement(icon, {
+                        style: { 
+                            maxHeight: Math.min(height, 32),
+                            maxWidth: Math.min(width, 32), 
+                            margin: "auto" 
+                        }
+                    })}
+                </Box>}
     </Box>
 )
 
@@ -330,6 +343,7 @@ export let SampleSizeEditor: FC<{
     </Box>
 }
 
+
 export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
 
     const config = useSelector((state: DataFormulatorState) => state.config);
@@ -353,11 +367,13 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
 
     const [codeViewOpen, setCodeViewOpen] = useState<boolean>(false);
     const [codeExplViewOpen, setCodeExplViewOpen] = useState<boolean>(false);
+    const [conceptExplanationsOpen, setConceptExplanationsOpen] = useState<boolean>(false);
+    
+    // Add new state for the explanation mode
+    const [explanationMode, setExplanationMode] = useState<'none' | 'code' | 'explanation' | 'concepts'>('none');
 
     const [chatDialogOpen, setChatDialogOpen] = useState<boolean>(false);
     const [focusUpdated, setFocusUpdated] = useState<boolean>(true);
-
-    let [collapseEditor, setCollapseEditor] = useState<boolean>(false);
 
     const [localScaleFactor, setLocalScaleFactor] = useState<number>(1);
 
@@ -450,7 +466,10 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
     let chartUnavailable = true;
     let resultTable = tables.find(t => t.id == trigger?.resultTableId);
 
-    let codeExpl = table.derive?.codeExpl || "";
+    let codeExpl = table.derive?.explanation?.code || "code explanation is currently unavailable"
+    // if (table.derive?.explanation?.concepts && table.derive?.explanation?.concepts.length > 0) {
+    //     codeExpl += "\n\n" + table.derive?.explanation?.concepts.map(c => `${c.field}: ${c.explanation}`).join("\n") || "";
+    // }
 
     let createChartElement = (chart: Chart, id: string) => {
         let chartTemplate = getChartTemplate(chart.chartType);
@@ -468,7 +487,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
 
         let element = <></>;
         if (!chart || !checkChartAvailabilityOnPreparedData(chart, conceptShelfItems, visTableRows)) {
-            return   generateChartSkeleton(chartTemplate?.icon);
+            return   generateChartSkeleton(chartTemplate?.icon, 48, 48);
         }
 
         chartUnavailable = false;
@@ -523,7 +542,6 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                                 {arrowCard}
                                 {resultChartElement}
                             </Box>;
-
     
     let saveButton = focusedChart.saved ?
         (
@@ -578,21 +596,135 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
         transformCode = `${table.derive.code}`
     }
 
-    let derivedTableItems =  (resultTable?.derive || table.derive) ? [
-        <Tooltip title={`${codeViewOpen ? 'hide' : 'view'} transformation code`} key="code-view-btn-tooltip">
-            <IconButton color="primary" size="small" sx={{ textTransform: "none",  marginLeft: 1,
-                                                            backgroundColor: !codeViewOpen ? "" : "rgba(2, 136, 209, 0.3)", 
-                                                            "&:hover": { backgroundColor: !codeViewOpen ? "default" : "rgba(2, 136, 209, 0.3)" }}} 
-                    onClick={() => { setCodeViewOpen(!codeViewOpen) }}><TerminalIcon />
-            </IconButton>
-        </Tooltip>,
-        <Tooltip title={`${codeExplViewOpen ? 'hide' : 'view'} transformation explanation`} key="code-expl-view-btn-tooltip">
-            <IconButton color="primary" size="small" sx={{ textTransform: "none",  
-                                                            backgroundColor: !codeExplViewOpen ? "" : "rgba(2, 136, 209, 0.3)", 
-                                                            "&:hover": { backgroundColor: !codeExplViewOpen ? "default" : "rgba(2, 136, 209, 0.3)" }}} 
-                    onClick={() => { setCodeExplViewOpen(!codeExplViewOpen) }}><TextSnippetIcon />
-            </IconButton>
-        </Tooltip>,
+    // Handle explanation mode changes
+    const handleExplanationModeChange = (
+        event: React.MouseEvent<HTMLElement>,
+        newMode: 'none' | 'code' | 'explanation' | 'concepts',
+    ) => {
+        // If clicking the same mode that's already active, turn it off
+        if (newMode === explanationMode) {
+            setExplanationMode('none');
+            setCodeViewOpen(false);
+            setCodeExplViewOpen(false);
+            setConceptExplanationsOpen(false);
+        } else if (newMode !== null) {
+            // Otherwise, switch to the new mode
+            setExplanationMode(newMode);
+            setCodeViewOpen(newMode === 'code');
+            setCodeExplViewOpen(newMode === 'explanation');
+            setConceptExplanationsOpen(newMode === 'concepts');
+        }
+    };
+
+    // Check if concepts are available
+    const availableConcepts = extractConceptExplanations(table);
+    const hasConcepts = availableConcepts.length > 0;
+
+    let derivedTableItems = (resultTable?.derive || table.derive) ? [
+        <Divider key="dvx0" orientation="vertical" variant="middle" flexItem sx={{ marginLeft: "8px", marginRight: "4px" }} />,
+        <Box key="explanation-toggle-group" sx={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            marginLeft: 1,
+            backgroundColor: 'rgba(0, 0, 0, 0.02)',
+            borderRadius: 1,
+            padding: '2px',
+            border: '1px solid rgba(0, 0, 0, 0.06)'
+        }}>
+            <ButtonGroup
+                size="small"
+                sx={{
+                    '& .MuiButton-root': {
+                        textTransform: 'none',
+                        fontSize: '0.7rem',
+                        fontWeight: 500,
+                        border: 'none',
+                        borderRadius: '3px',
+                        padding: '2px 6px',
+                        minWidth: 'auto',
+                        color: 'text.secondary',
+                        '&:hover': {
+                            backgroundColor: 'rgba(25, 118, 210, 0.08)',
+                        }
+                    }
+                }}
+            >
+                <Button 
+                    onClick={() => {
+                        if (codeViewOpen) {
+                            setExplanationMode('none');
+                            setCodeViewOpen(false);
+                        } else {
+                            setExplanationMode('code');
+                            setCodeViewOpen(true);
+                            setCodeExplViewOpen(false);
+                            setConceptExplanationsOpen(false);
+                        }
+                    }}
+                    sx={{
+                        backgroundColor: codeViewOpen ? 'rgba(25, 118, 210, 0.2)' : 'transparent',
+                        color: codeViewOpen ? 'primary.main' : 'text.secondary',
+                        fontWeight: codeViewOpen ? 600 : 500,
+                        '&:hover': {
+                            backgroundColor: codeViewOpen ? 'rgba(25, 118, 210, 0.25)' : 'rgba(25, 118, 210, 0.08)',
+                        }
+                    }}
+                >
+                    <TerminalIcon sx={{ fontSize: '14px', mr: 0.5 }} />
+                    code
+                </Button>
+                <Button 
+                    onClick={() => {
+                        if (codeExplViewOpen) {
+                            setExplanationMode('none');
+                            setCodeExplViewOpen(false);
+                        } else {
+                            setExplanationMode('explanation');
+                            setCodeExplViewOpen(true);
+                            setCodeViewOpen(false);
+                            setConceptExplanationsOpen(false);
+                        }
+                    }}
+                    sx={{
+                        backgroundColor: codeExplViewOpen ? 'rgba(25, 118, 210, 0.2)' : 'transparent',
+                        color: codeExplViewOpen ? 'primary.main' : 'text.secondary',
+                        fontWeight: codeExplViewOpen ? 600 : 500,
+                        '&:hover': {
+                            backgroundColor: codeExplViewOpen ? 'rgba(25, 118, 210, 0.25)' : 'rgba(25, 118, 210, 0.08)',
+                        }
+                    }}
+                >
+                    <TextSnippetIcon sx={{ fontSize: '14px', mr: 0.5 }} />
+                    explain
+                </Button>
+                {hasConcepts && (
+                    <Button 
+                        onClick={() => {
+                            if (conceptExplanationsOpen) {
+                                setExplanationMode('none');
+                                setConceptExplanationsOpen(false);
+                            } else {
+                                setExplanationMode('concepts');
+                                setConceptExplanationsOpen(true);
+                                setCodeViewOpen(false);
+                                setCodeExplViewOpen(false);
+                            }
+                        }}
+                        sx={{
+                            backgroundColor: conceptExplanationsOpen ? 'rgba(25, 118, 210, 0.2)' : 'transparent',
+                            color: conceptExplanationsOpen ? 'primary.main' : 'text.secondary',
+                            fontWeight: conceptExplanationsOpen ? 600 : 500,
+                            '&:hover': {
+                                backgroundColor: conceptExplanationsOpen ? 'rgba(25, 118, 210, 0.25)' : 'rgba(25, 118, 210, 0.08)',
+                            }
+                        }}
+                    >
+                        <InfoIcon sx={{ fontSize: '14px', mr: 0.5 }} />
+                        concepts
+                    </Button>
+                )}
+            </ButtonGroup>
+        </Box>,
         <Divider key="dv3" orientation="vertical" variant="middle" flexItem sx={{ marginLeft: "8px", marginRight: "4px" }} />,
         <Tooltip title="view agent dialog" key="view-chat-history-btn-tooltip">
             <IconButton color="primary" size="small" sx={{ textTransform: "none" }} 
@@ -639,9 +771,6 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
             </Box>
         </Box> :
         <>
-            {table.derive ? <Typography component="span" fontSize="small" color="text.secondary" sx={{textAlign:'center'}}>
-                AI generated results can be inaccurate, inspect it!
-            </Typography> : ""}
             {table.virtual ? (
                 <Box sx={{ display: 'flex', flexDirection: "row", margin: "auto", justifyContent: 'center', alignItems: 'center'}}>
                     
@@ -663,6 +792,9 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
             <Box key='chart=action-buttons' sx={{ display: 'flex', flexDirection: "row", margin: "auto", paddingTop: 1 }}>
                 {chartActionButtons}
             </Box>
+            {table.derive ? <Typography component="span" fontSize="small" color="text.secondary" sx={{textAlign:'center', my: 2}}>
+                AI generated results can be inaccurate, inspect it!
+            </Typography> : ""}
         </>
     
     let codeExplComp = <MuiMarkdown
@@ -720,56 +852,72 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                 onAnimationEnd={() => { setFocusUpdated(false); }}>
                 <Box sx={{display: 'flex', flexDirection: 'column'}}>
                     {focusedElement}
+                    <Collapse in={conceptExplanationsOpen}>
+                        <Box sx={{minWidth: 440, maxWidth: 800, padding: "0px 8px", position: 'relative', margin: '8px auto'}}>
+                            <ConceptExplCards 
+                                concepts={extractConceptExplanations(table)}
+                                title="Derived Concepts"
+                                maxCards={8}
+                            />
+                        </Box>
+                    </Collapse>
                     <Collapse in={codeViewOpen}>
                         <Box sx={{minWidth: 440, maxWidth: 800, padding: "0px 8px", position: 'relative', margin: '8px auto'}}>
                             <ButtonGroup sx={{position: 'absolute', right: 8, top: 1}}>
-                                <IconButton onClick={() => {setCodeViewOpen(false)}}  color='primary' aria-label="delete">
+                                <IconButton onClick={() => {
+                                    setCodeViewOpen(false);
+                                    setExplanationMode('none');
+                                }}  color='primary' aria-label="delete">
                                     <CloseIcon />
                                 </IconButton>
                             </ButtonGroup>
                             {/* <Typography fontSize="small" sx={{color: 'gray'}}>{table.derive?.source} → {table.id}</Typography> */}
-                            <Card variant="outlined" key={`code-view-card`}
-                                sx={{minWidth: "280px", maxWidth: "1920px",  display: "flex", flexGrow: 1,
-                                    border: "1px solid rgba(33, 33, 33, 0.1)"}}>
-                                <CardContent sx={{display: "flex", flexDirection: "column", flexGrow: 1, padding: 0, paddingBottom: '0px !important'}}>
-                                    <Typography sx={{ fontSize: 14, margin: 1 }}  gutterBottom>
-                                        Data transformation code ({transformationIndicatorText})
-                                    </Typography>
-                                    <Box sx={{display: 'flex', flexDirection: "row", alignItems: "center", flex: 'auto'}}>
-                                        <Box sx={{maxHeight: '400px', overflow: 'auto', width: '100%', p: 0.5}}>   
-                                            <CodeBox code={transformCode.trimStart()} language={table.virtual ? "sql" : "python"} />
-                                        </Box>
-                                    </Box>
-                                </CardContent>
-                            </Card>
+                            <CodeExplanationCard
+                                title="Data transformation code"
+                                icon={<CodeIcon sx={{ fontSize: 16, color: 'primary.main' }} />}
+                                transformationIndicatorText={transformationIndicatorText}
+                            >
+                                <Box 
+                                    sx={{
+                                        maxHeight: '400px', 
+                                        overflow: 'auto', 
+                                        width: '100%', 
+                                        p: 0.5
+                                    }}
+                                >   
+                                    <CodeBox code={transformCode.trimStart()} language={table.virtual ? "sql" : "python"} />
+                                </Box>
+                            </CodeExplanationCard>
                         </Box>
                     </Collapse>
                     <Collapse in={codeExplViewOpen}>
                         <Box sx={{minWidth: 440, maxWidth: 800, padding: "0px 8px", position: 'relative', margin: '8px auto'}}>
                             <ButtonGroup sx={{position: 'absolute', right: 8, top: 0}}>
-                                <IconButton onClick={() => {setCodeExplViewOpen(false)}}  color='primary' aria-label="delete">
+                                <IconButton onClick={() => {
+                                    setCodeExplViewOpen(false);
+                                    setExplanationMode('none');
+                                }}  color='primary' aria-label="delete">
                                     <CloseIcon />
                                 </IconButton>
                             </ButtonGroup>
-                            <Card variant="outlined" key={`code-explanation`}
-                                sx={{minWidth: "280px", maxWidth: "1920px", display: "flex", flexGrow: 1, margin: "0px", 
-                                    border: "1px solid rgba(33, 33, 33, 0.1)"}}>
-                                <CardContent sx={{display: "flex", flexDirection: "column", flexGrow: 1, padding: '0', paddingBottom: '0px !important'}}>
-                                    <Typography sx={{ fontSize: 14, margin: 1 }}  gutterBottom>
-                                        Data transformation explanation ({transformationIndicatorText})
-                                    </Typography>
-                                    <Box sx={{display: 'flex', flexDirection: "row", alignItems: "center", flex: 'auto', padding: 1, background: '#f5f2f0'}}>
-                                        <Box sx={{width: 'fit-content',  display: 'flex',}}>
-                                            {codeExplComp}
-                                            {/* <Typography sx={{ fontSize: 12, whiteSpace: 'pre-wrap' }}  color="text.secondary">
-                                                {codeExpl}
-                                            </Typography> */}
-                                        </Box>
-                                    </Box>
-                                </CardContent>
-                            </Card>
+                            <CodeExplanationCard
+                                title="Data transformation explanation"
+                                icon={<TerminalIcon sx={{ fontSize: 16, color: 'primary.main' }} />}
+                                transformationIndicatorText={transformationIndicatorText}
+                            >
+                                <Box 
+                                    sx={{
+                                        width: 'fit-content',  
+                                        display: 'flex',
+                                        flex: 1
+                                    }}
+                                >
+                                    {codeExplComp}
+                                </Box>
+                            </CodeExplanationCard>
                         </Box>
                     </Collapse>
+                    
                 </Box>
             </AnimateOnChange>
             {chartActionItems}
@@ -780,25 +928,16 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
         <Box key='focused-box' className="vega-focused" sx={{ display: "flex", overflow: 'auto', flexDirection: 'column', position: 'relative' }}>
             {focusedComponent}
         </Box>,
-        <Collapse 
-            key='encoding-shelf'
-            collapsedSize={48} in={!collapseEditor} orientation='horizontal' 
-            sx={{position: 'relative'}}>
-            <Box sx={{display: 'flex', flexDirection: 'row', height: '100%'}}>
-                <Tooltip placement="left" title={collapseEditor ? "open editor" : "hide editor"}>
-                    <Button color="primary"
-                            sx={{width: 24, minWidth: 24}}
-                        onClick={()=>{setCollapseEditor(!collapseEditor)}}
-                    >{collapseEditor ? <ChevronLeftIcon /> : <ChevronRightIcon />}</Button>
-                </Tooltip>
-                <EncodingShelfThread key='encoding-shelf' chartId={focusedChart.id} />
-            </Box>
-        </Collapse>,
+         <EncodingShelfThread key='encoding-shelf' chartId={focusedChart.id} />
     ]
 
     let [scaleMin, scaleMax] = [0.2, 2.4]
 
-    let chartResizer = <Stack spacing={1} direction="row" sx={{ padding: '8px', width: 160, position: "absolute", zIndex: 10, color: 'darkgray' }} alignItems="center">
+    let chartResizer = <Stack spacing={1} direction="row" sx={{ 
+        margin: 1, width: 160, position: "absolute", zIndex: 10, 
+        backgroundColor: 'rgba(255, 255, 255, 0.9)',
+        borderRadius: '4px',
+    }} alignItems="center">
         <Tooltip title="zoom out">
             <IconButton color="primary" size='small' disabled={localScaleFactor <= scaleMin} onClick={() => {
                 setLocalScaleFactor(prev => Math.max(scaleMin, prev - 0.1));
@@ -833,19 +972,15 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
 
 export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView({ }) {
 
-    let tables = useSelector((state: DataFormulatorState) => state.tables);
-
     let allCharts = useSelector(dfSelectors.getAllCharts);
     let focusedChartId = useSelector((state: DataFormulatorState) => state.focusedChartId);
     let focusedTableId = useSelector((state: DataFormulatorState) => state.focusedTableId);
-
-    let visViewMode = useSelector((state: DataFormulatorState) => state.visViewMode);
-
-    const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
+    let chartSynthesisInProgress = useSelector((state: DataFormulatorState) => state.chartSynthesisInProgress);
 
     const dispatch = useDispatch();
 
     let focusedChart = allCharts.find(c => c.id == focusedChartId) as Chart;
+    let synthesisRunning = focusedChartId ? chartSynthesisInProgress.includes(focusedChartId) : false;
 
     // when there is no result and synthesis is running, just show the waiting panel
     if (!focusedChart || focusedChart?.chartType == "?") {
@@ -853,6 +988,7 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
             {Object.entries(CHART_TEMPLATES).map(([cls, templates])=>templates).flat().filter(t => t.chart != "Auto").map(t =>
                 {
                     return <Button 
+                        disabled={synthesisRunning}
                         key={`${t.chart}-btn`}
                         sx={{margin: '2px', padding:'2px', display:'flex', flexDirection: 'column', 
                                 textTransform: 'none', justifyContent: 'flex-start'}}
@@ -865,9 +1001,9 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
                             }
                         }}
                     >
-                        <Icon sx={{width: 48, height: 48}} >
+                        <Box sx={{opacity: synthesisRunning ? 0.5 : 1, width: 48, height: 48, display: 'flex', alignItems: 'center', justifyContent: 'center'}} >
                             {typeof t?.icon == 'string' ? <img height="48px" width="48px" src={t?.icon} alt="" role="presentation" /> : t.icon}
-                        </Icon>
+                        </Box>
                         <Typography sx={{marginLeft: "2px", whiteSpace: "initial", fontSize: '10px', width: '64px'}} >{t?.chart}</Typography>
                     </Button>
                 }
@@ -886,89 +1022,11 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
         )
     }
 
-    let chartEditor = <ChartEditorFC key={focusedChartId} />
-
-    let finalView = <Box></Box>;
-
-    if (visViewMode == "gallery") {
-
-        let chartElements = allCharts.map((chart, index) => {
-
-            let table = getDataTable(chart, tables, allCharts, conceptShelfItems);
-    
-            let visTableRows = structuredClone(table.rows);
-
-            let chartTemplate = getChartTemplate(chart.chartType);
-
-            let setIndexFunc = () => {
-                dispatch(dfActions.setFocusedChart(chart.id));
-                dispatch(dfActions.setFocusedTable(table.id));
-                dispatch(dfActions.setVisViewMode('carousel'));
-            }
-
-            if (chart.chartType == "Table") {
-                return <Box key={`animateOnChange-${index}`}
-                     className="vega-thumbnail-box"
-                     onClick={setIndexFunc}
-                     sx={{  position: 'relative', backgroundColor: chart.saved ? "rgba(255,215,0,0.05)" : "white",
-                            border: chart.saved ? '2px solid gold' : '1px solid lightgray', margin: 1, 
-                            display: 'flex', flexDirection: 'column', maxWidth: '800px', maxHeight: '600px', overflow:'hidden'}}
-                >{renderTableChart(chart, conceptShelfItems, visTableRows)}</Box>
-            }
-
-            if (!checkChartAvailability(chart, conceptShelfItems, table.rows)) {
-                return <Box className={"vega-thumbnail" + (focusedChartId === chart.id ? " focused-vega-thumbnail" : "")} 
-                            key="skeleton" onClick={setIndexFunc}>{generateChartSkeleton(chartTemplate?.icon)}</Box>;
-            }
-
-            let assembledChart = assembleVegaChart(chart.chartType, chart.encodingMap, conceptShelfItems, visTableRows);
-
-            const id = `chart-element-${index}`;
-
-            let element =
-                <Box key={`animateOnChange-${index}`}
-                     className="vega-thumbnail-box"
-                     onClick={setIndexFunc}
-                     sx={{  position: 'relative', backgroundColor: chart.saved ? "rgba(255,215,0,0.05)" : "white",
-                            border: chart.saved ? '2px solid gold' : '1px solid lightgray', margin: 1, 
-                            display: 'flex', flexDirection: 'column', maxWidth: '800px', maxHeight: '600px', overflow:'hidden'}}
-                >
-                    {/* <Box className="vega-thumbnail" id={id} key={`chart-${index}`} sx={{ margin: "auto" }}
-                        onClick={setIndexFunc}></Box> */}
-                    {chart.saved ? <Typography key='chart-saved-star-icon' sx={{ position: "absolute", margin: "5px", zIndex: 2, right: 0 }}>
-                                        <StarIcon sx={{ color: "gold" }} fontSize="small" />
-                                    </Typography> : ""}
-                    <Typography fontSize="small">data: {chart.tableRef}</Typography>
-                    <Box className={"vega-thumbnail" + (focusedChartId == chart.id ? " focused-vega-thumbnail" : "")}
-                        id={id} key={`chart-gallery-${index}`} sx={{ margin: "auto",  }}
-                        >
-                    </Box>
-                </Box>;
-
-            embed('#' + id, assembledChart, { actions: false, renderer: "canvas", defaultStyle: true, }); //, config: powerbi
-
-            return element;
-        });
-
-        finalView = (
-            <Box className="visualization-gallery">
-                <Box className="vega-container" key="vega-container">
-                    {chartElements}
-                </Box>
-            </Box>
-        );
-    } else if (visViewMode == "carousel") {
-
-        finalView = (
-            <Box sx={{ width: "100%", overflow: "hidden", display: "flex", flexDirection: "row" }}>
-                <Box className="visualization-carousel" sx={{display: "contents"}} >
-                    {chartEditor}
-                </Box>
-            </Box>
-        );
-    }
-
-    let visPanel = finalView;
+    let visPanel = <Box sx={{ width: "100%", overflow: "hidden", display: "flex", flexDirection: "row" }}>
+        <Box className="visualization-carousel" sx={{display: "contents"}} >
+            <ChartEditorFC key={focusedChartId} />
+        </Box>
+    </Box>
 
     return visPanel;
 }
