@@ -12,8 +12,6 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
     steps:
     - uses: actions/checkout@v4
     - name: Set Node.js 20
@@ -24,14 +22,11 @@ jobs:
     - name: Set up Python 3.12
       uses: actions/setup-python@v5
       with:
-        python-version: 3.12
+        python-version: "3.12"
     - name: Install node dependencies
       run: yarn install
     - name: Install python dependencies
-      run: |
-        python -m pip install --upgrade pip
-        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-        python -m pip install build
+      run: pip install -r requirements.txt build
     - name: Build frontend
       run: yarn build
     - name: Build python artifact
