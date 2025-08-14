@@ -111,37 +111,6 @@ interface DBTable {
     view_source: string | null;
 }
 
-interface TabPanelProps {
-  children?: React.ReactNode;
-  key: string;
-  show: boolean;
-  sx?: SxProps;
-}
-
-function TabPanel(props: TabPanelProps, sx: SxProps) {
-    const { children, show, key, ...other } = props;
-
-    return (
-        <Box role="tabpanel" hidden={!show}
-            id={`vertical-tabpanel-${key}`}
-            aria-labelledby={`vertical-tab-${key}`}
-            style={{maxWidth: '100%'}}
-            sx={sx} {...other}
-        >
-            <Box sx={{ p: 2 }}>
-                {children}
-            </Box>
-        </Box>
-    );
-}
-
-function a11yProps(key: string) {
-    return {
-        id: `vertical-tab-${key}`,
-        'aria-controls': `vertical-tabpanel-${key}`,
-    };
-}
-
 interface ColumnStatistics {
     column: string;
     type: string;
@@ -631,6 +600,7 @@ export const DBTableSelectionDialog: React.FC<{
                 onClick={() => {
                     setSelectedTabKey('dataLoader:' + dataLoaderType);
                 }}
+                color='secondary'
                 sx={{
                     textTransform: "none",
                     width: 120,
@@ -640,12 +610,8 @@ export const DBTableSelectionDialog: React.FC<{
                     py: 0.5,
                     px: 2,
                     color: selectedTabKey === 'dataLoader:' + dataLoaderType ? 'secondary.main' : 'text.secondary',
-                    backgroundColor: 'transparent',
                     borderRight: selectedTabKey === 'dataLoader:' + dataLoaderType ? 2 : 0,
                     borderColor: 'secondary.main',
-                    '&:hover': {
-                        backgroundColor: selectedTabKey === 'dataLoader:' + dataLoaderType ? 'secondary.100' : 'secondary.50'
-                    }
                 }}
             >
                 <Typography 
@@ -664,7 +630,7 @@ export const DBTableSelectionDialog: React.FC<{
         ))}
     </Box>;
 
-    let tableSelectionPanel = <Box sx={{ px: 0.5, pt: 1, display: 'flex', flexDirection: 'column' }}>
+    let tableSelectionPanel = <Box sx={{ px: 0.5, pt: 1, display: 'flex', flexDirection: 'column', backgroundColor: alpha(theme.palette.primary.main, 0.02) }}>
         <Box sx={{ display: 'flex', alignItems: 'center', px: 1, mb: 1 }}>
             <Typography variant="caption" sx={{
                 color: "text.disabled", 
@@ -700,6 +666,7 @@ export const DBTableSelectionDialog: React.FC<{
                 key={t.name}
                 variant="text"
                 size="small"
+                color='primary'
                 onClick={() => {
                     setSelectedTabKey(t.name);
                 }}
@@ -712,12 +679,7 @@ export const DBTableSelectionDialog: React.FC<{
                     py: 0.5,
                     px: 2,
                     color: selectedTabKey === t.name ? 'primary.main' : 'text.secondary',
-                    backgroundColor: 'transparent',
                     borderRight: selectedTabKey === t.name ? 2 : 0,
-                    borderColor: 'primary.main',
-                    '&:hover': {
-                        backgroundColor: selectedTabKey === t.name ? 'primary.100' : 'primary.50'
-                    }
                 }}
             >
                 <Typography 
@@ -984,7 +946,7 @@ export const DBTableSelectionDialog: React.FC<{
                     open={tableDialogOpen}
                     sx={{ '& .MuiDialog-paper': { maxWidth: '100%', maxHeight: 800, minWidth: 800 } }}
                 >
-                    <DialogTitle sx={{display: "flex", bgcolor: 'grey.50' }} >
+                    <DialogTitle sx={{display: "flex" }} >
                         Database
                         <IconButton
                             sx={{marginLeft: "auto"}}
@@ -997,7 +959,7 @@ export const DBTableSelectionDialog: React.FC<{
                             <CloseIcon fontSize="inherit"/>
                         </IconButton>
                     </DialogTitle>
-                    <DialogContent  sx={{p: 1, bgcolor: 'grey.100', position: "relative"}}>
+                    <DialogContent  sx={{p: 1, position: "relative"}}>
                         {mainContent}
                         {isUploading && (
                             <Box sx={{ 

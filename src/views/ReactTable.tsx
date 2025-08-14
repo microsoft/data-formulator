@@ -29,9 +29,11 @@ interface CustomReactTableProps {
     compact: boolean;
     maxCellWidth? : number;
     isIncompleteTable?: boolean;
+    maxHeight?: number;
 }
 
-export const CustomReactTable: React.FC<CustomReactTableProps> = ({ rows, columnDefs, rowsPerPageNum, compact, maxCellWidth, isIncompleteTable }) => {
+export const CustomReactTable: React.FC<CustomReactTableProps> = ({ 
+    rows, columnDefs, rowsPerPageNum, compact, maxCellWidth, isIncompleteTable, maxHeight = 340 }) => {
 
     let theme = useTheme();
 
@@ -56,7 +58,7 @@ export const CustomReactTable: React.FC<CustomReactTableProps> = ({ rows, column
                     overflow: "clip", textOverflow: "ellipsis", whiteSpace: "nowrap"
                 }
             }}>
-            <TableContainer sx={{ maxHeight: 340 }}>
+            <TableContainer sx={{ maxHeight: maxHeight }}>
                 <Table stickyHeader aria-label="sticky table">
                     <TableHead>
                         <TableRow>

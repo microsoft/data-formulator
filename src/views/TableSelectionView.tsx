@@ -118,8 +118,10 @@ export const TableSelectionView: React.FC<TableSelectionViewProps> = function Ta
                         key={i}
                         variant="text"
                         size="small"
+                        color='primary'
                         onClick={() => handleTableSelect(i)}
                         sx={{
+                            fontSize: 12,
                             textTransform: "none",
                             width: 120,
                             justifyContent: 'flex-start',
@@ -128,12 +130,8 @@ export const TableSelectionView: React.FC<TableSelectionViewProps> = function Ta
                             py: 1,
                             px: 2,
                             color: selectedTableName === title ? 'primary.main' : 'text.secondary',
-                            backgroundColor:  'transparent',
                             borderRight: selectedTableName === title ? 2 : 0,
                             borderColor: 'primary.main',
-                            '&:hover': {
-                                backgroundColor: selectedTableName === title ? 'primary.100' : 'primary.50'
-                            }
                         }}
                     >
                         {title}
@@ -229,7 +227,7 @@ export const TableSelectionDialog: React.FC<{ buttonElement: any }> = function T
                 open={tableDialogOpen}
                 sx={{ '& .MuiDialog-paper': { maxWidth: '100%', maxHeight: 840, minWidth: 800 } }}
             >
-                <DialogTitle sx={{display: "flex", backgroundColor: "grey.100"}}>Explore Sample Datasets
+                <DialogTitle sx={{display: "flex"}}>Examples
                     <IconButton
                         sx={{marginLeft: "auto"}}
                         edge="start"
@@ -241,7 +239,7 @@ export const TableSelectionDialog: React.FC<{ buttonElement: any }> = function T
                         <CloseIcon fontSize="inherit"/>
                     </IconButton>
                 </DialogTitle>
-                <DialogContent sx={{overflowX: "hidden", padding: 1, backgroundColor: "grey.100"}}>
+                <DialogContent sx={{overflowX: "hidden", padding: 1}}>
                     <TableSelectionView tableMetadata={datasetPreviews} hideRowNum
                         handleDeleteTable={undefined}
                         handleSelectTable={(tableMetadata) => {

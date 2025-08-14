@@ -2,7 +2,7 @@
 // Licensed under the MIT License.
 
 import { createAsyncThunk, createSlice, PayloadAction, createSelector } from '@reduxjs/toolkit'
-import { Channel, Chart, ChartTemplate, EncodingItem, EncodingMap, FieldItem, Trigger } from '../components/ComponentType'
+import { Channel, Chart, ChartTemplate, DataCleanBlock, EncodingItem, EncodingMap, FieldItem, Trigger } from '../components/ComponentType'
 import { enableMapSet } from 'immer';
 import { DictTable } from "../components/ComponentType";
 import { Message } from '../views/MessageSnackbar';
@@ -55,28 +55,7 @@ export type ModelSlotType = typeof MODEL_SLOT_TYPES[number];
 // Derive ModelSlots interface from the constant
 export type ModelSlots = Partial<Record<ModelSlotType, string>>;
 
-// Define data cleaning message types
-export type DataCleanTableOutput = {
-    name: string;
-    description?: string;
-    reason?: string;
-    content: {
-        type: 'csv' | 'image_url' | 'web_url';
-        value: string;
-        incomplete?: boolean;
-    };
-};
 
-export interface DataCleanMessage {
-    type: 'input' | 'output';
-    timestamp: number;
-    // For input messages
-    prompt?: string;
-    imageData?: string[]; //support multiple images
-    // For output messages  
-    outputTables?: DataCleanTableOutput[];
-    dialogItem?: any; // Store the dialog item from the model response
-}
 
 export interface DataFormulatorState {
     sessionId: string | undefined;
@@ -94,6 +73,8 @@ export interface DataFormulatorState {
     // controls logs and message index
     messages: Message[];
     displayedMessageIdx: number;
+
+    focusedDataCleanBlockId: {blockId: string, itemId: number} | undefined;
 
     focusedTableId: string | undefined;
     focusedChartId: string | undefined;
@@ -114,7 +95,8 @@ export interface DataFormulatorState {
     agentWorkInProgress: {actionId: string, target: 'chart' | 'table', targetId: string, description: string}[];
 
     // Data cleaning dialog state
-    dataCleanMessages: DataCleanMessage[];
+    dataCleanBlocks: DataCleanBlock[];
+    cleanInProgress: boolean;
 }
 
 // Define the initial state using that type
@@ -134,6 +116,7 @@ const initialState: DataFormulatorState = {
     messages: [],
     displayedMessageIdx: -1,
 
+    focusedDataCleanBlockId: undefined,
     focusedTableId: undefined,
     focusedChartId: undefined,
 
@@ -155,7 +138,8 @@ const initialState: DataFormulatorState = {
     
     agentWorkInProgress: [],
 
-    dataCleanMessages: [],
+    dataCleanBlocks: [],
+    cleanInProgress: false,
 }
 
 let getUnrefedDerivedTableIds = (state: DataFormulatorState) => {
@@ -304,6 +288,8 @@ export const dataFormulatorSlice = createSlice({
             state.messages = [];
             state.displayedMessageIdx = -1;
 
+            state.focusedDataCleanBlockId = undefined;
+
             state.focusedTableId = undefined;
             state.focusedChartId = undefined;
 
@@ -313,7 +299,8 @@ export const dataFormulatorSlice = createSlice({
 
             state.config = initialState.config;
 
-            state.dataCleanMessages = [];
+            state.dataCleanBlocks = [];
+            state.cleanInProgress = false;
             
             //state.dataLoaderConnectParams = initialState.dataLoaderConnectParams;
         },
@@ -336,6 +323,8 @@ export const dataFormulatorSlice = createSlice({
             state.messages = [];
             state.displayedMessageIdx = -1;
 
+            state.focusedDataCleanBlockId = savedState.focusedDataCleanBlockId || undefined;
+
             state.focusedTableId = savedState.focusedTableId || undefined;
             state.focusedChartId = savedState.focusedChartId || undefined;
 
@@ -346,7 +335,8 @@ export const dataFormulatorSlice = createSlice({
             state.config = savedState.config;
 
             state.dataLoaderConnectParams = savedState.dataLoaderConnectParams || {};
-            state.dataCleanMessages = savedState.dataCleanMessages || [];
+            state.dataCleanBlocks = savedState.dataCleanBlocks || [];
+            state.cleanInProgress = false;
         },
         setServerConfig: (state, action: PayloadAction<ServerConfig>) => {
             state.serverConfig = action.payload;
@@ -706,6 +696,9 @@ export const dataFormulatorSlice = createSlice({
         setFocusedTable: (state, action: PayloadAction<string | undefined>) => {
             state.focusedTableId = action.payload;
         },
+        setFocusedDataCleanBlockId: (state, action: PayloadAction<{blockId: string, itemId: number} | undefined>) => {
+            state.focusedDataCleanBlockId = action.payload;
+        },
         setFocusedChart: (state, action: PayloadAction<string | undefined>) => {
             let chartId = action.payload;
             state.focusedChartId = chartId;
@@ -745,23 +738,26 @@ export const dataFormulatorSlice = createSlice({
             state.messages = [];
         },
         // Data cleaning dialog actions
-        addDataCleanMessage: (state, action: PayloadAction<DataCleanMessage>) => {
-            state.dataCleanMessages = [...state.dataCleanMessages, action.payload];
+        addDataCleanBlock: (state, action: PayloadAction<DataCleanBlock>) => {
+            state.dataCleanBlocks = [...state.dataCleanBlocks, action.payload];
         },
-        removeDataCleanMessage: (state, action: PayloadAction<{messageIds: number[]}>) => {
-            state.dataCleanMessages = state.dataCleanMessages.filter(message => !action.payload.messageIds.includes(message.timestamp));
+        removeDataCleanBlocks: (state, action: PayloadAction<{blockIds: string[]}>) => {
+            state.dataCleanBlocks = state.dataCleanBlocks.filter(block => !action.payload.blockIds.includes(block.id));
         },
-        resetDataCleanMessages: (state) => {
-            state.dataCleanMessages = [];
+        resetDataCleanBlocks: (state) => {
+            state.dataCleanBlocks = [];
         },
-        updateLastDataCleanMessage: (state, action: PayloadAction<Partial<DataCleanMessage>>) => {
-            if (state.dataCleanMessages.length > 0) {
-                const lastIndex = state.dataCleanMessages.length - 1;
-                state.dataCleanMessages[lastIndex] = { 
-                    ...state.dataCleanMessages[lastIndex], 
+        updateLastDataCleanBlock: (state, action: PayloadAction<Partial<DataCleanBlock>>) => {
+            if (state.dataCleanBlocks.length > 0) {
+                const lastIndex = state.dataCleanBlocks.length - 1;
+                state.dataCleanBlocks[lastIndex] = { 
+                    ...state.dataCleanBlocks[lastIndex], 
                     ...action.payload 
                 };
             }
+        },
+        setCleanInProgress: (state, action: PayloadAction<boolean>) => {
+            state.cleanInProgress = action.payload;
         }
     },
     extraReducers: (builder) => {

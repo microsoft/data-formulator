@@ -49,11 +49,12 @@ import { getUrls } from '../app/utils';
 import { CloudQueue } from '@mui/icons-material';
 import { DataLoadingChatDialog } from './DataLoadingChat';
 import { RotatingTextBlock } from '../components/RotatingTextBlock';
+import { DataLoadingInputBox, DataLoadingThread, DataPreviewBox } from './DataLoadingThread';
 
 export const DataFormulatorFC = ({ }) => {
 
     const tables = useSelector((state: DataFormulatorState) => state.tables);
-    
+    const dataCleanBlocks = useSelector((state: DataFormulatorState) => state.dataCleanBlocks);
     const models = useSelector((state: DataFormulatorState) => state.models);
     const modelSlots = useSelector((state: DataFormulatorState) => state.modelSlots);
 
@@ -201,6 +202,17 @@ Totals (7 entries)	5	5	5	15
                 <Tooltip title={<Box>Example of a messy text block: <Typography sx={{fontSize: 10, marginTop: '6px'}} component={"pre"}>{exampleMessyText}</Typography></Box>}><Box component="span" sx={{color: 'secondary.main', cursor: 'help', "&:hover": {textDecoration: 'underline'}}}>a text block</Box></Tooltip> or&nbsp;
                 <Tooltip title={<Box>Example of a table in image format: <Box component="img" sx={{ width: '100%',  marginTop: '6px' }} alt="" src={exampleImageTable} /></Box>}><Box component="span" sx={{color: 'secondary.main', cursor: 'help', "&:hover": {textDecoration: 'underline'}}}>an image</Box></Tooltip>.
             </Typography>
+
+            {/* <Box sx={{border: '1px solid lightgray', borderRadius: '4px', margin: '4px 4px 4px 8px', backgroundColor: 'white',
+                display: 'flex', height: '100%',  flexDirection: 'row'}}>
+                <Box sx={{width: '240px', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center'}}>
+                    <DataLoadingThread />
+                    <DataLoadingInputBox />
+                </Box>
+                <Box sx={{width: '600px', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center'}}>
+                    {dataCleanBlocks.length > 0 && <DataPreviewBox />}
+                </Box>
+            </Box> */}
         </Box>
         <Button size="small" color="inherit" 
                 sx={{position: "absolute", color:'darkgray', bottom: 0, right: 0, textTransform: 'none'}} 

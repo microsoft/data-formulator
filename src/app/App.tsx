@@ -71,6 +71,8 @@ import { DBTableSelectionDialog, handleDBDownload } from '../views/DBTableManage
 import CloudQueueIcon from '@mui/icons-material/CloudQueue';
 import { connectToSSE } from '../views/SSEClient';
 import { getUrls } from './utils';
+import { DataLoadingChatDialog } from '../views/DataLoadingChat';
+import ChatIcon from '@mui/icons-material/Chat';
 
 const AppBar = styled(MuiAppBar)(({ theme }) => ({
     color: 'black',
@@ -578,14 +580,16 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
                 <Box sx={{ display: 'flex', ml: 'auto', fontSize: 14 }}>
                     <ConfigDialog />
                     <Divider orientation="vertical" variant="middle" flexItem />
+                    <ModelSelectionButton />
+                    <Divider orientation="vertical" variant="middle" flexItem />
                     <DBTableSelectionDialog buttonElement={
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, textTransform: 'none' }}>
                             <CloudQueueIcon fontSize="small" /> Database
                         </Box>
                     } component="dialog" />
-                    <Divider orientation="vertical" variant="middle" flexItem />
-                    <ModelSelectionButton />
-                    <Divider orientation="vertical" variant="middle" flexItem />
+                    <DataLoadingChatDialog buttonElement={<Typography fontSize="inherit" sx={{ display: 'flex', textTransform: 'none', alignItems: 'center', gap: 1 }}>
+                        Vibe Data
+                    </Typography>}/>
                     <Typography fontSize="inherit" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                         <TableMenu />
                     </Typography>

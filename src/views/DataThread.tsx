@@ -28,6 +28,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { DataFormulatorState, dfActions, SSEMessage } from '../app/dfSlice';
 import { assembleVegaChart, getTriggers } from '../app/utils';
 import { Chart, DictTable, EncodingItem, FieldItem, Trigger } from "../components/ComponentType";
+import { createOrderedThreadBlocks, SingleDataCleanThreadView } from './DataLoadingThread';
 
 import DeleteIcon from '@mui/icons-material/Delete';
 import AddchartIcon from '@mui/icons-material/Addchart';
@@ -567,7 +568,7 @@ let SingleThreadView: FC<{
                 "&::before, &::after": { borderColor: alpha(theme.palette.custom.main, 0.2), borderWidth: '2px', width: 60 },
             }}>
                 <Typography sx={{ fontSize: "10px",  color: 'text.secondary', textTransform: 'none' }}>
-                    {`thread - ${threadIdx + 1}`}
+                    {`explore - ${threadIdx + 1}`}
                 </Typography>
             </Divider>
         </Box>
@@ -814,6 +815,8 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
     const executeScroll = () => { if (scrollRef.current != null) scrollRef.current.scrollIntoView() }
     // run this function from an event handler or an effect to execute scroll 
 
+
+
     const dispatch = useDispatch();
 
     useEffect(() => {
@@ -867,6 +870,7 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
         return aAncestors.length - bAncestors.length;
     });
 
+    
     let drawerOpen = leafTables.length > 1 && threadDrawerOpen;
     //let threadDrawerWidth = Math.max(Math.min(696, leafTables.length * 216), 232)
 
@@ -887,7 +891,7 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
                 .map(x => [ ...getTriggers(x, tables).map(y => y.tableId) || []]).flat();
             return <SingleThreadView
                 key={`thread-${lt.id}-${i}`}
-                scrollRef={scrollRef} 
+                scrollRef={scrollRef}
                 threadIdx={i} 
                 leafTable={lt} 
                 chartElements={chartElements} 
@@ -993,6 +997,7 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
                     </IconButton>
                 </Tooltip>
             </Box>
+
             <Box sx={{
                     transition: 'width 200ms cubic-bezier(0.4, 0, 0.2, 1) 0ms',
                     overflow: 'hidden', 

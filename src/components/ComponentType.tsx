@@ -55,6 +55,33 @@ export interface Trigger {
     resultTableId: string,
 }
 
+// Define data cleaning message types
+export type DataCleanTableOutput = {
+    name: string;
+    description?: string;
+    reason?: string;
+    content: {
+        type: 'csv' | 'image_url' | 'web_url';
+        value: string;
+        incomplete?: boolean;
+    };
+};
+
+export interface DataCleanBlock {
+    id: string; // the id of the item
+
+    items: DataCleanTableOutput[]; // the items that are cleaned in this block
+
+    derive: {
+        sourceId: string | undefined; // the source of the block that leads to this block
+        prompt: string;
+        artifacts: {type: 'image_url' | 'web_url', value: string}[]; // images sent along with the prompt
+    }
+
+    // For output messages  
+    dialogItem?: any; // Store the dialog item from the model response
+}
+
 export interface DictTable {
     id: string; // name/id of the table
     displayId: string; // display id of the table 

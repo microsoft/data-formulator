@@ -28,7 +28,7 @@ a json object that explains tables in the raw data, the mode, cleaning rationale
     "mode": ..., // one of "data generation" or "data cleaning" based on the provided task
     "tables": [
         {
-            "name": ..., // suggest a descriptive, meaningful but short name for this dataset (e.g., "sales_data_2024", "customer_survey_results", "weather_forecast_data")
+            "name": ..., // suggest a descriptive, meaningful but short name for this dataset, no more than 3 words, if there are duplicate names, add a suffix -1, -2, etc. (e.g., "sales-2024", "customer-survey", "weather-forecast")
             "description": ..., // describe the table in a few sentences, including the table structure, the cleaning process, and the rationale for the cleaning.
             "reason": ..., // explain the extraction reason here, including the table structure, the cleaning process, and the rationale for the cleaning.
             "content": {
@@ -70,9 +70,8 @@ a json object that explains tables in the raw data, the mode, cleaning rationale
 - similarly, if the raw data contains link to a website that directly contains the data (e.g., it points to a csv file), put the url of the data in the "web_url" field.
 
 **Instructions for generating synthetic data:**
-- NEVER generate data that has implicit bias as noted above, if that happens, return a dummy data consisting of dummy columns with 'a, b, c' and numbers.
-- NEVER generate data contain people's names, use "A" , "B", "C"... instead. 
-- If the user doesn't indicate how many rows to be generated, plan in generating a dataset with 10-20 rows depending on the content.
+- NEVER generate data that has implicit bias as noted above, if that happens, neutralize the data.
+- If the user doesn't indicate how many rows to be generated, plan in generating a dataset with 20-30 rows depending on the content.
 '''
 
 

@@ -21,9 +21,6 @@ class OpenAIClientAdapter(object):
             "messages": messages,
         }
         
-        if not (self.model == "o3-mini" or self.model == "o1"):
-            completion_params["temperature"] = self.params["temperature"]
-            
         return self._openai_client.chat.completions.create(**completion_params)
 
 class Client(object):
@@ -114,10 +111,6 @@ class Client(object):
                 "messages": messages,
             }
             
-            if not (self.model == "o3-mini" or self.model == "o1"):
-                completion_params["temperature"] = self.params["temperature"]
-                completion_params["max_tokens"] = self.params["max_completion_tokens"]
-                
             return client.chat.completions.create(**completion_params)
         else:
             return litellm.completion(
