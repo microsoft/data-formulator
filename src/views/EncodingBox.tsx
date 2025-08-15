@@ -621,7 +621,6 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
               <Box className="GroupItems" sx={{ 
                 display: 'grid', 
                 gridTemplateColumns: 'repeat(2, 1fr)', 
-                gap: '4px',
                 padding: '4px'
               }}>
                 {params.children}
@@ -647,11 +646,11 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
                 }
 
                 // Add overlay logic similar to ConceptCard - make fields not in focused table more transparent
-                let draggleCardHeaderBgOverlay = 'rgba(255, 255, 255, 0.93)';
+                let draggleCardHeaderBgOverlay = 'rgba(255, 255, 255, 0.9)';
                 
                 // Add subtle tint for non-focused fields
                 if (focusedTable && !focusedTable.names.includes(fieldItem.name)) {
-                    draggleCardHeaderBgOverlay = 'rgba(255, 255, 255, 0.98)';
+                    draggleCardHeaderBgOverlay = 'rgba(255, 255, 255, 1)';
                 }
 
                 // Extract only the compatible props for Card
@@ -679,7 +678,6 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
                         <Box sx={{ 
                             cursor: "pointer", 
                             background: draggleCardHeaderBgOverlay,
-                            padding: '4px 6px',
                             display: 'flex',
                             alignItems: 'center',
                             minHeight: '20px'

@@ -5,6 +5,8 @@ import { FC, useEffect, useState } from 'react'
 import { useSelector, useDispatch } from 'react-redux'
 import { DataFormulatorState, dfActions, dfSelectors, fetchCodeExpl, fetchFieldSemanticType, generateFreshChart } from '../app/dfSlice';
 
+import embed from 'vega-embed';
+
 import {
     Box,
     Typography,
@@ -40,7 +42,7 @@ import _ from 'lodash';
 import '../scss/EncodingShelf.scss';
 import { createDictTable, DictTable } from "../components/ComponentType";
 
-import { getUrls, resolveChartFields, getTriggers } from '../app/utils';
+import { getUrls, resolveChartFields, getTriggers, assembleVegaChart } from '../app/utils';
 import { EncodingBox } from './EncodingBox';
 
 import { ChannelGroups, CHART_TEMPLATES, getChartTemplate } from '../components/ChartTemplates';
@@ -102,20 +104,16 @@ const processPromptWithHighlighting = (prompt: string) => {
             // This is a highlighted part - remove the ** and wrap with styled component
             const content = part.slice(2, -2);
             return (
-                <Box
+                <Chip
                     key={index}
-                    component="span"
                     sx={{
-                        borderRadius: '2px', 
-                        border: '1px solid rgb(250 235 215)', 
-                        background: 'rgb(250 235 215 / 80%)',
-                        padding: '0px 4px',
-                        margin: '0 1px',
-                        fontWeight: 500,
+                        borderRadius: '4px', border: '1px solid rgb(250 235 215)', 
+                        background: 'rgb(250 235 215 / 80%)', maxWidth: '140px',
+                        whiteSpace: 'nowrap', overflow: 'hidden',
+                        textOverflow: 'ellipsis', height: 16, color: 'inherit',
                     }}
-                >
-                    {content}
-                </Box>
+                    label={content}
+                />
             );
         }
         return part;
@@ -129,8 +127,6 @@ export const TriggerCard: FC<{
     mini?: boolean,
     sx?: SxProps<Theme>}> = function ({ className, trigger, hideFields, mini = false, sx }) {
 
-    let theme = useTheme();
-
     let fieldItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
 
     const dispatch = useDispatch<AppDispatch>();
@@ -143,15 +139,21 @@ export const TriggerCard: FC<{
     }
 
     let encodingComp : any = '';
-    let prompt = trigger.displayInstruction ? `${trigger.displayInstruction}` : trigger.instruction;
-    
-    // Process the prompt to highlight content in ** **
-    const processedPrompt = processPromptWithHighlighting(prompt);
+    let encFields = [];
 
     if (trigger.chart) {
 
         let chart = trigger.chart;
         let encodingMap = chart?.encodingMap;
+
+        encFields = Object.entries(encodingMap)
+            .filter(([channel, encoding]) => {
+                return encoding.fieldID != undefined;
+            })
+            .map(([channel, encoding], index) => {
+                let field = fieldItems.find(f => f.id == encoding.fieldID) as FieldItem;
+                return field.name;
+            });
 
         encodingComp = Object.entries(encodingMap)
             .filter(([channel, encoding]) => {
@@ -169,6 +171,16 @@ export const TriggerCard: FC<{
                               label={`${field?.name}`} />]
             })
     }
+
+    let prompt: string = trigger.displayInstruction;
+    if (trigger.instruction == '' && encFields.length > 0) {
+        prompt = '';
+    } else if (trigger.instruction != '' && trigger.instruction.length <= trigger.displayInstruction.length) {
+        prompt = trigger.instruction;
+    } 
+    
+    // Process the prompt to highlight content in ** **
+    const processedPrompt = processPromptWithHighlighting(prompt);
 
     if (mini) {
         let theme = useTheme();
@@ -354,6 +366,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
     
     // Add state for ideas and loading
     const [ideas, setIdeas] = useState<{text: string, goal: string, difficulty: 'easy' | 'medium' | 'hard'}[]>([]);
+    const [recReasoning, setRecReasoning] = useState<string>("");
     const [isLoadingIdeas, setIsLoadingIdeas] = useState<boolean>(false);
     
     
@@ -421,6 +434,8 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                 throw new Error('No root table found');
             }
 
+            let currentChartPng = await vegaLiteSpecToPng(assembleVegaChart(chart.chartType, chart.encodingMap, activeFields, currentTable.rows));
+
             const messageBody = JSON.stringify({
                 token: String(Date.now()),
                 model: activeModel,
@@ -429,7 +444,8 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                     rows: rootTable.rows
                 }],
                 exploration_thread: explorationThread,
-                current_chart: ""
+                current_data_sample: currentTable.rows.slice(0, 10),
+                current_chart: currentChartPng
             });
 
             const engine = getUrls().GET_RECOMMENDATION_QUESTIONS;
@@ -463,6 +479,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                         difficulty: question.difficulty
                     }));
                     setIdeas(newIdeas);
+                    setRecReasoning(result.content.recap + "\n\n" + result.content.reasoning);
                 }
             } else {
                 throw new Error('No valid results returned from agent');
@@ -579,6 +596,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                     input_tables: actionTables.map(t => {return { name: t.virtual?.tableId || t.id.replace(/\.[^/.]+$/ , ""), rows: t.rows }}),
                     output_fields: mode == 'formulate' ? activeFields.map(f => { return {name: f.name} }) : [],
                     dialog: currentTable.derive?.dialog,
+                    latest_data_sample: currentTable.rows.slice(0, 10),
                     new_instruction: instruction,
                     model: activeModel,
                     max_repair_attempts: config.maxRepairAttempts,
@@ -1097,3 +1115,68 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
 
     return encodingShelfCard;
 }
+
+// Function to convert Vega-Lite spec to PNG data URL with improved resolution
+const vegaLiteSpecToPng = async (spec: any, scale: number = 2.0, quality: number = 1.0): Promise<string | null> => {
+    try {
+        // Create a temporary container
+        const tempId = `temp-chart-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        const tempContainer = document.createElement('div');
+        tempContainer.id = tempId;
+        tempContainer.style.position = 'absolute';
+        tempContainer.style.left = '-9999px';
+        tempContainer.style.top = '-9999px';
+        document.body.appendChild(tempContainer);
+
+        // Embed the chart with higher resolution settings
+        const result = await embed('#' + tempId, spec, { 
+            actions: false, 
+            renderer: "canvas",
+            scaleFactor: scale // Apply scale factor for higher resolution
+        });
+
+        // Get the canvas and apply high-resolution rendering
+        const canvas = await result.view.toCanvas(scale); // Pass scale to toCanvas
+        const pngDataUrl = canvas.toDataURL('image/png', quality);
+
+        // Clean up
+        document.body.removeChild(tempContainer);
+
+        return pngDataUrl;
+    } catch (error) {
+        console.error('Error converting Vega-Lite spec to PNG:', error);
+        return null;
+    }
+};
+
+// Alternative method using toImageURL for even better quality
+const vegaLiteSpecToPngWithImageURL = async (spec: any, scale: number = 2.0): Promise<string | null> => {
+    try {
+        // Create a temporary container
+        const tempId = `temp-chart-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        const tempContainer = document.createElement('div');
+        tempContainer.id = tempId;
+        tempContainer.style.position = 'absolute';
+        tempContainer.style.left = '-9999px';
+        tempContainer.style.top = '-9999px';
+        document.body.appendChild(tempContainer);
+
+        // Embed the chart
+        const result = await embed('#' + tempId, spec, { 
+            actions: false, 
+            renderer: "canvas",
+            scaleFactor: scale
+        });
+
+        // Use toImageURL for better quality
+        const pngDataUrl = await result.view.toImageURL('png', scale);
+
+        // Clean up
+        document.body.removeChild(tempContainer);
+
+        return pngDataUrl;
+    } catch (error) {
+        console.error('Error converting Vega-Lite spec to PNG:', error);
+        return null;
+    }
+};

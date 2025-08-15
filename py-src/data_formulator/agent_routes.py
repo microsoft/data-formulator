@@ -360,9 +360,9 @@ def derive_data():
             prev_dialog = results[0]['dialog']
 
             if mode == "transform":
-                results = agent.followup(input_tables, prev_dialog, [field['name'] for field in new_fields], new_instruction)
+                results = agent.followup(input_tables, prev_dialog, [], [field['name'] for field in new_fields], new_instruction)
             if mode == "recommendation":
-                results = agent.followup(input_tables, prev_dialog, new_instruction)
+                results = agent.followup(input_tables, prev_dialog, [], new_instruction)
 
             repair_attempts += 1
         
@@ -389,10 +389,13 @@ def refine_data():
 
         # each table is a dict with {"name": xxx, "rows": [...]}
         input_tables = content["input_tables"]
-        output_fields = content["output_fields"]
         dialog = content["dialog"]
+
+        output_fields = content["output_fields"]
         new_instruction = content["new_instruction"]
+        latest_data_sample = content["latest_data_sample"]
         max_repair_attempts = content.get("max_repair_attempts", 1)
+        
         language = content.get("language", "python") # whether to use sql or python, default to python
 
         logger.info("== input tables ===>")
@@ -408,7 +411,7 @@ def refine_data():
 
         # always resort to the data transform agent       
         agent = SQLDataTransformationAgent(client=client, conn=conn) if language == "sql" else PythonDataTransformationAgent(client=client, exec_python_in_subprocess=current_app.config['CLI_ARGS']['exec_python_in_subprocess'])
-        results = agent.followup(input_tables, dialog, [field['name'] for field in output_fields], new_instruction)
+        results = agent.followup(input_tables, dialog, latest_data_sample, [field['name'] for field in output_fields], new_instruction)
 
         repair_attempts = 0
         while results[0]['status'] == 'error' and repair_attempts < max_repair_attempts: # only try once
@@ -416,7 +419,7 @@ def refine_data():
             new_instruction = f"We run into the following problem executing the code, please fix it:\n\n{error_message}\n\nPlease think step by step, reflect why the error happens and fix the code so that no more errors would occur."
             prev_dialog = results[0]['dialog']
 
-            results = agent.followup(input_tables, prev_dialog, [field['name'] for field in output_fields], new_instruction)
+            results = agent.followup(input_tables, prev_dialog, [], [field['name'] for field in output_fields], new_instruction)
             repair_attempts += 1
 
         if conn:
@@ -495,8 +498,9 @@ def get_recommendation_questions():
         # Get exploration thread if provided (for context from previous explorations)
         exploration_thread = content.get("exploration_thread", None)
         current_chart = content.get("current_chart", None)
+        current_data_sample = content.get("current_data_sample", None)
 
-        results = agent.run(input_tables, exploration_thread, current_chart)
+        results = agent.run(input_tables, exploration_thread, current_data_sample, current_chart)
         
         # Filter out any failed results
         valid_results = [r for r in results if r['status'] == 'ok']

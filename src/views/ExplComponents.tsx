@@ -124,6 +124,7 @@ const ConceptExplanationCard = styled(Card)(({ theme }) => ({
     minWidth: 360,  // Increased from 300
     maxWidth: 480,  // Increased from 360
     margin: '4px',
+    overflow: 'auto',
     borderRadius: '6px',
     border: `1px solid ${alpha(theme.palette.divider, 0.2)}`,
     boxShadow: '0 1px 2px rgba(0,0,0,0.05)',

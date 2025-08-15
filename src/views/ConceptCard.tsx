@@ -372,11 +372,11 @@ export const ConceptCard: FC<ConceptCardProps> = function ConceptCard({ field, s
         backgroundColor = theme.palette.derived.main;
     }
 
-    let draggleCardHeaderBgOverlay = 'rgba(255, 255, 255, 0.93)';
+    let draggleCardHeaderBgOverlay = 'rgba(255, 255, 255, 0.9)';
 
     // Add subtle tint for non-focused fields
     if (focusedTable && !focusedTable.names.includes(field.name)) {
-        draggleCardHeaderBgOverlay = 'rgba(255, 255, 255, 0.98)';
+        draggleCardHeaderBgOverlay = 'rgba(255, 255, 255, 1)';
     }
 
     let boxShadow = editMode ? "0 2px 4px 0 rgb(0 0 0 / 20%), 0 2px 4px 0 rgb(0 0 0 / 19%)" : "";

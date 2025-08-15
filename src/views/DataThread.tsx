@@ -1005,7 +1005,6 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
                     display: 'block', 
                     flex: 1,
                     height: 'calc(100% - 48px)',
-                    backgroundColor: 'rgba(0, 0, 0, 0.02)',
                 }}>
                 {view}
             </Box>

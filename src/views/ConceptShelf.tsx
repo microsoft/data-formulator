@@ -202,7 +202,9 @@ export const ConceptShelf: FC<ConceptShelfProps> = function ConceptShelf() {
     // reference to states
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
     const tables = useSelector((state: DataFormulatorState) => state.tables);
-
+    const focusedTableId = useSelector((state: DataFormulatorState) => state.focusedTableId);
+    const focusedTable = tables.find(t => t.id == focusedTableId);
+    
     // group concepts based on types
     let conceptItemGroups = groupConceptItems(conceptShelfItems, tables);
     let groupNames = [...new Set(conceptItemGroups.map(g => g.group))]
@@ -236,6 +238,15 @@ export const ConceptShelf: FC<ConceptShelfProps> = function ConceptShelf() {
                     </Box>
                     {groupNames.map(groupName => {
                         let fields = conceptItemGroups.filter(g => g.group == groupName).map(g => g.field);
+                        fields = fields.sort((a, b) => {
+                            if (focusedTable && focusedTable.names.includes(a.name) && !focusedTable.names.includes(b.name)) {
+                                return -1;
+                            } else if (focusedTable && !focusedTable.names.includes(a.name) && focusedTable.names.includes(b.name)) {
+                                return 1;
+                            } else {
+                                return 0;
+                            }
+                        });
                         return <ConceptGroup key={`concept-group-${groupName}`} groupName={groupName} fields={fields} />
                     })}
                     <Divider orientation="horizontal" textAlign="left" sx={{mt: 1}}></Divider>

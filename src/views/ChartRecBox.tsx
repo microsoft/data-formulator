@@ -218,6 +218,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
     const [isFormulating, setIsFormulating] = useState<boolean>(false);
     const [ideas, setIdeas] = useState<{text: string, goal: string, difficulty: 'easy' | 'medium' | 'hard'}[]>(
         activeChallenges.find(ac => ac.tableId === tableId)?.challenges || []);
+    const [recReasoning, setRecReasoning] = useState<string>("");
     
     // Add state for cycling through questions
     const [currentQuestionIndex, setCurrentQuestionIndex] = useState<number>(0);
@@ -333,6 +334,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                         difficulty: question.difficulty
                     }));
                     setIdeas(newIdeas);
+                    setRecReasoning(result.content.reasoning);
                 }
             } else {
                 throw new Error('No valid results returned from agent');

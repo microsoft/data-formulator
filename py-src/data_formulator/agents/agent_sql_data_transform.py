@@ -32,9 +32,9 @@ Concretely, you should first refine users' goal and then create a sql query in t
                 * note: try to distinguish whether the user wants to fitler the data with some conditions, or they want to aggregate data based on some fields.
                 * e.g., filter data to show all items from top 20 categories based on their average values, is different from showing the top 20 categories with their average values
          - "display_instruction" should be a short verb phrase instruction that will be displayed to the user. 
-            - it would be a short single sentence summary of the user intent as a verb phrase, it should be very short and on point.
-            - generate it based on user's [GOAL] and the suggested visualization, avoid simply repeating the visualization design, use a high-level semantic description of the visualization goal.
-            - if the user's [GOAL] is a follow-up question like "filter to show top 10", you don't need to repeat the whole question, just describe the follow-up question in a high-level semantic way.
+            - it would be a short single sentence summary of the user intent as a verb phrase.
+            - generate it based on user's [GOAL] and the suggested visualization, don't simply repeat the visualization design, instead describe the visualization goal in high-level semantic way.
+            - if the user specification follows up the previous instruction, the display instruction should describe what's new in this step without repeating what's already mentioned in the previous instruction (the user will be able to see the previous instruction to get context).
             - if you mention column names from the input or the output data (either exact or semantically matching), highlight the text in **bold**.
         - determine "output_fields", the desired fields that the output data should have to achieve the user's goal, it's a good idea to include intermediate fields here.
             - note: when the user asks for filtering the data, include all fields that are needed to filter the data in "output_fields" (as well as other fields the user asked for or necessary in computation).
@@ -45,6 +45,9 @@ Concretely, you should first refine users' goal and then create a sql query in t
                 - when adding new fields to "visualization_fields", be efficient and add only a minimal number of fields that are needed to achive the user's goal. generally, the total number of fields in "visualization_fields" should be no more than 3 for x,y,legend.
                 - if the user's goal is to filter the data, include all fields that are needed to filter the data in "output_fields" (as well as other fields the user asked for or necessary in computation).
                 - all existing fields user provided in "visualization_fields" should be included in "visualization_fields" list.
+            - sometimes, user may provide instruction to update visualizations fields they provided. You should leverage the user's goal to resolve the conflict and decide the final "visualization_fields"
+                - e.g., they may mention "use Y metric instead" while X metric is in provided fields, in this case, you should update "visualization_fields" to update X metric with Y metric.
+
     Prepare the result in the following json format:
 
 ```
@@ -300,8 +303,13 @@ class SQLDataTransformationAgent(object):
         return self.process_gpt_sql_response(response, messages)
         
 
-    def followup(self, input_tables, dialog, output_fields: list[str], new_instruction: str, n=1):
-        """extend the input data (in json records format) to include new fields"""
+    def followup(self, input_tables, dialog, latest_data_sample, output_fields: list[str], new_instruction: str, n=1):
+        """
+        extend the input data (in json records format) to include new fields
+        latest_data_sample: the latest data sample that the user is working on, it's a json object that contains the data sample of the current table
+        output_fields: the fields that the user wants to add to the latest data sample
+        new_instruction: the new instruction that the user wants to add to the latest data sample
+        """
 
         goal = {
             "followup_instruction": new_instruction,
@@ -314,8 +322,11 @@ class SQLDataTransformationAgent(object):
 
         updated_dialog = [{"role":"system", "content": self.system_prompt}, *dialog[1:]]
 
+        # get the current table name
+        sample_data_str = pd.DataFrame(latest_data_sample).head(10).to_string()
+
         messages = [*updated_dialog, {"role":"user", 
-                              "content": f"Update the sql query above based on the following instruction:\n\n{json.dumps(goal, indent=4)}"}]
+                              "content": f"This is the result from the latest sql query:\n\n{sample_data_str}\n\nUpdate the sql query above based on the following instruction:\n\n{json.dumps(goal, indent=4)}"}]
 
         response = self.client.get_completion(messages = messages)
 

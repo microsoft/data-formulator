@@ -11,6 +11,7 @@ import string
 
 import traceback
 import duckdb
+import pandas as pd
 
 import logging
 
@@ -53,9 +54,9 @@ Concretely:
         - based on the recommendation, determine what is an ideal output data. Note, the output data must be in tidy format.
         - then suggest recommendations of visualization fields that should be visualized.
     - "display_instruction" should be a short verb phrase instruction that will be displayed to the user. 
-        - it would be a short single sentence summary of the user intent as a verb phrase, it should be very short and on point.
-        - generate it based on user's [GOAL] and the suggested visualization, avoid simply repeating the visualization design, use a high-level semantic description of the visualization goal.
-        - if the user's [GOAL] is a follow-up question like "filter to show top 10", you don't need to repeat the whole question, just describe the follow-up question in a high-level semantic way.
+        - it would be a short single sentence summary of the user intent as a verb phrase.
+        - generate it based on user's [GOAL] and the suggested visualization, don't simply repeat the visualization design, instead describe the visualization goal in high-level semantic way.
+        - if the user specification follows up the previous instruction, the display instruction should describe what's new in this step without repeating what's already mentioned in the previous instruction (the user will be able to see the previous instruction to get context).
         - if you mention column names from the input or the output data (either exact or semantically matching), highlight the text in **bold**.
     - "visualization_fields" should be ordered based on whether the field will be used in x,y axes or legends, do not include other intermediate fields from "output_fields".
     - "visualization_fields" should be 2-3 (for x,y,legend) or 4 (if you consider faceted visualization).
@@ -290,12 +291,20 @@ class SQLDataRecAgent(object):
         return self.process_gpt_response(input_tables, messages, response)
         
 
-    def followup(self, input_tables, dialog, new_instruction: str, n=1):
-        """extend the input data (in json records format) to include new fields"""
+    def followup(self, input_tables, dialog, latest_data_sample, new_instruction: str, n=1):
+        """extend the input data (in json records format) to include new fields
+        latest_data_sample: the latest data sample that the user is working on, it's a json object that contains the data sample of the current table
+        new_instruction: the new instruction that the user wants to add to the latest data sample
+        """
 
         logger.info(f"GOAL: \n\n{new_instruction}")
 
-        messages = [*dialog, {"role":"user", "content": f"Update: \n\n{new_instruction}"}]
+        # get the current table name
+        sample_data_str = pd.DataFrame(latest_data_sample).head(10).to_string()
+
+        messages = [*dialog, 
+                    {"role":"user", 
+                    "content": f"This is the result from the latest sql query:\n\n{sample_data_str}\n\nUpdate the sql query above based on the following instruction:\n\n{new_instruction}"}]
 
         response = self.client.get_completion(messages = messages)
 

@@ -22,16 +22,17 @@ Your goal:
     - *DO NOT* explain trivial new fields like "Decade" or "Avg_Rating", "US_Sales" that are self-explanatory.
         - Avoid explaining fields that are simple aggregate of fields in the original data (min_score, avg_value, count, etc.)
     - When a field involves mathematical computation, you can use LaTeX math notation in the explanation. Format mathematical expressions using:
-        - Inline math: `\( ... \)` for formulas within text
-        - Block math: `\[ ... \]` for standalone formulas
-        - Examples: `\( \frac{\text{Revenue}}{\text{Cost}} \)` for ratios, `\[ \text{Score} = \text{Rating} \times \text{Gross} \]` for formulas
+        - Inline math: `\\( ... \\)` for formulas within text
+        - Block math: `\\[ ... \\]` for standalone formulas
+        - Examples: `\\( \\frac{\\text{Revenue}}{\\text{Cost}} \\)` for ratios, `\\[ \\text{Score} = \\text{Rating} \\times \\text{Gross} \\]` for formulas
     - Note: don't use math notation for fields whose computation is trivial (use plain english), it will likely be confusing to the reader. 
       Only use math notation for fields that can not be easilyexplained in plain english. Use it sparingly.
 3. If there are multiple fields that have the similar computation, you can explain them together in one explanation.
     - in "field", you can provide a list of fields in format of "field1, field2, ..."
     - in "explanation", you can provide a single explanation for the computation of the fields.
     - for example, if you have fields like "Norm_Rating", "Norm_Gross", "Critical_Commercial_Score", you can explain Norm_Rating, Norm_Gross together in one explanation and explain Critical_Commercial_Score in another explanation.
-    
+4. When generating latex math notation, be sure to escape the backslashes in the latex notation.
+
 The focus is to explain how new fields are computed, don't generate explanation for low-level actions like "return", "load data" etc. 
 
 Provide the result in the following json format:
@@ -140,15 +141,15 @@ def transform_data(df_movies):
     "concepts": [  
         {  
             "field": "Norm_Rating",  
-            "explanation": "The normalized rating scales **Avg_Rating** between 0 and 1 using min-max normalization. Formula: \( \text{Norm\_Rating} = \frac{\text{Avg\_Rating} - \text{Min}(\text{Avg\_Rating})}{\text{Max}(\text{Avg\_Rating}) - \text{Min}(\text{Avg\_Rating})} \)"  
+            "explanation": "The normalized rating scales **Avg_Rating** between 0 and 1 using min-max normalization. Formula: \\( \\text{Norm\\_Rating} = \\frac{\\text{Avg\\_Rating} - \\text{Min}(\\text{Avg\\_Rating})}{\\text{Max}(\\text{Avg\\_Rating}) - \\text{Min}(\\text{Avg\\_Rating})} \\)"  
         },  
         {  
             "field": "Norm_Gross",  
-            "explanation": "The normalized worldwide gross scales **Worldwide_Gross** between 0 and 1 using min-max normalization. Formula: \( \text{Norm\_Gross} = \frac{\text{Worldwide\_Gross} - \text{Min}(\text{Worldwide\_Gross})}{\text{Max}(\text{Worldwide\_Gross}) - \text{Min}(\text{Worldwide\_Gross})} \)"  
+            "explanation": "The normalized worldwide gross scales **Worldwide_Gross** between 0 and 1 using min-max normalization. Formula: \\( \\text{Norm\\_Gross} = \\frac{\\text{Worldwide\\_Gross} - \\text{Min}(\\text{Worldwide_Gross})}{\\text{Max}(\\text{Worldwide_Gross}) - \\text{Min}(\\text{Worldwide_Gross})} \\)"  
         },  
         {  
             "field": "Critical_Commercial_Score",  
-            "explanation": "The critical-commercial success score combines **Norm_Rating** and **Norm_Gross** to represent a movie's critical acclaim and commercial performance. Formula: \( \text{Critical\_Commercial\_Score} = \text{Norm\_Rating} \times \text{Norm\_Gross} \)"  
+            "explanation": "The critical-commercial success score combines **Norm_Rating** and **Norm_Gross** to represent a movie's critical acclaim and commercial performance. Formula: \\( \\text{Critical\\_Commercial\\_Score} = \\text{Norm\\_Rating} \\times \\text{Norm\\_Gross} \\)"  
         }  
     ]  
 }  
@@ -178,7 +179,7 @@ class CodeExplanationAgent(object):
             logger.info("\n=== Code explanation result ===>\n")
             logger.info(choice.message.content + "\n")
             
-            json_blocks = extract_json_objects(choice.message.content + "\n")
+            json_blocks = extract_json_objects(choice.message.content)
             logger.info(json_blocks)
             
             if len(json_blocks) > 0:
@@ -188,6 +189,7 @@ class CodeExplanationAgent(object):
                     json_block = json.loads(choice.message.content + "\n")
                     result = {'status': 'ok', 'content': json_block}
                 except:
+                    logger.error(f"unable to extract JSON from response: {choice.message.content}")
                     result = {'status': 'other error', 'content': 'unable to extract JSON from response'}
             
             # individual dialog for the agent
