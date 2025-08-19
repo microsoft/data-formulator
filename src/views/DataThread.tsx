@@ -568,7 +568,7 @@ let SingleThreadView: FC<{
                 "&::before, &::after": { borderColor: alpha(theme.palette.custom.main, 0.2), borderWidth: '2px', width: 60 },
             }}>
                 <Typography sx={{ fontSize: "10px",  color: 'text.secondary', textTransform: 'none' }}>
-                    {`explore - ${threadIdx + 1}`}
+                    {`thread - ${threadIdx + 1}`}
                 </Typography>
             </Divider>
         </Box>

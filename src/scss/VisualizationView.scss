@@ -50,8 +50,8 @@
     }
 
     .vega-thumbnail-box:hover {
-        transform: translateY(1px) translateX(-1px);
-        box-shadow: 0 0 10px rgba(33,33,33,.4);
+        transform: translateY(-1px);
+        box-shadow: '0 2px 6px rgba(0,0,0,0.1)',
     }
 }
 
@@ -254,7 +254,7 @@ $accelerate-ease: cubic-bezier(0.4, 0.0, 1, 1);
 }
 
 .data-thread-card:hover {
-    transform: translateY(1px);
+    transform: translateY(-1px);
     box-shadow: 0 0 3px rgba(33,33,33,.2);
     z-index: 1;
 }
@@ -267,7 +267,7 @@ $accelerate-ease: cubic-bezier(0.4, 0.0, 1, 1);
 }
 
 .hover-card:hover {
-    transform: translateY(1px);
+    transform: translateY(-1px);
     box-shadow: 0 0 3px rgba(33,33,33,.2);
 }
 

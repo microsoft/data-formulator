@@ -500,8 +500,9 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
         assembledChart['config'] = {
             "view": {
                 "continuousWidth": config.defaultChartWidth,
-                "continuousHeight": config.defaultChartHeight,
-            }
+                "continuousHeight": config.defaultChartHeight
+            },
+            "axisX": {"labelLimit": 100},
         }
 
         embed('#' + id, { ...assembledChart }, { actions: true, renderer: "svg" }).then(function (result) {
@@ -862,7 +863,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                         </Box>
                     </Collapse>
                     <Collapse in={codeViewOpen}>
-                        <Box sx={{minWidth: 440, maxWidth: 800, padding: "0px 8px", position: 'relative', margin: '8px auto'}}>
+                        <Box sx={{minWidth: 440, maxWidth: 960, padding: "0px 8px", position: 'relative', margin: '8px auto'}}>
                             <ButtonGroup sx={{position: 'absolute', right: 8, top: 1}}>
                                 <IconButton onClick={() => {
                                     setCodeViewOpen(false);
@@ -877,8 +878,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                                 icon={<CodeIcon sx={{ fontSize: 16, color: 'primary.main' }} />}
                                 transformationIndicatorText={transformationIndicatorText}
                             >
-                                <Box 
-                                    sx={{
+                                <Box sx={{
                                         maxHeight: '400px', 
                                         overflow: 'auto', 
                                         width: '100%', 

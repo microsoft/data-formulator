@@ -41,34 +41,48 @@ Guidelines for question suggestions:
 8. FORMATTING: for each question, include a goal version that provides the high-level goal of the question that can be used as a subtitle for a chart. 
     - The goal should all be a short single sentence.
     - It should capture the task described in the text of the question (do not omit any information that may lead to ambiguity), but also keep it concise.
-
-Examples questions:
-```json
-[
-    {"text": "Compare income distribution between California and Texas over groups.", 
-    "goal": "Compare income distribution between California and Texas over groups", "difficulty": "easy"},
-    {"text": "Which states showed the most volatile income distribution changes between 2000-2016? Calculate the standard deviation of income group percentages for each state.", 
-    "goal": "Volatile income distribution changes between 2000-2016", "difficulty": "easy"},
-    {"text": "Identify states that experienced a 'middle class squeeze' - where middle income groups decreased while both low and high income groups increased.", 
-    "goal": "Identify states with 'middle class squeeze'", "difficulty": "hard"},
-    {"text": "Calculate the Gini coefficient equivalent for each state in 2016 using income group data. Show the 10 states with highest and lowest income inequality.", 
-    "goal": "Show the 10 states with highest and lowest income inequality", "difficulty": "hard"}
-]
-```
+    - include the **bold** keyword for the attributes / metrics that are important to the question, especially when the goal mentions fields / metrics in the original dataset (don't have to be exact match)
+    - include 'difficulty' to indicate the difficulty of the question, it should be one of 'easy', 'medium', 'hard'
+    - include a 'tag' to indicate the type of the question, it should be one of:
+        * 'summary': a summary question that provides a high-level overview of the data
+        * 'comparative': a comparative question that compares two or more groups of data or two entities
+        * 'refine': a refine question that refines the exploration by focusing on a specific aspect of the data
+        * 'explorative': an explorative question that explores a new aspect of the data introducing new metrics / attributes related to the current exploration thread
 
 Output format:
 ```json
 {
-    "recap": ... // a short summary of the user's exploration context, including the exploration thread, the current data sample, and the current chart
-    "reasoning": "Brief explanation of the reasoning behind the questions", // explain how you leverage the exploration context to suggest the questions
+    "recap": ..., // a short summary of the user's exploration context, including the exploration thread, the current data sample, and the current chart
+    "reasoning": ..., // explain how you leverage the exploration context to suggest the questions
     "exploration_questions": [
-        {"text": ..., "goal": ..., "difficulty": ...},
+        {"text": ..., "goal": ..., "difficulty": ..., "tag": ...},
         ...
     ],
-    
 }
 ```
 '''
+
+# Examples questions:
+# ```json
+# [
+#     {"text": "Compare income distribution between California and Texas over groups.", 
+#     "goal": "Compare income distribution between California and Texas over groups", 
+#     "difficulty": "easy",
+#     "tag": "comparative"},
+#     {"text": "Which states showed the most volatile income distribution changes between 2000-2016? Calculate the standard deviation of income group percentages for each state.", 
+#     "goal": "Volatile **income** distribution changes between 2000-2016", 
+#     "difficulty": "easy",
+#     "tag": "explorative"},
+#     {"text": "Identify states that experienced a 'middle class squeeze' - where middle income groups decreased while both low and high income groups increased.", 
+#     "goal": "Identify **states** with 'middle class squeeze'", 
+#     "difficulty": "hard",
+#     "tag": "refine"},
+#     {"text": "Calculate the Gini coefficient equivalent for each state in 2016 using income group data. Show the 10 states with highest and lowest income inequality.", 
+#     "goal": "Show the 10 **states** with highest and lowest **income inequality**", 
+#     "difficulty": "hard",
+#     "tag": "refine"}
+# ]
+# ```
 
 class InteractiveExploreAgent(object):
 

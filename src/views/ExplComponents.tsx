@@ -124,7 +124,7 @@ const ConceptExplanationCard = styled(Card)(({ theme }) => ({
     minWidth: 360,  // Increased from 300
     maxWidth: 480,  // Increased from 360
     margin: '4px',
-    overflow: 'auto',
+
     borderRadius: '6px',
     border: `1px solid ${alpha(theme.palette.divider, 0.2)}`,
     boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
@@ -150,10 +150,11 @@ const ConceptName = styled(Typography)(({ theme }) => ({
 const ConceptExplanation = styled(Typography)(({ theme }) => ({
     fontSize: '11px',
     lineHeight: 1.4,
+    overflow: 'auto',
     color: theme.palette.text.secondary,
     fontStyle: 'italic',
     '& .katex': {
-        fontSize: '14px',
+        fontSize: '12px',
         lineHeight: 1.2,
     },
     '& .katex-display': {
@@ -269,7 +270,7 @@ export const CodeExplanationCard: FC<{
         variant="outlined"
         sx={{
             minWidth: "280px", 
-            maxWidth: "1920px", 
+            maxWidth: "1200px", 
             display: "flex", 
             flexGrow: 1, 
             margin: 0,
@@ -290,6 +291,7 @@ export const CodeExplanationCard: FC<{
                 flexDirection: "column", 
                 flexGrow: 1, 
                 padding: 0,
+                overflow: 'auto',
                 '&:last-child': { paddingBottom: 0 }
             }}
         >
@@ -302,6 +304,7 @@ export const CodeExplanationCard: FC<{
                     display: 'flex',
                     alignItems: 'center',
                     gap: 0.5
+
                 }}
                 gutterBottom
             >

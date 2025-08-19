@@ -47,6 +47,7 @@ import { Type } from '../data/types';
 import CloseIcon from '@mui/icons-material/Close';
 import EmojiEventsIcon from '@mui/icons-material/EmojiEvents';
 import TipsAndUpdatesIcon from '@mui/icons-material/TipsAndUpdates';
+import { renderTextWithEmphasis } from './EncodingShelfCard';
 
 export interface ChartRecBoxProps {
     tableId: string;
@@ -167,40 +168,64 @@ export const IdeaChip: FC<{
     sx?: SxProps,
     disabled?: boolean
 }> = function ({mini, idea, theme, onClick, sx, disabled}) {
+
     const getDifficultyColor = (difficulty: 'easy' | 'medium' | 'hard') => {
         switch (difficulty) {
             case 'easy':
-                return 'success';
+                return theme.palette.success.main;
             case 'medium':
-                return 'warning';
+                return theme.palette.primary.main;
             case 'hard':
-                return 'warning';
+                return theme.palette.warning.main;
             default:
-                return 'default';
+                return theme.palette.text.secondary;
         }
     };
+
+    let styleColor = getDifficultyColor(idea.difficulty);
+
+    let ideaText = mini ? idea.goal : idea.text;
+
+    // Replace underscores with underscore + zero-width space for better breaking
+
+    let ideaTextComponent = renderTextWithEmphasis(ideaText, {
+        borderRadius: '4px',
+        border: `1px solid`,
+        borderColor: alpha(styleColor, 0.1),
+        fontSize: '11px',
+        lineHeight: 1.4,
+        backgroundColor: alpha(styleColor, 0.07),
+    });
+
     return (
-        <Chip
-            label={mini ? idea.goal : idea.text}
-            size={mini ? "small" : "medium"}
-            color={getDifficultyColor(idea.difficulty) as any}
-            variant="outlined"
+        <Box
             sx={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                padding: '4px 6px',
                 fontSize: '11px',
                 minHeight: '24px',
                 height: 'auto',
                 borderRadius: 2,
-                '& .MuiChip-label': {
-                    whiteSpace: 'normal',
-                    wordBreak: 'break-word',
-                    lineHeight: 1.1,
-                    padding: '4px 8px'
+                border: `1px solid ${alpha(styleColor, 0.2)}`,
+                boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
+                transition: 'all 0.2s ease-in-out',
+                backgroundColor: alpha(theme.palette.background.paper, 0.9),
+                cursor: 'pointer',
+                opacity: disabled ? 0.6 : 1,
+                '&:hover': {
+                    boxShadow: '0 2px 6px rgba(0,0,0,0.1)',
+                    borderColor: alpha(styleColor, 0.7),
+                    transform: 'translateY(-1px)',
                 },
                 ...sx
             }}
             onClick={onClick}
-            disabled={disabled}
-        />
+        >
+            <Typography sx={{ fontSize: '11px', color: getDifficultyColor(idea.difficulty) }}>
+                {ideaTextComponent}
+            </Typography>
+        </Box>
     );
 };
 
@@ -328,10 +353,11 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                 const result = data.results[0];
                 if (result.status === 'ok' && result.content.exploration_questions) {
                     // Convert questions to ideas with 'easy' difficulty
-                    const newIdeas = result.content.exploration_questions.map((question: {text: string, goal: string, difficulty: 'easy' | 'medium' | 'hard'}) => ({
+                    const newIdeas = result.content.exploration_questions.map((question: {text: string, goal: string, difficulty: 'easy' | 'medium' | 'hard', tag: string}) => ({
                         text: question.text,
                         goal: question.goal,
-                        difficulty: question.difficulty
+                        difficulty: question.difficulty,
+                        tag: question.tag
                     }));
                     setIdeas(newIdeas);
                     setRecReasoning(result.content.reasoning);
@@ -721,7 +747,6 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
             {ideas.length > 0 && (
                 <Box>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, marginBottom: 1 }}>
-                        <EmojiEventsIcon sx={{ fontSize: 16, color: 'primary.main' }} />
                         <Typography sx={{ fontSize: 12, color: "text.secondary" }}>
                             Ideas
                         </Typography>
@@ -741,7 +766,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                                 onClick={() => handleChallengeClick(challenge.text)}
                                 disabled={isFormulating}
                                 sx={{
-                                    width: '48%',
+                                    width: '46%',
                                 }}
                             />
                         ))}

@@ -95,25 +95,29 @@ let selectBaseTables = (activeFields: FieldItem[], currentTable: DictTable, tabl
 }
 
 // Add this utility function before the TriggerCard component
-const processPromptWithHighlighting = (prompt: string) => {
+export const renderTextWithEmphasis = (text: string, highlightChipSx?: SxProps<Theme>) => {
+    
+    text = text.replace(/_/g, '_\u200B');
     // Split the prompt by ** patterns and create an array of text and highlighted segments
-    const parts = prompt.split(/(\*\*.*?\*\*)/g);
+    const parts = text.split(/(\*\*.*?\*\*)/g);
     
     return parts.map((part, index) => {
         if (part.startsWith('**') && part.endsWith('**')) {
             // This is a highlighted part - remove the ** and wrap with styled component
             const content = part.slice(2, -2);
             return (
-                <Chip
+                <Typography
                     key={index}
+                    component="span"
                     sx={{
-                        borderRadius: '4px', border: '1px solid rgb(250 235 215)', 
-                        background: 'rgb(250 235 215 / 80%)', maxWidth: '140px',
-                        whiteSpace: 'nowrap', overflow: 'hidden',
-                        textOverflow: 'ellipsis', height: 16, color: 'inherit',
+                        color: 'inherit',
+                        padding: '0px 2px',
+                        borderRadius: '4px',
+                        ...highlightChipSx
                     }}
-                    label={content}
-                />
+                >
+                    {content}
+                </Typography>
             );
         }
         return part;
@@ -126,6 +130,8 @@ export const TriggerCard: FC<{
     hideFields?: boolean, 
     mini?: boolean,
     sx?: SxProps<Theme>}> = function ({ className, trigger, hideFields, mini = false, sx }) {
+
+    let theme = useTheme();
 
     let fieldItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
 
@@ -180,10 +186,13 @@ export const TriggerCard: FC<{
     } 
     
     // Process the prompt to highlight content in ** **
-    const processedPrompt = processPromptWithHighlighting(prompt);
+    const processedPrompt = renderTextWithEmphasis(prompt, {
+        borderRadius: '4px', border: '1px solid rgb(250 235 215)', 
+        fontSize: mini ? 10 : 11, padding: '1px 4px',
+        background: 'rgb(250 235 215 / 80%)', 
+    });
 
     if (mini) {
-        let theme = useTheme();
         return <Typography sx={{
             ml: '7px', borderLeft: '3px solid', 
             borderColor: alpha(theme.palette.custom.main, 0.5), 
@@ -205,9 +214,12 @@ export const TriggerCard: FC<{
 
     return  <Card className={`${className}`} variant="outlined" 
                 sx={{
-                    cursor: 'pointer', backgroundColor: 'rgba(255, 160, 122, 0.07)', 
+                    cursor: 'pointer', backgroundColor: alpha(theme.palette.custom.main, 0.05), 
                     fontSize: '12px', display: 'flex', flexDirection: 'row', alignItems: 'center', gap: '2px',
-                    '&:hover': { transform: "translate(0px, 1px)",  boxShadow: "0 0 3px rgba(33,33,33,.2)"},
+                    '&:hover': { 
+                        transform: "translate(0px, -1px)",  
+                        boxShadow: '0 2px 6px rgba(0,0,0,0.1)',
+                    },
                     '& .MuiChip-label': { px: 0.5, fontSize: "10px"},
                     ...sx,
                 }} 
@@ -473,10 +485,11 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                 const result = data.results[0];
                 if (result.status === 'ok' && result.content.exploration_questions) {
                     // Convert questions to ideas with difficulty
-                    const newIdeas = result.content.exploration_questions.map((question: {text: string, goal: string, difficulty: 'easy' | 'medium' | 'hard'}) => ({
+                    const newIdeas = result.content.exploration_questions.map((question: {text: string, goal: string, difficulty: 'easy' | 'medium' | 'hard', tag: string}) => ({
                         text: question.text,
                         goal: question.goal,
-                        difficulty: question.difficulty
+                        difficulty: question.difficulty,
+                        tag: question.tag
                     }));
                     setIdeas(newIdeas);
                     setRecReasoning(result.content.recap + "\n\n" + result.content.reasoning);
@@ -887,14 +900,16 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
         
     </Box>
 
+    console.log(ideas);
+
     // Ideas display section
     let ideasSection = ideas.length > 0 ? (
-        <Box key='ideas-section' sx={{ padding: '4px 8px'}}>
+        <Box key='ideas-section'>
             <Box sx={{
+                p: 0.5,
                 display: 'flex', 
                 flexWrap: 'wrap', 
-                gap: 0.5,
-                marginBottom: 1
+                gap: 0.75,
             }}>
                 {ideas.map((idea, index) => (
                     <IdeaChip
