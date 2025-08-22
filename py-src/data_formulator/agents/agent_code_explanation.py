@@ -2,14 +2,14 @@
 # Licensed under the MIT License.
 
 import json
-from data_formulator.agents.agent_utils import generate_data_summary, extract_json_objects
+from data_formulator.agents.agent_utils import generate_data_summary, extract_json_objects, extract_code_from_gpt_response
 
 import logging
 
 logger = logging.getLogger(__name__)
 
 
-SYSTEM_PROMPT = '''You are a data scientist to help user explain code, 
+SYSTEM_PROMPT = r'''You are a data scientist to help user explain code, 
 so that a non-code can clearly understand what the code is doing, you are provided with a summary of the input data, and the transformation code.
 
 Your goal:
@@ -22,31 +22,38 @@ Your goal:
     - *DO NOT* explain trivial new fields like "Decade" or "Avg_Rating", "US_Sales" that are self-explanatory.
         - Avoid explaining fields that are simple aggregate of fields in the original data (min_score, avg_value, count, etc.)
     - When a field involves mathematical computation, you can use LaTeX math notation in the explanation. Format mathematical expressions using:
-        - Inline math: `\\( ... \\)` for formulas within text
-        - Block math: `\\[ ... \\]` for standalone formulas
-        - Examples: `\\( \\frac{\\text{Revenue}}{\\text{Cost}} \\)` for ratios, `\\[ \\text{Score} = \\text{Rating} \\times \\text{Gross} \\]` for formulas
+        - Inline math: `\( ... \)` for formulas within text
+        - Block math: `\[ ... \]` for standalone formulas
+        - Examples: `\( \frac{\text{Revenue}}{\text{Cost}} \)` for ratios, `\[ \text{Score} = \text{Rating} \times \text{Worldwide\_Gross} \]` for formulas
+        - note: when using underscores as part of the text, you need to escape them with a backslash, e.g., `\_`
     - Note: don't use math notation for fields whose computation is trivial (use plain english), it will likely be confusing to the reader. 
       Only use math notation for fields that can not be easilyexplained in plain english. Use it sparingly.
 3. If there are multiple fields that have the similar computation, you can explain them together in one explanation.
     - in "field", you can provide a list of fields in format of "field1, field2, ..."
     - in "explanation", you can provide a single explanation for the computation of the fields.
     - for example, if you have fields like "Norm_Rating", "Norm_Gross", "Critical_Commercial_Score", you can explain Norm_Rating, Norm_Gross together in one explanation and explain Critical_Commercial_Score in another explanation.
-4. When generating latex math notation, be sure to escape the backslashes in the latex notation.
 
 The focus is to explain how new fields are computed, don't generate explanation for low-level actions like "return", "load data" etc. 
 
-Provide the result in the following json format:
+Provide the result in the following two sections:
+    - first section is the code explanation that should be a markdown block explaining the code, in the [CODE EXPLANATION] section.
+        - remember to highlight constants, data fields, and important verbs in the code explanation.
+    - second section is the concepts explanation that should be a json block (start with ```json) in the [CONCEPTS EXPLANATION] section.
+
+[CODE EXPLANATION]
+
+...(explanation of the code)
+
+[CONCEPTS EXPLANATION]
 
 ```json
-{
-    "code": "...", // the explanation of the code, it should be a markdown string that is a list of bullet points (with new lines), highlight constants, data fields, and important verbs.
-    "concepts": [
-        {
-            "field": "...",
-            "explanation": "..."
-        }
-    ] // explanation of selected new concepts
-}
+[
+    {
+        "field": "...",
+        "explanation": "..."
+    }
+]
+
 ```
 '''
 
@@ -134,25 +141,32 @@ def transform_data(df_movies):
     return transformed_df
 ```
 
-[EXPLANATION]
+[CODE EXPLANATION]
 
-{  
-    "code": "1. **Average Rating** is calculated by averaging the **Rotten_Tomatoes_Rating** (normalized to a 0-10 scale) and **IMDB_Rating**, handling missing values. \n2. **Normalized Rating** is derived by scaling the **Average Rating** to a range between 0 and 1 using min-max normalization. \n3. **Worldwide Gross** is normalized by scaling the values of **Worldwide_Gross** to a range between 0 and 1 using min-max normalization. \n4. **Critical-Commercial Success Score** is computed as the product of **Normalized Rating** and **Normalized Worldwide Gross**, representing a combination of critical acclaim and commercial success. \n5. **Decade** is extracted from the **Release_Date** by identifying the year and grouping it into its respective decade (e.g., '1990s', '2000s'). \n6. The resulting dataset includes original fields (**Title**, **Major_Genre**, **Release_Date**) and newly computed fields (**Decade**, **Avg_Rating**, **Norm_Rating**, **Norm_Gross**, **Critical_Commercial_Score**).",  
-    "concepts": [  
-        {  
-            "field": "Norm_Rating",  
-            "explanation": "The normalized rating scales **Avg_Rating** between 0 and 1 using min-max normalization. Formula: \\( \\text{Norm\\_Rating} = \\frac{\\text{Avg\\_Rating} - \\text{Min}(\\text{Avg\\_Rating})}{\\text{Max}(\\text{Avg\\_Rating}) - \\text{Min}(\\text{Avg\\_Rating})} \\)"  
-        },  
-        {  
-            "field": "Norm_Gross",  
-            "explanation": "The normalized worldwide gross scales **Worldwide_Gross** between 0 and 1 using min-max normalization. Formula: \\( \\text{Norm\\_Gross} = \\frac{\\text{Worldwide\\_Gross} - \\text{Min}(\\text{Worldwide_Gross})}{\\text{Max}(\\text{Worldwide_Gross}) - \\text{Min}(\\text{Worldwide_Gross})} \\)"  
-        },  
-        {  
-            "field": "Critical_Commercial_Score",  
-            "explanation": "The critical-commercial success score combines **Norm_Rating** and **Norm_Gross** to represent a movie's critical acclaim and commercial performance. Formula: \\( \\text{Critical\\_Commercial\\_Score} = \\text{Norm\\_Rating} \\times \\text{Norm\\_Gross} \\)"  
-        }  
-    ]  
-}  
+1. **Average Rating** is calculated by averaging the **Rotten_Tomatoes_Rating** (normalized to a 0-10 scale) and **IMDB_Rating**, handling missing values.
+2. **Normalized Rating** is derived by scaling the **Average Rating** to a range between 0 and 1 using min-max normalization.
+3. **Worldwide Gross** is normalized by scaling the values of **Worldwide_Gross** to a range between 0 and 1 using min-max normalization.
+4. **Critical-Commercial Success Score** is computed as the product of **Normalized Rating** and **Normalized Worldwide Gross**, representing a combination of critical acclaim and commercial success.
+5. **Decade** is extracted from the **Release_Date** by identifying the year and grouping it into its respective decade (e.g., '1990s', '2000s').
+6. The resulting dataset includes original fields (**Title**, **Major_Genre**, **Release_Date**) and newly computed fields (**Decade**, **Avg_Rating**, **Norm_Rating**, **Norm_Gross**, **Critical_Commercial_Score**).
+
+[CONCEPTS EXPLANATION]
+
+```json
+[  
+    {  
+        "field": "Norm_Rating",  
+        "explanation": "The normalized rating scales **Avg_Rating** between 0 and 1 using min-max normalization. Formula: -BSLASH-(-BSLASH-text{Norm-BSLASH-_Rating} = -BSLASH-frac{-BSLASH-text{Avg-BSLASH-_Rating} - -BSLASH-text{Min}(-BSLASH-text{Avg-BSLASH-_Rating})}{-BSLASH-text{Max}(-BSLASH-text{Avg-BSLASH-_Rating}) - -BSLASH-text{Min}(-BSLASH-text{Avg-BSLASH-_Rating})} -BSLASH-)"  
+    },  
+    {  
+        "field": "Norm_Gross",  
+        "explanation": "The normalized worldwide gross scales **Worldwide_Gross** between 0 and 1 using min-max normalization. Formula: -BSLASH-(-BSLASH-text{Norm-BSLASH-_Gross} = -BSLASH-frac{-BSLASH-text{Worldwide-BSLASH-_Gross} - -BSLASH-text{Min}(-BSLASH-text{Worldwide-BSLASH-_Gross})}{-BSLASH-text{Max}(-BSLASH-text{Worldwide-BSLASH-_Gross}) - -BSLASH-text{Min}(-BSLASH-text{Worldwide-BSLASH-_Gross})} -BSLASH-)"  
+    },  
+    {  
+        "field": "Critical_Commercial_Score",  
+        "explanation": "The critical-commercial success score combines **Norm_Rating** and **Norm_Gross** to represent a movie's critical acclaim and commercial performance. Formula: -BSLASH-(-BSLASH-text{Critical-BSLASH-_Commercial-BSLASH-_Score} = -BSLASH-text{Norm-BSLASH-_Rating} -BSLASH-times -BSLASH-text{Norm-BSLASH-_Gross} -BSLASH-)"  
+    }  
+]  
 '''
 
 class CodeExplanationAgent(object):
@@ -179,18 +193,49 @@ class CodeExplanationAgent(object):
             logger.info("\n=== Code explanation result ===>\n")
             logger.info(choice.message.content + "\n")
             
-            json_blocks = extract_json_objects(choice.message.content)
-            logger.info(json_blocks)
+            # Inline parsing of both sections
+            response_content = choice.message.content
+            code_explanation = ""
+            concepts = []
             
-            if len(json_blocks) > 0:
-                result = {'status': 'ok', 'content': json_blocks[0]}
-            else:
+            # Find CODE EXPLANATION section
+            code_start = response_content.find('[CODE EXPLANATION]')
+            if code_start != -1:
+                code_start += len('[CODE EXPLANATION]')
+                # Find the end of code explanation (either CONCEPTS EXPLANATION or end of content)
+                concepts_start = response_content.find('[CONCEPTS EXPLANATION]', code_start)
+                if concepts_start != -1:
+                    code_explanation = response_content[code_start:concepts_start].strip()
+                else:
+                    code_explanation = response_content[code_start:].strip()
+
+            # Find CONCEPTS EXPLANATION section
+            concepts_start = response_content.find('[CONCEPTS EXPLANATION]')
+            if concepts_start != -1:
+                concepts_start += len('[CONCEPTS EXPLANATION]')
+                # Extract JSON from the concepts section
+                concepts_content = response_content[concepts_start:].strip()
                 try:
-                    json_block = json.loads(choice.message.content + "\n")
-                    result = {'status': 'ok', 'content': json_block}
-                except:
-                    logger.error(f"unable to extract JSON from response: {choice.message.content}")
-                    result = {'status': 'other error', 'content': 'unable to extract JSON from response'}
+                    # Escape backslashes by doubling them
+                    escaped_content = concepts_content.replace('\\', '\\\\')
+                    raw_json_blocks = extract_code_from_gpt_response(escaped_content, "json")
+                    json_blocks = [json.loads(block) for block in raw_json_blocks]
+                except Exception as e:
+                    json_blocks = []
+
+                if json_blocks:
+                    concepts = json_blocks[0]
+            
+            # Build result
+            if code_explanation or concepts != []:
+                result = {
+                    'status': 'ok', 
+                    'concepts': concepts,
+                    'code': code_explanation
+                }
+            else:
+                logger.error(f"unable to extract JSON from response: {response_content}")
+                result = {'status': 'other error', 'content': 'unable to create code and concepts explanation'}
             
             # individual dialog for the agent
             result['dialog'] = [*messages, {"role": choice.message.role, "content": choice.message.content}]

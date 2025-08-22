@@ -571,6 +571,8 @@ export const dataFormulatorSlice = createSlice({
                     encoding.sortBy = value;
                 } else if (prop == "scheme") {
                     encoding.scheme = value;
+                } else if (prop == "dtype") {
+                    encoding.dtype = value;
                 }
             }
         },

@@ -208,8 +208,6 @@ def derive_concept_request():
         logger.info(f" model: {content['model']}")
         agent = ConceptDeriveAgent(client=client)
 
-        #print(content["input_data"])
-
         candidates = agent.run(content["input_data"], [f['name'] for f in content["input_fields"]], 
                                        content["output_name"], content["description"])
         
@@ -236,8 +234,6 @@ def derive_py_concept():
         logger.info(f" model: {content['model']}")
         agent = PyConceptDeriveAgent(client=client)
 
-        #print(content["input_data"])
-
         results = agent.run(content["input_data"], [f['name'] for f in content["input_fields"]], 
                                        content["output_name"], content["description"])
         
@@ -262,9 +258,6 @@ def clean_data_request():
         
         agent = DataCleanAgent(client=client)
 
-        # Check if this is a followup request (has dialog) or initial request
-
-        logger.info("Processing data clean request")
         try:
             candidates = agent.run(content.get('prompt', ''), content.get('artifacts', []), content.get('dialog', []))
         except Exception as e:
@@ -450,9 +443,9 @@ def request_code_expl():
         if candidates and len(candidates) > 0:
             result = candidates[0]
             if result['status'] == 'ok':
-                return jsonify(result['content'])
+                return jsonify(result)
             else:
-                return jsonify({'error': result['content']}), 400
+                return jsonify(result), 400
         else:
             return jsonify({'error': 'No explanation generated'}), 400
     else:

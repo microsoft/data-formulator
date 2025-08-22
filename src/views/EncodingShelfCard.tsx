@@ -20,7 +20,6 @@ import {
     IconButton,
     Tooltip,
     TextField,
-    Stack,
     Card,
     Chip,
     Autocomplete,
@@ -181,7 +180,7 @@ export const TriggerCard: FC<{
     let prompt: string = trigger.displayInstruction;
     if (trigger.instruction == '' && encFields.length > 0) {
         prompt = '';
-    } else if (trigger.instruction != '' && trigger.instruction.length <= trigger.displayInstruction.length) {
+    } else if (!trigger.displayInstruction || (trigger.instruction != '' && trigger.instruction.length <= trigger.displayInstruction.length)) {
         prompt = trigger.instruction;
     } 
     
@@ -899,8 +898,6 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
         }
         
     </Box>
-
-    console.log(ideas);
 
     // Ideas display section
     let ideasSection = ideas.length > 0 ? (

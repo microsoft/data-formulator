@@ -349,6 +349,9 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
     const config = useSelector((state: DataFormulatorState) => state.config);
     const componentRef = useRef<HTMLHeadingElement>(null);
 
+    // Add ref for the container box that holds all exploration components
+    const explanationComponentsRef = useRef<HTMLDivElement>(null);
+
     let tables = useSelector((state: DataFormulatorState) => state.tables);
     
     let charts = useSelector(dfSelectors.getAllCharts);
@@ -376,6 +379,18 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
     const [focusUpdated, setFocusUpdated] = useState<boolean>(true);
 
     const [localScaleFactor, setLocalScaleFactor] = useState<number>(1);
+
+    // Combined useEffect to scroll to exploration components when any of them open
+    useEffect(() => {
+        if ((conceptExplanationsOpen || codeViewOpen || codeExplViewOpen) && explanationComponentsRef.current) {
+            setTimeout(() => {
+                explanationComponentsRef.current?.scrollIntoView({ 
+                    behavior: 'smooth', 
+                    block: 'start' 
+                });
+            }, 200); // Small delay to ensure the component is rendered
+        }
+    }, [conceptExplanationsOpen, codeViewOpen, codeExplViewOpen]);
 
     let table = getDataTable(focusedChart, tables, charts, conceptShelfItems);
 
@@ -535,14 +550,10 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
     }
 
     let focusedChartElement = createChartElement(focusedChart, `focused-element-${focusedChart.id}`);
-    let arrowCard = <></>;
-    let resultChartElement = <></>;
 
-    let focusedElement = <Box sx={{margin: "auto", display: 'flex', flexDirection: 'row'}}>
+    let focusedElement = <Box sx={{margin: "auto", display: 'flex', flexDirection: 'row',}}>
                                 {focusedChartElement}
-                                {arrowCard}
-                                {resultChartElement}
-                            </Box>;
+                        </Box>;
     
     let saveButton = focusedChart.saved ?
         (
@@ -622,11 +633,11 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
     const hasConcepts = availableConcepts.length > 0;
 
     let derivedTableItems = (resultTable?.derive || table.derive) ? [
-        <Divider key="dvx0" orientation="vertical" variant="middle" flexItem sx={{ marginLeft: "8px", marginRight: "4px" }} />,
+        <Divider key="dvx0" orientation="vertical" variant="middle" flexItem sx={{ mx: 1 }} />,
         <Box key="explanation-toggle-group" sx={{ 
             display: 'flex', 
             alignItems: 'center', 
-            marginLeft: 1,
+            mx: 0.5,
             backgroundColor: 'rgba(0, 0, 0, 0.02)',
             borderRadius: 1,
             padding: '2px',
@@ -726,7 +737,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                 )}
             </ButtonGroup>
         </Box>,
-        <Divider key="dv3" orientation="vertical" variant="middle" flexItem sx={{ marginLeft: "8px", marginRight: "4px" }} />,
+        <Divider key="dv3" orientation="vertical" variant="middle" flexItem sx={{ mx: 1 }} />,
         <Tooltip title="view agent dialog" key="view-chat-history-btn-tooltip">
             <IconButton color="primary" size="small" sx={{ textTransform: "none" }} 
                     onClick={() => { setChatDialogOpen(!chatDialogOpen) }}><QuestionAnswerIcon />
@@ -745,7 +756,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
             </Typography>
         </Box>,
         ...derivedTableItems,
-        <Divider key="dv4" orientation="vertical" variant="middle" flexItem sx={{ marginLeft: "8px", marginRight: "4px" }} />,
+        <Divider key="dv4" orientation="vertical" variant="middle" flexItem sx={{ mx: 1 }} />,
         focusedChart.chartType == "Table" ? createNewChartButton : saveButton,
         duplicateButton,
         deleteButton,
@@ -845,81 +856,81 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
         `${table.derive.source.map(s => tables.find(t => t.id === s)?.displayId || s).join(", ")} → ${table.displayId || table.id}` : "";
 
     focusedComponent = [
-        <Box key="chart-focused-element"  sx={{ margin: "auto", display: "flex", flexDirection: "column"}}>
+        <Box key="chart-focused-element"  sx={{ width: "100%", minHeight: "calc(100% - 40px)", margin: "auto", mt: 4, mb: 1, display: "flex", flexDirection: "column"}}>
             <AnimateOnChange
+                style={{display: "flex", flexDirection: "column", flexShrink: 0}}
                 baseClassName="chart-box"
                 animationClassName="chart-box-animation"
                 animate={focusUpdated}
                 onAnimationEnd={() => { setFocusUpdated(false); }}>
-                <Box sx={{display: 'flex', flexDirection: 'column'}}>
-                    {focusedElement}
-                    <Collapse in={conceptExplanationsOpen}>
-                        <Box sx={{minWidth: 440, maxWidth: 800, padding: "0px 8px", position: 'relative', margin: '8px auto'}}>
-                            <ConceptExplCards 
-                                concepts={extractConceptExplanations(table)}
-                                title="Derived Concepts"
-                                maxCards={8}
-                            />
-                        </Box>
-                    </Collapse>
-                    <Collapse in={codeViewOpen}>
-                        <Box sx={{minWidth: 440, maxWidth: 960, padding: "0px 8px", position: 'relative', margin: '8px auto'}}>
-                            <ButtonGroup sx={{position: 'absolute', right: 8, top: 1}}>
-                                <IconButton onClick={() => {
-                                    setCodeViewOpen(false);
-                                    setExplanationMode('none');
-                                }}  color='primary' aria-label="delete">
-                                    <CloseIcon />
-                                </IconButton>
-                            </ButtonGroup>
-                            {/* <Typography fontSize="small" sx={{color: 'gray'}}>{table.derive?.source} → {table.id}</Typography> */}
-                            <CodeExplanationCard
-                                title="Data transformation code"
-                                icon={<CodeIcon sx={{ fontSize: 16, color: 'primary.main' }} />}
-                                transformationIndicatorText={transformationIndicatorText}
-                            >
-                                <Box sx={{
-                                        maxHeight: '400px', 
-                                        overflow: 'auto', 
-                                        width: '100%', 
-                                        p: 0.5
-                                    }}
-                                >   
-                                    <CodeBox code={transformCode.trimStart()} language={table.virtual ? "sql" : "python"} />
-                                </Box>
-                            </CodeExplanationCard>
-                        </Box>
-                    </Collapse>
-                    <Collapse in={codeExplViewOpen}>
-                        <Box sx={{minWidth: 440, maxWidth: 800, padding: "0px 8px", position: 'relative', margin: '8px auto'}}>
-                            <ButtonGroup sx={{position: 'absolute', right: 8, top: 0}}>
-                                <IconButton onClick={() => {
-                                    setCodeExplViewOpen(false);
-                                    setExplanationMode('none');
-                                }}  color='primary' aria-label="delete">
-                                    <CloseIcon />
-                                </IconButton>
-                            </ButtonGroup>
-                            <CodeExplanationCard
-                                title="Data transformation explanation"
-                                icon={<TerminalIcon sx={{ fontSize: 16, color: 'primary.main' }} />}
-                                transformationIndicatorText={transformationIndicatorText}
-                            >
-                                <Box 
-                                    sx={{
-                                        width: 'fit-content',  
-                                        display: 'flex',
-                                        flex: 1
-                                    }}
-                                >
-                                    {codeExplComp}
-                                </Box>
-                            </CodeExplanationCard>
-                        </Box>
-                    </Collapse>
-                    
-                </Box>
+                {focusedElement}
             </AnimateOnChange>
+            <Box ref={explanationComponentsRef} sx={{width: "100%", margin: "auto"}}>
+                <Collapse in={conceptExplanationsOpen}>
+                    <Box sx={{minWidth: 440, maxWidth: 800, padding: "0px 8px", position: 'relative', margin: '8px auto'}}>
+                        <ConceptExplCards 
+                            concepts={extractConceptExplanations(table)}
+                            title="Derived Concepts"
+                            maxCards={8}
+                        />
+                    </Box>
+                </Collapse>
+                <Collapse in={codeViewOpen}>
+                    <Box sx={{minWidth: 440, maxWidth: 960, padding: "0px 8px", position: 'relative', margin: '8px auto'}}>
+                        <ButtonGroup sx={{position: 'absolute', right: 8, top: 1}}>
+                            <IconButton onClick={() => {
+                                setCodeViewOpen(false);
+                                setExplanationMode('none');
+                            }}  color='primary' aria-label="delete">
+                                <CloseIcon />
+                            </IconButton>
+                        </ButtonGroup>
+                        {/* <Typography fontSize="small" sx={{color: 'gray'}}>{table.derive?.source} → {table.id}</Typography> */}
+                        <CodeExplanationCard
+                            title="Data transformation code"
+                            icon={<CodeIcon sx={{ fontSize: 16, color: 'primary.main' }} />}
+                            transformationIndicatorText={transformationIndicatorText}
+                        >
+                            <Box sx={{
+                                    maxHeight: '400px', 
+                                    overflow: 'auto', 
+                                    width: '100%', 
+                                    p: 0.5
+                                }}
+                            >   
+                                <CodeBox code={transformCode.trimStart()} language={table.virtual ? "sql" : "python"} />
+                            </Box>
+                        </CodeExplanationCard>
+                    </Box>
+                </Collapse>
+                <Collapse in={codeExplViewOpen}>
+                    <Box sx={{minWidth: 440, maxWidth: 800, padding: "0px 8px", position: 'relative', margin: '8px auto'}}>
+                        <ButtonGroup sx={{position: 'absolute', right: 8, top: 0}}>
+                            <IconButton onClick={() => {
+                                setCodeExplViewOpen(false);
+                                setExplanationMode('none');
+                            }}  color='primary' aria-label="delete">
+                                <CloseIcon />
+                            </IconButton>
+                        </ButtonGroup>
+                        <CodeExplanationCard
+                            title="Data transformation explanation"
+                            icon={<TerminalIcon sx={{ fontSize: 16, color: 'primary.main' }} />}
+                            transformationIndicatorText={transformationIndicatorText}
+                        >
+                            <Box 
+                                sx={{
+                                    width: 'fit-content',  
+                                    display: 'flex',
+                                    flex: 1
+                                }}
+                            >
+                                {codeExplComp}
+                            </Box>
+                        </CodeExplanationCard>
+                    </Box>
+                </Collapse>
+            </Box>
             {chartActionItems}
         </Box>
     ]
@@ -928,7 +939,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
         <Box key='focused-box' className="vega-focused" sx={{ display: "flex", overflow: 'auto', flexDirection: 'column', position: 'relative' }}>
             {focusedComponent}
         </Box>,
-         <EncodingShelfThread key='encoding-shelf' chartId={focusedChart.id} />
+        <EncodingShelfThread key='encoding-shelf' chartId={focusedChart.id} />
     ]
 
     let [scaleMin, scaleMax] = [0.2, 2.4]

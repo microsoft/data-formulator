@@ -9,6 +9,7 @@ import { Type } from "../data/types";
 import { BooleanIcon, NumericalIcon, StringIcon, DateIcon, UnknownIcon } from '../icons';
 
 import AutoFixHighIcon from '@mui/icons-material/AutoFixHigh';
+import BarChartIcon from '@mui/icons-material/BarChart';
 
 import prettier from "prettier";
 import parserBabel from 'prettier/parser-babel';
@@ -55,6 +56,22 @@ export const getIconFromType = (t: Type | undefined): JSX.Element => {
         case Type.String:
             return <StringIcon fontSize="inherit" />;
         case Type.Auto:
+            return <AutoFixHighIcon fontSize="inherit" />;
+    }
+    return <UnknownIcon fontSize="inherit" />;
+};
+
+export const getIconFromDtype = (t: "quantitative" | "nominal" | "ordinal" | "temporal" | "auto"): JSX.Element => {
+    switch (t) {
+        case "quantitative":
+            return <NumericalIcon fontSize="inherit" />;
+        case "nominal":
+            return <StringIcon fontSize="inherit" />;
+        case "ordinal":
+            return <BarChartIcon fontSize="inherit" />;
+        case "temporal":
+            return <DateIcon fontSize="inherit" />;
+        case "auto":
             return <AutoFixHighIcon fontSize="inherit" />;
     }
     return <UnknownIcon fontSize="inherit" />;

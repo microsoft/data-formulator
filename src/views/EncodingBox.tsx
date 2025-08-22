@@ -36,7 +36,10 @@ import React from 'react';
 
 import ArrowDropDownIcon from '@mui/icons-material/ArrowDropDown';
 import RefreshIcon from '@mui/icons-material/Refresh';
-
+import BarChartIcon from '@mui/icons-material/BarChart';
+import CategoryIcon from '@mui/icons-material/Category';
+import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
+import QuestionMarkIcon from '@mui/icons-material/QuestionMark';
 
 import { FieldItem, Channel, EncodingItem, AggrOp, AGGR_OP_LIST, 
         ConceptTransformation, Chart, duplicateField } from "../components/ComponentType";
@@ -46,7 +49,7 @@ import _ from 'lodash';
 
 import '../scss/EncodingShelf.scss';
 import AnimateHeight from 'react-animate-height';
-import { getDomains, getIconFromType, groupConceptItems } from './ViewUtils';
+import { getDomains, getIconFromDtype, getIconFromType, groupConceptItems } from './ViewUtils';
 import { getUrls } from '../app/utils';
 import { Type } from '../data/types';
 
@@ -142,6 +145,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
     let focusedTable = tables.find(t => t.id == focusedTableId);
     
     let encoding = chart.encodingMap[channel]; 
+
         
     let handleSwapEncodingField = (channel1: Channel, channel2: Channel) => {
         dispatch(dfActions.swapChartEncoding({chartId, channel1, channel2}))
@@ -222,10 +226,54 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
     // define anchor open
     let channelDisplay = getChannelDisplay(channel);
 
-    let radioLabel = (label: string, value: any, key: string, width: number = 80) => {
-        return <FormControlLabel sx={{ width: width, margin: 0 }} key={key}
-                    value={value} control={<Radio size="small" sx={{ padding: "4px" }} />} label={label} />
+    let radioLabel = (label: string | React.ReactNode, value: any, key: string, width: number = 80, disabled: boolean = false, tooltip: string = "") => {
+        let comp = <FormControlLabel sx={{ width: width, margin: 0 }} key={key}
+                    disabled={disabled}
+                    value={value} control={<Radio size="small" sx={{ padding: "4px" }} />} label={<Box sx={{display: 'flex', alignItems: 'center', gap: '4px'}}>
+                        {label}
+                </Box>} />
+        if (tooltip != "") {
+            comp = <Tooltip key={`${key}-tooltip`} title={tooltip} arrow slotProps={{
+                tooltip: {
+                    sx: { bgcolor: 'rgba(255, 255, 255, 0.95)', color: 'rgba(0,0,0,0.95)', border: '1px solid darkgray' },
+                },
+            }}>{comp}</Tooltip>
+        }
+        return comp;
     }
+
+    
+
+
+    let dataTypeOpt = [
+        <FormLabel key={`enc-box-${channel}-data-type-label`} sx={{ fontSize: "inherit" }} id="data-type-option-radio-buttons-group" >Data Type</FormLabel>,
+        <FormControl
+            key={`enc-box-${channel}-data-type-form-control`}
+            sx={{
+                paddingBottom: "2px", '& .MuiTypography-root': { fontSize: "inherit" }, flexDirection: "row",
+                '& .MuiFormLabel-root': { fontSize: "inherit" }
+            }}>
+            <RadioGroup
+                row
+                aria-labelledby="data-type-option-radio-buttons-group"
+                name="data-type-option-radio-buttons-group"
+                value={encoding.dtype || "auto"}
+                sx={{ width: 160 }}
+                onChange={(event) => { 
+                    if (event.target.value == "auto") {
+                        updateEncProp("dtype", undefined);
+                    } else {
+                        updateEncProp("dtype", event.target.value as "quantitative" | "qualitative" | "temporal");
+                    }
+                }}
+            >
+                {radioLabel(getIconFromDtype("auto"), "auto", `dtype-auto`, 40, false, "auto")}
+                {radioLabel(getIconFromDtype("quantitative"), "quantitative", `dtype-quantitative`, 40, field?.type === "string", "quantitative")}
+                {radioLabel(getIconFromDtype("nominal"), "nominal", `dtype-nominal`, 40, false, "nominal")}
+                {radioLabel(getIconFromDtype("temporal"), "temporal", `dtype-temporal`, 40, false, "temporal")}
+            </RadioGroup>
+        </FormControl>
+    ];
 
     let stackOpt = (chart.chartType == "bar" || chart.chartType == "area") && (channel == "x" || channel == "y") ? [
         <FormLabel key={`enc-box-${channel}-stack-label`} sx={{ fontSize: "inherit" }} id="normalized-option-radio-buttons-group" >Stack</FormLabel>,
@@ -475,6 +523,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
             margin: '0px 12px', padding: "6px", fontSize: "12px"
         }} >
             <Box sx={{margin: 'auto', display: "flex",  width: "fit-content", textAlign: "center", flexDirection: "column", alignItems: "flex-start" }}>
+                {dataTypeOpt}
                 {stackOpt}
                 {sortByOpt}
                 {sortOrderOpt}
@@ -501,7 +550,6 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
             if (option == "") {
                 console.log("nothing happens")
             } else {
-                console.log(`about to add ${option}`)
                 let newConept = {
                     id: `concept-${Date.now()}`, name: option, type: "auto" as Type, 
                     description: "", source: "custom", tableRef: "custom",
@@ -513,21 +561,19 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
         }
     }
 
+
     let conceptGroups = groupConceptItems(conceptShelfItems, tables);
 
-    // Custom Popper component with bottom-end alignment - Alternative CSS approach
-    const CustomPopperCSS = (props: any) => {
-        return (
-            <Popper 
-                {...props} 
-                style={{
-                    ...props.style,
-                    zIndex: 1300,
-                    transform: 'translateX(-100%) translateY(4px) !important', // Force right alignment
-                }}
-            />
-        );
-    };
+    let groupNames = [...new Set(conceptGroups.map(g => g.group))];
+    conceptGroups.sort((a, b) => {
+        if (groupNames.indexOf(a.group) < groupNames.indexOf(b.group)) {
+            return -1;
+        } else if (groupNames.indexOf(a.group) > groupNames.indexOf(b.group)) {
+            return 1;
+        } else {
+            return focusedTable && focusedTable.names.includes(a.field.name) && !focusedTable.names.includes(b.field.name) ? -1 : 1;
+        }
+    })
 
     // Smart Popper component that switches between bottom-end and top-end
     const CustomPopper = (props: any) => {
@@ -571,7 +617,6 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
             popper: CustomPopper // Try changing to: CustomPopperCSS
         }}
         onChange={(event, value) => {
-            console.log(`change: ${value}`)
             if (value != null) {
                 handleSelectOption(value)
             }
@@ -602,7 +647,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
         handleHomeEndKeys
         autoHighlight
         id="free-solo-with-text-demo"
-        options={conceptShelfItems.map(f => f.name).filter(name => name != "")}
+        options={conceptGroups.map(g => g.field.name).filter(name => name != "")}
         getOptionLabel={(option) => {
             // Value selected with enter, right from the input
             return option;
@@ -665,7 +710,6 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
                             backgroundColor, 
                             position: "relative",
                             border: "none",
-                            fontSize: "10px",
                             cursor: "pointer",
                             margin: '2px 4px',
                             "&:hover": {
@@ -676,20 +720,22 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
                         className={`data-field-list-item draggable-card`}
                     >
                         <Box sx={{ 
-                            cursor: "pointer", 
-                            background: draggleCardHeaderBgOverlay,
-                            display: 'flex',
-                            alignItems: 'center',
-                            minHeight: '20px'
-                        }}
-                            className={`draggable-card-header draggable-card-inner ${fieldItem.source}`}>
+                                cursor: "pointer", 
+                                background: draggleCardHeaderBgOverlay,
+                                display: 'flex',
+                                alignItems: 'center',
+                                minHeight: '20px',
+                                ml: 0.5
+                            }}
+                            className={`draggable-card-inner ${fieldItem.source}`}
+                        >
                             <Typography sx={{
                                 margin: '0px 4px',
                                 fontSize: 10, 
                                 width: "100%",
                                 display: 'flex',
                                 alignItems: 'center',
-                                gap: '4px'
+                                gap: '4px',
                             }} component={'span'}>
                                 {getIconFromType(fieldItem.type)}
                                 <span style={{

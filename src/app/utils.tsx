@@ -228,7 +228,7 @@ export const assembleVegaChart = (
 
             // create the encoding
             encodingObj["field"] = field.name;
-            encodingObj["type"] = getDType(field.type, workingTable.map(r => r[field.name]));
+            encodingObj["type"] = encoding.dtype || getDType(field.type, workingTable.map(r => r[field.name]));
             if (field.semanticType == "Year") {
                 if (['color', 'size', 'column', 'row'].includes(channel)) {
                     encodingObj["type"] = "nominal";
@@ -373,6 +373,11 @@ export const assembleVegaChart = (
     if (vgObj.encoding?.column != undefined && vgObj.encoding?.row == undefined) {
         vgObj['encoding']['facet'] = vgObj['encoding']['column'];
         vgObj['encoding']['facet']['columns'] = 6;
+        vgObj['resolve'] = {
+            "axis": {
+                "x": "independent",
+            }
+        }
         delete vgObj['encoding']['column'];
     }
 

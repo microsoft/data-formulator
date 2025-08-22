@@ -50,15 +50,20 @@ Concretely:
         - it would be a short single sentence summary of the user intent as a verb phrase.
         - generate it based on user's [GOAL] and the suggested visualization, don't simply repeat the visualization design, instead describe the visualization goal in high-level semantic way.
         - if the user specification follows up the previous instruction, the display instruction should describe what's new in this step without repeating what's already mentioned in the previous instruction (the user will be able to see the previous instruction to get context).
-        - if you mention column names from the input or the output data (either exact or semantically matching), highlight the text in **bold**.
+        - if you mention column names from the input or the output data, highlight the text in **bold**.
+            * the column can either be a column in the input data, or a new column that will be computed in the output data.
+            * the mention don't have to be exact match, it can be semantically matching, e.g., if you mentioned "average score" in the text while the column to be computed is "Avg_Score", you should still highlight "**average score**" in the text.
     - "visualization_fields" should be ordered based on whether the field will be used in x,y axes or legends, do not include other intermediate fields from "output_fields".
-    - "visualization_fields" should be 2-3 (for x,y,legend) or 4 (if you consider faceted visualization).
+    - "visualization_fields" should be 2-3 (for x,y,legend) or 4 (ONLY if you consider faceted visualization, facet must be a categorical field with small cardinality).
     - "chart_type" must be one of "point", "bar", "line", "area", "heatmap", "group_bar"
         - Consider chart types as follows:
-            - (bar) Bar Charts: X: Categorical (nominal/ordinal), Y: Quantitative, Color: Categorical (optional for group or stacked bar chart), Best for: Comparisons across categories
-                - use (bar) for simple bar chart or stacked bar chart, 
-                - use (group_bar) for grouped bar chart.
-            - (point) Scatter Plots: X,Y: Quantitative/Categorical, Color: Quantitative/Categorical (optional), Size: Quantitative (optional for creating bubble chart), Best for: Relationships, correlations, distributions
+             - (point) Scatter Plots: X,Y: Quantitative/Categorical, Color: Categorical (optional), Size: Quantitative (optional for creating bubble chart), Best for: Relationships, correlations, distributions
+                - scatter plots are good default way to visualize data when other chart types are not applicable.
+                - use color to visualize points from different categories.
+                - use size to visualize data points with an additional quantitative dimension of the data points.
+             - (bar) Bar Charts: X: Categorical (nominal/ordinal), Y: Quantitative, Color: Categorical (optional for group or stacked bar chart), Best for: Comparisons across categories
+                - use (bar) for simple bar chart or stacked bar chart (when it makes sense to add up Y values for each category with the same X value), 
+                - use (group_bar) for grouped bar chart, but only when the cardinality of color field is small (less than 5).
             - (line) Line Charts: X: Temporal (preferred) or ordinal, Y: Quantitative, Color: Categorical (optional for creating multiple lines), Best for: Trends over time, continuous data
             - (area) Area Charts: X: Temporal (preferred) or ordinal, Y: Quantitative, Color: Categorical (optional for creating stacked areas), Best for: Trends over time, continuous data
             - (heatmap) Heatmaps: X,Y: Categorical (convert quantitative to nominal), Color: Quantitative intensity, Best for: Pattern discovery in matrix data

@@ -35,7 +35,9 @@ Concretely, you should first refine users' goal and then create a sql query in t
             - it would be a short single sentence summary of the user intent as a verb phrase.
             - generate it based on user's [GOAL] and the suggested visualization, don't simply repeat the visualization design, instead describe the visualization goal in high-level semantic way.
             - if the user specification follows up the previous instruction, the display instruction should describe what's new in this step without repeating what's already mentioned in the previous instruction (the user will be able to see the previous instruction to get context).
-            - if you mention column names from the input or the output data (either exact or semantically matching), highlight the text in **bold**.
+            - if you mention column names from the input or the output data, highlight the text in **bold**.
+                * the column can either be a column in the input data, or a new column that will be computed in the output data.
+                * the mention don't have to be exact match, it can be semantically matching, e.g., if you mentioned "average score" in the text while the column to be computed is "Avg_Score", you should still highlight "**average score**" in the text.
         - determine "output_fields", the desired fields that the output data should have to achieve the user's goal, it's a good idea to include intermediate fields here.
             - note: when the user asks for filtering the data, include all fields that are needed to filter the data in "output_fields" (as well as other fields the user asked for or necessary in computation).
         - now, determine whether the user has provided sufficient fields in "visualization_fields" that are needed to achieve their goal:

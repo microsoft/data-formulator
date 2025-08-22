@@ -165,6 +165,7 @@ export type EncodingMap = { [key in Channel]: EncodingItem; }
 export interface EncodingItem {
     //channel: Channel, // the channel ID
     fieldID?: string, // the fieldID
+    dtype?: "quantitative" | "nominal" | "ordinal" | "temporal",
     aggregate?: AggrOp,
     stack?: "layered" | "zero" | "center" | "normalize",
     //sort?: "ascending" | "descending" | string,

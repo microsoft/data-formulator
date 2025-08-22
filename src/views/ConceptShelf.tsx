@@ -198,6 +198,7 @@ export const ConceptGroup: FC<{groupName: string, fields: FieldItem[]}> = functi
 export const ConceptShelf: FC<ConceptShelfProps> = function ConceptShelf() {
 
     const [conceptPanelOpen, setConceptPanelOpen] = useState(false);
+    const theme = useTheme();
 
     // reference to states
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
@@ -213,6 +214,10 @@ export const ConceptShelf: FC<ConceptShelfProps> = function ConceptShelf() {
         <Box className="concept-shelf" sx={{
             height: 'calc(100% - 16px)',
             overflow: conceptPanelOpen ? 'auto' : 'hidden',
+            ...(conceptPanelOpen ? {
+            } : {
+                pointerEvents: 'none',
+            })
         }}>
             <Box sx={{my: 0.25}}>
                 <Typography className="view-title" component="h2" sx={{textWrap: "nowrap"}}>
@@ -263,22 +268,11 @@ export const ConceptShelf: FC<ConceptShelfProps> = function ConceptShelf() {
         transition: 'width 0.3s ease', // Smooth transition
         overflow: 'hidden',
         position: 'relative',
-        '&::after': {
-            content: '""',
-            position: 'absolute',
-            top: 0,
-            right: 0,
-            width: '50px',
-            height: '100%',
-            background: 'linear-gradient(to right, transparent, rgba(255,255,255,1))',
-            pointerEvents: 'none',
-            zIndex: 1
-        }
     }}>
         <Tooltip placement="left" title={conceptPanelOpen ? "hide concept panel" : "open concept panel"}>
             <IconButton 
                 color="primary"
-                sx={{
+                sx={conceptPanelOpen ? {
                     width: 16, 
                     minWidth: 16,
                     alignSelf: 'stretch', // Add this to match the height of the ConceptShelf box
@@ -286,6 +280,18 @@ export const ConceptShelf: FC<ConceptShelfProps> = function ConceptShelf() {
                     flexShrink: 0,
                     position: 'relative',
                     backgroundColor: 'rgba(0,0,0,0.01)'
+                } : {
+                    width: '100%',
+                    minWidth: '100%',
+                    alignSelf: 'stretch', // Add this to match the height of the ConceptShelf box
+                    borderRadius: 0,
+                    flexShrink: 0,
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    zIndex: 10
                 }}
                 onClick={() => setConceptPanelOpen(!conceptPanelOpen)}
             >
@@ -293,16 +299,29 @@ export const ConceptShelf: FC<ConceptShelfProps> = function ConceptShelf() {
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    zIndex: 1,
+                    zIndex: 10,
+                    mr: 'auto'
                 }}>
-                    {conceptPanelOpen ?  <ChevronRightIcon sx={{fontSize: 18}} /> : <ChevronLeftIcon sx={{fontSize: 18}} />}
+                    {conceptPanelOpen ?  <ChevronRightIcon sx={{fontSize: 18}} /> 
+                        : <ChevronLeftIcon sx={{fontSize: 36, backgroundColor: 'rgba(255,255,255,0.5)', borderRadius: '50%'}} />}
                 </Box>
             </IconButton>
         </Tooltip>
         <Box 
             onClick={() => !conceptPanelOpen && setConceptPanelOpen(!conceptPanelOpen)}
             sx={{
-                overflow: 'hidden'
+                overflow: 'hidden',
+                '&::after': conceptPanelOpen ? undefined : {
+                    content: '""',
+                    position: 'absolute',
+                    top: 0,
+                    right: 0,
+                    width: '100%',
+                    height: '100%',
+                    background: 'linear-gradient(to right, rgba(255,255,255,0.8), rgba(255,255,255,0.9))',
+                    pointerEvents: 'none',
+                    zIndex: 1
+                },
         }}>
             {conceptShelf}
         </Box>

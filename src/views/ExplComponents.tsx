@@ -21,6 +21,7 @@ import InfoIcon from '@mui/icons-material/Info';
 
 // Helper function to render text with LaTeX math expressions
 const renderWithMath = (text: string) => {
+
     const parts: Array<{ type: 'text' | 'inline' | 'block', content: string }> = [];
     let currentIndex = 0;
     let currentText = '';

@@ -171,11 +171,11 @@ $accelerate-ease: cubic-bezier(0.4, 0.0, 1, 1);
         overflow: auto;
         
         .chart-box {
+            width: calc(100% - 48px);
+            overflow: auto;
             display: flex;
             color: #fff;
-            padding: 5px;
             border-radius: 3px;
-            margin: auto;
         }
       
         .chart-box-animation {
