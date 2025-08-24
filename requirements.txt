@@ -18,4 +18,5 @@ vl-convert-python
 backoff
 weasyprint
 beautifulsoup4
+scikit-learn
 -e . #also need to install data formulator itself

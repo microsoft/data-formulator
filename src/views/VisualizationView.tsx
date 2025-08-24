@@ -763,7 +763,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
     ]
 
     let chartActionItems = chartUnavailable ?
-        <Box key="chart-unavailable-box" sx={{ display: 'flex', flexDirection: "column", textAlign: 'center', paddingTop: 1 }} component="div" color="text.secondary">
+        <Box key="chart-unavailable-box" sx={{ display: 'flex', flexDirection: "column", textAlign: 'center', py: 1 }} component="div" color="text.secondary">
             {synthesisRunning ? "" : <Typography component="div" fontSize="small" sx={{ maxWidth: 640, margin: 'auto' }}>
                 {Object.entries(focusedChart.encodingMap).filter(entry => entry[1].fieldID != undefined).length == 0  ?
                     <Typography component="span" fontSize="inherit" >
@@ -865,7 +865,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                 onAnimationEnd={() => { setFocusUpdated(false); }}>
                 {focusedElement}
             </AnimateOnChange>
-            <Box ref={explanationComponentsRef} sx={{width: "100%", margin: "auto"}}>
+            {!chartUnavailable && <Box ref={explanationComponentsRef} sx={{width: "100%", margin: "auto"}}>
                 <Collapse in={conceptExplanationsOpen}>
                     <Box sx={{minWidth: 440, maxWidth: 800, padding: "0px 8px", position: 'relative', margin: '8px auto'}}>
                         <ConceptExplCards 
@@ -930,7 +930,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                         </CodeExplanationCard>
                     </Box>
                 </Collapse>
-            </Box>
+            </Box>}
             {chartActionItems}
         </Box>
     ]

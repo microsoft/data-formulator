@@ -39,7 +39,8 @@ dependencies = [
     "vl-convert-python", 
     "boto3",
     "backoff",
-    "weasyprint"
+    "weasyprint",
+    "scikit-learn"
 ]
 
 [project.urls]

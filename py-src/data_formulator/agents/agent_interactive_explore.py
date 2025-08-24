@@ -37,18 +37,15 @@ Guidelines for question suggestions:
     - you should include both types of questions:
         - questions that deepdive from the current data sample
         - questions that leverage the exploration thread and orginal dataset to explore new aspects of the data related to the thread
+    - if the dataset is series data with quantitative fields, or contains primarily quantitative fields, suggest a fifth question about statistical analysis: forecasting, regression, or clustering.
 7. VISUALIZATION: the question should be visualizable with a chart
 8. FORMATTING: for each question, include a goal version that provides the high-level goal of the question that can be used as a subtitle for a chart. 
     - The goal should all be a short single sentence.
     - It should capture the task described in the text of the question (do not omit any information that may lead to ambiguity), but also keep it concise.
     - include the **bold** keyword for the attributes / metrics that are important to the question, especially when the goal mentions fields / metrics in the original dataset (don't have to be exact match)
     - include 'difficulty' to indicate the difficulty of the question, it should be one of 'easy', 'medium', 'hard'
-    - include a 'tag' to indicate the type of the question, it should be one of:
-        * 'summary': a summary question that provides a high-level overview of the data
-        * 'comparative': a comparative question that compares two or more groups of data or two entities
-        * 'refine': a refine question that refines the exploration by focusing on a specific aspect of the data
-        * 'explorative': an explorative question that explores a new aspect of the data introducing new metrics / attributes related to the current exploration thread
-
+    - include a 'tag' to describe the type of the question
+    
 Output format:
 ```json
 {

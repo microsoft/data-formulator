@@ -32,7 +32,10 @@ Your goal:
     - in "field", you can provide a list of fields in format of "field1, field2, ..."
     - in "explanation", you can provide a single explanation for the computation of the fields.
     - for example, if you have fields like "Norm_Rating", "Norm_Gross", "Critical_Commercial_Score", you can explain Norm_Rating, Norm_Gross together in one explanation and explain Critical_Commercial_Score in another explanation.
-
+4. If the code is about statistical analysis, you should explain the statistical analysis in the explanation as a concept named "Statistical Analysis" in the [CONCEPTS EXPLANATION] section.
+    - explain how you model the data, which fields are used, how data processing is done, and what models are used.
+    - suggest some other modeling approaches that can be used to analyze the data in the explanation as well.
+    
 The focus is to explain how new fields are computed, don't generate explanation for low-level actions like "return", "load data" etc. 
 
 Provide the result in the following two sections:

@@ -28,7 +28,7 @@ Concretely, you should infer the appropriate data and create a python function i
 1. First, based on users' [GOAL]. Create a json object that represents the inferred user intent. The json object should have the following format:
 
 {
-    "mode": "" // string, one of "infer", "overview", "distribution", "summary"
+    "mode": "" // string, one of "infer", "overview", "distribution", "summary", "forecast"
     "recommendation": "..." // string, explain why this recommendation is made
     "display_instruction": "..." // string, the short verb phrase instruction that will be displayed to the user.
     "output_fields": [...] // string[], describe the desired output fields that the output data should have (i.e., the goal of transformed data), it's a good idea to preseve intermediate fields here
@@ -39,10 +39,11 @@ Concretely, you should infer the appropriate data and create a python function i
 Concretely:
     - If the user's [GOAL] is clear already, simply infer what the user mean. Set "mode" as "infer" and create "output_fields" and "visualization_fields_list" based off user description.
     - If the user's [GOAL] is not clear, make recommendations to the user:
-        - choose one of "distribution", "overview", "summary" in "mode":
+        - choose one of "distribution", "overview", "summary", "forecast" in "mode":
             * if it is "overview" and the data is in wide format, reshape it into long format.
             * if it is "distribution", select a few fields that would be interesting to visualize together.
             * if it is "summary", calculate some aggregated statistics to show intresting facts of the data.
+            * if it is "forecast", concretize the x,y fields that will be used for forecasting and decide if it is about regression or forecasting.
         - describe the recommendation reason in "recommendation"
         - based on the recommendation, determine what is an ideal output data. Note, the output data must be in tidy format.
         - then suggest recommendations of visualization fields that should be visualized.
@@ -57,14 +58,16 @@ Concretely:
     - "visualization_fields" should be 2-3 (for x,y,legend) or 4 (ONLY if you consider faceted visualization, facet must be a categorical field with small cardinality).
     - "chart_type" must be one of "point", "bar", "line", "area", "heatmap", "group_bar"
         - Consider chart types as follows:
-             - (point) Scatter Plots: X,Y: Quantitative/Categorical, Color: Categorical (optional), Size: Quantitative (optional for creating bubble chart), Best for: Relationships, correlations, distributions
+             - (point) Scatter Plots: X,Y: Quantitative/Categorical, Color: Categorical (optional), Size: Quantitative (optional for creating bubble chart), 
+                Best for: Relationships, correlations, distributions, forecasting, regression analysis
                 - scatter plots are good default way to visualize data when other chart types are not applicable.
                 - use color to visualize points from different categories.
                 - use size to visualize data points with an additional quantitative dimension of the data points.
              - (bar) Bar Charts: X: Categorical (nominal/ordinal), Y: Quantitative, Color: Categorical (optional for group or stacked bar chart), Best for: Comparisons across categories
                 - use (bar) for simple bar chart or stacked bar chart (when it makes sense to add up Y values for each category with the same X value), 
                 - use (group_bar) for grouped bar chart, but only when the cardinality of color field is small (less than 5).
-            - (line) Line Charts: X: Temporal (preferred) or ordinal, Y: Quantitative, Color: Categorical (optional for creating multiple lines), Best for: Trends over time, continuous data
+            - (line) Line Charts: X: Temporal (preferred) or ordinal, Y: Quantitative, Color: Categorical (optional for creating multiple lines), 
+                Best for: Trends over time, continuous data, forecasting, regression analysis
             - (area) Area Charts: X: Temporal (preferred) or ordinal, Y: Quantitative, Color: Categorical (optional for creating stacked areas), Best for: Trends over time, continuous data
             - (heatmap) Heatmaps: X,Y: Categorical (convert quantitative to nominal), Color: Quantitative intensity, Best for: Pattern discovery in matrix data
         - all charts have the option to add additional fields for legends (color, size, facet, etc.) to enrich the visualization if applicable.
@@ -75,7 +78,19 @@ Concretely:
         - exapmle 2: calculate some derived fields from these fields(e.g., correlation, difference, profit etc.) in data transformation description to visualize them in one visualization.
         - example 3: create a visualization only with a subset of the fields, you don't have to visualize all of them in one chart, you can later create a visualization with the rest of the fields. With the subset of charts, you can also consider reshaping or calculate some derived value.
         - again, it does not make sense to have five fields like [item, A, B, C, D, E] in visualization fields, you should consider data transformation to reduce the number of fields.
-
+    - guide on statistical analysis:
+        - when the user asks for forecasting or regression analysis, you should consider the following:
+            - the output should be a long format table where actual x, y pairs and predicted x, y pairs are included in the X, Y columns, they are differentiated with a third column "is_predicted" that is a boolean field.
+            - i.e., if the user ask for forecasting based on two columns T and Y, the output should be three columns: T, Y, is_predicted, where
+                - T, Y columns contain BOTH original values from the data and predicted values from the data.
+                - is_predicted is a boolean field to indicate whether the x, y pairs are original values from the data or predicted / regression values from the data.
+            - the recommended chart should be line chart (time series) or scatter plot (quantitative x, y)
+            - if the user asks for forecasting, it's good to include predicted x, y pairs for both x in the original data and future x values (i.e., combine regression and forecasting results)
+                - in this case, is_predicted should be of three values 'original', 'regression', 'forecasting'
+        - when the user asks for clustering:
+            - the output should be a long format table where actual x, y pairs with a third column "cluster_id" that indicates the cluster id of the data point.
+            - the recommended chart should be scatter plot (quantitative x, y)
+            
     2. Then, write a python function based on the inferred goal, the function input is a dataframe "df" (or multiple dataframes based on tables presented in the [CONTEXT] section) and the output is the transformed dataframe "transformed_df". "transformed_df" should contain all "output_fields" from the refined goal.
 The python function must follow the template provided in [TEMPLATE], do not import any other libraries or modify function name. The function should be as simple as possible and easily readable. 
 If there is no data transformation needed based on "output_fields", the transformation function can simply "return df".
@@ -86,6 +101,7 @@ If there is no data transformation needed based on "output_fields", the transfor
 import pandas as pd
 import collections
 import numpy as np
+from sklearn import ... # import necessary libraries from sklearn if needed
 
 def transform_data(df1, df2, ...): 
     # complete the template here

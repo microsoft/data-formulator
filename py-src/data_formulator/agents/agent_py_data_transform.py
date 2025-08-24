@@ -41,6 +41,19 @@ Concretely, you should first refine users' goal and then create a python functio
                     - when adding new fields to "visualization_fields", be efficient and add only a minimal number of fields that are needed to achive the user's goal. generally, the total number of fields in "visualization_fields" should be no more than 3 for x,y,legend.
             - sometimes, user may provide instruction to update visualizations fields they provided. You should leverage the user's goal to resolve the conflict and decide the final "visualization_fields"
                 - e.g., they may mention "use Y metric instead" while X metric is in provided fields, in this case, you should update "visualization_fields" to update X metric with Y metric.
+        - guide on statistical analysis:
+            - when the user asks for forecasting or regression analysis, you should consider the following:
+                - the output should be a long format table where actual x, y pairs and predicted x, y pairs are included in the X, Y columns, they are differentiated with a third column "is_predicted" that is a boolean field.
+                - i.e., if the user ask for forecasting based on two columns T and Y, the output should be three columns: T, Y, is_predicted, where
+                    - T, Y columns contain BOTH original values from the data and predicted values from the data.
+                    - is_predicted is a boolean field to indicate whether the x, y pairs are original values from the data or predicted / regression values from the data.
+                - the recommended chart should be line chart (time series) or scatter plot (quantitative x, y)
+                - if the user asks for forecasting, it's good to include predicted x, y pairs for both x in the original data and future x values (i.e., combine regression and forecasting results)
+                    - in this case, is_predicted should be of three values 'original', 'regression', 'forecasting'
+        - when the user asks for clustering:
+            - the output should be a long format table where actual x, y pairs with a third column "cluster_id" that indicates the cluster id of the data point.
+            - the recommended chart should be scatter plot (quantitative x, y)
+    
     Prepare the result in the following json format:
 
 ```
@@ -63,6 +76,7 @@ If there is no data transformation needed based on "output_fields", the transfor
 import pandas as pd
 import collections
 import numpy as np
+from sklearn import ... # import necessary libraries from sklearn if needed
 
 def transform_data(df1, df2, ...): 
     # complete the template here

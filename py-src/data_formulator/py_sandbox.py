@@ -82,12 +82,14 @@ def run_in_main_process(code, allowed_objects):
     ALLOWED_MODULES = {
         'pandas', 'numpy', 'math', 'datetime', 'json', 
         'statistics', 'random', 'collections', 're',
-        'itertools', 'functools', 'operator'
+        'itertools', 'functools', 'operator', 'sklearn'
     }
 
-    # Custom import function that only allows safe modules
+    # Custom import function that only allows safe modules and their submodules
     def safe_import(name, *args, **kwargs):
-        if name not in ALLOWED_MODULES:
+        # Check if the top-level module is allowed
+        top_level_module = name.split('.')[0]
+        if top_level_module not in ALLOWED_MODULES:
             raise ImportError(f"Import of module '{name}' is not allowed for security reasons. "
                            f"Allowed modules are: {', '.join(sorted(ALLOWED_MODULES))}")
         return __import__(name, *args, **kwargs)
