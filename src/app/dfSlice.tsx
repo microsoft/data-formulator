@@ -452,6 +452,9 @@ export const dataFormulatorSlice = createSlice({
                 });
             }
         },
+        createChartifact: (state, action: PayloadAction<{ tableId: string; chartId: string; element: any; }[]>) => {
+            console.log("Creating chartifact", action.payload);
+        },
         createNewChart: (state, action: PayloadAction<{chartType: string, tableId: string}>) => {
             let chartType = action.payload.chartType;
             let tableId = action.payload.tableId || state.tables[0].id;

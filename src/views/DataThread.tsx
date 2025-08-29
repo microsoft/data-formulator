@@ -32,6 +32,7 @@ import { Chart, DictTable, EncodingItem, FieldItem, Trigger } from "../component
 
 import DeleteIcon from '@mui/icons-material/Delete';
 import AddchartIcon from '@mui/icons-material/Addchart';
+import CreateChartifact from '@mui/icons-material/Description';
 import StarIcon from '@mui/icons-material/Star';
 import SouthIcon from '@mui/icons-material/South';
 import TableRowsIcon from '@mui/icons-material/TableRowsOutlined';
@@ -465,6 +466,18 @@ let SingleThreadView: FC<{
                                         onClick={(event) => {
                                             event.stopPropagation();
                                             dispatch(dfActions.createNewChart({ tableId: tableId, chartType: '?' }));
+                                        }} />
+                                </IconButton>
+                            </Tooltip>
+                            <Tooltip title="download as Chartifact document">
+                                <IconButton aria-label="sdhare" size="small" sx={{ padding: 0.25, '&:hover': {
+                                    transform: 'scale(1.2)',
+                                    transition: 'all 0.2s ease'
+                                } }}>
+                                    <CreateChartifact fontSize="small" sx={{ fontSize: 18 }} color='primary'
+                                        onClick={(event) => {
+                                            event.stopPropagation();
+                                            dispatch(dfActions.createChartifact(relevantCharts));
                                         }} />
                                 </IconButton>
                             </Tooltip>
