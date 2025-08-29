@@ -43,6 +43,7 @@ import CheckIcon from '@mui/icons-material/Check';
 
 import _ from 'lodash';
 import { getChartTemplate } from '../components/ChartTemplates';
+import { ChartifactDialog } from './ChartifactDialog';
 
 import 'prismjs/components/prism-python' // Language
 import 'prismjs/components/prism-typescript' // Language
@@ -198,6 +199,7 @@ let SingleThreadView: FC<{
     leafTable: DictTable;
     chartElements: { tableId: string, chartId: string, element: any }[];
     usedIntermediateTableIds: string[],
+    onOpenChartifactDialog: (chartElements: { tableId: string; chartId: string; element: any }[]) => void,
     sx?: SxProps
 }> = function ({
     scrollRef,
@@ -205,6 +207,7 @@ let SingleThreadView: FC<{
     leafTable,
     chartElements,
     usedIntermediateTableIds, // tables that have been used
+    onOpenChartifactDialog,
     sx
 }) {
         let tables = useSelector((state: DataFormulatorState) => state.tables);
@@ -477,7 +480,7 @@ let SingleThreadView: FC<{
                                     <CreateChartifact fontSize="small" sx={{ fontSize: 18 }} color='primary'
                                         onClick={(event) => {
                                             event.stopPropagation();
-                                            dispatch(dfActions.createChartifact(relevantCharts));
+                                            onOpenChartifactDialog(relevantCharts);
                                         }} />
                                 </IconButton>
                             </Tooltip>
@@ -796,6 +799,8 @@ export const DataThread: FC<{}> = function ({ }) {
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
 
     let [threadDrawerOpen, setThreadDrawerOpen] = useState<boolean>(false);
+    let [chartifactDialogOpen, setChartifactDialogOpen] = useState<boolean>(false);
+    let [currentChartElements, setCurrentChartElements] = useState<{ tableId: string; chartId: string; element: any }[]>([]);
 
     const scrollRef = useRef<null | HTMLDivElement>(null)
 
@@ -803,6 +808,11 @@ export const DataThread: FC<{}> = function ({ }) {
     // run this function from an event handler or an effect to execute scroll 
 
     const dispatch = useDispatch();
+
+    const handleOpenChartifactDialog = (chartElements: { tableId: string; chartId: string; element: any }[]) => {
+        setCurrentChartElements(chartElements);
+        setChartifactDialogOpen(true);
+    };
 
     useEffect(() => {
         executeScroll();
@@ -876,7 +886,8 @@ export const DataThread: FC<{}> = function ({ }) {
                 threadIdx={i} 
                 leafTable={lt} 
                 chartElements={chartElements} 
-                usedIntermediateTableIds={usedIntermediateTableIds} 
+                usedIntermediateTableIds={usedIntermediateTableIds}
+                onOpenChartifactDialog={handleOpenChartifactDialog}
                 sx={{
                     backgroundColor: (i % 2 == 1 ? "rgba(0, 0, 0, 0.03)" : 'white'), 
                     padding: '8px 8px',
@@ -991,6 +1002,11 @@ export const DataThread: FC<{}> = function ({ }) {
 
     return <Box sx={{ display: 'flex', flexDirection: 'row' }}>
         {carousel}
+        <ChartifactDialog
+            open={chartifactDialogOpen}
+            handleCloseDialog={() => setChartifactDialogOpen(false)}
+            chartElements={currentChartElements}
+        />
     </Box>;
 }
 
