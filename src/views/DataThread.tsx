@@ -43,7 +43,7 @@ import CheckIcon from '@mui/icons-material/Check';
 
 import _ from 'lodash';
 import { getChartTemplate } from '../components/ChartTemplates';
-import { ChartifactDialog } from './ChartifactDialog';
+import { ChartElements, ChartifactDialog } from './ChartifactDialog';
 
 import 'prismjs/components/prism-python' // Language
 import 'prismjs/components/prism-typescript' // Language
@@ -199,7 +199,7 @@ let SingleThreadView: FC<{
     leafTable: DictTable;
     chartElements: { tableId: string, chartId: string, element: any }[];
     usedIntermediateTableIds: string[],
-    onOpenChartifactDialog: (chartElements: { tableId: string; chartId: string; element: any }[]) => void,
+    onOpenChartifactDialog: (chartElements: ChartElements[]) => void,
     sx?: SxProps
 }> = function ({
     scrollRef,
@@ -800,7 +800,7 @@ export const DataThread: FC<{}> = function ({ }) {
 
     let [threadDrawerOpen, setThreadDrawerOpen] = useState<boolean>(false);
     let [chartifactDialogOpen, setChartifactDialogOpen] = useState<boolean>(false);
-    let [currentChartElements, setCurrentChartElements] = useState<{ tableId: string; chartId: string; element: any }[]>([]);
+    let [currentChartElements, setCurrentChartElements] = useState<ChartElements[]>([]);
 
     const scrollRef = useRef<null | HTMLDivElement>(null)
 
@@ -809,7 +809,7 @@ export const DataThread: FC<{}> = function ({ }) {
 
     const dispatch = useDispatch();
 
-    const handleOpenChartifactDialog = (chartElements: { tableId: string; chartId: string; element: any }[]) => {
+    const handleOpenChartifactDialog = (chartElements: ChartElements[]) => {
         setCurrentChartElements(chartElements);
         setChartifactDialogOpen(true);
     };
@@ -1005,6 +1005,7 @@ export const DataThread: FC<{}> = function ({ }) {
         <ChartifactDialog
             open={chartifactDialogOpen}
             handleCloseDialog={() => setChartifactDialogOpen(false)}
+            tables={tables}
             chartElements={currentChartElements}
         />
     </Box>;

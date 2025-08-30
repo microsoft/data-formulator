@@ -12,23 +12,67 @@ import {
     Typography,
     Box
 } from '@mui/material';
+import { DictTable } from '../components/ComponentType';
+
+export interface ChartElements {
+    tableId: string;
+    chartId: string;
+    element: any;
+}
 
 export interface ChartifactDialogProps {
     open: boolean;
     handleCloseDialog: () => void;
-    chartElements: { tableId: string; chartId: string; element: any }[];
+    tables: DictTable[];
+    chartElements: ChartElements[];
 }
 
 export const ChartifactDialog: FC<ChartifactDialogProps> = function ChartifactDialog({
     open,
     handleCloseDialog,
+    tables,
     chartElements
 }) {
     const [title, setTitle] = useState<string>('');
 
     const handleDownload = () => {
-        // Create the chartifact content
-        const chartifactContent = `# ${title}\n\nThis is a chartifact document.\n\nGenerated charts: ${chartElements.length}`;
+        // Get actual table data from tables array using the IDs
+        const chartData = chartElements.map(ce => {
+            const table = tables.find(t => t.id === ce.tableId);
+            return { table, element: ce.element, chartId: ce.chartId };
+        }).filter(item => item.table); // Filter out any missing data
+
+        // Create more detailed chartifact content
+        let chartifactContent = `# ${title}\n\n`;
+        chartifactContent += `This chartifact document contains ${chartData.length} visualization${chartData.length !== 1 ? 's' : ''}.\n\n`;
+        
+        chartData.forEach((item, index) => {
+            chartifactContent += `## Chart ${index + 1}\n`;
+            chartifactContent += `**Table:** ${item.table!.displayId || item.table!.id}\n`;
+            chartifactContent += `**Chart ID:** ${item.chartId}\n`;
+            
+            // Add table info
+            if (item.table!.derive?.code) {
+                chartifactContent += `\n**Transformation Code:**\n\`\`\`python\n${item.table!.derive.code}\n\`\`\`\n`;
+            }
+            
+            // Add table sample data
+            if (item.table!.rows && item.table!.rows.length > 0) {
+                chartifactContent += `\n**Sample Data (first 5 rows):**\n`;
+                const sampleRows = item.table!.rows.slice(0, 5);
+                const headers = item.table!.names || Object.keys(sampleRows[0] || {});
+                
+                // Create markdown table
+                chartifactContent += `| ${headers.join(' | ')} |\n`;
+                chartifactContent += `| ${headers.map(() => '---').join(' | ')} |\n`;
+                sampleRows.forEach((row: any) => {
+                    const values = headers.map((header: string) => row[header] ?? '');
+                    chartifactContent += `| ${values.join(' | ')} |\n`;
+                });
+            }
+            
+            chartifactContent += '\n---\n\n';
+        });
         
         // Create a blob and download the file
         const blob = new Blob([chartifactContent], { type: 'text/markdown' });
@@ -73,6 +117,18 @@ export const ChartifactDialog: FC<ChartifactDialogProps> = function ChartifactDi
                     />
                     <Typography variant="body2" color="text.secondary">
                         This will create a chartifact document with {chartElements.length} chart{chartElements.length !== 1 ? 's' : ''}.
+                        {chartElements.length > 0 && (
+                            <>
+                                <br />
+                                The document will include:
+                                <br />
+                                • Table data and transformations
+                                <br />
+                                • Sample data for each table
+                                <br />
+                                • Chart references
+                            </>
+                        )}
                     </Typography>
                 </Box>
             </DialogContent>
