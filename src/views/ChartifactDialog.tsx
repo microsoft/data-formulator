@@ -98,7 +98,7 @@ export const ChartifactDialog: FC<ChartifactDialogProps> = function ChartifactDi
         link.href = url;
         // Use title as filename, replace bad chars and spaces with underscores
         const sanitizedTitle = title.replace(/[^a-zA-Z0-9]/g, '_').replace(/_+/g, '_');
-        link.download = `${sanitizedTitle}.icoc.md`;
+        link.download = `${sanitizedTitle}.idoc.md`;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
