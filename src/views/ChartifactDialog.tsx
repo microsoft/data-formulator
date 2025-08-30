@@ -48,7 +48,7 @@ export const ChartifactDialog: FC<ChartifactDialogProps> = function ChartifactDi
             delete vg.data.values;
             vg.data.name = table?.id;
 
-            console.log('Vega Chart:', vg);
+            vg.padding = 50;
 
             return { table, element: ce.element, chartId: ce.chartId, vg };
         }).filter(item => item.table); // Filter out any missing data
@@ -67,16 +67,29 @@ export const ChartifactDialog: FC<ChartifactDialogProps> = function ChartifactDi
                 chartifactContent += `\n**Transformation Code:**\n\`\`\`python\n${item.table!.derive.code}\n\`\`\`\n`;
             }
 
-            // Add table sample data
-            if (item.table!.rows && item.table!.rows.length > 0) {
-                chartifactContent += `\n**Data:**\n`;
-                chartifactContent += `\`\`\`csv ${item.table!.id}\n`;
-                chartifactContent += exportTableToCsv(item.table!);
-                chartifactContent += `\n\`\`\`\n`;
-            }
+            // Add Vega-Lite specification
+            chartifactContent += `\n**Visualization:**\n`;
+            chartifactContent += `\`\`\`json vega-lite\n`;
+            chartifactContent += JSON.stringify(item.vg, null, 2);
+            chartifactContent += `\n\`\`\`\n`;
 
             chartifactContent += '\n---\n\n';
         });
+
+        // Output unique CSV tables at the end
+        const uniqueTableIds = [...new Set(chartData.map(item => item.table!.id))];
+        if (uniqueTableIds.length > 0) {
+            chartifactContent += `## Data Tables\n\n`;
+            uniqueTableIds.forEach(tableId => {
+                const table = tables.find(t => t.id === tableId);
+                if (table && table.rows && table.rows.length > 0) {
+                    chartifactContent += `### ${table.displayId || table.id}\n`;
+                    chartifactContent += `\`\`\`csv ${table.id}\n`;
+                    chartifactContent += exportTableToCsv(table);
+                    chartifactContent += `\n\`\`\`\n\n`;
+                }
+            });
+        }
 
         // Create a blob and download the file
         const blob = new Blob([chartifactContent], { type: 'text/markdown' });
