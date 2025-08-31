@@ -13,7 +13,7 @@ import {
     Box
 } from '@mui/material';
 import { DictTable } from '../components/ComponentType';
-import { exportTableToCsv } from '../data/utils';
+import { exportTableToDsv } from '../data/utils';
 import { assembleVegaChart } from '../app/utils';
 
 export interface ChartElements {
@@ -64,14 +64,13 @@ export const ChartifactDialog: FC<ChartifactDialogProps> = function ChartifactDi
 
             // Add table info
             if (item.table!.derive?.code) {
-                chartifactContent += `\n**Transformation Code:**\n\`\`\`python\n${item.table!.derive.code}\n\`\`\`\n`;
+                chartifactContent += `\n**Transformation Code:**`;
+                chartifactContent += tickWrap('python', item.table!.derive.code);
             }
 
             // Add Vega-Lite specification
-            chartifactContent += `\n**Visualization:**\n`;
-            chartifactContent += `\`\`\`json vega-lite\n`;
-            chartifactContent += JSON.stringify(item.vg, null, 2);
-            chartifactContent += `\n\`\`\`\n`;
+            chartifactContent += `\n**Visualization:**`;
+            chartifactContent += tickWrap('json vega-lite', JSON.stringify(item.vg, null, 2));
 
             chartifactContent += '\n---\n\n';
         });
@@ -84,9 +83,7 @@ export const ChartifactDialog: FC<ChartifactDialogProps> = function ChartifactDi
                 const table = tables.find(t => t.id === tableId);
                 if (table && table.rows && table.rows.length > 0) {
                     chartifactContent += `### ${table.displayId || table.id}\n`;
-                    chartifactContent += `\`\`\`csv ${table.id}\n`;
-                    chartifactContent += exportTableToCsv(table);
-                    chartifactContent += `\n\`\`\`\n\n`;
+                    chartifactContent += tickWrap(`csv ${table.id}`, exportTableToDsv(table, ','));
                 }
             });
         }
@@ -164,3 +161,7 @@ export const ChartifactDialog: FC<ChartifactDialogProps> = function ChartifactDi
         </Dialog>
     );
 };
+
+function tickWrap(plugin: string, content: string) {
+    return `\n\n\n\`\`\`${plugin}\n${content}\n\`\`\`\n\n\n`;
+}
