@@ -209,11 +209,11 @@ export const loadBinaryDataWrapper = (title: string, arrayBuffer: ArrayBuffer): 
 };
 
 /**
- * Exports a DictTable to CSV format using d3.csvFormat
+ * Exports a DictTable to DSV format using d3.dsvFormat
  * @param table - The DictTable to export
- * @returns CSV string representation of the table
+ * @returns DSV string representation of the table
  */
-export const exportTableToCsv = (table: DictTable): string => {
-    // Use d3.csvFormat to convert the rows array to CSV
-    return d3.csvFormat(table.rows);
+export const exportTableToDsv = (table: DictTable, delimiter: string): string => {
+    // Use d3.dsvFormat to convert the rows array to DSV
+    return d3.dsvFormat(delimiter).format(table.rows);
 };
