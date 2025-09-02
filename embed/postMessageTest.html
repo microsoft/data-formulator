@@ -16,67 +16,199 @@
         function postMessageToIframe() {
             var iframe = document.getElementById('df');
 
-            //create 10 rows of fake data objects like cars dataset. make sure not every manufacturer od Toyota
+            //create 24 rows of enhanced car sales data with dates for month filtering
             const data = [
                 {
                     "manufacturer": "Toyota",
                     "model": "Corolla",
                     "year": 2019,
-                    "price": 20000
+                    "price": 20000,
+                    "sale_date": "2023-01-15",
+                    "region": "West"
                 },
                 {
                     "manufacturer": "Toyota",
                     "model": "Camry",
-                    "year": 2019,
-                    "price": 25000
+                    "year": 2020,
+                    "price": 25000,
+                    "sale_date": "2023-02-12",
+                    "region": "East"
                 },
                 {
                     "manufacturer": "Toyota",
                     "model": "RAV4",
-                    "year": 2019,
-                    "price": 30000
+                    "year": 2021,
+                    "price": 30000,
+                    "sale_date": "2023-03-08",
+                    "region": "North"
                 },
                 {
                     "manufacturer": "Toyota",
                     "model": "Highlander",
-                    "year": 2019,
-                    "price": 35000
+                    "year": 2022,
+                    "price": 35000,
+                    "sale_date": "2023-04-22",
+                    "region": "South"
                 },
                 {
                     "manufacturer": "Toyota",
                     "model": "4Runner",
-                    "year": 2019,
-                    "price": 40000
+                    "year": 2020,
+                    "price": 40000,
+                    "sale_date": "2023-05-10",
+                    "region": "West"
                 },
                 {
                     "manufacturer": "Ford",
                     "model": "Fusion",
                     "year": 2019,
-                    "price": 20000
+                    "price": 22000,
+                    "sale_date": "2023-06-18",
+                    "region": "East"
                 },
                 {
                     "manufacturer": "Ford",
                     "model": "Focus",
-                    "year": 2019,
-                    "price": 25000
+                    "year": 2020,
+                    "price": 25000,
+                    "sale_date": "2023-07-05",
+                    "region": "North"
                 },
                 {
                     "manufacturer": "Ford",
                     "model": "Escape",
-                    "year": 2019,
-                    "price": 30000
+                    "year": 2021,
+                    "price": 32000,
+                    "sale_date": "2023-08-14",
+                    "region": "South"
                 },
                 {
                     "manufacturer": "Ford",
                     "model": "Explorer",
-                    "year": 2019,
-                    "price": 35000
+                    "year": 2022,
+                    "price": 38000,
+                    "sale_date": "2023-09-30",
+                    "region": "West"
                 },
                 {
                     "manufacturer": "Ford",
                     "model": "Expedition",
+                    "year": 2021,
+                    "price": 42000,
+                    "sale_date": "2023-10-25",
+                    "region": "East"
+                },
+                {
+                    "manufacturer": "Honda",
+                    "model": "Civic",
+                    "year": 2020,
+                    "price": 21000,
+                    "sale_date": "2023-11-12",
+                    "region": "North"
+                },
+                {
+                    "manufacturer": "Honda",
+                    "model": "Accord",
+                    "year": 2021,
+                    "price": 28000,
+                    "sale_date": "2023-12-03",
+                    "region": "South"
+                },
+                {
+                    "manufacturer": "Honda",
+                    "model": "CR-V",
+                    "year": 2022,
+                    "price": 33000,
+                    "sale_date": "2023-01-28",
+                    "region": "West"
+                },
+                {
+                    "manufacturer": "Honda",
+                    "model": "Pilot",
+                    "year": 2021,
+                    "price": 37000,
+                    "sale_date": "2023-02-20",
+                    "region": "East"
+                },
+                {
+                    "manufacturer": "Nissan",
+                    "model": "Altima",
+                    "year": 2020,
+                    "price": 24000,
+                    "sale_date": "2023-03-17",
+                    "region": "North"
+                },
+                {
+                    "manufacturer": "Nissan",
+                    "model": "Sentra",
+                    "year": 2021,
+                    "price": 19000,
+                    "sale_date": "2023-04-09",
+                    "region": "South"
+                },
+                {
+                    "manufacturer": "Nissan",
+                    "model": "Rogue",
+                    "year": 2022,
+                    "price": 31000,
+                    "sale_date": "2023-05-25",
+                    "region": "West"
+                },
+                {
+                    "manufacturer": "Nissan",
+                    "model": "Murano",
+                    "year": 2021,
+                    "price": 36000,
+                    "sale_date": "2023-06-11",
+                    "region": "East"
+                },
+                {
+                    "manufacturer": "Chevrolet",
+                    "model": "Malibu",
+                    "year": 2020,
+                    "price": 23000,
+                    "sale_date": "2023-07-22",
+                    "region": "North"
+                },
+                {
+                    "manufacturer": "Chevrolet",
+                    "model": "Cruze",
                     "year": 2019,
-                    "price": 40000
+                    "price": 18000,
+                    "sale_date": "2023-08-07",
+                    "region": "South"
+                },
+                {
+                    "manufacturer": "Chevrolet",
+                    "model": "Equinox",
+                    "year": 2021,
+                    "price": 29000,
+                    "sale_date": "2023-09-13",
+                    "region": "West"
+                },
+                {
+                    "manufacturer": "Chevrolet",
+                    "model": "Tahoe",
+                    "year": 2022,
+                    "price": 52000,
+                    "sale_date": "2023-10-01",
+                    "region": "East"
+                },
+                {
+                    "manufacturer": "BMW",
+                    "model": "3 Series",
+                    "year": 2021,
+                    "price": 45000,
+                    "sale_date": "2023-11-18",
+                    "region": "North"
+                },
+                {
+                    "manufacturer": "BMW",
+                    "model": "X3",
+                    "year": 2022,
+                    "price": 55000,
+                    "sale_date": "2023-12-15",
+                    "region": "South"
                 }
             ];
 
