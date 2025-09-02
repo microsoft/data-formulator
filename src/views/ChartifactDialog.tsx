@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-import React, { FC, useState } from 'react';
+import React, { FC, useState, useEffect } from 'react';
 import {
     Dialog,
     DialogTitle,
@@ -35,7 +35,24 @@ export const ChartifactDialog: FC<ChartifactDialogProps> = function ChartifactDi
     tables,
     chartElements
 }) {
-    const [title, setTitle] = useState<string>('');
+    // Generate initial title from table names
+    const getTablesFromChartElements = () => {
+        return chartElements
+            .map(ce => tables.find(t => t.id === ce.tableId))
+            .filter(table => table) as DictTable[];
+    };
+    
+    const [title, setTitle] = useState<string>(() => 
+        generateTitleFromTables(getTablesFromChartElements())
+    );
+
+    // Update title when chart elements change
+    useEffect(() => {
+        if (open) {
+            const newTitle = generateTitleFromTables(getTablesFromChartElements());
+            setTitle(newTitle);
+        }
+    }, [open, chartElements, tables]);
 
     const handleDownload = () => {
         // Get actual table data from tables array using the IDs
@@ -54,7 +71,10 @@ export const ChartifactDialog: FC<ChartifactDialogProps> = function ChartifactDi
         }).filter(item => item.table); // Filter out any missing data
 
         // Create more detailed chartifact content
-        let chartifactContent = `# ${title}\n\n`;
+        let chartifactContent = `${tickWrap('#', 'View this document in the online Chartifact viewer: https://microsoft.github.io/chartifact/view/ \nor with the Chartifact VS Code extension: https://marketplace.visualstudio.com/items?itemName=msrvida.chartifact')}
+# ${title}
+
+`;
         chartifactContent += `This chartifact document contains ${chartData.length} visualization${chartData.length !== 1 ? 's' : ''}.\n\n`;
 
         chartData.forEach((item, index) => {
@@ -164,4 +184,21 @@ export const ChartifactDialog: FC<ChartifactDialogProps> = function ChartifactDi
 
 function tickWrap(plugin: string, content: string) {
     return `\n\n\n\`\`\`${plugin}\n${content}\n\`\`\`\n\n\n`;
+}
+
+function generateTitleFromTables(tables: DictTable[]): string {
+    if (tables.length === 0) return '';
+
+    const uniqueTableNames = [...new Set(
+        tables.map(t => {
+            const name = t.displayId || t.id || '';
+            return name ? (name.charAt(0).toUpperCase() + name.slice(1)) : name;
+        })
+    )];
+
+    if (uniqueTableNames.length <= 3) {
+        return uniqueTableNames.join(', ');
+    } else {
+        return uniqueTableNames.slice(0, 3).join(', ') + '...';
+    }
 }
