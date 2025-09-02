@@ -41,8 +41,8 @@ export const ChartifactDialog: FC<ChartifactDialogProps> = function ChartifactDi
             .map(ce => tables.find(t => t.id === ce.tableId))
             .filter(table => table) as DictTable[];
     };
-    
-    const [title, setTitle] = useState<string>(() => 
+
+    const [title, setTitle] = useState<string>(() =>
         generateTitleFromTables(getTablesFromChartElements())
     );
 
@@ -55,61 +55,11 @@ export const ChartifactDialog: FC<ChartifactDialogProps> = function ChartifactDi
     }, [open, chartElements, tables]);
 
     const handleDownload = () => {
-        // Get actual table data from tables array using the IDs
-        const chartData = chartElements.map(ce => {
-            const table = tables.find(t => t.id === ce.tableId);
 
-            const { chart, conceptShelfItems } = ce.element.props;
-            const vg = assembleVegaChart(chart.chartType, chart.encodingMap, conceptShelfItems, table?.rows!);
-
-            delete vg.data.values;
-            vg.data.name = table?.id;
-
-            vg.padding = 50;
-
-            return { table, element: ce.element, chartId: ce.chartId, vg };
-        }).filter(item => item.table); // Filter out any missing data
-
-        // Create more detailed chartifact content
-        let chartifactContent = `${tickWrap('#', 'View this document in the online Chartifact viewer: https://microsoft.github.io/chartifact/view/ \nor with the Chartifact VS Code extension: https://marketplace.visualstudio.com/items?itemName=msrvida.chartifact')}
-# ${title}
-
-`;
-        chartifactContent += `This chartifact document contains ${chartData.length} visualization${chartData.length !== 1 ? 's' : ''}.\n\n`;
-
-        chartData.forEach((item, index) => {
-            chartifactContent += `## Chart ${index + 1}\n`;
-            chartifactContent += `**Table:** ${item.table!.displayId || item.table!.id}\n`;
-            chartifactContent += `**Chart ID:** ${item.chartId}\n`;
-
-            // Add table info
-            if (item.table!.derive?.code) {
-                chartifactContent += `\n**Transformation Code:**`;
-                chartifactContent += tickWrap('python', item.table!.derive.code);
-            }
-
-            // Add Vega-Lite specification
-            chartifactContent += `\n**Visualization:**`;
-            chartifactContent += tickWrap('json vega-lite', JSON.stringify(item.vg, null, 2));
-
-            chartifactContent += '\n---\n\n';
-        });
-
-        // Output unique CSV tables at the end
-        const uniqueTableIds = [...new Set(chartData.map(item => item.table!.id))];
-        if (uniqueTableIds.length > 0) {
-            chartifactContent += `## Data Tables\n\n`;
-            uniqueTableIds.forEach(tableId => {
-                const table = tables.find(t => t.id === tableId);
-                if (table && table.rows && table.rows.length > 0) {
-                    chartifactContent += `### ${table.displayId || table.id}\n`;
-                    chartifactContent += tickWrap(`csv ${table.id}`, exportTableToDsv(table, ','));
-                }
-            });
-        }
+        const content = createChartifact(chartElements, tables, title);
 
         // Create a blob and download the file
-        const blob = new Blob([chartifactContent], { type: 'text/markdown' });
+        const blob = new Blob([content], { type: 'text/markdown' });
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.href = url;
@@ -181,6 +131,65 @@ export const ChartifactDialog: FC<ChartifactDialogProps> = function ChartifactDi
         </Dialog>
     );
 };
+
+function createChartifact(chartElements: ChartElements[], tables: DictTable[], title: string) {
+    // Get actual table data from tables array using the IDs
+    const chartData = chartElements.map(ce => {
+        const table = tables.find(t => t.id === ce.tableId);
+
+        const { chart, conceptShelfItems } = ce.element.props;
+        const vg = assembleVegaChart(chart.chartType, chart.encodingMap, conceptShelfItems, table?.rows!);
+
+        delete vg.data.values;
+        vg.data.name = table?.id;
+
+        vg.padding = 50;
+
+        return { table, element: ce.element, chartId: ce.chartId, vg };
+    }).filter(item => item.table); // Filter out any missing data
+
+
+    // Create more detailed chartifact content
+    let out = [`${tickWrap('#', 'View this document in the online Chartifact viewer: https://microsoft.github.io/chartifact/view/ \nor with the Chartifact VS Code extension: https://marketplace.visualstudio.com/items?itemName=msrvida.chartifact')}
+# Data Formulator session: ${title}
+`];
+
+    out.push(`This chartifact document contains ${chartData.length} visualization${chartData.length !== 1 ? 's' : ''}.\n`);
+
+    chartData.forEach((item, index) => {
+        out.push(`## Chart ${index + 1}`);
+        out.push(`**Table:** ${item.table!.displayId || item.table!.id}`);
+        out.push(`**Chart ID:** ${item.chartId}`);
+
+        // Add table info
+        if (item.table!.derive?.code) {
+            out.push(`\n**Transformation Code:**`);
+            out.push(tickWrap('python', item.table!.derive.code));
+        }
+
+        // Add Vega-Lite specification
+        out.push(`\n**Visualization:**`);
+        out.push(tickWrap('json vega-lite', JSON.stringify(item.vg, null, 2)));
+
+        out.push('\n---\n');
+    });
+
+    // Output unique CSV tables at the end
+    const uniqueTableIds = [...new Set(chartData.map(item => item.table!.id))];
+    if (uniqueTableIds.length > 0) {
+        out.push(`## Data Tables\n\n`);
+        uniqueTableIds.forEach(tableId => {
+            const table = tables.find(t => t.id === tableId);
+            if (table && table.rows && table.rows.length > 0) {
+                out.push(`### ${table.displayId || table.id}`);
+                out.push(tickWrap(`csv ${table.id}`, exportTableToDsv(table, ',')));
+                out.push(tickWrap('json tabulator', JSON.stringify({ dataSourceName: table.id }, null, 2)));
+            }
+        });
+    }
+
+    return out.join('\n');
+}
 
 function tickWrap(plugin: string, content: string) {
     return `\n\n\n\`\`\`${plugin}\n${content}\n\`\`\`\n\n\n`;
