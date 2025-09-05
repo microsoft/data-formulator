@@ -308,8 +308,8 @@ export const dataFormulatorSlice = createSlice({
 
             let savedState = action.payload;
 
-            state.models = savedState.models;
-            state.modelSlots = savedState.modelSlots || {};
+            state.models = savedState.models || state.models || [];
+            state.modelSlots = savedState.modelSlots || state.modelSlots || {};
             state.testedModels = []; // models should be tested again
 
             //state.table = undefined;
@@ -790,7 +790,16 @@ export const dataFormulatorSlice = createSlice({
 
                 if (data["result"][0]["suggested_table_name"]) {
                     let table = state.tables.find(t => t.id == tableId) as DictTable;
-                    table.displayId = data["result"][0]["suggested_table_name"] as string;
+
+                    // avoid duplicate display ids
+                    let existingDisplayIds = state.tables.map(t => t.displayId);
+                    let displayId = data["result"][0]["suggested_table_name"] as string;
+                    let suffix = 1;
+                    while (existingDisplayIds.includes(displayId)) {
+                        displayId = `${displayId}-${suffix}`;
+                        suffix++;
+                    }
+                    table.displayId = displayId;
                 }
             }
         })

@@ -59,9 +59,19 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView({  $table
     // given a table render the table
     let renderTableBody = (targetTable: DictTable | undefined) => {
 
-        const rowData = targetTable ? 
-            targetTable.virtual ? targetTable.rows : targetTable.rows.map((r: any, i: number) => ({ ...r, "#rowId": i })) 
-            : [];
+        let rowData = [];
+        if (targetTable) {
+            if (targetTable.virtual) {
+                rowData = targetTable.rows;
+            } else {
+                if (targetTable.rows.length > 10000) {
+                    rowData = _.sampleSize(targetTable.rows, 10000);
+                } else {
+                    rowData = targetTable.rows;
+                }
+                rowData = rowData.map((r: any, i: number) => ({ ...r, "#rowId": i }));
+            }
+        }
 
         // Randomly sample up to 29 rows for column width calculation
         const sampleSize = Math.min(29, rowData.length);

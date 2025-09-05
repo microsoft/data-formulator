@@ -48,6 +48,8 @@ import CloseIcon from '@mui/icons-material/Close';
 import EmojiEventsIcon from '@mui/icons-material/EmojiEvents';
 import TipsAndUpdatesIcon from '@mui/icons-material/TipsAndUpdates';
 import { renderTextWithEmphasis } from './EncodingShelfCard';
+import CallSplitIcon from '@mui/icons-material/CallSplit';
+import MovingIcon from '@mui/icons-material/Moving';
 
 export interface ChartRecBoxProps {
     tableId: string;
@@ -166,8 +168,9 @@ export const IdeaChip: FC<{
     theme: Theme, 
     onClick: () => void, 
     sx?: SxProps,
-    disabled?: boolean
-}> = function ({mini, idea, theme, onClick, sx, disabled}) {
+    disabled?: boolean,
+    icon?: React.ReactNode
+}> = function ({mini, idea, theme, onClick, sx, disabled, icon}) {
 
     const getDifficultyColor = (difficulty: 'easy' | 'medium' | 'hard') => {
         switch (difficulty) {
@@ -211,17 +214,18 @@ export const IdeaChip: FC<{
                 boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
                 transition: 'all 0.2s ease-in-out',
                 backgroundColor: alpha(theme.palette.background.paper, 0.9),
-                cursor: 'pointer',
+                cursor: disabled ? 'default' : 'pointer',
                 opacity: disabled ? 0.6 : 1,
-                '&:hover': {
+                '&:hover': disabled ? 'none' : {
                     boxShadow: '0 2px 6px rgba(0,0,0,0.1)',
                     borderColor: alpha(styleColor, 0.7),
                     transform: 'translateY(-1px)',
                 },
                 ...sx
             }}
-            onClick={onClick}
+            onClick={disabled ? undefined : onClick}
         >
+            {icon}
             <Typography sx={{ fontSize: '11px', color: getDifficultyColor(idea.difficulty) }}>
                 {ideaTextComponent}
             </Typography>
@@ -446,7 +450,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
         setIsFormulating(true);
 
         const token = String(Date.now());
-        const messageBody = JSON.stringify({
+        let messageBody = JSON.stringify({
             token: token,
             mode: 'formulate',
             input_tables: actionTables.map(t => ({
@@ -459,12 +463,54 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
             max_repair_attempts: config.maxRepairAttempts,
             language: actionTables.some(t => t.virtual) ? "sql" : "python"
         });
+        let engine = getUrls().DERIVE_DATA;
+        
 
-        if (process.env.NODE_ENV !== 'production') {
-            console.debug("debug: messageBody", messageBody);
+        if (currentTable && currentTable.derive?.dialog && !currentTable.anchored) {
+            let sourceTableIds = currentTable.derive?.source;
+
+            let startNewDialog = (!sourceTableIds.every(id => selectedTableIds.includes(id)) || 
+                !selectedTableIds.every(id => sourceTableIds.includes(id)));
+
+            // Compare if source and base table IDs are different
+            if (startNewDialog) {
+
+                console.log("start new dialog", startNewDialog);
+                
+                let additionalMessages = currentTable.derive.dialog;
+
+                console.log("additional messages", additionalMessages);
+
+                // in this case, because table ids has changed, we need to use the additional messages and reformulate
+                messageBody = JSON.stringify({
+                    token: token,
+                    mode: 'formulate',
+                    input_tables: actionTables.map(t => {return { name: t.virtual?.tableId || t.id.replace(/\.[^/.]+$/ , ""), rows: t.rows }}),
+                    new_fields: [],
+                    extra_prompt: instruction,
+                    model: activeModel,
+                    additional_messages: additionalMessages,
+                    max_repair_attempts: config.maxRepairAttempts,
+                    language: actionTables.some(t => t.virtual) ? "sql" : "python"
+                });
+                engine = getUrls().DERIVE_DATA;
+            } else {
+                messageBody = JSON.stringify({
+                    token: token,
+                    mode: 'formulate',
+                    input_tables: actionTables.map(t => {return { name: t.virtual?.tableId || t.id.replace(/\.[^/.]+$/ , ""), rows: t.rows }}),
+                    output_fields: [],
+                    dialog: currentTable.derive?.dialog,
+                    latest_data_sample: currentTable.rows.slice(0, 10),
+                    new_instruction: instruction,
+                    model: activeModel,
+                    max_repair_attempts: config.maxRepairAttempts,
+                    language: actionTables.some(t => t.virtual) ? "sql" : "python"
+                })
+                engine = getUrls().REFINE_DATA;
+            } 
         }
-
-        const engine = getUrls().DERIVE_DATA;
+        
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), config.formulateTimeoutSeconds * 1000);
 
@@ -528,7 +574,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                             undefined // No derive info for ChartRecBox - it's NL-driven without triggers
                         );
 
-                        let refChart = generateFreshChart(firstTableId, 'Auto') as Chart;
+                        let refChart = generateFreshChart(tableId, 'Auto') as Chart;
                         refChart.source = 'trigger';
                         
                         // Add derive info manually since ChartRecBox doesn't use triggers
@@ -537,7 +583,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                             source: selectedTableIds,
                             dialog: dialog,
                             trigger: {
-                                tableId: firstTableId,
+                                tableId: tableId,
                                 sourceTableIds: selectedTableIds,
                                 instruction: instruction,
                                 displayInstruction: displayInstruction,
@@ -738,12 +784,26 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                         >
                             {isLoadingIdeas ? <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
                                 <CircularProgress size={24} />
-                            </Box> : <TipsAndUpdatesIcon sx={{fontSize: 24}} />}
+                            </Box> : <TipsAndUpdatesIcon sx={{
+                                fontSize: 24,
+                                animation: ideas.length == 0 ? 'colorWipe 5s ease-in-out infinite' : 'none',
+                                '@keyframes colorWipe': {
+                                    '0%, 90%': {
+                                        scale: 1,
+                                    },
+                                    '95%': {
+                                        scale: 1.2,
+                                    },
+                                    '100%': {
+                                        scale: 1,
+                                    },
+                                },
+                            }} />}
                         </IconButton>
                     </Tooltip>
                 </Box>
             </Box>
-            {/* Challenge Chips Section */}
+            {/* Ideas Chips Section */}
             {ideas.length > 0 && (
                 <Box>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, marginBottom: 1 }}>
@@ -770,6 +830,42 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                                 }}
                             />
                         ))}
+                    </Box>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, marginBottom: 1 }}>
+                        <Typography sx={{ fontSize: 12, color: "text.secondary" }}>
+                            Agent
+                        </Typography>
+                    </Box>
+                    <Box sx={{
+                        display: 'flex', 
+                        flexWrap: 'wrap', 
+                        gap: 0.5,
+                        marginBottom: 1
+                    }}>
+                        <IdeaChip
+                            mini
+                            idea={{text: "explore more", goal: "new exploration branches", difficulty: "medium"}}
+                            theme={theme}
+                            onClick={() => {
+                                deriveDataFromNL(ideas.length > 0 ? ideas[0].text : "do some research");
+                                deriveDataFromNL(ideas.length > 1 ? ideas[1].text : "do some research v2");
+                                deriveDataFromNL(ideas.length > 2 ? ideas[2].text : "do some research v3");
+                            }}
+                            disabled={isFormulating}
+                            icon={<CallSplitIcon color="primary" sx={{fontSize: 18, mr: 0.5, transform: 'rotate(90deg)'}} />}
+                            sx={{px: 1}}
+                        />
+                        <IdeaChip
+                            mini
+                            idea={{text: "explore more", goal: "deep dive from here", difficulty: "medium"}}
+                            theme={theme}
+                            onClick={() => {
+                                deriveDataFromNL(ideas.length > 0 ? ideas[0].text : "do some research");
+                            }}
+                            disabled={true}
+                            icon={<MovingIcon color="primary" sx={{fontSize: 18, mr: 0.5, transform: 'rotate(90deg)'}} />}
+                            sx={{px: 1, ml: 1}}
+                        />
                     </Box>
                 </Box>
             )}

@@ -31,7 +31,7 @@ import ReactDiffViewer from 'react-diff-viewer'
 
 import { DataFormulatorState, dfActions, dfSelectors, fetchFieldSemanticType } from '../app/dfSlice';
 import { useDispatch, useSelector } from 'react-redux';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { AppDispatch } from '../app/store';
 
 interface TabPanelProps {
@@ -86,7 +86,13 @@ export interface TableSelectionViewProps {
 
 export const TableSelectionView: React.FC<TableSelectionViewProps> = function TableSelectionView({ tableMetadata, handleDeleteTable, handleSelectTable, hideRowNum  }) {
 
-    const [selectedTableName, setSelectedTableName] = React.useState(tableMetadata[0].name);
+    const [selectedTableName, setSelectedTableName] = React.useState<string | undefined>(undefined);
+
+    useEffect(() => {
+        if (tableMetadata.length > 0) {
+            setSelectedTableName(tableMetadata[0].name);
+        }
+    }, [tableMetadata]);
 
     const handleTableSelect = (index: number) => {
         setSelectedTableName(tableMetadata[index].name);
@@ -149,13 +155,6 @@ export const TableSelectionView: React.FC<TableSelectionViewProps> = function Ta
                     let colDefs = t.names.map(name => { return {
                         id: name, label: name, minWidth: 60, align: undefined, format: (v: any) => v,
                     }})
-                    
-                    // let challengeView = <Box sx={{margin: "6px 0px"}}>
-                    //     <Typography variant="subtitle2" sx={{marginLeft: "6px", fontSize: 12}}>Try these data visualization challenges with this dataset:</Typography>
-                    //     {tc.challenges.map((c, j) => <Box key={j} sx={{display: 'flex', alignItems: 'flex-start', pl: 1}}>
-                    //         <Typography sx={{fontSize: 11, color: c.difficulty === 'easy' ? 'success.main' : 'warning.main'}}>[{c.difficulty}] {c.text}</Typography>
-                    //     </Box>)}
-                    // </Box>  
 
                     let content = <Paper variant="outlined" key={t.names.join("-")} sx={{width: 800, maxWidth: '100%', padding: "0px", marginBottom: "8px"}}>
                         <CustomReactTable rows={sampleRows} columnDefs={colDefs} rowsPerPageNum={-1} compact={false} />

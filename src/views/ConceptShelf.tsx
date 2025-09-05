@@ -18,7 +18,6 @@ import {
     Collapse,
 } from '@mui/material';
 
-import AddCircleIcon from '@mui/icons-material/AddCircle';
 import CleaningServicesIcon from '@mui/icons-material/CleaningServices';
 
 import { FieldItem, Channel } from '../components/ComponentType';
@@ -33,7 +32,7 @@ import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-
+import ListIcon from '@mui/icons-material/List';
 
 export const genFreshCustomConcept : () => FieldItem = () => {
     return {
@@ -205,7 +204,7 @@ export const ConceptShelf: FC<ConceptShelfProps> = function ConceptShelf() {
     const tables = useSelector((state: DataFormulatorState) => state.tables);
     const focusedTableId = useSelector((state: DataFormulatorState) => state.focusedTableId);
     const focusedTable = tables.find(t => t.id == focusedTableId);
-    
+
     // group concepts based on types
     let conceptItemGroups = groupConceptItems(conceptShelfItems, tables);
     let groupNames = [...new Set(conceptItemGroups.map(g => g.group))]
@@ -264,7 +263,10 @@ export const ConceptShelf: FC<ConceptShelfProps> = function ConceptShelf() {
         display: 'flex',
         flexDirection: 'row',
         flexShrink: 0, // Prevent panel from shrinking
-        width: conceptPanelOpen ? 296 : 64,
+        width: conceptPanelOpen ? 296 : 32,
+        borderLeft: conceptPanelOpen ? 'none' : '1px solid',
+        borderLeftColor: conceptPanelOpen ? 'transparent' : theme.palette.divider,
+        pl: conceptPanelOpen ? 0 : 1,
         transition: 'width 0.3s ease', // Smooth transition
         overflow: 'hidden',
         position: 'relative',
@@ -303,7 +305,7 @@ export const ConceptShelf: FC<ConceptShelfProps> = function ConceptShelf() {
                     mr: 'auto'
                 }}>
                     {conceptPanelOpen ?  <ChevronRightIcon sx={{fontSize: 18}} /> 
-                        : <ChevronLeftIcon sx={{fontSize: 36, backgroundColor: 'rgba(255,255,255,0.5)', borderRadius: '50%'}} />}
+                        : <ChevronLeftIcon sx={{fontSize: 36, backgroundColor: 'rgba(255,255,255,1)', borderRadius: '50%'}} />}
                 </Box>
             </IconButton>
         </Tooltip>
@@ -318,7 +320,7 @@ export const ConceptShelf: FC<ConceptShelfProps> = function ConceptShelf() {
                     right: 0,
                     width: '100%',
                     height: '100%',
-                    background: 'linear-gradient(to right, rgba(255,255,255,0.8), rgba(255,255,255,0.9))',
+                    background: 'rgba(255,255,255,0.8)',
                     pointerEvents: 'none',
                     zIndex: 1
                 },

@@ -121,7 +121,7 @@ const renderWithMath = (text: string) => {
 };
 
 // Styled components for the concept explanation cards
-const ConceptExplanationCard = styled(Card)(({ theme }) => ({
+const ConceptExplanationCard = styled(Card)<{ secondary?: boolean }>(({ theme, secondary}) => ({
     minWidth: 360,  // Increased from 300
     maxWidth: 480,  // Increased from 360
     margin: '4px',
@@ -133,15 +133,15 @@ const ConceptExplanationCard = styled(Card)(({ theme }) => ({
     backgroundColor: alpha(theme.palette.background.paper, 0.9),
     '&:hover': {
         boxShadow: '0 2px 6px rgba(0,0,0,0.1)',
-        borderColor: theme.palette.primary.light,
+        borderColor: !secondary ? theme.palette.primary.light : theme.palette.secondary.light, 
         transform: 'translateY(-1px)',
     },
 }));
 
-const ConceptName = styled(Typography)(({ theme }) => ({
+const ConceptName = styled(Typography)<{ secondary?: boolean }>(({ theme, secondary }) => ({
     fontSize: '12px',
     fontWeight: 600,
-    color: theme.palette.primary.main,
+    color: secondary ? theme.palette.secondary.main : theme.palette.primary.main,
     marginBottom: '3px',
     display: 'flex',
     alignItems: 'center',
@@ -152,7 +152,7 @@ const ConceptExplanation = styled(Typography)(({ theme }) => ({
     fontSize: '11px',
     lineHeight: 1.4,
     overflow: 'auto',
-    color: theme.palette.text.secondary,
+    color: theme.palette.text.primary,
     fontStyle: 'italic',
     '& .katex': {
         fontSize: '12px',
@@ -187,6 +187,7 @@ export const ConceptExplCards: FC<ConceptExplCardsProps> = ({
     const displayConcepts = expanded ? concepts : concepts.slice(0, maxCards);
     const hasMoreConcepts = concepts.length > maxCards;
 
+
     return (
         <Box sx={{ position: 'relative', display: 'flex', justifyContent: 'center' }}>
             {/* Concepts Grid */}
@@ -194,13 +195,14 @@ export const ConceptExplCards: FC<ConceptExplCardsProps> = ({
                     display: 'grid', 
                     gridTemplateColumns: 'repeat(auto-fill, minmax(36   0px, 1fr))',  // Increased from 180px
                     gap: 1,
-                    maxHeight: expanded ? 'none' : '280px',
                     overflow: 'hidden',
                 }}>
-                    {displayConcepts.map((concept, index) => (
-                        <ConceptExplanationCard key={`${concept.field}-${index}`}>
+                    {displayConcepts.map((concept, index) => {
+                        let secondary = concept.field == "Statistical Analysis";
+                        return (
+                        <ConceptExplanationCard key={`${concept.field}-${index}`} secondary={secondary}>
                             <CardContent sx={{ padding: '6px !important' }}>
-                                <ConceptName>
+                                <ConceptName secondary={secondary}>
                                     {concept.field}
                                 </ConceptName>
                                 <ConceptExplanation>
@@ -208,7 +210,7 @@ export const ConceptExplCards: FC<ConceptExplCardsProps> = ({
                                 </ConceptExplanation>
                             </CardContent>
                         </ConceptExplanationCard>
-                    ))}
+                    )})}
                 </Box>
 
                 {/* Show More/Less Button */}

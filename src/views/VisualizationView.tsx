@@ -31,6 +31,8 @@ import {
     Collapse,
 } from '@mui/material';
 
+import _ from 'lodash';
+
 import ButtonGroup from '@mui/material/ButtonGroup';
 
 import { styled } from "@mui/material/styles";
@@ -413,12 +415,18 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
         }
         let filteredRows = rows.map(row => Object.fromEntries(visFields.filter(f => table.names.includes(f.name)).map(f => [f.name, row[f.name]])));
         let visTable = prepVisTable(filteredRows, conceptShelfItems, focusedChart.encodingMap);
+
+        if (visTable.length > 5000) {
+            let rowSample = _.sampleSize(visTable, 5000);
+            visTable = structuredClone(rowSample);
+        }
+
         return visTable;
     }
 
     let initialVisTableRows = createVisTableRowsLocal(structuredClone(table.rows));
     const [visTableRows, setVisTableRows] = useState<any[]>(initialVisTableRows);
-    const [visTableTotalRowCount, setVisTableTotalRowCount] = useState<number>(table.virtual?.rowCount || initialVisTableRows.length);
+    const [visTableTotalRowCount, setVisTableTotalRowCount] = useState<number>(table.virtual?.rowCount || table.rows.length);
 
     async function fetchDisplayRows(sampleSize?: number) {
         if (sampleSize == undefined) {
@@ -453,8 +461,12 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
             .catch(error => {
                 console.error('Error sampling table:', error);
             });
+        } else {
+            // Randomly sample sampleSize rows from table.rows
+            let rowSample = _.sampleSize(table.rows, sampleSize);
+            setVisTableRows(structuredClone(rowSample));
         }
-    }   
+    }
 
     useEffect(() => {
         if (table.virtual && visFields.length > 0 && dataFieldsAllAvailable) {
@@ -783,7 +795,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
             </Box>
         </Box> :
         <>
-            {table.virtual ? (
+            {table.virtual || table.rows.length > 10000 ? (
                 <Box sx={{ display: 'flex', flexDirection: "row", margin: "auto", justifyContent: 'center', alignItems: 'center'}}>
                     
                     <Typography component="span" fontSize="small" color="text.secondary" sx={{textAlign:'center'}}>

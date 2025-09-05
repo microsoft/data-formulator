@@ -386,7 +386,7 @@ let customCharts = [
         "chart": "Custom Point",
         "icon": <LazyChartIcon iconPath="../assets/chart-icon-custom-point.png" />,
         "template": {
-            "mark": "circle",
+            "mark": "point",
             "encoding": { }
         },
         "channels": ["x", "y", "color", "opacity", "size", "shape", "column", "row"],

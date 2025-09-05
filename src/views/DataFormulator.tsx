@@ -49,23 +49,18 @@ import { getUrls } from '../app/utils';
 import { CloudQueue } from '@mui/icons-material';
 import { DataLoadingChatDialog } from './DataLoadingChat';
 import { RotatingTextBlock } from '../components/RotatingTextBlock';
-import { DataLoadingInputBox, DataLoadingThread, DataPreviewBox } from './DataLoadingThread';
 
 export const DataFormulatorFC = ({ }) => {
 
     const tables = useSelector((state: DataFormulatorState) => state.tables);
-    const dataCleanBlocks = useSelector((state: DataFormulatorState) => state.dataCleanBlocks);
     const models = useSelector((state: DataFormulatorState) => state.models);
     const modelSlots = useSelector((state: DataFormulatorState) => state.modelSlots);
 
-    let [dbPanelOpen, setDbPanelOpen] = useState<boolean>(false);
-    
     const noBrokenModelSlots= useSelector((state: DataFormulatorState) => {
         const slotTypes = dfSelectors.getAllSlotTypes();
         return slotTypes.every(
             slotType => state.modelSlots[slotType] !== undefined && state.testedModels.find(t => t.id == state.modelSlots[slotType])?.status != 'error');
     });
-
 
     const dispatch = useDispatch();
 

@@ -34,7 +34,7 @@ import {
 
 import React from 'react';
 
-import { Channel, EncodingItem, ConceptTransformation, Chart, FieldItem, Trigger, duplicateChart, EncodingMap } from "../components/ComponentType";
+import { Channel, Chart, FieldItem, Trigger, duplicateChart } from "../components/ComponentType";
 
 import _ from 'lodash';
 
@@ -180,10 +180,10 @@ export const TriggerCard: FC<{
     let prompt: string = trigger.displayInstruction;
     if (trigger.instruction == '' && encFields.length > 0) {
         prompt = '';
-    } else if (!trigger.displayInstruction || (trigger.instruction != '' && trigger.instruction.length <= trigger.displayInstruction.length)) {
+    } else if (!trigger.displayInstruction || (trigger.instruction != '' && trigger.instruction.length <= trigger.displayInstruction.replace(/\*\*/g, '').length)) {
         prompt = trigger.instruction;
-    } 
-    
+    }
+
     // Process the prompt to highlight content in ** **
     const processedPrompt = renderTextWithEmphasis(prompt, {
         borderRadius: '4px', border: '1px solid rgb(250 235 215)', 
@@ -212,27 +212,36 @@ export const TriggerCard: FC<{
     }
 
     return  <Card className={`${className}`} variant="outlined" 
-                sx={{
-                    cursor: 'pointer', backgroundColor: alpha(theme.palette.custom.main, 0.05), 
-                    fontSize: '12px', display: 'flex', flexDirection: 'row', alignItems: 'center', gap: '2px',
-                    '&:hover': { 
-                        transform: "translate(0px, -1px)",  
-                        boxShadow: '0 2px 6px rgba(0,0,0,0.1)',
-                    },
-                    '& .MuiChip-label': { px: 0.5, fontSize: "10px"},
-                    ...sx,
-                }} 
-                onClick={handleClick}>
-                <PrecisionManufacturing  sx={{ml: 1, color: 'darkgray', width: '14px', height: '14px'}} />
-                <Box sx={{margin: "4px 8px 4px 2px",}}>
-                    {hideFields ? "" : <Typography fontSize="inherit" sx={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center',
-                                    color: 'rgba(0,0,0,0.7)'}}>{encodingComp}</Typography>}
-                    <Typography fontSize="inherit" sx={{
-                        textAlign: 'center', width: 'fit-content', textWrap: 'balance',
-                        minWidth: '40px',
-                        color: 'rgba(0,0,0,0.7)'}}>{processedPrompt}</Typography> 
-                </Box>
-        </Card>
+        sx={{
+            cursor: 'pointer', backgroundColor: alpha(theme.palette.custom.main, 0.05), 
+            fontSize: '12px', display: 'flex', flexDirection: 'row', alignItems: 'center', gap: '2px',
+            '&:hover': { 
+                transform: "translate(0px, -1px)",  
+                boxShadow: '0 2px 6px rgba(0,0,0,0.1)',
+            },
+            '& .MuiChip-label': { px: 0.5, fontSize: "10px"},
+            ...sx,
+        }} 
+        onClick={handleClick}>
+        <Box sx={{mx: 1, my: 0.5}}>
+            {hideFields ? "" : <Typography fontSize="inherit" sx={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center',
+                            color: 'rgba(0,0,0,0.7)'}}>{encodingComp}</Typography>}
+            <Typography fontSize="inherit" sx={{
+                textAlign: 'center', width: 'fit-content',
+                minWidth: '40px',
+                color: 'rgba(0,0,0,0.7)'}}>
+                    {prompt.length > 0 && <PrecisionManufacturing sx={{
+                        color: 'darkgray', 
+                        width: '14px', 
+                        height: '14px',
+                        mr: 0.5,
+                        verticalAlign: 'text-bottom',
+                        display: 'inline-block'
+                    }} />}
+                    {processedPrompt}
+            </Typography>
+        </Box>
+    </Card>
 }
 
 // Add this component before EncodingShelfCard
@@ -518,7 +527,6 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
         deriveNewData(ideaText, 'ideate');
     };
 
-    
 
     let deriveNewData = (
         instruction: string, 
@@ -679,7 +687,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                                         while (tables.find(t => t.id == tableId) != undefined) {
                                             tableSuffix = tableSuffix + 1;
                                             tableId = `table-${tableSuffix}`
-                                        } 
+                                        }
                                         return tableId;
                                     }
                                     candidateTableId = genTableId();
@@ -994,15 +1002,6 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
             />}
             <Box key='mark-selector-box' sx={{ flex: '0 0 auto' }}>
                 <FormControl sx={{ m: 1, minWidth: 120, width: "100%", margin: "0px 0"}} size="small">
-                    {/* {!existMultiplePossibleBaseTables && <InputLabel 
-                        id="chart-mark-select-label"
-                        sx={{
-                            color: "text.secondary",
-                            transform: "none",
-                            fontSize: "10px",
-                            margin: "-2px 0px 0px 4px",
-                        }}
-                    >Chart Type</InputLabel>}    */}
                     <Select
                         variant="standard"
                         labelId="chart-mark-select-label"
@@ -1085,7 +1084,6 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                 {encodingBoxGroups}
             </Box>
             {formulateInputBox}
-            
         </Box>);
 
     const encodingShelfCard = (

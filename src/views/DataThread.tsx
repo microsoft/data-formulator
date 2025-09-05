@@ -28,7 +28,6 @@ import { useDispatch, useSelector } from 'react-redux';
 import { DataFormulatorState, dfActions, SSEMessage } from '../app/dfSlice';
 import { assembleVegaChart, getTriggers } from '../app/utils';
 import { Chart, DictTable, EncodingItem, FieldItem, Trigger } from "../components/ComponentType";
-import { createOrderedThreadBlocks, SingleDataCleanThreadView } from './DataLoadingThread';
 
 import DeleteIcon from '@mui/icons-material/Delete';
 import AddchartIcon from '@mui/icons-material/Addchart';
@@ -64,7 +63,6 @@ let buildChartCard = (chartElement: { tableId: string, chartId: string, element:
     let selectedClassName = focusedChartId == chartElement.chartId ? 'selected-card' : '';
     return <Card className={`data-thread-card ${selectedClassName}`} variant="outlined"
         sx={{
-            marginLeft: 1,
             width: '100%',
             display: 'flex'
         }}>
@@ -191,22 +189,28 @@ const EditableTableName: FC<{
     );
 };
 
-let SingleThreadView: FC<{
+let SingleThreadGroupView: FC<{
     scrollRef: any,
     threadIdx: number,
-    leafTable: DictTable;
+    leafTables: DictTable[];
     chartElements: { tableId: string, chartId: string, element: any }[];
     usedIntermediateTableIds: string[],
     sx?: SxProps
 }> = function ({
     scrollRef,
     threadIdx,
-    leafTable,
+    leafTables,
     chartElements,
     usedIntermediateTableIds, // tables that have been used
     sx
 }) {
+
     let tables = useSelector((state: DataFormulatorState) => state.tables);
+
+    let leafTableIds = leafTables.map(lt => lt.id);
+    let parentTableId = leafTables[0].derive?.trigger.tableId || undefined;
+    let parentTable = tables.find(t => t.id == parentTableId) as DictTable;
+
     let charts = useSelector(dfSelectors.getAllCharts);
     let focusedChartId = useSelector((state: DataFormulatorState) => state.focusedChartId);
     let focusedTableId = useSelector((state: DataFormulatorState) => state.focusedTableId);
@@ -217,99 +221,35 @@ let SingleThreadView: FC<{
             tableId: tableId,
             displayId: displayId
         }));
-    }   
-
-    const theme = useTheme();
-
-    let focusedChart = useSelector((state: DataFormulatorState) => charts.find(c => c.id == focusedChartId));
-
-    const dispatch = useDispatch();
-
-    let [collapsed, setCollapsed] = useState<boolean>(false);
-
-    const w: any = (a: any[], b: any[], spaceElement?: any) => a.length ? [a[0], b.length == 0 ? "" : (spaceElement || ""), ...w(b, a.slice(1), spaceElement)] : b;
-
-    let content: any = ""
-
-    let tableIdList = [leafTable.id]
-    let triggerCards: any[] = []
-    let triggers = getTriggers(leafTable, tables);
-
-    let highlightedTableIds: string[] = [leafTable.id];
-
-    let isThreadFocused: boolean = false;
-    
-    // Recursively find the original table ID by using the triggers array
-    let threadOriginalTableId: string | undefined = undefined;
-    if (triggers.length > 0) {
-        // The first trigger in the array points to the original table
-        threadOriginalTableId = triggers[0].tableId;
-    } else if (leafTable.derive) {
-        // If no triggers but table is derived, use the immediate source
-        threadOriginalTableId = leafTable.derive.trigger.sourceTableIds[0];
-    }
-    let triggerToFirstNewTable: Trigger | undefined = undefined;
-
-    if (leafTable.derive) {
-
-        // find the first table that belongs to this thread, it should not be an intermediate table that has appeared in previous threads
-        let firstNewTableIndex = triggers.findIndex(tg => !usedIntermediateTableIds.includes(tg.tableId));
-        let firstNewTableId = firstNewTableIndex != -1 ? triggers[firstNewTableIndex].tableId : leafTable.id;
-
-        triggerToFirstNewTable = triggers.find(t => t.resultTableId == firstNewTableId);
-
-        // when firstNewTableIndex is -1, it means the leaf table should be the first one to display at the top of the thread
-        if (firstNewTableIndex == -1) {
-            triggers = [];
-        } else {
-            triggers = triggers.slice(firstNewTableIndex);
-        }
-
-        tableIdList = [...triggers.map((trigger) => trigger.tableId), leafTable.id];
-        highlightedTableIds = focusedTableId && tableIdList.includes(focusedTableId) ? tableIdList : [];
-        isThreadFocused = Boolean(focusedTableId && tableIdList.includes(focusedTableId));
-
-        triggerCards = triggers.map((trigger, i) => {
-
-            let selectedClassName = trigger.chart?.id == focusedChartId ? 'selected-card' : '';
-            
-            let extractActiveFields = (t: Trigger) => {
-                let encodingMap = t.chart?.encodingMap;
-                if (!encodingMap) {
-                    return [];
-                }
-                return Array.from(Object.values(encodingMap)).map((enc: EncodingItem) => enc.fieldID).filter(x => x != undefined);
-            };
-
-            let previousActiveFields = new Set(i == 0 ? [] : extractActiveFields(triggers[i - 1]))
-            let currentActiveFields = new Set(extractActiveFields(trigger))
-            let fieldsIdentical = _.isEqual(previousActiveFields, currentActiveFields)
-
-            let triggerCard = <div key={'thread-card-trigger-box'}>
-                <Box sx={{ flex: 1 }} >
-                    <TriggerCard className={selectedClassName} trigger={trigger} 
-                        hideFields={trigger.instruction != ""} 
-                    />
-                </Box>
-            </div>;
-
-            return <Box sx={{ display: 'flex', flexDirection: 'column' }} key={`trigger-card-${trigger.chart?.id}`}>
-                {triggerCard}
-                <ListItemIcon key={'down-arrow'} sx={{ minWidth: 0 }}>
-                    <SouthIcon sx={{ fontSize: "inherit", 
-                        color: highlightedTableIds.includes(trigger.tableId) ? theme.palette.primary.light : 'darkgray' }} />
-                </ListItemIcon>
-            </Box>;
-        });
-
-    } else {
-        highlightedTableIds = focusedTableId && tableIdList.includes(focusedTableId) ? tableIdList : [];
-        isThreadFocused = Boolean(focusedTableId && tableIdList.includes(focusedTableId));
     }
 
-    let tableElementList = tableIdList.map((tableId, i) => {
+    let buildTriggerCard = (trigger: Trigger) => {
+        let selectedClassName = trigger.chart?.id == focusedChartId ? 'selected-card' : '';
+        
+        let triggerCard = <div key={'thread-card-trigger-box'}>
+            <Box sx={{ flex: 1 }} >
+                <TriggerCard className={selectedClassName} trigger={trigger} 
+                    hideFields={trigger.instruction != ""} 
+                    sx={highlightedTableIds.includes(trigger.resultTableId) ? {borderLeft: '3px solid', borderLeftColor: alpha(theme.palette.custom.main, 0.5)} : {}}
+                />
+            </Box>
+        </div>;
 
-        if (tableId == leafTable.id && leafTable.anchored && tableIdList.length > 1) {
+        return <Box sx={{ display: 'flex', flexDirection: 'column' }} key={`trigger-card-${trigger.chart?.id}`}>
+            {triggerCard}
+            <ListItemIcon key={'down-arrow'} sx={{ minWidth: 0 }}>
+                <SouthIcon sx={{
+                    fontSize: "inherit", 
+                    color: highlightedTableIds.includes(trigger.resultTableId) ? theme.palette.primary.light : 'darkgray',
+                    ...(highlightedTableIds.includes(trigger.resultTableId) ? { strokeWidth: 1, stroke: theme.palette.primary.light } : { })
+                }} />
+            </ListItemIcon>
+        </Box>;
+    }
+
+    let buildTableCard = (tableId: string) => {
+
+        if (parentTable && tableId == parentTable.id && parentTable.anchored && tableIdList.length > 1) {
             let table = tables.find(t => t.id == tableId);
             return <Typography sx={{ background: 'transparent', }} >
                 <Box 
@@ -494,10 +434,10 @@ let SingleThreadView: FC<{
             <Box
                 key={`table-${tableId}`}
                 sx={{ display: 'flex', flexDirection: 'row' }}>
-                <Box sx={{
-                    minWidth: '1px', padding: '0px', width: '8px', flex: 'none', display: 'flex',
+                {!leafTableIds.includes(tableId) && <Box sx={{
+                    minWidth: '1px', padding: '0px', width: '16px', flex: 'none', display: 'flex',
                     marginLeft: highlightedTableIds.includes(tableId) ? '7px' : '8px',
-                    borderLeft: highlightedTableIds.includes(tableId) ? 
+                    borderLeft:  highlightedTableIds.includes(tableId) ? 
                         `3px solid ${theme.palette.primary.light}` : '1px dashed darkgray',
                 }}>
                     <Box sx={{
@@ -505,7 +445,7 @@ let SingleThreadView: FC<{
                         backgroundImage: 'linear-gradient(180deg, darkgray, darkgray 75%, transparent 75%, transparent 100%)',
                         backgroundSize: '1px 6px, 3px 100%'
                     }}></Box>
-                </Box>
+                </Box>}
                 <Box sx={{ flex: 1, padding: '8px 0px', minHeight: '8px', ...chartElementProps }}>
                     {releventChartElements}
                     {(agentWorkInProgress.some(a => a.target == 'table' && a.targetId == tableId) )&& 
@@ -538,28 +478,86 @@ let SingleThreadView: FC<{
                             }} />
                         </Box>}
                 </Box>
-            </Box>,
-            
-            ,
-            (i == tableIdList.length - 1) ?
-                <Box sx={{ marginLeft: "6px", marginTop: '-10px' }}>
-                    <PanoramaFishEyeIcon sx={{ fontSize: 5 }} />
-                </Box> : ""
+            </Box>
         ]
+    }
+
+    const theme = useTheme();
+
+    let focusedChart = useSelector((state: DataFormulatorState) => charts.find(c => c.id == focusedChartId));
+
+    const dispatch = useDispatch();
+
+    let [collapsed, setCollapsed] = useState<boolean>(false);
+
+    const w: any = (a: any[], b: any[], spaceElement?: any) => a.length ? [a[0], b.length == 0 ? "" : (spaceElement || ""), ...w(b, a.slice(1), spaceElement)] : b;
+    
+    let triggers = parentTable ? getTriggers(parentTable, tables) : [];
+    let tableIdList = parentTable ? [...triggers.map((trigger) => trigger.tableId), parentTable.id] : [];
+
+    let isThreadFocused: boolean = false;
+
+    let usedTableIdsInThread = tableIdList.filter(id => usedIntermediateTableIds.includes(id));
+    let newTableIds = tableIdList.filter(id => !usedTableIdsInThread.includes(id));
+    let newTriggers = triggers.filter(tg => newTableIds.includes(tg.resultTableId));
+
+    let highlightedTableIds: string[] = [];
+    if (focusedTableId && leafTableIds.includes(focusedTableId)) {
+        highlightedTableIds = [...tableIdList, focusedTableId];
+        isThreadFocused = true;
+    } else if (focusedTableId && newTableIds.includes(focusedTableId)) {
+        highlightedTableIds = tableIdList.slice(0, tableIdList.indexOf(focusedTableId) + 1);
+        isThreadFocused = true;
+    }
+
+    let tableElementList = newTableIds.map((tableId, i) => buildTableCard(tableId));
+    let triggerCards = newTriggers.map((trigger) => buildTriggerCard(trigger));
+
+    let leafTableComp = leafTables.length > 1 ? leafTables.map((lt, i) => {
+
+        let leafTrigger = lt.derive?.trigger;
+
+        let leftBorder = i == leafTables.length - 1 ? `none` : `1px dashed rgba(0, 0, 0, 0.3)`;
+        let stackML = '8px';
+        let spaceBox = <Box sx={{ height: '16px', width: '16px', flexShrink: 0,
+            borderLeft: i == leafTables.length - 1 ? `1px dashed rgba(0, 0, 0, 0.3)` : 'none',
+            borderBottom: `1px dashed rgba(0, 0, 0, 0.3)` }}></Box>
+
+        if (focusedTableId && leafTableIds.indexOf(focusedTableId) > i) {
+            leftBorder = `3px solid ${theme.palette.primary.light}`;
+            stackML = '7px';
+        }
+
+        if (focusedTableId && lt.id == focusedTableId) {
+            spaceBox = <Box sx={{ height: '16px', width: '16px', flexShrink: 0, ml: i == leafTables.length - 1 ? '-1px' : '-2px',
+                borderLeft:`3px solid ${theme.palette.primary.light}`,
+                borderBottom: `3px solid ${theme.palette.primary.light}` }}></Box>
+        }
+
+        return <Stack sx={{ ml: stackML , width: '208px', display: 'flex', flexDirection: 'row', 
+                borderLeft: leftBorder, }}>
+            {spaceBox}
+            <Box sx={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
+                {leafTrigger && buildTriggerCard(leafTrigger)}
+                {buildTableCard(lt.id)}
+            </Box>
+        </Stack>;
+    }) : leafTables.map((lt, i) => {
+        return <Stack sx={{ ml: 0 , width: '192px', display: 'flex', flexDirection: 'row' }}>
+            <Box sx={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
+                {lt.derive?.trigger && buildTriggerCard(lt.derive.trigger)}
+                {buildTableCard(lt.id)}
+            </Box>
+        </Stack>;
     });
 
-    content = w(tableElementList, triggerCards, "")
-
-    let selectedClassName = focusedChartId == triggerToFirstNewTable?.chart?.id ? 'selected-card' : '';
-
     return <Box sx={{ ...sx, 
-                '& .selected-card': { border: `2px solid ${theme.palette.primary.light}` },
-                '& .MuiTypography-root': {
-                    color: isThreadFocused ? theme.palette.text.primary : theme.palette.text.secondary,
-                },
-                boxShadow: isThreadFocused ? "0 2px 8px rgba(0,0,0,0.08), 0 1px 3px rgba(0,0,0,0.12)" : "none",
-                transition: "box-shadow 0.3s ease-in-out",
-            }} 
+            '& .selected-card': { border: `2px solid ${theme.palette.primary.light}` },
+            '& .MuiTypography-root': {
+                color: isThreadFocused ? theme.palette.text.primary : theme.palette.text.secondary,
+            },
+            transition: "box-shadow 0.3s ease-in-out",
+        }}
         data-thread-index={threadIdx}>
         <Box sx={{ display: 'flex', direction: 'ltr', margin: '2px 2px 8px 2px' }}>
             <Divider flexItem sx={{
@@ -573,44 +571,37 @@ let SingleThreadView: FC<{
             </Divider>
         </Box>
         <div style={{ padding: '2px 4px 2px 4px', marginTop: 0, direction: 'ltr' }}>
-            {threadOriginalTableId && !tableIdList.includes(threadOriginalTableId) && 
-                <Box sx={{ direction: 'ltr' }}>
-                    {triggerToFirstNewTable && threadOriginalTableId != triggerToFirstNewTable.tableId && 
-                        <React.Fragment>
-                            <Typography sx={{ ml: 0.25, fontSize: "10px", color: 'darkgray', textTransform: 'none' }}>
-                                {`${tables.find(t => t.id === threadOriginalTableId)?.displayId || threadOriginalTableId}`}
-                            </Typography>
-                            <Box sx={{
-                                height: '14px',
-                                ml: 1,
-                                borderLeft: highlightedTableIds.includes(threadOriginalTableId) ? `3px solid ${theme.palette.primary.light}` : `1px dashed rgba(0, 0, 0, 0.1)`,
-                            }}>
-                            </Box>
-                        </React.Fragment>}
-                    {triggerToFirstNewTable && <React.Fragment>
-                            <Typography sx={{ ml: 0.25, fontSize: "10px", color: 'text.secondary', textTransform: 'none' }}>
-                                {`${tables.find(t => t.id === triggerToFirstNewTable.tableId)?.displayId || triggerToFirstNewTable.tableId}`}
-                            </Typography>
-                            <Box sx={{
-                                height: '14px',
-                                ml: 1,
-                                borderLeft: highlightedTableIds.includes((triggerToFirstNewTable as Trigger).resultTableId) ? `3px solid ${theme.palette.primary.light}` : `1px dashed rgba(0, 0, 0, 0.3)`
-                            }}></Box>
-                        </React.Fragment>}
-                    {triggerToFirstNewTable && 
-                        <div key={'thread-card-trigger-box'}>
-                            <Box sx={{ flex: 1 }} >
-                                <TriggerCard className={selectedClassName} trigger={triggerToFirstNewTable} hideFields={false} />
-                            </Box>
-                        </div>}
-                        <Box sx={{
-                            height: '14px',
-                            ml: 1,
-                            borderLeft: highlightedTableIds.includes((triggerToFirstNewTable as Trigger).resultTableId) ? `3px solid ${theme.palette.primary.light}` : `1px dashed rgba(0, 0, 0, 0.3)`
-                        }}></Box>
+            {usedTableIdsInThread.map((tableId, i) => {
+                let table = tables.find(t => t.id === tableId) as DictTable;
+                return [
+                    <Typography key={`thread-used-table-${tableId}-${i}-text`} 
+                        sx={{
+                            fontSize: '10px',
+                            cursor: 'pointer',
+                            width: 'fit-content',
+                            '&:hover': {
+                                backgroundColor: alpha(theme.palette.primary.light, 0.1),
+                            },
+                        }} 
+                        onClick={() => { dispatch(dfActions.setFocusedTable(tableId)) }}>
+                        {table.displayId || tableId}
+                    </Typography>,
+                    <Box 
+                        key={`thread-used-table-${tableId}-${i}-gap-box`}
+                        sx={{
+                        minWidth: '1px', padding: '0px', width: '16px', flex: 'none', display: 'flex',
+                        height: '10px',
+                        marginLeft: highlightedTableIds.includes(tableId) ? '7px' : '8px',
+                        borderLeft:  highlightedTableIds.includes(tableId) ? `3px solid ${theme.palette.primary.light}` : '1px dashed darkgray',
+                    }}>
                     </Box>
-            }
-            {content}
+                ]
+            })}
+            <Box sx={{ display: 'flex',  width: '192px', flexDirection: 'column', flex: 1 }}>
+                {tableElementList.length > triggerCards.length ? 
+                    w(tableElementList, triggerCards, "") : w(triggerCards, tableElementList, "")}
+            </Box>
+            {leafTableComp}
         </div>
     </Box>
 }
@@ -681,7 +672,13 @@ const MemoizedChartObject = memo<{
     onDelete: (chartId: string) => void;
 }>(({ chart, table, conceptShelfItems, status, onChartClick, onDelete }) => {
     
-    let visTableRows = structuredClone(table.rows);
+    let visTableRows: any[] = [];
+    if (table.rows.length > 1000) {
+        visTableRows = structuredClone(_.sampleSize(table.rows, 1000));
+    } else {
+        visTableRows = structuredClone(table.rows);
+    }
+
     let deleteButton = <Box className='data-thread-chart-card-action-button'
         sx={{ zIndex: 10, color: 'blue', position: "absolute", right: 1, background: 'rgba(255, 255, 255, 0.95)' }}>
         <Tooltip title="delete chart">
@@ -815,8 +812,6 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
     const executeScroll = () => { if (scrollRef.current != null) scrollRef.current.scrollIntoView() }
     // run this function from an event handler or an effect to execute scroll 
 
-
-
     const dispatch = useDispatch();
 
     useEffect(() => {
@@ -845,36 +840,70 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
     }, [charts, tables, conceptShelfItems, chartSynthesisInProgress]);
 
     // anchors are considered leaf tables to simplify the view
-    let leafTables = [...tables.filter(t => (t.anchored && t.derive)), ...tables.filter(t => !tables.some(t2 => t2.derive?.trigger.tableId == t.id))];
+
+    let isLeafTable = (table: DictTable) => {
+        let children = tables.filter(t => t.derive?.trigger.tableId == table.id);
+        if (children.length == 0 || children.every(t => t.anchored)) {
+            return true;
+        }
+        return false;
+    }
+    let leafTables = [ ...tables.filter(t => isLeafTable(t)) ];
     
     // we want to sort the leaf tables by the order of their ancestors
     // for example if ancestor of list a is [0, 3] and the ancestor of list b is [0, 2] then b should come before a
-    let tableOrder = Object.fromEntries(tables.map((table, index) => [table.id, index]));
+    // when tables are anchored, we want to give them a higher order (so that they are displayed after their peers)
+    let tableOrder = Object.fromEntries(tables.map((table, index) => [table.id, index + (table.anchored ? 1 : 0) * tables.length]));
     let getAncestorOrders = (leafTable: DictTable) => {
         let triggers = getTriggers(leafTable, tables);
         return [...triggers.map(t => tableOrder[t.tableId]), tableOrder[leafTable.id]];
     }
 
     leafTables.sort((a, b) => {
-        let aAncestors = getAncestorOrders(a);
-        let bAncestors = getAncestorOrders(b);
+        let aOrders = getAncestorOrders(a);
+        let bOrders = getAncestorOrders(b);
         
-        // If lengths are equal, compare ancestors in order
-        for (let i = 0; i < Math.min(aAncestors.length, bAncestors.length); i++) {
-            if (aAncestors[i] !== bAncestors[i]) {
-                return aAncestors[i] - bAncestors[i];
+        // If lengths are equal, compare orders in order
+        for (let i = 0; i < Math.min(aOrders.length, bOrders.length); i++) {
+            if (aOrders[i] !== bOrders[i]) {
+                return aOrders[i] - bOrders[i];
             }
         }
         
-        // If all ancestors are equal, compare the leaf tables themselves
-        return aAncestors.length - bAncestors.length;
+        // If all orders are equal, compare the leaf tables themselves
+        return aOrders.length - bOrders.length;
     });
 
-    
+    let leafTableGroups = leafTables.reduce((groups: { [groupId: string]: DictTable[] }, leafTable) => {
+        // Get the immediate parent table ID (first trigger in the chain)
+        const triggers = getTriggers(leafTable, tables);
+        const immediateParentTableId = triggers.length > 0 ? triggers[triggers.length - 1].tableId : 'root';
+        
+        let groupId = immediateParentTableId + (leafTable.anchored ? ('-' + leafTable.id) : '');
+
+        let subgroupIdCount = 0;
+        while (groups[groupId] && groups[groupId].length >= 3) {
+            groupId = groupId + '-' + subgroupIdCount;
+            subgroupIdCount++;
+        }
+
+        // Initialize group if it doesn't exist
+        if (!groups[groupId]) {
+            groups[groupId] = [];
+        }
+        
+        // Add leaf table to its group
+        groups[groupId].push(leafTable);
+        
+        return groups;
+    }, {});
+
     let drawerOpen = leafTables.length > 1 && threadDrawerOpen;
     //let threadDrawerWidth = Math.max(Math.min(696, leafTables.length * 216), 232)
 
-    let view = <Box maxWidth={drawerOpen ? 720 : 232} sx={{ 
+    let collaposedViewWidth = Math.max(...Object.values(leafTableGroups).map(x => x.length)) > 1 ? 248 : 232
+
+    let view = <Box maxWidth={drawerOpen ? 720 : collaposedViewWidth} sx={{ 
         overflow: 'auto', // Add horizontal scroll when drawer is open
         position: 'relative',
         display: 'flex', 
@@ -886,14 +915,15 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
         gap: 1,
         p: 1,
     }}>
-        {leafTables.map((lt, i) => {
-            let usedIntermediateTableIds = leafTables.slice(0, i)
+        {Object.entries(leafTableGroups).map(([groupId, leafTables], i) => {
+
+            let usedIntermediateTableIds = Object.values(leafTableGroups).slice(0, i).flat()
                 .map(x => [ ...getTriggers(x, tables).map(y => y.tableId) || []]).flat();
-            return <SingleThreadView
-                key={`thread-${lt.id}-${i}`}
+            return <SingleThreadGroupView
+                key={`thread-${groupId}-${i}`}
                 scrollRef={scrollRef}
                 threadIdx={i} 
-                leafTable={lt} 
+                leafTables={leafTables} 
                 chartElements={chartElements} 
                 usedIntermediateTableIds={usedIntermediateTableIds} 
                 sx={{
@@ -905,14 +935,14 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
                     display: 'flex',
                     flexDirection: 'column',
                     height: 'fit-content',
-                    width: '200px', 
+                    width: leafTables.length > 1 ? '216px' : '200px', 
                     transition: 'all 0.3s ease',
                 }} />
         })}
     </Box>
 
     let jumpButtonsDrawerOpen = <ButtonGroup size="small" color="primary">
-        {_.chunk(Array.from({length: leafTables.length}, (_, i) => i), 3).map((group, groupIdx) => {
+        {_.chunk(Array.from({length: Object.keys(leafTableGroups).length}, (_, i) => i), 3).map((group, groupIdx) => {
             const startNum = group[0] + 1;
             const endNum = group[group.length - 1] + 1;
             const label = startNum === endNum ? `${startNum}` : `${startNum}-${endNum}`;
@@ -959,7 +989,7 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
     </ButtonGroup>
 
     let jumpButtonDrawerClosed = <ButtonGroup size="small" color="primary" sx={{ gap: 0 }}>
-        {leafTables.map((_, idx) => (
+        {Object.keys(leafTableGroups).map((groupId, idx) => (
             <Tooltip key={`thread-nav-${idx}`} title={`Jump to thread ${idx + 1}`}>
                 <IconButton 
                     size="small" 

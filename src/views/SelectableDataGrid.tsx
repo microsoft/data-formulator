@@ -150,8 +150,6 @@ function getComparator<Key extends keyof any>(
 
 export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({ tableId, rows, tableName, columnDefs, $tableRef, onSelectionFinished, rowCount, virtual }) => {
 
-    const [footerActionExpand, setFooterActionExpand] = React.useState<boolean>(false);
-    
     const [orderBy, setOrderBy] = React.useState<string | undefined>(undefined);
     const [order, setOrder] = React.useState<'asc' | 'desc'>('asc');
     const [searchText, setSearchText] = React.useState<string>('');

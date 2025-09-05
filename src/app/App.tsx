@@ -146,7 +146,10 @@ export const ImportStateButton: React.FC<{}> = ({ }) => {
 
 export const ExportStateButton: React.FC<{}> = ({ }) => {
     const sessionId = useSelector((state: DataFormulatorState) => state.sessionId);
-    const fullStateJson = useSelector((state: DataFormulatorState) => JSON.stringify(state));
+    const fullStateJson = useSelector((state: DataFormulatorState) => {
+        const { models, modelSlots, testedModels, oaiModels, selectedModel, selectedModelId, ...stateWithoutModels } = state as any;
+        return JSON.stringify(stateWithoutModels);
+    });
 
     return <Tooltip title="save session locally">
         <Button 
