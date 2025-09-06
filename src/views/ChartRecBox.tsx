@@ -5,6 +5,8 @@ import { FC, useEffect, useState } from 'react'
 import { useSelector, useDispatch } from 'react-redux'
 import { DataFormulatorState, dfActions, dfSelectors, fetchCodeExpl, fetchFieldSemanticType, generateFreshChart } from '../app/dfSlice';
 
+import { AppDispatch } from '../app/store';
+
 import {
     Box,
     Typography,
@@ -26,6 +28,10 @@ import {
     alpha,
     useTheme,
     Theme,
+    ToggleButton,
+    ToggleButtonGroup,
+    Button,
+    ButtonGroup,
 } from '@mui/material';
 
 import React from 'react';
@@ -40,9 +46,9 @@ import { createDictTable, DictTable } from "../components/ComponentType";
 import { getUrls, resolveChartFields, getTriggers } from '../app/utils';
 
 import AddIcon from '@mui/icons-material/Add';
-
-import { AppDispatch } from '../app/store';
 import PrecisionManufacturing from '@mui/icons-material/PrecisionManufacturing';
+import SmartToyIcon from '@mui/icons-material/SmartToy';
+import TouchAppIcon from '@mui/icons-material/TouchApp';
 import { Type } from '../data/types';
 import CloseIcon from '@mui/icons-material/Close';
 import EmojiEventsIcon from '@mui/icons-material/EmojiEvents';
@@ -50,6 +56,7 @@ import TipsAndUpdatesIcon from '@mui/icons-material/TipsAndUpdates';
 import { renderTextWithEmphasis } from './EncodingShelfCard';
 import CallSplitIcon from '@mui/icons-material/CallSplit';
 import MovingIcon from '@mui/icons-material/Moving';
+import RotateRightIcon from '@mui/icons-material/RotateRight';
 
 export interface ChartRecBoxProps {
     tableId: string;
@@ -164,13 +171,13 @@ const NLTableSelector: FC<{
 
 export const IdeaChip: FC<{
     mini?: boolean,
-    idea: {text: string, goal: string, difficulty: 'easy' | 'medium' | 'hard'}, 
+    mode: 'interactive' | 'agent',
+    idea: {text?: string, questions?: string[], goal: string, difficulty: 'easy' | 'medium' | 'hard', type?: 'branch' | 'deep_dive'} 
     theme: Theme, 
     onClick: () => void, 
     sx?: SxProps,
     disabled?: boolean,
-    icon?: React.ReactNode
-}> = function ({mini, idea, theme, onClick, sx, disabled, icon}) {
+}> = function ({mini, mode, idea, theme, onClick, sx, disabled}) {
 
     const getDifficultyColor = (difficulty: 'easy' | 'medium' | 'hard') => {
         switch (difficulty) {
@@ -185,11 +192,14 @@ export const IdeaChip: FC<{
         }
     };
 
-    let styleColor = getDifficultyColor(idea.difficulty);
+    let styleColor = getDifficultyColor(idea.difficulty || 'medium');
 
-    let ideaText = mini ? idea.goal : idea.text;
-
-    // Replace underscores with underscore + zero-width space for better breaking
+    let ideaText: string = "";
+    if (mode == 'interactive') {
+        ideaText = mini ? idea.goal : idea.text || "";
+    } else if (idea.questions) {
+        ideaText = idea.goal;
+    }
 
     let ideaTextComponent = renderTextWithEmphasis(ideaText, {
         borderRadius: '4px',
@@ -225,8 +235,9 @@ export const IdeaChip: FC<{
             }}
             onClick={disabled ? undefined : onClick}
         >
-            {icon}
-            <Typography sx={{ fontSize: '11px', color: getDifficultyColor(idea.difficulty) }}>
+            {idea.type === 'branch' && <CallSplitIcon sx={{color: getDifficultyColor(idea.difficulty), fontSize: 18, mr: 0.5, transform: 'rotate(90deg)'}} />}
+            {idea.type === 'deep_dive' && <MovingIcon sx={{color: getDifficultyColor(idea.difficulty), fontSize: 18, mr: 0.5, transform: 'rotate(90deg)'}} />}
+            <Typography sx={{ fontSize: '11px', color: getDifficultyColor(idea.difficulty || 'medium') }}>
                 {ideaTextComponent}
             </Typography>
         </Box>
@@ -236,6 +247,7 @@ export const IdeaChip: FC<{
 export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolderChartId, sx }) {
     const dispatch = useDispatch<AppDispatch>();
     const theme = useTheme();
+
     // reference to states
     const tables = useSelector((state: DataFormulatorState) => state.tables);
     const config = useSelector((state: DataFormulatorState) => state.config);
@@ -243,10 +255,14 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
     const activeModel = useSelector(dfSelectors.getActiveModel);
     const activeChallenges = useSelector((state: DataFormulatorState) => state.activeChallenges);
 
+    const [mode, setMode] = useState<'agent' | 'interactive'>("interactive");
     const [prompt, setPrompt] = useState<string>("");
     const [isFormulating, setIsFormulating] = useState<boolean>(false);
     const [ideas, setIdeas] = useState<{text: string, goal: string, difficulty: 'easy' | 'medium' | 'hard'}[]>(
         activeChallenges.find(ac => ac.tableId === tableId)?.challenges || []);
+    
+    const [agentIdeas, setAgentIdeas] = useState<{
+        questions: string[], goal: string, difficulty: 'easy' | 'medium' | 'hard', tag: string, type: 'branch' | 'deep_dive' }[]>([]);
     const [recReasoning, setRecReasoning] = useState<string>("");
     
     // Add state for cycling through questions
@@ -254,6 +270,19 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
     
     // Add state for loading ideas
     const [isLoadingIdeas, setIsLoadingIdeas] = useState<boolean>(false);
+
+    // Helper functions for localStorage-based timing with table-specific keys
+    const getLastGenerationTime = (tableId: string, mode: 'interactive' | 'agent'): number => {
+        const stored = localStorage.getItem(`chartRecBox_lastGenerationTime_${tableId}_${mode}`);
+        return stored ? parseInt(stored, 10) : 0;
+    };
+
+    const setLastGenerationTime = (tableId: string, mode: 'interactive' | 'agent', time: number) => {
+        localStorage.setItem(`chartRecBox_lastGenerationTime_${tableId}_${mode}`, time.toString());
+    };
+
+    // Minimum interval between generations (in milliseconds) - 30 seconds
+    const MIN_GENERATION_INTERVAL = 30000;
 
     // Use the provided tableId and find additional available tables for multi-table operations
     const currentTable = tables.find(t => t.id === tableId);
@@ -273,26 +302,26 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
     // Function to handle challenge chip click
     const handleChallengeClick = (challengeText: string) => {
         setPrompt(challengeText);
-        // Automatically start the data formulation process
         deriveDataFromNL(challengeText);
+        
     };
 
     // Function to get a question from the list with cycling
     const getQuestion = (random: boolean = false): string => {
-        if (currentTable?.explorativeQuestions && currentTable.explorativeQuestions.length > 0) {
-            if (random) {
-                const index = Math.floor(Math.random() * currentTable.explorativeQuestions.length);
-                return currentTable.explorativeQuestions[index];
-            } else {
-                // Cycle through questions sequentially
-                return currentTable.explorativeQuestions[currentQuestionIndex];
-            }
-        }
-        return "Show something interesting about the data";
+        // if (currentTable?.explorativeQuestions && currentTable.explorativeQuestions.length > 0) {
+        //     if (random) {
+        //         const index = Math.floor(Math.random() * currentTable.explorativeQuestions.length);
+        //         return currentTable.explorativeQuestions[index];
+        //     } else {
+        //         // Cycle through questions sequentially
+        //         return currentTable.explorativeQuestions[currentQuestionIndex];
+        //     }
+        // }
+        return mode === "agent" ? "generate some explore directions" : "show something interesting about the data";
     };
 
     // Function to get ideas from the interactive explore agent
-    const getIdeasFromAgent = async () => {
+    const getIdeasFromAgent = async (startQuestion?: string) => {
         if (!currentTable || isLoadingIdeas) {
             return;
         }
@@ -325,6 +354,8 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
             const messageBody = JSON.stringify({
                 token: String(Date.now()),
                 model: activeModel,
+                start_question: startQuestion,
+                mode: mode,
                 input_tables: [{
                     name: sourceTables[0].virtual?.tableId || sourceTables[0].id.replace(/\.[^/.]+$/, ""),
                     rows: sourceTables[0].rows
@@ -357,14 +388,26 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                 const result = data.results[0];
                 if (result.status === 'ok' && result.content.exploration_questions) {
                     // Convert questions to ideas with 'easy' difficulty
-                    const newIdeas = result.content.exploration_questions.map((question: {text: string, goal: string, difficulty: 'easy' | 'medium' | 'hard', tag: string}) => ({
-                        text: question.text,
-                        goal: question.goal,
-                        difficulty: question.difficulty,
-                        tag: question.tag
-                    }));
-                    setIdeas(newIdeas);
-                    setRecReasoning(result.content.reasoning);
+                    if (mode === "agent") {
+                    const newIdeas = result.content.exploration_questions.map((question: any) => ({
+                            questions: question.questions,
+                            goal: question.goal,
+                            type: question.type,
+                            difficulty: question.difficulty,
+                            tag: question.tag
+                        }));
+                        setAgentIdeas(newIdeas);
+                        setRecReasoning(result.content.reasoning);
+                    } else {
+                        const newIdeas = result.content.exploration_questions.map((question: {text: string, goal: string, difficulty: 'easy' | 'medium' | 'hard', tag: string}) => ({
+                            text: question.text,
+                            goal: question.goal,
+                            difficulty: question.difficulty,
+                            tag: question.tag
+                        }));
+                        setIdeas(newIdeas);
+                        setRecReasoning(result.content.reasoning);
+                    }
                 }
             } else {
                 throw new Error('No valid results returned from agent');
@@ -400,8 +443,38 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
 
     useEffect(() => {
         let defaultIdeas = activeChallenges.find(ac => ac.tableId === tableId)?.challenges;
-        setIdeas(defaultIdeas || []);
+        if (mode === "agent") {
+            setAgentIdeas([]);
+        } else {
+            setIdeas(defaultIdeas || []);
+        }
+        
     }, [tableId]);
+
+    // Effect to automatically generate ideas when there are no questions
+    useEffect(() => {
+        // Only auto-generate if:
+        // 1. We have a current table
+        // 2. We haven't already auto-generated for this table
+        // 3. There are no ideas in interactive mode
+        // 4. We're not currently loading ideas
+        // 5. We're not currently formulating
+        // 6. Minimum interval has passed
+        const now = Date.now();
+        const lastTime = getLastGenerationTime(tableId, mode);
+        const canGenerate = now - lastTime >= MIN_GENERATION_INTERVAL;
+        
+        if (currentTable && 
+            currentTable.derive === undefined &&
+            ((ideas.length === 0 && mode === "interactive" ) || (agentIdeas.length === 0 && mode === "agent")) && 
+            !isLoadingIdeas && 
+            !isFormulating &&
+            canGenerate) {
+            
+            getIdeasFromAgent(mode);
+            setLastGenerationTime(tableId, mode as 'interactive' | 'agent', now);
+        }
+    }, [currentTable, mode, ideas.length, isLoadingIdeas, isFormulating, tableId]);
 
     // Handle tab key press for auto-completion
     const handleKeyDown = (event: React.KeyboardEvent) => {
@@ -633,15 +706,11 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                             "heatmap": "Heatmap",
                             "group_bar": "Grouped Bar Chart"
                         };
-                        
-
-                        console.log("refinedGoal", refinedGoal);
 
                         const chartType = chartTypeMap[refinedGoal?.['chart_type']] || 'Scatter Plot';
                         let newChart = generateFreshChart(candidateTable.id, chartType) as Chart;
                         newChart = resolveChartFields(newChart, currentConcepts, refinedGoal, candidateTable);
 
-                        console.log("newChart", newChart);
                         // Create and focus the new chart directly
                         dispatch(dfActions.addAndFocusChart(newChart));
 
@@ -675,8 +744,6 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
         .catch((error) => {
             setIsFormulating(false);
 
-            console.log("error", error);
-            
             if (error.name === 'AbortError') {
                 dispatch(dfActions.addMessages({
                     "timestamp": Date.now(),
@@ -700,175 +767,228 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
     const showTableSelector = availableTables.length > 1 && currentTable;
 
     return (
-        <Card variant='outlined' sx={{ 
-            ...sx,
-            padding: 2, 
-            maxWidth: "600px", 
-            display: 'flex', 
-            flexDirection: 'column',
-            gap: 1,
-            position: 'relative'
-        }}>
-            {isFormulating && (
-                <LinearProgress 
-                    sx={{ 
-                        position: 'absolute',
-                        top: 0,
-                        left: 0,
-                        right: 0,
-                        zIndex: 1000,
-                        height: '4px'
-                    }} 
-                />
-            )}
-            {showTableSelector && (
-                <Box>
-                    <Typography sx={{ fontSize: 12, color: "text.secondary", marginBottom: 0.5 }}>
-                        Select additional tables:
-                    </Typography>
-                    <NLTableSelector
-                        selectedTableIds={selectedTableIds}
-                        tables={availableTables}
-                        updateSelectedTableIds={handleTableSelectionChange}
-                        requiredTableIds={[tableId]}
-                    />
-                </Box>
-            )}
-
-            <Box sx={{ display: 'flex', flexDirection: 'row', gap: 1, alignItems: 'flex-end' }}>
-                <TextField
+        <Box sx={{ display: 'flex', flexDirection: 'column', ...sx }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <ButtonGroup
+                    size="small"
                     sx={{
-                        flex: 1,
-                        "& .MuiInputLabel-root": { fontSize: '14px' },
-                        "& .MuiInput-input": { fontSize: '14px' }
+                        ml: 1,
+                        '& .MuiButton-root': {
+                            textTransform: 'none',
+                            fontSize: '0.625rem',
+                            fontWeight: 500,
+                            border: 'none',
+                            borderRadius: '4px',
+                            borderBottomLeftRadius: 0,
+                            borderBottomRightRadius: 0,
+                            padding: '2px 6px',
+                            minWidth: 'auto',
+                        },
                     }}
-                    onChange={(event) => setPrompt(event.target.value)}
-                    onKeyDown={handleKeyDown}
-                    slotProps={{
-                        inputLabel: { shrink: true },
-                        input: {
-                            endAdornment: <Tooltip title="Generate chart from description">
-                                <IconButton 
-                                    size="medium"
-                                    disabled={isFormulating || !currentTable || prompt.trim() === ""}
-                                    color="primary" 
-                                    onClick={() => deriveDataFromNL(prompt.trim())}
-                                >
-                                    {isFormulating ? <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
-                                        <CircularProgress size={24} />
-                                    </Box> : <PrecisionManufacturing sx={{fontSize: 24}} />}
-                                </IconButton>
-                            </Tooltip>
-                        }
-                    }}
-                    value={prompt}
-                    label="Describe what you want to visualize"
-                    placeholder={`e.g., ${getQuestion(false)}`}
-                    fullWidth
-                    multiline
-                    variant="standard"
-                    maxRows={4}
-                    minRows={1}
-                />
-                <Divider orientation="vertical" flexItem />
-                <Box sx={{display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 0.5, my: 1}}>
-                    <Typography sx={{ fontSize: 10, color: "text.secondary", marginBottom: 0.5 }}>
-                        ideas?
-                    </Typography>
-                    <Tooltip title="Get some ideas!">   
-                        <IconButton 
-                            size="medium"
-                            disabled={isFormulating || !currentTable || isLoadingIdeas}
-                            color="primary" 
-                            onClick={getIdeasFromAgent}
-                        >
-                            {isLoadingIdeas ? <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
-                                <CircularProgress size={24} />
-                            </Box> : <TipsAndUpdatesIcon sx={{
-                                fontSize: 24,
-                                animation: ideas.length == 0 ? 'colorWipe 5s ease-in-out infinite' : 'none',
-                                '@keyframes colorWipe': {
-                                    '0%, 90%': {
-                                        scale: 1,
-                                    },
-                                    '95%': {
-                                        scale: 1.2,
-                                    },
-                                    '100%': {
-                                        scale: 1,
-                                    },
-                                },
-                            }} />}
-                        </IconButton>
-                    </Tooltip>
-                </Box>
+                >
+                    <Button variant="text" value="interactive" sx={{ 
+                        color: mode === "interactive" ? "primary" : "text.secondary", 
+                        backgroundColor: mode === "interactive" ? "rgba(25, 118, 210, 0.08)" : "transparent",
+                        
+                    }} onClick={() => setMode("interactive")}>
+                        interactive
+                    </Button>
+                    <Button variant="text" value="agent" sx={{ 
+                            color: mode === "agent" ? "primary" : "text.secondary", 
+                            backgroundColor: mode === "agent" ? "rgba(25, 118, 210, 0.08)" : "transparent"
+                        }} onClick={() => setMode("agent")}>
+                        agent
+                    </Button>
+                </ButtonGroup>
             </Box>
-            {/* Ideas Chips Section */}
-            {ideas.length > 0 && (
-                <Box>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, marginBottom: 1 }}>
-                        <Typography sx={{ fontSize: 12, color: "text.secondary" }}>
-                            Ideas
+            <Card variant='outlined' sx={{ 
+                padding: 2, 
+                maxWidth: "600px", 
+                display: 'flex', 
+                flexDirection: 'column',
+                gap: 1,
+                position: 'relative',
+                boxShadow: mode === "agent" 
+                    ? ' 0 0 20px 0 rgba(25, 118, 210, 0.15)' 
+                    : 'none'
+            }}>
+                {isFormulating && (
+                    <LinearProgress 
+                        sx={{ 
+                            position: 'absolute',
+                            top: 0,
+                            left: 0,
+                            right: 0,
+                            zIndex: 1000,
+                            height: '4px'
+                        }} 
+                    />
+                )}
+                {showTableSelector && (
+                    <Box>
+                        <Typography sx={{ fontSize: 12, color: "text.secondary", marginBottom: 0.5 }}>
+                            Select additional tables:
                         </Typography>
-                    </Box>
-                    <Box sx={{
-                        display: 'flex', 
-                        flexWrap: 'wrap', 
-                        gap: 0.5,
-                        marginBottom: 1
-                    }}>
-                        {ideas.map((challenge, index) => (
-                            <IdeaChip
-                                mini
-                                key={index}
-                                idea={challenge}
-                                theme={theme}
-                                onClick={() => handleChallengeClick(challenge.text)}
-                                disabled={isFormulating}
-                                sx={{
-                                    width: '46%',
-                                }}
-                            />
-                        ))}
-                    </Box>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, marginBottom: 1 }}>
-                        <Typography sx={{ fontSize: 12, color: "text.secondary" }}>
-                            Agent
-                        </Typography>
-                    </Box>
-                    <Box sx={{
-                        display: 'flex', 
-                        flexWrap: 'wrap', 
-                        gap: 0.5,
-                        marginBottom: 1
-                    }}>
-                        <IdeaChip
-                            mini
-                            idea={{text: "explore more", goal: "new exploration branches", difficulty: "medium"}}
-                            theme={theme}
-                            onClick={() => {
-                                deriveDataFromNL(ideas.length > 0 ? ideas[0].text : "do some research");
-                                deriveDataFromNL(ideas.length > 1 ? ideas[1].text : "do some research v2");
-                                deriveDataFromNL(ideas.length > 2 ? ideas[2].text : "do some research v3");
-                            }}
-                            disabled={isFormulating}
-                            icon={<CallSplitIcon color="primary" sx={{fontSize: 18, mr: 0.5, transform: 'rotate(90deg)'}} />}
-                            sx={{px: 1}}
-                        />
-                        <IdeaChip
-                            mini
-                            idea={{text: "explore more", goal: "deep dive from here", difficulty: "medium"}}
-                            theme={theme}
-                            onClick={() => {
-                                deriveDataFromNL(ideas.length > 0 ? ideas[0].text : "do some research");
-                            }}
-                            disabled={true}
-                            icon={<MovingIcon color="primary" sx={{fontSize: 18, mr: 0.5, transform: 'rotate(90deg)'}} />}
-                            sx={{px: 1, ml: 1}}
+                        <NLTableSelector
+                            selectedTableIds={selectedTableIds}
+                            tables={availableTables}
+                            updateSelectedTableIds={handleTableSelectionChange}
+                            requiredTableIds={[tableId]}
                         />
                     </Box>
+                )}
+
+                <Box sx={{ display: 'flex', flexDirection: 'row', gap: 1, alignItems: 'flex-end' }}>
+                    <TextField
+                        sx={{
+                            flex: 1,
+                            "& .MuiInputLabel-root": { fontSize: '14px' },
+                            "& .MuiInput-input": { fontSize: '14px' }
+                        }}
+                        onChange={(event) => setPrompt(event.target.value)}
+                        onKeyDown={handleKeyDown}
+                        slotProps={{
+                            inputLabel: { shrink: true },
+                            input: {
+                                endAdornment: mode == "agent" ? <ButtonGroup>
+                                    <Tooltip title={agentIdeas.length > 0 ? "regenerate directions" : "generate exploration directions"}>   
+                                        <IconButton 
+                                            size="medium"
+                                            disabled={isFormulating || !currentTable || isLoadingIdeas}
+                                            color="primary" 
+                                            onClick={() => getIdeasFromAgent(prompt.trim())}
+                                        >
+                                            {isLoadingIdeas ? <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
+                                                <CircularProgress size={24} />
+                                            </Box> : (agentIdeas.length > 0 ? <RotateRightIcon sx={{fontSize: 24}} /> : <TipsAndUpdatesIcon sx={{fontSize: 24}} />)}
+                                        </IconButton>
+                                    </Tooltip>
+                                </ButtonGroup>
+                                : <Tooltip title="Generate chart from description">
+                                    <IconButton 
+                                        size="medium"
+                                        disabled={isFormulating || !currentTable || prompt.trim() === ""}
+                                        color="primary" 
+                                        onClick={() => deriveDataFromNL(prompt.trim())}
+                                    >
+                                        {isFormulating ? <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
+                                            <CircularProgress size={24} />
+                                        </Box> : <PrecisionManufacturing sx={{fontSize: 24}} />}
+                                    </IconButton>
+                                </Tooltip>
+                            }
+                        }}
+                        value={prompt}
+                        label={mode === "agent" ? "Where should the agent go?" : "What do you want to explore?"}
+                        placeholder={`${getQuestion(false)}`}
+                        fullWidth
+                        multiline
+                        variant="standard"
+                        maxRows={4}
+                        minRows={1}
+                    />
+                    {mode === "interactive" && <Divider orientation="vertical" flexItem />}
+                    {mode === "interactive" && <Box sx={{display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 0.5, my: 1}}>
+                        <Typography sx={{ fontSize: 10, color: "text.secondary", marginBottom: 0.5 }}>
+                            ideas?
+                        </Typography>
+                        <Tooltip title="Get some ideas!">   
+                            <IconButton 
+                                size="medium"
+                                disabled={isFormulating || !currentTable || isLoadingIdeas}
+                                color="primary" 
+                                onClick={() => getIdeasFromAgent()}
+                            >
+                                {isLoadingIdeas ? <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
+                                    <CircularProgress size={24} />
+                                </Box> : <TipsAndUpdatesIcon sx={{
+                                    fontSize: 24,
+                                    animation: ideas.length == 0 ? 'colorWipe 5s ease-in-out infinite' : 'none',
+                                    '@keyframes colorWipe': {
+                                        '0%, 90%': {
+                                            scale: 1,
+                                        },
+                                        '95%': {
+                                            scale: 1.2,
+                                        },
+                                        '100%': {
+                                            scale: 1,
+                                        },
+                                    },
+                                }} />}
+                            </IconButton>
+                        </Tooltip>
+                    </Box>}
                 </Box>
-            )}
-        </Card>
+                {/* Ideas Chips Section */}
+                {mode === 'interactive' && ideas.length > 0 && (
+                    <Box>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, marginBottom: 1 }}>
+                            <Typography sx={{ fontSize: 12, color: "text.secondary" }}>
+                                ideas
+                            </Typography>
+                        </Box>
+                        <Box sx={{
+                            display: 'flex', 
+                            flexWrap: 'wrap', 
+                            gap: 0.5,
+                            marginBottom: 1
+                        }}>
+                            {ideas.map((challenge, index) => (
+                                <IdeaChip
+                                    mode="interactive"
+                                    mini
+                                    key={index}
+                                    idea={challenge}
+                                    theme={theme}
+                                    onClick={() => handleChallengeClick(challenge.text)}
+                                    disabled={isFormulating}
+                                    sx={{
+                                        width: '46%',
+                                    }}
+                                />
+                            ))}
+                        </Box>
+                    </Box>
+                )}
+                {mode === 'agent' && agentIdeas.length > 0 && (
+                    <Box>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, marginBottom: 1 }}>
+                            <Typography sx={{ fontSize: 12, color: "text.secondary", ".MuiSvgIcon-root": { cursor: 'help', transform: 'rotate(90deg)', verticalAlign: 'middle', fontSize: 12} }}>
+                                directions <Tooltip title="deep dive"><MovingIcon /></Tooltip>  <Tooltip title="branch"><CallSplitIcon /></Tooltip>
+                            </Typography>
+                        </Box>
+                        <Box sx={{
+                            display: 'flex', 
+                            flexWrap: 'wrap', 
+                            gap: 0.5,
+                            marginBottom: 1,
+                        }}>
+                            {agentIdeas.map((challenge, index) => (
+                                <IdeaChip
+                                    mode="agent"
+                                    mini
+                                    key={index}
+                                    idea={challenge}
+                                    theme={theme}
+                                    onClick={() => {
+                                        challenge.questions.forEach((question, index) => {
+                                            setTimeout(() => {
+                                                handleChallengeClick(question);
+                                            }, index * 300); // 300ms delay between each call
+                                        });
+                                    }}
+                                    disabled={isFormulating}
+                                    sx={{
+                                        width: '46%',
+                                    }}
+                                />
+                            ))}
+                            
+                        </Box>
+                    </Box>
+                )}
+            </Card>
+        </Box>
     );
 };

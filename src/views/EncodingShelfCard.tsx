@@ -465,7 +465,8 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                 }],
                 exploration_thread: explorationThread,
                 current_data_sample: currentTable.rows.slice(0, 10),
-                current_chart: currentChartPng
+                current_chart: currentChartPng,
+                mode: 'interactive'
             });
 
             const engine = getUrls().GET_RECOMMENDATION_QUESTIONS;
@@ -919,6 +920,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                 {ideas.map((idea, index) => (
                     <IdeaChip
                         mini={true}
+                        mode="interactive"
                         key={index}
                         idea={idea}
                         theme={theme}

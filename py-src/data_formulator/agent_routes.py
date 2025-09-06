@@ -489,11 +489,13 @@ def get_recommendation_questions():
         input_tables = content.get("input_tables", [])
         
         # Get exploration thread if provided (for context from previous explorations)
+        mode = content.get("mode", "interactive")
+        start_question = content.get("start_question", None)
         exploration_thread = content.get("exploration_thread", None)
         current_chart = content.get("current_chart", None)
         current_data_sample = content.get("current_data_sample", None)
 
-        results = agent.run(input_tables, exploration_thread, current_data_sample, current_chart)
+        results = agent.run(input_tables, start_question, exploration_thread, current_data_sample, current_chart, mode)
         
         # Filter out any failed results
         valid_results = [r for r in results if r['status'] == 'ok']

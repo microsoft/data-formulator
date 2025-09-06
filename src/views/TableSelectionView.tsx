@@ -553,7 +553,6 @@ export const TableCopyDialogV2: React.FC<TableCopyDialogProps> = ({ buttonElemen
     }
 
     let handleCleanData = () => {
-        //setCleanTableContent("hehehao\n\n" + tableContent);
         let token = String(Date.now());
         setCleaningInProgress(true);
         setCleanTableContent(undefined);
@@ -563,8 +562,9 @@ export const TableCopyDialogV2: React.FC<TableCopyDialogProps> = ({ buttonElemen
             body: JSON.stringify({
                 token: token,
                 content_type: tableContentType,
-                raw_data: tableContent,
-                image_cleaning_instruction: imageCleaningInstr,
+                prompt: tableContent || imageCleaningInstr,
+                artifacts: [],
+                dialog: [],
                 model: activeModel
             }),
         };
@@ -573,8 +573,6 @@ export const TableCopyDialogV2: React.FC<TableCopyDialogProps> = ({ buttonElemen
             .then((response) => response.json())
             .then((data) => {
                 setCleaningInProgress(false);
-                console.log(data);
-                console.log(token);
 
                 if (data["status"] == "ok") {
                     if (data["token"] == token) {
@@ -585,8 +583,6 @@ export const TableCopyDialogV2: React.FC<TableCopyDialogProps> = ({ buttonElemen
                         let info = candidate['info'];
 
                         setCleanTableContent({content: cleanContent.trim(), reason: info['reason'], mode: info['mode']});
-                        console.log(`data cleaning reason:`)
-                        console.log(info);
                     }
                 } else {
                     // TODO: add warnings to show the user
