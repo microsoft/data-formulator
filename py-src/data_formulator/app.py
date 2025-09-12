@@ -36,7 +36,6 @@ import os
 # blueprints
 from data_formulator.tables_routes import tables_bp
 from data_formulator.agent_routes import agent_bp
-from data_formulator.sse_routes import sse_bp
 from data_formulator.db_manager import db_manager
 
 import queue
@@ -72,7 +71,6 @@ app.config['CLI_ARGS'] = {
 if not app.config['CLI_ARGS']['disable_database']:
     app.register_blueprint(tables_bp)
 app.register_blueprint(agent_bp)
-app.register_blueprint(sse_bp)
 
 # Get logger for this module (logging config moved to run_app function)
 logger = logging.getLogger(__name__)
@@ -317,7 +315,7 @@ def run_app():
 
     # Enable debug mode and auto-reload in development mode
     debug_mode = args.dev
-    app.run(host='0.0.0.0', port=args.port, threaded=True, debug=debug_mode, use_reloader=debug_mode)
+    app.run(host='0.0.0.0', port=args.port, debug=debug_mode, use_reloader=debug_mode)
 
 if __name__ == '__main__':
     #app.run(debug=True, host='127.0.0.1', port=5000)

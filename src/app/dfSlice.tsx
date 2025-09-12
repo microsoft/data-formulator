@@ -11,7 +11,6 @@ import { getDataTable } from '../views/VisualizationView';
 import { adaptChart, getTriggers, getUrls } from './utils';
 import { Type } from '../data/types';
 import { createTableFromFromObjectArray, inferTypeFromValueArray } from '../data/utils';
-import { handleSSEMessage } from './SSEActions';
 
 enableMapSet();
 
@@ -92,7 +91,8 @@ export interface DataFormulatorState {
 
     dataLoaderConnectParams: Record<string, Record<string, string>>; // {table_name: {param_name: param_value}}
     
-    agentWorkInProgress: {actionId: string, target: 'chart' | 'table', targetId: string, description: string}[];
+    // which table is the agent working on
+    agentWorkInProgress: {actionId: string, tableId: string, description: string}[];
 
     // Data cleaning dialog state
     dataCleanBlocks: DataCleanBlock[];
@@ -301,6 +301,8 @@ export const dataFormulatorSlice = createSlice({
 
             state.dataCleanBlocks = [];
             state.cleanInProgress = false;
+
+            state.agentWorkInProgress = [];
             
             //state.dataLoaderConnectParams = initialState.dataLoaderConnectParams;
         },
@@ -337,6 +339,18 @@ export const dataFormulatorSlice = createSlice({
             state.dataLoaderConnectParams = savedState.dataLoaderConnectParams || {};
             state.dataCleanBlocks = savedState.dataCleanBlocks || [];
             state.cleanInProgress = false;
+
+            state.agentWorkInProgress = savedState.agentWorkInProgress || [];
+        },
+        setAgentWorkInProgress: (state, action: PayloadAction<{actionId: string, tableId: string, description: string}>) => {
+            if (state.agentWorkInProgress.some(a => a.actionId == action.payload.actionId)) {
+                state.agentWorkInProgress = state.agentWorkInProgress.map(a => a.actionId == action.payload.actionId ? action.payload : a);
+            } else {
+                state.agentWorkInProgress = [...state.agentWorkInProgress, action.payload];
+            }
+        },
+        deleteAgentWorkInProgress: (state, action: PayloadAction<string>) => {
+            state.agentWorkInProgress = state.agentWorkInProgress.filter(a => a.actionId != action.payload);
         },
         setServerConfig: (state, action: PayloadAction<ServerConfig>) => {
             state.serverConfig = action.payload;
@@ -733,9 +747,6 @@ export const dataFormulatorSlice = createSlice({
             let dataLoaderType = action.payload;
             delete state.dataLoaderConnectParams[dataLoaderType];
         },
-        handleSSEMessage: (state, action: PayloadAction<SSEMessage>) => {
-            handleSSEMessage(state, action.payload);
-        },
         clearMessages: (state) => {
             state.messages = [];
         },
@@ -793,11 +804,13 @@ export const dataFormulatorSlice = createSlice({
 
                     // avoid duplicate display ids
                     let existingDisplayIds = state.tables.map(t => t.displayId);
-                    let displayId = data["result"][0]["suggested_table_name"] as string;
-                    let suffix = 1;
+                    let suffix = "";
+                    let displayId = `data-${data["result"][0]["suggested_table_name"] as string}${suffix}`;
+                    let suffixId = 1;
                     while (existingDisplayIds.includes(displayId)) {
-                        displayId = `${displayId}-${suffix}`;
-                        suffix++;
+                        displayId = `data-${data["result"][0]["suggested_table_name"] as string}${suffixId}`;
+                        suffixId++;
+                        suffix = `-${suffixId}`;
                     }
                     table.displayId = displayId;
                 }

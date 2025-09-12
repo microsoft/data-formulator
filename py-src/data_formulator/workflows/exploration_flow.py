@@ -7,8 +7,8 @@ import pandas as pd
 from typing import Dict, List, Any, Optional, Tuple, Generator
 
 from data_formulator.agents.agent_exploration import ExplorationAgent
-from data_formulator.agents.agent_py_data_transform import PythonDataTransformationAgent
-from data_formulator.agents.agent_sql_data_transform import SQLDataTransformationAgent
+from data_formulator.agents.agent_py_data_rec import PythonDataRecAgent
+from data_formulator.agents.agent_sql_data_rec import SQLDataRecAgent
 from data_formulator.agents.client_utils import Client
 from data_formulator.db_manager import db_manager
 from data_formulator.workflows.create_vl_plots import assemble_vegailte_chart, spec_to_base64, fields_to_encodings
@@ -25,7 +25,7 @@ def create_chart_spec_from_data(
     
     Args:
         transformed_data: Dictionary with 'rows' key containing the data
-        chart_type: Type of chart to create (bar, point, line, boxplot, etc.)
+        chart_type: Type of chart to create (bar, point, line, etc.)
         visualization_fields: List of field names to visualize
         
     Returns:
@@ -75,187 +75,191 @@ def run_exploration_flow_streaming(
     Yields:
         Dictionary containing:
         - iteration: Current iteration number
-        - type: "planning", "visualization", or "completion" 
+        - type: "data_transformation", "visualization", "planning", or "completion" 
         - data: Step-specific data (plan details, results, or final insights)
         - status: "success" or "error"
         - error_message: Error details if status is "error"
         
     The function is complete when a yield with type="completion" is emitted.
     """
-    # Initialize variables for error handling
+    # Initialize variables
     iteration = 0
-    current_transformed_data = None
-    current_visualization = None
+    exploration_steps = []
+    current_question = start_question
+    previous_transformation_dialog = []
+    previous_transformation_data = []
     
     # Initialize client and agents
     client = Client.from_config(model_config)
     exploration_agent = ExplorationAgent(client)
     
-    # Track iteration and dialog context
-    planning_dialog = []
-    transformation_dialog = []
-    
-    # Get initial exploration plan
-    initial_results = exploration_agent.initial(input_tables, start_question)
-    
-    if not initial_results or initial_results[0]['status'] != 'ok':
-        error_msg = initial_results[0]['content'] if initial_results else "No initial plan generated"
-        yield {
-            "iteration": iteration,
-            "type": "planning",
-            "data": {},
-            "status": "error", 
-            "error_message": error_msg
-        }
-        return
-        
-    # Extract initial plan
-    plan = initial_results[0]['content']
-    planning_dialog = initial_results[0].get('dialog', [])
-    
-    yield {
-        "iteration": iteration,
-        "type": "planning",
-        "data": {"plan": plan},
-        "status": "success",
-        "error_message": ""
-    }
+    # Initialize rec agent based on language
+    conn = None
+    if language == "sql":
+        if session_id:
+            conn = db_manager.get_connection(session_id)
+            rec_agent = SQLDataRecAgent(client=client, conn=conn)
+        else:
+            yield {
+                "iteration": iteration,
+                "type": "data_transformation",
+                "content": {},
+                "status": "error",
+                "error_message": "Session ID required for SQL transformations"
+            }
+            return
+    else:
+        rec_agent = PythonDataRecAgent(
+            client=client,
+            exec_python_in_subprocess=exec_python_in_subprocess
+        )
     
     # Main exploration loop
     while iteration < max_iterations:
         iteration += 1
         
-        # Step 1: Execute data transformation
-        conn = None
-        if language == "sql":
-            if session_id:
-                conn = db_manager.get_connection(session_id)
-                agent = SQLDataTransformationAgent(client=client, conn=conn)
-            else:
-                yield {
-                    "iteration": iteration,
-                    "type": "data_transformation",
-                    "data": {},
-                    "status": "error",
-                    "error_message": "Session ID required for SQL transformations"
-                }
-                return
-        else:
-            agent = PythonDataTransformationAgent(
-                client=client,
-                exec_python_in_subprocess=exec_python_in_subprocess
+        # Step 1: Use rec agent to transform data based on current question
+        logger.info(f"Iteration {iteration}: Using rec agent for question: {current_question}")
+        
+        if previous_transformation_dialog:
+            transformation_results = rec_agent.followup(
+                input_tables=input_tables,
+                new_instruction=current_question,
+                latest_data_sample=previous_transformation_data['rows'],
+                dialog=previous_transformation_dialog
             )
-        
-        # Run data transformation
-        transformation_results = agent.run(
-            input_tables=input_tables,
-            description=plan.get('action', {}).get('data_transformation_goal', ''),
-            expected_fields=plan.get('action', {}).get('expected_output_fields', []),
-            prev_messages=transformation_dialog
-        )
-        
-        # Clean up connection
-        if conn:
-            conn.close()
+        else:
+            transformation_results = rec_agent.run(
+                input_tables=input_tables,
+                description=current_question
+            )
         
         if not transformation_results or transformation_results[0]['status'] != 'ok':
             error_msg = transformation_results[0]['content'] if transformation_results else "Data transformation failed"
             yield {
                 "iteration": iteration,
-                "type": "visualization",
-                "data": {},
-                "status": "error",
-                "error_message": error_msg
-            }
-            continue
-        
-        # Extract transformed data
-        current_transformed_data = transformation_results[0]['content']
-        transformation_dialog = transformation_results[0].get('dialog', [])
-
-        chart_type = plan.get('action', {}).get('visualization_type', 'bar')
-        visualization_fields = plan.get('action', {}).get('visualization_fields', [])
-        
-        # Create visualization
-        chart_spec = create_chart_spec_from_data(
-            current_transformed_data,
-            chart_type,
-            visualization_fields
-        )
-        current_visualization = spec_to_base64(chart_spec) if chart_spec else None
-        
-        yield {
-            "iteration": iteration,
-            "type": "visualization",
-            "data": {
-                "transformed_data": current_transformed_data,
-                "chart_spec": chart_spec,
-                "chart_image": current_visualization
-            },
-            "status": "success",
-            "error_message": ""
-        }
-        
-        # Step 2: Followup planning
-        followup_results = exploration_agent.followup(
-            current_transformed_data,
-            current_visualization,
-            planning_dialog
-        )
-        
-        if not followup_results or followup_results[0]['status'] != 'ok':
-            error_msg = followup_results[0]['content'] if followup_results else "Followup planning failed"
-            yield {
-                "iteration": iteration,
-                "type": "planning",
-                "data": {},
+                "type": "data_transformation",
+                "content": {"question": current_question},
                 "status": "error",
                 "error_message": error_msg
             }
             break
         
-        # Extract followup plan
-        followup_plan = followup_results[0]['content']
-        planning_dialog = followup_results[0].get('dialog', [])
-        
+        # Extract transformation result
+        transform_result = transformation_results[0]
+        transformed_data = transform_result['content']
+        refined_goal = transform_result.get('refined_goal', {})
+        code = transform_result.get('code', '')
+        previous_transformation_dialog = transform_result.get('dialog', [])
+        previous_transformation_data = transformed_data
+
         yield {
             "iteration": iteration,
-            "type": "planning",
-            "data": {"plan": followup_plan},
+            "type": "data_transformation",
+            "content": {
+                "question": current_question,
+                "result": transform_result
+            },
             "status": "success",
             "error_message": ""
         }
         
-        # Check if we should stop exploring
+        # Step 2: Create visualization to help generate followup question
+        chart_type = refined_goal.get('chart_type', 'bar')
+        visualization_fields = refined_goal.get('visualization_fields', [])
+        
+        chart_spec = create_chart_spec_from_data(
+            transformed_data,
+            chart_type,
+            visualization_fields
+        )
+        current_visualization = spec_to_base64(chart_spec) if chart_spec else None
+        
+        # Store this step for exploration analysis
+        step_data = {
+            'question': current_question,
+            'code': code,
+            'data': transformed_data,
+            'visualization': current_visualization
+        }
+        exploration_steps.append(step_data)
+
+        print(f"Exploration steps {iteration}:")
+        print({
+            'question': current_question,
+            'code': code,
+            'data': str(transformed_data)[:1000],
+        })
+
+        # Step 3: Use exploration agent to analyze results and decide next step
+        logger.info(f"Iteration {iteration}: Using exploration agent to decide next step")
+        
+        followup_results = exploration_agent.suggest_followup(
+            input_tables=input_tables,
+            steps=exploration_steps
+        )
+
+        
+        if not followup_results or followup_results[0]['status'] != 'ok':
+            error_msg = followup_results[0]['content'] if followup_results else "Follow-up planning failed"
+            yield {
+                "iteration": iteration,
+                "type": "planning",
+                "content": {},
+                "status": "error",
+                "error_message": error_msg
+            }
+            break
+        
+        # Extract follow-up decision
+        followup_plan = followup_results[0]['content']
+        
+        yield {
+            "iteration": iteration,
+            "type": "planning",
+            "content": {
+                "plan": followup_plan,
+                "exploration_steps_count": len(exploration_steps)
+            },
+            "status": "success",
+            "error_message": ""
+        }
+        
+        # Check if exploration agent decides to present findings
         if followup_plan.get('status') == 'present':
-            # Yield final completion with exploration results
             yield {
                 "iteration": iteration,
                 "type": "completion",
-                "data": {
-                    "reason": "exploration_complete",
-                    "assessment": followup_plan.get('assessment', ''),
-                    "reasoning": followup_plan.get('reasoning', ''),
-                    "final_data": current_transformed_data,
-                    "final_visualization": current_visualization
+                "content": {
+                    "final_plan": followup_plan,
+                    "total_steps": len(exploration_steps),
+                    "insights": followup_plan.get('assessment', ''),
+                    "exploration_summary": followup_plan.get('recap', '')
                 },
                 "status": "success",
                 "error_message": ""
             }
             break
         
-        # Continue with new plan
-        plan = followup_plan
+        # Continue with new question from instruction
+        current_question = followup_plan.get('instruction', '')
             
-        # If we hit max iterations without presenting
-        if iteration >= max_iterations:
-            yield {
-                "iteration": iteration,
-                "type": "completion",
-                "data": {},
-                "status": "success",
-                "error_message": "Reached maximum iterations"
-            }
+    # Clean up connection if used
+    if conn:
+        conn.close()
+        
+    # If we hit max iterations without presenting
+    if iteration >= max_iterations:
+        yield {
+            "iteration": iteration,
+            "type": "completion",
+            "content": {
+                "total_steps": len(exploration_steps),
+                "reason": "Reached maximum iterations"
+            },
+            "status": "success",
+            "error_message": "Reached maximum iterations"
+        }
         
 
     

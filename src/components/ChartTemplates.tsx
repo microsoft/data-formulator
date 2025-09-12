@@ -3,40 +3,30 @@
 
 import { ChartTemplate } from "./ComponentType";
 import InsightsIcon from '@mui/icons-material/Insights';
-import React, { useState, useEffect } from "react";
+import React from "react";
 
-// Simple lazy loading for chart icons
-const useLazyIcon = (iconPath: string) => {
-  const [icon, setIcon] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+// Import all chart icons statically so they are included in the build
+import chartIconTable from '../assets/chart-icon-table-min.png';
+import chartIconScatter from '../assets/chart-icon-scatter-min.png';
+import chartIconLinearRegression from '../assets/chart-icon-linear-regression-min.png';
+import chartIconDotPlotHorizontal from '../assets/chart-icon-dot-plot-horizontal-min.png';
+import chartIconBoxPlot from '../assets/chart-icon-box-plot-min.png';
+import chartIconColumn from '../assets/chart-icon-column-min.png';
+import chartIconColumnGrouped from '../assets/chart-icon-column-grouped-min.png';
+import chartIconColumnStacked from '../assets/chart-icon-column-stacked-min.png';
+import chartIconHistogram from '../assets/chart-icon-histogram-min.png';
+import chartIconHeatMap from '../assets/chart-icon-heat-map-min.png';
+import chartIconLine from '../assets/chart-icon-line-min.png';
+import chartIconDottedLine from '../assets/chart-icon-dotted-line-min.png';
+import chartIconCustomPoint from '../assets/chart-icon-custom-point-min.png';
+import chartIconCustomLine from '../assets/chart-icon-custom-line-min.png';
+import chartIconCustomBar from '../assets/chart-icon-custom-bar-min.png';
+import chartIconCustomRect from '../assets/chart-icon-custom-rect-min.png';
+import chartIconCustomArea from '../assets/chart-icon-custom-area-min.png';
 
-  useEffect(() => {
-    import(/* @vite-ignore */ iconPath)
-      .then(module => {
-        setIcon(module.default);
-        setLoading(false);
-      })
-      .catch(() => {
-        setLoading(false);
-      });
-  }, [iconPath]);
-
-  return { icon, loading };
-};
-
-// Lazy Icon Component
-const LazyChartIcon: React.FC<{ iconPath: string; alt?: string }> = ({ iconPath, alt = "" }) => {
-  const { icon, loading } = useLazyIcon(iconPath);
-
-  if (loading) {
-    return <div style={{ width: '100%', height: '100%', backgroundColor: 'white' }} />;
-  }
-
-  if (!icon) {
-    return <div style={{ width: '100%', height: '100%' }} />;
-  }
-
-  return <img src={icon} alt={alt} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />;
+// Chart Icon Component using static imports
+const ChartIcon: React.FC<{ src: string; alt?: string }> = ({ src, alt = "" }) => {
+  return <img src={src} alt={alt} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />;
 };
 
 export function getChartTemplate(chartType: string): ChartTemplate | undefined {
@@ -68,7 +58,7 @@ const tablePlots: ChartTemplate[] = [
     },
     {
         "chart": "Table",
-        "icon": <LazyChartIcon iconPath="../assets/chart-icon-table.png" />,
+        "icon": <ChartIcon src={chartIconTable} />,
         "template": { },
         "channels": [], //"field 1", "field 2", "field 3", "field 4", "field 5", 'field 6'
         "paths": { }
@@ -78,7 +68,7 @@ const tablePlots: ChartTemplate[] = [
 const scatterPlots: ChartTemplate[] = [
     {
         "chart": "Scatter Plot",
-        "icon": <LazyChartIcon iconPath="../assets/chart-icon-scatter.png" />,
+        "icon": <ChartIcon src={chartIconScatter} />,
         "template": {
             "mark": "circle",
             "encoding": { }
@@ -111,7 +101,7 @@ const scatterPlots: ChartTemplate[] = [
     // },
     {
         "chart": "Linear Regression",
-        "icon": <LazyChartIcon iconPath="../assets/chart-icon-linear-regression.png" />,
+        "icon": <ChartIcon src={chartIconLinearRegression} />,
         "template": {
             "layer": [
                 {
@@ -146,7 +136,7 @@ const scatterPlots: ChartTemplate[] = [
     },
     {
         "chart": "Ranged Dot Plot",
-        "icon": <LazyChartIcon iconPath="../assets/chart-icon-dot-plot-horizontal.png" />,
+        "icon": <ChartIcon src={chartIconDotPlotHorizontal} />,
         "template": {
             "encoding": { },
             "layer": [
@@ -186,7 +176,7 @@ const scatterPlots: ChartTemplate[] = [
     }, 
     {
         "chart": "Boxplot",
-        "icon": <LazyChartIcon iconPath="../assets/chart-icon-box-plot.png" />,
+        "icon": <ChartIcon src={chartIconBoxPlot} />,
         "template": {
             "mark": "boxplot",
             "encoding": { }
@@ -205,7 +195,7 @@ const scatterPlots: ChartTemplate[] = [
 const barCharts: ChartTemplate[] = [
     {
         "chart": "Bar Chart",
-        "icon": <LazyChartIcon iconPath="../assets/chart-icon-column.png" />,
+        "icon": <ChartIcon src={chartIconColumn} />,
         "template": {
             "mark": "bar",
             "encoding": { }
@@ -221,7 +211,7 @@ const barCharts: ChartTemplate[] = [
     },
     {
         "chart": "Pyramid Chart",
-        "icon": <LazyChartIcon iconPath="../assets/chart-icon-column.png" />,
+        "icon": <ChartIcon src={chartIconColumn} />,
         "template": {
             "spacing": 0,
             
@@ -277,7 +267,7 @@ const barCharts: ChartTemplate[] = [
     },
     {
         "chart": "Grouped Bar Chart",
-        "icon": <LazyChartIcon iconPath="../assets/chart-icon-column-grouped.png" />,
+        "icon": <ChartIcon src={chartIconColumnGrouped} />,
         "template": {
             "mark": "bar",
             "encoding": {
@@ -294,7 +284,7 @@ const barCharts: ChartTemplate[] = [
     },
     {
         "chart": "Stacked Bar Chart",
-        "icon": <LazyChartIcon iconPath="../assets/chart-icon-column-stacked.png" />,
+        "icon": <ChartIcon src={chartIconColumnStacked} />,
         "template": {
             "mark": "bar",
             "encoding": { }
@@ -310,7 +300,7 @@ const barCharts: ChartTemplate[] = [
     },
     {
         "chart": "Histogram",
-        "icon": <LazyChartIcon iconPath="../assets/chart-icon-histogram.png" />,
+        "icon": <ChartIcon src={chartIconHistogram} />,
         "template": {
             "mark": "bar",
             "encoding": {
@@ -327,7 +317,7 @@ const barCharts: ChartTemplate[] = [
     },
     {
         "chart": "Heatmap",
-        "icon": <LazyChartIcon iconPath="../assets/chart-icon-heat-map.png" />,
+        "icon": <ChartIcon src={chartIconHeatMap} />,
         "template": {
             "mark": "rect",
             "encoding": {  }
@@ -349,7 +339,7 @@ const barCharts: ChartTemplate[] = [
 let lineCharts = [
     {
         "chart": "Line Chart",
-        "icon": <LazyChartIcon iconPath="../assets/chart-icon-line.png" />,
+        "icon": <ChartIcon src={chartIconLine} />,
         "template": {
             "mark": "line",
             "encoding": { }
@@ -365,7 +355,7 @@ let lineCharts = [
     },
     {
         "chart": "Dotted Line Chart",
-        "icon": <LazyChartIcon iconPath="../assets/chart-icon-dotted-line.png" />,
+        "icon": <ChartIcon src={chartIconDottedLine} />,
         "template": {
             "mark": {"type": "line", "point": true},
             "encoding": { }
@@ -384,7 +374,7 @@ let lineCharts = [
 let customCharts = [
     {
         "chart": "Custom Point",
-        "icon": <LazyChartIcon iconPath="../assets/chart-icon-custom-point.png" />,
+        "icon": <ChartIcon src={chartIconCustomPoint} />,
         "template": {
             "mark": "point",
             "encoding": { }
@@ -394,7 +384,7 @@ let customCharts = [
     },
     {
         "chart": "Custom Line",
-        "icon": <LazyChartIcon iconPath="../assets/chart-icon-custom-line.png" />,
+        "icon": <ChartIcon src={chartIconCustomLine} />,
         "template": {
             "mark": "line",
             "encoding": {  }
@@ -409,7 +399,7 @@ let customCharts = [
     },
     {
         "chart": "Custom Bar",
-        "icon": <LazyChartIcon iconPath="../assets/chart-icon-custom-bar.png" />,
+        "icon": <ChartIcon src={chartIconCustomBar} />,
         "template": {
             "mark": "bar",
             "encoding": { }
@@ -419,7 +409,7 @@ let customCharts = [
     }, 
     {
         "chart": "Custom Rect",
-        "icon": <LazyChartIcon iconPath="../assets/chart-icon-custom-rect.png" />,
+        "icon": <ChartIcon src={chartIconCustomRect} />,
         "template": {
             "mark": "rect",
             "encoding": { }
@@ -429,7 +419,7 @@ let customCharts = [
     },
     {
         "chart": "Custom Area",
-        "icon": <LazyChartIcon iconPath="../assets/chart-icon-custom-area.png" />,
+        "icon": <ChartIcon src={chartIconCustomArea} />,
         "template": {
             "mark": "area",
             "encoding": { }

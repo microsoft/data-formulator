@@ -970,7 +970,23 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                 }}
             >
                 {ideas.length > 0 ? "Ideas" : "Get Ideas"}
-                {ideas.length == 0 && <LightbulbOutlinedIcon sx={{fontSize: 12}} />}
+                {ideas.length == 0 && (
+                    <LightbulbOutlinedIcon 
+                        sx={{
+                            fontSize: 12, 
+                            animation: 'pulse 3s ease-in-out infinite',
+                            '@keyframes pulse': {
+                                '0%': {
+                                },
+                                '50%': {
+                                    color: theme.palette.derived.main,
+                                },
+                                '100%': {
+                                }
+                            }
+                        }} 
+                    />
+                )}
             </Typography>
             <Typography 
                 sx={{ 

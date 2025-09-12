@@ -56,7 +56,7 @@ Concretely:
             * the mention don't have to be exact match, it can be semantically matching, e.g., if you mentioned "average score" in the text while the column to be computed is "Avg_Score", you should still highlight "**average score**" in the text.
     - "visualization_fields" should be ordered based on whether the field will be used in x,y axes or legends, do not include other intermediate fields from "output_fields".
     - "visualization_fields" should be 2-3 (for x,y,legend) or 4 (ONLY if you consider faceted visualization, facet must be a categorical field with small cardinality).
-    - "chart_type" must be one of "point", "bar", "line", "area", "heatmap", "group_bar"
+    - **IMPORTANT** "chart_type" must be one of "point", "bar", "line", "area", "heatmap", "group_bar"
         - Consider chart types as follows:
              - (point) Scatter Plots: X,Y: Quantitative/Categorical, Color: Categorical (optional), Size: Quantitative (optional for creating bubble chart), 
                 Best for: Relationships, correlations, distributions, forecasting, regression analysis

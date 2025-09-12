@@ -674,6 +674,22 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                 }}
             >
                 <Button 
+                    key="chat-dialog-btn"
+                    onClick={() => { setChatDialogOpen(!chatDialogOpen) }}
+                    sx={{
+                        backgroundColor: conceptExplanationsOpen ? 'rgba(25, 118, 210, 0.2)' : 'transparent',
+                        color: conceptExplanationsOpen ? 'primary.main' : 'text.secondary',
+                        fontWeight: conceptExplanationsOpen ? 600 : 500,
+                        '&:hover': {
+                            backgroundColor: conceptExplanationsOpen ? 'rgba(25, 118, 210, 0.25)' : 'rgba(25, 118, 210, 0.08)',
+                        },
+                    }}
+                >
+                    <QuestionAnswerIcon sx={{ fontSize: '14px', mr: 0.5 }} />
+                    chat
+                </Button>
+                <Button 
+                    key="code-btn"
                     onClick={() => {
                         if (codeViewOpen) {
                             setExplanationMode('none');
@@ -698,6 +714,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                     code
                 </Button>
                 <Button 
+                    key="explanation-btn"
                     onClick={() => {
                         if (codeExplViewOpen) {
                             setExplanationMode('none');
@@ -723,6 +740,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                 </Button>
                 {hasConcepts && (
                     <Button 
+                        key="concepts-btn"
                         onClick={() => {
                             if (conceptExplanationsOpen) {
                                 setExplanationMode('none');
@@ -749,12 +767,6 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                 )}
             </ButtonGroup>
         </Box>,
-        <Divider key="dv3" orientation="vertical" variant="middle" flexItem sx={{ mx: 1 }} />,
-        <Tooltip title="view agent dialog" key="view-chat-history-btn-tooltip">
-            <IconButton color="primary" size="small" sx={{ textTransform: "none" }} 
-                    onClick={() => { setChatDialogOpen(!chatDialogOpen) }}><QuestionAnswerIcon />
-            </IconButton>
-        </Tooltip>,
         <ChatDialog key="chat-dialog-button" open={chatDialogOpen} 
                     handleCloseDialog={() => { setChatDialogOpen(false) }}
                     code={transformCode}
@@ -763,7 +775,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
     
     let chartActionButtons = [
         <Box key="data-source" fontSize="small" sx={{ margin: "auto", display: "flex", flexDirection: "row"}}>
-            <Typography component="span" sx={{display: 'flex', flexDirection: 'row', alignItems: 'center'}} fontSize="inherit">
+            <Typography component="span" sx={{display: 'flex', flexDirection: 'row', alignItems: 'center', whiteSpace: 'nowrap'}} fontSize="inherit">
                 data: {table.virtual ? <Tooltip title="this table resides in the backend database, sample rows are used for visualization"><CloudQueueIcon  sx={{ fontSize: '12px', color: 'text.secondary', mx: 0.5}} /></Tooltip> : ""} {table.displayId || table.id}
             </Typography>
         </Box>,

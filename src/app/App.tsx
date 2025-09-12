@@ -69,7 +69,6 @@ import UploadFileIcon from '@mui/icons-material/UploadFile';
 import DownloadIcon from '@mui/icons-material/Download';
 import { DBTableSelectionDialog, handleDBDownload } from '../views/DBTableManager';
 import CloudQueueIcon from '@mui/icons-material/CloudQueue';
-import { connectToSSE } from '../views/SSEClient';
 import { getUrls } from './utils';
 import { DataLoadingChatDialog } from '../views/DataLoadingChat';
 import ChatIcon from '@mui/icons-material/Chat';
@@ -493,14 +492,6 @@ const ConfigDialog: React.FC = () => {
 export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
 
     const dispatch = useDispatch<AppDispatch>();
-
-    useEffect(() => {
-        const sseConnection = connectToSSE(dispatch);
-        return () => {
-            console.log("closing sse connection because of unmount of AppFC")
-            sseConnection.close();
-        };
-    }, []);
 
     useEffect(() => {
         fetch(getUrls().APP_CONFIG)

@@ -1,10 +1,7 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
 
-import json
-import pandas as pd
-
-from data_formulator.agents.agent_utils import extract_json_objects, generate_data_summary, extract_code_from_gpt_response, field_name_to_ts_variable_name, infer_ts_datatype
+from data_formulator.agents.agent_utils import extract_json_objects
 from data_formulator.agents.web_utils import download_html_content
 
 import logging

@@ -43,7 +43,7 @@ import _ from 'lodash';
 import '../scss/EncodingShelf.scss';
 import { createDictTable, DictTable } from "../components/ComponentType";
 
-import { getUrls, resolveChartFields, getTriggers } from '../app/utils';
+import { getUrls, resolveChartFields, getTriggers, resolveChartFieldsV2 } from '../app/utils';
 
 import AddIcon from '@mui/icons-material/Add';
 import PrecisionManufacturing from '@mui/icons-material/PrecisionManufacturing';
@@ -262,7 +262,57 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
         activeChallenges.find(ac => ac.tableId === tableId)?.challenges || []);
     
     const [agentIdeas, setAgentIdeas] = useState<{
-        questions: string[], goal: string, difficulty: 'easy' | 'medium' | 'hard', tag: string, type: 'branch' | 'deep_dive' }[]>([]);
+        questions: string[], goal: string, 
+        difficulty: 'easy' | 'medium' | 'hard', 
+        tag: string, type: 'branch' | 'deep_dive' }[]>([
+            {
+                "difficulty": "medium",
+                "goal": "Compare and visualize overall and type-specific impacts of natural disasters over time.",
+                "questions": [
+                    "Which types of natural disasters contributed the most deaths globally from 1900 to 2017?",
+                    "How has the total number of deaths from all natural disasters changed over each decade?",
+                    "What are the trends in deaths from specific disaster types (e.g., earthquakes vs. floods) over time?",
+                    "Which years experienced anomalously high numbers of disaster-related deaths, and which disaster types were responsible?"
+                ],
+                "tag": "overview_comparison",
+                "type": "branch"
+            },
+            {
+                "difficulty": "hard",
+                "goal": "Identify trends, cycles, and variability within and across disaster types.",
+                "questions": [
+                    "Is there seasonality or periodicity in the occurrence of high-fatality disasters?",
+                    "Do some disaster types show increasing or decreasing death trends while others remain stable?",
+                    "Are there clusters of years with high-impact disasters across multiple types?",
+                    "How does the variability (variance) in deaths differ between disaster types?"
+                ],
+                "tag": "trend_analysis",
+                "type": "branch"
+            },
+            {
+                "difficulty": "hard",
+                "goal": "Investigate and contextualize extreme outliers in disaster fatalities.",
+                "questions": [
+                    "Which disaster type had the single deadliest event across the entire dataset?",
+                    "For this disaster type, which five years had the highest death tolls?",
+                    "What percentage of total deaths from this disaster type occurred in its deadliest year?",
+                    "Did similar peaks occur in other disaster types during the same years?"
+                ],
+                "tag": "outlier_analysis",
+                "type": "deep_dive"
+            },
+            {
+                "difficulty": "hard",
+                "goal": "Apply statistical and predictive methods to discover patterns and make predictions.",
+                "questions": [
+                    "Can we forecast the number of deaths from natural disasters in the next decade using time series modeling?",
+                    "Is there a statistically significant correlation between certain disaster types\u2019 death tolls over time?",
+                    "How do the disaster death counts cluster when analyzed by multi-year windows (e.g., K-means clustering by year and disaster type)?"
+                ],
+                "tag": "statistical_forecasting",
+                "type": "branch"
+            }
+        ]);
     const [recReasoning, setRecReasoning] = useState<string>("");
     
     // Add state for cycling through questions
@@ -299,29 +349,13 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
         setAdditionalTableIds(additionalIds);
     };
 
-    // Function to handle challenge chip click
-    const handleChallengeClick = (challengeText: string) => {
-        setPrompt(challengeText);
-        deriveDataFromNL(challengeText);
-        
-    };
-
     // Function to get a question from the list with cycling
-    const getQuestion = (random: boolean = false): string => {
-        // if (currentTable?.explorativeQuestions && currentTable.explorativeQuestions.length > 0) {
-        //     if (random) {
-        //         const index = Math.floor(Math.random() * currentTable.explorativeQuestions.length);
-        //         return currentTable.explorativeQuestions[index];
-        //     } else {
-        //         // Cycle through questions sequentially
-        //         return currentTable.explorativeQuestions[currentQuestionIndex];
-        //     }
-        // }
+    const getQuestion = (): string => {
         return mode === "agent" ? "generate some explore directions" : "show something interesting about the data";
     };
 
     // Function to get ideas from the interactive explore agent
-    const getIdeasFromAgent = async (startQuestion?: string) => {
+    const getIdeasFromAgent = async (mode: 'interactive' | 'agent', startQuestion?: string) => {
         if (!currentTable || isLoadingIdeas) {
             return;
         }
@@ -426,62 +460,21 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
         }
     };
 
-    // Effect to cycle through questions every 3 seconds
     useEffect(() => {
-        if (!currentTable?.explorativeQuestions || currentTable.explorativeQuestions.length <= 1) {
-            return;
-        }
-
-        const interval = setInterval(() => {
-            setCurrentQuestionIndex((prevIndex) => 
-                (prevIndex + 1) % currentTable.explorativeQuestions.length
-            );
-        }, 5000); // 5 seconds
-
-        return () => clearInterval(interval);
-    }, [currentTable?.explorativeQuestions]);
-
-    useEffect(() => {
-        let defaultIdeas = activeChallenges.find(ac => ac.tableId === tableId)?.challenges;
         if (mode === "agent") {
             setAgentIdeas([]);
         } else {
-            setIdeas(defaultIdeas || []);
+            setIdeas([]);
         }
         
     }, [tableId]);
-
-    // Effect to automatically generate ideas when there are no questions
-    useEffect(() => {
-        // Only auto-generate if:
-        // 1. We have a current table
-        // 2. We haven't already auto-generated for this table
-        // 3. There are no ideas in interactive mode
-        // 4. We're not currently loading ideas
-        // 5. We're not currently formulating
-        // 6. Minimum interval has passed
-        const now = Date.now();
-        const lastTime = getLastGenerationTime(tableId, mode);
-        const canGenerate = now - lastTime >= MIN_GENERATION_INTERVAL;
-        
-        if (currentTable && 
-            currentTable.derive === undefined &&
-            ((ideas.length === 0 && mode === "interactive" ) || (agentIdeas.length === 0 && mode === "agent")) && 
-            !isLoadingIdeas && 
-            !isFormulating &&
-            canGenerate) {
-            
-            getIdeasFromAgent(mode);
-            setLastGenerationTime(tableId, mode as 'interactive' | 'agent', now);
-        }
-    }, [currentTable, mode, ideas.length, isLoadingIdeas, isFormulating, tableId]);
 
     // Handle tab key press for auto-completion
     const handleKeyDown = (event: React.KeyboardEvent) => {
         if (event.key === 'Tab' && !event.shiftKey) {
             event.preventDefault();
             if (prompt.trim() === "") {
-                setPrompt(getQuestion(false));
+                setPrompt(getQuestion());
             }
         }
     };
@@ -498,12 +491,8 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
             //dispatch(dfActions.updateChartType({chartType: "Auto", chartId: placeHolderChartId}));
             dispatch(dfActions.changeChartRunningStatus({chartId: placeHolderChartId, status: true}));
             originateChartId = placeHolderChartId;
-        } else {
-            let newChart = generateFreshChart(tableId, "?") as Chart;
-            dispatch(dfActions.addAndFocusChart(newChart));
-            dispatch(dfActions.changeChartRunningStatus({chartId: newChart.id, status: true}));
-            originateChartId = newChart.id;
-        }
+        } 
+
 
         const actionTables = selectedTableIds.map(id => tables.find(t => t.id === id) as DictTable);
 
@@ -518,8 +507,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
             }));
             return;
         }
-        
-        // Set formulating status without creating Auto chart
+
         setIsFormulating(true);
 
         const token = String(Date.now());
@@ -538,7 +526,6 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
         });
         let engine = getUrls().DERIVE_DATA;
         
-
         if (currentTable && currentTable.derive?.dialog && !currentTable.anchored) {
             let sourceTableIds = currentTable.derive?.source;
 
@@ -548,11 +535,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
             // Compare if source and base table IDs are different
             if (startNewDialog) {
 
-                console.log("start new dialog", startNewDialog);
-                
                 let additionalMessages = currentTable.derive.dialog;
-
-                console.log("additional messages", additionalMessages);
 
                 // in this case, because table ids has changed, we need to use the additional messages and reformulate
                 messageBody = JSON.stringify({
@@ -743,6 +726,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
         })
         .catch((error) => {
             setIsFormulating(false);
+            dispatch(dfActions.changeChartRunningStatus({chartId: originateChartId, status: false}));   
 
             if (error.name === 'AbortError') {
                 dispatch(dfActions.addMessages({
@@ -758,6 +742,364 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                     "component": "chart builder",
                     "type": "error",
                     "value": `Data formulation failed, please try again.`,
+                    "detail": error.message
+                }));
+            }
+        });
+    };
+
+    const exploreDataFromNL = (startQuestion: string) => {
+
+        let actionId = `explore-data-${Date.now()}`;
+
+        if (selectedTableIds.length === 0 || startQuestion.trim() === "") {
+            return;
+        }
+
+        setIsFormulating(true);
+        dispatch(dfActions.setAgentWorkInProgress({actionId: actionId, tableId: tableId, description: startQuestion}));
+
+        let actionTables = tables.filter(t => selectedTableIds.includes(t.id));
+
+        const token = String(Date.now());
+        let messageBody = JSON.stringify({
+            token: token,
+            input_tables: actionTables.map(t => ({
+                name: t.virtual?.tableId || t.id.replace(/\.[^/.]+$/, ""),
+                rows: t.rows
+            })),
+            start_question: startQuestion,
+            model: activeModel,
+            max_iterations: 5,
+            language: actionTables.some(t => t.virtual) ? "sql" : "python"
+        });
+
+        
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), config.formulateTimeoutSeconds * 4 * 1000);
+
+        // State for accumulating streaming results
+        let allResults: any[] = [];
+        let createdTables: DictTable[] = [];
+        let createdCharts: Chart[] = [];
+        let allNewConcepts: FieldItem[] = [];
+        let isCompleted = false;
+
+        // Generate table ID helper
+        const genTableId = () => {
+            let tableSuffix = Number.parseInt((Date.now() - Math.floor(Math.random() * 10000)).toString().slice(-2));
+            let tableId = `table-${tableSuffix}`;
+            while (tables.find(t => t.id === tableId) !== undefined) {
+                tableSuffix = tableSuffix + 1;
+                tableId = `table-${tableSuffix}`;
+            }
+            return tableId;
+        };
+
+        // Function to process a single streaming result
+        const processStreamingResult = (result: any) => {
+            if (result.type === "data_transformation" && result.status === "success") {
+                // Extract from the new structure: content.result instead of transform_result
+                const transformResult = result.content.result;
+                
+                if (!transformResult || transformResult.status !== 'ok') {
+                    return; // Skip failed transformations
+                }
+                
+                const transformedData = transformResult.content;
+                const code = transformResult.code;
+                const dialog = transformResult.dialog;
+                const refinedGoal = transformResult.refined_goal;
+                const question = result.content.question;
+                
+                if (!transformedData || !transformedData.rows || transformedData.rows.length === 0) {
+                    return; // Skip empty results
+                }
+
+                const rows = transformedData.rows;
+                const candidateTableId = transformedData.virtual?.table_name || genTableId();
+                const displayInstruction = refinedGoal?.display_instruction || `Exploration step ${createdTables.length + 1}: ${question}`;
+
+                // Determine the trigger table and source tables for this iteration
+                const isFirstIteration = createdTables.length === 0;
+                const triggerTableId = isFirstIteration ? tableId : createdTables[createdTables.length - 1].id;
+                const triggerSourceTableIds = isFirstIteration ? selectedTableIds : [createdTables[createdTables.length - 1].id];
+
+                // Create new table
+                const candidateTable = createDictTable(
+                    candidateTableId,
+                    rows,
+                    undefined // No derive info initially
+                );
+
+                // Add derive info manually for exploration results
+                candidateTable.derive = {
+                    code: code || `# Exploration step ${createdTables.length + 1}`,
+                    source: triggerSourceTableIds,
+                    dialog: dialog || [],
+                    trigger: {
+                        tableId: triggerTableId,
+                        sourceTableIds: triggerSourceTableIds,
+                        instruction: question,
+                        displayInstruction: displayInstruction,
+                        chart: undefined, // Will be set after chart creation
+                        resultTableId: candidateTableId
+                    }
+                };
+
+                if (transformedData.virtual) {
+                    candidateTable.virtual = {
+                        tableId: transformedData.virtual.table_name,
+                        rowCount: transformedData.virtual.row_count
+                    };
+                }
+
+                createdTables.push(candidateTable);
+
+                dispatch(dfActions.setAgentWorkInProgress({actionId: actionId, tableId: candidateTable.id, description: displayInstruction}));
+
+                // Add missing concept items for this table
+                const names = candidateTable.names;
+                const missingNames = names.filter(name => 
+                    !conceptShelfItems.some(field => field.name === name) &&
+                    !allNewConcepts.some(concept => concept.name === name)
+                );
+
+                const conceptsToAdd = missingNames.map((name) => ({
+                    id: `concept-${name}-${Date.now()}-${Math.random()}`,
+                    name: name,
+                    type: "auto" as Type,
+                    description: "",
+                    source: "custom",
+                    tableRef: "custom",
+                    temporary: true,
+                } as FieldItem));
+
+                allNewConcepts.push(...conceptsToAdd);
+
+                // Create chart from refined goal or planning data
+                let chartType = "Scatter Plot"; // default
+                let chartGoal = refinedGoal;
+
+                // If no refined goal, try to extract from the planning result in the same iteration
+                if (!chartGoal) {
+                    const planningResult = allResults.find((r: any) => 
+                        r.type === "planning" && 
+                        r.iteration === result.iteration && 
+                        r.status === "success"
+                    );
+
+                    if (planningResult && planningResult.content?.plan) {
+                        const plan = planningResult.content.plan;
+                        // Try to extract chart info from the plan if available
+                        if (plan.instruction) {
+                            chartGoal = {
+                                chart_type: "scatter", // default
+                                visualization_fields: [], // will be inferred
+                                display_instruction: `Exploration: ${plan.instruction}`
+                            };
+                        }
+                    }
+                }
+
+                // Map chart types
+                const chartTypeMap: any = {
+                    "line": "Line Chart",
+                    "bar": "Bar Chart", 
+                    "point": "Scatter Plot",
+                    "boxplot": "Boxplot",
+                    "area": "Custom Area",
+                    "heatmap": "Heatmap",
+                    "group_bar": "Grouped Bar Chart"
+                };
+
+                chartType = chartTypeMap[chartGoal?.chart_type] || "Scatter Plot";
+                
+                // Create trigger chart for derive info
+                let triggerChart = generateFreshChart(candidateTable.id, chartType) as Chart;
+                triggerChart.source = 'trigger';
+
+                // Resolve chart fields for trigger chart if we have them
+                if (chartGoal) {
+                    const currentConcepts = [...conceptShelfItems.filter(c => names.includes(c.name)), ...conceptsToAdd];
+                    triggerChart = resolveChartFields(triggerChart, currentConcepts, chartGoal, candidateTable);
+                }
+
+                // Update the derive trigger to reference the trigger chart
+                if (candidateTable.derive) {
+                    candidateTable.derive.trigger.chart = triggerChart;
+                }
+
+                // Create regular chart that belongs to the table for visualization
+                let newChart = generateFreshChart(candidateTable.id, chartType) as Chart;
+                newChart.source = 'user';
+
+                // Resolve chart fields for regular chart if we have them
+                if (chartGoal) {
+                    const currentConcepts = [...conceptShelfItems.filter(c => names.includes(c.name)), ...conceptsToAdd];
+                    newChart = resolveChartFields(newChart, currentConcepts, chartGoal, candidateTable);
+                }
+
+                createdCharts.push(newChart);
+
+                // Immediately add the new concepts, table, and chart to the state
+                if (conceptsToAdd.length > 0) {
+                    dispatch(dfActions.addConceptItems(conceptsToAdd));
+                }
+
+                dispatch(dfActions.insertDerivedTables(candidateTable));
+                dispatch(fetchFieldSemanticType(candidateTable));
+                dispatch(fetchCodeExpl(candidateTable));
+
+                // Add and focus on the new chart
+                dispatch(dfActions.addAndFocusChart(newChart));
+                dispatch(dfActions.setFocusedTable(candidateTable.id));
+
+                // Show progress message
+                dispatch(dfActions.addMessages({
+                    "timestamp": Date.now(),
+                    "component": "chart builder",
+                    "type": "info",
+                    "value": `Exploration step ${createdTables.length} completed: ${displayInstruction}`
+                }));
+            }
+        };
+
+        // Function to handle completion
+        const handleCompletion = () => {
+            if (isCompleted) return;
+            isCompleted = true;
+
+            dispatch(dfActions.deleteAgentWorkInProgress(actionId));
+            
+            setIsFormulating(false);
+            clearTimeout(timeoutId);
+
+            if (createdTables.length === 0) {
+                const errorResults = allResults.filter((result: any) => result.status === "error");
+                const errorMessage = errorResults.length > 0 ? errorResults[0].error_message : "No transformations were generated.";
+
+                dispatch(dfActions.addMessages({
+                    "timestamp": Date.now(),
+                    "type": "error",
+                    "component": "chart builder",
+                    "value": `Data exploration failed: ${errorMessage}`,
+                    "detail": errorMessage
+                }));
+            } else {
+                // Get completion message from completion result if available
+                const completionResult = allResults.find((result: any) => result.type === "completion");
+                let completionMessage = `Data exploration completed with ${createdTables.length} visualization${createdTables.length > 1 ? 's' : ''}.`;
+                
+                if (completionResult && completionResult.data?.insights) {
+                    completionMessage += ` ${completionResult.data.insights}`;
+                } else if (completionResult && completionResult.data?.final_plan?.assessment) {
+                    completionMessage += ` ${completionResult.data.final_plan.assessment}`;
+                }
+
+                dispatch(dfActions.addMessages({
+                    "timestamp": Date.now(),
+                    "component": "chart builder",
+                    "type": "success",
+                    "value": completionMessage
+                }));
+
+                // Clear the prompt after successful exploration
+                setPrompt("");
+            }
+        };
+
+        fetch(getUrls().EXPLORE_DATA_STREAMING, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', },
+            body: messageBody,
+            signal: controller.signal
+        })
+        .then(async (response) => {
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            const reader = response.body?.getReader();
+            if (!reader) {
+                throw new Error('No response body reader available');
+            }
+
+            const decoder = new TextDecoder();
+            let buffer = '';
+
+            try {
+                while (true) {
+                    const { done, value } = await reader.read();
+                    
+                    if (done) {
+                        handleCompletion();
+                        break;
+                    }
+
+                    buffer += decoder.decode(value, { stream: true });
+                    
+                    // Split by newlines to get individual JSON objects
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop() || ''; // Keep the last incomplete line in buffer
+
+                    // should be only one message per line
+                    for (let line of lines) {
+                        if (line.trim() !== "") {
+                            try {
+                                const data = JSON.parse(line);
+                                if (data.token === token) {
+                                    if (data.status === "ok" && data.result) {
+                                        allResults.push(data.result);
+                                        processStreamingResult(data.result);
+
+
+                                        // Check if this is a completion result
+                                        if (data.result.type === "completion") {
+                                            handleCompletion();
+                                            return;
+                                        }
+                                    } else if (data.status === "error") {
+                                        setIsFormulating(false);
+                                        clearTimeout(timeoutId);
+                                        
+                                        dispatch(dfActions.addMessages({
+                                            "timestamp": Date.now(),
+                                            "component": "chart builder", 
+                                            "type": "error",
+                                            "value": data.error_message || "Error during data exploration. Please try again."
+                                        }));
+                                        return;
+                                    }
+                                }
+                            } catch (parseError) {
+                                console.warn('Failed to parse streaming response:', parseError);
+                            }
+                        }
+                    }
+                }
+            } finally {
+                reader.releaseLock();
+            }
+        })
+        .catch((error) => {
+            setIsFormulating(false);
+            clearTimeout(timeoutId);
+            
+            if (error.name === 'AbortError') {
+                dispatch(dfActions.addMessages({
+                    "timestamp": Date.now(),
+                    "component": "chart builder",
+                    "type": "error",
+                    "value": "Data exploration timed out. Please try again.",
+                    "detail": error.message
+                }));
+            } else {
+                dispatch(dfActions.addMessages({
+                    "timestamp": Date.now(),
+                    "component": "chart builder",
+                    "type": "error",
+                    "value": `Data exploration failed: ${error.message}`,
                     "detail": error.message
                 }));
             }
@@ -790,13 +1132,23 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                         color: mode === "interactive" ? "primary" : "text.secondary", 
                         backgroundColor: mode === "interactive" ? "rgba(25, 118, 210, 0.08)" : "transparent",
                         
-                    }} onClick={() => setMode("interactive")}>
+                    }} onClick={() => {
+                        setMode("interactive");
+                        if (ideas.length === 0) {
+                            getIdeasFromAgent("interactive");
+                        }
+                    }}>
                         interactive
                     </Button>
                     <Button variant="text" value="agent" sx={{ 
                             color: mode === "agent" ? "primary" : "text.secondary", 
                             backgroundColor: mode === "agent" ? "rgba(25, 118, 210, 0.08)" : "transparent"
-                        }} onClick={() => setMode("agent")}>
+                        }} onClick={() => {
+                            setMode("agent");
+                            if (agentIdeas.length === 0) {
+                                getIdeasFromAgent("agent");
+                            }
+                        }}>
                         agent
                     </Button>
                 </ButtonGroup>
@@ -845,6 +1197,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                             "& .MuiInputLabel-root": { fontSize: '14px' },
                             "& .MuiInput-input": { fontSize: '14px' }
                         }}
+                        disabled={isFormulating || isLoadingIdeas}
                         onChange={(event) => setPrompt(event.target.value)}
                         onKeyDown={handleKeyDown}
                         slotProps={{
@@ -856,7 +1209,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                                             size="medium"
                                             disabled={isFormulating || !currentTable || isLoadingIdeas}
                                             color="primary" 
-                                            onClick={() => getIdeasFromAgent(prompt.trim())}
+                                            onClick={() => getIdeasFromAgent("agent", prompt.trim())}
                                         >
                                             {isLoadingIdeas ? <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
                                                 <CircularProgress size={24} />
@@ -880,7 +1233,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                         }}
                         value={prompt}
                         label={mode === "agent" ? "Where should the agent go?" : "What do you want to explore?"}
-                        placeholder={`${getQuestion(false)}`}
+                        placeholder={`${getQuestion()}`}
                         fullWidth
                         multiline
                         variant="standard"
@@ -897,7 +1250,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                                 size="medium"
                                 disabled={isFormulating || !currentTable || isLoadingIdeas}
                                 color="primary" 
-                                onClick={() => getIdeasFromAgent()}
+                                onClick={() => getIdeasFromAgent("interactive")}
                             >
                                 {isLoadingIdeas ? <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
                                     <CircularProgress size={24} />
@@ -934,14 +1287,17 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                             gap: 0.5,
                             marginBottom: 1
                         }}>
-                            {ideas.map((challenge, index) => (
+                            {ideas.map((idea, index) => (
                                 <IdeaChip
                                     mode="interactive"
                                     mini
                                     key={index}
-                                    idea={challenge}
+                                    idea={idea}
                                     theme={theme}
-                                    onClick={() => handleChallengeClick(challenge.text)}
+                                    onClick={() => {
+                                        setPrompt(idea.text);
+                                        deriveDataFromNL(idea.text);
+                                    }}
                                     disabled={isFormulating}
                                     sx={{
                                         width: '46%',
@@ -964,19 +1320,24 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                             gap: 0.5,
                             marginBottom: 1,
                         }}>
-                            {agentIdeas.map((challenge, index) => (
+                            {agentIdeas.map((idea, index) => (
                                 <IdeaChip
                                     mode="agent"
                                     mini
                                     key={index}
-                                    idea={challenge}
+                                    idea={idea}
                                     theme={theme}
                                     onClick={() => {
-                                        challenge.questions.forEach((question, index) => {
-                                            setTimeout(() => {
-                                                handleChallengeClick(question);
-                                            }, index * 300); // 300ms delay between each call
-                                        });
+                                        if (idea.type === "deep_dive" && idea.questions.length > 0) {
+                                            exploreDataFromNL(idea.questions[0]);
+                                        } else {    
+                                            idea.questions.forEach((question, index) => {
+                                                setTimeout(() => {
+                                                    setPrompt(question);
+                                                    deriveDataFromNL(question);
+                                                }, index * 1000); // 1000ms delay between each call
+                                            });
+                                        }
                                     }}
                                     disabled={isFormulating}
                                     sx={{

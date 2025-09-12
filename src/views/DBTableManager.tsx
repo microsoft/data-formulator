@@ -929,7 +929,7 @@ export const DBTableSelectionDialog: React.FC<{
         return (
             <>
                 <Tooltip 
-                    title={serverConfig.DISABLE_DATABASE ? "Launch Data Formulator locally to enable database access" : ""}
+                    title={serverConfig.DISABLE_DATABASE ? "Install Data Formulator locally to enable database access (visit https://github.com/microsoft/data-formulator)" : ""}
                     placement="top"
                 >
                     <span style={{cursor: serverConfig.DISABLE_DATABASE ? 'help' : 'pointer'}}>
@@ -940,7 +940,7 @@ export const DBTableSelectionDialog: React.FC<{
                         </Button>
                     </span>
                 </Tooltip>
-                <Dialog 
+                <Dialog
                     key="db-table-selection-dialog" 
                     onClose={() => {setTableDialogOpen(false)}} 
                     open={tableDialogOpen}

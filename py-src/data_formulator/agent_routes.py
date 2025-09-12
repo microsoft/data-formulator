@@ -11,7 +11,7 @@ mimetypes.add_type('application/javascript', '.js')
 mimetypes.add_type('application/javascript', '.mjs')
 
 import flask
-from flask import request, session, jsonify, Blueprint, current_app
+from flask import request, session, jsonify, Blueprint, current_app, Response, stream_with_context
 import logging
 
 import json
@@ -34,6 +34,7 @@ from data_formulator.agents.agent_interactive_explore import InteractiveExploreA
 from data_formulator.agents.client_utils import Client
 
 from data_formulator.db_manager import db_manager
+from data_formulator.workflows.exploration_flow import run_exploration_flow_streaming
 
 # Get logger for this module (logging config done in app.py)
 logger = logging.getLogger(__name__)
@@ -368,6 +369,98 @@ def derive_data():
 
     response.headers.add('Access-Control-Allow-Origin', '*')
     return response
+
+@agent_bp.route('/explore-data-streaming', methods=['GET', 'POST'])
+def explore_data_streaming():
+    def generate():
+        if request.is_json:
+            logger.setLevel(logging.INFO)
+
+            logger.info("# explore data request: ")
+            content = request.get_json()        
+            token = content["token"]
+
+            # each table is a dict with {"name": xxx, "rows": [...]}
+            input_tables = content["input_tables"]
+            start_question = content["start_question"]  # The exploration question
+            language = content.get("language", "python")  # whether to use sql or python, default to python
+            max_iterations = content.get("max_iterations", 4)  # Number of exploration iterations
+
+            logger.info("== input tables ===>")
+            for table in input_tables:
+                logger.info(f"===> Table: {table['name']} (first 5 rows)")
+                logger.info(table['rows'][:5])
+
+            logger.info("== exploration question ===")
+            logger.info(start_question)
+
+            # Model config for the exploration flow
+            model_config = {
+                "endpoint": content['model']['endpoint'],
+                "model": content['model']['model'],
+                "api_key": content['model']['api_key'],
+                "api_base": content['model'].get('api_base', ''),
+                "api_version": content['model'].get('api_version', '')
+            }
+
+            session_id = session.get('session_id') if language == "sql" else None
+            exec_python_in_subprocess = current_app.config['CLI_ARGS']['exec_python_in_subprocess']
+
+            try:
+                for result in run_exploration_flow_streaming(
+                    model_config=model_config,
+                    input_tables=input_tables,
+                    start_question=start_question,
+                    language=language,
+                    session_id=session_id,
+                    exec_python_in_subprocess=exec_python_in_subprocess,
+                    max_iterations=max_iterations
+                ):
+                    response_data = { 
+                        "token": token, 
+                        "status": "ok", 
+                        "result": result 
+                    }
+                    
+                    yield json.dumps(response_data) + '\n'
+                    
+                    # Break if we get a completion result
+                    if result.get("type") == "completion":
+                        break
+            
+            except Exception as e:
+                logger.setLevel(logging.WARNING)
+                logger.error(f"Error in exploration flow: {e}")
+                error_data = { 
+                    "token": token, 
+                    "status": "error", 
+                    "result": None,
+                    "error_message": str(e)
+                }
+                yield json.dumps(error_data) + '\n'
+            
+            logger.setLevel(logging.WARNING)
+
+        else:
+            error_data = { 
+                "token": "", 
+                "status": "error", 
+                "result": None,
+                "error_message": "Invalid request format"
+            }
+            yield json.dumps(error_data) + '\n'
+
+    response = Response(
+        stream_with_context(generate()),
+        mimetype='application/json',
+        headers={
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type'
+        }
+    )
+    return response
+
 
 @agent_bp.route('/refine-data', methods=['GET', 'POST'])
 def refine_data():

@@ -9,8 +9,6 @@ from urllib.parse import urlparse
 import tempfile
 import os
 
-from weasyprint import HTML
-
 logger = logging.getLogger(__name__)
 
 
@@ -107,61 +105,6 @@ def html_to_text(html_content: str, remove_scripts: bool = True, remove_styles: 
         logger.error(f"Failed to convert HTML to text: {str(e)}")
         # Fallback: return the raw content if parsing fails
         return html_content
-
-
-def html_to_pdf(html_content: str, output_path: Optional[str] = None, 
-                css_string: Optional[str] = None, options: Optional[dict] = None) -> str:
-    """
-    Convert HTML content to PDF format.
-    
-    Args:
-        html_content (str): HTML content as a string
-        output_path (str, optional): Path where to save the PDF. If None, creates a temporary file
-        css_string (str, optional): Additional CSS to apply to the HTML
-        options (dict, optional): PDF generation options
-        
-    Returns:
-        str: Path to the generated PDF file
-        
-    Raises:
-        RuntimeError: If no PDF conversion library is available
-        ValueError: If HTML content is empty
-    """
-    if not html_content or not html_content.strip():
-        raise ValueError("HTML content cannot be empty")
-    
-    # Set default options if none provided
-    if options is None:
-        options = {}
-    
-    # Generate output path if not provided
-    if output_path is None:
-        with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as tmp_file:
-            output_path = tmp_file.name
-    
-    try:
-        # Create HTML object
-        html_obj = HTML(string=html_content)
-        
-        # Apply CSS if provided
-        if css_string:
-            html_obj.append_css(string=css_string)
-        
-        # Generate PDF
-        html_obj.write_pdf(output_path, **options)
-        
-        return output_path
-        
-    except Exception as e:
-        logger.error(f"Failed to convert HTML to PDF: {str(e)}")
-        # Clean up temporary file if it was created
-        if output_path and os.path.exists(output_path) and not options.get('keep_file', False):
-            try:
-                os.unlink(output_path)
-            except OSError:
-                pass
-        raise
-
 
 def get_html_title(html_content: str) -> Optional[str]:
     """

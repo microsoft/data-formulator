@@ -448,12 +448,8 @@ let SingleThreadGroupView: FC<{
                 </Box>}
                 <Box sx={{ flex: 1, padding: '8px 0px', minHeight: '8px', ...chartElementProps }}>
                     {releventChartElements}
-                    {(agentWorkInProgress.some(a => a.target == 'table' && a.targetId == tableId) )&& 
-                        <Box sx={{ 
-                        py: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', }}>
-                            <Typography sx={{ mr: 1,fontSize: '10px', color: 'rgba(0,0,0,0.5)' }}>
-                                agent is deriving data...
-                            </Typography>
+                    {(agentWorkInProgress.some(a => a.tableId == tableId) )&& 
+                        <Box sx={{ py: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', }}>
                             <PrecisionManufacturingIcon sx={{ 
                                 fontSize: 16, 
                                 color: 'rgba(0,0,0,0.5)',

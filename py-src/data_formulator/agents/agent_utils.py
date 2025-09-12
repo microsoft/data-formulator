@@ -230,7 +230,7 @@ def generate_data_summary(input_tables, include_data_samples=True, field_sample_
     table_field_summaries = [f'table_{i} ({input_table_names[i]}) fields:\n\t{s}' for i, s in enumerate(field_summaries)]
     
     if include_data_samples:
-        table_sample_strings = [f'table_{i} ({input_table_names[i]}) sample:\n\n```\n{pd.DataFrame(data_sample).to_csv(sep="|")}......\n```' for i, data_sample in enumerate(data_samples)]
+        table_sample_strings = [f'table_{i} ({input_table_names[i]}) sample:\n\n{pd.DataFrame(data_sample).to_string() + '......'}' for i, data_sample in enumerate(data_samples)]
     else:
         table_sample_strings = ['' for i, data_sample in enumerate(data_samples)]
 

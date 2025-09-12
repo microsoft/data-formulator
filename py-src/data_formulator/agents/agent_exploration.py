@@ -9,122 +9,60 @@ from data_formulator.agents.agent_utils import extract_json_objects, generate_da
 
 logger = logging.getLogger(__name__)
 
-INITIAL_PROMPT = '''
-You are a data exploration expert to suggest a visualization to help the user to get started exploring their data.
-The user will provide you in [CONTEXT] section:
-* The dataset (name, description, fields)
-* A data analysis question (if the user doesn't provide a question, you infer the question from the dataset and based on previous explorations)
-* previous explorations from the user (if any)
-
-Your task is to analyze the dataset and the question, and suggest a visualization to help the user to get started exploring their data.
-- The visualization should be a non-trivial visualization build on top of the input data. 
-- It should answer the question in a way that is not obvious from the input data.
-- Consider chart types as follows:
-    - (bar) Bar Charts: X: Categorical (nominal/ordinal), Y: Quantitative, Color: Categorical (optional for group or stacked bar chart), Best for: Comparisons across categories
-        - use (bar) for simple bar chart or stacked bar chart, 
-        - use (group_bar) for grouped bar chart.
-    - (point) Scatter Plots: X,Y: Quantitative/Categorical, Color: Quantitative/Categorical (optional), Size: Quantitative (optional for creating bubble chart), Best for: Relationships, correlations, distributions
-    - (line) Line Charts: X: Temporal (preferred) or ordinal, Y: Quantitative, Color: Categorical (optional for creating multiple lines), Best for: Trends over time, continuous data
-    - (area) Area Charts: X: Temporal (preferred) or ordinal, Y: Quantitative, Color: Categorical (optional for creating stacked areas), Best for: Trends over time, continuous data
-    - (heatmap) Heatmaps: X,Y: Categorical (convert quantitative to nominal), Color: Quantitative intensity, Best for: Pattern discovery in matrix data
-- Introduce additional fields for legends (color, size, facet, etc.) for all the above chart types to enrich the visualization if applicable.
-- After pikcing the chart type, consider which fields will be used for the visualization. Recommend to use 2-3 fields to visualize, maybe 4 if you consider faceted visualization.
-- The visualization fields must be in **tidy format** with respect to the chart type to create the visualization, so it does not make sense to have too many or too few fields. 
-  It should follow guidelines like VegaLite and ggplot2 so that each field is mapped to a visualization axis or legend. 
-- Consider data transformations if you want to visualize multiple fields together.
-  - exapmle 1: suggest reshaping the data into long format in data transformation description 
-        - for example, if you want to visualize sales from regions stored in 5 columns, suggest reshaping the data into long format into 2 columns: region, value.
-        - for example, if you want to visualize max_val, min_val of some value, suggest reshaping the data into long format into 2 columns: value, type (the type column should contain values of "max" or "min").
-        - note: only reshape data to long format for fields of the same type, e.g., they are all about sales, price, etc. don't mix different types of fields (e.g., put sales and price in one column) in reshaping.
-  - exapmle 2: calculate some derived fields from these fields(e.g., correlation, difference, profit etc.) in data transformation description to visualize them in one visualization.
-  - example 3: create a visualization only with a subset of the fields, you don't have to visualize all of them in one chart, you can later create a visualization with the rest of the fields. With the subset of charts, you can also consider reshaping or calculate some derived value.
-  - again, it does not make sense to have five fields like [item, A, B, C, D, E] in one visualization, you should consider data transformation to reduce the number of fields.
-- Describe the data transformation necessary to achieve these visualizations in data_transformation_goal field. It's very common that we need to do some data transformation to achieve the visualization, so think carefully.
-
-You should follow the following format:
-
-```json
-{{
-    "reasoning": "...", // Explain the decision - why continue or present. If continuing, include context about the broader analytical strategy and why the next step is important.
-    "action": {{
-        "description": "...", // Clear description of what the next step explores - MUST build on previous insights
-        "data_transformation_goal": "...", // Describe the data transformation needed to create the visualization
-        "expected_output_fields": ["field1", "field2", ...], // fields expected to be in the transformed data
-        "visualization_type": "bar|point|line|area|heatmap|group_bar", // Recommended chart type 
-        "visualization_fields": ["field1", "field2", ...], // 2-3 fields to visualize (maybe 4 if you consider faceted visualization), it should be a subset of expected_output_fields, the first two fields should always be x and y axes.
-    }} 
-}}
-```
-'''
-
 FOLLOWUP_PROMPT = '''
 You are a data exploration expert to suggest a follow-up analysis to help the user explore their data.
 The user will provide you:
-* the context of data exploration (including input tables they are working with and their analysis questions) in [CONTEXT] section
-* the current result of the exploration (transformed data and visualization) in [CURRENT RESULT] section
+* in [CONTEXT] section, the input data the user is working with
+* in [STEPS] section, the previous analysis results, it is a list of:
+    - analysis question
+    - the code, data, and visualization (if provided) generated to answer this question
 
 Your task is to analyze the current result and decide the next step.
 You should follow the following format:
 
 **Your Task:**
 1. First, interpret what the transformed data and visualization reveal, refer to the context to understand the user's question and the current result.
-2a. If the visualization is broken, propose a follow-up action to fix the issue.
-   - Common issues to address:
-      - data transformation problems: missing or incorrect aggregations, wrong field names, inappropriate grouping, incorrect data types, etc.
-      - visualization problems: chart type not suitable, incorrect field mappings, too many/few data points
-      - analysis focus problems: step description too vague, trying to do too much, missing intermediate calculations
-2b. If the visualization is appropriate, decide whether it's time to stop exploring and present findings to the user.
-   - Have we completed at least 2-3 analysis steps? or been stuck for a few steps?
+2a. Decide whether it's time to stop exploring and present findings to the user.
+   - Can you still suggest good followup questions that are not just incremntal minimal stuff on top of the current result?
+   - Have we completed at least 2-3 analysis steps?
    - Do we have interesting insights to show the user?
-2c. Otherwise, let's continue exploring the question with a new visualization. 
-    - The new visualization should be a non-trivial visualization build on top of the current one. 
-      IMPORTANT: Create a new visualization that should leverage new data transformations (example below) to reveal new insights. (don't just switch field combinations in input tables or just project table with different visualization fields)
-      If there is no new data transformation you can think of, set status to "present" and explain why.
-    - the new visualization don't have to be exactly following the orignal user's question, but an extension of the question that involves new data transformations to reveal new insights.
+2b. Otherwise, let's continue exploring wiht a followup question.
+    - Note that the new question should not lead to an easy incremental followup question. It needs to provide substantial new information.
+    - The new followup question should be a non-trivial question build on top of the current one, it should create a distinct new data with new information (with data transformation). 
+        - don't just switch field combinations in input tables or just project table with different fields
+        - if there is no new data transformation you can think of, set status to "present" and explain why.
+    - the question should be answer based with a data and a visualization (e.g., bar|line|scatter|heatmap that shows trends and insights).
+        - provide hint in the instruction so that transformation result should be in a long format data table suitable for visualization
+        - e.g., if you want to visualize min max temperature trends over time, it should be a long format data table with columns: date, temperature, type where type is either 'min' or 'max' (instead of a wide format data table with columns: date, min_temperature, max_temperature).
     - Consider:
-        - change a metric (e.g., count -> percentage in a heatmap)
-        - add a new dimension, especially derived one (e.g., convert score -> grade, price -> price_bin, date -> month or year)
-        - use different grouping and/or aggregation (e.g., visualize sum of sales amount by region, group by more granular or more general categories, etc.)
-        - add a new color/facet with new categorical fields (e.g., add product_category as facet) to create small multiples
-        - filter the data to focus on the most interesting part (e.g., top 10 customers, top 20 products etc.)
-        - calculate trend of difference of values between two groups (e.g., different between two regions over time, each category's  difference between two time periods, etc.)
+        - change a metric (e.g., count -> percentage if they make difference)
+        - use a different statistical model that is more suitable (e.g., linear model -> non-linear model)
+        - use different data cleaning method to handle outliers if more appropriate (e.g., impute missing values vs remove outliers)
+        - used a new derived field to group data in a different way (e.g., convert score -> grade, price -> price_bin, date -> month or year)
+        - use different grouping methods to show trends in different levels (e.g., visualize sum of sales amount by region, group by more granular or more general categories, etc.)
+        - filter the data to focus on the most interesting part 
+            - show extreme values (e.g., top 10 customers, top 20 products etc.)
+            - show items with certain properties (e.g., items with certain price range, countries in different regions, items with attributes, etc.)
+            - filter items based on metrics (e.g., items with certain sales amount, etc.)
+        - introduce new properties to categorize items (e.g., add indicators of "is_profitable", etc.)
+        - calculate trend of difference of values between two groups 
+            - two groups that are often compared together (e.g., two competitors, two countries)
+            - the same item across different time periods (e.g., a product's sales amount at start and end of the period, etc.)
+            - two time point that display unique trends (e.g., before and after a major event, etc.)
         - use window functions to calculate rolling averages, moving averages, etc.
         - calculate rankings based on metrics and show rank changes over time
     - in reasoning, explain which of the above transformations you leverage and why (or new ones you think of)
     - avoid transformations that cannot be calculated programmatically based on the input data, e.g., looking up zipcode, get continent
-    - for the follow-up visualization, consider the following guidelines:
-        - Consider chart types as follows:
-            - (bar) Bar Charts: X: Categorical (nominal/ordinal), Y: Quantitative, Color: Categorical (optional for group or stacked bar chart), Best for: Comparisons across categories
-                - use (bar) for simple bar chart or stacked bar chart, 
-                - use (group_bar) for grouped bar chart.
-            - (point) Scatter Plots: X,Y: Quantitative/Categorical, Color: Quantitative/Categorical (optional), Size: Quantitative (optional for creating bubble chart), Best for: Relationships, correlations, distributions
-            - (line) Line Charts: X: Temporal (preferred) or ordinal, Y: Quantitative, Color: Categorical (optional for creating multiple lines), Best for: Trends over time, continuous data
-            - (area) Area Charts: X: Temporal (preferred) or ordinal, Y: Quantitative, Color: Categorical (optional for creating stacked areas), Best for: Trends over time, continuous data
-            - (heatmap) Heatmaps: X,Y: Categorical (convert quantitative to nominal), Color: Quantitative intensity, Best for: Pattern discovery in matrix data
-        - Introduce additional fields for legends (color, size, facet, etc.) for all the above chart types to enrich the visualization if applicable.
-        - After pikcing the chart type, consider which fields will be used for the visualization. Recommend to use 2-3 fields to visualize, maybe 4 if you consider faceted visualization.
-        - The visualization fields must be in **tidy format** with respect to the chart type to create the visualization, so it does not make sense to have too many or too few fields. 
-            It should follow guidelines like VegaLite and ggplot2 so that each field is mapped to a visualization axis or legend. 
-        - You need to use following transformations if you want to visualize multiple fields together.
-            - exapmle 1: suggest reshaping the data into long format in data transformation description (if these fields are all of the same type, e.g., they are all about sales, price, two columns about min/max-values, etc. don't mix different types of fields in reshaping) so we can visualize multiple fields as categories or in different facets.
-            - exapmle 2: calculate some derived fields from these fields(e.g., correlation, difference, profit etc.) in data transformation description to visualize them in one visualization.
-            - example 3: create a visualization only with a subset of the fields, you don't have to visualize all of them in one chart, you can later create a visualization with the rest of the fields. With the subset of charts, you can also consider reshaping or calculate some derived value.
-            - again, it does not make sense to have five fields like [item, A, B, C, D, E] in one visualization, you should consider data transformation to reduce the number of fields.
 
-Create a follow-up decision with this format:
+Create a follow-up decision with this format, don't add any other text:
 
 ```json
 {{
-    "assessment": "...", // Assess the current result, describe what you see and what you think about it, is there any issues? how well does it answer the question?
+    "recap": "...", // Recap what previous steps have explored
+    "assessment": "...", // Describe the lastest result, espeially data and visualization, describe what you see and what you think about it, is there any issues? how well does it answer the question?
     "status": "continue|present", // Decision on whether to continue analysis (followup or retry) or present findings  
     "reasoning": "...", // Explain the decision - why continue or present. If continuing, include context about the broader analytical strategy and why the next step is important.
-    "action": {{
-        "description": "...", // Clear description of what the next step explores - MUST build on previous insights
-        "data_transformation_goal": "...", // Describe the data transformation needed to create the visualization
-        "expected_output_fields": ["field1", "field2", ...], // fields expected to be in the transformed data
-        "visualization_type": "bar|point|line|area|heatmap|group_bar", // Recommended chart type 
-        "visualization_fields": ["field1", "field2", ...], // 2-3 (maybe 4 if using facet) fields to visualize, it should be a subset of expected_output_fields, the first two fields should always be x and y axes.
-    }} 
+    "instruction": "...", // Clear description of what the next step should explore - MUST build on previous insights
 }}
 ```
 '''
@@ -189,52 +127,51 @@ class ExplorationAgent(object):
                     "image_url": {"url": f"data:image/png;base64,{img_data}"}
                 }
             
-    def initial(self, input_tables, question, previous_explorations=[]):
-        """
-        Suggest a visualization to help the user to get started exploring their data.
-        """
-
-        data_summary = generate_data_summary(input_tables)
-
-        messages = [
-            {"role": "system", "content": INITIAL_PROMPT},
-            {"role": "user", "content": [
-                {"type": "text", "text": f"""[CONTEXT]\n\n{data_summary}\n\n[QUESTION]\n\n{question}\n\n[PREVIOUS EXPLORATIONS]\n\n{previous_explorations}\n\n[OUTPUT]\n\n"""},
-            ]}
-        ]
-        
-        response = self.client.get_completion(messages)
-
-        return self.process_gpt_response(messages, response)
-
-    def followup(self, transformed_data, visualization: str, dialog=[]):
+    def suggest_followup(self, input_tables, steps: list[dict]):
         """
         Interpret analysis results and decide whether to continue exploration or present findings
         
         Args:
-            context: the context of the exploration, including the input tables and the user's previous exploration question
-            transformed_data: the output data of the previous exploration step ({'name': 'table_name', 'rows': [...], 'description': 'table description'})
-            visualization: the visualization image of the previous exploration step (as base64 string or file path)
+            input_tables: the input tables the user is working with
+            steps: the previous analysis results, it is a list of:
+                - analysis question
+                - the code, data, and visualization generated to answer this question
             
         Returns:
             the followup analysis based on the previous results
         """
         
-        # Generate data summary
-        if 'name' not in transformed_data:
-            transformed_data['name'] = 'table_0'
-        data_summary = generate_data_summary([transformed_data])
+        data_summary = generate_data_summary(input_tables)
 
         # Prepare messages for the completion call
         messages = [
             {"role": "system", "content": FOLLOWUP_PROMPT},
-            *[r for r in dialog if r['role'] != 'system'],
-            {"role": "user", "content": [
-                {"type": "text", "text": f"""[CURRENT RESULT]\n\n**data summary**:\n\n{data_summary}\n\n**visualization**: reference to the visualization image\n\n[OUTPUT]\n\n"""},
-                self.get_chart_message(visualization)
-            ]}
+            {"role": "user", "content": f"[CONTEXT]\n\n{data_summary}"},
+            
         ]
-        
+
+        for i,step in enumerate(steps):
+            code = step['code']
+            if 'name' not in step['data']:
+                step['data']['name'] = f'table-s-{i+1}'
+            data = generate_data_summary([step['data']])
+
+            if step['visualization']:
+                chart_message = self.get_chart_message(step['visualization'])
+                
+                # Create content array with text and image
+                content = [
+                    {"type": "text", "text": f"[STEP {i+1}] \n\n**Question**: {step['question']}\n\n **Code**:\n```{code}``` \n\n**Transformed Data Sample**:\n{data}\n\n**Visualization**:"}
+                ]
+                content.append(chart_message)
+            else:
+                content = [
+                    {"type": "text", "text": f"[STEP {i+1}] \n\n**Question**: {step['question']}\n\n **Code**:\n```{code}``` \n\n**Transformed Data Sample**:\n{data}"}
+                ]
+            
+            messages.append({"role": "user", "content": content})
+
         response = self.client.get_completion(messages)
+
         
         return self.process_gpt_response(messages, response)
