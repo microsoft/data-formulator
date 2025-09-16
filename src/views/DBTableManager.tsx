@@ -260,7 +260,7 @@ export const DBTableSelectionDialog: React.FC<{
     }
 
     useEffect(() => {
-        fetchTables();
+        //fetchTables();
         fetchDataLoaders();
     }, []);
 
@@ -536,44 +536,50 @@ export const DBTableSelectionDialog: React.FC<{
 
     let importButton = (buttonElement: React.ReactNode) => {
         return <Tooltip title="import a duckdb .db file to the local database">
-            <Button variant="text" sx={{fontSize: "inherit", minWidth: "auto"}} component="label" disabled={isUploading}>
-                {buttonElement}
-                <input type="file" hidden onChange={handleDBUpload} accept=".db" disabled={isUploading} />
-            </Button>
+            <span>
+                <Button variant="text" sx={{fontSize: "inherit", minWidth: "auto"}} component="label" disabled={isUploading}>
+                    {buttonElement}
+                    <input type="file" hidden onChange={handleDBUpload} accept=".db" disabled={isUploading} />
+                </Button>
+            </span>
         </Tooltip>
     }
 
     let exportButton = 
         <Tooltip title="save the local database to a duckdb .db file">
-            <Button variant="text" size="small" onClick={() => {
-                handleDBDownload(sessionId ?? '')
-                    .catch(error => {
-                        console.error('Failed to download database:', error);
-                        setSystemMessage('Failed to download database file', "error");
-                    });
-            }} disabled={isUploading || dbTables.length === 0}>
-                export
-            </Button>
+            <span>
+                <Button variant="text" size="small" onClick={() => {
+                    handleDBDownload(sessionId ?? '')
+                        .catch(error => {
+                            console.error('Failed to download database:', error);
+                            setSystemMessage('Failed to download database file', "error");
+                        });
+                }} disabled={isUploading || dbTables.length === 0}>
+                    export
+                </Button>
+            </span>
         </Tooltip>
 
     function uploadFileButton(element: React.ReactNode, buttonSx?: SxProps) {
         return (
             <Tooltip title="upload a csv/tsv file to the local database">
-                <Button
-                    variant="text"
-                    component="label"
-                    sx={{ fontSize: "inherit", ...buttonSx}}                    
-                    disabled={isUploading}
-                >
-                    {element}
-                    <input
-                        type="file"
-                        hidden
-                        onChange={handleDBFileUpload}
-                        accept=".csv,.xlsx,.json"
+                <span>
+                    <Button
+                        variant="text"
+                        component="label"
+                        sx={{ fontSize: "inherit", ...buttonSx}}                    
                         disabled={isUploading}
-                    />
-                </Button>
+                    >
+                        {element}
+                        <input
+                            type="file"
+                            hidden
+                            onChange={handleDBFileUpload}
+                            accept=".csv,.xlsx,.json"
+                            disabled={isUploading}
+                        />
+                    </Button>
+                </span>
             </Tooltip>
         );
     }

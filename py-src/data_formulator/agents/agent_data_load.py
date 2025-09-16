@@ -13,9 +13,9 @@ logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = '''You are a data scientist to help user infer data types based off the table provided by the user.
 Given a dataset provided by the user, 
-1. suggest a descriptive name for the table if the table name is a generic name like table-xx, the suggested name should best capture meaning of the table but also very concise.
-    - if the table name is already descriptive, do not change it.
-    - table name should be of format "table-name" (e.g., "income", "weather-seattle-atlanta")
+1. suggest a descriptive name for the table if the table name is a generic name like table-6, the suggested name should best capture meaning of the table but also very concise.
+    - if the table already have a descriptive name provided in the bracket (...), use it; if the provided name is not descriptive, suggest a new name.
+    - format table name using '-' when it contains multiple words (e.g., "income", "weather-seattle-atlanta")
     - the suggested table name should be similar to variable names that are very descriptive and concise, no more than 3 words.
 2. identify their type and semantic type
 3. provide a very short summary of the dataset.

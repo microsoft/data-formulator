@@ -92,7 +92,14 @@ export interface DataFormulatorState {
     dataLoaderConnectParams: Record<string, Record<string, string>>; // {table_name: {param_name: param_value}}
     
     // which table is the agent working on
-    agentWorkInProgress: {actionId: string, tableId: string, description: string}[];
+    agentActions: {
+        actionId: string, 
+        tableId: string, 
+        description: string, 
+        status: 'running' | 'completed' | 'failed',
+        lastUpdate: number, // the time the action is last updated
+        hidden: boolean // whether the action is hidden
+    }[];
 
     // Data cleaning dialog state
     dataCleanBlocks: DataCleanBlock[];
@@ -136,7 +143,7 @@ const initialState: DataFormulatorState = {
 
     dataLoaderConnectParams: {},
     
-    agentWorkInProgress: [],
+    agentActions: [],
 
     dataCleanBlocks: [],
     cleanInProgress: false,
@@ -302,7 +309,7 @@ export const dataFormulatorSlice = createSlice({
             state.dataCleanBlocks = [];
             state.cleanInProgress = false;
 
-            state.agentWorkInProgress = [];
+            state.agentActions = [];
             
             //state.dataLoaderConnectParams = initialState.dataLoaderConnectParams;
         },
@@ -340,17 +347,18 @@ export const dataFormulatorSlice = createSlice({
             state.dataCleanBlocks = savedState.dataCleanBlocks || [];
             state.cleanInProgress = false;
 
-            state.agentWorkInProgress = savedState.agentWorkInProgress || [];
+            state.agentActions = savedState.agentActions || [];
         },
-        setAgentWorkInProgress: (state, action: PayloadAction<{actionId: string, tableId: string, description: string}>) => {
-            if (state.agentWorkInProgress.some(a => a.actionId == action.payload.actionId)) {
-                state.agentWorkInProgress = state.agentWorkInProgress.map(a => a.actionId == action.payload.actionId ? action.payload : a);
+        udpateAgentWorkInProgress: (state, action: PayloadAction<{actionId: string, tableId?: string, description: string, status: 'running' | 'completed' | 'failed', hidden: boolean}>) => {
+            if (state.agentActions.some(a => a.actionId == action.payload.actionId)) {
+                state.agentActions = state.agentActions.map(a => a.actionId == action.payload.actionId ? 
+                    {...a, ...action.payload, lastUpdate: Date.now()} : a);
             } else {
-                state.agentWorkInProgress = [...state.agentWorkInProgress, action.payload];
+                state.agentActions = [...state.agentActions, {...action.payload, tableId: action.payload.tableId || "", lastUpdate: Date.now(), hidden: action.payload.hidden}];
             }
         },
         deleteAgentWorkInProgress: (state, action: PayloadAction<string>) => {
-            state.agentWorkInProgress = state.agentWorkInProgress.filter(a => a.actionId != action.payload);
+            state.agentActions = state.agentActions.filter(a => a.actionId != action.payload);
         },
         setServerConfig: (state, action: PayloadAction<ServerConfig>) => {
             state.serverConfig = action.payload;
@@ -393,13 +401,12 @@ export const dataFormulatorSlice = createSlice({
         },
         loadTable: (state, action: PayloadAction<DictTable>) => {
             let table = action.payload;
-            let freshChart = generateFreshChart(table.id, '?') as Chart;
             state.tables = [...state.tables, table];
-            state.charts = [...state.charts, freshChart];
+            state.charts = [...state.charts];
             state.conceptShelfItems = [...state.conceptShelfItems, ...getDataFieldItems(table)];
 
             state.focusedTableId = table.id;
-            state.focusedChartId = freshChart.id;
+            state.focusedChartId = undefined;
         },
         deleteTable: (state, action: PayloadAction<string>) => {
             let tableId = action.payload;
@@ -803,12 +810,12 @@ export const dataFormulatorSlice = createSlice({
                     let table = state.tables.find(t => t.id == tableId) as DictTable;
 
                     // avoid duplicate display ids
-                    let existingDisplayIds = state.tables.map(t => t.displayId);
+                    let existingDisplayIds = state.tables.filter(t => t.id == tableId).map(t => t.displayId);
                     let suffix = "";
-                    let displayId = `data-${data["result"][0]["suggested_table_name"] as string}${suffix}`;
+                    let displayId = `${data["result"][0]["suggested_table_name"] as string}${suffix}`;
                     let suffixId = 1;
                     while (existingDisplayIds.includes(displayId)) {
-                        displayId = `data-${data["result"][0]["suggested_table_name"] as string}${suffixId}`;
+                        displayId = `${data["result"][0]["suggested_table_name"] as string}${suffixId}`;
                         suffixId++;
                         suffix = `-${suffixId}`;
                     }

@@ -23,9 +23,12 @@ You should follow the following format:
 **Your Task:**
 1. First, interpret what the transformed data and visualization reveal, refer to the context to understand the user's question and the current result.
 2a. Decide whether it's time to stop exploring and present findings to the user.
-   - Can you still suggest good followup questions that are not just incremntal minimal stuff on top of the current result?
-   - Have we completed at least 2-3 analysis steps?
-   - Do we have interesting insights to show the user?
+    - Can you still suggest good followup questions that are not just incremntal minimal stuff on top of the current result?
+    - Have we completed at least 2-3 analysis steps?
+    - Do we have interesting insights to show the user?
+    - be ready to wrap up when we have 4-5 analysis steps.
+    - if you are ready to wrap up, set status to "present" and explain communicate a breif summary of what you have explored in bullet points in 'instruction' (very concise, no more than 3 bullet points).
+    - if the question and the context mismatch, set status to "warning" and explain very briefly why stop and what you need from the user in 'instruction' (make it very concise and polite with 'it looks like...').
 2b. Otherwise, let's continue exploring wiht a followup question.
     - Note that the new question should not lead to an easy incremental followup question. It needs to provide substantial new information.
     - The new followup question should be a non-trivial question build on top of the current one, it should create a distinct new data with new information (with data transformation). 
@@ -58,11 +61,11 @@ Create a follow-up decision with this format, don't add any other text:
 
 ```json
 {{
-    "recap": "...", // Recap what previous steps have explored
+    "recap": "...", // Recap what previous steps have explored in bullet points
     "assessment": "...", // Describe the lastest result, espeially data and visualization, describe what you see and what you think about it, is there any issues? how well does it answer the question?
-    "status": "continue|present", // Decision on whether to continue analysis (followup or retry) or present findings  
+    "status": "continue|present|warning", // Decision on whether to continue analysis, or present findings or warning 
     "reasoning": "...", // Explain the decision - why continue or present. If continuing, include context about the broader analytical strategy and why the next step is important.
-    "instruction": "...", // Clear description of what the next step should explore - MUST build on previous insights
+    "instruction": "...", // if status is "continue", clear description of what the next step should explore - MUST build on previous insights; if status is "present", clear and concise summary of the findings and insights in bullet points based on all analysis steps.
 }}
 ```
 '''

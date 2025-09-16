@@ -38,6 +38,10 @@ import AnchorIcon from '@mui/icons-material/Anchor';
 import PanoramaFishEyeIcon from '@mui/icons-material/PanoramaFishEye';
 import InsightsIcon from '@mui/icons-material/Insights';
 import CheckIcon from '@mui/icons-material/Check';
+import CloseIcon from '@mui/icons-material/Close';
+import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
+import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
+import CancelOutlinedIcon from '@mui/icons-material/CancelOutlined';
 
 import _ from 'lodash';
 import { getChartTemplate } from '../components/ChartTemplates';
@@ -57,6 +61,130 @@ import PrecisionManufacturingIcon from '@mui/icons-material/PrecisionManufacturi
 import { alpha } from '@mui/material/styles';
 
 import { dfSelectors } from '../app/dfSlice';
+
+// Agent Status Box Component
+const AgentStatusBox = memo<{
+    tableId: string;
+    relevantAgentActions: any[];
+    agentStatus: string;
+    getAgentStatusColor: (status: string) => string;
+    dispatch: any;
+}>(({ tableId, relevantAgentActions, agentStatus, getAgentStatusColor, dispatch }) => {
+    const thinkingBanner = (
+        <Box sx={{ 
+            py: 0.5, 
+            display: 'flex', 
+            position: 'relative',
+            overflow: 'hidden',
+            '&::before': {
+                content: '""',
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%',
+                height: '100%',
+                background: 'linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.8) 50%, transparent 100%)',
+                animation: 'windowWipe 2s ease-in-out infinite',
+                zIndex: 1,
+                pointerEvents: 'none',
+            }
+        }}>
+            <Box sx={{ 
+                py: 1, 
+                display: 'flex', 
+                alignItems: 'center', 
+                justifyContent: 'left',
+            }}>
+                <CircularProgress size={10} sx={{ color: 'text.secondary' }} />
+                <Typography variant="body2" sx={{ 
+                    ml: 1, 
+                    fontSize: 10, 
+                    color: 'rgba(0, 0, 0, 0.7) !important'
+                }}>
+                    thinking...
+                </Typography>
+            </Box>
+        </Box>
+    );
+
+    if (relevantAgentActions.length === 0) {
+        return null;
+    }
+
+    return (
+        <Box sx={{ padding: '0px 8px' }}>
+            {agentStatus === 'running' ? thinkingBanner : (
+                <Box sx={{ 
+                    py: 1, 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    justifyContent: 'left',
+                    '& .MuiSvgIcon-root, .MuiTypography-root': {
+                        fontSize: 10,
+                        color: getAgentStatusColor(agentStatus)
+                    },
+                }}>
+                    {agentStatus === 'completed' && <CheckCircleOutlineIcon />}
+                    {agentStatus === 'failed' && <CancelOutlinedIcon />}
+                    {agentStatus === 'warning' && <HelpOutlineIcon />}
+                    <Typography variant="body2" sx={{ 
+                        ml: 0.5, 
+                        fontSize: 10,
+                    }}>
+                        {agentStatus === 'warning' ? 'hmm...' : agentStatus === 'failed' ? 'oops...' : agentStatus}
+                    </Typography>
+                    <Tooltip title="Delete message">
+                        <IconButton
+                            className="delete-button"
+                            size="small"
+                            sx={{
+                                padding: '2px',
+                                ml: 'auto',
+                                transition: 'opacity 0.2s ease-in-out',
+                                '& .MuiSvgIcon-root': { fontSize: 12, color: 'darkgray !important' }
+                            }}
+                            onClick={(event) => {
+                                event.stopPropagation();
+                                dispatch(dfActions.deleteAgentWorkInProgress(relevantAgentActions[0].actionId));
+                            }}
+                        >
+                            <CloseIcon fontSize="small" />
+                        </IconButton>
+                    </Tooltip>
+                </Box>
+            )}
+            {relevantAgentActions.map((a, index, array) => (
+                <React.Fragment key={a.actionId + "-" + index}>
+                    <Box sx={{ 
+                        position: 'relative',
+                    }}>
+                        <Typography variant="body2" sx={{ 
+                            ml: 1, fontSize: 10, 
+                            color: getAgentStatusColor(a.status),
+                            whiteSpace: 'pre-wrap'
+                        }}>
+                            {a.description.split('\n').map((line: string, index: number) => (
+                                <React.Fragment key={index}>
+                                    {line}
+                                    {index < a.description.split('\n').length - 1 && <Divider sx={{ my: 0.5, }} />}
+                                </React.Fragment>
+                            ))}
+                        </Typography>
+                        
+                    </Box>
+                    {index < array.length - 1 && array.length > 1 && (
+                        <Box sx={{ 
+                            ml: 1, 
+                            height: '1px', 
+                            backgroundColor: 'rgba(0, 0, 0, 0.2)', 
+                            my: 0.5 
+                        }} />
+                    )}
+                </React.Fragment>
+            ))}
+        </Box>
+    );
+});
 
 let buildChartCard = (chartElement: { tableId: string, chartId: string, element: any },
     focusedChartId?: string) => {
@@ -214,7 +342,8 @@ let SingleThreadGroupView: FC<{
     let charts = useSelector(dfSelectors.getAllCharts);
     let focusedChartId = useSelector((state: DataFormulatorState) => state.focusedChartId);
     let focusedTableId = useSelector((state: DataFormulatorState) => state.focusedTableId);
-    let agentWorkInProgress = useSelector((state: DataFormulatorState) => state.agentWorkInProgress);
+    let agentActions = useSelector((state: DataFormulatorState) => state.agentActions);
+
 
     let handleUpdateTableDisplayId = (tableId: string, displayId: string) => {
         dispatch(dfActions.updateTableDisplayId({
@@ -314,13 +443,13 @@ let SingleThreadGroupView: FC<{
 
         let tableCardIcon =  ( table?.anchored ? 
             <AnchorIcon sx={{ 
-                fontSize: tableId === focusedTableId ? 20 : 16,
+                fontSize: 16,
                 color: tableId === focusedTableId ? theme.palette.primary.main : 'rgba(0,0,0,0.5)',
                 fontWeight: tableId === focusedTableId ? 'bold' : 'normal',
             }} /> : 
             <TableRowsIcon sx={{ fontSize: 16 }} /> )
 
-        let regularTableBox = <Box ref={relevantCharts.some(c => c.chartId == focusedChartId) ? scrollRef : null} 
+        let regularTableBox = <Box key={`regular-table-box-${tableId}`} ref={relevantCharts.some(c => c.chartId == focusedChartId) ? scrollRef : null} 
             sx={{ padding: '0px' }}>
             <Card className={`data-thread-card ${selectedClassName}`} variant="outlined"
                 sx={{ width: '100%', backgroundColor: alpha(theme.palette.primary.light, 0.1),
@@ -357,29 +486,7 @@ let SingleThreadGroupView: FC<{
                             event.stopPropagation();
                             dispatch(dfActions.updateTableAnchored({tableId: tableId, anchored: !table?.anchored}));
                         }}>
-                            <Tooltip title={table?.anchored ? "unanchor table" : "anchor table"}>
-                                <span>  {/* Wrapper span needed for disabled IconButton tooltip */}
-                                    <IconButton color="primary" sx={{
-                                        minWidth: 0, 
-                                        padding: 0.25,
-                                        '&:hover': {
-                                            transform: 'scale(1.1)',
-                                            transition: 'all 0.2s ease',
-                                        },
-                                        '&.Mui-disabled': {
-                                            color: 'rgba(0, 0, 0, 0.5)'
-                                        }
-                                    }} 
-                                    size="small" 
-                                    disabled={table?.derive == undefined || tables.some(t => t.derive?.trigger.tableId == tableId)}
-                                    onClick={(event) => {
-                                        event.stopPropagation();
-                                        dispatch(dfActions.updateTableAnchored({tableId: tableId, anchored: !table?.anchored}));
-                                    }}>
-                                        {tableCardIcon}
-                                    </IconButton>
-                                </span>
-                            </Tooltip>
+                            {tableCardIcon}
                         </IconButton>
                         <Box sx={{ margin: '4px 8px 4px 2px', display: 'flex', alignItems: 'center' }}>
                             {table?.virtual? <CloudQueueIcon sx={{ fontSize: 10, }} /> : ""}
@@ -398,28 +505,31 @@ let SingleThreadGroupView: FC<{
                         </Box>
                     </Stack>
                     <ButtonGroup aria-label="Basic button group" variant="text" sx={{ textAlign: 'end', margin: "auto 2px auto auto" }}>
-                        {tableDeleteEnabled && <Tooltip title="delete table">
+                        {tableDeleteEnabled && <Tooltip key="delete-table-btn-tooltip" title="delete table">
                             <IconButton aria-label="share" size="small" sx={{ padding: 0.25, '&:hover': {
                                 transform: 'scale(1.2)',
                                 transition: 'all 0.2s ease'
-                            } }}>
-                                <DeleteIcon fontSize="small" sx={{ fontSize: 18 }} color='warning'
-                                    onClick={(event) => {
-                                        event.stopPropagation();
-                                        dispatch(dfActions.deleteTable(tableId));
-                                    }} />
+                                } }}
+                                onClick={(event) => {
+                                    event.stopPropagation();
+                                    dispatch(dfActions.deleteTable(tableId));
+                                }}
+                            >
+                                <DeleteIcon fontSize="small" sx={{ fontSize: 18 }} color='warning'/>
                             </IconButton>
                         </Tooltip>}
-                        <Tooltip title="create a new chart">
+                        <Tooltip key="create-new-chart-btn-tooltip" title="create a new chart">
                             <IconButton aria-label="share" size="small" sx={{ padding: 0.25, '&:hover': {
                                 transform: 'scale(1.2)',
                                 transition: 'all 0.2s ease'
-                            } }}>
-                                <AddchartIcon fontSize="small" sx={{ fontSize: 18 }} color='primary'
-                                    onClick={(event) => {
-                                        event.stopPropagation();
-                                        dispatch(dfActions.createNewChart({ tableId: tableId, chartType: '?' }));
-                                    }} />
+                                } }}
+                                onClick={(event) => {
+                                    event.stopPropagation();
+                                    dispatch(dfActions.setFocusedTable(tableId));
+                                    dispatch(dfActions.setFocusedChart(undefined));
+                                }}
+                            >   
+                                <AddchartIcon fontSize="small" sx={{ fontSize: 18 }} color='primary'/>
                             </IconButton>
                         </Tooltip>
                     </ButtonGroup>
@@ -429,10 +539,47 @@ let SingleThreadGroupView: FC<{
 
         let chartElementProps = collapsed ? { display: 'flex', flexWrap: 'wrap' } : {}
 
+        let relevantAgentActions = agentActions.filter(a => a.tableId == tableId).filter(a => a.hidden == false);
+
+        let agentStatus = undefined;
+        let getAgentStatusColor = (status: string) => {
+            switch (status) {
+                case 'running':
+                    return `${theme.palette.text.secondary} !important`;
+                case 'completed':
+                    return `${theme.palette.success.main} !important`;
+                case 'failed':
+                    return `${theme.palette.error.main} !important`;
+                case 'warning':
+                    return `${theme.palette.warning.main} !important`;
+                default:
+                    return `${theme.palette.text.secondary} !important`;
+            }
+        }
+        if (relevantAgentActions.some(a => a.status == 'running')) {
+            agentStatus = 'running';
+        } else if (relevantAgentActions.every(a => a.status == 'completed')) {
+            agentStatus = 'completed';
+        } else if (relevantAgentActions.every(a => a.status == 'failed')) {
+            agentStatus = 'failed';
+        } else {
+            agentStatus = 'warning';
+        }
+
+        let agentActionBox = (
+            <AgentStatusBox 
+                tableId={tableId}
+                relevantAgentActions={relevantAgentActions}
+                agentStatus={agentStatus}
+                getAgentStatusColor={getAgentStatusColor}
+                dispatch={dispatch}
+            />
+        )
+
         return [
             regularTableBox,
             <Box
-                key={`table-${tableId}`}
+                key={`table-associated-elements-box-${tableId}`}
                 sx={{ display: 'flex', flexDirection: 'row' }}>
                 {!leafTableIds.includes(tableId) && <Box sx={{
                     minWidth: '1px', padding: '0px', width: '16px', flex: 'none', display: 'flex',
@@ -448,31 +595,7 @@ let SingleThreadGroupView: FC<{
                 </Box>}
                 <Box sx={{ flex: 1, padding: '8px 0px', minHeight: '8px', ...chartElementProps }}>
                     {releventChartElements}
-                    {(agentWorkInProgress.some(a => a.tableId == tableId) )&& 
-                        <Box sx={{ py: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', }}>
-                            <PrecisionManufacturingIcon sx={{ 
-                                fontSize: 16, 
-                                color: 'rgba(0,0,0,0.5)',
-                                animation: 'spin 2s linear infinite',
-                                '@keyframes spin': {
-                                    '0%': {
-                                        transform: 'scale(1)',
-                                    },
-                                    '25%': {
-                                        transform: 'rotate(30deg) scale(1.5)',
-                                    },
-                                    '50%': {
-                                        transform: 'scale(1)',
-                                    },
-                                    '75%': {
-                                        transform: 'rotate(330deg) scale(1.5)',
-                                    },
-                                    '100%': {
-                                        transform: 'rotate(360deg) scale(1)',
-                                    },
-                                }
-                            }} />
-                        </Box>}
+                    {agentActionBox}
                 </Box>
             </Box>
         ]
@@ -530,7 +653,7 @@ let SingleThreadGroupView: FC<{
                 borderBottom: `3px solid ${theme.palette.primary.light}` }}></Box>
         }
 
-        return <Stack sx={{ ml: stackML , width: '208px', display: 'flex', flexDirection: 'row', 
+        return <Stack key={`leaf-table-stack-${lt.id}`} sx={{ ml: stackML , width: '208px', display: 'flex', flexDirection: 'row', 
                 borderLeft: leftBorder, }}>
             {spaceBox}
             <Box sx={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
@@ -539,7 +662,7 @@ let SingleThreadGroupView: FC<{
             </Box>
         </Stack>;
     }) : leafTables.map((lt, i) => {
-        return <Stack sx={{ ml: 0 , width: '192px', display: 'flex', flexDirection: 'row' }}>
+        return <Stack key={`leaf-table-stack-${lt.id}`} sx={{ ml: 0 , width: '192px', display: 'flex', flexDirection: 'row' }}>
             <Box sx={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
                 {lt.derive?.trigger && buildTriggerCard(lt.derive.trigger)}
                 {buildTableCard(lt.id)}
@@ -548,7 +671,9 @@ let SingleThreadGroupView: FC<{
     });
 
     return <Box sx={{ ...sx, 
-            '& .selected-card': { border: `2px solid ${theme.palette.primary.light}` },
+            '& .selected-card': { 
+                border: `2px solid ${theme.palette.primary.light}`,
+            },
             '& .MuiTypography-root': {
                 color: isThreadFocused ? theme.palette.text.primary : theme.palette.text.secondary,
             },
@@ -1018,9 +1143,11 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
                 </Box>
                 
                 <Tooltip title={drawerOpen ? "collapse" : "expand"}>
-                    <IconButton size={'small'} color="primary" disabled={leafTables.length <= 1} onClick={() => { setThreadDrawerOpen(!threadDrawerOpen); }}>
-                        {drawerOpen ? <ChevronLeftIcon /> : <ChevronRightIcon />}
-                    </IconButton>
+                    <span>
+                        <IconButton size={'small'} color="primary" disabled={leafTables.length <= 1} onClick={() => { setThreadDrawerOpen(!threadDrawerOpen); }}>
+                            {drawerOpen ? <ChevronLeftIcon /> : <ChevronRightIcon />}
+                        </IconButton>
+                    </span>
                 </Tooltip>
             </Box>
 

@@ -86,7 +86,6 @@ def list_tables():
             "tables": result
         })
     except Exception as e:
-        logger.error(f"Error listing tables: {str(e)}")
         safe_msg, status_code = sanitize_db_error_message(e)
         return jsonify({
             "status": "error",

@@ -301,7 +301,7 @@ const ResetDialog: React.FC = () => {
                 <DialogTitle sx={{ display: "flex", alignItems: "center" }}>Reset Session?</DialogTitle>
                 <DialogContent>
                     <DialogContentText>
-                        <Typography>All unexported content (charts, derived data, concepts) will be lost upon reset.</Typography>
+                        All unexported content (charts, derived data, concepts) will be lost upon reset.
                     </DialogContentText>
                 </DialogContent>
                 <DialogActions>
@@ -347,120 +347,115 @@ const ConfigDialog: React.FC = () => {
     return (
         <>
             <Button variant="text" sx={{textTransform: 'none'}} onClick={() => setOpen(true)} startIcon={<SettingsIcon />}>
-                Config
+                Settings
             </Button>
             <Dialog onClose={() => setOpen(false)} open={open}>
-                <DialogTitle>Data Formulator Configuration</DialogTitle>
+                <DialogTitle>Settings</DialogTitle>
                 <DialogContent>
-                    <DialogContentText>
-                        <Box sx={{ 
-                            display: 'flex', 
-                            flexDirection: 'column', 
-                            gap: 3,
-                            maxWidth: 400
-                        }}>
-                            <Divider><Typography variant="caption">Frontend configuration</Typography></Divider>
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                                <Box sx={{ flex: 1 }}>
-                                    <TextField
-                                        label="default chart width"
-                                        type="number"
-                                        variant="outlined"
-                                        value={defaultChartWidth}
-                                        onChange={(e) => {
-                                            const value = parseInt(e.target.value);
-                                            setDefaultChartWidth(value);
-                                        }}
-                                        fullWidth
-                                        inputProps={{
-                                            min: 100,
-                                            max: 1000
-                                        }}
-                                        error={defaultChartWidth < 100 || defaultChartWidth > 1000}
-                                        helperText={defaultChartWidth < 100 || defaultChartWidth > 1000 ? 
-                                            "Value must be between 100 and 1000 pixels" : ""}
-                                    />
-                                </Box>
-                                <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
-                                    <ClearIcon fontSize="small" />
-                                </Typography>
-                                <Box sx={{ flex: 1 }}>
-                                    <TextField
-                                        label="default chart height"
-                                        type="number"
-                                        variant="outlined"
-                                        value={defaultChartHeight}
-                                        onChange={(e) => {
-                                            const value = parseInt(e.target.value);
-                                            setDefaultChartHeight(value);
-                                        }}
-                                        fullWidth
-                                        inputProps={{
-                                            min: 100,
-                                            max: 1000
-                                        }}
-                                        error={defaultChartHeight < 100 || defaultChartHeight > 1000}
-                                        helperText={defaultChartHeight < 100 || defaultChartHeight > 1000 ? 
-                                            "Value must be between 100 and 1000 pixels" : ""}
-                                    />
-                                </Box>
+                    <Box sx={{ 
+                        display: 'flex', 
+                        flexDirection: 'column', 
+                        gap: 3,
+                        maxWidth: 400
+                    }}>
+                        <Divider><Typography variant="caption">Frontend</Typography></Divider>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                            <Box sx={{ flex: 1 }}>
+                                <TextField
+                                    label="default chart width"
+                                    type="number"
+                                    variant="outlined"
+                                    value={defaultChartWidth}
+                                    onChange={(e) => {
+                                        const value = parseInt(e.target.value);
+                                        setDefaultChartWidth(value);
+                                    }}
+                                    fullWidth
+                                    inputProps={{
+                                        min: 100,
+                                        max: 1000
+                                    }}
+                                    error={defaultChartWidth < 100 || defaultChartWidth > 1000}
+                                    helperText={defaultChartWidth < 100 || defaultChartWidth > 1000 ? 
+                                        "Value must be between 100 and 1000 pixels" : ""}
+                                />
                             </Box>
-                            <Divider><Typography variant="caption">Backend configuration</Typography></Divider>
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                                <Box sx={{ flex: 1 }}>
-                                    <TextField
-                                        label="formulate timeout (seconds)"
-                                        type="number"
-                                        variant="outlined"
-                                        value={formulateTimeoutSeconds}
-                                        onChange={(e) => {
-                                            const value = parseInt(e.target.value);
-                                            setFormulateTimeoutSeconds(value);
-                                        }}
-                                        inputProps={{
-                                            min: 0,
-                                            max: 3600,
-                                        }}
-                                        error={formulateTimeoutSeconds <= 0 || formulateTimeoutSeconds > 3600}
-                                        helperText={formulateTimeoutSeconds <= 0 || formulateTimeoutSeconds > 3600 ? 
-                                            "Value must be between 1 and 3600 seconds" : ""}
-                                        fullWidth
-                                    />
-                                    <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
-                                        Maximum time allowed for the formulation process before timing out. 
-                                    </Typography>
-                                </Box>
-                            </Box>
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                                <Box sx={{ flex: 1 }}>
-                                    <TextField
-                                        label="max repair attempts"
-                                        type="number"
-                                        variant="outlined"
-                                        value={maxRepairAttempts}
-                                        onChange={(e) => {
-                                            const value = parseInt(e.target.value);
-                                            setMaxRepairAttempts(value);
-                                        }}
-                                        fullWidth
-                                        inputProps={{
-                                            min: 1,
-                                            max: 5,
-                                        }}
-                                        error={maxRepairAttempts <= 0 || maxRepairAttempts > 5}
-                                        helperText={maxRepairAttempts <= 0 || maxRepairAttempts > 5 ? 
-                                            "Value must be between 1 and 5" : ""}
-                                    />
-                                    <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
-                                        Maximum number of times the LLM will attempt to repair code if generated code fails to execute (recommended = 1).
-                                    </Typography>
-                                    <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
-                                        Higher values might slightly increase the chance of success but can crash the backend. Repair time is as part of the formulate timeout.
-                                    </Typography>
-                                </Box>
+                            <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+                                <ClearIcon fontSize="small" />
+                            </Typography>
+                            <Box sx={{ flex: 1 }}>
+                                <TextField
+                                    label="default chart height"
+                                    type="number"
+                                    variant="outlined"
+                                    value={defaultChartHeight}
+                                    onChange={(e) => {
+                                        const value = parseInt(e.target.value);
+                                        setDefaultChartHeight(value);
+                                    }}
+                                    fullWidth
+                                    inputProps={{
+                                        min: 100,
+                                        max: 1000
+                                    }}
+                                    error={defaultChartHeight < 100 || defaultChartHeight > 1000}
+                                    helperText={defaultChartHeight < 100 || defaultChartHeight > 1000 ? 
+                                        "Value must be between 100 and 1000 pixels" : ""}
+                                />
                             </Box>
                         </Box>
-                    </DialogContentText>
+                        <Divider><Typography variant="caption">Backend</Typography></Divider>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                            <Box sx={{ flex: 1 }}>
+                                <TextField
+                                    label="formulate timeout (seconds)"
+                                    type="number"
+                                    variant="outlined"
+                                    value={formulateTimeoutSeconds}
+                                    onChange={(e) => {
+                                        const value = parseInt(e.target.value);
+                                        setFormulateTimeoutSeconds(value);
+                                    }}
+                                    inputProps={{
+                                        min: 0,
+                                        max: 3600,
+                                    }}
+                                    error={formulateTimeoutSeconds <= 0 || formulateTimeoutSeconds > 3600}
+                                    helperText={formulateTimeoutSeconds <= 0 || formulateTimeoutSeconds > 3600 ? 
+                                        "Value must be between 1 and 3600 seconds" : ""}
+                                    fullWidth
+                                />
+                                <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+                                    Maximum time allowed for the formulation process before timing out. 
+                                </Typography>
+                            </Box>
+                        </Box>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                            <Box sx={{ flex: 1 }}>
+                                <TextField
+                                    label="max repair attempts"
+                                    type="number"
+                                    variant="outlined"
+                                    value={maxRepairAttempts}
+                                    onChange={(e) => {
+                                        const value = parseInt(e.target.value);
+                                        setMaxRepairAttempts(value);
+                                    }}
+                                    fullWidth
+                                    inputProps={{
+                                        min: 1,
+                                        max: 5,
+                                    }}
+                                    error={maxRepairAttempts <= 0 || maxRepairAttempts > 5}
+                                    helperText={maxRepairAttempts <= 0 || maxRepairAttempts > 5 ? 
+                                        "Value must be between 1 and 5" : ""}
+                                />
+                                <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+                                    How many attempts LLM will make to repair code if code fails to execute (recommended = 1, higher values might increase the chance of success but it's slow).
+                                </Typography>
+                            </Box>
+                        </Box>
+                    </Box>
                 </DialogContent>
                 <DialogActions sx={{'.MuiButton-root': {textTransform: 'none'}}}>
                     <Button sx={{marginRight: 'auto'}} onClick={() => {

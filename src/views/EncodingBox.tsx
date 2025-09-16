@@ -646,7 +646,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
         clearOnBlur
         handleHomeEndKeys
         autoHighlight
-        id="free-solo-with-text-demo"
+        id={`autocomplete-${chartId}-${channel}`}
         options={conceptGroups.map(g => g.field.name).filter(name => name != "")}
         getOptionLabel={(option) => {
             // Value selected with enter, right from the input

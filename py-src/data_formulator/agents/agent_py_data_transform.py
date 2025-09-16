@@ -21,7 +21,7 @@ The users' instruction includes "expected fields" that the user want for visuali
 - NEVER create formulas that could be used to discriminate based on age. Ageism of any form (explicit and implicit) is strictly prohibited.
 - If above issue occurs, generate columns with np.nan.
 
-Concretely, you should first refine users' goal and then create a python function in the [OUTPUT] section based off the [CONTEXT] and [GOAL]:
+Concretely, you should first refine users' goal and then create a python function in the output section based off the [CONTEXT] and [GOAL]:
 
     1. First, refine users' [GOAL]. The main objective in this step is to check if "visualization_fields" provided by the user are sufficient to achieve their "goal". Concretely:
         - based on the user's "goal", elaborate the goal into a "detailed_instruction".
@@ -91,7 +91,7 @@ note:
     - if the output is time only: convert hour to number if it's just the hour (e.g., 10), but convert hour:min or h:m:s to string object (e.g., "10:30", "10:30:45")
     - never return datetime object directly, convert it to either number (if it only contains year) or string so it's readable.
 
-    3. The [OUTPUT] must only contain a json object representing the refined goal (including "detailed_instruction", "output_fields", "visualization_fields" and "reason") and a python code block representing the transformation code, do not add any extra text explanation.
+    3. The output must only contain a json object representing the refined goal (including "detailed_instruction", "output_fields", "visualization_fields" and "reason") and a python code block representing the transformation code, do not add any extra text explanation.
 '''
 
 EXAMPLE='''
@@ -221,10 +221,6 @@ class PythonDataTransformationAgent(object):
     def process_gpt_response(self, input_tables, messages, response):
         """process gpt response to handle execution"""
 
-        #log = {'messages': messages, 'response': response.model_dump(mode='json')}
-        #logger.info("=== prompt_filter_results ===>")
-        #logger.info(response.prompt_filter_results)
-
         if isinstance(response, Exception):
             result = {'status': 'other error', 'content': str(response.body)}
             return [result]
@@ -283,14 +279,6 @@ class PythonDataTransformationAgent(object):
 
     def run(self, input_tables, description, expected_fields: list[str], prev_messages: list[dict] = [], n=1):
 
-        if len(prev_messages) > 0:
-            logger.info("=== Previous messages ===>")
-            formatted_prev_messages = ""
-            for m in prev_messages:
-                if m['role'] != 'system':
-                    formatted_prev_messages += f"{m['role']}: \n\n\t{m['content']}\n\n"
-            logger.info(formatted_prev_messages)
-            prev_messages = [{"role": "user", "content": '[Previous Messages] Here are the previous messages for your reference:\n\n' + formatted_prev_messages}]
 
         data_summary = generate_data_summary(input_tables, include_data_samples=True)
 
@@ -299,12 +287,17 @@ class PythonDataTransformationAgent(object):
             "visualization_fields": expected_fields
         }
 
-        user_query = f"[CONTEXT]\n\n{data_summary}\n\n[GOAL]\n\n{json.dumps(goal, indent=4)}\n\n[OUTPUT]\n"
+        user_query = f"[CONTEXT]\n\n{data_summary}\n\n[GOAL]\n\n{json.dumps(goal, indent=4)}"
+        if len(prev_messages) > 0:
+            user_query = f"The user wants a new transformation based off the following updated context and goal:\n\n[CONTEXT]\n\n{data_summary}\n\n[GOAL]\n\n{description}"
 
         logger.info(user_query)
 
+        # Filter out system messages from prev_messages
+        filtered_prev_messages = [msg for msg in prev_messages if msg.get("role") != "system"]
+
         messages = [{"role":"system", "content": self.system_prompt},
-                    *prev_messages,
+                    *filtered_prev_messages,
                     {"role":"user", "content": user_query}]
         
         response = self.client.get_completion(messages = messages)

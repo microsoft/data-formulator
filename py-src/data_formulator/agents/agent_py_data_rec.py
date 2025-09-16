@@ -23,7 +23,7 @@ The [CONTEXT] shows what the current dataset is, and the [GOAL] describes what t
 - NEVER create formulas that could be used to discriminate based on age. Ageism of any form (explicit and implicit) is strictly prohibited.
 - If above issue occurs, generate columns with np.nan.
 
-Concretely, you should infer the appropriate data and create a python function in the [OUTPUT] section based off the [CONTEXT] and [GOAL] in two steps:
+Concretely, you should infer the appropriate data and create in the output section a python function based off the [CONTEXT] and [GOAL] in two steps:
 
 1. First, based on users' [GOAL]. Create a json object that represents the inferred user intent. The json object should have the following format:
 
@@ -112,7 +112,7 @@ note:
 - if the user provided one table, then it should be def transform_data(df1), if the user provided multiple tables, then it should be def transform_data(df1, df2, ...) and you should consider the join between tables to derive the output.
 - try to use table names to refer to the input dataframes, for example, if the user provided two tables city and weather, you can use `transform_data(df_city, df_weather)` to refer to the two dataframes.
 
-    3. The [OUTPUT] must only contain a json object representing the refined goal and a python code block representing the transformation code, do not add any extra text explanation.
+    3. The output must only contain a json object representing the refined goal and a python code block representing the transformation code, do not add any extra text explanation.
 '''
 
 example = """
@@ -241,21 +241,19 @@ class PythonDataRecAgent(object):
 
         data_summary = generate_data_summary(input_tables, include_data_samples=True)
 
-        user_query = f"[CONTEXT]\n\n{data_summary}\n\n[GOAL]\n\n{description}\n\n[OUTPUT]\n"
-        if len(prev_messages) > 0:
-            logger.info("=== Previous messages ===>")
-            formatted_prev_messages = ""
-            for m in prev_messages:
-                if m['role'] != 'system':
-                    formatted_prev_messages += f"{m['role']}: \n\n\t{m['content']}\n\n"
-            logger.info(formatted_prev_messages)
-            prev_messages = [{"role": "user", "content": '[Previous Messages] Here are the previous messages for your reference:\n\n' + formatted_prev_messages}]
+        user_query = f"[CONTEXT]\n\n{data_summary}\n\n[GOAL]\n\n{description}"
 
+        if len(prev_messages) > 0:
+            
+            user_query = f"The user new wants to new creation based off the following updated context and goal:\n\n[CONTEXT]\n\n{data_summary}\n\n[GOAL]\n\n{description}"
 
         logger.info(user_query)
 
+        # Filter out system messages from prev_messages
+        filtered_prev_messages = [msg for msg in prev_messages if msg.get("role") != "system"]
+
         messages = [{"role":"system", "content": self.system_prompt},
-                    *prev_messages,
+                    *filtered_prev_messages,
                     {"role":"user","content": user_query}]
         
         response = self.client.get_completion(messages = messages)
@@ -272,7 +270,7 @@ class PythonDataRecAgent(object):
         logger.info(f"GOAL: \n\n{new_instruction}")
 
         # get the current table name
-        sample_data_str = pd.DataFrame(latest_data_sample).head(10).to_string()
+        sample_data_str = pd.DataFrame(latest_data_sample).head(10).to_string() + '......'
 
         messages = [*dialog, 
                     {"role":"user", 

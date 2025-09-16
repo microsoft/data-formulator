@@ -28,7 +28,7 @@ The [CONTEXT] shows what the current dataset is, and the [GOAL] describes what t
 - NEVER create formulas that could be used to discriminate based on age. Ageism of any form (explicit and implicit) is strictly prohibited.
 - If above issue occurs, generate columns with NULL.
 
-Concretely, you should infer the appropriate data and create a SQL query in the [OUTPUT] section based off the [CONTEXT] and [GOAL] in two steps:
+Concretely, you should infer the appropriate data and create a SQL query based off the [CONTEXT] and [GOAL] in two steps:
 
 1. First, based on users' [GOAL]. Create a json object that represents the inferred user intent. The json object should have the following format:
 
@@ -89,7 +89,7 @@ note:
      - the sql query should be written in the style of duckdb.
      - if the user provided multiple tables, you should consider the join between tables to derive the output.
 
-    3. The [OUTPUT] must only contain two items:
+    3. The output must only contain two items:
         - a json object (wrapped in ```json```) representing the refined goal (including "mode", "recommendation", "output_fields", "chart_type", "visualization_fields")
         - a sql query block (wrapped in ```sql```) representing the transformation code, do not add any extra text explanation.
 
@@ -275,20 +275,17 @@ class SQLDataRecAgent(object):
             table_summary_str = get_sql_table_statistics_str(self.conn, table_name)
             data_summary += f"[TABLE {table_name}]\n\n{table_summary_str}\n\n"
 
-        user_query = f"[CONTEXT]\n\n{data_summary}\n\n[GOAL]\n\n{description}\n\n[OUTPUT]\n"
+        user_query = f"[CONTEXT]\n\n{data_summary}\n\n[GOAL]\n\n{description}"
         if len(prev_messages) > 0:
-            logger.info("=== Previous messages ===>")
-            formatted_prev_messages = ""
-            for m in prev_messages:
-                if m['role'] != 'system':
-                    formatted_prev_messages += f"{m['role']}: \n\n\t{m['content']}\n\n"
-            logger.info(formatted_prev_messages)
-            prev_messages = [{"role": "user", "content": '[Previous Messages] Here are the previous messages for your reference:\n\n' + formatted_prev_messages}]
+            user_query = f"The user wants a new recommendation based off the following updated context and goal:\n\n[CONTEXT]\n\n{data_summary}\n\n[GOAL]\n\n{description}"
 
         logger.info(user_query)
 
+        # Filter out system messages from prev_messages
+        filtered_prev_messages = [msg for msg in prev_messages if msg.get("role") != "system"]
+
         messages = [{"role":"system", "content": self.system_prompt},
-                    *prev_messages,
+                    *filtered_prev_messages,
                     {"role":"user","content": user_query}]
         
         response = self.client.get_completion(messages = messages)

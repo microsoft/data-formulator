@@ -574,44 +574,50 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                     //dispatch(dfActions.saveChart({chartId: chart.id, tableRef: undefined}));
                     dispatch(dfActions.saveUnsaveChart(focusedChart.id));
                 }}>
-                <Tooltip title="unsave">
+                <Tooltip key="unsave-tooltip" title="unsave">
                     <StarIcon sx={{ fontSize: "3rem", color: "gold" }} />
                 </Tooltip>
             </IconButton>
         ) : (
-            <Tooltip title="save a copy">
-            <IconButton color="primary" key="unsave-btn" size="small" sx={{ textTransform: "none" }}
-                disabled={chartUnavailable}
-                onClick={() => {
-                    dispatch(dfActions.saveUnsaveChart(focusedChart.id));
-                }}>
-                    <StarBorderIcon  />
-                </IconButton>
+            <Tooltip key="save-copy-tooltip" title="save a copy">
+                <span>
+                    <IconButton color="primary" key="unsave-btn" size="small" sx={{ textTransform: "none" }}
+                        disabled={chartUnavailable}
+                        onClick={() => {
+                            dispatch(dfActions.saveUnsaveChart(focusedChart.id));
+                        }}>
+                        <StarBorderIcon  />
+                    </IconButton>
+                </span>
             </Tooltip>
         );
 
-    let duplicateButton = <Tooltip title="duplicate the chart">
-        <IconButton color="primary" key="duplicate-btn" size="small" sx={{ textTransform: "none" }}
-        disabled={trigger != undefined}
-        onClick={() => {
-            dispatch(dfActions.duplicateChart(focusedChart.id));
-        }}>
-            <ContentCopyIcon  />
-        </IconButton>
+    let duplicateButton = <Tooltip key="duplicate-btn-tooltip" title="duplicate the chart">
+        <span>
+            <IconButton color="primary" key="duplicate-btn" size="small" sx={{ textTransform: "none" }}
+                disabled={trigger != undefined}
+                onClick={() => {
+                    dispatch(dfActions.duplicateChart(focusedChart.id));
+                }}>
+                <ContentCopyIcon  />
+            </IconButton>
+        </span>
     </Tooltip>
 
-    let createNewChartButton =  <BaseChartCreationMenu tableId={focusedChart.tableRef} buttonElement={
-            <Tooltip title="create a new chart">
-                <AddchartIcon sx={{ fontSize: "3rem" }} />
-            </Tooltip>} />
+    let createNewChartButton =  <BaseChartCreationMenu key="create-new-chart-btn" tableId={focusedChart.tableRef} buttonElement={
+        <Tooltip key="create-new-chart-btn-tooltip" title="create a new chart">
+            <AddchartIcon sx={{ fontSize: "3rem" }} />
+        </Tooltip>} />
 
 
     let deleteButton = (
         <Tooltip title="delete" key="delete-btn-tooltip">
-            <IconButton color="warning" size="small" sx={{ textTransform: "none" }}  disabled={trigger != undefined}
-                        onClick={() => { handleDeleteChart() }}>
-                <DeleteIcon />
-            </IconButton>
+            <span>
+                <IconButton color="warning" size="small" sx={{ textTransform: "none" }}  disabled={trigger != undefined}
+                            onClick={() => { handleDeleteChart() }}>
+                    <DeleteIcon />
+                </IconButton>
+            </span>
         </Tooltip>
     );
 
@@ -645,7 +651,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
     const hasConcepts = availableConcepts.length > 0;
 
     let derivedTableItems = (resultTable?.derive || table.derive) ? [
-        <Divider key="dvx0" orientation="vertical" variant="middle" flexItem sx={{ mx: 1 }} />,
+        <Divider key="derived-divider-start" orientation="vertical" variant="middle" flexItem sx={{ mx: 1 }} />,
         <Box key="explanation-toggle-group" sx={{ 
             display: 'flex', 
             alignItems: 'center', 
@@ -656,6 +662,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
             border: '1px solid rgba(0, 0, 0, 0.06)'
         }}>
             <ButtonGroup
+                key="explanation-button-group"
                 size="small"
                 sx={{
                     '& .MuiButton-root': {
@@ -776,11 +783,11 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
     let chartActionButtons = [
         <Box key="data-source" fontSize="small" sx={{ margin: "auto", display: "flex", flexDirection: "row"}}>
             <Typography component="span" sx={{display: 'flex', flexDirection: 'row', alignItems: 'center', whiteSpace: 'nowrap'}} fontSize="inherit">
-                data: {table.virtual ? <Tooltip title="this table resides in the backend database, sample rows are used for visualization"><CloudQueueIcon  sx={{ fontSize: '12px', color: 'text.secondary', mx: 0.5}} /></Tooltip> : ""} {table.displayId || table.id}
+                data: {table.virtual ? <Tooltip key="virtual-table-tooltip" title="this table resides in the backend database, sample rows are used for visualization"><CloudQueueIcon  sx={{ fontSize: '12px', color: 'text.secondary', mx: 0.5}} /></Tooltip> : ""} {table.displayId || table.id}
             </Typography>
         </Box>,
         ...derivedTableItems,
-        <Divider key="dv4" orientation="vertical" variant="middle" flexItem sx={{ mx: 1 }} />,
+        <Divider key="chart-actions-divider" orientation="vertical" variant="middle" flexItem sx={{ mx: 1 }} />,
         focusedChart.chartType == "Table" ? createNewChartButton : saveButton,
         duplicateButton,
         deleteButton,
@@ -973,23 +980,27 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
         backgroundColor: 'rgba(255, 255, 255, 0.9)',
         borderRadius: '4px',
     }} alignItems="center">
-        <Tooltip title="zoom out">
-            <IconButton color="primary" size='small' disabled={localScaleFactor <= scaleMin} onClick={() => {
-                setLocalScaleFactor(prev => Math.max(scaleMin, prev - 0.1));
-            }}>
-                <ZoomOutIcon fontSize="small" />
-            </IconButton>
+        <Tooltip key="zoom-out-tooltip" title="zoom out">
+            <span>
+                <IconButton color="primary" size='small' disabled={localScaleFactor <= scaleMin} onClick={() => {
+                    setLocalScaleFactor(prev => Math.max(scaleMin, prev - 0.1));
+                }}>
+                    <ZoomOutIcon fontSize="small" />
+                </IconButton>
+            </span>
         </Tooltip>
         <Slider aria-label="chart-resize" size='small' defaultValue={1} step={0.1} min={scaleMin} max={scaleMax} 
                 value={localScaleFactor} onChange={(event: Event, newValue: number | number[]) => {
             setLocalScaleFactor(newValue as number);
         }} />
-        <Tooltip title="zoom in">
-            <IconButton color="primary" size='small' disabled={localScaleFactor >= scaleMax} onClick={() => {
-                setLocalScaleFactor(prev => Math.min(scaleMax, prev + 0.1));
-            }}>
-                <ZoomInIcon fontSize="small" />
-            </IconButton>
+        <Tooltip key="zoom-in-tooltip" title="zoom in">
+            <span>
+                <IconButton color="primary" size='small' disabled={localScaleFactor >= scaleMax} onClick={() => {
+                    setLocalScaleFactor(prev => Math.min(scaleMax, prev + 0.1));
+                }}>
+                    <ZoomInIcon fontSize="small" />
+                </IconButton>
+            </span>
         </Tooltip>
     </Stack>
 
@@ -1020,11 +1031,14 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
     // when there is no result and synthesis is running, just show the waiting panel
     if (!focusedChart || focusedChart?.chartType == "?") {
         let chartSelectionBox = <Box sx={{display: "flex", flexDirection: "row", width: '666px', flexWrap: "wrap"}}> 
-            {Object.entries(CHART_TEMPLATES).map(([cls, templates])=>templates).flat().filter(t => t.chart != "Auto").map(t =>
+            {Object.entries(CHART_TEMPLATES)
+                .flatMap(([cls, templates]) => templates.map((t, index) => ({ ...t, group: cls, index })))
+                .filter(t => t.chart != "Auto")
+                .map((t, globalIndex) =>
                 {
                     return <Button 
                         disabled={synthesisRunning}
-                        key={`${t.chart}-btn`}
+                        key={`${t.group}-${t.index}-${t.chart}-btn`}
                         sx={{margin: '2px', padding:'2px', display:'flex', flexDirection: 'column', 
                                 textTransform: 'none', justifyContent: 'flex-start'}}
                         onClick={() => { 

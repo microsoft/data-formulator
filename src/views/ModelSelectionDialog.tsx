@@ -434,58 +434,60 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
         </TableCell>
         <TableCell align="right">
             <Tooltip title={modelExists ? "provider + model already exists" : "add and test model"}>
-                <IconButton color={modelExists ? 'error' : 'primary'}
-                    disabled={!readyToTest}
-                    sx={{cursor: modelExists ? 'help' : 'pointer'}}
-                    onClick={(event) => {
-                        event.stopPropagation()
+                <span>
+                    <IconButton color={modelExists ? 'error' : 'primary'}
+                        disabled={!readyToTest}
+                        sx={{cursor: modelExists ? 'help' : 'pointer'}}
+                        onClick={(event) => {
+                            event.stopPropagation()
 
-                        let endpoint = newEndpoint;
+                            let endpoint = newEndpoint;
 
-                        let id = `${endpoint}-${newModel}-${newApiKey}-${newApiBase}-${newApiVersion}`;
+                            let id = `${endpoint}-${newModel}-${newApiKey}-${newApiBase}-${newApiVersion}`;
 
-                        let model = {endpoint, model: newModel, api_key: newApiKey, api_base: newApiBase, api_version: newApiVersion, id: id};
+                            let model = {endpoint, model: newModel, api_key: newApiKey, api_base: newApiBase, api_version: newApiVersion, id: id};
 
-                        dispatch(dfActions.addModel(model));
+                            dispatch(dfActions.addModel(model));
 
-                        // Create a custom test function that assigns to slot on success
-                        const testAndAssignModel = (model: ModelConfig) => {
-                            updateModelStatus(model, 'testing', "");
-                            let message = {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json', },
-                                body: JSON.stringify({
-                                    model: model,
-                                }),
-                            };
-                            fetch(getUrls().TEST_MODEL, {...message })
-                                .then((response) => response.json())
-                                .then((data) => {
-                                    let status = data["status"] || 'error';
-                                    updateModelStatus(model, status, data["message"] || "");
-                                    // Only assign to slot if test is successful
-                                    if (status === 'ok') {
-                                        for (let slotType of dfSelectors.getAllSlotTypes()) {
-                                            if (!tempModelSlots[slotType]) {
-                                                updateTempSlot(slotType, id);
+                            // Create a custom test function that assigns to slot on success
+                            const testAndAssignModel = (model: ModelConfig) => {
+                                updateModelStatus(model, 'testing', "");
+                                let message = {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json', },
+                                    body: JSON.stringify({
+                                        model: model,
+                                    }),
+                                };
+                                fetch(getUrls().TEST_MODEL, {...message })
+                                    .then((response) => response.json())
+                                    .then((data) => {
+                                        let status = data["status"] || 'error';
+                                        updateModelStatus(model, status, data["message"] || "");
+                                        // Only assign to slot if test is successful
+                                        if (status === 'ok') {
+                                            for (let slotType of dfSelectors.getAllSlotTypes()) {
+                                                if (!tempModelSlots[slotType]) {
+                                                    updateTempSlot(slotType, id);
+                                                }
                                             }
                                         }
-                                    }
-                                }).catch((error) => {
-                                    updateModelStatus(model, 'error', error.message)
-                                });
-                        };
+                                    }).catch((error) => {
+                                        updateModelStatus(model, 'error', error.message)
+                                    });
+                            };
 
-                        testAndAssignModel(model); 
-                        
-                        setNewEndpoint("");
-                        setNewModel("");
-                        setNewApiKey("");
-                        setNewApiBase("");
-                        setNewApiVersion("");
-                    }}>
-                    <AddCircleIcon />
-                </IconButton>
+                            testAndAssignModel(model); 
+                            
+                            setNewEndpoint("");
+                            setNewModel("");
+                            setNewApiKey("");
+                            setNewApiBase("");
+                            setNewApiVersion("");
+                        }}>
+                        <AddCircleIcon />
+                    </IconButton>
+                </span>
             </Tooltip>
         </TableCell>
         <TableCell align="right">

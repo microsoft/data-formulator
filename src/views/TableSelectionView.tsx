@@ -31,7 +31,7 @@ import ReactDiffViewer from 'react-diff-viewer'
 
 import { DataFormulatorState, dfActions, dfSelectors, fetchFieldSemanticType } from '../app/dfSlice';
 import { useDispatch, useSelector } from 'react-redux';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { AppDispatch } from '../app/store';
 
 interface TabPanelProps {
@@ -495,12 +495,18 @@ export const TableCopyDialogV2: React.FC<TableCopyDialogProps> = ({ buttonElemen
     const [tableContentType, setTableContentType] = useState<'text' | 'image'>('text');
 
     const [cleaningInProgress, setCleaningInProgress] = useState<boolean>(false);
-    const [cleanTableContent, setCleanTableContent] = useState<{content: string, reason: string, mode: string} | undefined>(undefined);
-
-    let viewTable = cleanTableContent == undefined ?  undefined : createTableFromText(tableName || "clean-table", cleanTableContent.content)
 
     const [loadFromURL, setLoadFromURL] = useState<boolean>(false);
     const [url, setURL] = useState<string>("");
+
+    // Add new state for display optimization
+    const [displayContent, setDisplayContent] = useState<string>("");
+    const [isLargeContent, setIsLargeContent] = useState<boolean>(false);
+    const [showFullContent, setShowFullContent] = useState<boolean>(false);
+    
+    // Constants for content size limits
+    const MAX_DISPLAY_LINES = 20; // Reduced from 30
+    const LARGE_CONTENT_THRESHOLD = 50000; // ~50KB threshold
 
     const dispatch = useDispatch<AppDispatch>();
     const existingTables = useSelector((state: DataFormulatorState) => state.tables);
@@ -534,6 +540,39 @@ export const TableCopyDialogV2: React.FC<TableCopyDialogProps> = ({ buttonElemen
         }        
     };
 
+    // Optimized content change handler
+    const handleContentChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+        const newContent = event.target.value;
+        setTableContent(newContent);
+        
+        // Check if content is large
+        const isLarge = newContent.length > LARGE_CONTENT_THRESHOLD;
+        setIsLargeContent(isLarge);
+        
+        if (isLarge && !showFullContent) {
+            // For large content, only show a preview in the TextField
+            const lines = newContent.split('\n');
+            const previewLines = lines.slice(0, MAX_DISPLAY_LINES);
+            const preview = previewLines.join('\n') + (lines.length > MAX_DISPLAY_LINES ? '\n... (truncated for performance)' : '');
+            setDisplayContent(preview);
+        } else {
+            setDisplayContent(newContent);
+        }
+    }, [showFullContent]);
+
+    // Toggle between preview and full content
+    const toggleFullContent = useCallback(() => {
+        setShowFullContent(!showFullContent);
+        if (!showFullContent) {
+            setDisplayContent(tableContent);
+        } else {
+            const lines = tableContent.split('\n');
+            const previewLines = lines.slice(0, MAX_DISPLAY_LINES);
+            const preview = previewLines.join('\n') + (lines.length > MAX_DISPLAY_LINES ? '\n... (truncated for performance)' : '');
+            setDisplayContent(preview);
+        }
+    }, [showFullContent, tableContent]);
+
     let handleLoadURL = () => {
         console.log("hello hello")
         setLoadFromURL(!loadFromURL);
@@ -555,7 +594,6 @@ export const TableCopyDialogV2: React.FC<TableCopyDialogProps> = ({ buttonElemen
     let handleCleanData = () => {
         let token = String(Date.now());
         setCleaningInProgress(true);
-        setCleanTableContent(undefined);
         let message = {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', },
@@ -582,7 +620,7 @@ export const TableCopyDialogV2: React.FC<TableCopyDialogProps> = ({ buttonElemen
                         let cleanContent = candidate['content'];
                         let info = candidate['info'];
 
-                        setCleanTableContent({content: cleanContent.trim(), reason: info['reason'], mode: info['mode']});
+                        setTableContent(cleanContent.trim());
                     }
                 } else {
                     // TODO: add warnings to show the user
@@ -592,11 +630,9 @@ export const TableCopyDialogV2: React.FC<TableCopyDialogProps> = ({ buttonElemen
                         "component": "data loader",
                         "value": "unable to perform auto-sort."
                     }));
-                    setCleanTableContent(undefined);
                 }
             }).catch((error) => {
                 setCleaningInProgress(false);
-                setCleanTableContent(undefined);
                
                 dispatch(dfActions.addMessages({
                     "timestamp": Date.now(),
@@ -651,51 +687,75 @@ export const TableCopyDialogV2: React.FC<TableCopyDialogProps> = ({ buttonElemen
                 </Box>
                 <Box sx={{width: '100%',  display:'flex', position: 'relative', overflow: 'auto'}}>
                     {cleaningInProgress && tableContentType == "text" ? <LinearProgress sx={{ width: '100%', height: "calc(100% - 8px)", marginTop: 1, minHeight: 200, opacity: 0.1, position: 'absolute', zIndex: 1 }} /> : ""}
-                    {viewTable  ? 
-                    <>
-                        <CustomReactTable
-                            rows={viewTable.rows} 
-                            rowsPerPageNum={-1} compact={false}
-                            columnDefs={viewTable.names.map(name => { 
-                                return { id: name, label: name, minWidth: 60, align: undefined, format: (v: any) => v}
-                            })}  
-                        />
-                        {/* <Typography>{cleanTableContent.reason}</Typography> */}
-                    </>
-                    : ( tableContentType == "text" ?
-                        <TextField disabled={loadFromURL || cleaningInProgress} autoFocus 
-                            size="small" sx={{ marginTop: 1, flex: 1, "& .MuiInputBase-input" : {fontSize: tableContent.length > 1000 ? 12 : 14, lineHeight: 1.2 }}} 
-                            id="upload content" value={tableContent} maxRows={30}
-                            onChange={(event) => { 
-                                setTableContent(event.target.value); 
-                            }}
-                            slotProps={{
-                                inputLabel: {
-                                    shrink: true
-                                }
-                            }}
-                            placeholder="Paste data (in csv, tsv, or json format), or a text snippet / an image that contains data to get started."
-                            onPasteCapture={(e) => {
-                                console.log(e.clipboardData.files);
-                                if (e.clipboardData.files.length > 0) {
-                                    let file = e.clipboardData.files[0];
-                                    let read = new FileReader();
+                    { ( tableContentType == "text" ?
+                        <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+                            {/* Content size indicator */}
+                            {isLargeContent && (
+                                <Box sx={{ display: 'flex', alignItems: 'center', marginBottom: 1, padding: 1, backgroundColor: 'rgba(255, 193, 7, 0.1)', borderRadius: 1 }}>
+                                    <Typography variant="caption" sx={{ flex: 1 }}>
+                                        Large content detected ({Math.round(tableContent.length / 1000)}KB). 
+                                        {showFullContent ? 'Showing full content (may be slow)' : 'Showing preview for performance'}
+                                    </Typography>
+                                    <Button 
+                                        size="small" 
+                                        variant="outlined" 
+                                        onClick={toggleFullContent}
+                                        sx={{ textTransform: 'none', minWidth: 'auto' }}
+                                    >
+                                        {showFullContent ? 'Show Preview' : 'Show Full'}
+                                    </Button>
+                                </Box>
+                            )}
+                            
+                            <TextField 
+                                disabled={loadFromURL || cleaningInProgress} 
+                                autoFocus 
+                                size="small" 
+                                sx={{ 
+                                    marginTop: 1, 
+                                    flex: 1, 
+                                    "& .MuiInputBase-input": {
+                                        fontSize: 12, 
+                                        lineHeight: 1.2,
+                                        // Limit height for performance
+                                        maxHeight: isLargeContent && !showFullContent ? '300px' : '400px',
+                                        overflow: 'auto'
+                                    }
+                                }} 
+                                id="upload content" 
+                                value={displayContent} 
+                                maxRows={isLargeContent && !showFullContent ? MAX_DISPLAY_LINES : 25} // Dynamic max rows
+                                minRows={10} // Reduced from 15
+                                onChange={handleContentChange}
+                                slotProps={{
+                                    inputLabel: {
+                                        shrink: true
+                                    }
+                                }}
+                                placeholder="Paste data (in csv, tsv, or json format), or a text snippet / an image that contains data to get started."
+                                onPasteCapture={(e) => {
+                                    console.log(e.clipboardData.files);
+                                    if (e.clipboardData.files.length > 0) {
+                                        let file = e.clipboardData.files[0];
+                                        let read = new FileReader();
 
-                                    read.readAsDataURL(file);
-
-                                    read.onloadend = function(){
-                                        let res = read.result;
-                                        console.log(res);
-                                        if (res) { 
-                                            setTableContent(res as string); 
-                                            setTableContentType("image");
+                                        read.readAsDataURL(file);
+                                        read.onloadend = function(){
+                                            let res = read.result;
+                                            console.log(res);
+                                            if (res) { 
+                                                setTableContent(res as string); 
+                                                setTableContentType("image");
+                                            }
                                         }
                                     }
-                                }
-                            }}
-                            autoComplete='off'
-                            label="data content" variant="outlined" multiline minRows={15} 
-                        />
+                                }}
+                                autoComplete='off'
+                                label="data content" 
+                                variant="outlined" 
+                                multiline 
+                            />
+                        </Box>
                         :
                         <Box sx={{display: 'flex', flexDirection: 'column', alignItems: 'center'}}>
                             <Box sx={{marginTop: 1, position: 'relative'}}>
@@ -727,34 +787,21 @@ export const TableCopyDialogV2: React.FC<TableCopyDialogProps> = ({ buttonElemen
                         </Box>)
                     }
                     </Box>
-            </ DialogContent>
+            </DialogContent>
             <DialogActions>
-                { cleanTableContent != undefined ? 
-                    <Box sx={{display: 'flex', marginRight: 'auto'}}>
-                        <Button sx={{}} variant="contained" color="warning" size="small" onClick={()=>{ setCleanTableContent(undefined); }} >
-                            Revert
-                        </Button>
-                        <Button sx={{marginLeft: 1}} variant="contained" size="small" 
-                                onClick={()=>{ 
-                                    setTableContent(cleanTableContent?.content || ""); 
-                                    setTableContentType("text");
-                                    setCleanTableContent(undefined); 
-                                }} >
-                            Edit Data
-                        </Button>
-                    </Box> : <Button disabled={tableContent.trim() == "" || loadFromURL} 
+                <Button disabled={tableContent.trim() == "" || loadFromURL} 
                     variant={cleaningInProgress ? "outlined" : "contained"} color="primary" size="small" sx={{marginRight: 'auto', textTransform: 'none'}} 
                         onClick={handleCleanData} endIcon={cleaningInProgress ? <CircularProgress size={24} /> : <AutoFixNormalIcon/> }>
-                    {tableContentType == "text" ? "Clean / Generate Data" : "Extract Data from Image"} {cleanTableContent ? "(again)" : ""}
-                </Button>}
+                    {tableContentType == "text" ? "Clean / Generate Data" : "Extract Data from Image"} 
+                </Button>
                 {/* <Collapse orientation='horizontal' in={cleanTableContent != undefined}>
                     <Divider sx={{marginLeft: 1}} flexItem orientation='vertical'/>
                 </Collapse> */}
-                <Button disabled={cleanTableContent != undefined} variant="contained" size="small" onClick={()=>{ setDialogOpen(false); }}>cancel</Button>
-                <Button disabled={cleanTableContent?.content == undefined && (tableContentType != "text" || tableContent.trim() == "")} variant="contained" size="small" 
+                <Button variant="contained" size="small" onClick={()=>{ setDialogOpen(false); }}>cancel</Button>
+                <Button disabled={tableContentType != "text" || tableContent.trim() == ""} variant="contained" size="small" 
                     onClick={()=>{ 
                         setDialogOpen(false); 
-                        handleSubmitContent(cleanTableContent?.content || tableContent); 
+                        handleSubmitContent(tableContent); // Always use full content for processing
                     }} >
                     {"upload"}
                 </Button>

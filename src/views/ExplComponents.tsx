@@ -121,7 +121,9 @@ const renderWithMath = (text: string) => {
 };
 
 // Styled components for the concept explanation cards
-const ConceptExplanationCard = styled(Card)<{ secondary?: boolean }>(({ theme, secondary}) => ({
+const ConceptExplanationCard = styled(Card, {
+    shouldForwardProp: (prop) => prop !== 'secondary',
+})<{ secondary: boolean }>(({ theme, secondary}) => ({
     minWidth: 360,  // Increased from 300
     maxWidth: 480,  // Increased from 360
     margin: '4px',
@@ -138,7 +140,9 @@ const ConceptExplanationCard = styled(Card)<{ secondary?: boolean }>(({ theme, s
     },
 }));
 
-const ConceptName = styled(Typography)<{ secondary?: boolean }>(({ theme, secondary }) => ({
+const ConceptName = styled(Typography, {
+    shouldForwardProp: (prop) => prop !== 'secondary',
+})<{ secondary: boolean }>(({ theme, secondary }) => ({
     fontSize: '12px',
     fontWeight: 600,
     color: secondary ? theme.palette.secondary.main : theme.palette.primary.main,

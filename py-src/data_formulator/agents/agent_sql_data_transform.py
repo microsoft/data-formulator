@@ -22,7 +22,7 @@ The users' instruction includes "visualization_fields" that the user want for vi
 - NEVER create formulas that could be used to discriminate based on age. Ageism of any form (explicit and implicit) is strictly prohibited.
 - If above issue occurs, generate columns with NULL.
 
-Concretely, you should first refine users' goal and then create a sql query in the [OUTPUT] section based off the [CONTEXT] and [GOAL]:
+Concretely, you should first refine users' goal and then create a sql query in the output section based off the [CONTEXT] and [GOAL]:
 
     1. First, refine users' [GOAL]. The main objective in this step is to decide data transformation based on the user's goal. 
         Concretely:
@@ -67,7 +67,7 @@ The query should be as simple as possible and easily readable. If there is no da
 note:
     - the sql query should be written in the style of duckdb.
 
-    3. The [OUTPUT] must only contain two items:
+    3. The output must only contain two items:
         - a json object (wrapped in ```json```) representing the refined goal (including "detailed_instruction", "output_fields", "visualization_fields" and "reason")
         - a sql query block (wrapped in ```sql```) representing the transformation code, do not add any extra text explanation.
 
@@ -272,14 +272,6 @@ class SQLDataTransformationAgent(object):
                 # Log the creation of the table
                 logger.info(f"Created table {table_name} from dataframe")
 
-        if len(prev_messages) > 0:
-            logger.info("=== Previous messages ===>")
-            formatted_prev_messages = ""
-            for m in prev_messages:
-                if m['role'] != 'system':
-                    formatted_prev_messages += f"{m['role']}: \n\n\t{m['content']}\n\n"
-            logger.info(formatted_prev_messages)
-            prev_messages = [{"role": "user", "content": '[Previous Messages] Here are the previous messages for your reference:\n\n' + formatted_prev_messages}]
 
         data_summary = ""
         for table in input_tables:
@@ -292,12 +284,17 @@ class SQLDataTransformationAgent(object):
             "visualization_fields": expected_fields
         }
 
-        user_query = f"[CONTEXT]\n\n{data_summary}[GOAL]\n\n{json.dumps(goal, indent=4)}\n\n[OUTPUT]\n"
+        user_query = f"[CONTEXT]\n\n{data_summary}\n\n[GOAL]\n\n{json.dumps(goal, indent=4)}"
+        if len(prev_messages) > 0:
+            user_query = f"The user wants a new transformation based off the following updated context and goal:\n\n[CONTEXT]\n\n{data_summary}\n\n[GOAL]\n\n{description}"
 
         logger.info(user_query)
 
+        # Filter out system messages from prev_messages
+        filtered_prev_messages = [msg for msg in prev_messages if msg.get("role") != "system"]
+
         messages = [{"role":"system", "content": self.system_prompt},
-                    *prev_messages,
+                    *filtered_prev_messages,
                     {"role":"user","content": user_query}]
         
         response = self.client.get_completion(messages = messages)

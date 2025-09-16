@@ -45,7 +45,7 @@ import { getUrls, resolveChartFields, getTriggers, assembleVegaChart } from '../
 import { EncodingBox } from './EncodingBox';
 
 import { ChannelGroups, CHART_TEMPLATES, getChartTemplate } from '../components/ChartTemplates';
-import { getDataTable } from './VisualizationView';
+import { checkChartAvailability, getDataTable } from './VisualizationView';
 import TableRowsIcon from '@mui/icons-material/TableRowsOutlined';
 import ChangeCircleOutlinedIcon from '@mui/icons-material/ChangeCircleOutlined';
 import AddIcon from '@mui/icons-material/Add';
@@ -103,7 +103,7 @@ export const renderTextWithEmphasis = (text: string, highlightChipSx?: SxProps<T
     return parts.map((part, index) => {
         if (part.startsWith('**') && part.endsWith('**')) {
             // This is a highlighted part - remove the ** and wrap with styled component
-            const content = part.slice(2, -2);
+            const content = part.slice(2, -2).replaceAll('_', ' ');
             return (
                 <Typography
                     key={index}
@@ -192,7 +192,7 @@ export const TriggerCard: FC<{
     });
 
     if (mini) {
-        return <Typography sx={{
+        return <Typography component="div" sx={{
             ml: '7px', borderLeft: '3px solid', 
             borderColor: alpha(theme.palette.custom.main, 0.5), 
             paddingLeft: '8px', 
@@ -224,7 +224,7 @@ export const TriggerCard: FC<{
         }} 
         onClick={handleClick}>
         <Box sx={{mx: 1, my: 0.5}}>
-            {hideFields ? "" : <Typography fontSize="inherit" sx={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center',
+            {hideFields ? "" : <Typography component="div" fontSize="inherit" sx={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center',
                             color: 'rgba(0,0,0,0.7)'}}>{encodingComp}</Typography>}
             <Typography fontSize="inherit" sx={{
                 textAlign: 'center', width: 'fit-content',
@@ -304,18 +304,20 @@ const UserActionTableSelector: FC<{
                 );
             })}
             <Tooltip title="add more base tables for data formulation">
-                <IconButton
-                    size="small"
-                    onClick={handleClick}
-                    sx={{ 
-                        width: 16,
-                        height: 16,
-                        fontSize: '10px',
-                        padding: 0
-                    }}
-                >
-                    <AddIcon fontSize="inherit" />
-                </IconButton>
+                <span>
+                    <IconButton
+                        size="small"
+                        onClick={handleClick}
+                        sx={{ 
+                            width: 16,
+                            height: 16,
+                            fontSize: '10px',
+                            padding: 0
+                        }}
+                    >
+                        <AddIcon fontSize="inherit" />
+                    </IconButton>
+                </span>
             </Tooltip>
             <Menu
                 anchorEl={anchorEl}
@@ -399,7 +401,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
         .filter(([group, channelList]) => channelList.some(ch => Object.keys(encodingMap).includes(ch)))
         .map(([group, channelList]) => {
 
-            let component = <Box>
+            let component = <Box key={`encoding-group-box-${group}`}>
                 <Typography key={`encoding-group-${group}`} sx={{ fontSize: 10, color: "text.secondary", marginTop: "6px", marginBottom: "2px" }}>{group}</Typography>
                 {channelList.filter(channel => Object.keys(encodingMap).includes(channel))
                     .map(channel => <EncodingBox key={`shelf-${channel}`} channel={channel as Channel} chartId={chartId} />)}
@@ -454,7 +456,8 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                 throw new Error('No root table found');
             }
 
-            let currentChartPng = await vegaLiteSpecToPng(assembleVegaChart(chart.chartType, chart.encodingMap, activeFields, currentTable.rows));
+            let chartAvailable = checkChartAvailability(chart, conceptShelfItems, currentTable.rows);
+            let currentChartPng = chartAvailable ? await vegaLiteSpecToPng(assembleVegaChart(chart.chartType, chart.encodingMap, activeFields, currentTable.rows)) : undefined;
 
             const messageBody = JSON.stringify({
                 token: String(Date.now()),
@@ -586,7 +589,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
             let sourceTableIds = currentTable.derive?.source;
 
             let startNewDialog = (!sourceTableIds.every(id => actionTableIds.includes(id)) || 
-                !actionTableIds.every(id => sourceTableIds.includes(id))) || mode == 'ideate';
+                !actionTableIds.every(id => sourceTableIds.includes(id))) || mode === 'ideate';
 
             // Compare if source and base table IDs are different
             if (startNewDialog) {
@@ -596,6 +599,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                 let additionalMessages = currentTable.derive.dialog;
 
                 console.log("additional messages", additionalMessages);
+                console.log("action tables", actionTables);
 
                 // in this case, because table ids has changed, we need to use the additional messages and reformulate
                 messageBody = JSON.stringify({
@@ -889,20 +893,24 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
         {trigger ? 
             <Box sx={{display: 'flex'}}>
                 <Tooltip title={<Typography sx={{fontSize: 11}}>formulate and override <TableRowsIcon sx={{fontSize: 10, marginBottom: '-1px'}}/>{trigger.resultTableId}</Typography>}>
-                    <IconButton sx={{ marginLeft: "0"}} size="small"
-                        disabled={createDisabled} color={"warning"} onClick={() => { 
-                            deriveNewData(trigger.instruction, 'formulate', trigger.resultTableId); 
-                        }}>
-                        <ChangeCircleOutlinedIcon fontSize="small" />
-                    </IconButton>
+                    <span>
+                        <IconButton sx={{ marginLeft: "0"}} size="small"
+                            disabled={createDisabled} color={"warning"} onClick={() => { 
+                                deriveNewData(trigger.instruction, 'formulate', trigger.resultTableId); 
+                            }}>
+                            <ChangeCircleOutlinedIcon fontSize="small" />
+                        </IconButton>
+                    </span>
                 </Tooltip>
             </Box>
             : 
             <Tooltip title={`Formulate`}>
-                <IconButton sx={{ marginLeft: "0"}} 
-                    disabled={createDisabled} color={"primary"} onClick={() => { deriveNewData(prompt, 'formulate'); }}>
-                    <PrecisionManufacturing />
-                </IconButton>
+                <span>
+                    <IconButton sx={{ marginLeft: "0"}} 
+                        disabled={createDisabled} color={"primary"} onClick={() => { deriveNewData(prompt, 'formulate'); }}>
+                        <PrecisionManufacturing />
+                    </IconButton>
+                </span>
             </Tooltip>
         }
         
@@ -1038,6 +1046,16 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                                 vertical: 'top',
                                 horizontal: 'left',
                             },
+                            PaperProps: {
+                                sx: {
+                                    '& .MuiList-root': {
+                                        display: 'grid',
+                                        gridTemplateColumns: '1fr 1fr',
+                                        gap: 0,
+                                        padding: '8px'
+                                    }
+                                }
+                            }
                         }}
                         renderValue={(value: string) => {
                             const t = getChartTemplate(value);
@@ -1054,30 +1072,30 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                         onChange={(event) => { }}>
                         {Object.entries(CHART_TEMPLATES).map(([group, templates]) => {
                             return [
-                                <ListSubheader sx={{ color: "text.secondary", lineHeight: 2, fontSize: 12 }} key={group}>{group}</ListSubheader>,
-                                <Box key={`${group}-container`} sx={{ 
-                                    display: 'grid', 
-                                    gridTemplateColumns: '1fr 1fr', 
-                                    gap: 0,
-                                    padding: '0 8px'
-                                }}>
-                                    {templates.map((t, i) => (
-                                        <MenuItem 
-                                            sx={{ 
-                                                fontSize: 12, 
-                                                paddingLeft: 2, 
-                                                paddingRight: 2,
-                                                minHeight: '32px',
-                                                margin: '1px 0'
-                                            }} 
-                                            value={t.chart} 
-                                            key={`${group}-${i}`}
-                                            onClick={(e) => {
-                                                console.log('MenuItem clicked:', t.chart);
-                                                // Manually trigger the chart type update (this will also close the menu)
-                                                handleUpdateChartType(t.chart);
-                                            }}
-                                        >
+                                <ListSubheader sx={{ 
+                                    color: "text.secondary", 
+                                    lineHeight: 2, 
+                                    fontSize: 12,
+                                    gridColumn: '1 / -1' // Make subheader span both columns
+                                }} key={group}>{group}</ListSubheader>,
+                                ...templates.map((t, i) => (
+                                    <MenuItem 
+                                        sx={{ 
+                                            fontSize: 12, 
+                                            paddingLeft: 2, 
+                                            paddingRight: 2,
+                                            minHeight: '32px',
+                                            margin: '1px 0'
+                                        }} 
+                                        value={t.chart} 
+                                        key={`${group}-${i}`}
+                                        onClick={(e) => {
+                                            console.log('MenuItem clicked:', t.chart);
+                                            // Manually trigger the chart type update (this will also close the menu)
+                                            handleUpdateChartType(t.chart);
+                                        }}
+                                    >
+                                        <Box sx={{display: 'flex'}}>
                                             <ListItemIcon sx={{minWidth: "20px"}}>
                                                 {typeof t?.icon == 'string' ? 
                                                     <img height="20px" width="20px" src={t?.icon} alt="" role="presentation" /> : 
@@ -1090,9 +1108,9 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                                             >
                                                 {t.chart}
                                             </ListItemText>
-                                        </MenuItem>
-                                    ))}
-                                </Box>
+                                        </Box>
+                                    </MenuItem>
+                                ))
                             ]
                         })}
                     </Select>
@@ -1116,20 +1134,22 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
             {ideateMode ? (
                 <Box sx={{ padding: 1 }}>
                     <Tooltip title={`get ideas for visualization`}>
-                        <Button 
-                            variant="text"
-                            disabled={createDisabled || isLoadingIdeas} 
-                            color={"primary"} 
-                            size="small"
-                            onClick={() => { getIdeasForVisualization(); }}
-                            startIcon={isLoadingIdeas ? <CircularProgress size={16} /> : <LightbulbOutlinedIcon sx={{fontSize: 10}} />}
-                            sx={{
-                                fontSize: 12,
-                                textTransform: 'none',
-                            }}
-                        >
-                            {isLoadingIdeas ? "Ideating..." : "Different ideas?"} 
-                        </Button>
+                        <span>
+                            <Button 
+                                variant="text"
+                                disabled={createDisabled || isLoadingIdeas} 
+                                color={"primary"} 
+                                size="small"
+                                onClick={() => { getIdeasForVisualization(); }}
+                                startIcon={isLoadingIdeas ? <CircularProgress size={16} /> : <LightbulbOutlinedIcon sx={{fontSize: 10}} />}
+                                sx={{
+                                    fontSize: 12,
+                                    textTransform: 'none',
+                                }}
+                            >
+                                {isLoadingIdeas ? "Ideating..." : "Different ideas?"} 
+                            </Button>
+                        </span>
                     </Tooltip>
                     {ideasSection}
                 </Box>

@@ -214,6 +214,21 @@ def run_exploration_flow_streaming(
         # Extract follow-up decision
         followup_plan = followup_results[0]['content']
         
+        # Check if exploration agent decides to present findings
+        if followup_plan.get('status') in ['present', 'warning']:
+            yield {
+                "iteration": iteration,
+                "type": "completion",
+                "content": {
+                    "plan": followup_plan,
+                    "total_steps": len(exploration_steps),
+                },
+                "status": "success" if followup_plan.get('status') == 'present' else "warning",
+                "error_message": ""
+            }
+            break
+
+
         yield {
             "iteration": iteration,
             "type": "planning",
@@ -224,22 +239,6 @@ def run_exploration_flow_streaming(
             "status": "success",
             "error_message": ""
         }
-        
-        # Check if exploration agent decides to present findings
-        if followup_plan.get('status') == 'present':
-            yield {
-                "iteration": iteration,
-                "type": "completion",
-                "content": {
-                    "final_plan": followup_plan,
-                    "total_steps": len(exploration_steps),
-                    "insights": followup_plan.get('assessment', ''),
-                    "exploration_summary": followup_plan.get('recap', '')
-                },
-                "status": "success",
-                "error_message": ""
-            }
-            break
         
         # Continue with new question from instruction
         current_question = followup_plan.get('instruction', '')

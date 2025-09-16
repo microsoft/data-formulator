@@ -202,12 +202,12 @@ export const IdeaChip: FC<{
     }
 
     let ideaTextComponent = renderTextWithEmphasis(ideaText, {
-        borderRadius: '4px',
-        border: `1px solid`,
-        borderColor: alpha(styleColor, 0.1),
+        borderRadius: '0px',
+        borderBottom: `1px solid`,
+        borderColor: alpha(styleColor, 0.4),
         fontSize: '11px',
         lineHeight: 1.4,
-        backgroundColor: alpha(styleColor, 0.07),
+        backgroundColor: alpha(styleColor, 0.05),
     });
 
     return (
@@ -237,7 +237,7 @@ export const IdeaChip: FC<{
         >
             {idea.type === 'branch' && <CallSplitIcon sx={{color: getDifficultyColor(idea.difficulty), fontSize: 18, mr: 0.5, transform: 'rotate(90deg)'}} />}
             {idea.type === 'deep_dive' && <MovingIcon sx={{color: getDifficultyColor(idea.difficulty), fontSize: 18, mr: 0.5, transform: 'rotate(90deg)'}} />}
-            <Typography sx={{ fontSize: '11px', color: getDifficultyColor(idea.difficulty || 'medium') }}>
+            <Typography component="div" sx={{ fontSize: '11px', color: getDifficultyColor(idea.difficulty || 'medium') }}>
                 {ideaTextComponent}
             </Typography>
         </Box>
@@ -493,8 +493,10 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
             originateChartId = placeHolderChartId;
         } 
 
-
         const actionTables = selectedTableIds.map(id => tables.find(t => t.id === id) as DictTable);
+
+        const actionId = `deriveDataFromNL_${String(Date.now())}`;
+        dispatch(dfActions.udpateAgentWorkInProgress({actionId: actionId, tableId: tableId, description: instruction, status: 'running', hidden: false}));
 
         // Validate table selection
         const firstTableId = selectedTableIds[0];
@@ -507,6 +509,17 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
             }));
             return;
         }
+
+        // Generate table ID
+        const genTableId = () => {
+            let tableSuffix = Number.parseInt((Date.now() - Math.floor(Math.random() * 10000)).toString().slice(-6));
+            let tableId = `table-${tableSuffix}`;
+            while (tables.find(t => t.id === tableId) !== undefined) {
+                tableSuffix = tableSuffix + 1;
+                tableId = `table-${tableSuffix}`;
+            }
+            return tableId;
+        };
 
         setIsFormulating(true);
 
@@ -608,16 +621,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                         const refinedGoal = candidate['refined_goal'];
                         const displayInstruction = refinedGoal['display_instruction'];
 
-                        // Generate table ID
-                        const genTableId = () => {
-                            let tableSuffix = Number.parseInt((Date.now() - Math.floor(Math.random() * 10000)).toString().slice(-2));
-                            let tableId = `table-${tableSuffix}`;
-                            while (tables.find(t => t.id === tableId) !== undefined) {
-                                tableSuffix = tableSuffix + 1;
-                                tableId = `table-${tableSuffix}`;
-                            }
-                            return tableId;
-                        };
+                        
 
                         const candidateTableId = candidate["content"]["virtual"] 
                             ? candidate["content"]["virtual"]["table_name"] 
@@ -709,10 +713,9 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
 
                         // Clear the prompt after successful formulation
                         setPrompt("");
-
-                        dispatch(dfActions.deleteChartById(originateChartId));
                     }
                 }
+                dispatch(dfActions.deleteAgentWorkInProgress(actionId));
             } else {
                 dispatch(dfActions.addMessages({
                     "timestamp": Date.now(),
@@ -722,6 +725,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                 }));
                 
                 setIsFormulating(false);
+                dispatch(dfActions.deleteAgentWorkInProgress(actionId));
             }
         })
         .catch((error) => {
@@ -736,6 +740,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                     "value": `Data formulation timed out after ${config.formulateTimeoutSeconds} seconds. Consider breaking down the task, using a different model or prompt, or increasing the timeout limit.`,
                     "detail": "Request exceeded timeout limit"
                 }));
+                dispatch(dfActions.deleteAgentWorkInProgress(actionId));
             } else {
                 dispatch(dfActions.addMessages({
                     "timestamp": Date.now(),
@@ -744,20 +749,21 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                     "value": `Data formulation failed, please try again.`,
                     "detail": error.message
                 }));
+                dispatch(dfActions.deleteAgentWorkInProgress(actionId));
             }
         });
     };
 
     const exploreDataFromNL = (startQuestion: string) => {
 
-        let actionId = `explore-data-${Date.now()}`;
+        let actionId = `exploreDataFromNL_${String(Date.now())}`;
 
         if (selectedTableIds.length === 0 || startQuestion.trim() === "") {
             return;
         }
 
         setIsFormulating(true);
-        dispatch(dfActions.setAgentWorkInProgress({actionId: actionId, tableId: tableId, description: startQuestion}));
+        dispatch(dfActions.udpateAgentWorkInProgress({actionId: actionId, tableId: tableId, description: startQuestion, status: 'running', hidden: false}));
 
         let actionTables = tables.filter(t => selectedTableIds.includes(t.id));
 
@@ -787,7 +793,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
 
         // Generate table ID helper
         const genTableId = () => {
-            let tableSuffix = Number.parseInt((Date.now() - Math.floor(Math.random() * 10000)).toString().slice(-2));
+            let tableSuffix = Number.parseInt((Date.now() - Math.floor(Math.random() * 10000)).toString().slice(-6));
             let tableId = `table-${tableSuffix}`;
             while (tables.find(t => t.id === tableId) !== undefined) {
                 tableSuffix = tableSuffix + 1;
@@ -798,6 +804,11 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
 
         // Function to process a single streaming result
         const processStreamingResult = (result: any) => {
+
+            if (result.type === "planning") {
+                dispatch(dfActions.udpateAgentWorkInProgress({actionId: actionId, description: result.content.plan.instruction, status: 'running', hidden: false}));
+            }
+
             if (result.type === "data_transformation" && result.status === "success") {
                 // Extract from the new structure: content.result instead of transform_result
                 const transformResult = result.content.result;
@@ -823,7 +834,6 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                 // Determine the trigger table and source tables for this iteration
                 const isFirstIteration = createdTables.length === 0;
                 const triggerTableId = isFirstIteration ? tableId : createdTables[createdTables.length - 1].id;
-                const triggerSourceTableIds = isFirstIteration ? selectedTableIds : [createdTables[createdTables.length - 1].id];
 
                 // Create new table
                 const candidateTable = createDictTable(
@@ -835,11 +845,11 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                 // Add derive info manually for exploration results
                 candidateTable.derive = {
                     code: code || `# Exploration step ${createdTables.length + 1}`,
-                    source: triggerSourceTableIds,
+                    source: selectedTableIds,
                     dialog: dialog || [],
                     trigger: {
                         tableId: triggerTableId,
-                        sourceTableIds: triggerSourceTableIds,
+                        sourceTableIds: selectedTableIds,
                         instruction: question,
                         displayInstruction: displayInstruction,
                         chart: undefined, // Will be set after chart creation
@@ -856,7 +866,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
 
                 createdTables.push(candidateTable);
 
-                dispatch(dfActions.setAgentWorkInProgress({actionId: actionId, tableId: candidateTable.id, description: displayInstruction}));
+                dispatch(dfActions.udpateAgentWorkInProgress({actionId: actionId, tableId: candidateTable.id, description: '', status: 'running', hidden: false}));
 
                 // Add missing concept items for this table
                 const names = candidateTable.names;
@@ -970,32 +980,18 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
             if (isCompleted) return;
             isCompleted = true;
 
-            dispatch(dfActions.deleteAgentWorkInProgress(actionId));
-            
             setIsFormulating(false);
             clearTimeout(timeoutId);
 
-            if (createdTables.length === 0) {
-                const errorResults = allResults.filter((result: any) => result.status === "error");
-                const errorMessage = errorResults.length > 0 ? errorResults[0].error_message : "No transformations were generated.";
-
-                dispatch(dfActions.addMessages({
-                    "timestamp": Date.now(),
-                    "type": "error",
-                    "component": "chart builder",
-                    "value": `Data exploration failed: ${errorMessage}`,
-                    "detail": errorMessage
-                }));
-            } else {
+            const completionResult = allResults.find((result: any) => result.type === "completion");
+            if (completionResult) {
                 // Get completion message from completion result if available
-                const completionResult = allResults.find((result: any) => result.type === "completion");
-                let completionMessage = `Data exploration completed with ${createdTables.length} visualization${createdTables.length > 1 ? 's' : ''}.`;
+                let summary = completionResult.content.plan.instruction || completionResult.content.plan.assessment || "";
+                console.log(completionResult);
                 
-                if (completionResult && completionResult.data?.insights) {
-                    completionMessage += ` ${completionResult.data.insights}`;
-                } else if (completionResult && completionResult.data?.final_plan?.assessment) {
-                    completionMessage += ` ${completionResult.data.final_plan.assessment}`;
-                }
+                dispatch(dfActions.udpateAgentWorkInProgress({actionId: actionId, description: summary, status: completionResult.content.plan.status === 'present' ? 'completed' : 'warning', hidden: false}));
+
+                let completionMessage = `Data exploration completed with ${completionResult.content.total_steps} visualization${completionResult.content.total_steps > 1 ? 's' : ''}.`;
 
                 dispatch(dfActions.addMessages({
                     "timestamp": Date.now(),
@@ -1006,6 +1002,15 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
 
                 // Clear the prompt after successful exploration
                 setPrompt("");
+            } else {
+                dispatch(dfActions.udpateAgentWorkInProgress({actionId: actionId, description: "The agent got lost in the data.", status: 'failed', hidden: false}));
+
+                dispatch(dfActions.addMessages({
+                    "timestamp": Date.now(),
+                    "component": "chart builder",
+                    "type": "error",
+                    "value": "The agent got lost in the data. Please try again."
+                }));
             }
         };
 
@@ -1052,7 +1057,6 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                                     if (data.status === "ok" && data.result) {
                                         allResults.push(data.result);
                                         processStreamingResult(data.result);
-
 
                                         // Check if this is a completion result
                                         if (data.result.type === "completion") {
@@ -1205,29 +1209,33 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                             input: {
                                 endAdornment: mode == "agent" ? <ButtonGroup>
                                     <Tooltip title={agentIdeas.length > 0 ? "regenerate directions" : "generate exploration directions"}>   
-                                        <IconButton 
-                                            size="medium"
-                                            disabled={isFormulating || !currentTable || isLoadingIdeas}
-                                            color="primary" 
-                                            onClick={() => getIdeasFromAgent("agent", prompt.trim())}
-                                        >
-                                            {isLoadingIdeas ? <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
-                                                <CircularProgress size={24} />
-                                            </Box> : (agentIdeas.length > 0 ? <RotateRightIcon sx={{fontSize: 24}} /> : <TipsAndUpdatesIcon sx={{fontSize: 24}} />)}
-                                        </IconButton>
+                                        <span>
+                                            <IconButton 
+                                                size="medium"
+                                                disabled={isFormulating || !currentTable || isLoadingIdeas}
+                                                color="primary" 
+                                                onClick={() => getIdeasFromAgent("agent", prompt.trim())}
+                                            >
+                                                {isLoadingIdeas ? <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
+                                                    <CircularProgress size={24} />
+                                                </Box> : (agentIdeas.length > 0 ? <RotateRightIcon sx={{fontSize: 24}} /> : <TipsAndUpdatesIcon sx={{fontSize: 24}} />)}
+                                            </IconButton>
+                                        </span>
                                     </Tooltip>
                                 </ButtonGroup>
                                 : <Tooltip title="Generate chart from description">
-                                    <IconButton 
-                                        size="medium"
-                                        disabled={isFormulating || !currentTable || prompt.trim() === ""}
-                                        color="primary" 
-                                        onClick={() => deriveDataFromNL(prompt.trim())}
-                                    >
-                                        {isFormulating ? <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
-                                            <CircularProgress size={24} />
-                                        </Box> : <PrecisionManufacturing sx={{fontSize: 24}} />}
-                                    </IconButton>
+                                    <span>
+                                        <IconButton 
+                                            size="medium"
+                                            disabled={isFormulating || !currentTable || prompt.trim() === ""}
+                                            color="primary" 
+                                            onClick={() => deriveDataFromNL(prompt.trim())}
+                                        >
+                                            {isFormulating ? <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
+                                                <CircularProgress size={24} />
+                                            </Box> : <PrecisionManufacturing sx={{fontSize: 24}} />}
+                                        </IconButton>
+                                    </span>
                                 </Tooltip>
                             }
                         }}
@@ -1246,30 +1254,32 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                             ideas?
                         </Typography>
                         <Tooltip title="Get some ideas!">   
-                            <IconButton 
-                                size="medium"
-                                disabled={isFormulating || !currentTable || isLoadingIdeas}
-                                color="primary" 
-                                onClick={() => getIdeasFromAgent("interactive")}
-                            >
-                                {isLoadingIdeas ? <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
-                                    <CircularProgress size={24} />
-                                </Box> : <TipsAndUpdatesIcon sx={{
-                                    fontSize: 24,
-                                    animation: ideas.length == 0 ? 'colorWipe 5s ease-in-out infinite' : 'none',
-                                    '@keyframes colorWipe': {
-                                        '0%, 90%': {
-                                            scale: 1,
+                            <span>
+                                <IconButton 
+                                    size="medium"
+                                    disabled={isFormulating || !currentTable || isLoadingIdeas}
+                                    color="primary" 
+                                    onClick={() => getIdeasFromAgent("interactive")}
+                                >
+                                    {isLoadingIdeas ? <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
+                                        <CircularProgress size={24} />
+                                    </Box> : <TipsAndUpdatesIcon sx={{
+                                        fontSize: 24,
+                                        animation: ideas.length == 0 ? 'colorWipe 5s ease-in-out infinite' : 'none',
+                                        '@keyframes colorWipe': {
+                                            '0%, 90%': {
+                                                scale: 1,
+                                            },
+                                            '95%': {
+                                                scale: 1.2,
+                                            },
+                                            '100%': {
+                                                scale: 1,
+                                            },
                                         },
-                                        '95%': {
-                                            scale: 1.2,
-                                        },
-                                        '100%': {
-                                            scale: 1,
-                                        },
-                                    },
-                                }} />}
-                            </IconButton>
+                                    }} />}
+                                </IconButton>
+                            </span>
                         </Tooltip>
                     </Box>}
                 </Box>
