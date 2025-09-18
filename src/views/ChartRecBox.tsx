@@ -43,7 +43,7 @@ import _ from 'lodash';
 import '../scss/EncodingShelf.scss';
 import { createDictTable, DictTable } from "../components/ComponentType";
 
-import { getUrls, resolveChartFields, getTriggers, resolveChartFieldsV2 } from '../app/utils';
+import { getUrls, resolveChartFields, getTriggers } from '../app/utils';
 
 import AddIcon from '@mui/icons-material/Add';
 import PrecisionManufacturing from '@mui/icons-material/PrecisionManufacturing';
@@ -303,15 +303,13 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
             },
             {
                 "difficulty": "hard",
-                "goal": "Apply statistical and predictive methods to discover patterns and make predictions.",
+                "goal": "test 4:Investigate and contextualize extreme outliers in disaster fatalities.",
                 "questions": [
-                    "Can we forecast the number of deaths from natural disasters in the next decade using time series modeling?",
-                    "Is there a statistically significant correlation between certain disaster types\u2019 death tolls over time?",
-                    "How do the disaster death counts cluster when analyzed by multi-year windows (e.g., K-means clustering by year and disaster type)?"
+                    "write a function with two input variables df1 and df2 that calculate the correlation between the two dataframes",
                 ],
-                "tag": "statistical_forecasting",
-                "type": "branch"
-            }
+                "tag": "outlier_analysis",
+                "type": "deep_dive"
+            },
         ]);
     const [recReasoning, setRecReasoning] = useState<string>("");
     
@@ -320,19 +318,6 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
     
     // Add state for loading ideas
     const [isLoadingIdeas, setIsLoadingIdeas] = useState<boolean>(false);
-
-    // Helper functions for localStorage-based timing with table-specific keys
-    const getLastGenerationTime = (tableId: string, mode: 'interactive' | 'agent'): number => {
-        const stored = localStorage.getItem(`chartRecBox_lastGenerationTime_${tableId}_${mode}`);
-        return stored ? parseInt(stored, 10) : 0;
-    };
-
-    const setLastGenerationTime = (tableId: string, mode: 'interactive' | 'agent', time: number) => {
-        localStorage.setItem(`chartRecBox_lastGenerationTime_${tableId}_${mode}`, time.toString());
-    };
-
-    // Minimum interval between generations (in milliseconds) - 30 seconds
-    const MIN_GENERATION_INTERVAL = 30000;
 
     // Use the provided tableId and find additional available tables for multi-table operations
     const currentTable = tables.find(t => t.id === tableId);
@@ -696,7 +681,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
 
                         const chartType = chartTypeMap[refinedGoal?.['chart_type']] || 'Scatter Plot';
                         let newChart = generateFreshChart(candidateTable.id, chartType) as Chart;
-                        newChart = resolveChartFields(newChart, currentConcepts, refinedGoal, candidateTable);
+                        newChart = resolveChartFields(newChart, currentConcepts, refinedGoal['visualization_fields'], candidateTable);
 
                         // Create and focus the new chart directly
                         dispatch(dfActions.addAndFocusChart(newChart));
@@ -926,14 +911,8 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                 chartType = chartTypeMap[chartGoal?.chart_type] || "Scatter Plot";
                 
                 // Create trigger chart for derive info
-                let triggerChart = generateFreshChart(candidateTable.id, chartType) as Chart;
+                let triggerChart = generateFreshChart(actionTables[0].id, 'Auto') as Chart;
                 triggerChart.source = 'trigger';
-
-                // Resolve chart fields for trigger chart if we have them
-                if (chartGoal) {
-                    const currentConcepts = [...conceptShelfItems.filter(c => names.includes(c.name)), ...conceptsToAdd];
-                    triggerChart = resolveChartFields(triggerChart, currentConcepts, chartGoal, candidateTable);
-                }
 
                 // Update the derive trigger to reference the trigger chart
                 if (candidateTable.derive) {
@@ -946,8 +925,8 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
 
                 // Resolve chart fields for regular chart if we have them
                 if (chartGoal) {
-                    const currentConcepts = [...conceptShelfItems.filter(c => names.includes(c.name)), ...conceptsToAdd];
-                    newChart = resolveChartFields(newChart, currentConcepts, chartGoal, candidateTable);
+                    const currentConcepts = [...conceptShelfItems.filter(c => names.includes(c.name)), ...allNewConcepts, ...conceptsToAdd];
+                    newChart = resolveChartFields(newChart, currentConcepts, chartGoal['visualization_fields'], candidateTable);
                 }
 
                 createdCharts.push(newChart);
@@ -987,7 +966,6 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
             if (completionResult) {
                 // Get completion message from completion result if available
                 let summary = completionResult.content.plan.instruction || completionResult.content.plan.assessment || "";
-                console.log(completionResult);
                 
                 dispatch(dfActions.udpateAgentWorkInProgress({actionId: actionId, description: summary, status: completionResult.content.plan.status === 'present' ? 'completed' : 'warning', hidden: false}));
 
@@ -1138,9 +1116,6 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                         
                     }} onClick={() => {
                         setMode("interactive");
-                        if (ideas.length === 0) {
-                            getIdeasFromAgent("interactive");
-                        }
                     }}>
                         interactive
                     </Button>

@@ -35,8 +35,9 @@ Concretely, you should infer the appropriate data and create a SQL query based o
 ```json
 {
     "mode": "" // string, one of "infer", "overview", "distribution", "summary"
+    "recap": "..." // string, a short summary of the user's goal.
+    "display_instruction": "..." // string, the even shorter verb phrase describing the users' goal.
     "recommendation": "..." // string, explain why this recommendation is made 
-    "display_instruction": "..." // string, the short verb phrase instruction that will be displayed to the user.
     "output_fields": [...] // string[], describe the desired output fields that the output data should have (i.e., the goal of transformed data), it's a good idea to preseve intermediate fields here
     "chart_type": "" // string, one of "point", "bar", "line", "area", "heatmap", "group_bar". "chart_type" should either be inferred from user instruction, or recommend if the user didn't specify any.
     "visualization_fields": [] // string[]: select a subset of the output_fields should be visualized (no more than 3 unless the user explicitly mentioned), ordered based on if the field will be used in x,y axes or legends for the recommended chart type, do not include other intermediate fields from "output_fields".
@@ -44,6 +45,7 @@ Concretely, you should infer the appropriate data and create a SQL query based o
 ```
 
 Concretely:
+    - recap what the user's goal is in a short summary in "recap".
     - If the user's [GOAL] is clear already, simply infer what the user mean. Set "mode" as "infer" and create "output_fields" and "visualization_fields_list" based off user description.
     - If the user's [GOAL] is not clear, make recommendations to the user:
         - choose one of "distribution", "overview", "summary" in "mode":
@@ -53,10 +55,11 @@ Concretely:
         - describe the recommendation reason in "recommendation"
         - based on the recommendation, determine what is an ideal output data. Note, the output data must be in tidy format.
         - then suggest recommendations of visualization fields that should be visualized.
-    - "display_instruction" should be a short verb phrase instruction that will be displayed to the user. 
-        - it would be a short single sentence summary of the user intent as a verb phrase.
-        - generate it based on user's [GOAL] and the suggested visualization, don't simply repeat the visualization design, instead describe the visualization goal in high-level semantic way.
-        - if the user specification follows up the previous instruction, the display instruction should describe what's new in this step without repeating what's already mentioned in the previous instruction (the user will be able to see the previous instruction to get context).
+    - "display_instruction" should be a short verb phrase describing the users' goal, it should be even shorter than "recap". 
+        - it would be a short verbal description of user intent as a verb phrase (<12 words).
+        - generate it based on user's [GOAL] and the suggested visualization, but don't need to mention the visualization details.
+        - if the user specification follows up the previous instruction, the 'display_instruction' should only describe how it builds up the previous instruction without repeating information from previous steps.
+        - the phrase can be presented in different styles, e.g., question (what's xxx), instruction (show xxx), description, etc.
         - if you mention column names from the input or the output data, highlight the text in **bold**.
             * the column can either be a column in the input data, or a new column that will be computed in the output data.
             * the mention don't have to be exact match, it can be semantically matching, e.g., if you mentioned "average score" in the text while the column to be computed is "Avg_Score", you should still highlight "**average score**" in the text.
@@ -148,8 +151,9 @@ table_0 (student_exam) sample:
 ```json
 {  
     "mode": "infer",  
-    "recommendation": "To rank students based on their average scores, we need to calculate the average score for each student and then rank them accordingly.",  
+    "recap": "Rank students based on their average scores",
     "display_instruction": "Rank students based on their average scores",
+    "recommendation": "To rank students based on their average scores, we need to calculate the average score for each student and then rank them accordingly.",  
     "output_fields": ["student", "major", "math", "reading", "writing", "average_score", "rank"],  
     "chart_type": "bar",  
     "visualization_fields": ["student", "average_score"]  

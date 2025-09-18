@@ -58,6 +58,7 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import CloseIcon from '@mui/icons-material/Close';
 import LightbulbOutlinedIcon from '@mui/icons-material/LightbulbOutlined';
 import TipsAndUpdatesIcon from '@mui/icons-material/TipsAndUpdates';
+import BugReportIcon from '@mui/icons-material/BugReport';
 import { IdeaChip } from './ChartRecBox';
 
 // Property and state of an encoding shelf
@@ -390,7 +391,6 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
     const [ideas, setIdeas] = useState<{text: string, goal: string, difficulty: 'easy' | 'medium' | 'hard'}[]>([]);
     const [recReasoning, setRecReasoning] = useState<string>("");
     const [isLoadingIdeas, setIsLoadingIdeas] = useState<boolean>(false);
-    
     
     // Update the handler to use state
     const handleUserSelectedActionTableChange = (newTableIds: string[]) => {
@@ -808,7 +808,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                                 
                                 // there is no need to resolve fields for table chart, just display all fields
                                 if (chart.chartType != "Table") {   
-                                    newChart = resolveChartFields(newChart, currentConcepts, refinedGoal, candidateTable);
+                                    newChart = resolveChartFields(newChart, currentConcepts, refinedGoal['visualization_fields'], candidateTable);
                                 }
 
                                 dispatch(dfActions.addAndFocusChart(newChart));

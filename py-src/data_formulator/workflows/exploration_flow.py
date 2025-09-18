@@ -3,6 +3,7 @@
 
 import json
 import logging
+from this import d
 import pandas as pd
 from typing import Dict, List, Any, Optional, Tuple, Generator
 
@@ -121,6 +122,7 @@ def run_exploration_flow_streaming(
         # Step 1: Use rec agent to transform data based on current question
         logger.info(f"Iteration {iteration}: Using rec agent for question: {current_question}")
         
+        attempt = 0
         if previous_transformation_dialog:
             transformation_results = rec_agent.followup(
                 input_tables=input_tables,
@@ -133,18 +135,32 @@ def run_exploration_flow_streaming(
                 input_tables=input_tables,
                 description=current_question
             )
-        
-        if not transformation_results or transformation_results[0]['status'] != 'ok':
-            error_msg = transformation_results[0]['content'] if transformation_results else "Data transformation failed"
-            yield {
-                "iteration": iteration,
-                "type": "data_transformation",
-                "content": {"question": current_question},
-                "status": "error",
-                "error_message": error_msg
-            }
-            break
-        
+
+        # give one attempt to fix potential errors
+        while (not transformation_results or transformation_results[0]['status'] != 'ok'):
+
+            if attempt >= 1 or not transformation_results:
+                yield {
+                    "iteration": iteration,
+                    "type": "data_transformation",
+                    "content": {"question": current_question},
+                    "status": "error",
+                    "error_message": "data transformation failed"
+                }
+                break
+
+            attempt += 1
+            error_msg = transformation_results[0]['content'] 
+            dialog = transformation_results[0]['dialog']
+
+            new_instruction = f"We run into the following problem executing the code, please fix it:\n\n{error_msg}\n\nPlease think step by step, reflect why the error happens and fix the code so that no more errors would occur."
+            transformation_results = rec_agent.followup(
+                input_tables=input_tables,
+                new_instruction=new_instruction,
+                latest_data_sample=[],
+                dialog=dialog
+            )
+
         # Extract transformation result
         transform_result = transformation_results[0]
         transformed_data = transform_result['content']

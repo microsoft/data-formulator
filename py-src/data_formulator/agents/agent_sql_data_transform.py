@@ -29,12 +29,12 @@ Concretely, you should first refine users' goal and then create a sql query in t
         - based on the user's "goal" and provided "visualization_fields", elaborate the goal into a "detailed_instruction".
             - first elaborate which fields the user wants to visualize based on "visualization_fields";
             - then, elaborate the goal into a "detailed_instruction" contextualized with the provided "visualization_fields".
-                * note: try to distinguish whether the user wants to fitler the data with some conditions, or they want to aggregate data based on some fields.
-                * e.g., filter data to show all items from top 20 categories based on their average values, is different from showing the top 20 categories with their average values
-         - "display_instruction" should be a short verb phrase instruction that will be displayed to the user. 
-            - it would be a short single sentence summary of the user intent as a verb phrase.
-            - generate it based on user's [GOAL] and the suggested visualization, don't simply repeat the visualization design, instead describe the visualization goal in high-level semantic way.
-            - if the user specification follows up the previous instruction, the display instruction should describe what's new in this step without repeating what's already mentioned in the previous instruction (the user will be able to see the previous instruction to get context).
+        - "display_instruction" should be a short verb phrase describing the users' goal, it should be shorter than "detailed_instruction". 
+            - it would be a short verbal description of user intent as a verb phrase (<12 words).
+            - generate it based on user's [GOAL] and the suggested visualization, but don't need to mention the visualization details.
+            - should capture key computation ideas: by reading the display, the user can understand the purpose and what's derived from the data.
+            - if the user specification follows up the previous instruction, the 'display_instruction' should only describe how it builds up the previous instruction without repeating information from previous steps.
+            - the phrase can be presented in different styles, e.g., question (what's xxx), instruction (show xxx), description, etc.
             - if you mention column names from the input or the output data, highlight the text in **bold**.
                 * the column can either be a column in the input data, or a new column that will be computed in the output data.
                 * the mention don't have to be exact match, it can be semantically matching, e.g., if you mentioned "average score" in the text while the column to be computed is "Avg_Score", you should still highlight "**average score**" in the text.
@@ -55,7 +55,7 @@ Concretely, you should first refine users' goal and then create a sql query in t
 ```
 {
     "detailed_instruction": "..." // string, elaborate user instruction with details if the user
-    "display_instruction": "..." // string, the short verb phrase instruction that will be displayed to the user.
+    "display_instruction": "..." // string, the short verb phrase describing the users' goal.
     "output_fields": [...] // string[], describe the desired output fields that the output data should have based on the user's goal, it's a good idea to preserve intermediate fields here (i.e., the goal of transformed data)
     "visualization_fields": [] // string[]: a subset of fields from "output_fields" that will be visualized, ordered based on if the field will be used in x,y axes or legends, do not include other intermediate fields from "output_fields".
     "reason": "..." // string, explain why this refinement is made
