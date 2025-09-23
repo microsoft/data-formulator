@@ -68,75 +68,79 @@ function a11yProps(index: number) {
   };
 }
 
-export interface TableMetadata {
+// Update the interface to support multiple tables per dataset
+export interface DatasetMetadata {
     name: string;
     description: string;
-    challenges: { text: string; goal: string; difficulty: 'easy' | 'hard'; }[];
-    table: DictTable;
+    source: string;
+    tables: {
+        table_name: string;
+        url: string;
+        format: string;
+        sample: any[];
+    }[];
 }
 
-
-export interface TableSelectionViewProps {
-    tableMetadata: TableMetadata[];
-    handleDeleteTable?: (index: number) => void;
-    handleSelectTable: (tableMetadata: TableMetadata) => void;
+export interface DatasetSelectionViewProps {
+    datasets: DatasetMetadata[];
+    handleSelectDataset: (datasetMetadata: DatasetMetadata) => void;
     hideRowNum?: boolean;
 }
 
 
-export const TableSelectionView: React.FC<TableSelectionViewProps> = function TableSelectionView({ tableMetadata, handleDeleteTable, handleSelectTable, hideRowNum  }) {
+export const DatasetSelectionView: React.FC<DatasetSelectionViewProps> = function DatasetSelectionView({ datasets, handleSelectDataset, hideRowNum  }) {
 
-    const [selectedTableName, setSelectedTableName] = React.useState<string | undefined>(undefined);
+    const [selectedDatasetName, setSelectedDatasetName] = React.useState<string | undefined>(undefined);
 
     useEffect(() => {
-        if (tableMetadata.length > 0) {
-            setSelectedTableName(tableMetadata[0].name);
+        if (datasets.length > 0) {
+            setSelectedDatasetName(datasets[0].name);
         }
-    }, [tableMetadata]);
+    }, [datasets]);
 
-    const handleTableSelect = (index: number) => {
-        setSelectedTableName(tableMetadata[index].name);
+    const handleDatasetSelect = (index: number) => {
+        setSelectedDatasetName(datasets[index].name);
     };
 
-    let tableTitles : string[] = [];
-    for (let i = 0; i < tableMetadata.length; i ++) {
+    let datasetTitles : string[] = [];
+    for (let i = 0; i < datasets.length; i ++) {
         let k = 0;
-        let title = tableMetadata[i].name;
-        while (tableTitles.includes(title)) {
+        let title = datasets[i].name;
+        while (datasetTitles.includes(title)) {
             k = k + 1;
             title = `${title}_${k}`;
         }
-        tableTitles.push(title);
+        datasetTitles.push(title);
     }
 
     return (
-        <Box sx={{ flexGrow: 1, bgcolor: 'background.paper', display: 'flex', maxHeight: 600, borderRadius: 2 }} >
+        <Box sx={{ flexGrow: 1, bgcolor: 'background.paper', display: 'flex', height: 600, borderRadius: 2 }} >
             {/* Button navigation */}
             <Box sx={{ 
-                minWidth: 120, 
+                minWidth: 180, 
                 display: 'flex',
                 flexDirection: 'column',
                 borderRight: 1,
                 borderColor: 'divider'
             }}>
-                {tableTitles.map((title, i) => (
+                {datasetTitles.map((title, i) => (
                     <Button
                         key={i}
                         variant="text"
                         size="small"
                         color='primary'
-                        onClick={() => handleTableSelect(i)}
+                        onClick={() => handleDatasetSelect(i)}
                         sx={{
                             fontSize: 12,
                             textTransform: "none",
-                            width: 120,
+                            width: 180,
                             justifyContent: 'flex-start',
                             textAlign: 'left',
                             borderRadius: 0,
                             py: 1,
                             px: 2,
-                            color: selectedTableName === title ? 'primary.main' : 'text.secondary',
-                            borderRight: selectedTableName === title ? 2 : 0,
+                            color: selectedDatasetName === title ? 'primary.main' : 'text.secondary',
+                            borderRight: selectedDatasetName === title ? 2 : 0,
                             borderColor: 'primary.main',
                         }}
                     >
@@ -147,47 +151,53 @@ export const TableSelectionView: React.FC<TableSelectionViewProps> = function Ta
 
             {/* Content area */}
             <Box sx={{ flex: 1, overflow: 'auto', p: 2 }}>
-                {tableMetadata.map((tm, i) => {
-                    if (tm.name !== selectedTableName) return null;
+                {datasets.map((dataset, i) => {
+                    if (dataset.name !== selectedDatasetName) return null;
+
+                    let tableComponents = dataset.tables.map((table, j) => {
+                        let t = createTableFromFromObjectArray(table.table_name, table.sample, true);
+                        let maxDisplayRows = dataset.tables.length > 1 ? 5 : 9;
+                        if (t.rows.length < maxDisplayRows) {
+                            maxDisplayRows = t.rows.length - 1;
+                        }
+                        let sampleRows = [
+                            ...t.rows.slice(0,maxDisplayRows), 
+                            Object.fromEntries(t.names.map(n => [n, "..."]))
+                        ];
+                        let colDefs = t.names.map(name => { return {
+                            id: name, label: name, minWidth: 60, align: undefined, format: (v: any) => v,
+                        }})
+
+                        let content = <Paper variant="outlined" key={t.names.join("-")} sx={{width: 800, maxWidth: '100%', padding: "0px", marginBottom: "8px"}}>
+                            <CustomReactTable rows={sampleRows} columnDefs={colDefs} rowsPerPageNum={-1} compact={false} />
+                        </Paper>
+
+                        return (
+                            <Box key={j}>
+                                <Typography variant="subtitle2" sx={{ mb: 1, fontSize: 12}} color="text.secondary">
+                                    {table.url.split("/").pop()?.split(".")[0]}  ({Object.keys(t.rows[0]).length} columns{hideRowNum ? "" : ` ⨉ ${t.rows.length} rows`})
+                                </Typography>
+                                {content}
+                            </Box>
+                        )
+                    });
                     
-                    let t = tm.table;
-                    let sampleRows = [...t.rows.slice(0,9), Object.fromEntries(t.names.map(n => [n, "..."]))];
-                    let colDefs = t.names.map(name => { return {
-                        id: name, label: name, minWidth: 60, align: undefined, format: (v: any) => v,
-                    }})
-
-                    let content = <Paper variant="outlined" key={t.names.join("-")} sx={{width: 800, maxWidth: '100%', padding: "0px", marginBottom: "8px"}}>
-                        <CustomReactTable rows={sampleRows} columnDefs={colDefs} rowsPerPageNum={-1} compact={false} />
-                    </Paper>
-
                     return (
                         <Box key={i}>
-                            <Typography variant="subtitle2" sx={{ mb: 1, fontSize: 12}} color="text.secondary">
-                                {tm.name} ‣ {tm.description}
-                            </Typography>
-                            {content}
-                            <Box width="100%" sx={{display: "flex"}}>
-                                <Typography sx={{fontSize: 10, color: "text.secondary"}}>
-                                    {Object.keys(t.rows[0]).length} columns{hideRowNum ? "" : ` ⨉ ${t.rows.length} rows`}
+                            <Box sx={{mb: 1, gap: 1, maxWidth: 800, display: "flex", alignItems: "center"}}>
+                                <Typography sx={{fontSize: 12}}>
+                                    {dataset.description} <Typography variant="caption" sx={{color: "primary.light", fontSize: 10, mx: 0.5}}>[from {dataset.source}]</Typography> 
                                 </Typography>
-                                <Box sx={{marginLeft: "auto"}} >
-                                    {handleDeleteTable == undefined ? "" : 
-                                        <IconButton size="small" color="primary" sx={{marginRight: "12px"}}
-                                            onClick={(event: React.MouseEvent<HTMLElement>) => { 
-                                                handleDeleteTable(i);
-                                                setSelectedTableName(tableMetadata[i - 1 < 0 ? 0 : i - 1].name);
-                                            }}
-                                        >
-                                            <DeleteIcon fontSize="inherit"/>
-                                        </IconButton>}
+                                <Box sx={{marginLeft: "auto", flexShrink: 0}} >
                                     <Button size="small" variant="contained" 
                                             onClick={(event: React.MouseEvent<HTMLElement>) => {
-                                                handleSelectTable(tm);
+                                                handleSelectDataset(dataset);
                                             }}>
-                                        load table
+                                        load dataset
                                     </Button>
                                 </Box>
                             </Box>
+                            {tableComponents}
                         </Box>
                     );
                 })}
@@ -196,21 +206,64 @@ export const TableSelectionView: React.FC<TableSelectionViewProps> = function Ta
     );
 }
 
-export const TableSelectionDialog: React.FC<{ buttonElement: any }> = function TableSelectionDialog({ buttonElement }) {
+export const DatasetSelectionDialog: React.FC<{ buttonElement: any }> = function DatasetSelectionDialog({ buttonElement }) {
 
-    const [datasetPreviews, setDatasetPreviews] = React.useState<TableMetadata[]>([]);
+    const [datasetPreviews, setDatasetPreviews] = React.useState<DatasetMetadata[]>([]);
     const [tableDialogOpen, setTableDialogOpen] = useState<boolean>(false);
 
     React.useEffect(() => {
         // Show a loading animation/message while loading
-        fetch(`${getUrls().VEGA_DATASET_LIST}`)
+        fetch(`${getUrls().EXAMPLE_DATASETS}`)
             .then((response) => response.json())
             .then((result) => {
-                let tableMetadata : TableMetadata[] = result.map((info: any) => {
-                    let table = createTableFromFromObjectArray(info["name"], JSON.parse(info["snapshot"]), true)
-                    return {table: table, challenges: info["challenges"], name: info["name"], description: info["description"]}
-                }).filter((t : TableMetadata | undefined) => t != undefined);
-                setDatasetPreviews(tableMetadata);
+                let datasets : DatasetMetadata[] = result.map((info: any) => {
+                    let tables = info["tables"].map((table: any) => {
+
+                        if (table["format"] == "json") {
+                            return {
+                                table_name: table["name"],
+                                url: table["url"],
+                                format: table["format"],
+                                sample: table["sample"],
+                            }
+                        }
+                        else if (table["format"] == "csv" || table["format"] == "tsv") {
+                            const delimiter = table["format"] === "csv" ? "," : "\t";
+                            const rows = table["sample"]
+                                .split("\n")
+                                .map((row: string) => row.split(delimiter));
+                            
+                            // Treat first row as headers and convert to object array
+                            if (rows.length > 0) {
+                                const headers = rows[0];
+                                const dataRows = rows.slice(1);
+                                const sampleData = dataRows.map((row: string[]) => {
+                                    const obj: any = {};
+                                    headers.forEach((header: string, index: number) => {
+                                        obj[header] = row[index] || '';
+                                    });
+                                    return obj;
+                                });
+                                
+                                return {
+                                    table_name: table["name"],
+                                    url: table["url"],
+                                    format: table["format"],
+                                    sample: sampleData,
+                                };
+                            }
+                            
+                            return {
+                                table_name: table["name"],
+                                url: table["url"],
+                                format: table["format"],
+                                sample: [],
+                            };
+                        }
+                    })
+                    return {tables: tables, name: info["name"], description: info["description"], source: info["source"]}
+                }).filter((t : DatasetMetadata | undefined) => t != undefined);
+                setDatasetPreviews(datasets);
             });
       }, []);
 
@@ -226,7 +279,7 @@ export const TableSelectionDialog: React.FC<{ buttonElement: any }> = function T
                 open={tableDialogOpen}
                 sx={{ '& .MuiDialog-paper': { maxWidth: '100%', maxHeight: 840, minWidth: 800 } }}
             >
-                <DialogTitle sx={{display: "flex"}}>Examples
+                <DialogTitle sx={{display: "flex"}}>Explore
                     <IconButton
                         sx={{marginLeft: "auto"}}
                         edge="start"
@@ -239,42 +292,33 @@ export const TableSelectionDialog: React.FC<{ buttonElement: any }> = function T
                     </IconButton>
                 </DialogTitle>
                 <DialogContent sx={{overflowX: "hidden", padding: 1}}>
-                    <TableSelectionView tableMetadata={datasetPreviews} hideRowNum
-                        handleDeleteTable={undefined}
-                        handleSelectTable={(tableMetadata) => {
-                            fetch(`${getUrls().VEGA_DATASET_REQUEST_PREFIX}${tableMetadata.table.id}`)
-                                .then((response) => {
-                                    return response.text()
-                                })
-                                .then((text) => {         
-                                    let fullTable = createTableFromFromObjectArray(tableMetadata.table.id, JSON.parse(text), true);
-                                    if (fullTable) {
-                                        dispatch(dfActions.loadTable(fullTable));
-                                        dispatch(fetchFieldSemanticType(fullTable));
-                                        dispatch(dfActions.addChallenges({
-                                            tableId: tableMetadata.table.id,
-                                            challenges: tableMetadata.challenges
-                                        }));
-                                    } else {
-                                        throw "";
+                    <DatasetSelectionView datasets={datasetPreviews} hideRowNum
+                        handleSelectDataset={(dataset) => {
+                            setTableDialogOpen(false);
+                            for (let table of dataset.tables) { 
+                                fetch(table.url)
+                                .then(res => res.text())
+                                .then(textData => {
+                                    console.log(textData);
+                                    let tableName = table.url.split("/").pop()?.split(".")[0] || 'table-' + Date.now().toString().substring(0, 8);
+                                    let dictTable;
+                                    if (table.format == "csv") {
+                                        dictTable = createTableFromText(tableName, textData);
+                                    } else if (table.format == "json") {
+                                        dictTable = createTableFromFromObjectArray(tableName, JSON.parse(textData), true);
+                                    } 
+                                    if (dictTable) {
+                                        dispatch(dfActions.loadTable(dictTable));
+                                        dispatch(fetchFieldSemanticType(dictTable));
                                     }
-                                    setTableDialogOpen(false); 
-                                })
-                                .catch((error) => {
-                                    console.log(error)
-                                    dispatch(dfActions.addMessages({
-                                        "timestamp": Date.now(),
-                                        "type": "error",
-                                        "component": "data loader",
-                                        "value": `Unable to load the sample dataset ${tableMetadata.table.id}, please try again later or upload your data.`
-                                    }));
-                                })
+                                    
+                                });
+                            } 
                         }}/>
                 </DialogContent>
             </Dialog>
     </>
 }
-
 
 export interface TableUploadDialogProps {
     buttonElement: any;

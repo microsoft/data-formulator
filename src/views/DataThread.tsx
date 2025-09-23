@@ -66,10 +66,40 @@ import { dfSelectors } from '../app/dfSlice';
 const AgentStatusBox = memo<{
     tableId: string;
     relevantAgentActions: any[];
-    agentStatus: string;
-    getAgentStatusColor: (status: string) => string;
     dispatch: any;
-}>(({ tableId, relevantAgentActions, agentStatus, getAgentStatusColor, dispatch }) => {
+}>(({ tableId, relevantAgentActions, dispatch }) => {
+
+    let theme = useTheme();
+
+    let agentStatus = undefined;
+
+    let getAgentStatusColor = (status: string) => {
+        switch (status) {
+            case 'running':
+                return `${theme.palette.text.secondary} !important`;
+            case 'completed':
+                return `${theme.palette.success.main} !important`;
+            case 'failed':
+                return `${theme.palette.error.main} !important`;
+            case 'warning':
+                return `${theme.palette.warning.main} !important`;
+            default:
+                return `${theme.palette.text.secondary} !important`;
+        }
+    }
+
+    let currentActions = relevantAgentActions.filter(a => !(a.status == 'running' && Date.now() - a.lastUpdate > 30 * 1000));
+
+    if (currentActions.some(a => a.status == 'running')) {
+        agentStatus = 'running';
+    } else if (currentActions.every(a => a.status == 'completed')) {
+        agentStatus = 'completed';
+    } else if (currentActions.every(a => a.status == 'failed')) {
+        agentStatus = 'failed';
+    } else {
+        agentStatus = 'warning';
+    }
+    
     const thinkingBanner = (
         <Box sx={{ 
             py: 0.5, 
@@ -107,7 +137,7 @@ const AgentStatusBox = memo<{
         </Box>
     );
 
-    if (relevantAgentActions.length === 0) {
+    if (currentActions.length === 0) {
         return null;
     }
 
@@ -153,7 +183,7 @@ const AgentStatusBox = memo<{
                     </Tooltip>
                 </Box>
             )}
-            {relevantAgentActions.map((a, index, array) => (
+            {currentActions.map((a, index, array) => (
                 <React.Fragment key={a.actionId + "-" + index}>
                     <Box sx={{ 
                         position: 'relative',
@@ -541,37 +571,13 @@ let SingleThreadGroupView: FC<{
 
         let relevantAgentActions = agentActions.filter(a => a.tableId == tableId).filter(a => a.hidden == false);
 
-        let agentStatus = undefined;
-        let getAgentStatusColor = (status: string) => {
-            switch (status) {
-                case 'running':
-                    return `${theme.palette.text.secondary} !important`;
-                case 'completed':
-                    return `${theme.palette.success.main} !important`;
-                case 'failed':
-                    return `${theme.palette.error.main} !important`;
-                case 'warning':
-                    return `${theme.palette.warning.main} !important`;
-                default:
-                    return `${theme.palette.text.secondary} !important`;
-            }
-        }
-        if (relevantAgentActions.some(a => a.status == 'running')) {
-            agentStatus = 'running';
-        } else if (relevantAgentActions.every(a => a.status == 'completed')) {
-            agentStatus = 'completed';
-        } else if (relevantAgentActions.every(a => a.status == 'failed')) {
-            agentStatus = 'failed';
-        } else {
-            agentStatus = 'warning';
-        }
+        
+
 
         let agentActionBox = (
             <AgentStatusBox 
                 tableId={tableId}
                 relevantAgentActions={relevantAgentActions}
-                agentStatus={agentStatus}
-                getAgentStatusColor={getAgentStatusColor}
                 dispatch={dispatch}
             />
         )
@@ -673,9 +679,6 @@ let SingleThreadGroupView: FC<{
     return <Box sx={{ ...sx, 
             '& .selected-card': { 
                 border: `2px solid ${theme.palette.primary.light}`,
-            },
-            '& .MuiTypography-root': {
-                color: isThreadFocused ? theme.palette.text.primary : theme.palette.text.secondary,
             },
             transition: "box-shadow 0.3s ease-in-out",
         }}
@@ -1003,7 +1006,7 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
         let groupId = immediateParentTableId + (leafTable.anchored ? ('-' + leafTable.id) : '');
 
         let subgroupIdCount = 0;
-        while (groups[groupId] && groups[groupId].length >= 3) {
+        while (groups[groupId] && groups[groupId].length >= 4) {
             groupId = groupId + '-' + subgroupIdCount;
             subgroupIdCount++;
         }

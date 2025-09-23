@@ -22,7 +22,7 @@ Given a dataset provided by the user,
 4. provide a list of 5 explorative questions that can help users get started with data visualizations.
 
 Types to consider include: string, number, date
-Semantic types to consider include: Location, Year, Month, Day, Date, Time, DateTime, Range, Duration, Name, Percentage, String, Number
+Semantic types to consider include: Location, Decade, Year, Month, YearMonth, Day, Date, Time, DateTime, Range, Duration, Name, Percentage, String, Number
 
 Furthermore, if the field is string type and is ordinal (especially for english month name, week name, range), provide the natural sort order of the fields here.
 Otherwise, put sort_order as null (for example, Name should not be sorted).

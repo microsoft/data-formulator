@@ -60,6 +60,7 @@ import LightbulbOutlinedIcon from '@mui/icons-material/LightbulbOutlined';
 import TipsAndUpdatesIcon from '@mui/icons-material/TipsAndUpdates';
 import BugReportIcon from '@mui/icons-material/BugReport';
 import { IdeaChip } from './ChartRecBox';
+import { ResolveChartFieldsTestDialog } from './ResolveChartFieldsTestDialog';
 
 // Property and state of an encoding shelf
 export interface EncodingShelfCardProps { 
@@ -187,9 +188,9 @@ export const TriggerCard: FC<{
 
     // Process the prompt to highlight content in ** **
     const processedPrompt = renderTextWithEmphasis(prompt, {
-        borderRadius: '4px', border: '1px solid rgb(250 235 215)', 
-        fontSize: mini ? 10 : 11, padding: '1px 4px',
-        background: 'rgb(250 235 215 / 80%)', 
+        fontSize: mini ? 10 : 12, padding: '1px 4px',
+        borderRadius: '4px',
+        background: alpha(theme.palette.custom.main, 0.08), 
     });
 
     if (mini) {
@@ -373,6 +374,9 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
     const dispatch = useDispatch<AppDispatch>();
 
     const [chartTypeMenuOpen, setChartTypeMenuOpen] = useState<boolean>(false);
+    
+    // Add state for test dialog
+    const [testDialogOpen, setTestDialogOpen] = useState<boolean>(false);
 
     let handleUpdateChartType = (newChartType: string) => {
         dispatch(dfActions.updateChartType({chartId, chartType: newChartType}));
@@ -597,9 +601,6 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                 console.log("start new dialog", startNewDialog);
                 
                 let additionalMessages = currentTable.derive.dialog;
-
-                console.log("additional messages", additionalMessages);
-                console.log("action tables", actionTables);
 
                 // in this case, because table ids has changed, we need to use the additional messages and reformulate
                 messageBody = JSON.stringify({
@@ -1014,6 +1015,20 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
             >
                 Editor
             </Typography>
+            <Box sx={{ flex: 1 }} />
+            <Tooltip title="Test resolveChartFields function">
+                <IconButton
+                    size="small"
+                    onClick={() => setTestDialogOpen(true)}
+                    sx={{ 
+                        width: 20,
+                        height: 20,
+                        fontSize: '10px'
+                    }}
+                >
+                    <BugReportIcon fontSize="inherit" />
+                </IconButton>
+            </Tooltip>
         </Box>
     );
 
@@ -1161,7 +1176,15 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
         </Card>
     );
 
-    return encodingShelfCard;
+    return (
+        <>
+            {encodingShelfCard}
+            <ResolveChartFieldsTestDialog 
+                open={testDialogOpen}
+                onClose={() => setTestDialogOpen(false)}
+            />
+        </>
+    );
 }
 
 // Function to convert Vega-Lite spec to PNG data URL with improved resolution

@@ -6,6 +6,7 @@ import random
 import sys
 import os
 import mimetypes
+from functools import lru_cache
 mimetypes.add_type('application/javascript', '.js')
 mimetypes.add_type('application/javascript', '.mjs')
 
@@ -37,6 +38,7 @@ import os
 from data_formulator.tables_routes import tables_bp
 from data_formulator.agent_routes import agent_bp
 from data_formulator.db_manager import db_manager
+from data_formulator.example_datasets_config import EXAMPLE_DATASETS
 
 import queue
 from typing import Dict, Any
@@ -94,79 +96,11 @@ def configure_logging():
     for handler in logging.getLogger().handlers:
         app.logger.addHandler(handler)
 
-@app.route('/api/vega-datasets')
-def get_example_dataset_list():
-    example_datasets = [
-        {"name": "gapminder", 
-         "description": "A simplified dataset of global development indicators tracking population, and life expectancy across countries over time.",
-         "challenges": [
-            {"text": "Show life expectancy trends for the 5 most populous countries.", "difficulty": "easy", "goal": "Life expectancy trends of the world's largest countries"},
-            {"text": "Which countries experienced the most dramatic life expectancy improvements between 1955 and 2005? Show the top 10 countries with the largest percentage increase.", "difficulty": "easy", "goal": "Countries with fastest life expectancy growth over 50 years"},
-            {"text": "Show the relationship between fertility rate and life expectancy in 2005. Highlight countries with population over 100 million.", "difficulty": "easy", "goal": "Fertility vs life expectancy correlation in major countries"},
-            {"text": "Identify countries that consistently ranked in the top 10 for life expectancy across all decades (1955-2005). Visualize their life expectancy trends over time.", "difficulty": "hard", "goal": "Consistently high-performing countries in life expectancy"},
-            {"text": "Find countries that completed the demographic transition (high life expectancy, low fertility) most quickly. Calculate the speed of transition for each country and show the top 15 fastest transitions.", "difficulty": "hard", "goal": "Speed of demographic transition across countries"}
-        ]},
-        {"name": "income", 
-         "description": "US income distribution data showing how household incomes are spread across different brackets and states.",
-         "challenges": [
-            {"text": "Compare income distribution between California and Texas over groups.", "difficulty": "easy", "goal": "Income distribution comparison: California vs Texas"},
-            {"text": "Which states showed the most volatile income distribution changes between 2000-2016? Calculate the standard deviation of income group percentages for each state.", "difficulty": "easy", "goal": "States with most volatile income distribution changes"},
-            {"text": "Create a stacked bar chart showing how the middle class (middle income groups) has changed as a percentage of total population across all states over time.", "difficulty": "easy", "goal": "Middle class evolution across US states"},
-            {"text": "Identify states that experienced a 'middle class squeeze' - where middle income groups decreased while both low and high income groups increased. Visualize these trends.", "difficulty": "hard", "goal": "States experiencing middle class decline"},
-            {"text": "Calculate the Gini coefficient equivalent for each state in 2016 using income group data. Show the 10 states with highest and lowest income inequality.", "difficulty": "hard", "goal": "Income inequality ranking across US states"}
-        ]},
-        {"name": "disasters", 
-         "description": "Historical records of natural disasters worldwide, including fatalities, types, and locations.",
-         "challenges": [
-            {"text": "Show deaths by disaster type for the last 10 years.", "difficulty": "easy", "goal": "Fatalities by disaster type (recent decade)"},
-            {"text": "Which disaster types have become more or less deadly over time? Calculate the 10-year moving average of deaths for each disaster type.", "difficulty": "easy", "goal": "Long-term trends in disaster fatality rates"},
-            {"text": "Create a heatmap showing the correlation between different disaster types - which disasters tend to occur together in the same year?", "difficulty": "easy", "goal": "Correlation patterns between disaster types"},
-            {"text": "Identify years with 'disaster clusters' - when multiple disaster types had above-average death tolls. Visualize these high-impact years.", "difficulty": "hard", "goal": "Years with multiple high-impact disasters"}
-        ]},
-        {"name": "movies", 
-         "description": "Box office performance, budgets, and ratings for films across different genres and time periods.",
-         "challenges": [
-            {"text": "Show the top 20 highest-grossing movies by genre.", "difficulty": "easy", "goal": "Top-grossing movies across genres"},
-            {"text": "Which movie genres have the highest 'return on investment' (worldwide gross / production budget)? Show the top 10 genres by average ROI.", "difficulty": "easy", "goal": "Most profitable movie genres by ROI"},
-            {"text": "Create a scatter plot of budget vs worldwide gross, colored by genre. Highlight movies that overperformed relative to their budget.", "difficulty": "easy", "goal": "Budget vs gross performance by genre"},
-            {"text": "Identify 'sleeper hits' - movies with low budgets but high ratings and gross. Show the top 20 movies that exceeded expectations.", "difficulty": "hard", "goal": "Low-budget movies that exceeded expectations"},
-            {"text": "Calculate the 'critical-commercial success' score (normalized rating × normalized gross) for each movie. Visualize how this score varies by genre and decade.", "difficulty": "hard", "goal": "Critical and commercial success by genre and era"}
-        ]},
-        {"name": "unemployment-across-industries", 
-         "description": "Unemployment rates across different economic sectors and industries over time.",
-         "challenges": [
-            {"text": "Show unemployment trends for the 5 largest industries.", "difficulty": "easy", "goal": "Unemployment trends in major industries"},
-            {"text": "Which industries are most sensitive to economic cycles? Calculate the correlation between each industry's unemployment rate and the overall average.", "difficulty": "easy", "goal": "Economic cycle sensitivity by industry"},
-            {"text": "Create a line chart showing the 'unemployment gap' (industry rate minus overall average) for each industry over time. Highlight industries that consistently outperform or underperform.", "difficulty": "easy", "goal": "Industry performance relative to overall unemployment"},
-            {"text": "Identify 'recession-proof' industries - those with the smallest unemployment rate increases during economic downturns (2000-2003, 2008-2010).", "difficulty": "hard", "goal": "Industries resilient to economic downturns"},
-            {"text": "Calculate the 'volatility index' (standard deviation of unemployment rate) for each industry. Show which industries have the most stable vs volatile employment patterns.", "difficulty": "hard", "goal": "Employment stability ranking across industries"}
-        ]}
-    ]
-    dataset_info = []
-    for dataset in example_datasets:
-        name = dataset["name"]
-        description = dataset["description"]
-        challenges = dataset["challenges"]
-        try:
-            info_obj = {'name': name, 'description': description, 'challenges': challenges, 'snapshot': vega_data(name).to_json(orient='records')}
-            dataset_info.append(info_obj)
-        except:
-            pass
-    
-    response = flask.jsonify(dataset_info)
-    response.headers.add('Access-Control-Allow-Origin', '*')
-    return response
 
-@app.route('/api/vega-dataset/<path:path>')
-def get_datasets(path):
-    try:
-        df = vega_data(path)
-        # to_json is necessary for handle NaN issues
-        data_object = df.to_json(None, 'records')
-    except Exception as err:
-        data_object = "[]"
-    response = data_object
-    return response
+@app.route('/api/example-datasets')
+def get_sample_datasets():
+    return flask.jsonify(EXAMPLE_DATASETS)
+
 
 @app.route("/", defaults={"path": ""})
 def index_alt(path):

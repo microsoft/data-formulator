@@ -70,11 +70,11 @@ def run_in_main_process(code, allowed_objects):
     # Create a restricted builtins dictionary with only safe operations
     safe_builtins = {}
     for name in ['abs', 'all', 'any', 'ascii', 'bin', 'bool', 'bytearray', 'bytes',
-                 'chr', 'complex', 'dict', 'divmod', 'enumerate', 'filter', 'float',
-                 'format', 'frozenset', 'hash', 'hex', 'int', 'iter', 'len', 'list',
-                 'map', 'max', 'min', 'next', 'oct', 'ord', 'pow', 'range', 'repr',
-                 'reversed', 'round', 'set', 'slice', 'sorted', 'str', 'sum', 'tuple',
-                 'zip', '__import__']:  # Note: we need __import__ for importing allowed modules
+                 'callable', 'chr', 'complex', 'dict', 'divmod', 'enumerate', 'filter', 'float',
+                 'format', 'frozenset', 'getattr', 'hasattr', 'hash', 'hex', 'id', 'int', 'isinstance',
+                 'iter', 'len', 'list', 'map', 'max', 'min', 'next', 'object', 'oct', 'ord', 'pow',
+                 'range', 'repr', 'reversed', 'round', 'set', 'slice', 'sorted', 'str', 'sum', 'tuple',
+                 'type', 'zip', '__import__']:  # Note: we need __import__ for importing allowed modules
         if name in __builtins__:
             safe_builtins[name] = __builtins__[name]
 

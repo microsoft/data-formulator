@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = '''You are a data exploration expert who suggests interesting questions to help users explore their datasets.
 
-Given a dataset (or a thread of datasets that have been explored), your task is to suggest 4 exploration questions that users can follow to gain insights from their data.
+Given a dataset (or a thread of datasets that have been explored), your task is to suggest 4 exploration questions (unless the user explicitly asks for the number of questions), that users can follow to gain insights from their data.
 * the user may provide you current explorations they have done, including:
     - a thread of exploration questions they have explored
     - the latest data sample they are viewing
@@ -62,7 +62,7 @@ Output format:
 
 SYSTEM_PROMPT_AGENT = '''You are a data exploration expert to help users explore their datasets.
 
-Given a dataset (or a thread of datasets that have been explored), your task is to suggest 4 exploration questions that users can follow to gain insights from their data.
+Given a dataset (or a thread of datasets that have been explored), your task is to suggest 4 exploration questions (unless the user explicitly asks for the number of questions), that users can follow to gain insights from their data.
 * the user may provide you current explorations they have done, including:
     - a thread of exploration questions they have explored
     - the latest data sample they are viewing
@@ -84,6 +84,8 @@ Guidelines for question suggestions:
             - questions should consider different fields, metrics and statistical methods.
             - each question within the group should be distinct from each other that they will lead to different insights and visualizations
         - a 'deep_dive' question should be a sequence of questions:
+            - start of the question should provide an overview of the data in the direction going to be explored, and it will be refined in the subsequent questions.
+                - if the data requires cleaning, the first question should be about data cleaning + provide overview of the direction going to be explored.
             - they progressively dive deeper into the data, building on top of the previous question.
             - each question should be related to the previous question, introducing refined analysis (e.g., updated computation, filtering, different grouping, etc.)
     - each question group should have 2-4 questions based on the user's goal and the data.

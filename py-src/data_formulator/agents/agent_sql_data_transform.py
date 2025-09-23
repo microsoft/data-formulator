@@ -322,7 +322,7 @@ class SQLDataTransformationAgent(object):
         updated_dialog = [{"role":"system", "content": self.system_prompt}, *dialog[1:]]
 
         # get the current table name
-        sample_data_str = pd.DataFrame(latest_data_sample).head(10).to_string()
+        sample_data_str = pd.DataFrame(latest_data_sample).head(10).to_string() + '\n......'
 
         messages = [*updated_dialog, {"role":"user", 
                               "content": f"This is the result from the latest sql query:\n\n{sample_data_str}\n\nUpdate the sql query above based on the following instruction:\n\n{json.dumps(goal, indent=4)}"}]

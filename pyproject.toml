@@ -39,7 +39,7 @@ dependencies = [
     "vl-convert-python", 
     "boto3",
     "backoff",
-    "weasyprint",
+    "beautifulsoup4",
     "scikit-learn"
 ]
 

@@ -264,57 +264,8 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
     const [agentIdeas, setAgentIdeas] = useState<{
         questions: string[], goal: string, 
         difficulty: 'easy' | 'medium' | 'hard', 
-        tag: string, type: 'branch' | 'deep_dive' }[]>([
-            {
-                "difficulty": "medium",
-                "goal": "Compare and visualize overall and type-specific impacts of natural disasters over time.",
-                "questions": [
-                    "Which types of natural disasters contributed the most deaths globally from 1900 to 2017?",
-                    "How has the total number of deaths from all natural disasters changed over each decade?",
-                    "What are the trends in deaths from specific disaster types (e.g., earthquakes vs. floods) over time?",
-                    "Which years experienced anomalously high numbers of disaster-related deaths, and which disaster types were responsible?"
-                ],
-                "tag": "overview_comparison",
-                "type": "branch"
-            },
-            {
-                "difficulty": "hard",
-                "goal": "Identify trends, cycles, and variability within and across disaster types.",
-                "questions": [
-                    "Is there seasonality or periodicity in the occurrence of high-fatality disasters?",
-                    "Do some disaster types show increasing or decreasing death trends while others remain stable?",
-                    "Are there clusters of years with high-impact disasters across multiple types?",
-                    "How does the variability (variance) in deaths differ between disaster types?"
-                ],
-                "tag": "trend_analysis",
-                "type": "branch"
-            },
-            {
-                "difficulty": "hard",
-                "goal": "Investigate and contextualize extreme outliers in disaster fatalities.",
-                "questions": [
-                    "Which disaster type had the single deadliest event across the entire dataset?",
-                    "For this disaster type, which five years had the highest death tolls?",
-                    "What percentage of total deaths from this disaster type occurred in its deadliest year?",
-                    "Did similar peaks occur in other disaster types during the same years?"
-                ],
-                "tag": "outlier_analysis",
-                "type": "deep_dive"
-            },
-            {
-                "difficulty": "hard",
-                "goal": "test 4:Investigate and contextualize extreme outliers in disaster fatalities.",
-                "questions": [
-                    "write a function with two input variables df1 and df2 that calculate the correlation between the two dataframes",
-                ],
-                "tag": "outlier_analysis",
-                "type": "deep_dive"
-            },
-        ]);
+        tag: string, type: 'branch' | 'deep_dive' }[]>([]);
     const [recReasoning, setRecReasoning] = useState<string>("");
-    
-    // Add state for cycling through questions
-    const [currentQuestionIndex, setCurrentQuestionIndex] = useState<number>(0);
     
     // Add state for loading ideas
     const [isLoadingIdeas, setIsLoadingIdeas] = useState<boolean>(false);
@@ -326,7 +277,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
     const [additionalTableIds, setAdditionalTableIds] = useState<string[]>([]);
     
     // Combine the main tableId with additional selected tables
-    const selectedTableIds = currentTable?.derive ? [...currentTable.derive.source, ...additionalTableIds] : [tableId];
+    const selectedTableIds = currentTable?.derive ? [...currentTable.derive.source, ...additionalTableIds] : [tableId, ...additionalTableIds];
 
     const handleTableSelectionChange = (newTableIds: string[]) => {
         // Filter out the main tableId since it's always included
@@ -336,7 +287,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
 
     // Function to get a question from the list with cycling
     const getQuestion = (): string => {
-        return mode === "agent" ? "generate some explore directions" : "show something interesting about the data";
+        return mode === "agent" ? "explore this direction" : "show something interesting about the data";
     };
 
     // Function to get ideas from the interactive explore agent
@@ -350,14 +301,10 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
         try {
             // Determine the root table and derived tables context
             let explorationThread: any[] = [];
-            let sourceTables = [currentTable];
+            let sourceTables = tables.filter(t => selectedTableIds.includes(t.id));
 
             // If current table is derived, find the root table and build exploration thread
             if (currentTable.derive && !currentTable.anchored) {
-                // Find the root table (first source table that is anchored or not derived)
-                const sourceTableIds = currentTable.derive.source;
-                sourceTables = sourceTableIds.map(id => tables.find(t => t.id === id)).filter(Boolean) as DictTable[];
-                
                 // Find the root table (anchored or not derived)
                 let triggers = getTriggers(currentTable, tables);
                 
@@ -375,10 +322,10 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                 model: activeModel,
                 start_question: startQuestion,
                 mode: mode,
-                input_tables: [{
-                    name: sourceTables[0].virtual?.tableId || sourceTables[0].id.replace(/\.[^/.]+$/, ""),
-                    rows: sourceTables[0].rows
-                }],
+                input_tables: sourceTables.map(t => ({
+                    name: t.virtual?.tableId || t.id.replace(/\.[^/.]+$/, ""),
+                    rows: t.rows
+                })),
                 exploration_thread: explorationThread
             });
 
@@ -464,7 +411,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
         }
     };
 
-    const deriveDataFromNL = (instruction: string) => {
+    const deriveDataFromNL = (instruction: string, focusNewChart: boolean = true) => {
 
         if (selectedTableIds.length === 0 || instruction.trim() === "") {
             return;
@@ -684,7 +631,10 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                         newChart = resolveChartFields(newChart, currentConcepts, refinedGoal['visualization_fields'], candidateTable);
 
                         // Create and focus the new chart directly
-                        dispatch(dfActions.addAndFocusChart(newChart));
+                        dispatch(dfActions.addChart(newChart));
+                        if (focusNewChart) {
+                            dispatch(dfActions.setFocusedChart(newChart.id));
+                        }
 
                         // Clean up
                         dispatch(dfActions.setFocusedTable(candidateTable.id));
@@ -739,7 +689,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
         });
     };
 
-    const exploreDataFromNL = (startQuestion: string) => {
+    const exploreDataFromNL = (startQuestion: string, startWithPlanning: boolean = false) => {
 
         let actionId = `exploreDataFromNL_${String(Date.now())}`;
 
@@ -762,7 +712,8 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
             start_question: startQuestion,
             model: activeModel,
             max_iterations: 5,
-            language: actionTables.some(t => t.virtual) ? "sql" : "python"
+            language: actionTables.some(t => t.virtual) ? "sql" : "python",
+            start_with_planning: startWithPlanning
         });
 
         
@@ -788,7 +739,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
         };
 
         // Function to process a single streaming result
-        const processStreamingResult = (result: any) => {
+        const processStreamingResult = (result: any, focusNewChart: boolean) => {
 
             if (result.type === "planning") {
                 dispatch(dfActions.udpateAgentWorkInProgress({actionId: actionId, description: result.content.plan.instruction, status: 'running', hidden: false}));
@@ -941,7 +892,10 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                 dispatch(fetchCodeExpl(candidateTable));
 
                 // Add and focus on the new chart
-                dispatch(dfActions.addAndFocusChart(newChart));
+                dispatch(dfActions.addChart(newChart));
+                if (focusNewChart) {
+                    dispatch(dfActions.setFocusedChart(newChart.id));
+                }
                 dispatch(dfActions.setFocusedTable(candidateTable.id));
 
                 // Show progress message
@@ -1027,6 +981,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                     buffer = lines.pop() || ''; // Keep the last incomplete line in buffer
 
                     // should be only one message per line
+                    let focusNewChart = true;
                     for (let line of lines) {
                         if (line.trim() !== "") {
                             try {
@@ -1034,7 +989,8 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                                 if (data.token === token) {
                                     if (data.status === "ok" && data.result) {
                                         allResults.push(data.result);
-                                        processStreamingResult(data.result);
+                                        processStreamingResult(data.result, focusNewChart);
+                                        focusNewChart = false;
 
                                         // Check if this is a completion result
                                         if (data.result.type === "completion") {
@@ -1124,9 +1080,6 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                             backgroundColor: mode === "agent" ? "rgba(25, 118, 210, 0.08)" : "transparent"
                         }} onClick={() => {
                             setMode("agent");
-                            if (agentIdeas.length === 0) {
-                                getIdeasFromAgent("agent");
-                            }
                         }}>
                         agent
                     </Button>
@@ -1140,8 +1093,19 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                 gap: 1,
                 position: 'relative',
                 boxShadow: mode === "agent" 
-                    ? ' 0 0 20px 0 rgba(25, 118, 210, 0.15)' 
-                    : 'none'
+                    ? '0 0 10px 0 rgba(25, 118, 210, 0.15)' 
+                    : 'none',
+                animation: mode === "agent" 
+                    ? 'glow 2s ease-in-out infinite alternate' 
+                    : 'none',
+                '@keyframes glow': {
+                    '0%': {
+                        boxShadow: '0 0 10px 0 rgba(25, 118, 210, 0.1)',
+                    },
+                    '100%': {
+                        boxShadow: '0 0 20px 0 rgba(25, 118, 210, 0.2), 0 0 20px 0 rgba(25, 118, 210, 0.1)',
+                    }
+                }
             }}>
                 {isFormulating && (
                     <LinearProgress 
@@ -1157,9 +1121,6 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                 )}
                 {showTableSelector && (
                     <Box>
-                        <Typography sx={{ fontSize: 12, color: "text.secondary", marginBottom: 0.5 }}>
-                            Select additional tables:
-                        </Typography>
                         <NLTableSelector
                             selectedTableIds={selectedTableIds}
                             tables={availableTables}
@@ -1182,33 +1143,17 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                         slotProps={{
                             inputLabel: { shrink: true },
                             input: {
-                                endAdornment: mode == "agent" ? <ButtonGroup>
-                                    <Tooltip title={agentIdeas.length > 0 ? "regenerate directions" : "generate exploration directions"}>   
-                                        <span>
-                                            <IconButton 
-                                                size="medium"
-                                                disabled={isFormulating || !currentTable || isLoadingIdeas}
-                                                color="primary" 
-                                                onClick={() => getIdeasFromAgent("agent", prompt.trim())}
-                                            >
-                                                {isLoadingIdeas ? <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
-                                                    <CircularProgress size={24} />
-                                                </Box> : (agentIdeas.length > 0 ? <RotateRightIcon sx={{fontSize: 24}} /> : <TipsAndUpdatesIcon sx={{fontSize: 24}} />)}
-                                            </IconButton>
-                                        </span>
-                                    </Tooltip>
-                                </ButtonGroup>
-                                : <Tooltip title="Generate chart from description">
+                                endAdornment: <Tooltip title="Generate chart from description">
                                     <span>
                                         <IconButton 
                                             size="medium"
                                             disabled={isFormulating || !currentTable || prompt.trim() === ""}
                                             color="primary" 
-                                            onClick={() => deriveDataFromNL(prompt.trim())}
+                                            onClick={() => mode === "agent" ? exploreDataFromNL(prompt.trim(), true) : deriveDataFromNL(prompt.trim(), true)}
                                         >
                                             {isFormulating ? <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
                                                 <CircularProgress size={24} />
-                                            </Box> : <PrecisionManufacturing sx={{fontSize: 24}} />}
+                                            </Box> : mode === "agent" ? <MovingIcon sx={{transform: 'rotate(90deg)', fontSize: 24}} /> : <PrecisionManufacturing sx={{fontSize: 24}} />}
                                         </IconButton>
                                     </span>
                                 </Tooltip>
@@ -1223,8 +1168,8 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                         maxRows={4}
                         minRows={1}
                     />
-                    {mode === "interactive" && <Divider orientation="vertical" flexItem />}
-                    {mode === "interactive" && <Box sx={{display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 0.5, my: 1}}>
+                    {<Divider orientation="vertical" flexItem />}
+                    {<Box sx={{display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 0.5, my: 1}}>
                         <Typography sx={{ fontSize: 10, color: "text.secondary", marginBottom: 0.5 }}>
                             ideas?
                         </Typography>
@@ -1234,7 +1179,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                                     size="medium"
                                     disabled={isFormulating || !currentTable || isLoadingIdeas}
                                     color="primary" 
-                                    onClick={() => getIdeasFromAgent("interactive")}
+                                    onClick={() => getIdeasFromAgent(mode)}
                                 >
                                     {isLoadingIdeas ? <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
                                         <CircularProgress size={24} />
@@ -1281,7 +1226,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                                     theme={theme}
                                     onClick={() => {
                                         setPrompt(idea.text);
-                                        deriveDataFromNL(idea.text);
+                                        deriveDataFromNL(idea.text, true);
                                     }}
                                     disabled={isFormulating}
                                     sx={{
@@ -1319,7 +1264,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                                             idea.questions.forEach((question, index) => {
                                                 setTimeout(() => {
                                                     setPrompt(question);
-                                                    deriveDataFromNL(question);
+                                                    deriveDataFromNL(question, index === 0);
                                                 }, index * 1000); // 1000ms delay between each call
                                             });
                                         }

@@ -36,7 +36,7 @@ import { DndProvider } from 'react-dnd'
 import { HTML5Backend } from 'react-dnd-html5-backend'
 
 import { SelectableGroup } from 'react-selectable-fast';
-import { TableCopyDialogV2, TableSelectionDialog } from './TableSelectionView';
+import { TableCopyDialogV2, DatasetSelectionDialog } from './TableSelectionView';
 import { TableUploadDialog } from './TableSelectionView';
 import { toolName } from '../app/App';
 import { DataThread } from './DataThread';
@@ -189,7 +189,7 @@ Totals (7 entries)	5	5	5	15
                 />
                 <Divider sx={{width: '80px', margin: '10px auto', fontSize: '1.2rem', color: 'text.disabled'}}> or </Divider>
                 Load data from
-                <TableSelectionDialog  buttonElement={"Examples"} />, <TableUploadDialog buttonElement={"file"} disabled={false} />, <TableCopyDialogV2 buttonElement={"clipboard"} disabled={false} />, or <DBTableSelectionDialog buttonElement={"Database"} component="dialog" />
+                <DatasetSelectionDialog  buttonElement={"Examples"} />, <TableUploadDialog buttonElement={"file"} disabled={false} />, <TableCopyDialogV2 buttonElement={"clipboard"} disabled={false} />, or <DBTableSelectionDialog buttonElement={"Database"} component="dialog" />
             </Typography>
             
             <Typography sx={{  width: 960, margin: "auto" }} variant="body1">

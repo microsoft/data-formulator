@@ -329,7 +329,7 @@ class PythonDataTransformationAgent(object):
         updated_dialog = [{"role":"system", "content": self.system_prompt}, *dialog[1:]]
 
         # get the current table name
-        sample_data_str = pd.DataFrame(latest_data_sample).head(10).to_string()
+        sample_data_str = pd.DataFrame(latest_data_sample).head(10).to_string() + '\n......'
 
         messages = [*updated_dialog, 
                     {"role":"user", 

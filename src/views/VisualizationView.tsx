@@ -35,8 +35,6 @@ import _ from 'lodash';
 
 import ButtonGroup from '@mui/material/ButtonGroup';
 
-import { styled } from "@mui/material/styles";
-
 import embed from 'vega-embed';
 import AnimateOnChange from 'react-animate-on-change'
 

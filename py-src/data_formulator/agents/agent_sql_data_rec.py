@@ -306,7 +306,7 @@ class SQLDataRecAgent(object):
         logger.info(f"GOAL: \n\n{new_instruction}")
 
         # get the current table name
-        sample_data_str = pd.DataFrame(latest_data_sample).head(10).to_string()
+        sample_data_str = pd.DataFrame(latest_data_sample).head(10).to_string() + '\n......'
 
         messages = [*dialog, 
                     {"role":"user", 

@@ -8,6 +8,7 @@ import pandas as pd
 from typing import Dict, List, Any, Optional, Tuple, Generator
 
 from data_formulator.agents.agent_exploration import ExplorationAgent
+from data_formulator.agents.agent_interactive_explore import InteractiveExploreAgent
 from data_formulator.agents.agent_py_data_rec import PythonDataRecAgent
 from data_formulator.agents.agent_sql_data_rec import SQLDataRecAgent
 from data_formulator.agents.client_utils import Client
@@ -59,7 +60,8 @@ def run_exploration_flow_streaming(
     language: str = "python",
     session_id: Optional[str] = None,
     exec_python_in_subprocess: bool = False,
-    max_iterations: int = 5
+    max_iterations: int = 5,
+    start_with_planning: bool = False
 ) -> Generator[Dict[str, Any], None, None]:
     """
     Run the complete exploration flow from high-level question to final insights as a streaming generator.
@@ -72,7 +74,7 @@ def run_exploration_flow_streaming(
         session_id: Database session ID for SQL connections
         exec_python_in_subprocess: Whether to execute Python in subprocess
         max_iterations: Maximum number of exploration iterations
-        
+        start_with_planning: Whether to start with planning / or go directly to data transformation
     Yields:
         Dictionary containing:
         - iteration: Current iteration number
@@ -93,6 +95,46 @@ def run_exploration_flow_streaming(
     # Initialize client and agents
     client = Client.from_config(model_config)
     exploration_agent = ExplorationAgent(client)
+
+    if start_with_planning:
+        interactive_explore_agent = InteractiveExploreAgent(client) # for interactive exploration
+
+        start_plan = interactive_explore_agent.run(
+            input_tables=input_tables,
+            start_question=f'Based on the following user\'s question suggest a deep dive exploration plan:\n {start_question}',
+            mode='agent'
+        )
+
+        if not start_plan or start_plan[0]['status'] != 'ok':
+            yield {
+                "iteration": iteration,
+                "type": "planning",
+                "content": {},
+                "status": "error",
+                "error_message": "Failed to suggest exploration plan"
+            }
+            return
+
+        start_question_group = start_plan[0]['content']['exploration_questions'][0]
+        current_question = f'The overall goal: {start_question_group["goal"]} | Let\'s start with the first question: {start_question_group["questions"][0]}'
+
+        yield {
+            "iteration": iteration,
+            "type": "planning",
+            "content": {
+                "plan": {
+                    "recap": start_plan[0]['content']['recap'],
+                    "assessment": '\n'.join([f'{i+1}. {question}' for i, question in enumerate(start_question_group['questions'])]),
+                    "status": "continue",
+                    "reasoning": start_plan[0]['content']['reasoning'],
+                    "instruction": current_question
+                },
+                "exploration_steps_count": 0
+            },
+            "status": "success",
+            "error_message": ""
+        }
+
     
     # Initialize rec agent based on language
     conn = None

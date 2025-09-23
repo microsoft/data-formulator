@@ -96,7 +96,7 @@ export interface DataFormulatorState {
         actionId: string, 
         tableId: string, 
         description: string, 
-        status: 'running' | 'completed' | 'failed',
+        status: 'running' | 'completed' | 'warning' | 'failed',
         lastUpdate: number, // the time the action is last updated
         hidden: boolean // whether the action is hidden
     }[];
@@ -349,7 +349,7 @@ export const dataFormulatorSlice = createSlice({
 
             state.agentActions = savedState.agentActions || [];
         },
-        udpateAgentWorkInProgress: (state, action: PayloadAction<{actionId: string, tableId?: string, description: string, status: 'running' | 'completed' | 'failed', hidden: boolean}>) => {
+        udpateAgentWorkInProgress: (state, action: PayloadAction<{actionId: string, tableId?: string, description: string, status: 'running' | 'completed' | 'warning' | 'failed', hidden: boolean}>) => {
             if (state.agentActions.some(a => a.actionId == action.payload.actionId)) {
                 state.agentActions = state.agentActions.map(a => a.actionId == action.payload.actionId ? 
                     {...a, ...action.payload, lastUpdate: Date.now()} : a);
@@ -504,6 +504,10 @@ export const dataFormulatorSlice = createSlice({
             state.focusedTableId = tableId;
             state.focusedChartId = freshChart.id;
         },
+        addChart: (state, action: PayloadAction<Chart>) => {
+            let chart = action.payload;
+            state.charts = [chart, ...state.charts];
+        },
         addAndFocusChart: (state, action: PayloadAction<Chart>) => {
             let chart = action.payload;
             state.charts = [chart, ...state.charts];
@@ -607,8 +611,8 @@ export const dataFormulatorSlice = createSlice({
                 let enc1 = chart.encodingMap[channel1];
                 let enc2 = chart.encodingMap[channel2];
 
-                chart.encodingMap[channel1] = { fieldID: enc2.fieldID, aggregate: enc2.aggregate, sortBy: enc2.sortBy };
-                chart.encodingMap[channel2] = { fieldID: enc1.fieldID, aggregate: enc1.aggregate, sortBy: enc1.sortBy };
+                chart.encodingMap[channel1] = { fieldID: enc2.fieldID, aggregate: enc2.aggregate, sortBy: enc2.sortBy, sortOrder: enc2.sortOrder };
+                chart.encodingMap[channel2] = { fieldID: enc1.fieldID, aggregate: enc1.aggregate, sortBy: enc1.sortBy, sortOrder: enc1.sortOrder };
             }
         },
         addConceptItems: (state, action: PayloadAction<FieldItem[]>) => {

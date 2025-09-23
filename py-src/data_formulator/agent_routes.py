@@ -384,7 +384,8 @@ def explore_data_streaming():
             input_tables = content["input_tables"]
             start_question = content["start_question"]  # The exploration question
             language = content.get("language", "python")  # whether to use sql or python, default to python
-            max_iterations = content.get("max_iterations", 4)  # Number of exploration iterations
+            max_iterations = content.get("max_iterations", 5)  # Number of exploration iterations
+            start_with_planning = content.get("start_with_planning", False)
 
             logger.info("== input tables ===>")
             for table in input_tables:
@@ -414,7 +415,8 @@ def explore_data_streaming():
                     language=language,
                     session_id=session_id,
                     exec_python_in_subprocess=exec_python_in_subprocess,
-                    max_iterations=max_iterations
+                    max_iterations=max_iterations,
+                    start_with_planning=start_with_planning
                 ):
                     response_data = { 
                         "token": token, 
@@ -555,7 +557,6 @@ def query_completion():
         data_source_metadata = content["data_source_metadata"]
         query = content["query"]
 
-        
         query_completion_agent = QueryCompletionAgent(client=client)
         reasoning, query = query_completion_agent.run(data_source_metadata, query)
         response = flask.jsonify({ "token": "", "status": "ok", "reasoning": reasoning, "query": query })
