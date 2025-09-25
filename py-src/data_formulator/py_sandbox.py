@@ -81,8 +81,8 @@ def run_in_main_process(code, allowed_objects):
     # List of allowed modules for import
     ALLOWED_MODULES = {
         'pandas', 'numpy', 'math', 'datetime', 'json', 
-        'statistics', 'random', 'collections', 're',
-        'itertools', 'functools', 'operator', 'sklearn'
+        'statistics', 'random', 'collections', 're', 
+        'itertools', 'functools', 'operator', 'sklearn', 'time'
     }
 
     # Custom import function that only allows safe modules and their submodules

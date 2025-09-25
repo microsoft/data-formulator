@@ -216,6 +216,17 @@ def run_exploration_flow_streaming(
                 dialog=dialog
             )
 
+        # if the transformation results is not ok, yield an error and break
+        if transformation_results[0]['status'] != 'ok':
+            yield {
+                "iteration": iteration,
+                "type": "data_transformation",
+                "content": {},
+                "status": "error",
+                "error_message": transformation_results[0]['content']
+            }
+            break
+
         # Extract transformation result
         transform_result = transformation_results[0]
         transformed_data = transform_result['content']
