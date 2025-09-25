@@ -1030,6 +1030,9 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                                         setIsFormulating(false);
                                         clearTimeout(timeoutId);
                                         
+                                        // Clean up the inprogress thinking when streaming fails
+                                        dispatch(dfActions.udpateAgentWorkInProgress({actionId: actionId, description: data.error_message || "Error during data exploration", status: 'failed', hidden: false}));
+                                        
                                         dispatch(dfActions.addMessages({
                                             "timestamp": Date.now(),
                                             "component": "chart builder", 
@@ -1052,6 +1055,10 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
         .catch((error) => {
             setIsFormulating(false);
             clearTimeout(timeoutId);
+            
+            // Clean up the inprogress thinking when network errors occur
+            const errorMessage = error.name === 'AbortError' ? "Data exploration timed out" : `Data exploration failed: ${error.message}`;
+            dispatch(dfActions.udpateAgentWorkInProgress({actionId: actionId, description: errorMessage, status: 'failed', hidden: false}));
             
             if (error.name === 'AbortError') {
                 dispatch(dfActions.addMessages({
