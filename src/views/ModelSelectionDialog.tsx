@@ -434,7 +434,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
         </TableCell>
         <TableCell align="right">
             <Tooltip title={modelExists ? "provider + model already exists" : "add and test model"}>
-                <span>
+                <span>  
                     <IconButton color={modelExists ? 'error' : 'primary'}
                         disabled={!readyToTest}
                         sx={{cursor: modelExists ? 'help' : 'pointer'}}
@@ -704,8 +704,8 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
     return <>
         <Tooltip title="Configure model assignments for different task types">
             <Button sx={{fontSize: "inherit", textTransform: "none"}} variant="text" color="primary" onClick={()=>{setModelDialogOpen(true)}}>
-                {notAllSlotsReady ? 'Configure Model Slots' : 
-                    `Models: ${Object.entries(modelSlots).filter(([slotType, modelId]) => modelId).map(([slotType, modelId]) => models.find(m => m.id == modelId)?.model).join('/')}`}
+                {notAllSlotsReady ? 'Select Models' : 
+                    `${Object.entries(modelSlots).filter(([slotType, modelId]) => modelId).map(([slotType, modelId]) => models.find(m => m.id == modelId)?.model).join('/')}`}
             </Button>
         </Tooltip>
         <Dialog 

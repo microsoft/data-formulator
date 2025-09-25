@@ -88,8 +88,9 @@ def transform_data(df1, df2, ...):
 ```
 
 note: 
-- if the user provided one table, then it should be def transform_data(df1), if the user provided multiple tables, then it should be def transform_data(df1, df2, ...) and you should consider the join between tables to derive the output.
-- try to use table names to refer to the input dataframes, for example, if the user provided two tables city and weather, you can use `transform_data(df_city, df_weather)` to refer to the two dataframes.
+- if the user provided one table, then it should be `def transform_data(df1)`, if the user provided multiple tables, then it should be `def transform_data(df1, df2, ...)` and you should consider the join between tables to derive the output.
+- **VERY IMPORTANT** the number of arguments in the function must match the number of tables provided, and the order of arguments must match the order of tables provided.
+- try to use intuitive table names to refer to the input dataframes, for example, if the user provided two tables city and weather, you can use `transform_data(df_city, df_weather)` to refer to the two dataframes, as long as the number and order of the arguments match the number and order of the tables provided.
 - datetime objects handling:
     - if the output field is year, convert it to number, if it is year-month / year-month-day, convert it to string object (e.g., "2020-01" / "2020-01-01").
     - if the output is time only: convert hour to number if it's just the hour (e.g., 10), but convert hour:min or h:m:s to string object (e.g., "10:30", "10:30:45")
@@ -106,11 +107,11 @@ For example:
 
 Here are our datasets, here are their field summaries and samples:
 
-table_0 (us_covid_cases) fields:
+df1 (us_covid_cases) fields:
 	Date -- type: object, values: 1/1/2021, 1/1/2022, 1/1/2023, ..., 9/8/2022, 9/9/2020, 9/9/2021, 9/9/2022
 	Cases -- type: int64, values: -23999, -14195, -6940, ..., 1018935, 1032159, 1178403, 1433977
 
-table_0 (us_covid_cases) sample:
+df1 (us_covid_cases) sample:
 ```
 |Date|Cases
 0|1/21/2020|1
@@ -163,12 +164,12 @@ def transform_data(df):
 
 Here are our datasets, here are their field summaries and samples:
 
-table_0 (weather_seattle_atlanta) fields:
+df1 (weather_seattle_atlanta) fields:
 	Date -- type: object, values: 1/1/2020, 1/10/2020, 1/11/2020, ..., 9/6/2020, 9/7/2020, 9/8/2020, 9/9/2020
 	City -- type: object, values: Atlanta, Seattle
 	Temperature -- type: int64, values: 30, 31, 32, ..., 83, 84, 85, 86
 
-table_0 (weather_seattle_atlanta) sample:
+df1 (weather_seattle_atlanta) sample:
 ```
 |Date|City|Temperature
 0|1/1/2020|Seattle|51
@@ -217,9 +218,19 @@ def transform_data(df):
 
 class PythonDataTransformationAgent(object):
 
-    def __init__(self, client, system_prompt=None, exec_python_in_subprocess=False):
+    def __init__(self, client, system_prompt=None, exec_python_in_subprocess=False, agent_coding_rules=""):
         self.client = client
-        self.system_prompt = system_prompt if system_prompt is not None else SYSTEM_PROMPT
+        
+        # Incorporate agent coding rules into system prompt if provided
+        if system_prompt is not None:
+            self.system_prompt = system_prompt
+        else:
+            base_prompt = SYSTEM_PROMPT
+            if agent_coding_rules and agent_coding_rules.strip():
+                self.system_prompt = base_prompt + "\n\n[AGENT CODING RULES]\nFollow these rules when generating code. Note: if the user instruction conflicts with these rules, you should priortize user instructions.\n\n" + agent_coding_rules.strip()
+            else:
+                self.system_prompt = base_prompt
+                
         self.exec_python_in_subprocess = exec_python_in_subprocess
 
     def process_gpt_response(self, input_tables, messages, response):

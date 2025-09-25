@@ -22,6 +22,7 @@ export const generateFreshChart = (tableRef: string, chartType: string, source: 
         tableRef: tableRef,
         saved: false,
         source: source,
+        unread: true,
     }
 }
 
@@ -57,6 +58,12 @@ export type ModelSlots = Partial<Record<ModelSlotType, string>>;
 
 
 export interface DataFormulatorState {
+
+    agentRules: {
+        coding: string;
+        exploration: string;
+    };
+
     sessionId: string | undefined;
     models: ModelConfig[];
     modelSlots: ModelSlots;
@@ -108,6 +115,12 @@ export interface DataFormulatorState {
 
 // Define the initial state using that type
 const initialState: DataFormulatorState = {
+
+    agentRules: {
+        coding: "",
+        exploration: "",
+    },
+
     sessionId: undefined,
     models: [],
     modelSlots: {},
@@ -146,15 +159,16 @@ const initialState: DataFormulatorState = {
     agentActions: [],
 
     dataCleanBlocks: [],
-    cleanInProgress: false,
+    cleanInProgress: false
 }
 
 let getUnrefedDerivedTableIds = (state: DataFormulatorState) => {
     // find tables directly referred by charts
     let allCharts = dfSelectors.getAllCharts(state);
     let chartRefedTables = allCharts.map(chart => getDataTable(chart, state.tables, allCharts, state.conceptShelfItems)).map(t => t.id);
+    let tableWithDescendants = state.tables.filter(table => state.tables.some(t => t.derive?.trigger.tableId == table.id)).map(t => t.id);
 
-    return state.tables.filter(table => table.derive && !chartRefedTables.includes(table.id)).map(t => t.id);
+    return state.tables.filter(table => table.derive && !tableWithDescendants.includes(table.id) && !chartRefedTables.includes(table.id)).map(t => t.id);
 } 
 
 let deleteChartsRoutine = (state: DataFormulatorState, chartIds: string[]) => {
@@ -172,9 +186,18 @@ let deleteChartsRoutine = (state: DataFormulatorState, chartIds: string[]) => {
     // update focusedChart and activeThreadChart
     state.charts = charts;
     state.focusedChartId = focusedChartId;
+    
+    // Set unread to false for the newly focused chart
+    if (focusedChartId) {
+        let chart = charts.find(c => c.id === focusedChartId);
+        if (chart) {
+            chart.unread = false;
+        }
+    }
 
     let unrefedDerivedTableIds = getUnrefedDerivedTableIds(state);
     let tableIdsToDelete = state.tables.filter(t => !t.anchored && unrefedDerivedTableIds.includes(t.id)).map(t => t.id);
+   
     state.tables = state.tables.filter(t => !tableIdsToDelete.includes(t.id));
 }
 
@@ -218,8 +241,12 @@ export const fetchCodeExpl = createAsyncThunk(
             body: JSON.stringify({
                 token: Date.now(),
                 input_tables: derivedTable.derive?.source
-                                    .map(tId => state.tables.find(t => t.id == tId) as DictTable)
-                                    .map(t => {return {name: t.id, rows: t.rows}}),
+                                .map(tId => state.tables.find(t => t.id == tId) as DictTable)
+                                .map(t => ({ 
+                                    name: t.id, 
+                                    rows: t.rows, 
+                                    attached_metadata: t.attachedMetadata
+                                })),
                 code: derivedTable.derive?.code,
                 model: dfSelectors.getActiveModel(state)
             }),
@@ -284,6 +311,8 @@ export const dataFormulatorSlice = createSlice({
             //state.table = undefined;
             
             // state.modelSlots = {};
+            state.agentRules = initialState.agentRules;
+
             state.testedModels = [];
 
             state.tables = [];
@@ -316,6 +345,8 @@ export const dataFormulatorSlice = createSlice({
         loadState: (state, action: PayloadAction<any>) => {
 
             let savedState = action.payload;
+
+            state.agentRules = savedState.agentRules || initialState.agentRules;
 
             state.models = savedState.models || state.models || [];
             state.modelSlots = savedState.modelSlots || state.modelSlots || {};
@@ -367,6 +398,9 @@ export const dataFormulatorSlice = createSlice({
             formulateTimeoutSeconds: number, maxRepairAttempts: number, 
             defaultChartWidth: number, defaultChartHeight: number}>) => {
             state.config = action.payload;
+        },
+        setAgentRules: (state, action: PayloadAction<{coding: string, exploration: string}>) => {
+            state.agentRules = action.payload;
         },
         selectModel: (state, action: PayloadAction<string | undefined>) => {
             state.modelSlots = { ...state.modelSlots, generation: action.payload };
@@ -428,6 +462,11 @@ export const dataFormulatorSlice = createSlice({
             let tableId = action.payload.tableId;
             let displayId = action.payload.displayId;
             state.tables = state.tables.map(t => t.id == tableId ? {...t, displayId} : t);
+        },
+        updateTableAttachedMetadata: (state, action: PayloadAction<{tableId: string, attachedMetadata: string}>) => {
+            let tableId = action.payload.tableId;
+            let attachedMetadata = action.payload.attachedMetadata;
+            state.tables = state.tables.map(t => t.id == tableId ? {...t, attachedMetadata} : t);
         },
         addChallenges: (state, action: PayloadAction<{tableId: string, challenges: { text: string; goal: string; difficulty: 'easy' | 'hard'; }[]}>) => {
             state.activeChallenges = [...state.activeChallenges, action.payload];
@@ -503,6 +542,7 @@ export const dataFormulatorSlice = createSlice({
             state.charts = [ freshChart , ...state.charts];
             state.focusedTableId = tableId;
             state.focusedChartId = freshChart.id;
+            // freshChart is already created with unread: true, so we don't need to set it to false here
         },
         addChart: (state, action: PayloadAction<Chart>) => {
             let chart = action.payload;
@@ -512,15 +552,19 @@ export const dataFormulatorSlice = createSlice({
             let chart = action.payload;
             state.charts = [chart, ...state.charts];
             state.focusedChartId = chart.id;
+            // Set unread to false when focusing the chart
+            chart.unread = false;
         },
         duplicateChart: (state, action: PayloadAction<string>) => {
             let chartId = action.payload;
 
             let chartCopy = JSON.parse(JSON.stringify(state.charts.find(chart => chart.id == chartId) as Chart)) as Chart;
-            chartCopy = { ...chartCopy, saved: false }
+            chartCopy = { ...chartCopy, saved: false, unread: true }
             chartCopy.id = `chart-${Date.now()- Math.floor(Math.random() * 10000)}`;
             state.charts.push(chartCopy);
             state.focusedChartId = chartCopy.id;
+            // Set unread to false when focusing the duplicated chart
+            chartCopy.unread = false;
         },
         saveUnsaveChart: (state, action: PayloadAction<string>) => {
             let chartId = action.payload;
@@ -729,6 +773,21 @@ export const dataFormulatorSlice = createSlice({
         setFocusedChart: (state, action: PayloadAction<string | undefined>) => {
             let chartId = action.payload;
             state.focusedChartId = chartId;
+            
+            // Set unread to false when a chart is focused
+            if (chartId) {
+                // Find the chart in the charts array
+                let chart = state.charts.find(c => c.id === chartId);
+                if (chart) {
+                    chart.unread = false;
+                } else {
+                    // Check if it's a trigger chart in tables
+                    let table = state.tables.find(t => t.derive?.trigger?.chart?.id === chartId);
+                    if (table?.derive?.trigger?.chart) {
+                        table.derive.trigger.chart.unread = false;
+                    }
+                }
+            }
         },
         changeChartRunningStatus: (state, action: PayloadAction<{chartId: string, status: boolean}>) => {
             if (action.payload.status) {
@@ -805,16 +864,11 @@ export const dataFormulatorSlice = createSlice({
                     }
                 })
 
-                if (data["result"][0]["explorative_questions"] && data["result"][0]["explorative_questions"].length > 0) {
-                    let table = state.tables.find(t => t.id == tableId) as DictTable;
-                    table.explorativeQuestions = data["result"][0]["explorative_questions"] as string[];
-                }
-
                 if (data["result"][0]["suggested_table_name"]) {
                     let table = state.tables.find(t => t.id == tableId) as DictTable;
 
                     // avoid duplicate display ids
-                    let existingDisplayIds = state.tables.filter(t => t.id == tableId).map(t => t.displayId);
+                    let existingDisplayIds = state.tables.filter(t => t.id != tableId).map(t => t.displayId);
                     let suffix = "";
                     let displayId = `${data["result"][0]["suggested_table_name"] as string}${suffix}`;
                     let suffixId = 1;

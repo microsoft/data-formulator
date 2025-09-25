@@ -217,29 +217,28 @@ def get_field_summary(field_name, df, field_sample_size, max_val_chars=100):
 
 def generate_data_summary(input_tables, include_data_samples=True, field_sample_size=7, max_val_chars=140):
     
-    input_table_names = [f'{string_to_py_varname(t["name"])}' for t in input_tables]
+    def assemble_table_summary(input_table, idx):
+        table_id = f'table{idx+1}'
+        name = string_to_py_varname(input_table["name"])
+        rows = input_table["rows"]
+        description = input_table.get("attached_metadata", "")
+        
+        df = pd.DataFrame(rows)
+        fields_summary = '\n'.join(['\t*' + get_field_summary(fname, df, field_sample_size, max_val_chars)  for fname in list(df.columns.values)])
 
-    data_samples = [t['rows'][:5] for t in input_tables]
+        fields_section = f'## fields\n{fields_summary}\n\n'
+        sample_section = f'## sample\n{pd.DataFrame(rows[:5]).to_string()}\n......\n\n' if include_data_samples else ''
+        description_section = f'## description\n{description}\n\n' if description else ''
 
-    field_summaries = []
-    for input_data in input_tables:
-        df = pd.DataFrame(input_data['rows'])
-        s = '\n\t'.join([get_field_summary(fname, df, field_sample_size, max_val_chars)  for fname in list(df.columns.values)])
-        field_summaries.append(s)
+        summary_str = f'''# {table_id} ({name})\n\n{description_section}{fields_section}{sample_section}'''
+        return summary_str
 
-    table_field_summaries = [f'table_{i} ({input_table_names[i]}) fields:\n\t{s}' for i, s in enumerate(field_summaries)]
-    
-    if include_data_samples:
-        table_sample_strings = [f'table_{i} ({input_table_names[i]}) sample:\n\n{pd.DataFrame(data_sample).to_string() + '......'}' for i, data_sample in enumerate(data_samples)]
-    else:
-        table_sample_strings = ['' for i, data_sample in enumerate(data_samples)]
+    table_summaries = [assemble_table_summary(input_table, i) for i, input_table in enumerate(input_tables)]
 
-    table_summary = "\n\n".join([f'{field_summary}\n\n{sample_str}' for field_summary, sample_str in zip(table_field_summaries, table_sample_strings)])
+    full_summary = f'''Here are our datasets, here are their summaries and samples:
 
-    data_summary = f'''Here are our datasets, here are their field summaries and samples:
-
-{table_summary}
+{'\n'.join(table_summaries)}
 '''
 
-    return data_summary
+    return full_summary
 

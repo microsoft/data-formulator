@@ -521,11 +521,26 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
 
         let assembledChart = assembleVegaChart(chart.chartType, chart.encodingMap, conceptShelfItems, visTableRows, Math.min(config.defaultChartWidth * 2 / 20, 48), true);
         
+        // Check if chart uses facet, column, or row encodings
+        const hasFaceting = assembledChart && (
+            assembledChart.encoding?.facet !== undefined ||
+            assembledChart.encoding?.column !== undefined ||
+            assembledChart.encoding?.row !== undefined ||
+            chart.chartType == 'Grouped Bar Chart'
+        );
+        
+        // Apply 0.75 scale factor for faceted charts
+        const widthScale = hasFaceting ? 0.75 : 1;
+        const heightScale = hasFaceting ? 0.75 : 1;
+        
         assembledChart['resize'] = true;
         assembledChart['config'] = {
             "view": {
-                "continuousWidth": config.defaultChartWidth,
-                "continuousHeight": config.defaultChartHeight
+                "continuousWidth": config.defaultChartWidth * widthScale,
+                "continuousHeight": config.defaultChartHeight * heightScale,
+                ...hasFaceting ? {
+                    "step": 20 * widthScale,
+                } : {},
             },
             "axisX": {"labelLimit": 100},
         }
@@ -533,7 +548,6 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
         embed('#' + id, { ...assembledChart }, { actions: true, renderer: "svg" }).then(function (result) {
             // Access the Vega view instance (https://vega.github.io/vega/docs/api/view/) as result.view
             
-
             // the intermediate data used by vega-lite
             //let data_0 = (result.view as any)._runtime.data.data_0.values.value;
             if (result.view.container()?.getElementsByTagName("svg")) {

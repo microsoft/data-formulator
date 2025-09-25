@@ -259,6 +259,11 @@ $accelerate-ease: cubic-bezier(0.4, 0.0, 1, 1);
     z-index: 1;
 }
 
+.unread-card {
+    border: 2px solid red !important;
+    border-color: #f44336 !important;
+}
+
 .hover-card {
     cursor: pointer;
     canvas {

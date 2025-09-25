@@ -61,20 +61,26 @@ def run_exploration_flow_streaming(
     session_id: Optional[str] = None,
     exec_python_in_subprocess: bool = False,
     max_iterations: int = 5,
-    start_with_planning: bool = False
+    start_with_planning: bool = False,
+    max_repair_attempts: int = 1,
+    agent_exploration_rules: str = "",
+    agent_coding_rules: str = ""
 ) -> Generator[Dict[str, Any], None, None]:
     """
     Run the complete exploration flow from high-level question to final insights as a streaming generator.
     
     Args:
         model_config: Dictionary with endpoint, model, api_key, api_base, api_version
-        input_tables: List of input table dictionaries with 'name' and 'rows'
+        input_tables: List of input table dictionaries with 'name' 'rows' and 'attached_metadata'
         start_question: User's high-level exploration question
         language: "python" or "sql" for data transformation
         session_id: Database session ID for SQL connections
         exec_python_in_subprocess: Whether to execute Python in subprocess
         max_iterations: Maximum number of exploration iterations
         start_with_planning: Whether to start with planning / or go directly to data transformation
+        max_repair_attempts: Maximum number of code repair attempts
+        agent_exploration_rules: Custom exploration rules for the agent
+        agent_coding_rules: Custom coding rules for the agent
     Yields:
         Dictionary containing:
         - iteration: Current iteration number
@@ -97,7 +103,7 @@ def run_exploration_flow_streaming(
     exploration_agent = ExplorationAgent(client)
 
     if start_with_planning:
-        interactive_explore_agent = InteractiveExploreAgent(client) # for interactive exploration
+        interactive_explore_agent = InteractiveExploreAgent(client, agent_exploration_rules=agent_exploration_rules) # for interactive exploration
 
         start_plan = interactive_explore_agent.run(
             input_tables=input_tables,
@@ -141,7 +147,7 @@ def run_exploration_flow_streaming(
     if language == "sql":
         if session_id:
             conn = db_manager.get_connection(session_id)
-            rec_agent = SQLDataRecAgent(client=client, conn=conn)
+            rec_agent = SQLDataRecAgent(client=client, conn=conn, agent_coding_rules=agent_coding_rules)
         else:
             yield {
                 "iteration": iteration,
@@ -154,7 +160,8 @@ def run_exploration_flow_streaming(
     else:
         rec_agent = PythonDataRecAgent(
             client=client,
-            exec_python_in_subprocess=exec_python_in_subprocess
+            exec_python_in_subprocess=exec_python_in_subprocess,
+            agent_coding_rules=agent_coding_rules
         )
     
     # Main exploration loop
@@ -166,10 +173,16 @@ def run_exploration_flow_streaming(
         
         attempt = 0
         if previous_transformation_dialog:
+
+            if isinstance(previous_transformation_data, dict) and 'rows' in previous_transformation_data:
+                latest_data_sample = previous_transformation_data['rows']
+            else:
+                latest_data_sample = []  # Use empty list as fallback
+            
             transformation_results = rec_agent.followup(
                 input_tables=input_tables,
                 new_instruction=current_question,
-                latest_data_sample=previous_transformation_data['rows'],
+                latest_data_sample=latest_data_sample,
                 dialog=previous_transformation_dialog
             )
         else:

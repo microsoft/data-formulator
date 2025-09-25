@@ -788,12 +788,11 @@ export const SingleDataCleanThreadView: React.FC<{thread: ThreadBlock, sx?: SxPr
                                                 <IconButton aria-label="share" size="small" sx={{ ml: 'auto', padding: 0.25, '&:hover': {
                                                     transform: 'scale(1.2)',
                                                     transition: 'all 0.2s ease'
-                                                } }}>
-                                                    <DeleteIcon fontSize="small" sx={{ fontSize: 18 }} color='warning'
-                                                        onClick={(event) => {
-                                                            event.stopPropagation();
-                                                            dispatch(dfActions.removeDataCleanBlocks({ blockIds: [block.id] })) 
-                                                        }} />
+                                                } }} onClick={(event) => {
+                                                    event.stopPropagation();
+                                                    dispatch(dfActions.removeDataCleanBlocks({ blockIds: [block.id] })) 
+                                                }}>
+                                                    <DeleteIcon fontSize="small" sx={{ fontSize: 18 }} color='warning'/>
                                                 </IconButton>
                                             </Tooltip>
                                             }

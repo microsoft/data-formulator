@@ -31,8 +31,8 @@ Guidelines for question suggestions:
     - do not suggest questions that are not related to the thread (e.g. questions that are completely unrelated to the exploration direction in the thread)
     - do not naively follow up if the question is already too low-level when previous iterations have already come into a small subset of the data (suggest new related areas related to the metric / attributes etc)
 6. DIVERSITY: the questions should be diverse in difficulty (easy / medium / hard) and the four questions should cover different aspects of the data analysis to expand the user's horizon
-    - simple questions should be short -- single sentence explorative questions
-    - medium questions can be 1-2 sentences explorative questions
+    - simple questions should be short -- single sentence exploratory questions
+    - medium questions can be 1-2 sentences exploratory questions
     - hard questions should introduce some new analysis concept but still make it concise
     - you should include both types of questions:
         - questions that deepdive from the provided data to further refine the exploration (zoom-in).
@@ -91,8 +91,8 @@ Guidelines for question suggestions:
     - each question group should have 2-4 questions based on the user's goal and the data.
     - do not repeat questions that have already been explored in the thread.
 6. DIVERSITY: the questions should be diverse in difficulty (easy / medium / hard) and the four questions should cover different aspects of the data analysis to expand the user's horizon
-    - simple questions should be short -- single sentence explorative questions
-    - medium questions can be 1-2 sentences explorative questions
+    - simple questions should be short -- single sentence exploratory questions
+    - medium questions can be 1-2 sentences exploratory questions
     - hard questions should introduce some new analysis concept but still make it concise
     - if suitable, include a statistical analysis question: forecasting, regression, or clustering.
 7. VISUALIZATION: the question should be visualizable with a series of charts.
@@ -127,8 +127,9 @@ Output format:
 
 class InteractiveExploreAgent(object):
 
-    def __init__(self, client):
+    def __init__(self, client, agent_exploration_rules=""):
         self.client = client
+        self.agent_exploration_rules = agent_exploration_rules
 
     def run(self, input_tables, start_question=None, exploration_thread=None, current_data_sample=None, current_chart=None, mode='interactive'):
         """
@@ -168,7 +169,13 @@ class InteractiveExploreAgent(object):
         if start_question:
             context += f"\n\n[START QUESTION]\n\n{start_question}"
 
-        system_prompt = SYSTEM_PROMPT_AGENT if mode == 'agent' else SYSTEM_PROMPT
+        base_system_prompt = SYSTEM_PROMPT_AGENT if mode == 'agent' else SYSTEM_PROMPT
+        
+        # Incorporate agent exploration rules into system prompt if provided
+        if self.agent_exploration_rules and self.agent_exploration_rules.strip():
+            system_prompt = base_system_prompt + "\n\n[AGENT EXPLORATION RULES]\n\n" + self.agent_exploration_rules.strip() + "\n\nPlease follow the above agent exploration rules when suggesting questions."
+        else:
+            system_prompt = base_system_prompt
 
         logger.info(f"Interactive explore agent input: {context}")
         

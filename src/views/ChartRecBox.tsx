@@ -251,6 +251,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
     // reference to states
     const tables = useSelector((state: DataFormulatorState) => state.tables);
     const config = useSelector((state: DataFormulatorState) => state.config);
+    const agentRules = useSelector((state: DataFormulatorState) => state.agentRules);
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
     const activeModel = useSelector(dfSelectors.getActiveModel);
     const activeChallenges = useSelector((state: DataFormulatorState) => state.activeChallenges);
@@ -287,7 +288,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
 
     // Function to get a question from the list with cycling
     const getQuestion = (): string => {
-        return mode === "agent" ? "explore this direction" : "show something interesting about the data";
+        return mode === "agent" ? "let's explore something interesting about the data" : "show something interesting about the data";
     };
 
     // Function to get ideas from the interactive explore agent
@@ -301,7 +302,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
         try {
             // Determine the root table and derived tables context
             let explorationThread: any[] = [];
-            let sourceTables = tables.filter(t => selectedTableIds.includes(t.id));
+            let sourceTables = selectedTableIds.map(id => tables.find(t => t.id === id) as DictTable);
 
             // If current table is derived, find the root table and build exploration thread
             if (currentTable.derive && !currentTable.anchored) {
@@ -324,9 +325,11 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                 mode: mode,
                 input_tables: sourceTables.map(t => ({
                     name: t.virtual?.tableId || t.id.replace(/\.[^/.]+$/, ""),
-                    rows: t.rows
+                    rows: t.rows,
+                    attached_metadata: t.attachedMetadata
                 })),
-                exploration_thread: explorationThread
+                exploration_thread: explorationThread,
+                agent_exploration_rules: agentRules.exploration
             });
 
             const engine = getUrls().GET_RECOMMENDATION_QUESTIONS;
@@ -461,12 +464,14 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
             mode: 'formulate',
             input_tables: actionTables.map(t => ({
                 name: t.virtual?.tableId || t.id.replace(/\.[^/.]+$/, ""),
-                rows: t.rows
+                rows: t.rows,
+                attached_metadata: t.attachedMetadata
             })),
             new_fields: [], // No specific fields, let AI decide
             extra_prompt: instruction,
             model: activeModel,
             max_repair_attempts: config.maxRepairAttempts,
+            agent_coding_rules: agentRules.coding,
             language: actionTables.some(t => t.virtual) ? "sql" : "python"
         });
         let engine = getUrls().DERIVE_DATA;
@@ -486,12 +491,18 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                 messageBody = JSON.stringify({
                     token: token,
                     mode: 'formulate',
-                    input_tables: actionTables.map(t => {return { name: t.virtual?.tableId || t.id.replace(/\.[^/.]+$/ , ""), rows: t.rows }}),
+                    input_tables: actionTables.map(t => {
+                        return { 
+                            name: t.virtual?.tableId || t.id.replace(/\.[^/.]+$/ , ""), 
+                            rows: t.rows, 
+                            attached_metadata: t.attachedMetadata 
+                        }}),
                     new_fields: [],
                     extra_prompt: instruction,
                     model: activeModel,
                     additional_messages: additionalMessages,
                     max_repair_attempts: config.maxRepairAttempts,
+                    agent_coding_rules: agentRules.coding,
                     language: actionTables.some(t => t.virtual) ? "sql" : "python"
                 });
                 engine = getUrls().DERIVE_DATA;
@@ -499,13 +510,19 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                 messageBody = JSON.stringify({
                     token: token,
                     mode: 'formulate',
-                    input_tables: actionTables.map(t => {return { name: t.virtual?.tableId || t.id.replace(/\.[^/.]+$/ , ""), rows: t.rows }}),
+                    input_tables: actionTables.map(t => {
+                        return { 
+                            name: t.virtual?.tableId || t.id.replace(/\.[^/.]+$/ , ""), 
+                            rows: t.rows, 
+                            attached_metadata: t.attachedMetadata 
+                        }}),
                     output_fields: [],
                     dialog: currentTable.derive?.dialog,
                     latest_data_sample: currentTable.rows.slice(0, 10),
                     new_instruction: instruction,
                     model: activeModel,
                     max_repair_attempts: config.maxRepairAttempts,
+                    agent_coding_rules: agentRules.coding,
                     language: actionTables.some(t => t.virtual) ? "sql" : "python"
                 })
                 engine = getUrls().REFINE_DATA;
@@ -700,22 +717,25 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
         setIsFormulating(true);
         dispatch(dfActions.udpateAgentWorkInProgress({actionId: actionId, tableId: tableId, description: startQuestion, status: 'running', hidden: false}));
 
-        let actionTables = tables.filter(t => selectedTableIds.includes(t.id));
+        let actionTables = selectedTableIds.map(id => tables.find(t => t.id === id) as DictTable);
 
         const token = String(Date.now());
         let messageBody = JSON.stringify({
             token: token,
             input_tables: actionTables.map(t => ({
                 name: t.virtual?.tableId || t.id.replace(/\.[^/.]+$/, ""),
-                rows: t.rows
+                rows: t.rows,
+                attached_metadata: t.attachedMetadata
             })),
             start_question: startQuestion,
             model: activeModel,
             max_iterations: 5,
+            max_repair_attempts: config.maxRepairAttempts,
+            agent_exploration_rules: agentRules.exploration,
+            agent_coding_rules: agentRules.coding,
             language: actionTables.some(t => t.virtual) ? "sql" : "python",
             start_with_planning: startWithPlanning
         });
-
         
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), config.formulateTimeoutSeconds * 4 * 1000);
@@ -964,6 +984,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
 
             const decoder = new TextDecoder();
             let buffer = '';
+            let focusNewChart = true; // Keep this outside the while loop
 
             try {
                 while (true) {
@@ -981,7 +1002,6 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                     buffer = lines.pop() || ''; // Keep the last incomplete line in buffer
 
                     // should be only one message per line
-                    let focusNewChart = true;
                     for (let line of lines) {
                         if (line.trim() !== "") {
                             try {
@@ -989,8 +1009,17 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                                 if (data.token === token) {
                                     if (data.status === "ok" && data.result) {
                                         allResults.push(data.result);
-                                        processStreamingResult(data.result, focusNewChart);
-                                        focusNewChart = false;
+                                        console.log('focusNewChart', focusNewChart);
+                                        
+                                        // Store the current focusNewChart value before processing
+                                        const shouldFocus = focusNewChart;
+                                        processStreamingResult(data.result, shouldFocus);
+                                        
+                                        // Only set focusNewChart to false if this result created a chart
+                                        // (i.e., if it was a data_transformation result)
+                                        if (data.result.type === "data_transformation" && data.result.status === "success") {
+                                            focusNewChart = false;
+                                        }
 
                                         // Check if this is a completion result
                                         if (data.result.type === "completion") {
@@ -1093,7 +1122,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                 gap: 1,
                 position: 'relative',
                 boxShadow: mode === "agent" 
-                    ? '0 0 10px 0 rgba(25, 118, 210, 0.15)' 
+                    ? '0 0 10px 0 rgba(25, 118, 210, 0.3)' 
                     : 'none',
                 animation: mode === "agent" 
                     ? 'glow 2s ease-in-out infinite alternate' 
@@ -1103,7 +1132,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                         boxShadow: '0 0 10px 0 rgba(25, 118, 210, 0.1)',
                     },
                     '100%': {
-                        boxShadow: '0 0 20px 0 rgba(25, 118, 210, 0.2), 0 0 20px 0 rgba(25, 118, 210, 0.1)',
+                        boxShadow: '0 0 20px 0 rgba(25, 118, 210, 0.3), 0 0 20px 0 rgba(25, 118, 210, 0.3)',
                     }
                 }
             }}>

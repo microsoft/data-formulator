@@ -74,7 +74,7 @@ def run_in_main_process(code, allowed_objects):
                  'format', 'frozenset', 'getattr', 'hasattr', 'hash', 'hex', 'id', 'int', 'isinstance',
                  'iter', 'len', 'list', 'map', 'max', 'min', 'next', 'object', 'oct', 'ord', 'pow',
                  'range', 'repr', 'reversed', 'round', 'set', 'slice', 'sorted', 'str', 'sum', 'tuple',
-                 'type', 'zip', '__import__']:  # Note: we need __import__ for importing allowed modules
+                 'type', 'zip', '__import__', 'Exception']:  # Note: we need __import__ for importing allowed modules
         if name in __builtins__:
             safe_builtins[name] = __builtins__[name]
 

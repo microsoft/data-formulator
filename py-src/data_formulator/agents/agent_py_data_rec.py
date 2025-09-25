@@ -113,9 +113,14 @@ def transform_data(df1, df2, ...):
 ```
 
 note: 
-- if the user provided one table, then it should be def transform_data(df1), if the user provided multiple tables, then it should be def transform_data(df1, df2, ...) and you should consider the join between tables to derive the output.
-- try to use table names to refer to the input dataframes, for example, if the user provided two tables city and weather, you can use `transform_data(df_city, df_weather)` to refer to the two dataframes.
-
+- if the user provided one table, then it should be `def transform_data(df1)`, if the user provided multiple tables, then it should be `def transform_data(df1, df2, ...)` and you should consider the join between tables to derive the output.
+- **VERY IMPORTANT** the number of arguments in the function must match the number of tables provided, and the order of arguments must match the order of tables provided.
+- you can use intuitive table names to refer to the input dataframes, for example, if the user provided two tables city and weather, you can use `transform_data(df_city, df_weather)` to refer to the two dataframes, as long as the number and order of the arguments match the number and order of the tables provided.
+- datetime objects handling:
+    - if the output field is year, convert it to number, if it is year-month / year-month-day, convert it to string object (e.g., "2020-01" / "2020-01-01").
+    - if the output is time only: convert hour to number if it's just the hour (e.g., 10), but convert hour:min or h:m:s to string object (e.g., "10:30", "10:30:45")
+    - never return datetime object directly, convert it to either number (if it only contains year) or string so it's readable.
+    
     3. The output must only contain a json object representing the refined goal and a python code block representing the transformation code, do not add any extra text explanation.
 '''
 
@@ -126,14 +131,14 @@ For example:
 
 Here are our datasets, here are their field summaries and samples:
 
-table_0 (student_exam) fields:
+df1 (student_exam) fields:
 	student -- type: int64, values: 1, 2, 3, ..., 997, 998, 999, 1000
 	major -- type: object, values: liberal arts, science
 	math -- type: int64, values: 0, 8, 18, ..., 97, 98, 99, 100
 	reading -- type: int64, values: 17, 23, 24, ..., 96, 97, 99, 100
 	writing -- type: int64, values: 10, 15, 19, ..., 97, 98, 99, 100
 
-table_0 (student_exam) sample:
+df1 (student_exam) sample:
 
 ```
 |student|major|math|reading|writing
@@ -176,9 +181,19 @@ def transform_data(df):
 
 class PythonDataRecAgent(object):
 
-    def __init__(self, client, system_prompt=None, exec_python_in_subprocess=False):
+    def __init__(self, client, system_prompt=None, exec_python_in_subprocess=False, agent_coding_rules=""):
         self.client = client
-        self.system_prompt = system_prompt if system_prompt is not None else SYSTEM_PROMPT
+        
+        # Incorporate agent coding rules into system prompt if provided
+        if system_prompt is not None:
+            self.system_prompt = system_prompt
+        else:
+            base_prompt = SYSTEM_PROMPT
+            if agent_coding_rules and agent_coding_rules.strip():
+                self.system_prompt = base_prompt + "\n\n[AGENT CODING RULES]\nFollow these rules when generating code. Note: if the user instruction conflicts with these rules, priortize user instructions.\n\n" + agent_coding_rules.strip()
+            else:
+                self.system_prompt = base_prompt
+                
         self.exec_python_in_subprocess = exec_python_in_subprocess
 
     def process_gpt_response(self, input_tables, messages, response):

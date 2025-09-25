@@ -17,12 +17,12 @@ Given a dataset provided by the user,
     - if the table already have a descriptive name provided in the bracket (...), use it; if the provided name is not descriptive, suggest a new name.
     - format table name using '-' when it contains multiple words (e.g., "income", "weather-seattle-atlanta")
     - the suggested table name should be similar to variable names that are very descriptive and concise, no more than 3 words.
+    - the suggested name should best be within 12 characters, be smart with abbreviations (yet still descriptive and follow common practices), when in doubt, use less words but less abbreviation.
 2. identify their type and semantic type
 3. provide a very short summary of the dataset.
-4. provide a list of 5 explorative questions that can help users get started with data visualizations.
 
 Types to consider include: string, number, date
-Semantic types to consider include: Location, Decade, Year, Month, YearMonth, Day, Date, Time, DateTime, Range, Duration, Name, Percentage, String, Number
+Semantic types to consider include: Location, Decade, Year, Month, YearMonth, Day, Date, Time, DateTime, TimeRange, Range, Duration, Name, Percentage, String, Number
 
 Furthermore, if the field is string type and is ordinal (especially for english month name, week name, range), provide the natural sort order of the fields here.
 Otherwise, put sort_order as null (for example, Name should not be sorted).
@@ -42,8 +42,7 @@ output should be in the format of:
         "field2": {"type": ..., "semantic_type": ..., "sort_order": null}, 
         ...
     },
-    "data summary": ... // a short summary of the data,
-    "explorative_questions": [...], // a list of explorative questions that can help users get started with data visualizations
+    "data summary": ... // a short summary of the data
 }
 ```
 '''
@@ -87,12 +86,6 @@ table_0 (table_0) sample:
         "group": {"type": "string", "semantic_type": "Range", "sort_order": ["<10000", "10000 to 14999", "15000 to 24999", "25000 to 34999", "35000 to 49999", "50000 to 74999", "75000 to 99999", "100000 to 149999", "150000 to 199999", "200000+"]}
     },
     "data summary": "The dataset contains information about income distribution across different states in the USA. It includes fields for state names, regions, state IDs, percentage of total income, total income, and income groups.",
-    "explorative_questions": [
-        "What is the average income across different states?",
-        "What is the distribution of income across different regions?",
-        "What is the relationship between income and state ID?",
-        "What is the relationship between income and region?"
-    ]
 }
 ```
 
@@ -139,12 +132,6 @@ table_0 (weather_seattle_atlanta) sample:
         }  
     },  
     "data_summary": "This dataset contains weather information for the cities of Seattle and Atlanta. The fields include the date, city name, and temperature readings. The 'Date' field represents dates in a string format, the 'City' field represents city names, and the 'Temperature' field represents temperature values in integer format.",
-    "explorative_questions": [
-        "What is the average temperature across different cities?",
-        "What is the distribution of temperature across different dates?",
-        "What is the relationship between temperature and city?",
-        "What is the relationship between temperature and date?"
-    ]
 }```'''
 
 class DataLoadAgent(object):

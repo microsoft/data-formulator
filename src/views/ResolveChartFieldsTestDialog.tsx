@@ -56,15 +56,13 @@ export const ResolveChartFieldsTestDialog: FC<ResolveChartFieldsTestDialogProps>
     }
 
     // Get available field names from concepts
-    const availableFieldNames = conceptShelfItems
-        .filter(field => currentTable.names.includes(field.name))
+    const availableFieldNames = (currentTable.names.map(name => conceptShelfItems.find(c => c.name === name)).filter(f => f != undefined) as FieldItem[])
         .map(field => field.name);
 
     // Auto-populate first three fields
     useEffect(() => {
         if (availableFieldNames.length > 0 && selectedFieldNames.length === 0) {
-            const firstThreeFields = availableFieldNames.slice(0, 3);
-            setSelectedFieldNames(firstThreeFields);
+            setSelectedFieldNames(availableFieldNames);
         }
     }, [availableFieldNames, selectedFieldNames.length]);
 

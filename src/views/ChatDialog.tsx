@@ -142,6 +142,7 @@ export const ChatDialog: FC<ChatDialogProps> = function ChatDialog({code, dialog
             <Box sx={{display: "flex", overflowX: "auto", flexDirection: "column", 
                     justifyContent: "space-between", position: "relative", marginTop: "10px", minHeight: "50px"}}>
                 
+                {/* filter out system messages */}
                 {dialog.filter(entry => entry["role"] != 'system').map((chatEntry, idx) => {
 
                     let role = chatEntry['role'];

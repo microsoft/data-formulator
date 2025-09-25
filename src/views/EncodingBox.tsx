@@ -171,7 +171,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
 
     useEffect(() => { 
         setAutoSortResult(field?.levels);
-        if (field?.levels) {
+        if (!chart.chartType.includes("Area") && field?.levels) {
             updateEncProp('sortBy', JSON.stringify(field?.levels));
         }
     }, [encoding.fieldID, field?.levels])

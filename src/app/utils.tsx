@@ -225,8 +225,8 @@ export const assembleVegaChart = (
         if (field) {
             // create the encoding
             encodingObj["field"] = field.name;
-            encodingObj["type"] = encoding.dtype || getDType(field.type, workingTable.map(r => r[field.name]));
-            if (field.semanticType == "Date" || field.semanticType == "YearMonth" || field.semanticType == "Year" || field.semanticType == "Decade") {
+            encodingObj["type"] = getDType(field.type, workingTable.map(r => r[field.name]));
+            if (field.semanticType == "Date" || field.semanticType == "DateTime" || field.semanticType == "YearMonth" || field.semanticType == "Year" || field.semanticType == "Decade") {
                 if (['color', 'size', 'column', 'row'].includes(channel)) {
                     encodingObj["type"] = "nominal";
                 } else if (field.type == "string" && (field.semanticType == "Decade" || field.semanticType == "Year")) {
@@ -234,6 +234,9 @@ export const assembleVegaChart = (
                 } else {
                     encodingObj["type"] = "temporal";
                 }
+            }
+            if (encoding.dtype) {
+                encodingObj["type"] = encoding.dtype;
             }
 
             if (aggrPreprocessed) {
@@ -262,20 +265,7 @@ export const assembleVegaChart = (
 
             if (encodingObj["type"] == "nominal" && channel == 'color') {
 
-                // special case, unify
                 let actualDomain = [...new Set(workingTable.map(r => r[field.name]))];
-                // if (actualDomain.every(v => field.domain.includes(v)) && field.domain.length > actualDomain.length) {
-
-                //     let scaleValues = [...new Set(field.domain)].sort();
-                //     let legendValues = actualDomain.sort();
-
-                //     encodingObj["scale"] = {
-                //         domain: scaleValues,
-                //     }
-                //     encodingObj["legend"] = {
-                //         "values": legendValues,
-                //     }
-                // }
 
                 if (actualDomain.length >= 16) {
                     if (encodingObj["legend"] == undefined) {
@@ -284,16 +274,9 @@ export const assembleVegaChart = (
                     encodingObj["legend"]['symbolSize'] = 12;
                     encodingObj["legend"]["labelFontSize"] = 8;
                 }
-
-                // if ([...new Set(field.domain)].length >= 16) {
-                //     if (encodingObj["scale"] == undefined) {
-                //         encodingObj["scale"] = {}
-                //     }
-                //     encodingObj["scale"]['scheme'] = "tableau20";
-                // }
             }
         }
-        
+
         if (encoding.sortBy || encoding.sortOrder) {
             let sortOrder = encoding.sortOrder || "ascending";
 
@@ -304,6 +287,12 @@ export const assembleVegaChart = (
             } else {
                 try {
                     let sortedValues = JSON.parse(encoding.sortBy)['values'];
+
+                    // this is to coordinate with the type conversion of temporal fields
+                    if (field?.type == "date" || field?.semanticType == "Year" || field?.semanticType == "Decade") {
+                        sortedValues = sortedValues.map((v: any) => v.toString());
+                    }
+
                     encodingObj['sort'] = sortOrder == "ascending" ? sortedValues : sortedValues.reverse();
 
                     // special hack: ensure stack bar and stacked area charts are ordered correctly
@@ -370,7 +359,7 @@ export const assembleVegaChart = (
 
     if (vgObj.encoding?.column != undefined && vgObj.encoding?.row == undefined) {
         vgObj['encoding']['facet'] = vgObj['encoding']['column'];
-        vgObj['encoding']['facet']['columns'] = 6;
+        vgObj['encoding']['facet']['columns'] = 4;
         vgObj['resolve'] = {
             "axis": {
                 "x": "independent",
@@ -442,11 +431,14 @@ export const assembleVegaChart = (
         if (encoding?.type === 'nominal') {
             const fieldName = encoding.field;
             const uniqueValues = [...new Set(values.map((r: any) => r[fieldName]))];
+            const fieldOriginalType = getDType(conceptShelfItems.find(f => f.name == fieldName)?.type, workingTable.map(r => r[fieldName]));
             
             let valuesToKeep: any[];
             if (uniqueValues.length > maxNominalValues) {
 
-                if (channel == 'x' || channel == 'y') {
+                if (fieldOriginalType == 'quantitative') {
+                    valuesToKeep = uniqueValues.sort((a, b) => a - b).slice(0, maxNominalValues);
+                } else if (channel == 'x' || channel == 'y') {
                     const oppositeChannel = channel === 'x' ? 'y' : 'x';
                     const oppositeEncoding = vgObj.encoding?.[oppositeChannel];
                     
@@ -561,6 +553,7 @@ interface FieldAnalysis {
     cardinality: number;
     isLowCardinality: boolean;
     isVeryLowCardinality: boolean;
+    mightBeTemporal: boolean;
 }
 
 const analyzeField = (field: FieldItem, table: DictTable): FieldAnalysis => {
@@ -574,13 +567,20 @@ const analyzeField = (field: FieldItem, table: DictTable): FieldAnalysis => {
             semanticType: field.semanticType || 'None',
             cardinality: 0,
             isLowCardinality: false,
-            isVeryLowCardinality: false
+            isVeryLowCardinality: false,
+            mightBeTemporal: false
         };
     }
 
     const values = table.rows.map(row => row[fieldName]);
     const cardinality = new Set(values.filter(v => v != null)).size;
     const fieldType = getDType(field.type, values);
+    const mightBeTemporal = 
+        field.name.toLowerCase().endsWith("year") 
+        || field.name.toLowerCase().endsWith("decade") 
+        || field.name.toLowerCase().endsWith("decades")
+        || (fieldType == "quantitative" && values.every(v => typeof v === "number") && 
+            isLikelyYear(values));
     
     return {
         field,
@@ -589,7 +589,27 @@ const analyzeField = (field: FieldItem, table: DictTable): FieldAnalysis => {
         cardinality,
         isLowCardinality: cardinality <= 20,
         isVeryLowCardinality: cardinality <= 10,
+        mightBeTemporal: mightBeTemporal
     };
+};
+
+// Helper function to detect if values look like years
+const isLikelyYear = (values: any[]): boolean => {
+    const numericValues = values.filter(v => v != null && typeof v === "number");
+    if (numericValues.length === 0) return false;
+    
+    // Check if values are in reasonable year range
+    const inYearRange = numericValues.every(v => v >= 1900 && v <= 2100);
+    
+    // Check if values are integers (years should be whole numbers)
+    const areIntegers = numericValues.every(v => Number.isInteger(v));
+    
+    // Check if the range is reasonable for years (not too spread out)
+    const min = Math.min(...numericValues);
+    const max = Math.max(...numericValues);
+    const reasonableRange = (max - min) <= 200;
+    
+    return inYearRange && areIntegers && reasonableRange;
 };
 
 
@@ -782,7 +802,9 @@ export const resolveChartFields = (chart: Chart, allFields: FieldItem[], visFiel
             let remainingFields = availableFields.filter(fa => fa.field.id !== reservedVeryLowCardinalityFields?.field.id);
 
             const preferredXField = remainingFields.find(fa => 
-                fa.fieldType === "nominal" || fa.fieldType === "ordinal" || (fa.fieldType === "quantitative" && fa.isLowCardinality)
+                fa.fieldType === "nominal" || fa.fieldType === "ordinal" 
+                || (fa.fieldType === "quantitative" && fa.isLowCardinality)
+                || (fa.field.name.toLowerCase() == "year" || fa.field.name.toLowerCase() == "decade")
             );
             
             if (preferredXField) {
@@ -852,6 +874,16 @@ export const resolveChartFields = (chart: Chart, allFields: FieldItem[], visFiel
                 // if we cannot find such field, we will leave it for facet to handle
                 if (groupFields.length >= 1) {
                     addEncoding("color", groupFields[0].field.id);
+                }
+            } else if (chartType === "Line Chart" || chartType === "Custom Area") {
+                // 3. For line chart and custom area chart:
+                const discreteOrLowCardinalityField = colorFields.filter(
+                    fa => fa.fieldType === "nominal" 
+                    || fa.fieldType === "ordinal" 
+                    || (fa.fieldType === "quantitative" && fa.mightBeTemporal)
+                    || (fa.fieldType === "quantitative" && fa.isVeryLowCardinality));
+                if (discreteOrLowCardinalityField.length >= 1) {
+                    addEncoding("color", discreteOrLowCardinalityField[0].field.id);
                 }
             } else {
                 // 3. For other chart types: choose the first of leftover fields

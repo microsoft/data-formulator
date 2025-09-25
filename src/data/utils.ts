@@ -126,7 +126,7 @@ export const createTableFromFromObjectArray = (title: string, values: any[], anc
         derive: derive,
         anchored: anchored,
         createdBy: "user",
-        explorativeQuestions: []
+        attachedMetadata: ''
     }
 };
 

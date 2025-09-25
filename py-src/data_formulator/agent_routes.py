@@ -7,6 +7,7 @@ import sys
 import os
 import mimetypes
 import re
+import traceback
 mimetypes.add_type('application/javascript', '.js')
 mimetypes.add_type('application/javascript', '.mjs')
 
@@ -317,6 +318,7 @@ def derive_data():
         language = content.get("language", "python") # whether to use sql or python, default to python
         
         max_repair_attempts = content["max_repair_attempts"] if "max_repair_attempts" in content else 1
+        agent_coding_rules = content.get("agent_coding_rules", "")
 
         if "additional_messages" in content:
             prev_messages = content["additional_messages"]
@@ -340,10 +342,10 @@ def derive_data():
 
         if mode == "recommendation":
             # now it's in recommendation mode
-            agent = SQLDataRecAgent(client=client, conn=conn) if language == "sql" else PythonDataRecAgent(client=client, exec_python_in_subprocess=current_app.config['CLI_ARGS']['exec_python_in_subprocess'])
+            agent = SQLDataRecAgent(client=client, conn=conn, agent_coding_rules=agent_coding_rules) if language == "sql" else PythonDataRecAgent(client=client, exec_python_in_subprocess=current_app.config['CLI_ARGS']['exec_python_in_subprocess'], agent_coding_rules=agent_coding_rules)
             results = agent.run(input_tables, instruction, prev_messages=prev_messages)
         else:
-            agent = SQLDataTransformationAgent(client=client, conn=conn) if language == "sql" else PythonDataTransformationAgent(client=client, exec_python_in_subprocess=current_app.config['CLI_ARGS']['exec_python_in_subprocess'])
+            agent = SQLDataTransformationAgent(client=client, conn=conn, agent_coding_rules=agent_coding_rules) if language == "sql" else PythonDataTransformationAgent(client=client, exec_python_in_subprocess=current_app.config['CLI_ARGS']['exec_python_in_subprocess'], agent_coding_rules=agent_coding_rules)
             results = agent.run(input_tables, instruction, [field['name'] for field in new_fields], prev_messages)
 
         repair_attempts = 0
@@ -386,6 +388,9 @@ def explore_data_streaming():
             language = content.get("language", "python")  # whether to use sql or python, default to python
             max_iterations = content.get("max_iterations", 5)  # Number of exploration iterations
             start_with_planning = content.get("start_with_planning", False)
+            max_repair_attempts = content.get("max_repair_attempts", 1)
+            agent_exploration_rules = content.get("agent_exploration_rules", "")
+            agent_coding_rules = content.get("agent_coding_rules", "")
 
             logger.info("== input tables ===>")
             for table in input_tables:
@@ -416,7 +421,10 @@ def explore_data_streaming():
                     session_id=session_id,
                     exec_python_in_subprocess=exec_python_in_subprocess,
                     max_iterations=max_iterations,
-                    start_with_planning=start_with_planning
+                    start_with_planning=start_with_planning,
+                    max_repair_attempts=max_repair_attempts,
+                    agent_exploration_rules=agent_exploration_rules,
+                    agent_coding_rules=agent_coding_rules
                 ):
                     response_data = { 
                         "token": token, 
@@ -433,6 +441,7 @@ def explore_data_streaming():
             except Exception as e:
                 logger.setLevel(logging.WARNING)
                 logger.error(f"Error in exploration flow: {e}")
+                logger.error(traceback.format_exc())
                 error_data = { 
                     "token": token, 
                     "status": "error", 
@@ -483,6 +492,7 @@ def refine_data():
         new_instruction = content["new_instruction"]
         latest_data_sample = content["latest_data_sample"]
         max_repair_attempts = content.get("max_repair_attempts", 1)
+        agent_coding_rules = content.get("agent_coding_rules", "")
         
         language = content.get("language", "python") # whether to use sql or python, default to python
 
@@ -498,7 +508,7 @@ def refine_data():
         conn = db_manager.get_connection(session['session_id']) if language == "sql" else None
 
         # always resort to the data transform agent       
-        agent = SQLDataTransformationAgent(client=client, conn=conn) if language == "sql" else PythonDataTransformationAgent(client=client, exec_python_in_subprocess=current_app.config['CLI_ARGS']['exec_python_in_subprocess'])
+        agent = SQLDataTransformationAgent(client=client, conn=conn, agent_coding_rules=agent_coding_rules) if language == "sql" else PythonDataTransformationAgent(client=client, exec_python_in_subprocess=current_app.config['CLI_ARGS']['exec_python_in_subprocess'], agent_coding_rules=agent_coding_rules)
         results = agent.followup(input_tables, dialog, latest_data_sample, [field['name'] for field in output_fields], new_instruction)
 
         repair_attempts = 0
@@ -577,7 +587,8 @@ def get_recommendation_questions():
 
         logger.info(f" model: {content['model']}")
         
-        agent = InteractiveExploreAgent(client=client)
+        agent_exploration_rules = content.get("agent_exploration_rules", "")
+        agent = InteractiveExploreAgent(client=client, agent_exploration_rules=agent_exploration_rules)
 
         # Get input tables from the request
         input_tables = content.get("input_tables", [])

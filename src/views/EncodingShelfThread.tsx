@@ -179,7 +179,7 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
                 className="table-list-item">
                 <Button variant="text" sx={{textTransform: 'none', padding: 0, minWidth: 0}} onClick={() => { dispatch(dfActions.setFocusedTable(tableId)) }}>
                 <Stack direction="row" sx={{fontSize: '12px'}} alignItems="center" gap={"2px"}>
-                    {table.anchored ? <AnchorIcon fontSize="inherit" /> : <TableRowsIcon fontSize="inherit" />}
+                    {table && table.anchored ? <AnchorIcon fontSize="inherit" /> : <TableRowsIcon fontSize="inherit" />}
                     <Typography sx={{fontSize: '12px'}} >
                         {table.displayId || tableId}
                     </Typography>
@@ -189,6 +189,10 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
     }
 
     let tableList = activeTableThread.map((tableId) => {
+        let table = tables.find(t => t.id == tableId) as DictTable;
+        if (!table) {
+            return null;
+        }
         return buildTableCard(tableId);
     });
 

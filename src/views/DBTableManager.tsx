@@ -516,8 +516,8 @@ export const DBTableSelectionDialog: React.FC<{
                 rowCount: dbTable.row_count,
             },
             anchored: true, // by default, db tables are anchored
-            explorativeQuestions: [],
-            createdBy: 'user'
+            createdBy: 'user',
+            attachedMetadata: ''
         }
        dispatch(dfActions.loadTable(table));
        dispatch(fetchFieldSemanticType(table));

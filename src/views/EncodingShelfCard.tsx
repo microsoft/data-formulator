@@ -358,6 +358,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
     // reference to states
     const tables = useSelector((state: DataFormulatorState) => state.tables);
     const config = useSelector((state: DataFormulatorState) => state.config);
+    const agentRules = useSelector((state: DataFormulatorState) => state.agentRules);
     let existMultiplePossibleBaseTables = tables.filter(t => t.derive == undefined || t.anchored).length > 1;
 
     let activeModel = useSelector(dfSelectors.getActiveModel);
@@ -468,12 +469,14 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                 model: activeModel,
                 input_tables: [{
                     name: rootTable.virtual?.tableId || rootTable.id.replace(/\.[^/.]+$/, ""),
-                    rows: rootTable.rows
+                    rows: rootTable.rows,
+                    attached_metadata: rootTable.attachedMetadata
                 }],
                 exploration_thread: explorationThread,
                 current_data_sample: currentTable.rows.slice(0, 10),
                 current_chart: currentChartPng,
-                mode: 'interactive'
+                mode: 'interactive',
+                agent_exploration_rules: agentRules.exploration
             });
 
             const engine = getUrls().GET_RECOMMENDATION_QUESTIONS;
@@ -579,11 +582,16 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
             token: token,
             mode,
             input_tables: actionTables.map(t => {
-                return { name: t.virtual?.tableId || t.id.replace(/\.[^/.]+$/ , ""), rows: t.rows }}),
+                return { 
+                    name: t.virtual?.tableId || t.id.replace(/\.[^/.]+$/ , ""), 
+                    rows: t.rows, 
+                    attached_metadata: t.attachedMetadata 
+                }}),
             new_fields: mode == 'formulate' ? activeFields.map(f => { return {name: f.name} }) : [],
             extra_prompt: instruction,
             model: activeModel,
             max_repair_attempts: config.maxRepairAttempts,
+            agent_coding_rules: agentRules.coding,
             language: actionTables.some(t => t.virtual) ? "sql" : "python"
         })
 
@@ -606,12 +614,18 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                 messageBody = JSON.stringify({
                     token: token,
                     mode,
-                    input_tables: actionTables.map(t => {return { name: t.virtual?.tableId || t.id.replace(/\.[^/.]+$/ , ""), rows: t.rows }}),
+                    input_tables: actionTables.map(t => {
+                        return { 
+                            name: t.virtual?.tableId || t.id.replace(/\.[^/.]+$/ , ""), 
+                            rows: t.rows, 
+                            attached_metadata: t.attachedMetadata 
+                        }}),
                     new_fields: mode == 'formulate' ? activeFields.map(f => { return {name: f.name} }) : [],
                     extra_prompt: instruction,
                     model: activeModel,
                     additional_messages: additionalMessages,
                     max_repair_attempts: config.maxRepairAttempts,
+                    agent_coding_rules: agentRules.coding,
                     language: actionTables.some(t => t.virtual) ? "sql" : "python"
                 });
                 engine = getUrls().DERIVE_DATA;
@@ -619,13 +633,19 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                 messageBody = JSON.stringify({
                     token: token,
                     mode,
-                    input_tables: actionTables.map(t => {return { name: t.virtual?.tableId || t.id.replace(/\.[^/.]+$/ , ""), rows: t.rows }}),
+                    input_tables: actionTables.map(t => {
+                        return { 
+                            name: t.virtual?.tableId || t.id.replace(/\.[^/.]+$/ , ""), 
+                            rows: t.rows, 
+                            attached_metadata: t.attachedMetadata 
+                        }}),
                     output_fields: mode == 'formulate' ? activeFields.map(f => { return {name: f.name} }) : [],
                     dialog: currentTable.derive?.dialog,
                     latest_data_sample: currentTable.rows.slice(0, 10),
                     new_instruction: instruction,
                     model: activeModel,
                     max_repair_attempts: config.maxRepairAttempts,
+                    agent_coding_rules: agentRules.coding,
                     language: actionTables.some(t => t.virtual) ? "sql" : "python"
                 })
                 engine = getUrls().REFINE_DATA;

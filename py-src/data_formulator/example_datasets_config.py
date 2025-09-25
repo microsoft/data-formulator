@@ -345,6 +345,52 @@ Life sciences,Agricultural sciences and natural resources,Natural resource and e
 1902,Physics,The Nobel Prize in Physics 1902,"""in recognition of the extraordinary service they rendered by their researches into the influence of magnetism upon radiation phenomena""",1/2,2,Individual,Hendrik Antoon Lorentz,1853-07-18,Arnhem,Netherlands,Male,Leiden University,Leiden,Netherlands,1928-02-04,NA,Netherlands'''
             }
         ]
+    }, {
+        'source': 'tidytuesday',
+        'name': 'Space launches',
+        'description': 'Taken from Economist GitHub (https://github.com/rfordatascience/tidytuesday/tree/main/data/2018/2018-08-21). These are the data behind the "space launches" article, The space race is dominated by new contenders. Principal data came from the Jonathan McDowell\'s JSR Launch Vehicle Database.',
+        'tables': [
+            {
+                "format": 'csv',
+                "url": 'https://raw.githubusercontent.com/rfordatascience/tidytuesday/refs/heads/main/data/2019/2019-01-15/agencies.csv',
+                'sample': '''agency,count,ucode,state_code,type,class,tstart,tstop,short_name,name,location,longitude,latitude,error,parent,short_english_name,english_name,unicode_name,agency_type
+RVSN,1528,RVSN,SU,O/LA,D,1960,1991 Dec,RVSN,Rakentiye Voiska Strategicheskogo Naznacheniye,Mosvka?,-,-,-,-,-,Strategic Rocket Forces,Ракетные войска стратегического назначения,state
+UNKS,904,GUKOS,SU,O/LA,D,1986 Apr 24,1991,UNKS,Upravleniye Nachalnika Kosmicheskikh Sredstv,Moskva,-,-,-,MO,-,-,Управление начальника космических средств МО СССР,state
+NASA,469,NASA,US,O/LA/LV/PL/S,C,1958 Oct  1,-,NASA,National Aeronautics and Space Administration,"Washington, D.C.",-,-,-,-,-,-,National Aeronautics and Space Administration,state
+USAF,388,USAF,US,O/LA/S,D,1947 Sep 18,-,USAF,United States Air Force,"Washington, DC-Pentagon",-,-,-,-,-,-,United States Air Force,state
+AE,258,AE,F,O/LA,B,1980 Mar 26,*,Arianespace,"Arianespace, Inc.","Paris-Evry, France",-,-,-,-,Arianespace,-,"Arianespace, Inc.",private
+AFSC,247,AFSC,US,LA,D,1961 Apr  1,1992 Jul  1,AFSC,"US Air Force Systems Command, Los Angeles AFS","El Segundo, California",-,-,-,USAF,-,-,"US Air Force Systems Command, Los Angeles AFS",state
+VKSR,200,GUKOS,RU,O/LA,D,1997 Jul,2001 Jun  1,VKS RVSN,"Voenno-Kosmicheskiye Sili (Military Space Forces), RVSN","Mosvka-Solnechnogorsk, Rossiya",-,-,-,RVSN,-,Russian Military Space Forces,Военно-космические силы РВСН,state
+CALT,181,CALT,CN,LA/LV/PL/E,C,1957 Nov 11,-,CALT,Zhongguo yunzaihuojian jishu yanjiu yuan,Beijing-Nanyuan,-,-,-,CASC,CALT,Chinese Academy of Launch Vehicle Technology (CASC 1st Acad),中国运载火箭技术研究院,state
+FKA,128,MOM,RU,O/LA,C,2004,2016 Jan  1,Roskosmos,Federal'noe kosmicheskoe agentstvo Rossii (Roskosmos),Moskva,-,-,-,-,-,Roskosmos,Федеральное космическое агентство (Роскосмос),state
+SAST,105,SBA,CN,O/LA/LV/PL,B,1993,-,SAST,Shanghai hangtian jishu yanjiuyuan,Shanghai-Minghan,-,-,-,CASC,-,Shanghai Academy of Space Technology (CASC 8th Acad),上海航天技术研究院,state
+ILSK,97,ILSK,RU,LA,B,1995,-,ILS-K,"International Launch Services, Khrunichev",Moskva,-,-,-,KHRU,-,-,"International Launch Services, Khrunichev",private
+KVR,78,GUKOS,RU,O/LA,D,2001 Jun  1,2011 Dec  1,KVR,Kosmichesikiye voyska Rossii,Moskva-Solnechnogorsk,-,-,-,-,-,Russian Space Forces,Космические войска России,state
+ULAL,70,ULAL,US,LA,B,2006 Dec,-,ULA/LMA,United Launch Alliance/Lockheed Martin Astronautics,"Denver-Centennial, Colorado",-,-,-,LM,-,-,United Launch Alliance/Lockheed Martin Astronautics,private
+KHRU,67,KHRU,RU,O/LA/LV/PL/S,B,1994,1998,Khrunichev,"GKNPTs im. M.V. Khrunichev, Zavod Khrunichev",Moskva-Fili,-,-,-,-,-,Khrunichev State Research and Production Center,ГКНПЦ им. М.В.Хруничева,state
+SPX,65,SPX,US,O/LA/LV/PL/S,B,2007 Aug,-,SpaceX,SpaceX,"Hawthorne, California",-,-,-,-,-,-,SpaceX,startup'''
+            }, {
+                "format": 'csv',
+                "url": 'https://raw.githubusercontent.com/rfordatascience/tidytuesday/refs/heads/main/data/2019/2019-01-15/launches.csv',
+                'sample': '''tag,JD,launch_date,launch_year,type,variant,mission,agency,state_code,category,agency_type
+1967-065,2439671.38,1967-06-29,1967,Thor Burner 2,,Secor Type II S/N 10,US,US,O,state
+1967-080,2439725.7,1967-08-23,1967,Thor Burner 2,,DAPP 3419,US,US,O,state
+1967-096,2439774.83,1967-10-11,1967,Thor Burner 2,,DAPP 4417,US,US,O,state
+1968-042,2439999.69,1968-05-23,1968,Thor Burner 2,,DAPP 5420,US,US,O,state
+1968-092,2440152.69,1968-10-23,1968,Thor Burner 2,,DAPP 6422,US,US,O,state
+1969-062,2440425.69,1969-07-23,1969,Thor Burner 2,,DAPP 7421,US,US,O,state
+1970-012,2440628.86,1970-02-11,1970,Thor Burner 2,,DAPP Block 5A F-1,US,US,O,state
+1970-070,2440832.86,1970-09-03,1970,Thor Burner 2,,DAPP Block 5A F-2,US,US,O,state
+1971-012,2440999.66,1971-02-17,1971,Thor Burner 2,,DAPP Block 5A F-3,US,US,O,state
+1971-054,2441111.08,1971-06-08,1971,Thor Burner 2,,P70-1,US,US,O,state
+1971-087,2441238.83,1971-10-14,1971,Thor Burner 2A,,DMSP Block 5B F-1 (SV-2),US,US,O,state
+1972-018,2441400.87,1972-03-24,1972,Thor Burner 2A,,DMSP Block 5B F-2 (SV-1),US,US,O,state
+1972-089,2441630.64,1972-11-09,1972,Thor Burner 2A,,DMSP Block 5B F-3,US,US,O,state
+1973-054,2441911.7,1973-08-17,1973,Thor Burner 2A,,DMSP Block 5B F-4,US,US,O,state
+1974-015,2442122.83,1974-03-16,1974,Thor Burner 2A,,DMSP Block 5B F-5,US,US,O,state
+1974-063,2442268.64,1974-08-09,1974,Thor Burner 2A,,DMSP Block 5C F-1,US,US,O,state'''
+            }
+        ]
     }
 ]
 

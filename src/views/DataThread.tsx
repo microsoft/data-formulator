@@ -18,7 +18,11 @@ import {
     SxProps,
     Button,
     TextField,
-    CircularProgress
+    CircularProgress,
+    Popper,
+    Paper,
+    ClickAwayListener,
+    Badge
 } from '@mui/material';
 
 import { VegaLite } from 'react-vega'
@@ -56,11 +60,96 @@ import { TriggerCard } from './EncodingShelfCard';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import CloudQueueIcon from '@mui/icons-material/CloudQueue';
-import PrecisionManufacturingIcon from '@mui/icons-material/PrecisionManufacturing';
+import AttachFileIcon from '@mui/icons-material/AttachFile';
 
 import { alpha } from '@mui/material/styles';
 
 import { dfSelectors } from '../app/dfSlice';
+
+// Metadata Popup Component
+const MetadataPopup = memo<{
+    open: boolean;
+    anchorEl: HTMLElement | null;
+    onClose: () => void;
+    onSave: (metadata: string) => void;
+    initialValue: string;
+    tableName: string;
+}>(({ open, anchorEl, onClose, onSave, initialValue, tableName }) => {
+    const [metadata, setMetadata] = useState(initialValue);
+
+    let hasChanges = metadata !== initialValue;
+
+    useEffect(() => {
+        setMetadata(initialValue);
+    }, [initialValue, open]);
+
+    const handleSave = () => {
+        onSave(metadata);
+        onClose();
+    };
+
+    const handleCancel = () => {
+        setMetadata(initialValue);
+        onClose();
+    };
+
+    const handleKeyDown = (e: React.KeyboardEvent) => {
+        if (e.key === 'Escape') {
+            handleCancel();
+        } else if (e.key === 'Enter' && e.ctrlKey) {
+            handleSave();
+        }
+    };
+
+    return (
+        <Popper
+            open={open}
+            anchorEl={anchorEl}
+            placement="bottom-start"
+            style={{ zIndex: 1300 }}
+        >
+            <ClickAwayListener onClickAway={handleCancel}>
+                <Paper
+                    elevation={8}
+                    sx={{
+                        width: 480,
+                        fontSize: 12,
+                        p: 2,
+                        mt: 1,
+                        border: '1px solid',
+                        borderColor: 'divider'
+                    }}
+                >
+                    <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                        Attach metadata to <Typography component="span" sx={{ fontSize: 'inherit', color: 'primary.main'}}>{tableName}</Typography>
+                    </Typography>
+                    <TextField
+                        autoFocus
+                        label="metadata"
+                        placeholder="Attach additional contexts or guidance so that AI agents can better understand and process the data."
+                        fullWidth
+                        multiline
+                        slotProps={{
+                            inputLabel: {shrink: true},
+                        }}
+                        minRows={3}
+                        maxRows={20}
+                        variant="outlined"
+                        size="small"
+                        value={metadata}
+                        onChange={(e) => setMetadata(e.target.value)}
+                        onKeyDown={handleKeyDown}
+                        sx={{ my: 1, '& .MuiInputBase-input': { fontSize: 12 } }}
+                    />
+                    <Box sx={{ mt: 1, display: 'flex', gap: 1, alignItems: 'center' }}>
+                        <Button size="small" sx={{ml: 'auto'}} onClick={handleCancel} color="primary">Cancel</Button>
+                        <Button size="small" onClick={handleSave} color="primary" disabled={!hasChanges}>Save</Button>
+                    </Box>
+                </Paper>
+            </ClickAwayListener>
+        </Popper>
+    );
+});
 
 // Agent Status Box Component
 const AgentStatusBox = memo<{
@@ -216,13 +305,29 @@ const AgentStatusBox = memo<{
     );
 });
 
-let buildChartCard = (chartElement: { tableId: string, chartId: string, element: any },
-    focusedChartId?: string) => {
+let buildChartCard = (
+    chartElement: { tableId: string, chartId: string, element: any },
+    focusedChartId?: string,
+    unread?: boolean
+) => {
     let selectedClassName = focusedChartId == chartElement.chartId ? 'selected-card' : '';
     return <Card className={`data-thread-card ${selectedClassName}`} variant="outlined"
         sx={{
             width: '100%',
-            display: 'flex'
+            display: 'flex',
+            position: 'relative',
+            ...(unread && {
+                boxShadow: '0 0 6px rgba(255, 152, 0, 0.15), 0 0 12px rgba(255, 152, 0, 0.15)',
+                animation: 'glow 2s ease-in-out infinite alternate',
+                '@keyframes glow': {
+                    '0%': {
+                        boxShadow: '0 0 6px rgba(255, 152, 0, 0.15), 0 0 12px rgba(255, 152, 0, 0.15)',
+                    },
+                    '100%': {
+                        boxShadow: '0 0 8px rgba(255, 152, 0, 0.2), 0 0 16px rgba(255, 152, 0, 0.2)',
+                    },
+                },
+            })
         }}>
         {chartElement.element}
     </Card>
@@ -374,6 +479,11 @@ let SingleThreadGroupView: FC<{
     let focusedTableId = useSelector((state: DataFormulatorState) => state.focusedTableId);
     let agentActions = useSelector((state: DataFormulatorState) => state.agentActions);
 
+    // Metadata popup state
+    const [metadataPopupOpen, setMetadataPopupOpen] = useState(false);
+    const [selectedTableForMetadata, setSelectedTableForMetadata] = useState<DictTable | null>(null);
+    const [metadataAnchorEl, setMetadataAnchorEl] = useState<HTMLElement | null>(null);
+
 
     let handleUpdateTableDisplayId = (tableId: string, displayId: string) => {
         dispatch(dfActions.updateTableDisplayId({
@@ -381,6 +491,27 @@ let SingleThreadGroupView: FC<{
             displayId: displayId
         }));
     }
+
+    const handleOpenMetadataPopup = (table: DictTable, anchorEl: HTMLElement) => {
+        setSelectedTableForMetadata(table);
+        setMetadataAnchorEl(anchorEl);
+        setMetadataPopupOpen(true);
+    };
+
+    const handleCloseMetadataPopup = () => {
+        setMetadataPopupOpen(false);
+        setSelectedTableForMetadata(null);
+        setMetadataAnchorEl(null);
+    };
+
+    const handleSaveMetadata = (metadata: string) => {
+        if (selectedTableForMetadata) {
+            dispatch(dfActions.updateTableAttachedMetadata({
+                tableId: selectedTableForMetadata.id,
+                attachedMetadata: metadata
+            }));
+        }
+    };
 
     let buildTriggerCard = (trigger: Trigger) => {
         let selectedClassName = trigger.chart?.id == focusedChartId ? 'selected-card' : '';
@@ -464,8 +595,9 @@ let SingleThreadGroupView: FC<{
 
         let releventChartElements = relevantCharts.map((ce, j) =>
             <Box key={`relevant-chart-${ce.chartId}`}
-                sx={{ display: 'flex', padding: 0, pb: j == relevantCharts.length - 1 ? 1 : 0.5, ...collapsedProps }}>
-                {buildChartCard(ce, focusedChartId)}
+                sx={{ 
+                    display: 'flex', padding: 0, pb: j == relevantCharts.length - 1 ? 1 : 0.5, ...collapsedProps }}>
+                {buildChartCard(ce, focusedChartId, charts.find(c => c.id == ce.chartId)?.unread)}
             </Box>)
 
         // only charts without dependency can be deleted
@@ -535,6 +667,27 @@ let SingleThreadGroupView: FC<{
                         </Box>
                     </Stack>
                     <ButtonGroup aria-label="Basic button group" variant="text" sx={{ textAlign: 'end', margin: "auto 2px auto auto" }}>
+                        {table?.derive == undefined && <Tooltip key="attach-metadata-btn-tooltip" title={table?.attachedMetadata ? "edit table metadata" : "attach table metadata"}>
+                            <IconButton aria-label="attach metadata" size="small" sx={{ 
+                                padding: 0.25, 
+                                '&:hover': {
+                                    transform: 'scale(1.2)',
+                                    transition: 'all 0.2s ease'
+                                } 
+                            }}
+                                onClick={(event) => {
+                                    event.stopPropagation();
+                                    handleOpenMetadataPopup(table!, event.currentTarget);
+                                }}
+                            >
+                                <AttachFileIcon fontSize="small" sx={{ 
+                                    fontSize: 18,
+                                    color: table?.attachedMetadata ? 'secondary.main' : 'text.secondary',
+                                    opacity: table?.attachedMetadata ? 1 : 0.7
+                                }}/>
+                            </IconButton>
+                        </Tooltip>}
+                        
                         {tableDeleteEnabled && <Tooltip key="delete-table-btn-tooltip" title="delete table">
                             <IconButton aria-label="share" size="small" sx={{ padding: 0.25, '&:hover': {
                                 transform: 'scale(1.2)',
@@ -548,6 +701,7 @@ let SingleThreadGroupView: FC<{
                                 <DeleteIcon fontSize="small" sx={{ fontSize: 18 }} color='warning'/>
                             </IconButton>
                         </Tooltip>}
+                        
                         <Tooltip key="create-new-chart-btn-tooltip" title="create a new chart">
                             <IconButton aria-label="share" size="small" sx={{ padding: 0.25, '&:hover': {
                                 transform: 'scale(1.2)',
@@ -570,9 +724,6 @@ let SingleThreadGroupView: FC<{
         let chartElementProps = collapsed ? { display: 'flex', flexWrap: 'wrap' } : {}
 
         let relevantAgentActions = agentActions.filter(a => a.tableId == tableId).filter(a => a.hidden == false);
-
-        
-
 
         let agentActionBox = (
             <AgentStatusBox 
@@ -727,6 +878,14 @@ let SingleThreadGroupView: FC<{
             </Box>
             {leafTableComp}
         </div>
+        <MetadataPopup
+            open={metadataPopupOpen}
+            anchorEl={metadataAnchorEl}
+            onClose={handleCloseMetadataPopup}
+            onSave={handleSaveMetadata}
+            initialValue={selectedTableForMetadata?.attachedMetadata || ''}
+            tableName={selectedTableForMetadata?.displayId || selectedTableForMetadata?.id || ''}
+        />
     </Box>
 }
 

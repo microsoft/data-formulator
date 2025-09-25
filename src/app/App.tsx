@@ -72,6 +72,7 @@ import CloudQueueIcon from '@mui/icons-material/CloudQueue';
 import { getUrls } from './utils';
 import { DataLoadingChatDialog } from '../views/DataLoadingChat';
 import ChatIcon from '@mui/icons-material/Chat';
+import { AgentRulesDialog } from '../views/AgentRulesDialog';
 
 const AppBar = styled(MuiAppBar)(({ theme }) => ({
     color: 'black',
@@ -195,7 +196,7 @@ const TableMenu: React.FC = () => {
                 aria-expanded={open ? 'true' : undefined}
                 sx={{ textTransform: 'none' }}
             >
-                Add Table
+                Add Data
             </Button>
             <Menu
                 id="add-table-menu"
@@ -206,23 +207,29 @@ const TableMenu: React.FC = () => {
                     paper: { sx: { py: '4px', px: '8px' } }
                 }}
                 aria-labelledby="add-table-button"
-                sx={{ '& .MuiMenuItem-root': { padding: 0, margin: 0 } }}
+                sx={{ 
+                    '& .MuiMenuItem-root': { padding: 0, margin: 0 } ,
+                    '& .MuiTypography-root': { fontSize: 14, display: 'flex', alignItems: 'center', textTransform: 'none',gap: 1 }
+                }}
             >
+                <MenuItem onClick={(e) => {}}>     
+                    <DataLoadingChatDialog buttonElement={<Typography fontSize="inherit" sx={{  }}>
+                        from vibe
+                    </Typography>}/>
+                </MenuItem>
                 <MenuItem onClick={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
                 }}>
                     <TableCopyDialogV2 buttonElement={
-                        <Typography sx={{ fontSize: 14, textTransform: 'none', display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <ContentPasteIcon fontSize="small" />
+                        <Typography sx={{  }}>
                             from clipboard
                         </Typography>
                     } disabled={false} />
                 </MenuItem>
                 <MenuItem onClick={(e) => {}} >
                     <TableUploadDialog buttonElement={
-                        <Typography sx={{ fontSize: 14, textTransform: 'none', display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <UploadFileIcon fontSize="small" />
+                        <Typography sx={{ }}>
                             from file
                         </Typography>
                     } disabled={false} />
@@ -245,7 +252,7 @@ const SessionMenu: React.FC = () => {
                 endIcon={<KeyboardArrowDownIcon />} 
                 sx={{ textTransform: 'none' }}
             >
-                Session {sessionId ? `(${sessionId.substring(0, 8)}...)` : ''}
+                Session {sessionId ? `(#${sessionId.substring(sessionId.length - 4)})` : ''}
             </Button>
             <Menu
                 id="session-menu"
@@ -568,6 +575,7 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
                 </Button>
                 <Box sx={{ display: 'flex', ml: 'auto', fontSize: 14 }}>
                     <ConfigDialog />
+                    <AgentRulesDialog />
                     <Divider orientation="vertical" variant="middle" flexItem />
                     <ModelSelectionButton />
                     <Divider orientation="vertical" variant="middle" flexItem />
@@ -576,9 +584,6 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
                             <CloudQueueIcon fontSize="small" /> Database
                         </Box>
                     } component="dialog" />
-                    <DataLoadingChatDialog buttonElement={<Typography fontSize="inherit" sx={{ display: 'flex', textTransform: 'none', alignItems: 'center', gap: 1 }}>
-                        Vibe Data
-                    </Typography>}/>
                     <Typography fontSize="inherit" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                         <TableMenu />
                     </Typography>

@@ -176,10 +176,19 @@ FROM
 
 class SQLDataRecAgent(object):
 
-    def __init__(self, client, conn, system_prompt=None):
+    def __init__(self, client, conn, system_prompt=None, agent_coding_rules=""):
         self.client = client
         self.conn = conn
-        self.system_prompt = system_prompt if system_prompt is not None else SYSTEM_PROMPT
+        
+        # Incorporate agent coding rules into system prompt if provided
+        if system_prompt is not None:
+            self.system_prompt = system_prompt
+        else:
+            base_prompt = SYSTEM_PROMPT
+            if agent_coding_rules and agent_coding_rules.strip():
+                self.system_prompt = base_prompt + "\n\n[AGENT CODING RULES]\nPlease follow these rules when generating code. Note: if the user instruction conflicts with these rules, you should priortize user instructions.\n\n" + agent_coding_rules.strip()
+            else:
+                self.system_prompt = base_prompt
 
     def process_gpt_response(self, input_tables, messages, response):
         """process gpt response to handle execution"""
