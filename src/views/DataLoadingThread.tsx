@@ -214,7 +214,7 @@ export const DataLoadingInputBox = React.forwardRef<(() => void) | null, {maxLin
     const placeholders = (existOutputBlocks || streamingContent) ? [
         selectedTable && selectedTable.content.type === 'image_url' ? "extract data from this image" : "follow-up instruction (e.g., fix headers, remove totals, generate 15 rows, etc.)"
     ] : [
-        "get Claude performance data from https://www.anthropic.com/news/claude-opus-4-1",
+        "get Claude performance data from https://www.anthropic.com/news/claude-sonnet-4-5",
         "help me extract data from this image",
         `help me extract sub-segment growth data from this text\n\n\"Revenue in Productivity and Business Processes was $33.1 billion and increased 16% (up 14% in constant currency), with the following business highlights:
 ·        Microsoft 365 Commercial products and cloud services revenue increased 16% (up 15% in constant currency) driven by Microsoft 365 Commercial cloud revenue growth of 18% (up 16% in constant currency)

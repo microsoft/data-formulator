@@ -42,8 +42,6 @@ def parse_table_sections(text):
             # Create table object
             table = {
                 "name": metadata_json.get('name', 'unknown'),
-                "description": metadata_json.get('description', 'unknown'),
-                "reason": metadata_json.get('reason', 'unknown'),
                 "content": {
                     "type": metadata_json.get('type', 'csv'),
                     "value": content_block
@@ -56,17 +54,20 @@ def parse_table_sections(text):
 
 
 SYSTEM_PROMPT = '''You are a data scientist to help user to generate, extract data from image or clean a text input into a structured csv table. 
-The output should contain the rationale for the extraction and cleaning process. If there are multiple tables in the raw data, you should extract them all.
+
+If there are multiple tables in the raw data, you should extract them all.
 Each table can either be a csv block or a url (image url or file url of an image).
 - csv block: a string of csv content (if the content is already available from the input)
-- image url: link to an image that contains the table (if the data exists but cannot be directly obtained from raw input text, which will be converted to a csv block later)
+- image url: link to an image that contains data (if the data exists but cannot be directly obtained from raw input text, which will be converted to a csv block later)
 - web url: link to a file, which can be a csv, tsv, txt, or a json file that contains the data (which will be converted to a csv block later), it should not be another html page.
 
 Based on the raw data provided by the user, extract tables: 
-- each extracted table should be wrapped in a section, its metadata is a json object describes its name, description and type in [METADATA] section.
-- if the table is a csv block, it should be wrapped in [CONTENT] tags.
+- each extracted table should be wrapped in a section, its metadata is a json object describes its name and type in [METADATA] section.
+- if the table is a csv block, it should be wrapped in [CONTENT] tags. Do not wrap it in any other tags, just write plain csv content in the [CONTENT].
 - if the table is an image url or web url, [CONTENT] should be the url.
 - when there are multiple tables, generate one table at a time.
+
+Output only extract tables, no other text should be included.
 
 [TABLE_START]
 
@@ -75,8 +76,6 @@ Based on the raw data provided by the user, extract tables:
 ```
 {
     "name": ..., // suggest a descriptive, meaningful but short name for this dataset, no more than 3 words, if there are duplicate names, add a suffix -1, -2, etc. (e.g., "sales-2024", "customer-survey", "weather-forecast")
-    "description": ..., // describe the table in a few sentences, including the table structure, the cleaning process, and the rationale for the cleaning.
-    "reason": ..., // explain the extraction reason here, including the table structure, the cleaning process, and the rationale for the cleaning.
     "type": "csv" | "image_url" | "web_url",
 }
 ```

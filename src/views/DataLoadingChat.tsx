@@ -183,7 +183,7 @@ export const DataLoadingChat: React.FC = () => {
                 >
                     {thinkingBanner}
                     <Typography variant="body2" color="text.secondary" 
-                        sx={{ mt: 4, fontSize: '11px', whiteSpace: 'pre-wrap', overflow: 'clip' }}>
+                        sx={{ mt: 4, fontSize: '11px', whiteSpace: 'pre-wrap', overflow: 'clip', maxHeight: '600px', overflowY: 'auto' }}>
                         {streamingContent.replace('[METADATA]', '').replace('[CONTENT]', '').replace('[TABLE_START]', '').replace('[TABLE_END]', '').replace(/\n\n/g, '\n').trim()}
                     </Typography>
                 </Box>
