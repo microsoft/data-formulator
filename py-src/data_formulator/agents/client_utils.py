@@ -92,7 +92,7 @@ class Client(object):
             model_config.get("api_version")
         )
 
-    def get_completion(self, messages):
+    def get_completion(self, messages, stream=False):
         """
         Returns a LiteLLM client configured for the specified endpoint and model.
         Supports OpenAI, Azure, Ollama, and other providers via LiteLLM.
@@ -110,15 +110,27 @@ class Client(object):
                 "model": self.model,
                 "messages": messages,
             }
+
+            if self.model.startswith("gpt-5") or self.model.startswith("o1") or self.model.startswith("o3"):
+                completion_params["reasoning_effort"] = "minimal"
             
-            return client.chat.completions.create(**completion_params)
+            return client.chat.completions.create(**completion_params, stream=stream)
         else:
+
+            params = self.params.copy()
+
+            if (self.model.startswith("gpt-5") or self.model.startswith("o1") or self.model.startswith("o3")
+                or self.model.startswith("claude-sonnet-4-5") or self.model.startswith("claude-opus-4")):
+                params["reasoning_effort"] = "low"
+
             return litellm.completion(
                 model=self.model,
                 messages=messages,
                 drop_params=True,
-                **self.params
+                stream=stream,
+                **params
             )
+
         
     def get_response(self, messages: list[dict], tools: Optional[list] = None):
         """

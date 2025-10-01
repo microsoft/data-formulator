@@ -50,6 +50,8 @@ export const DataLoadingChat: React.FC = () => {
     const dataCleanBlocks = useSelector((state: DataFormulatorState) => state.dataCleanBlocks);
     const focusedDataCleanBlockId = useSelector((state: DataFormulatorState) => state.focusedDataCleanBlockId);
 
+    const [streamingContent, setStreamingContent] = useState('');
+
     const existingNames = new Set(existingTables.map(t => t.id));
 
     let existOutputBlocks = dataCleanBlocks.length > 0;
@@ -93,14 +95,60 @@ export const DataLoadingChat: React.FC = () => {
         }
     };
 
-    if (!existOutputBlocks) {
+    if (!existOutputBlocks && !streamingContent) {
         return <Box sx={{ width: 'calc(100% - 32px)', borderRadius: 2, px: 2 }}>
-            <DataLoadingInputBox maxLines={24} />
+            <DataLoadingInputBox maxLines={24} onStreamingContentUpdate={setStreamingContent} />
         </Box>
     }
+
+    const thinkingBanner = (
+        <Box sx={{ 
+            py: 0.5, 
+            display: 'flex', 
+            position: 'relative',
+            overflow: 'hidden',
+            '&::before': {
+                content: '""',
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%',
+                height: '100%',
+                background: 'linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.8) 50%, transparent 100%)',
+                animation: 'shimmer 2s ease-in-out infinite',
+                zIndex: 1,
+                pointerEvents: 'none',
+            },
+            '@keyframes shimmer': {
+                '0%': {
+                    transform: 'translateX(-100%)',
+                },
+                '100%': {
+                    transform: 'translateX(100%)',
+                },
+            }
+        }}>
+            <Box sx={{ 
+                py: 1, 
+                display: 'flex', 
+                alignItems: 'center', 
+                justifyContent: 'left',
+            }}>
+                <CircularProgress size={10} sx={{ color: 'text.secondary' }} />
+                <Typography variant="body2" sx={{ 
+                    ml: 1, 
+                    fontSize: 10, 
+                    color: 'rgba(0, 0, 0, 0.7) !important'
+                }}>
+                    extracting data...
+                </Typography>
+            </Box>
+        </Box>
+    );
+
     
     let chatCard = (
-        <Box sx={{ width: dataCleanBlocks.length > 0 ? '960px' : '640px', minHeight: 400,
+        <Box sx={{ width: (existOutputBlocks || streamingContent) ? '960px' : '640px', minHeight: 400,
                 display: 'flex', flexDirection: 'row', borderRadius: 2 }}>
             
             {/* Left: Chat panel */}
@@ -117,13 +165,32 @@ export const DataLoadingChat: React.FC = () => {
                     overflowY: 'auto', overflowX: 'hidden' }}>
                     {threadsComponent}
                 </Box>
-                <DataLoadingInputBox ref={inputBoxRef} maxLines={4} />
+                <DataLoadingInputBox ref={inputBoxRef} maxLines={4} onStreamingContentUpdate={setStreamingContent} />
             </Box>
 
             <Divider orientation="vertical" flexItem sx={{m: 2, color: 'divider'}} />
 
+            {streamingContent && (
+                <Box
+                    sx={{
+                        flex: 1.4,
+                        minWidth: 480,
+                        maxWidth: 640,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        padding: 1
+                    }}
+                >
+                    {thinkingBanner}
+                    <Typography variant="body2" color="text.secondary" 
+                        sx={{ mt: 4, fontSize: '11px', whiteSpace: 'pre-wrap', overflow: 'clip' }}>
+                        {streamingContent.replace('[METADATA]', '').replace('[CONTENT]', '').replace('[TABLE_START]', '').replace('[TABLE_END]', '').replace(/\n\n/g, '\n').trim()}
+                    </Typography>
+                </Box>
+            )}
+
             {/* Right: Data preview panel */}
-            {existOutputBlocks && (
+            {(existOutputBlocks && !streamingContent) && (
                 <Box
                     sx={{
                         flex: 1.4,
@@ -133,6 +200,7 @@ export const DataLoadingChat: React.FC = () => {
                         padding: 1
                     }}
                 >
+                    
                     <Typography 
                         sx={{ 
                             fontSize: 14, 

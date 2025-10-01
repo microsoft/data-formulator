@@ -26,7 +26,7 @@ export function getUrls() {
         DERIVE_PY_CONCEPT: `/api/agent/derive-py-concept`,
 
         SORT_DATA_URL: `/api/agent/sort-data`,
-        CLEAN_DATA_URL: `/api/agent/clean-data`,
+        CLEAN_DATA_URL: `/api/agent/clean-data-stream`,
         
         CODE_EXPL_URL: `/api/agent/code-expl`,
         SERVER_PROCESS_DATA_ON_LOAD: `/api/agent/process-data-on-load`,

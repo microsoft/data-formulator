@@ -5,46 +5,96 @@ from data_formulator.agents.agent_utils import extract_json_objects
 from data_formulator.agents.web_utils import download_html_content
 
 import logging
+import re
+import json
+import traceback
 
 logger = logging.getLogger(__name__)
 
 
+def parse_table_sections(text):
+    """Parse [TABLE_START] to [TABLE_END] sections and extract metadata and content."""
+    tables = []
+    
+    # Split by [TABLE_START] and process each section
+    sections = text.split('[TABLE_START]')
+    
+    for i, section in enumerate(sections[1:], 1):  # Skip first empty section
+        
+        # Find the end of this table section
+        if '[TABLE_END]' not in section:
+            continue
+            
+        table_section = section.split('[TABLE_END]')[0]
+
+        metadata_index = table_section.find('[METADATA]')
+        content_index = table_section.find('[CONTENT]')
+        
+        # Extract metadata between [METADATA] and ```
+        if metadata_index != -1 and content_index != -1:
+            metadata_block = table_section[metadata_index + len('[METADATA]'):content_index]
+            metadata_json = extract_json_objects(metadata_block)[0]
+            
+        # Extract content between [CONTENT] and end
+        if content_index != -1:
+            content_block = table_section[content_index + len('[CONTENT]'):].strip()
+            
+            # Create table object
+            table = {
+                "name": metadata_json.get('name', 'unknown'),
+                "description": metadata_json.get('description', 'unknown'),
+                "reason": metadata_json.get('reason', 'unknown'),
+                "content": {
+                    "type": metadata_json.get('type', 'csv'),
+                    "value": content_block
+                }
+            }
+            
+            tables.append(table)
+    
+    return tables
+
+
 SYSTEM_PROMPT = '''You are a data scientist to help user to generate, extract data from image or clean a text input into a structured csv table. 
-The output should contain the rationale for the extraction and cleaning process. If there are multiple tables in the raw data, you should extract them all and return them as a list of csv blocks.
+The output should contain the rationale for the extraction and cleaning process. If there are multiple tables in the raw data, you should extract them all.
 Each table can either be a csv block or a url (image url or file url of an image).
 - csv block: a string of csv content (if the content is already available from the input)
 - image url: link to an image that contains the table (if the data exists but cannot be directly obtained from raw input text, which will be converted to a csv block later)
 - web url: link to a file, which can be a csv, tsv, txt, or a json file that contains the data (which will be converted to a csv block later), it should not be another html page.
 
-Create [OUTPUT] based on [RAW DATA] provided. The output should be in the following formats:
+Based on the raw data provided by the user, extract tables: 
+- each extracted table should be wrapped in a section, its metadata is a json object describes its name, description and type in [METADATA] section.
+- if the table is a csv block, it should be wrapped in [CONTENT] tags.
+- if the table is an image url or web url, [CONTENT] should be the url.
+- when there are multiple tables, generate one table at a time.
 
-a json object that explains tables in the raw data, cleaning rationale, and suggests a descriptive name for each dataset (wrap in a json block):
+[TABLE_START]
 
-```json
+[METADATA]
+
+```
 {
-    "tables": [
-        {
-            "name": ..., // suggest a descriptive, meaningful but short name for this dataset, no more than 3 words, if there are duplicate names, add a suffix -1, -2, etc. (e.g., "sales-2024", "customer-survey", "weather-forecast")
-            "description": ..., // describe the table in a few sentences, including the table structure, the cleaning process, and the rationale for the cleaning.
-            "reason": ..., // explain the extraction reason here, including the table structure, the cleaning process, and the rationale for the cleaning.
-            "content": {
-                "type": "csv" | "image_url" | "web_url",
-                "value": ... // the csv block as a string or image url or web url
-            }
-        }
-    ],
+    "name": ..., // suggest a descriptive, meaningful but short name for this dataset, no more than 3 words, if there are duplicate names, add a suffix -1, -2, etc. (e.g., "sales-2024", "customer-survey", "weather-forecast")
+    "description": ..., // describe the table in a few sentences, including the table structure, the cleaning process, and the rationale for the cleaning.
+    "reason": ..., // explain the extraction reason here, including the table structure, the cleaning process, and the rationale for the cleaning.
+    "type": "csv" | "image_url" | "web_url",
 }
 ```
+
+[CONTENT]
+
+... // the csv block or image url or web url
+
+[TABLE_END]
 
 **Important:**
 - NEVER make assumptions or judgments about a person's gender, biological sex, sexuality, religion, race, nationality, ethnicity, political stance, socioeconomic status, mental health, invisible disabilities, medical conditions, personality type, social impressions, emotional state, and cognitive state.
 - NEVER create formulas that could be used to discriminate based on age. Ageism of any form (explicit and implicit) is strictly prohibited.
-- If above issue occurs, just copy the original data and return in the block
 
 **Multiple tables:**
 - if the raw data contains multiple tables, based on the user's instruction to decide which table to extract.
 - if the user doesn't specify which tables to extract, extract all tables.
-- if there are multiple tables yet they can be too large, only extract the first 200 rows for each table.
+- if there are multiple tables yet they can be too large, only extract up to 200 rows for each table.
 
 **Instructions for creating csv blocks:**
 * the output should be a structured csv table: 
@@ -61,8 +111,8 @@ a json object that explains tables in the raw data, cleaning rationale, and sugg
     - you don't need to convert format of the cell.
 
 **Instructions for creating image url or web url:**
-- based on the context provided in the prompt and raw input material, decide which url in the raw data may cotain the data we would like to extract. put the url of the data in the "image_url" field.
-- similarly, if the raw data contains link to a website that directly contains the data (e.g., it points to a csv file), put the url of the data in the "web_url" field.
+- based on the context provided in the prompt and raw input material, decide which url in the raw data may cotain the data we would like to extract (like an image contains structured data).
+- similarly, extract the url that are likely to link to the data (e.g., especially if it points to a csv file).
 
 **Instructions for generating synthetic data:**
 - NEVER generate data that has implicit bias as noted above, if that happens, neutralize the data.
@@ -70,10 +120,7 @@ a json object that explains tables in the raw data, cleaning rationale, and sugg
 '''
 
 
-
 EXAMPLE = '''
-[RAW DATA]
-
 Rank	NOC	Gold	Silver	Bronze	Total
 1	 South Korea	5	1	1	7
 2	 France*	0	1	1	2
@@ -83,17 +130,14 @@ Rank	NOC	Gold	Silver	Bronze	Total
 6	 Mexico	0	0	1	1
  Turkey	0	0	1	1
 Totals (7 entries)	5	5	5	15
-
-[OUTPUT]
-
 '''
 
-class DataCleanAgent(object):
+class DataCleanAgentStream(object):
 
     def __init__(self, client):
         self.client = client
 
-    def run(self, prompt, artifacts=[], dialog=[]):
+    def stream(self, prompt, artifacts=[], dialog=[]):
         """derive a new concept based on the raw input data
         Args:
             prompt (str): the prompt to the agent
@@ -101,7 +145,7 @@ class DataCleanAgent(object):
             [{"type": "image_url", "content": ...}, {"type": "web_url", "content": ...}, ...]
             dialog (list): the dialog history
         Returns:
-            dict: the result of the agent
+            generator: the result of the agent
         """
 
         content = []
@@ -126,7 +170,7 @@ class DataCleanAgent(object):
         
         content.append({
             'type': 'text',
-            'text': f'''[INSTRUCTION]\n\n{prompt}\n\n[OUTPUT]\n'''
+            'text': f'''{prompt}'''
         })
 
         user_prompt = {
@@ -148,27 +192,37 @@ class DataCleanAgent(object):
         ]
         
         ###### the part that calls open_ai
-        response = self.client.get_completion(messages = messages)
+        stream = self.client.get_completion(messages = messages, stream=True)
 
-        candidates = []
-        for choice in response.choices:
-            
-            logger.info("\n=== Python Data Clean Agent ===>\n")
-            logger.info(choice.message.content + "\n")
+        accumulated_content = ""
+        
+        for part in stream:
+            if hasattr(part, 'choices') and len(part.choices) > 0:
+                delta = part.choices[0].delta
+                if hasattr(delta, 'content') and delta.content:
+                    accumulated_content += delta.content
+                    
+                    # Stream each character for real-time display as JSON
+                    yield delta.content
+        
+        # Parse the final content the same way as the non-streaming version
+        logger.info("\n=== Python Data Clean Agent Stream ===>\n")
+        logger.info(accumulated_content + "\n")
 
-            data_blocks = extract_json_objects(choice.message.content + "\n")
+        # Parse table sections from the accumulated content
+        tables = parse_table_sections(accumulated_content)
 
-            if len(data_blocks) > 0:
-                data_block = data_blocks[-1]
-                result = {
-                    'status': 'ok', 
-                    'content': data_block.get('tables', []), 
-                }
-            else:
-                result = {'status': 'other error', 'content': 'unable to extract code from response'}
+        if len(tables) > 0:
+            # Use the same format as non-streaming version - return the parsed data directly
+            result = {
+                'status': 'ok', 
+                'content': tables, 
+            }
+        else:
+            result = {'status': 'other error', 'content': 'unable to extract tables from response'}
 
-            result['dialog'] = [*messages, {"role": choice.message.role, "content": choice.message.content}]
-            result['agent'] = 'DataCleanAgent'
-            candidates.append(result)
-
-        return candidates
+        result['dialog'] = [*messages, {"role": "assistant", "content": accumulated_content}]
+        result['agent'] = 'DataCleanAgentStream'
+        
+        # add a newline to the beginning of the result to separate it from the previous result     
+        yield '\n' + json.dumps(result) + '\n'

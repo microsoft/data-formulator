@@ -66,6 +66,53 @@ import { alpha } from '@mui/material/styles';
 
 import { dfSelectors } from '../app/dfSlice';
 
+
+export const ThinkingBanner = (message: string, sx?: SxProps) => (
+    <Box sx={{ 
+        display: 'flex', 
+        position: 'relative',
+        overflow: 'hidden',
+        '&::before': {
+            content: '""',
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            width: '100%',
+            height: '100%',
+            background: 'linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.8) 50%, transparent 100%)',
+            animation: 'windowWipe 2s ease-in-out infinite',
+            zIndex: 1,
+            pointerEvents: 'none',
+        },
+        '@keyframes windowWipe': {
+            '0%': {
+                transform: 'translateX(-100%)',
+            },
+            '100%': {
+                transform: 'translateX(100%)',
+            },
+        },
+        ...sx
+    }}>
+        <Box sx={{ 
+            py: 1, 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'left',
+        }}>
+            <CircularProgress size={10} sx={{ color: 'text.secondary' }} />
+            <Typography variant="body2" sx={{ 
+                ml: 1, 
+                fontSize: 10, 
+                color: 'rgba(0, 0, 0, 0.7) !important'
+            }}>
+                {message}
+            </Typography>
+        </Box>
+    </Box>
+);
+
+
 // Metadata Popup Component
 const MetadataPopup = memo<{
     open: boolean;
@@ -189,42 +236,7 @@ const AgentStatusBox = memo<{
         agentStatus = 'warning';
     }
     
-    const thinkingBanner = (
-        <Box sx={{ 
-            py: 0.5, 
-            display: 'flex', 
-            position: 'relative',
-            overflow: 'hidden',
-            '&::before': {
-                content: '""',
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                width: '100%',
-                height: '100%',
-                background: 'linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.8) 50%, transparent 100%)',
-                animation: 'windowWipe 2s ease-in-out infinite',
-                zIndex: 1,
-                pointerEvents: 'none',
-            }
-        }}>
-            <Box sx={{ 
-                py: 1, 
-                display: 'flex', 
-                alignItems: 'center', 
-                justifyContent: 'left',
-            }}>
-                <CircularProgress size={10} sx={{ color: 'text.secondary' }} />
-                <Typography variant="body2" sx={{ 
-                    ml: 1, 
-                    fontSize: 10, 
-                    color: 'rgba(0, 0, 0, 0.7) !important'
-                }}>
-                    thinking...
-                </Typography>
-            </Box>
-        </Box>
-    );
+    
 
     if (currentActions.length === 0) {
         return null;
@@ -232,7 +244,7 @@ const AgentStatusBox = memo<{
 
     return (
         <Box sx={{ padding: '0px 8px' }}>
-            {agentStatus === 'running' ? thinkingBanner : (
+            {agentStatus === 'running' ? ThinkingBanner('thinking...', { py: 0.5 }) : (
                 <Box sx={{ 
                     py: 1, 
                     display: 'flex', 
@@ -272,35 +284,39 @@ const AgentStatusBox = memo<{
                     </Tooltip>
                 </Box>
             )}
-            {currentActions.map((a, index, array) => (
-                <React.Fragment key={a.actionId + "-" + index}>
-                    <Box sx={{ 
-                        position: 'relative',
-                    }}>
-                        <Typography variant="body2" sx={{ 
-                            ml: 1, fontSize: 10, 
-                            color: getAgentStatusColor(a.status),
-                            whiteSpace: 'pre-wrap'
-                        }}>
-                            {a.description.split('\n').map((line: string, index: number) => (
-                                <React.Fragment key={index}>
-                                    {line}
-                                    {index < a.description.split('\n').length - 1 && <Divider sx={{ my: 0.5, }} />}
-                                </React.Fragment>
-                            ))}
-                        </Typography>
-                        
-                    </Box>
-                    {index < array.length - 1 && array.length > 1 && (
+            {currentActions.map((a, index, array) => {
+                let descriptions =  String(a.description).split('\n');
+                return (
+                    <React.Fragment key={a.actionId + "-" + index}>
                         <Box sx={{ 
-                            ml: 1, 
-                            height: '1px', 
-                            backgroundColor: 'rgba(0, 0, 0, 0.2)', 
-                            my: 0.5 
-                        }} />
-                    )}
-                </React.Fragment>
-            ))}
+                            position: 'relative',
+                        }}>
+                            <Typography variant="body2" sx={{ 
+                                ml: 1, fontSize: 10, 
+                                color: getAgentStatusColor(a.status),
+                                whiteSpace: 'pre-wrap',
+                                wordBreak: 'break-word'
+                            }}>
+                                {descriptions.map((line: string, index: number) => (
+                                    <React.Fragment key={index}>
+                                        {line}
+                                        {index < descriptions.length - 1 && <Divider sx={{ my: 0.5, }} />}
+                                    </React.Fragment>
+                                ))}
+                            </Typography>
+                            
+                        </Box>
+                        {index < array.length - 1 && array.length > 1 && (
+                            <Box sx={{ 
+                                ml: 1, 
+                                height: '1px', 
+                                backgroundColor: 'rgba(0, 0, 0, 0.2)', 
+                                my: 0.5 
+                            }} />
+                        )}
+                    </React.Fragment>
+                )
+            })}
         </Box>
     );
 });

@@ -147,7 +147,7 @@ export const DataPreviewBox: React.FC<{sx?: SxProps}> = ({sx}) => {
     </Paper>
 }
 
-export const DataLoadingInputBox = React.forwardRef<(() => void) | null, {maxLines?: number}>(({maxLines = 4}, ref) => {
+export const DataLoadingInputBox = React.forwardRef<(() => void) | null, {maxLines?: number, onStreamingContentUpdate?: (content: string) => void}>(({maxLines = 4, onStreamingContentUpdate}, ref) => {
     const dispatch = useDispatch<AppDispatch>();
     const activeModel = useSelector(dfSelectors.getActiveModel);
     const dataCleanBlocks = useSelector((state: DataFormulatorState) => state.dataCleanBlocks);
@@ -162,6 +162,7 @@ export const DataLoadingInputBox = React.forwardRef<(() => void) | null, {maxLin
     const [placeholderIndex, setPlaceholderIndex] = useState(0);
 
     const existOutputBlocks = dataCleanBlocks.length > 0;
+    const [streamingContent, setStreamingContent] = useState('');
 
     // Reconstruct dialog from Redux state for API compatibility
     const dialog: DialogMessage[] = (() => {
@@ -210,7 +211,7 @@ export const DataLoadingInputBox = React.forwardRef<(() => void) | null, {maxLin
     })();
 
     // Add rotating placeholder state
-    const placeholders = existOutputBlocks ? [
+    const placeholders = (existOutputBlocks || streamingContent) ? [
         selectedTable && selectedTable.content.type === 'image_url' ? "extract data from this image" : "follow-up instruction (e.g., fix headers, remove totals, generate 15 rows, etc.)"
     ] : [
         "get Claude performance data from https://www.anthropic.com/news/claude-opus-4-1",
@@ -317,24 +318,62 @@ Revenue in More Personal Computing was $13.5 billion and increased 9%, with the 
             dialog: dialog
         };
 
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 second timeout
+
         fetch(getUrls().CLEAN_DATA_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload),
+            signal: controller.signal
         })
-            .then(r => r.json())
-            .then(data => {
-                dispatch(dfActions.setCleanInProgress(false));
-                if (data && data.status === 'ok' && data.result && data.result.length > 0) {
-                    
-                    const cand = data.result[0];
-                    const tables = cand.content.tables;
-                    const csv = tables[0].content.value;
-                    const updatedDialog = cand.dialog || [];
-                    
-                    // Use suggested name from agent if available, otherwise generate default
-                    const suggestedName = tables[0].name || generateDefaultName(csv.slice(0, 96));
+        .then(async (response) => {
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
 
+            const reader = response.body?.getReader();
+            if (!reader) {
+                throw new Error('No response body reader available');
+            }
+
+            const decoder = new TextDecoder();
+            let buffer = '';
+            let finalResult: any = null;
+
+            try {
+                while (true) {
+                    const { done, value } = await reader.read();
+                    
+                    if (done) {
+                        break;
+                    }
+
+                    buffer += decoder.decode(value, { stream: true });
+                    onStreamingContentUpdate?.(buffer);
+                    setStreamingContent(buffer);
+
+                    // Split by newlines to get individual JSON objects
+                    const lastLine = buffer.split('\n').filter(line => line.trim() !== "").pop();
+
+                    // Process each line
+                    if (lastLine) {
+                        try {
+                            const data = JSON.parse(lastLine);
+                            if (data.status === "ok" && data.content) {
+                                finalResult = data;
+                                break;
+                            } 
+                        } catch (parseError) {
+                            continue
+                        }
+                    }
+                }
+
+                if (finalResult && finalResult.status === 'ok' && finalResult.content) {
+                    const tables = finalResult.content;
+                    const updatedDialog = finalResult.dialog || [];
+                    
                     // Create new DataCleanBlock
                     const newBlock: DataCleanBlock = {
                         id: `block-${Date.now()}`,
@@ -350,6 +389,8 @@ Revenue in More Personal Computing was $13.5 billion and increased 9%, with the 
                         dialogItem: updatedDialog.length > 0 ? updatedDialog[updatedDialog.length - 1] : undefined
                     };
                     
+                    onStreamingContentUpdate?.('');
+                    setStreamingContent('');
                     dispatch(dfActions.addDataCleanBlock(newBlock));
                     dispatch(dfActions.setFocusedDataCleanBlockId({blockId: newBlock.id, itemId: 0}));
                     
@@ -362,27 +403,39 @@ Revenue in More Personal Computing was $13.5 billion and increased 9%, with the 
                         timestamp: Date.now(),
                         type: 'error',
                         component: 'data loader',
-                        value: data.result,
+                        value: finalResult?.content || 'Unable to extract tables from response',
                     }));
                     // Clear input fields only after failed completion
                     setPrompt('');
+                    onStreamingContentUpdate?.('');
+                    setStreamingContent('');
                     setUserImages([]);
                 }
-            })
-            .catch(() => {
+            } finally {
+                reader.releaseLock();
                 dispatch(dfActions.setCleanInProgress(false));
-                // Generation failed
-                dispatch(dfActions.addMessages({
-                    timestamp: Date.now(),
-                    type: 'error',
-                    component: 'data loader',
-                    value: 'Server error while processing data.',
-                }));
-                
-                // Clear input fields only after failed completion
-                setPrompt('');
-                setUserImages([]);
-            });
+                clearTimeout(timeoutId);
+            }
+        })
+        .catch((error) => {
+            dispatch(dfActions.setCleanInProgress(false));
+            clearTimeout(timeoutId);
+            
+            // Generation failed
+            const errorMessage = error.name === 'AbortError' ? 'Data cleaning timed out' : `Server error while processing data: ${error.message}`;
+            dispatch(dfActions.addMessages({
+                timestamp: Date.now(),
+                type: 'error',
+                component: 'data loader',
+                value: errorMessage,
+            }));
+            
+            // Clear input fields only after failed completion
+            setPrompt('');
+            setStreamingContent('');
+            setUserImages([]);
+            onStreamingContentUpdate?.('');
+        });
     };
 
     // Expose sendRequest function to parent via ref
@@ -418,13 +471,13 @@ Revenue in More Personal Computing was $13.5 billion and increased 9%, with the 
                             color="primary"
                             size="small"
                             sx={{
-                                maxWidth: existOutputBlocks ? 280 : 400,
+                                maxWidth: existOutputBlocks || streamingContent ? 280 : 400,
                                 backgroundColor: 'primary.50',
                                 borderColor: 'primary.200',
                                 color: 'primary.700',
                                 borderRadius: 2,
                                 '& .MuiChip-label': {
-                                    fontSize: existOutputBlocks ? '11px' : '12px',
+                                    fontSize: (existOutputBlocks || streamingContent) ? '11px' : '12px',
                                     maxWidth: '100%',
                                     overflow: 'hidden',
                                     textOverflow: 'ellipsis'
@@ -435,7 +488,7 @@ Revenue in More Personal Computing was $13.5 billion and increased 9%, with the 
                 </Box>
             )}
 
-            {inputImages.length == 0 && prompt == "" && placeholders[placeholderIndex] == "help me extract data from this image" && 
+            {!cleanInProgress && inputImages.length == 0 && prompt == "" && placeholders[placeholderIndex] == "help me extract data from this image" && 
                 <Box sx={{ display: 'flex', flexDirection: 'row', flexWrap: 'wrap', gap: 0.5, mt: 0.5, position: 'relative' }}>
                     <Box component="img"
                         sx={{ display: 'block', position: 'relative', maxHeight: 600,
@@ -493,7 +546,7 @@ Revenue in More Personal Computing was $13.5 billion and increased 9%, with the 
                         }
                     },
                 }}
-                placeholder={placeholders[placeholderIndex]}
+                placeholder={cleanInProgress ? 'extracting data...' : placeholders[placeholderIndex]}
                 variant="standard"
                 multiline
                 value={prompt}

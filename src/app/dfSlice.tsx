@@ -148,7 +148,7 @@ const initialState: DataFormulatorState = {
     },
 
     config: {
-        formulateTimeoutSeconds: 30,
+        formulateTimeoutSeconds: 45,
         maxRepairAttempts: 1,
         defaultChartWidth: 300,
         defaultChartHeight: 300,
@@ -380,7 +380,7 @@ export const dataFormulatorSlice = createSlice({
 
             state.agentActions = savedState.agentActions || [];
         },
-        udpateAgentWorkInProgress: (state, action: PayloadAction<{actionId: string, tableId?: string, description: string, status: 'running' | 'completed' | 'warning' | 'failed', hidden: boolean}>) => {
+        updateAgentWorkInProgress: (state, action: PayloadAction<{actionId: string, tableId?: string, description: string, status: 'running' | 'completed' | 'warning' | 'failed', hidden: boolean}>) => {
             if (state.agentActions.some(a => a.actionId == action.payload.actionId)) {
                 state.agentActions = state.agentActions.map(a => a.actionId == action.payload.actionId ? 
                     {...a, ...action.payload, lastUpdate: Date.now()} : a);
@@ -542,7 +542,7 @@ export const dataFormulatorSlice = createSlice({
             state.charts = [ freshChart , ...state.charts];
             state.focusedTableId = tableId;
             state.focusedChartId = freshChart.id;
-            // freshChart is already created with unread: true, so we don't need to set it to false here
+            freshChart.unread = false;
         },
         addChart: (state, action: PayloadAction<Chart>) => {
             let chart = action.payload;

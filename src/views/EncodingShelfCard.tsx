@@ -50,6 +50,7 @@ import TableRowsIcon from '@mui/icons-material/TableRowsOutlined';
 import ChangeCircleOutlinedIcon from '@mui/icons-material/ChangeCircleOutlined';
 import AddIcon from '@mui/icons-material/Add';
 import CheckIcon from '@mui/icons-material/Check';
+import { ThinkingBanner } from './DataThread';
 
 import { AppDispatch } from '../app/store';
 import PrecisionManufacturing from '@mui/icons-material/PrecisionManufacturing';
@@ -394,7 +395,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
     
     // Add state for ideas and loading
     const [ideas, setIdeas] = useState<{text: string, goal: string, difficulty: 'easy' | 'medium' | 'hard'}[]>([]);
-    const [recReasoning, setRecReasoning] = useState<string>("");
+    const [thinkingBuffer, setThinkingBuffer] = useState<string>("");
     const [isLoadingIdeas, setIsLoadingIdeas] = useState<boolean>(false);
     
     // Update the handler to use state
@@ -437,6 +438,8 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
         }
 
         setIsLoadingIdeas(true);
+        setThinkingBuffer("");
+        setIdeas([]);
 
         try {
             // Build exploration thread from current table to root
@@ -464,8 +467,9 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
             let chartAvailable = checkChartAvailability(chart, conceptShelfItems, currentTable.rows);
             let currentChartPng = chartAvailable ? await vegaLiteSpecToPng(assembleVegaChart(chart.chartType, chart.encodingMap, activeFields, currentTable.rows)) : undefined;
 
+            const token = String(Date.now());
             const messageBody = JSON.stringify({
-                token: String(Date.now()),
+                token: token,
                 model: activeModel,
                 input_tables: [{
                     name: rootTable.virtual?.tableId || rootTable.id.replace(/\.[^/.]+$/, ""),
@@ -498,26 +502,62 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                 throw new Error(`HTTP error! status: ${response.status}`);
             }
 
-            const data = await response.json();
+            // Use streaming reader instead of response.json()
+            const reader = response.body?.getReader();
+            if (!reader) {
+                throw new Error('No response body reader available');
+            }
 
-            if (data.status === 'ok' && data.results.length > 0) {
-                const result = data.results[0];
-                if (result.status === 'ok' && result.content.exploration_questions) {
-                    // Convert questions to ideas with difficulty
-                    const newIdeas = result.content.exploration_questions.map((question: {text: string, goal: string, difficulty: 'easy' | 'medium' | 'hard', tag: string}) => ({
-                        text: question.text,
-                        goal: question.goal,
-                        difficulty: question.difficulty,
-                        tag: question.tag
-                    }));
-                    setIdeas(newIdeas);
-                    setRecReasoning(result.content.recap + "\n\n" + result.content.reasoning);
+            const decoder = new TextDecoder();
+
+            let lines: string[] = [];
+            let buffer = '';
+
+            let updateState = (lines: string[]) => {
+
+                let dataBlocks = lines
+                    .map(line => {
+                        try { return JSON.parse(line.trim()); } catch (e) { return null; }})
+                    .filter(block => block != null);
+
+                let questions = dataBlocks.filter(block => block.type == "question").map(block => ({
+                    text: block.text,
+                    goal: block.goal,
+                    difficulty: block.difficulty,
+                    tag: block.tag
+                }));
+
+                setIdeas(questions);
+            }
+
+            try {
+                while (true) {
+                    const { done, value } = await reader.read();
+
+                    if (done) { break; }
+
+                    buffer += decoder.decode(value, { stream: true });
+                    let newLines = buffer.split('data: ').filter(line => line.trim() !== "");
+
+                    buffer = newLines.pop() || '';
+                    if (newLines.length > 0) {
+                        lines.push(...newLines);
+                        updateState(lines);
+                    }
+                    setThinkingBuffer(buffer.replace(/^data: /, ""));
                 }
-            } else {
+            } finally {
+                reader.releaseLock();
+            }
+
+            lines.push(buffer);
+            updateState(lines);
+
+            // Process the final result
+            if (lines.length == 0) {
                 throw new Error('No valid results returned from agent');
             }
         } catch (error) {
-            console.error('Error getting ideas from agent:', error);
             dispatch(dfActions.addMessages({
                 "timestamp": Date.now(),
                 "type": "error",
@@ -957,6 +997,21 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                         disabled={createDisabled}
                     />
                 ))}
+                {isLoadingIdeas && thinkingBuffer && (
+                    <Typography sx={{ padding: 0.5, fontSize: 10, color: "darkgray" }}>
+                        drafting {thinkingBuffer
+                            .slice(-80) // Get latest 80 characters
+                            .split('')
+                            .map((char, index) => {
+                                if (/\s/.test(char)) return char; // Keep whitespace
+                                // Use different characters based on position for variety
+                                const chars = ['·'];
+                                return chars[index % chars.length];
+                            })
+                            .join('')
+                        }
+                    </Typography>
+                )}
             </Box>
         </Box>
     ) : null;
@@ -1176,13 +1231,13 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                                 color={"primary"} 
                                 size="small"
                                 onClick={() => { getIdeasForVisualization(); }}
-                                startIcon={isLoadingIdeas ? <CircularProgress size={16} /> : <LightbulbOutlinedIcon sx={{fontSize: 10}} />}
+                                startIcon={isLoadingIdeas ? undefined : <LightbulbOutlinedIcon sx={{fontSize: 10}} />}
                                 sx={{
                                     fontSize: 12,
                                     textTransform: 'none',
                                 }}
                             >
-                                {isLoadingIdeas ? "Ideating..." : "Different ideas?"} 
+                                {isLoadingIdeas ? ThinkingBanner('ideating...') : "Different ideas?"} 
                             </Button>
                         </span>
                     </Tooltip>

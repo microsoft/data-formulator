@@ -299,7 +299,6 @@ export const DatasetSelectionDialog: React.FC<{ buttonElement: any }> = function
                                 fetch(table.url)
                                 .then(res => res.text())
                                 .then(textData => {
-                                    console.log(textData);
                                     let tableName = table.url.split("/").pop()?.split(".")[0] || 'table-' + Date.now().toString().substring(0, 8);
                                     let dictTable;
                                     if (table.format == "csv") {

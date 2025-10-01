@@ -47,17 +47,13 @@ Guidelines for question suggestions:
     - include 'difficulty' to indicate the difficulty of the question, it should be one of 'easy', 'medium', 'hard'
     - include a 'tag' to describe the type of the question.
     
-Output format:
-```json
-{
-    "recap": ..., // a short summary of the user's exploration context, including the exploration thread, the current data sample, and the current chart
-    "reasoning": ..., // explain how you leverage the exploration context to suggest the questions
-    "exploration_questions": [
-        {"text": ..., "goal": ..., "difficulty": ..., "tag": ...},
-        ...
-    ],
-}
-```
+Output should be a list of json objects in the following format, each line should be a json object representing a question, starting with 'data:':
+
+Format:
+
+data: {"type": "question", "text": ..., "goal": ..., "difficulty": ..., "tag": ...} 
+data: {"type": "question", "text": ..., "goal": ..., "difficulty": ..., "tag": ...} 
+... // more questions
 '''
 
 SYSTEM_PROMPT_AGENT = '''You are a data exploration expert to help users explore their datasets.
@@ -85,7 +81,6 @@ Guidelines for question suggestions:
             - each question within the group should be distinct from each other that they will lead to different insights and visualizations
         - a 'deep_dive' question should be a sequence of questions:
             - start of the question should provide an overview of the data in the direction going to be explored, and it will be refined in the subsequent questions.
-                - if the data requires cleaning, the first question should be about data cleaning + provide overview of the direction going to be explored.
             - they progressively dive deeper into the data, building on top of the previous question.
             - each question should be related to the previous question, introducing refined analysis (e.g., updated computation, filtering, different grouping, etc.)
     - each question group should have 2-4 questions based on the user's goal and the data.
@@ -105,24 +100,14 @@ Guidelines for question suggestions:
     - include 'difficulty' to indicate the difficulty of the question, it should be one of 'easy', 'medium', 'hard'
     - include a 'tag' to describe the type of the question.
     - include a 'type' to indicate the type of the question: 'branch' or 'deep_dive'
-    
-Output format:
-```json
-{
-    "recap": ..., // a short recap of the user's exploration context (the exploration thread, the current data sample, and the current chart)
-    "reasoning": ..., // explain how you leverage the exploration context to suggest the questions
-    "exploration_questions": [
-        {  
-            "type": ..., // the type of the question: 'branch' or 'deep_dive'
-            "questions": [ ... ], // concrete questions in this group
-            "goal": ..., // high-levelsummary of this question group
-            "difficulty": ..., 
-            "tag": ..., 
-        }, 
-        ... // suggest multiple question groups
-    ],
-}
-```
+
+Output should be a list of json objects in the following format, each line should be a json object representing a question group, starting with 'data: ':
+
+Format:
+
+data: {"type": "branch" | "deep_dive", "questions": [...], "goal": ..., "difficulty": ..., "tag": ...} 
+data: {"type": "branch" | "deep_dive", "questions": [...], "goal": ..., "difficulty": ..., "tag": ...} 
+... // more question groups
 '''
 
 class InteractiveExploreAgent(object):
@@ -131,7 +116,8 @@ class InteractiveExploreAgent(object):
         self.client = client
         self.agent_exploration_rules = agent_exploration_rules
 
-    def run(self, input_tables, start_question=None, exploration_thread=None, current_data_sample=None, current_chart=None, mode='interactive'):
+    def run(self, input_tables, start_question=None, exploration_thread=None, 
+                  current_data_sample=None, current_chart=None, mode='interactive'):
         """
         Suggest exploration questions for a dataset or exploration thread.
         
@@ -194,7 +180,7 @@ class InteractiveExploreAgent(object):
                     {"role": "user", "content": context}
                 ]
             # Get completion from client
-            response = self.client.get_completion(messages=messages)
+            stream = self.client.get_completion(messages=messages, stream=True)
         except Exception as e:
             # if the model doesn't accept image, just use the text context
             messages = [
@@ -202,30 +188,15 @@ class InteractiveExploreAgent(object):
                 {"role": "user", "content": context}
             ]
             # Get completion from client
-            response = self.client.get_completion(messages=messages)
+            stream = self.client.get_completion(messages=messages, stream=True)
+
+        accumulated_content = ""
         
-        candidates = []
-        for choice in response.choices:
-            
-            logger.info("\n=== Interactive Explore Result ===>\n")
-            logger.info(choice.message.content + "\n")
-            
-            json_blocks = extract_json_objects(choice.message.content + "\n")
-            logger.info(f"Extracted JSON blocks: {json_blocks}")
-            
-            if len(json_blocks) > 0:
-                result = {'status': 'ok', 'content': json_blocks[0]}
-            else:
-                try:
-                    json_block = json.loads(choice.message.content + "\n")
-                    result = {'status': 'ok', 'content': json_block}
-                except:
-                    result = {'status': 'other error', 'content': 'unable to extract exploration questions from response'}
-            
-            # Add dialog and agent info
-            result['dialog'] = [*messages, {"role": choice.message.role, "content": choice.message.content}]
-            result['agent'] = 'InteractiveExploreAgent'
-
-            candidates.append(result)
-
-        return candidates 
+        for part in stream:
+            if hasattr(part, 'choices') and len(part.choices) > 0:
+                delta = part.choices[0].delta
+                if hasattr(delta, 'content') and delta.content:
+                    accumulated_content += delta.content
+                    
+                    # Stream each character for real-time display as JSON
+                    yield delta.content

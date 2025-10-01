@@ -60,6 +60,8 @@ Provide the result in the following two sections:
 ```
 '''
 
+print(SYSTEM_PROMPT)
+
 EXAMPLE = '''
 [CONTEXT]
 
@@ -220,8 +222,7 @@ class CodeExplanationAgent(object):
                 concepts_content = response_content[concepts_start:].strip()
                 try:
                     # Escape backslashes by doubling them
-                    escaped_content = concepts_content.replace('\\', '\\\\')
-                    raw_json_blocks = extract_code_from_gpt_response(escaped_content, "json")
+                    raw_json_blocks = extract_code_from_gpt_response(concepts_content, "json")
                     json_blocks = [json.loads(block) for block in raw_json_blocks]
                 except Exception as e:
                     json_blocks = []

@@ -256,7 +256,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
     const activeModel = useSelector(dfSelectors.getActiveModel);
     const activeChallenges = useSelector((state: DataFormulatorState) => state.activeChallenges);
 
-    const [mode, setMode] = useState<'agent' | 'interactive'>("interactive");
+    const [mode, setMode] = useState<'agent' | 'interactive'>("agent");
     const [prompt, setPrompt] = useState<string>("");
     const [isFormulating, setIsFormulating] = useState<boolean>(false);
     const [ideas, setIdeas] = useState<{text: string, goal: string, difficulty: 'easy' | 'medium' | 'hard'}[]>(
@@ -266,7 +266,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
         questions: string[], goal: string, 
         difficulty: 'easy' | 'medium' | 'hard', 
         tag: string, type: 'branch' | 'deep_dive' }[]>([]);
-    const [recReasoning, setRecReasoning] = useState<string>("");
+    const [thinkingBuffer, setThinkingBuffer] = useState<string>("");
     
     // Add state for loading ideas
     const [isLoadingIdeas, setIsLoadingIdeas] = useState<boolean>(false);
@@ -298,6 +298,12 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
         }
 
         setIsLoadingIdeas(true);
+        setThinkingBuffer("");
+        if (mode === "agent") {
+            setAgentIdeas([]);
+        } else {
+            setIdeas([]);
+        }
 
         try {
             // Determine the root table and derived tables context
@@ -334,7 +340,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
 
             const engine = getUrls().GET_RECOMMENDATION_QUESTIONS;
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+            const timeoutId = setTimeout(() => controller.abort(), config.formulateTimeoutSeconds * 1000); 
 
             const response = await fetch(engine, {
                 method: 'POST',
@@ -351,34 +357,74 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                 throw new Error(`HTTP error! status: ${response.status}`);
             }
 
-            const data = await response.json();
+            // Use streaming reader instead of response.json()
+            const reader = response.body?.getReader();
+            if (!reader) {
+                throw new Error('No response body reader available');
+            }
 
-            if (data.status === 'ok' && data.results.length > 0) {
-                const result = data.results[0];
-                if (result.status === 'ok' && result.content.exploration_questions) {
-                    // Convert questions to ideas with 'easy' difficulty
-                    if (mode === "agent") {
-                    const newIdeas = result.content.exploration_questions.map((question: any) => ({
-                            questions: question.questions,
-                            goal: question.goal,
-                            type: question.type,
-                            difficulty: question.difficulty,
-                            tag: question.tag
-                        }));
-                        setAgentIdeas(newIdeas);
-                        setRecReasoning(result.content.reasoning);
-                    } else {
-                        const newIdeas = result.content.exploration_questions.map((question: {text: string, goal: string, difficulty: 'easy' | 'medium' | 'hard', tag: string}) => ({
-                            text: question.text,
-                            goal: question.goal,
-                            difficulty: question.difficulty,
-                            tag: question.tag
-                        }));
-                        setIdeas(newIdeas);
-                        setRecReasoning(result.content.reasoning);
-                    }
+            const decoder = new TextDecoder();
+
+            let lines: string[] = [];
+            let buffer = '';
+
+            let updateState = (lines: string[]) => {
+                let dataBlocks = lines
+                    .map(line => {
+                        try { return JSON.parse(line.trim()); } catch (e) { return null; }})
+                    .filter(block => block != null);
+
+                if (mode === "agent") {
+                    let questions = dataBlocks.filter(block => block.type == "branch" || block.type == "deep_dive").map(block => ({
+                        questions: block.questions,
+                        goal: block.goal,
+                        difficulty: block.difficulty,
+                        tag: block.tag,
+                        type: block.type
+                    }));
+                    const newIdeas = questions.map((question: any) => ({
+                        questions: question.questions,
+                        goal: question.goal,
+                        type: question.type,
+                        difficulty: question.difficulty,
+                        tag: question.tag
+                    }));
+                    setAgentIdeas(newIdeas);
+                } else {
+                    let questions = dataBlocks.filter(block => block.type == "question").map(block => ({
+                        text: block.text,
+                        goal: block.goal,
+                        difficulty: block.difficulty,
+                        tag: block.tag
+                    }));
+                    setIdeas(questions);
                 }
-            } else {
+            }
+
+            try {
+                while (true) {
+                    const { done, value } = await reader.read();
+
+                    if (done) { break; }
+
+                    buffer += decoder.decode(value, { stream: true });
+                    let newLines = buffer.split('data: ').filter(line => line.trim() !== "");
+                    buffer = newLines.pop() || '';
+                    if (newLines.length > 0) {
+                        lines.push(...newLines);
+                        updateState(lines);
+                    }
+                    setThinkingBuffer(buffer.replace(/^data: /, ""));
+                }
+            } finally {
+                reader.releaseLock();
+            }
+
+            lines.push(buffer);
+            updateState(lines);
+
+            // Process the final result
+            if (lines.length == 0) {
                 throw new Error('No valid results returned from agent');
             }
         } catch (error) {
@@ -392,6 +438,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
             }));
         } finally {
             setIsLoadingIdeas(false);
+            setThinkingBuffer("");
         }
     };
 
@@ -431,7 +478,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
         const actionTables = selectedTableIds.map(id => tables.find(t => t.id === id) as DictTable);
 
         const actionId = `deriveDataFromNL_${String(Date.now())}`;
-        dispatch(dfActions.udpateAgentWorkInProgress({actionId: actionId, tableId: tableId, description: instruction, status: 'running', hidden: false}));
+        dispatch(dfActions.updateAgentWorkInProgress({actionId: actionId, tableId: tableId, description: instruction, status: 'running', hidden: false}));
 
         // Validate table selection
         const firstTableId = selectedTableIds[0];
@@ -706,16 +753,16 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
         });
     };
 
-    const exploreDataFromNL = (startQuestion: string, startWithPlanning: boolean = false) => {
+    const exploreDataFromNL = (initialPlan: string[]) => {
 
         let actionId = `exploreDataFromNL_${String(Date.now())}`;
 
-        if (selectedTableIds.length === 0 || startQuestion.trim() === "") {
+        if (selectedTableIds.length === 0 || initialPlan.length === 0 || initialPlan[0].trim() === "") {
             return;
         }
 
         setIsFormulating(true);
-        dispatch(dfActions.udpateAgentWorkInProgress({actionId: actionId, tableId: tableId, description: startQuestion, status: 'running', hidden: false}));
+        dispatch(dfActions.updateAgentWorkInProgress({actionId: actionId, tableId: tableId, description: initialPlan[0], status: 'running', hidden: false}));
 
         let actionTables = selectedTableIds.map(id => tables.find(t => t.id === id) as DictTable);
 
@@ -727,18 +774,17 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                 rows: t.rows,
                 attached_metadata: t.attachedMetadata
             })),
-            start_question: startQuestion,
+            initial_plan: initialPlan,
             model: activeModel,
-            max_iterations: 5,
+            max_iterations: 3,
             max_repair_attempts: config.maxRepairAttempts,
             agent_exploration_rules: agentRules.exploration,
             agent_coding_rules: agentRules.coding,
             language: actionTables.some(t => t.virtual) ? "sql" : "python",
-            start_with_planning: startWithPlanning
         });
         
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), config.formulateTimeoutSeconds * 4 * 1000);
+        const timeoutId = setTimeout(() => controller.abort(), config.formulateTimeoutSeconds * 6 * 1000);
 
         // State for accumulating streaming results
         let allResults: any[] = [];
@@ -762,7 +808,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
         const processStreamingResult = (result: any, focusNewChart: boolean) => {
 
             if (result.type === "planning") {
-                dispatch(dfActions.udpateAgentWorkInProgress({actionId: actionId, description: result.content.plan.instruction, status: 'running', hidden: false}));
+                dispatch(dfActions.updateAgentWorkInProgress({actionId: actionId, description: result.content.message, status: 'running', hidden: false}));
             }
 
             if (result.type === "data_transformation" && result.status === "success") {
@@ -822,7 +868,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
 
                 createdTables.push(candidateTable);
 
-                dispatch(dfActions.udpateAgentWorkInProgress({actionId: actionId, tableId: candidateTable.id, description: '', status: 'running', hidden: false}));
+                dispatch(dfActions.updateAgentWorkInProgress({actionId: actionId, tableId: candidateTable.id, description: '', status: 'running', hidden: false}));
 
                 // Add missing concept items for this table
                 const names = candidateTable.names;
@@ -846,27 +892,6 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                 // Create chart from refined goal or planning data
                 let chartType = "Scatter Plot"; // default
                 let chartGoal = refinedGoal;
-
-                // If no refined goal, try to extract from the planning result in the same iteration
-                if (!chartGoal) {
-                    const planningResult = allResults.find((r: any) => 
-                        r.type === "planning" && 
-                        r.iteration === result.iteration && 
-                        r.status === "success"
-                    );
-
-                    if (planningResult && planningResult.content?.plan) {
-                        const plan = planningResult.content.plan;
-                        // Try to extract chart info from the plan if available
-                        if (plan.instruction) {
-                            chartGoal = {
-                                chart_type: "scatter", // default
-                                visualization_fields: [], // will be inferred
-                                display_instruction: `Exploration: ${plan.instruction}`
-                            };
-                        }
-                    }
-                }
 
                 // Map chart types
                 const chartTypeMap: any = {
@@ -933,17 +958,24 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
             if (isCompleted) return;
             isCompleted = true;
 
+            console.log('in completion state')
+
             setIsFormulating(false);
             clearTimeout(timeoutId);
 
             const completionResult = allResults.find((result: any) => result.type === "completion");
+
+            console.log('completionResult', completionResult)
             if (completionResult) {
                 // Get completion message from completion result if available
-                let summary = completionResult.content.plan.instruction || completionResult.content.plan.assessment || "";
-                
-                dispatch(dfActions.udpateAgentWorkInProgress({actionId: actionId, description: summary, status: completionResult.content.plan.status === 'present' ? 'completed' : 'warning', hidden: false}));
+                let summary = completionResult.content.message || "";
+                let status : "running" | "completed" | "warning" | "failed" = completionResult.status === "success" ? "completed" : "warning";
 
-                let completionMessage = `Data exploration completed with ${completionResult.content.total_steps} visualization${completionResult.content.total_steps > 1 ? 's' : ''}.`;
+                dispatch(dfActions.updateAgentWorkInProgress({
+                    actionId: actionId, description: summary, status: status, hidden: false
+                }));
+
+                let completionMessage = `Data exploration completed.`;
 
                 dispatch(dfActions.addMessages({
                     "timestamp": Date.now(),
@@ -955,7 +987,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                 // Clear the prompt after successful exploration
                 setPrompt("");
             } else {
-                dispatch(dfActions.udpateAgentWorkInProgress({actionId: actionId, description: "The agent got lost in the data.", status: 'failed', hidden: false}));
+                dispatch(dfActions.updateAgentWorkInProgress({actionId: actionId, description: "The agent got lost in the data.", status: 'warning', hidden: false}));
 
                 dispatch(dfActions.addMessages({
                     "timestamp": Date.now(),
@@ -1031,7 +1063,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                                         clearTimeout(timeoutId);
                                         
                                         // Clean up the inprogress thinking when streaming fails
-                                        dispatch(dfActions.udpateAgentWorkInProgress({actionId: actionId, description: data.error_message || "Error during data exploration", status: 'failed', hidden: false}));
+                                        dispatch(dfActions.updateAgentWorkInProgress({actionId: actionId, description: data.error_message || "Error during data exploration", status: 'failed', hidden: false}));
                                         
                                         dispatch(dfActions.addMessages({
                                             "timestamp": Date.now(),
@@ -1058,7 +1090,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
             
             // Clean up the inprogress thinking when network errors occur
             const errorMessage = error.name === 'AbortError' ? "Data exploration timed out" : `Data exploration failed: ${error.message}`;
-            dispatch(dfActions.udpateAgentWorkInProgress({actionId: actionId, description: errorMessage, status: 'failed', hidden: false}));
+            dispatch(dfActions.updateAgentWorkInProgress({actionId: actionId, description: errorMessage, status: 'failed', hidden: false}));
             
             if (error.name === 'AbortError') {
                 dispatch(dfActions.addMessages({
@@ -1104,7 +1136,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                 >
                     <Button variant="text" value="interactive" sx={{ 
                         color: mode === "interactive" ? "primary" : "text.secondary", 
-                        backgroundColor: mode === "interactive" ? "rgba(25, 118, 210, 0.08)" : "transparent",
+                        backgroundColor: mode === "interactive" ? alpha(theme.palette.primary.main, 0.08) : "transparent",
                         
                     }} onClick={() => {
                         setMode("interactive");
@@ -1113,7 +1145,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                     </Button>
                     <Button variant="text" value="agent" sx={{ 
                             color: mode === "agent" ? "primary" : "text.secondary", 
-                            backgroundColor: mode === "agent" ? "rgba(25, 118, 210, 0.08)" : "transparent"
+                            backgroundColor: mode === "agent" ? alpha(theme.palette.primary.main, 0.08) : "transparent"
                         }} onClick={() => {
                             setMode("agent");
                         }}>
@@ -1128,18 +1160,14 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                 flexDirection: 'column',
                 gap: 1,
                 position: 'relative',
-                boxShadow: mode === "agent" 
-                    ? '0 0 10px 0 rgba(25, 118, 210, 0.3)' 
-                    : 'none',
-                animation: mode === "agent" 
-                    ? 'glow 2s ease-in-out infinite alternate' 
-                    : 'none',
+                boxShadow: `0 0 10px 0 ${alpha(theme.palette.primary.main, 0.3)}`,
+                animation: 'glow 2s ease-in-out infinite alternate',
                 '@keyframes glow': {
                     '0%': {
-                        boxShadow: '0 0 10px 0 rgba(25, 118, 210, 0.1)',
+                        boxShadow: `0 0 5px 0 ${alpha(theme.palette.primary.main, 0.1)}`,
                     },
                     '100%': {
-                        boxShadow: '0 0 20px 0 rgba(25, 118, 210, 0.3), 0 0 20px 0 rgba(25, 118, 210, 0.3)',
+                        boxShadow: `0 0 10px 0 ${alpha(theme.palette.primary.main, 0.3)}, 0 0 10px 0 ${alpha(theme.palette.primary.main, 0.3)}`,
                     }
                 }
             }}>
@@ -1185,7 +1213,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                                             size="medium"
                                             disabled={isFormulating || !currentTable || prompt.trim() === ""}
                                             color="primary" 
-                                            onClick={() => mode === "agent" ? exploreDataFromNL(prompt.trim(), true) : deriveDataFromNL(prompt.trim(), true)}
+                                            onClick={() => mode === "agent" ? exploreDataFromNL([prompt.trim()]) : deriveDataFromNL(prompt.trim(), true)}
                                         >
                                             {isFormulating ? <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
                                                 <CircularProgress size={24} />
@@ -1240,18 +1268,17 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                     </Box>}
                 </Box>
                 {/* Ideas Chips Section */}
-                {mode === 'interactive' && ideas.length > 0 && (
+                {mode === 'interactive' && (ideas.length > 0 || thinkingBuffer) && (
                     <Box>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, marginBottom: 1 }}>
+                       {ideas.length > 0 && ( <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, marginBottom: 1 }}>
                             <Typography sx={{ fontSize: 12, color: "text.secondary" }}>
                                 ideas
                             </Typography>
-                        </Box>
+                        </Box>)}
                         <Box sx={{
                             display: 'flex', 
                             flexWrap: 'wrap', 
                             gap: 0.5,
-                            marginBottom: 1
                         }}>
                             {ideas.map((idea, index) => (
                                 <IdeaChip
@@ -1270,16 +1297,21 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                                     }}
                                 />
                             ))}
+                            {isLoadingIdeas && thinkingBuffer && (
+                                <Typography sx={{ margin: 'auto 0', padding: 0.5, fontSize: 10, color: "darkgray", width: '46%'}}>
+                                    drafting {thinkingBuffer.slice(-60).replace(/[^\s]/g, '·')}
+                                </Typography>
+                            )}
                         </Box>
                     </Box>
                 )}
-                {mode === 'agent' && agentIdeas.length > 0 && (
+                {mode === 'agent' && (agentIdeas.length > 0 || thinkingBuffer) && (
                     <Box>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, marginBottom: 1 }}>
+                        {agentIdeas.length > 0 && <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, marginBottom: 1 }}>
                             <Typography sx={{ fontSize: 12, color: "text.secondary", ".MuiSvgIcon-root": { cursor: 'help', transform: 'rotate(90deg)', verticalAlign: 'middle', fontSize: 12} }}>
                                 directions <Tooltip title="deep dive"><MovingIcon /></Tooltip>  <Tooltip title="branch"><CallSplitIcon /></Tooltip>
                             </Typography>
-                        </Box>
+                        </Box>}
                         <Box sx={{
                             display: 'flex', 
                             flexWrap: 'wrap', 
@@ -1295,7 +1327,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                                     theme={theme}
                                     onClick={() => {
                                         if (idea.type === "deep_dive" && idea.questions.length > 0) {
-                                            exploreDataFromNL(idea.questions[0]);
+                                            exploreDataFromNL(idea.questions);
                                         } else {    
                                             idea.questions.forEach((question, index) => {
                                                 setTimeout(() => {
@@ -1311,7 +1343,11 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                                     }}
                                 />
                             ))}
-                            
+                            {isLoadingIdeas && thinkingBuffer && (
+                                <Typography sx={{ margin: 'auto 0', padding: 0.5, fontSize: 10, color: "darkgray", width: '46%', maxLines: 3 }}>
+                                    drafting {thinkingBuffer.slice(-60).replace(/[^\s]/g, '·')}
+                                </Typography>
+                            )}
                         </Box>
                     </Box>
                 )}

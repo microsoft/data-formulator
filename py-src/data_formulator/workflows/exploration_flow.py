@@ -14,6 +14,7 @@ from data_formulator.agents.agent_sql_data_rec import SQLDataRecAgent
 from data_formulator.agents.client_utils import Client
 from data_formulator.db_manager import db_manager
 from data_formulator.workflows.create_vl_plots import assemble_vegailte_chart, spec_to_base64, fields_to_encodings
+from data_formulator.agents.agent_utils import extract_json_objects
 
 logger = logging.getLogger(__name__)
 
@@ -56,12 +57,11 @@ def create_chart_spec_from_data(
 def run_exploration_flow_streaming(
     model_config: Dict[str, str],
     input_tables: List[Dict[str, Any]],
-    start_question: str,
+    initial_plan: List[str],
     language: str = "python",
     session_id: Optional[str] = None,
     exec_python_in_subprocess: bool = False,
     max_iterations: int = 5,
-    start_with_planning: bool = False,
     max_repair_attempts: int = 1,
     agent_exploration_rules: str = "",
     agent_coding_rules: str = ""
@@ -72,12 +72,11 @@ def run_exploration_flow_streaming(
     Args:
         model_config: Dictionary with endpoint, model, api_key, api_base, api_version
         input_tables: List of input table dictionaries with 'name' 'rows' and 'attached_metadata'
-        start_question: User's high-level exploration question
+        plan: List of steps to continue exploring
         language: "python" or "sql" for data transformation
         session_id: Database session ID for SQL connections
         exec_python_in_subprocess: Whether to execute Python in subprocess
         max_iterations: Maximum number of exploration iterations
-        start_with_planning: Whether to start with planning / or go directly to data transformation
         max_repair_attempts: Maximum number of code repair attempts
         agent_exploration_rules: Custom exploration rules for the agent
         agent_coding_rules: Custom coding rules for the agent
@@ -93,8 +92,6 @@ def run_exploration_flow_streaming(
     """
     # Initialize variables
     iteration = 0
-    exploration_steps = []
-    current_question = start_question
     previous_transformation_dialog = []
     previous_transformation_data = []
     
@@ -102,16 +99,40 @@ def run_exploration_flow_streaming(
     client = Client.from_config(model_config)
     exploration_agent = ExplorationAgent(client)
 
-    if start_with_planning:
+    completed_steps = []
+    current_question = initial_plan[0] if len(initial_plan) > 0 else "Let's explore something interesting."
+    current_plan = initial_plan[1:] if len(initial_plan) > 1 else []
+
+    if len(current_plan) == 0:
         interactive_explore_agent = InteractiveExploreAgent(client, agent_exploration_rules=agent_exploration_rules) # for interactive exploration
 
-        start_plan = interactive_explore_agent.run(
+        stream = interactive_explore_agent.run(
             input_tables=input_tables,
-            start_question=f'Based on the following user\'s question suggest a deep dive exploration plan:\n {start_question}',
+            start_question=f'Based on the following user\'s question suggest a deep dive exploration plan with at most {max_iterations} questions:\n {current_question}',
             mode='agent'
         )
+        
+        buffer = ""
 
-        if not start_plan or start_plan[0]['status'] != 'ok':
+        question_groups = []
+
+        for part in stream:
+            buffer += part
+            new_lines = [x for x in buffer.split('data: ') if x.strip() != ""];
+            buffer = new_lines.pop() if new_lines else '';
+        
+        new_lines.append(buffer)
+
+        if len(new_lines) > 0:
+            for line in new_lines:
+                content = extract_json_objects(line)[0]
+                if content.get('type') in ['branch', 'deep_dive']:
+                    question_groups.append(content)
+
+        try:
+            current_plan = question_groups[0]['questions']
+            current_question = current_plan.pop(0)
+        except Exception as e:
             yield {
                 "iteration": iteration,
                 "type": "planning",
@@ -121,20 +142,11 @@ def run_exploration_flow_streaming(
             }
             return
 
-        start_question_group = start_plan[0]['content']['exploration_questions'][0]
-        current_question = f'The overall goal: {start_question_group["goal"]} | Let\'s start with the first question: {start_question_group["questions"][0]}'
-
         yield {
             "iteration": iteration,
             "type": "planning",
             "content": {
-                "plan": {
-                    "recap": start_plan[0]['content']['recap'],
-                    "assessment": '\n'.join([f'{i+1}. {question}' for i, question in enumerate(start_question_group['questions'])]),
-                    "status": "continue",
-                    "reasoning": start_plan[0]['content']['reasoning'],
-                    "instruction": current_question
-                },
+                "message": current_question,
                 "exploration_steps_count": 0
             },
             "status": "success",
@@ -165,7 +177,7 @@ def run_exploration_flow_streaming(
         )
     
     # Main exploration loop
-    while iteration < max_iterations:
+    while iteration < max_iterations + 1:
         iteration += 1
         
         # Step 1: Use rec agent to transform data based on current question
@@ -264,7 +276,7 @@ def run_exploration_flow_streaming(
             'data': transformed_data,
             'visualization': current_visualization
         }
-        exploration_steps.append(step_data)
+        completed_steps.append(step_data)
 
         print(f"Exploration steps {iteration}:")
         print({
@@ -278,10 +290,10 @@ def run_exploration_flow_streaming(
         
         followup_results = exploration_agent.suggest_followup(
             input_tables=input_tables,
-            steps=exploration_steps
+            completed_steps=completed_steps,
+            next_steps=current_plan
         )
 
-        
         if not followup_results or followup_results[0]['status'] != 'ok':
             error_msg = followup_results[0]['content'] if followup_results else "Follow-up planning failed"
             yield {
@@ -302,29 +314,28 @@ def run_exploration_flow_streaming(
                 "iteration": iteration,
                 "type": "completion",
                 "content": {
-                    "plan": followup_plan,
-                    "total_steps": len(exploration_steps),
+                    "message": followup_plan.get('summary', ''),
+                    "total_steps": len(completed_steps),
                 },
                 "status": "success" if followup_plan.get('status') == 'present' else "warning",
                 "error_message": ""
             }
             break
 
+        current_plan = followup_plan.get('next_steps', [])
+        current_question = current_plan.pop(0)
 
         yield {
             "iteration": iteration,
             "type": "planning",
             "content": {
-                "plan": followup_plan,
-                "exploration_steps_count": len(exploration_steps)
+                "message": current_question,
+                "exploration_steps_count": len(completed_steps)
             },
             "status": "success",
             "error_message": ""
         }
         
-        # Continue with new question from instruction
-        current_question = followup_plan.get('instruction', '')
-            
     # Clean up connection if used
     if conn:
         conn.close()
@@ -335,7 +346,7 @@ def run_exploration_flow_streaming(
             "iteration": iteration,
             "type": "completion",
             "content": {
-                "total_steps": len(exploration_steps),
+                "total_steps": len(completed_steps),
                 "reason": "Reached maximum iterations"
             },
             "status": "success",

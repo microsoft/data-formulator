@@ -29,6 +29,7 @@ from data_formulator.agents.agent_sql_data_rec import SQLDataRecAgent
 from data_formulator.agents.agent_sort_data import SortDataAgent
 from data_formulator.agents.agent_data_load import DataLoadAgent
 from data_formulator.agents.agent_data_clean import DataCleanAgent
+from data_formulator.agents.agent_data_clean_stream import DataCleanAgentStream
 from data_formulator.agents.agent_code_explanation import CodeExplanationAgent
 from data_formulator.agents.agent_query_completion import QueryCompletionAgent
 from data_formulator.agents.agent_interactive_explore import InteractiveExploreAgent
@@ -280,6 +281,58 @@ def clean_data_request():
     return response
 
 
+@agent_bp.route('/clean-data-stream', methods=['GET', 'POST'])
+def clean_data_stream_request():
+    def generate():
+        if request.is_json:
+            logger.info("# data clean stream request")
+            content = request.get_json()
+            token = content["token"]
+
+            client = get_client(content['model'])
+
+            logger.info(f" model: {content['model']}")
+            
+            agent = DataCleanAgentStream(client=client)
+
+            try:
+                for chunk in agent.stream(content.get('prompt', ''), content.get('artifacts', []), content.get('dialog', [])):
+                    yield chunk
+            except Exception as e:
+                logger.error(e)
+                if 'unable to download html from url' in str(e):
+                    error_data = { 
+                        "token": token, 
+                        "status": "error", 
+                        "result": 'this website doesn\'t allow us to download html from url :(' 
+                    }
+                else:
+                    error_data = { 
+                        "token": token, 
+                        "status": "error", 
+                        "result": 'unable to process data clean request' 
+                    }
+                yield '\n' + json.dumps(error_data) + '\n'
+        else:
+            error_data = { 
+                "token": -1, 
+                "status": "error", 
+                "result": "Invalid request format" 
+            }
+            yield '\n' + json.dumps(error_data) + '\n'
+
+    response = Response(
+        stream_with_context(generate()),
+        mimetype='application/json',
+        headers={
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type'
+        }
+    )
+    return response
+
+
 @agent_bp.route('/sort-data', methods=['GET', 'POST'])
 def sort_data_request():
 
@@ -384,10 +437,9 @@ def explore_data_streaming():
 
             # each table is a dict with {"name": xxx, "rows": [...]}
             input_tables = content["input_tables"]
-            start_question = content["start_question"]  # The exploration question
+            initial_plan = content["initial_plan"]  # The exploration question
             language = content.get("language", "python")  # whether to use sql or python, default to python
-            max_iterations = content.get("max_iterations", 5)  # Number of exploration iterations
-            start_with_planning = content.get("start_with_planning", False)
+            max_iterations = content.get("max_iterations", 3)  # Number of exploration iterations
             max_repair_attempts = content.get("max_repair_attempts", 1)
             agent_exploration_rules = content.get("agent_exploration_rules", "")
             agent_coding_rules = content.get("agent_coding_rules", "")
@@ -398,7 +450,7 @@ def explore_data_streaming():
                 logger.info(table['rows'][:5])
 
             logger.info("== exploration question ===")
-            logger.info(start_question)
+            logger.info(initial_plan)
 
             # Model config for the exploration flow
             model_config = {
@@ -416,12 +468,11 @@ def explore_data_streaming():
                 for result in run_exploration_flow_streaming(
                     model_config=model_config,
                     input_tables=input_tables,
-                    start_question=start_question,
+                    initial_plan=initial_plan,
                     language=language,
                     session_id=session_id,
                     exec_python_in_subprocess=exec_python_in_subprocess,
                     max_iterations=max_iterations,
-                    start_with_planning=start_with_planning,
                     max_repair_attempts=max_repair_attempts,
                     agent_exploration_rules=agent_exploration_rules,
                     agent_coding_rules=agent_coding_rules
@@ -578,36 +629,47 @@ def query_completion():
 
 @agent_bp.route('/get-recommendation-questions', methods=['GET', 'POST'])
 def get_recommendation_questions():
-    if request.is_json:
-        logger.info("# get recommendation questions request")
-        content = request.get_json()
-        token = content.get("token", "")
+    def generate():
+        if request.is_json:
+            logger.info("# get recommendation questions request")
+            content = request.get_json()
+            token = content.get("token", "")
 
-        client = get_client(content['model'])
+            client = get_client(content['model'])
 
-        logger.info(f" model: {content['model']}")
-        
-        agent_exploration_rules = content.get("agent_exploration_rules", "")
-        agent = InteractiveExploreAgent(client=client, agent_exploration_rules=agent_exploration_rules)
+            logger.info(f" model: {content['model']}")
+            
+            agent_exploration_rules = content.get("agent_exploration_rules", "")
+            agent = InteractiveExploreAgent(client=client, agent_exploration_rules=agent_exploration_rules)
 
-        # Get input tables from the request
-        input_tables = content.get("input_tables", [])
-        
-        # Get exploration thread if provided (for context from previous explorations)
-        mode = content.get("mode", "interactive")
-        start_question = content.get("start_question", None)
-        exploration_thread = content.get("exploration_thread", None)
-        current_chart = content.get("current_chart", None)
-        current_data_sample = content.get("current_data_sample", None)
+            # Get input tables from the request
+            input_tables = content.get("input_tables", [])
+            
+            # Get exploration thread if provided (for context from previous explorations)
+            mode = content.get("mode", "interactive")
+            start_question = content.get("start_question", None)
+            exploration_thread = content.get("exploration_thread", None)
+            current_chart = content.get("current_chart", None)
+            current_data_sample = content.get("current_data_sample", None)
 
-        results = agent.run(input_tables, start_question, exploration_thread, current_data_sample, current_chart, mode)
-        
-        # Filter out any failed results
-        valid_results = [r for r in results if r['status'] == 'ok']
+            try:
+                for chunk in agent.run(input_tables, start_question, exploration_thread, current_data_sample, current_chart, mode):
+                    yield chunk
+            except Exception as e:
+                logger.error(e)
+                error_data = { 
+                    "content": "unable to process recommendation questions request" 
+                }
+                yield 'error: ' + json.dumps(error_data) + '\n'
+        else:
+            error_data = { 
+                "content": "Invalid request format" 
+            }
+            yield 'error: ' + json.dumps(error_data) + '\n'
 
-        response = flask.jsonify({ "status": "ok", "token": token, "results": valid_results })
-    else:
-        response = flask.jsonify({ "token": "", "status": "error", "results": [] })
-
-    response.headers.add('Access-Control-Allow-Origin', '*')
+    response = Response(
+        stream_with_context(generate()),
+        mimetype='application/json',
+        headers={ 'Access-Control-Allow-Origin': '*',  }
+    )
     return response
