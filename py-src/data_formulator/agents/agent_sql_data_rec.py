@@ -32,21 +32,26 @@ Concretely, you should infer the appropriate data and create a SQL query based o
 
 1. First, based on users' [GOAL]. Create a json object that represents the inferred user intent. The json object should have the following format:
 
-```json
 {
     "mode": "" // string, one of "infer", "overview", "distribution", "summary"
     "recap": "..." // string, a short summary of the user's goal.
     "display_instruction": "..." // string, the even shorter verb phrase describing the users' goal.
-    "recommendation": "..." // string, explain why this recommendation is made 
+    "recommendation": "..." // string, explain why this recommendation is made
     "output_fields": [...] // string[], describe the desired output fields that the output data should have (i.e., the goal of transformed data), it's a good idea to preseve intermediate fields here
     "chart_type": "" // string, one of "point", "bar", "line", "area", "heatmap", "group_bar". "chart_type" should either be inferred from user instruction, or recommend if the user didn't specify any.
-    "visualization_fields": [] // string[]: select a subset of the output_fields should be visualized (no more than 3 unless the user explicitly mentioned), ordered based on if the field will be used in x,y axes or legends for the recommended chart type, do not include other intermediate fields from "output_fields".
+    "chart_encodings": {
+        "x": "",
+        "y": "",
+        "color": "",
+        "size": "",
+        "opacity": "",
+        "facet": "",
+    } // object: map visualization channels (x, y, color, size, opacity, facet, etc.) to a subset of output fields, appropriate visual channels for different chart types are defined below.
 }
-```
 
 Concretely:
     - recap what the user's goal is in a short summary in "recap".
-    - If the user's [GOAL] is clear already, simply infer what the user mean. Set "mode" as "infer" and create "output_fields" and "visualization_fields_list" based off user description.
+    - If the user's [GOAL] is clear already, simply infer what the user mean. Set "mode" as "infer" and create "output_fields" and "chart_encodings" based off user description.
     - If the user's [GOAL] is not clear, make recommendations to the user:
         - choose one of "distribution", "overview", "summary" in "mode":
             * if it is "overview" and the data is in wide format, reshape it into long format.
@@ -54,38 +59,64 @@ Concretely:
             * if it is "summary", calculate some aggregated statistics to show intresting facts of the data.
         - describe the recommendation reason in "recommendation"
         - based on the recommendation, determine what is an ideal output data. Note, the output data must be in tidy format.
-        - then suggest recommendations of visualization fields that should be visualized.
+        - then suggest recommendations of chart encoding that should be used to create the visualization.
     - "display_instruction" should be a short verb phrase describing the users' goal, it should be even shorter than "recap". 
         - it would be a short verbal description of user intent as a verb phrase (<12 words).
-        - generate it based on user's [GOAL] and the suggested visualization, but don't need to mention the visualization details.
-        - if the user specification follows up the previous instruction, the 'display_instruction' should only describe how it builds up the previous instruction without repeating information from previous steps.
+        - generate based on "recap" and the suggested visualization, but don't need to mention the visualization details.
+        - should capture key computation ideas: by reading the display, the user can understand the purpose and what's derived from the data.
+        - if the user instruction builds up the previous instruction, the 'display_instruction' should only describe how it builds up the previous instruction without repeating information from previous steps.
         - the phrase can be presented in different styles, e.g., question (what's xxx), instruction (show xxx), description, etc.
         - if you mention column names from the input or the output data, highlight the text in **bold**.
             * the column can either be a column in the input data, or a new column that will be computed in the output data.
             * the mention don't have to be exact match, it can be semantically matching, e.g., if you mentioned "average score" in the text while the column to be computed is "Avg_Score", you should still highlight "**average score**" in the text.
-    - "visualization_fields" should be ordered based on whether the field will be used in x,y axes or legends, do not include other intermediate fields from "output_fields".
-    - "visualization_fields" should be 2-3 (for x,y,legend) or 4 (ONLY if you consider faceted visualization, facet must be a categorical field with small cardinality).
     - "chart_type" must be one of "point", "bar", "line", "area", "heatmap", "group_bar"
+    - "chart_encodings" should specify which fields should be used to create the visualization
+        - decide which visual channels should be used to create the visualization appropriate for the chart type.
+            - point: x, y, color, size, facet
+            - bar: x, y, color, facet
+            - line: x, y, color, facet
+            - area: x, y, color, facet
+            - heatmap: x, y, color, facet
+            - group_bar: x, y, color, facet
+        - do not include other intermediate fields from "output_fields".
+        - typically only 2-3 fields should be used to create the visualization (x, y, color/size), facet use be added if it's a faceted visualization (totally 4 fields used).
+    - Guidelines for choosing chart type and visualization fields:
         - Consider chart types as follows:
-            - (point) Scatter Plots: X,Y: Quantitative/Categorical, Color: Categorical (optional), Size: Quantitative (optional for creating bubble chart), Best for: Relationships, correlations, distributions
+             - (point) Scatter Plots: x,y: Quantitative/Categorical, color: Categorical (optional), size: Quantitative (optional for creating bubble chart), 
+                - best for: Relationships, correlations, distributions
                 - scatter plots are good default way to visualize data when other chart types are not applicable.
                 - use color to visualize points from different categories.
                 - use size to visualize data points with an additional quantitative dimension of the data points.
-            - (bar) Bar Charts: X: Categorical (nominal/ordinal), Y: Quantitative, Color: Categorical (optional for group or stacked bar chart), Best for: Comparisons across categories
+             - (bar) Bar Charts: x: Categorical (nominal/ordinal), y: Quantitative, color: Categorical (optional for group or stacked bar chart), 
+                - best for: Comparisons across categories
                 - use (bar) for simple bar chart or stacked bar chart (when it makes sense to add up Y values for each category with the same X value), 
-                - use (group_bar) for grouped bar chart, but only when the cardinality of color field is small (less than 5).
-            - (line) Line Charts: X: Temporal (preferred) or ordinal, Y: Quantitative, Color: Categorical (optional for creating multiple lines), Best for: Trends over time, continuous data
-            - (area) Area Charts: X: Temporal (preferred) or ordinal, Y: Quantitative, Color: Categorical (optional for creating stacked areas), Best for: Trends over time, continuous data
-            - (heatmap) Heatmaps: X,Y: Categorical (convert quantitative to nominal), Color: Quantitative intensity, Best for: Pattern discovery in matrix data
-        - all charts have the option to add additional fields for legends (color, size, facet, etc.) to enrich the visualization if applicable.
-    - visualization fields should be in tidy format with respect to the chart type to create the visualization, so it does not make sense to have too many or too few fields. 
-        It should follow guidelines like VegaLite and ggplot2 so that each field is mapped to a visualization axis or legend. 
-    - consider data transformations if you want to visualize multiple fields together.
-        - exapmle 1: suggest reshaping the data into long format in data transformation description (if these fields are all of the same type, e.g., they are all about sales, price, two columns about min/max-values, etc. don't mix different types of fields in reshaping) so we can visualize multiple fields as categories or in different facets.
-        - exapmle 2: calculate some derived fields from these fields(e.g., correlation, difference, profit etc.) in data transformation description to visualize them in one visualization.
-        - example 3: create a visualization only with a subset of the fields, you don't have to visualize all of them in one chart, you can later create a visualization with the rest of the fields. With the subset of charts, you can also consider reshaping or calculate some derived value.
-        - again, it does not make sense to have five fields like [item, A, B, C, D, E] in visualization fields, you should consider data transformation to reduce the number of fields.
-
+                    - when color is specified, it will turn the chart into a stacked bar chart.
+                    - note that when there are multiple rows in the data with same x values, the bar will be stacked automatically.
+                        - 1. consider to use an aggregated field for y values if the value is not suitable for stacking.
+                        - 2. consider to introduce facets so that each group is visualized in a separate bar.
+            - (group_bar) for grouped bar chart, x: Categorical (nominal/ordinal), y: Quantitative, color: Categorical
+                - when color is specifed, bars from different groups will be grouped automatically.
+                - only use facet if the cardinality of color field is small (less than 5).
+            - (line) Line Charts: x: Temporal (preferred) or ordinal, y: Quantitative, color: Categorical (optional for creating multiple lines), 
+                - best for: Trends over time, continuous data
+                - note that when there are multiple rows in the data belong to the same group (same x and color values) but different y values, the line will not look correct.
+                - consider to use an aggregated field for y values, or introduce facets so that each group is visualized in a separate line.
+            - (area) Area Charts: x: Temporal (preferred) or ordinal, y: Quantitative, color: Categorical (optional for creating stacked areas), 
+                - best for: Trends over time, continuous data
+            - (heatmap) Heatmaps: x,y: Categorical (you need to convert quantitative to nominal), color: Quantitative intensity, 
+                - best for: Pattern discovery in matrix data
+        - facet channel is available for all chart types, it supports a categorical field with small cardinality to visualize the data in different facets.
+        - if you really need additional legend fields:
+            - you can use opacity for legend (support Quantitative and Categorical).
+    - visualization fields require tidy data. 
+        - similar to VegaLite and ggplot2 so that each field is mapped to a visualization axis or legend. 
+        - consider data transformations if you want to visualize multiple fields together:
+            - exapmle 1: suggest reshaping the data into long format in data transformation description (if these fields are all of the same type, e.g., they are all about sales, price, two columns about min/max-values, etc. don't mix different types of fields in reshaping) so we can visualize multiple fields as categories or in different facets.
+            - exapmle 2: calculate some derived fields from these fields(e.g., correlation, difference, profit etc.) in data transformation description to visualize them in one visualization.
+            - example 3: create a visualization only with a subset of the fields, you don't have to visualize all of them in one chart, you can later create a visualization with the rest of the fields. With the subset of charts, you can also consider reshaping or calculate some derived value.
+            - again, it does not make sense to have five fields like [item, A, B, C, D, E] in visualization fields, you should consider data transformation to reduce the number of fields.
+            - when reshaping data to long format, only fields of the same semantic type should be rehaped into the same column.
+            
     2. Then, write a SQL query based on the inferred goal, the query input are tables (or multiple tables presented in the [CONTEXT] section) and the output is the transformed data. The output data should contain all "output_fields" from the refined goal.
 The query should be as simple as possible and easily readable. If there is no data transformation needed based on "output_fields", the transformation function can simply "SELECT * FROM table".
 note:   
@@ -93,7 +124,7 @@ note:
      - if the user provided multiple tables, you should consider the join between tables to derive the output.
 
     3. The output must only contain two items:
-        - a json object (wrapped in ```json```) representing the refined goal (including "mode", "recommendation", "output_fields", "chart_type", "visualization_fields")
+        - a json object (wrapped in ```json```) representing the refined goal (including "mode", "recommendation", "output_fields", "chart_type", "chart_encodings")
         - a sql query block (wrapped in ```sql```) representing the transformation code, do not add any extra text explanation.
 
 some notes:
@@ -150,13 +181,13 @@ table_0 (student_exam) sample:
 
 ```json
 {  
-    "mode": "infer",  
     "recap": "Rank students based on their average scores",
-    "display_instruction": "Rank students based on their average scores",
-    "recommendation": "To rank students based on their average scores, we need to calculate the average score for each student and then rank them accordingly.",  
-    "output_fields": ["student", "major", "math", "reading", "writing", "average_score", "rank"],  
+    "display_instruction": "Rank students by **average scores**",
+    "mode": "infer",
+    "recommendation": "To rank students based on their average scores, we need to calculate the average score for each student, then sort the data, and finally assign a rank to each student based on their average score.",  
+    "output_fields": ["student", "major", "average_score", "rank"],  
     "chart_type": "bar",  
-    "visualization_fields": ["student", "average_score"]  
+    "chart_encodings": {"x": "student", "y": "average_score"}  
 }  
 ```
 
@@ -164,13 +195,11 @@ table_0 (student_exam) sample:
 SELECT   
     student,  
     major,  
-    math,  
-    reading,  
-    writing,  
     (math + reading + writing) / 3.0 AS average_score,  
     RANK() OVER (ORDER BY (math + reading + writing) / 3.0 DESC) AS rank  
 FROM   
-    student_exam;  
+    student_exam  
+ORDER BY average_score DESC;
 ```
 """
 
@@ -209,7 +238,7 @@ class SQLDataRecAgent(object):
             if len(json_blocks) > 0:
                 refined_goal = json_blocks[0]
             else:
-                refined_goal = { 'mode': "", 'recommendation': "", 'output_fields': [], 'visualization_fields': [], }
+                refined_goal = { 'mode': "", 'recommendation': "", 'output_fields': [], 'chart_encodings': {}, 'chart_type': "" }
 
             code_blocks = extract_code_from_gpt_response(choice.message.content + "\n", "sql")
 

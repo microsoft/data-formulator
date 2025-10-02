@@ -13,7 +13,7 @@ from data_formulator.agents.agent_py_data_rec import PythonDataRecAgent
 from data_formulator.agents.agent_sql_data_rec import SQLDataRecAgent
 from data_formulator.agents.client_utils import Client
 from data_formulator.db_manager import db_manager
-from data_formulator.workflows.create_vl_plots import assemble_vegailte_chart, spec_to_base64, fields_to_encodings
+from data_formulator.workflows.create_vl_plots import assemble_vegailte_chart, spec_to_base64, detect_field_type
 from data_formulator.agents.agent_utils import extract_json_objects
 
 logger = logging.getLogger(__name__)
@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 def create_chart_spec_from_data(
     transformed_data: Dict[str, Any], 
     chart_type: str, 
-    visualization_fields: List[str]
+    chart_encodings: Dict[str, str]
 ) -> str:
     """
     Create a chart from transformed data using Vega-Lite.
@@ -29,7 +29,7 @@ def create_chart_spec_from_data(
     Args:
         transformed_data: Dictionary with 'rows' key containing the data
         chart_type: Type of chart to create (bar, point, line, etc.)
-        visualization_fields: List of field names to visualize
+        chart_encodings: Dictionary mapping channel names to field names (e.g., {"x": "field1", "y": "field2"})
         
     Returns:
         Base64 encoded PNG image string
@@ -42,8 +42,13 @@ def create_chart_spec_from_data(
             logger.warning("Empty dataframe, cannot create chart")
             return ""
         
-        # Create encodings based on chart type and visualization fields
-        encodings = fields_to_encodings(df, chart_type, visualization_fields)
+        # Convert chart_encodings to the format expected by assemble_vegailte_chart
+        encodings = {}
+        for channel, field in chart_encodings.items():
+            if field and field in df.columns:
+                # Determine field type for encoding
+                field_type = detect_field_type(df[field])
+                encodings[channel] = {"field": field, "type": field_type}
         
         # Create Vega-Lite specification
         spec = assemble_vegailte_chart(df, chart_type, encodings)
@@ -260,12 +265,12 @@ def run_exploration_flow_streaming(
         
         # Step 2: Create visualization to help generate followup question
         chart_type = refined_goal.get('chart_type', 'bar')
-        visualization_fields = refined_goal.get('visualization_fields', [])
+        chart_encodings = refined_goal.get('chart_encodings', {})
         
         chart_spec = create_chart_spec_from_data(
             transformed_data,
             chart_type,
-            visualization_fields
+            chart_encodings
         )
         current_visualization = spec_to_base64(chart_spec) if chart_spec else None
         

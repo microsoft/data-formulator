@@ -44,7 +44,7 @@ import { createDictTable, DictTable } from "../components/ComponentType";
 import { getUrls, resolveChartFields, getTriggers, assembleVegaChart } from '../app/utils';
 import { EncodingBox } from './EncodingBox';
 
-import { ChannelGroups, CHART_TEMPLATES, getChartTemplate } from '../components/ChartTemplates';
+import { ChannelGroups, CHART_TEMPLATES, getChartChannels, getChartTemplate } from '../components/ChartTemplates';
 import { checkChartAvailability, getDataTable } from './VisualizationView';
 import TableRowsIcon from '@mui/icons-material/TableRowsOutlined';
 import ChangeCircleOutlinedIcon from '@mui/icons-material/ChangeCircleOutlined';
@@ -61,7 +61,6 @@ import LightbulbOutlinedIcon from '@mui/icons-material/LightbulbOutlined';
 import TipsAndUpdatesIcon from '@mui/icons-material/TipsAndUpdates';
 import BugReportIcon from '@mui/icons-material/BugReport';
 import { IdeaChip } from './ChartRecBox';
-import { ResolveChartFieldsTestDialog } from './ResolveChartFieldsTestDialog';
 
 // Property and state of an encoding shelf
 export interface EncodingShelfCardProps { 
@@ -410,7 +409,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
             let component = <Box key={`encoding-group-box-${group}`}>
                 <Typography key={`encoding-group-${group}`} sx={{ fontSize: 10, color: "text.secondary", marginTop: "6px", marginBottom: "2px" }}>{group}</Typography>
                 {channelList.filter(channel => Object.keys(encodingMap).includes(channel))
-                    .map(channel => <EncodingBox key={`shelf-${channel}`} channel={channel as Channel} chartId={chartId} />)}
+                    .map(channel => <EncodingBox key={`shelf-${channel}`} channel={channel as Channel} chartId={chartId} tableId={currentTable.id} />)}
             </Box>
             return component;
         });
@@ -418,6 +417,12 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
     // derive active fields from encoding map so that we can keep the order of which fields will be visualized
     let activeFields = Object.values(encodingMap).map(enc => enc.fieldID).filter(fieldId => fieldId && conceptShelfItems.map(f => f.id)
                                 .includes(fieldId)).map(fieldId => conceptShelfItems.find(f => f.id == fieldId) as FieldItem);
+    let activeSimpleEncodings: { [key: string]: string } = {};
+    for (let channel of getChartChannels(chart.chartType)) {
+        if (chart.encodingMap[channel as Channel].fieldID) {
+            activeSimpleEncodings[channel] = activeFields.find(f => f.id == chart.encodingMap[channel as Channel].fieldID)?.name as string;
+        }
+    }
     
     let activeCustomFields = activeFields.filter(field => field.source == "custom");
 
@@ -465,7 +470,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
             }
 
             let chartAvailable = checkChartAvailability(chart, conceptShelfItems, currentTable.rows);
-            let currentChartPng = chartAvailable ? await vegaLiteSpecToPng(assembleVegaChart(chart.chartType, chart.encodingMap, activeFields, currentTable.rows)) : undefined;
+            let currentChartPng = chartAvailable ? await vegaLiteSpecToPng(assembleVegaChart(chart.chartType, chart.encodingMap, activeFields, currentTable.rows, currentTable.metadata, 20)) : undefined;
 
             const token = String(Date.now());
             const messageBody = JSON.stringify({
@@ -615,6 +620,8 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
         let fieldNamesStr = activeFields.map(f => f.name).reduce(
             (a: string, b: string, i, array) => a + (i == 0 ? "" : (i < array.length - 1 ? ', ' : ' and ')) + b, "")
 
+        let chartType = chart.chartType;
+
         let token = String(Date.now());
 
         // if nothing is specified, just a formulation from the beginning
@@ -627,7 +634,8 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                     rows: t.rows, 
                     attached_metadata: t.attachedMetadata 
                 }}),
-            new_fields: mode == 'formulate' ? activeFields.map(f => { return {name: f.name} }) : [],
+            chart_type: chartType,
+            chart_encodings: mode == 'formulate' ? activeSimpleEncodings : {},
             extra_prompt: instruction,
             model: activeModel,
             max_repair_attempts: config.maxRepairAttempts,
@@ -660,7 +668,8 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                             rows: t.rows, 
                             attached_metadata: t.attachedMetadata 
                         }}),
-                    new_fields: mode == 'formulate' ? activeFields.map(f => { return {name: f.name} }) : [],
+                    chart_type: chartType,
+                    chart_encodings: mode == 'formulate' ? activeSimpleEncodings : {},
                     extra_prompt: instruction,
                     model: activeModel,
                     additional_messages: additionalMessages,
@@ -679,7 +688,8 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                             rows: t.rows, 
                             attached_metadata: t.attachedMetadata 
                         }}),
-                    output_fields: mode == 'formulate' ? activeFields.map(f => { return {name: f.name} }) : [],
+                    chart_type: chartType,
+                    chart_encodings: mode == 'formulate' ? activeSimpleEncodings : {},
                     dialog: currentTable.derive?.dialog,
                     latest_data_sample: currentTable.rows.slice(0, 10),
                     new_instruction: instruction,
@@ -842,8 +852,6 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                             }
                             
                             if (needToCreateNewChart) {
-                                
-
                                 let newChart : Chart; 
                                 if (mode == "ideate" || chart.chartType == "Auto") {
                                     let chartTypeMap : any = {
@@ -869,7 +877,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                                 
                                 // there is no need to resolve fields for table chart, just display all fields
                                 if (chart.chartType != "Table") {   
-                                    newChart = resolveChartFields(newChart, currentConcepts, refinedGoal['visualization_fields'], candidateTable);
+                                    newChart = resolveChartFields(newChart, currentConcepts, refinedGoal['chart_encodings'], candidateTable);
                                 }
 
                                 dispatch(dfActions.addAndFocusChart(newChart));
@@ -912,6 +920,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                         "detail": "Request exceeded timeout limit"
                     }));
                 } else {
+                    console.error(error);
                     dispatch(dfActions.addMessages({
                         "timestamp": Date.now(),
                         "component": "chart builder",
@@ -937,6 +946,14 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
             }}
             onChange={(event: any) => {
                 setPrompt(event.target.value);
+            }}
+            onKeyDown={(event: any) => {
+                if (event.key === 'Enter' && !event.shiftKey) {
+                    event.preventDefault();
+                    if (prompt.trim().length > 0) {
+                        deriveNewData(prompt, 'formulate');
+                    }
+                }
             }}
             slotProps={{
                 inputLabel: { shrink: true },
@@ -1251,15 +1268,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
         </Card>
     );
 
-    return (
-        <>
-            {encodingShelfCard}
-            <ResolveChartFieldsTestDialog 
-                open={testDialogOpen}
-                onClose={() => setTestDialogOpen(false)}
-            />
-        </>
-    );
+    return encodingShelfCard;
 }
 
 // Function to convert Vega-Lite spec to PNG data URL with improved resolution

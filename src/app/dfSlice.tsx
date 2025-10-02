@@ -486,17 +486,19 @@ export const dataFormulatorSlice = createSlice({
             let table = state.tables.find(t => t.id == tableId) as DictTable;
 
             let newNames = [];
-            let newTypes = [];
             if (previousName && table.names.indexOf(previousName) != -1) {
                 let replacePosition = table.names.indexOf(previousName);
                 newNames[replacePosition] = columnName;
-                newTypes[replacePosition] = inferTypeFromValueArray(newValues);
             } else {            
                 let insertPosition = lastParentName ? table.names.indexOf(lastParentName) : table.names.length - 1;
                 newNames = table.names.slice(0, insertPosition + 1).concat(columnName).concat(table.names.slice(insertPosition + 1));
-                newTypes = table.types.slice(0, insertPosition + 1).concat(inferTypeFromValueArray(newValues)).concat(table.types.slice(insertPosition + 1));
             }
-            
+
+            let newMetadata = structuredClone(table.metadata);
+            for (let name of newNames) {
+                newMetadata[name] = {type: inferTypeFromValueArray(newValues), semanticType: "", levels: []};
+            }
+
             // Create new rows with the column positioned after the first parent
             let newRows = table.rows.map((row, i) => {
                 let newRow: {[key: string]: any} = {};
@@ -516,7 +518,7 @@ export const dataFormulatorSlice = createSlice({
             });
             
             table.names = newNames;
-            table.types = newTypes;
+            table.metadata = newMetadata;
             table.rows = newRows;
         },
         removeDerivedField: (state, action: PayloadAction<{tableId: string, fieldId: string}>) => {
@@ -528,7 +530,7 @@ export const dataFormulatorSlice = createSlice({
             let fieldIndex = table.names.indexOf(fieldName);  
             if (fieldIndex != -1) {
                 table.names = table.names.slice(0, fieldIndex).concat(table.names.slice(fieldIndex + 1));
-                table.types = table.types.slice(0, fieldIndex).concat(table.types.slice(fieldIndex + 1));
+                delete table.metadata[fieldName];
                 table.rows = table.rows.map(r => {
                     delete r[fieldName];
                     return r;
@@ -618,6 +620,7 @@ export const dataFormulatorSlice = createSlice({
             let prop = action.payload.prop;
             let value = action.payload.value;
             let chart = dfSelectors.getAllCharts(state).find(c => c.id == chartId);
+            let table = state.tables.find(t => t.id == chart?.tableRef) as DictTable;
             
             if (chart) {
                 //TODO: check this, finding reference and directly update??
@@ -627,8 +630,8 @@ export const dataFormulatorSlice = createSlice({
 
                     // automatcially fetch the auto-sort order from the field
                     let field = state.conceptShelfItems.find(f => f.id == value);
-                    if (field?.levels) {
-                        encoding.sortBy = JSON.stringify(field.levels);
+                    if (table && field && table.metadata[field.name] && table.metadata[field.name].levels && table.metadata[field.name].levels.length > 0) {
+                        encoding.sortBy = JSON.stringify(table.metadata[field.name].levels);
                     }
                 } else if (prop == 'aggregate') {
                     encoding.aggregate = value;
@@ -692,7 +695,7 @@ export const dataFormulatorSlice = createSlice({
                     let table = state.tables.find(t => t.id == field.tableRef) as DictTable;
                     let fieldIndex = table.names.indexOf(field.name);
                     table.names = table.names.slice(0, fieldIndex).concat(table.names.slice(fieldIndex + 1));
-                    table.types = table.types.slice(0, fieldIndex).concat(table.types.slice(fieldIndex + 1));
+                    delete table.metadata[field.name];
                     table.rows = table.rows.map(row => {
                         delete row[field.name];
                         return row;
@@ -848,25 +851,20 @@ export const dataFormulatorSlice = createSlice({
         .addCase(fetchFieldSemanticType.fulfilled, (state, action) => {
             let data = action.payload;
             let tableId = action.meta.arg.id;
+            let table = state.tables.find(t => t.id == tableId) as DictTable;
 
             if (data["status"] == "ok" && data["result"].length > 0) {
                 let typeMap = data['result'][0]['fields'];
-                state.conceptShelfItems = state.conceptShelfItems.map(field => {
-                    if (((field.source == "original" && field.tableRef == tableId ) || field.source == "custom") && Object.keys(typeMap).includes(field.name)) {
-                        field.semanticType = typeMap[field.name]['semantic_type'];
-                        field.type = typeMap[field.name]['type'] as Type;
-                        if (typeMap[field.name]['sort_order']) {
-                            field.levels = { "values": typeMap[field.name]['sort_order'], "reason": "natural sort order"}
-                        }
-                        return field;
-                    } else {
-                        return field;
-                    }
-                })
+
+                for (let name of table.names) {
+                    table.metadata[name] = { 
+                        type: typeMap[name]['type'] as Type, 
+                        semanticType: typeMap[name]['semantic_type'], 
+                        levels: typeMap[name]['sort_order'] || undefined
+                    };
+                }
 
                 if (data["result"][0]["suggested_table_name"]) {
-                    let table = state.tables.find(t => t.id == tableId) as DictTable;
-
                     // avoid duplicate display ids
                     let existingDisplayIds = state.tables.filter(t => t.id != tableId).map(t => t.displayId);
                     let suffix = "";
@@ -973,13 +971,16 @@ export const dfSelectors = {
 
 // derived field: extra all field items from the table
 export const getDataFieldItems = (baseTable: DictTable): FieldItem[] => {
-    return baseTable.names.map((name, index) => {
+
+    let dataFieldItems = baseTable.names.map((name, index) => {
         const id = `original--${baseTable.id}--${name}`;
         const columnValues = baseTable.rows.map((r) => r[name]);
-        const type = baseTable.types[index];
+        const type = baseTable.metadata[name].type;
         const uniqueValues = Array.from(new Set(columnValues));
-        return { id, name, type, source: "original", description: "", tableRef: baseTable.id };
+        return { id, name, type, source: "original", description: "", tableRef: baseTable.id } as FieldItem;
     }) || [];
+
+    return dataFieldItems;
 }
 
 // Action creators are generated for each case reducer function

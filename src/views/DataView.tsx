@@ -110,7 +110,7 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView({  $table
                 width, 
                 align: undefined, 
                 format: (value: any) => <Typography fontSize="inherit">{`${value}`}</Typography>, 
-                dataType: targetTable?.types[i] as Type,
+                dataType: targetTable?.metadata[name].type as Type,
                 source: conceptShelfItems.find(f => f.name == name)?.source || "original", 
             };
         }) : [];

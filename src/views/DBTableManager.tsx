@@ -509,7 +509,14 @@ export const DBTableSelectionDialog: React.FC<{
             id: dbTable.name,
             displayId: dbTable.name,
             names: dbTable.columns.map((col: any) => col.name),
-            types: dbTable.columns.map((col: any) => convertSqlTypeToAppType(col.type)),
+            metadata: dbTable.columns.reduce((acc: Record<string, {type: Type, semanticType: string, levels: any[]}>, col: any) => ({
+                ...acc,
+                [col.name]: {
+                    type: convertSqlTypeToAppType(col.type),
+                    semanticType: "",
+                    levels: []
+                }
+            }), {}),
             rows: dbTable.sample_rows,
             virtual: {
                 tableId: dbTable.name,

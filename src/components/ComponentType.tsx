@@ -17,27 +17,22 @@ export type FieldSource =  "original" | "derived" | "custom";
 export interface FieldItem {
     id: string;
     name: string;
-    type: Type;
+
     source: FieldSource;
     tableRef: string; // which table it belongs to, it matters when it's an original field or a derived field
 
     transform?: ConceptTransformation;
     temporary?: true; // the field is temporary, and it will be deleted unless it's saved
-    levels?: {values: any[], reason: string}; // the order in which values in this field would be sorted
-    semanticType?: string; // the semantic type of the object, inferred by the model
 }
 
 export const duplicateField = (field: FieldItem) => {
     let newConcept = {
         id: field.id,
         name: field.name,
-        type: field.type,
         source: field.source,
         transform: field.transform,
         tableRef: field.tableRef,
         temporary: field.temporary,
-        levels: field.levels,
-        semanticType: field.semanticType
     } as FieldItem;
     return newConcept;
 }
@@ -85,8 +80,14 @@ export interface DataCleanBlock {
 export interface DictTable {
     id: string; // name/id of the table
     displayId: string; // display id of the table 
+    
     names: string[]; // column names
-    types: Type[]; // column types
+    metadata: {[key: string]: {
+        type: Type,
+        semanticType: string, 
+        levels: any[]
+    }}; // metadata of the table
+
     rows: any[]; // table content, each entry is a row
     derive?: { // how is this table derived
         source: string[], // which tables are this table computed from
@@ -131,7 +132,14 @@ export function createDictTable(
         displayId: `${id}`,
         names, 
         rows,
-        types: names.map(name => inferTypeFromValueArray(rows.map(r => r[name]))),
+        metadata: names.reduce((acc, name) => ({
+            ...acc,
+            [name]: {
+                type: inferTypeFromValueArray(rows.map(r => r[name])),
+                semanticType: "",
+                levels: []
+            }
+        }), {}),
         derive,
         virtual,
         anchored,
@@ -147,6 +155,7 @@ export type Chart = {
     tableRef: string, 
     saved: boolean,
     source: "user" | "trigger",
+    unread: boolean,
 }
 
 export let duplicateChart = (chart: Chart) : Chart => {
@@ -157,6 +166,7 @@ export let duplicateChart = (chart: Chart) : Chart => {
         tableRef: chart.tableRef,
         saved: false,
         source: chart.source,
+        unread: false,
     }
 }
 

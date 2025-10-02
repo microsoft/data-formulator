@@ -366,7 +366,9 @@ def derive_data():
 
         # each table is a dict with {"name": xxx, "rows": [...]}
         input_tables = content["input_tables"]
-        new_fields = content["new_fields"]
+        chart_type = content.get("chart_type", "")
+        chart_encodings = content.get("chart_encodings", {})
+
         instruction = content["extra_prompt"]
         language = content.get("language", "python") # whether to use sql or python, default to python
         
@@ -384,11 +386,12 @@ def derive_data():
             logger.info(table['rows'][:5])
 
         logger.info("== user spec ===")
-        logger.info(new_fields)
+        logger.info(chart_type)
+        logger.info(chart_encodings)
         logger.info(instruction)
 
         mode = "transform"
-        if len(new_fields) == 0:
+        if chart_encodings == {}:
             mode = "recommendation"
 
         conn = db_manager.get_connection(session['session_id']) if language == "sql" else None
@@ -396,10 +399,10 @@ def derive_data():
         if mode == "recommendation":
             # now it's in recommendation mode
             agent = SQLDataRecAgent(client=client, conn=conn, agent_coding_rules=agent_coding_rules) if language == "sql" else PythonDataRecAgent(client=client, exec_python_in_subprocess=current_app.config['CLI_ARGS']['exec_python_in_subprocess'], agent_coding_rules=agent_coding_rules)
-            results = agent.run(input_tables, instruction, prev_messages=prev_messages)
+            results = agent.run(input_tables, instruction, n=1, prev_messages=prev_messages)
         else:
             agent = SQLDataTransformationAgent(client=client, conn=conn, agent_coding_rules=agent_coding_rules) if language == "sql" else PythonDataTransformationAgent(client=client, exec_python_in_subprocess=current_app.config['CLI_ARGS']['exec_python_in_subprocess'], agent_coding_rules=agent_coding_rules)
-            results = agent.run(input_tables, instruction, [field['name'] for field in new_fields], prev_messages)
+            results = agent.run(input_tables, instruction, chart_type, chart_encodings, prev_messages)
 
         repair_attempts = 0
         while results[0]['status'] == 'error' and repair_attempts < max_repair_attempts: # try up to n times
@@ -409,9 +412,9 @@ def derive_data():
             prev_dialog = results[0]['dialog']
 
             if mode == "transform":
-                results = agent.followup(input_tables, prev_dialog, [], [field['name'] for field in new_fields], new_instruction)
+                results = agent.followup(input_tables, prev_dialog, [], chart_type, chart_encodings, new_instruction, n=1)
             if mode == "recommendation":
-                results = agent.followup(input_tables, prev_dialog, [], new_instruction)
+                results = agent.followup(input_tables, prev_dialog, [], new_instruction, n=1)
 
             repair_attempts += 1
         
@@ -539,7 +542,9 @@ def refine_data():
         input_tables = content["input_tables"]
         dialog = content["dialog"]
 
-        output_fields = content["output_fields"]
+        chart_type = content.get("chart_type", "")
+        chart_encodings = content.get("chart_encodings", {})
+
         new_instruction = content["new_instruction"]
         latest_data_sample = content["latest_data_sample"]
         max_repair_attempts = content.get("max_repair_attempts", 1)
@@ -553,14 +558,15 @@ def refine_data():
             logger.info(table['rows'][:5])
         
         logger.info("== user spec ===>")
-        logger.info(output_fields)
+        logger.info(chart_type)
+        logger.info(chart_encodings)
         logger.info(new_instruction)
 
         conn = db_manager.get_connection(session['session_id']) if language == "sql" else None
 
         # always resort to the data transform agent       
         agent = SQLDataTransformationAgent(client=client, conn=conn, agent_coding_rules=agent_coding_rules) if language == "sql" else PythonDataTransformationAgent(client=client, exec_python_in_subprocess=current_app.config['CLI_ARGS']['exec_python_in_subprocess'], agent_coding_rules=agent_coding_rules)
-        results = agent.followup(input_tables, dialog, latest_data_sample, [field['name'] for field in output_fields], new_instruction)
+        results = agent.followup(input_tables, dialog, latest_data_sample, chart_type, chart_encodings, new_instruction, n=1)
 
         repair_attempts = 0
         while results[0]['status'] == 'error' and repair_attempts < max_repair_attempts: # only try once
@@ -568,7 +574,7 @@ def refine_data():
             new_instruction = f"We run into the following problem executing the code, please fix it:\n\n{error_message}\n\nPlease think step by step, reflect why the error happens and fix the code so that no more errors would occur."
             prev_dialog = results[0]['dialog']
 
-            results = agent.followup(input_tables, prev_dialog, [], [field['name'] for field in output_fields], new_instruction)
+            results = agent.followup(input_tables, prev_dialog, [], chart_type, chart_encodings, new_instruction, n=1)
             repair_attempts += 1
 
         if conn:
@@ -637,8 +643,6 @@ def get_recommendation_questions():
 
             client = get_client(content['model'])
 
-            logger.info(f" model: {content['model']}")
-            
             agent_exploration_rules = content.get("agent_exploration_rules", "")
             agent = InteractiveExploreAgent(client=client, agent_exploration_rules=agent_exploration_rules)
 

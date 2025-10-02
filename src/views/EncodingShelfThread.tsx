@@ -26,6 +26,7 @@ import _ from 'lodash';
 
 import '../scss/EncodingShelf.scss';
 import { DictTable } from "../components/ComponentType";
+import { Type } from '../data/types';
 import embed from 'vega-embed';
 
 import { getTriggers, assembleVegaChart } from '../app/utils';
@@ -52,7 +53,11 @@ export interface EncodingShelfThreadProps {
     chartId: string,
 }
 
-export let ChartElementFC: FC<{chart: Chart, tableRows: any[], boxWidth?: number, boxHeight?: number}> = function({chart, tableRows, boxWidth, boxHeight}) {
+export let ChartElementFC: FC<{
+    chart: Chart, 
+    tableRows: any[], 
+    tableMetadata: {[key: string]: {type: Type, semanticType: string, levels: any[]}}, 
+    boxWidth?: number, boxHeight?: number}> = function({chart, tableRows, tableMetadata, boxWidth, boxHeight}) {
 
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
 
@@ -80,7 +85,7 @@ export let ChartElementFC: FC<{chart: Chart, tableRows: any[], boxWidth?: number
     // }
 
     // prepare the chart to be rendered
-    let assembledChart = assembleVegaChart(chart.chartType, chart.encodingMap, conceptShelfItems, tableRows);
+    let assembledChart = assembleVegaChart(chart.chartType, chart.encodingMap, conceptShelfItems, tableRows, tableMetadata, 20);
     assembledChart["background"] = "transparent";
     // chart["autosize"] = {
     //     "type": "fit",
@@ -267,7 +272,7 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
                                 dispatch(dfActions.setFocusedTable(c.tableRef));
                             }}
                 sx={{padding: '2px 0 2px 0', display: 'flex', alignItems: "left", width: 'fit-content', "& canvas": {'margin': 1}}}>
-                <ChartElementFC chart={c} tableRows={resultTable.rows.slice(0, 100)} boxWidth={200} boxHeight={160}/>
+                <ChartElementFC chart={c} tableRows={resultTable.rows.slice(0, 100)} tableMetadata={resultTable.metadata} boxWidth={200} boxHeight={160}/>
             </Card>
         })
 

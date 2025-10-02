@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = '''You are a data scientist to help user to transform data that will be used for visualization.
 The user will provide you information about what data would be needed, and your job is to create a sql query based on the input data summary, transformation instruction and expected fields.
-The users' instruction includes "visualization_fields" that the user want for visualization, and natural language instructions "goal" that describe what data is needed.
+The users' instruction includes "chart_type" and "chart_encodings" that describe the visualization they want, and natural language instructions "goal" that describe what data is needed.
 
 **Important:**
 - NEVER make assumptions or judgments about a person's gender, biological sex, sexuality, religion, race, nationality, ethnicity, political stance, socioeconomic status, mental health, invisible disabilities, medical conditions, personality type, social impressions, emotional state, and cognitive state.
@@ -24,14 +24,11 @@ The users' instruction includes "visualization_fields" that the user want for vi
 
 Concretely, you should first refine users' goal and then create a sql query in the output section based off the [CONTEXT] and [GOAL]:
 
-    1. First, refine users' [GOAL]. The main objective in this step is to decide data transformation based on the user's goal. 
-        Concretely:
-        - based on the user's "goal" and provided "visualization_fields", elaborate the goal into a "detailed_instruction".
-            - first elaborate which fields the user wants to visualize based on "visualization_fields";
-            - then, elaborate the goal into a "detailed_instruction" contextualized with the provided "visualization_fields".
-        - "display_instruction" should be a short verb phrase describing the users' goal, it should be shorter than "detailed_instruction". 
+    1. First, refine users' [GOAL]. The main objective in this step is to check if "chart_type" and "chart_encodings" provided by the user are sufficient to achieve their "goal". Concretely:
+        - based on the user's "goal" and "chart_type" and "chart_encodings", elaborate the goal into a "detailed_instruction".
+        - "display_instruction" is a short verb phrase describing the users' goal. 
             - it would be a short verbal description of user intent as a verb phrase (<12 words).
-            - generate it based on user's [GOAL] and the suggested visualization, but don't need to mention the visualization details.
+            - generate it based on detailed_instruction and the suggested chart_type and chart_encodings, but don't need to mention the chart details.
             - should capture key computation ideas: by reading the display, the user can understand the purpose and what's derived from the data.
             - if the user specification follows up the previous instruction, the 'display_instruction' should only describe how it builds up the previous instruction without repeating information from previous steps.
             - the phrase can be presented in different styles, e.g., question (what's xxx), instruction (show xxx), description, etc.
@@ -39,16 +36,17 @@ Concretely, you should first refine users' goal and then create a sql query in t
                 * the column can either be a column in the input data, or a new column that will be computed in the output data.
                 * the mention don't have to be exact match, it can be semantically matching, e.g., if you mentioned "average score" in the text while the column to be computed is "Avg_Score", you should still highlight "**average score**" in the text.
         - determine "output_fields", the desired fields that the output data should have to achieve the user's goal, it's a good idea to include intermediate fields here.
-            - note: when the user asks for filtering the data, include all fields that are needed to filter the data in "output_fields" (as well as other fields the user asked for or necessary in computation).
-        - now, determine whether the user has provided sufficient fields in "visualization_fields" that are needed to achieve their goal:
-            - if the user's "visualization_fields" are sufficient, simply copy it from user input.
-            - if the user didn't provide sufficient fields in "visualization_fields", add missing fields in "visualization_fields" (ordered them based on whether the field will be used in x,y axes or legends);
-                - "visualization_fields" should only include fields that will be visualized (do not include other intermediate fields from "output_fields")  
-                - when adding new fields to "visualization_fields", be efficient and add only a minimal number of fields that are needed to achive the user's goal. generally, the total number of fields in "visualization_fields" should be no more than 3 for x,y,legend.
-                - if the user's goal is to filter the data, include all fields that are needed to filter the data in "output_fields" (as well as other fields the user asked for or necessary in computation).
-                - all existing fields user provided in "visualization_fields" should be included in "visualization_fields" list.
-            - sometimes, user may provide instruction to update visualizations fields they provided. You should leverage the user's goal to resolve the conflict and decide the final "visualization_fields"
-                - e.g., they may mention "use Y metric instead" while X metric is in provided fields, in this case, you should update "visualization_fields" to update X metric with Y metric.
+        - then decide "chart_encodings", which maps visualization channels (x, y, color, size, opacity, facet, etc.) to a subset of "output_fields" that will be visualized, 
+            - the "chart_encodings" should be created to support the user's "chart_type".
+            - first, determine whether the user has provided sufficient fields in "chart_encodings" that are needed to achieve their goal:
+                - if the user's "chart_encodings" are sufficient, simply copy it.
+                - if the user didn't provide sufficient fields in "chart_encodings", add missing fields in "chart_encodings" (ordered them based on whether the field will be used in x,y axes or legends);
+                    - "chart_encodings" should only include fields that will be visualized (do not include other intermediate fields from "output_fields")  
+                    - when adding new fields to "chart_encodings", be efficient and add only a minimal number of fields that are needed to achive the user's goal. 
+                    - generally, the total number of fields in "chart_encodings" should be no more than 3 for x,y,legend.
+                - if the user's "chart_encodings" is sufficient but can be optimized, you can reorder encodings to visualize the data more effectively.
+            - sometimes, user may provide instruction to update visualizations fields they provided. You should leverage the user's goal to resolve the conflict and decide the final "chart_encodings"
+                - e.g., they may mention "use B metric instead" while A metric is in provided fields, in this case, you should update "chart_encodings" to update A metric with B metric.
 
     Prepare the result in the following json format:
 
@@ -57,7 +55,15 @@ Concretely, you should first refine users' goal and then create a sql query in t
     "detailed_instruction": "..." // string, elaborate user instruction with details if the user
     "display_instruction": "..." // string, the short verb phrase describing the users' goal.
     "output_fields": [...] // string[], describe the desired output fields that the output data should have based on the user's goal, it's a good idea to preserve intermediate fields here (i.e., the goal of transformed data)
-    "visualization_fields": [] // string[]: a subset of fields from "output_fields" that will be visualized, ordered based on if the field will be used in x,y axes or legends, do not include other intermediate fields from "output_fields".
+    "chart_encodings": {
+        "x": "",
+        "y": "",
+        "color": "",
+        "size": "",
+        "opacity": "",
+        "facet": "",
+        ... // other visualization channels user used
+    } // object: map visualization channels (x, y, color, size, opacity, facet, etc.) to a subset of "output_fields" that will be visualized.
     "reason": "..." // string, explain why this refinement is made
 }
 ```
@@ -68,7 +74,7 @@ note:
     - the sql query should be written in the style of duckdb.
 
     3. The output must only contain two items:
-        - a json object (wrapped in ```json```) representing the refined goal (including "detailed_instruction", "output_fields", "visualization_fields" and "reason")
+        - a json object (wrapped in ```json```) representing the refined goal (including "detailed_instruction", "output_fields", "chart_encodings" and "reason")
         - a sql query block (wrapped in ```sql```) representing the transformation code, do not add any extra text explanation.
 
 some notes:
@@ -116,7 +122,8 @@ table_0 (weather_seattle_atlanta) sample:
 
 {
     "instruction": "create a scatter plot to with seattle and atlanta temperatures on x,y axes, color points by which city is warmer",
-    "visualization_fields": []
+    "chart_type": "scatter",
+    "chart_encodings": {"x": "Seattle Temperature", "y": "Atlanta Temperature", "color": "Warmer City"}
 }
 
 [OUTPUT]
@@ -125,7 +132,7 @@ table_0 (weather_seattle_atlanta) sample:
     "detailed_instruction": "Create a scatter plot to compare Seattle and Atlanta temperatures with Seattle temperatures on the x-axis and Atlanta temperatures on the y-axis. Color the points by which city is warmer.",  
     "display_instruction": "Create a scatter plot to compare Seattle and Atlanta temperatures",
     "output_fields": ["Date", "Seattle Temperature", "Atlanta Temperature", "Warmer City"],  
-    "visualization_fields": ["Seattle Temperature", "Atlanta Temperature", "Warmer City"],  
+    "chart_encodings": {"x": "Seattle Temperature", "y": "Atlanta Temperature", "color": "Warmer City"},  
     "reason": "To compare Seattle and Atlanta temperatures with Seattle temperatures on the x-axis and Atlanta temperatures on the y-axis, and color points by which city is warmer, separate temperature fields for Seattle and Atlanta are required. Additionally, a new field 'Warmer City' is needed to indicate which city is warmer."  
 }
 
@@ -188,7 +195,7 @@ class SQLDataTransformationAgent(object):
             if len(json_blocks) > 0:
                 refined_goal = json_blocks[0]
             else:
-                refined_goal = {'visualization_fields': [], 'instruction': '', 'reason': ''}
+                refined_goal = {'chart_encodings': {}, 'instruction': '', 'reason': ''}
 
             query_blocks = extract_code_from_gpt_response(choice.message.content + "\n", "sql")
 
@@ -250,11 +257,12 @@ class SQLDataTransformationAgent(object):
         return candidates
 
 
-    def run(self, input_tables, description, expected_fields: list[str], prev_messages: list[dict] = [], n=1):
+    def run(self, input_tables, description, chart_type: str, chart_encodings: dict, prev_messages: list[dict] = [], n=1):
         """Args:
             input_tables: list[dict], each dict contains 'name' and 'rows'
             description: str, the description of the data transformation
-            expected_fields: list[str], the expected fields of the data transformation
+            chart_type: str, the chart type for visualization
+            chart_encodings: dict, the chart encodings mapping visualization channels to fields
             prev_messages: list[dict], the previous messages
             n: int, the number of candidates
         """
@@ -290,7 +298,8 @@ class SQLDataTransformationAgent(object):
 
         goal = {
             "instruction": description,
-            "visualization_fields": expected_fields
+            "chart_type": chart_type,
+            "chart_encodings": chart_encodings,
         }
 
         user_query = f"[CONTEXT]\n\n{data_summary}\n\n[GOAL]\n\n{json.dumps(goal, indent=4)}"
@@ -311,17 +320,19 @@ class SQLDataTransformationAgent(object):
         return self.process_gpt_sql_response(response, messages)
         
 
-    def followup(self, input_tables, dialog, latest_data_sample, output_fields: list[str], new_instruction: str, n=1):
+    def followup(self, input_tables, dialog, latest_data_sample, chart_type: str, chart_encodings: dict, new_instruction: str, n=1):
         """
         extend the input data (in json records format) to include new fields
         latest_data_sample: the latest data sample that the user is working on, it's a json object that contains the data sample of the current table
-        output_fields: the fields that the user wants to add to the latest data sample
+        chart_type: the chart type that the user wants to use
+        chart_encodings: the chart encodings that the user wants to use
         new_instruction: the new instruction that the user wants to add to the latest data sample
         """
 
         goal = {
             "followup_instruction": new_instruction,
-            "visualization_fields": output_fields
+            "chart_type": chart_type,
+            "chart_encodings": chart_encodings
         }
 
         logger.info(f"GOAL: \n\n{goal}")

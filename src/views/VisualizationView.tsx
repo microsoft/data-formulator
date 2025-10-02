@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-import React, { FC, useEffect, useRef, useState } from 'react';
+import React, { FC, useEffect, useMemo, useRef, useState } from 'react';
 
 import {
     Box,
@@ -60,6 +60,8 @@ import FilterAltIcon from '@mui/icons-material/FilterAlt';
 import CheckIcon from '@mui/icons-material/Check';
 import CloudQueueIcon from '@mui/icons-material/CloudQueue';
 import InfoIcon from '@mui/icons-material/Info';
+import CasinoIcon from '@mui/icons-material/Casino';
+
 import { CHART_TEMPLATES, getChartTemplate } from '../components/ChartTemplates';
 
 import Prism from 'prismjs'
@@ -411,24 +413,28 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
         if (visFields.length == 0) {
             return rows;
         }
+        
         let filteredRows = rows.map(row => Object.fromEntries(visFields.filter(f => table.names.includes(f.name)).map(f => [f.name, row[f.name]])));
         let visTable = prepVisTable(filteredRows, conceptShelfItems, focusedChart.encodingMap);
 
-        if (visTable.length > 5000) {
-            let rowSample = _.sampleSize(visTable, 5000);
+        if (visTable.length > 1000) {
+            let rowSample = _.sampleSize(visTable, 1000);
             visTable = structuredClone(rowSample);
         }
+
+        visTable = structuredClone(visTable);
 
         return visTable;
     }
 
-    let initialVisTableRows = createVisTableRowsLocal(structuredClone(table.rows));
-    const [visTableRows, setVisTableRows] = useState<any[]>(initialVisTableRows);
+    const processedData = createVisTableRowsLocal(table.rows);
+
+    const [visTableRows, setVisTableRows] = useState<any[]>(processedData);
     const [visTableTotalRowCount, setVisTableTotalRowCount] = useState<number>(table.virtual?.rowCount || table.rows.length);
 
     async function fetchDisplayRows(sampleSize?: number) {
         if (sampleSize == undefined) {
-            sampleSize = 5000;
+            sampleSize = 1000;
         }
         if (table.virtual) {
             let { aggregateFields, groupByFields } = extractFieldsFromEncodingMap(focusedChart.encodingMap, conceptShelfItems);
@@ -479,7 +485,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                 // virtual table, we need to sample the table
                 fetchDisplayRows();
             } else {
-                setVisTableRows(createVisTableRowsLocal(structuredClone(table.rows)));
+                setVisTableRows(processedData);
             }
         } 
     }, [focusedChart])
@@ -491,10 +497,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
     let chartUnavailable = true;
     let resultTable = tables.find(t => t.id == trigger?.resultTableId);
 
-    let codeExpl = table.derive?.explanation?.code || "code explanation is currently unavailable"
-    // if (table.derive?.explanation?.concepts && table.derive?.explanation?.concepts.length > 0) {
-    //     codeExpl += "\n\n" + table.derive?.explanation?.concepts.map(c => `${c.field}: ${c.explanation}`).join("\n") || "";
-    // }
+    let codeExpl = table.derive?.explanation?.code || ""
 
     let createChartElement = (chart: Chart, id: string) => {
         let chartTemplate = getChartTemplate(chart.chartType);
@@ -519,7 +522,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
 
         element = <Box id={id} key={`focused-chart`} ></Box>    
 
-        let assembledChart = assembleVegaChart(chart.chartType, chart.encodingMap, conceptShelfItems, visTableRows, Math.min(config.defaultChartWidth * 2 / 20, 48), true);
+        let assembledChart = assembleVegaChart(chart.chartType, chart.encodingMap, conceptShelfItems, visTableRows, table.metadata, Math.min(config.defaultChartWidth * 2 / 20, 48), true);
         
         // Check if chart uses facet, column, or row encodings
         const hasFaceting = assembledChart && (
@@ -732,7 +735,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                     <TerminalIcon sx={{ fontSize: '14px', mr: 0.5 }} />
                     code
                 </Button>
-                <Button 
+                {codeExpl != "" && <Button 
                     key="explanation-btn"
                     onClick={() => {
                         if (codeExplViewOpen) {
@@ -756,7 +759,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                 >
                     <TextSnippetIcon sx={{ fontSize: '14px', mr: 0.5 }} />
                     explain
-                </Button>
+                </Button>}
                 {hasConcepts && (
                     <Button 
                         key="concepts-btn"
@@ -826,9 +829,8 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
             </Box>
         </Box> :
         <>
-            {table.virtual || table.rows.length > 10000 ? (
+            {table.virtual || table.rows.length > 1000 ? (
                 <Box sx={{ display: 'flex', flexDirection: "row", margin: "auto", justifyContent: 'center', alignItems: 'center'}}>
-                    
                     <Typography component="span" fontSize="small" color="text.secondary" sx={{textAlign:'center'}}>
                         visualizing
                     </Typography>
@@ -842,6 +844,15 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                     <Typography component="span" fontSize="small" color="text.secondary" sx={{textAlign:'center'}}>
                         sample rows
                     </Typography>
+                    <Tooltip title="sample again!">
+                        <IconButton size="small" color="primary" onClick={() => {
+                            fetchDisplayRows(visTableRows.length);
+                            setFocusUpdated(true);
+                        }}>
+                            <CasinoIcon sx={{ fontSize: '14px', 
+                                transition: 'transform 0.5s ease-in-out', '&:hover': { transform: 'rotate(180deg)' } }}/>
+                        </IconButton>
+                    </Tooltip>
                 </Box>
             ) : ""}
             <Box key='chart=action-buttons' sx={{ display: 'flex', flexDirection: "row", margin: "auto", paddingTop: 1 }}>

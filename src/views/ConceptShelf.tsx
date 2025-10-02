@@ -146,49 +146,37 @@ export const ConceptGroup: FC<{groupName: string, fields: FieldItem[]}> = functi
         </Box>
 
         {/* Collapsible section for additional fields */}
-        {hasMoreFields && (
-            <>
-                <Collapse in={expanded} timeout={300}>
-                    <Box sx={{ width: '100%' }}>
-                        {fields.slice(6).map((field) => (
-                            <ConceptCard key={`concept-card-${field.id}`} field={field} />
-                        ))}
-                    </Box>
-                </Collapse>
-                
-                {!expanded && (
-                    <Button
-                        onClick={() => setExpanded(true)}
-                        sx={{
-                            fontSize: "10px",
-                            color: "text.secondary",
-                            pl: 2,
-                            py: 0.5,
-                            textTransform: 'none',
-                            position: 'relative',
-                            textWrap: 'nowrap',
-                            width: '100%',
-                            justifyContent: 'flex-start',
-                            '&:hover': {
-                                background: 'transparent',
-                                textDecoration: 'underline'
-                            },
-                            '&::before': {
-                                content: '""',
-                                position: 'absolute',
-                                top: '-20px',
-                                left: 0,
-                                right: 0,
-                                height: '20px',
-                                background: 'linear-gradient(to bottom, transparent, white)',
-                                pointerEvents: 'none'
-                            }
-                        }}
-                    >
-                        {`... show all ${fields.length} ${groupName} fields ▾`}
-                    </Button>
-                )}
-            </>
+        {hasMoreFields && !expanded && (
+            <Button
+                onClick={() => setExpanded(true)}
+                sx={{
+                    fontSize: "10px",
+                    color: "text.secondary",
+                    pl: 2,
+                    py: 0.5,
+                    textTransform: 'none',
+                    position: 'relative',
+                    textWrap: 'nowrap',
+                    width: '100%',
+                    justifyContent: 'flex-start',
+                    '&:hover': {
+                        background: 'transparent',
+                        textDecoration: 'underline'
+                    },
+                    '&::before': {
+                        content: '""',
+                        position: 'absolute',
+                        top: '-20px',
+                        left: 0,
+                        right: 0,
+                        height: '20px',
+                        background: 'linear-gradient(to bottom, transparent, white)',
+                        pointerEvents: 'none'
+                    }
+                }}
+            >
+                {`... show all ${fields.length} ${groupName} fields ▾`}
+            </Button>
         )}
     </Box>;
 }

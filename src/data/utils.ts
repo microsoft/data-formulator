@@ -121,7 +121,14 @@ export const createTableFromFromObjectArray = (title: string, values: any[], anc
         id: title,
         displayId: `${title}`,
         names: columnTable.names(),
-        types: columnTable.names().map(name => (columnTable.column(name) as Column).type),
+        metadata: columnTable.names().reduce((acc, name) => ({
+            ...acc,
+            [name]: {
+                type: (columnTable.column(name) as Column).type,
+                semanticType: "",
+                levels: []
+            }
+        }), {}),
         rows: columnTable.objects(),
         derive: derive,
         anchored: anchored,

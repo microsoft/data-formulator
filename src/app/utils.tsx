@@ -7,7 +7,7 @@ import ts from "typescript";
 import { ChannelGroups, getChartChannels, getChartTemplate } from "../components/ChartTemplates";
 import { Channel, Chart, ChartTemplate, ConceptTransformation, EncodingItem, EncodingMap, FieldItem, Trigger } from "../components/ComponentType";
 import { DictTable } from "../components/ComponentType";
-import { getDType } from "../data/types";
+import { getDType, Type } from "../data/types";
 import * as d3 from 'd3';
 
 export function getUrls() {
@@ -194,6 +194,7 @@ export const assembleVegaChart = (
     encodingMap: { [key in Channel]: EncodingItem; }, 
     conceptShelfItems: FieldItem[], 
     workingTable: any[],
+    tableMetadata: {[key: string]: {type: Type, semanticType: string, levels: any[]}},
     maxNominalValues: number = 68,
     aggrPreprocessed: boolean = false // whether the data has been preprocessed for aggregation and binning
 ) => {
@@ -225,16 +226,24 @@ export const assembleVegaChart = (
         if (field) {
             // create the encoding
             encodingObj["field"] = field.name;
-            encodingObj["type"] = getDType(field.type, workingTable.map(r => r[field.name]));
-            if (field.semanticType == "Date" || field.semanticType == "DateTime" || field.semanticType == "YearMonth" || field.semanticType == "Year" || field.semanticType == "Decade") {
-                if (['color', 'size', 'column', 'row'].includes(channel)) {
-                    encodingObj["type"] = "nominal";
-                } else if (field.type == "string" && (field.semanticType == "Decade" || field.semanticType == "Year")) {
-                    encodingObj["type"] = "nominal";
-                } else {
-                    encodingObj["type"] = "temporal";
+            let fieldMetadata = tableMetadata[field.name];
+
+            if (fieldMetadata != undefined) {
+                encodingObj["type"] = getDType(fieldMetadata.type, workingTable.map(r => r[field.name]));
+                if (fieldMetadata.semanticType == "Date" || fieldMetadata.semanticType == "DateTime" || fieldMetadata.semanticType == "YearMonth" || fieldMetadata.semanticType == "Year" || fieldMetadata.semanticType == "Decade") {
+                    if (['color', 'size', 'column', 'row'].includes(channel)) {
+                        encodingObj["type"] = "nominal";
+                    } else if (fieldMetadata.type == "string" && (fieldMetadata.semanticType == "Decade" || fieldMetadata.semanticType == "Year")) {
+                        encodingObj["type"] = "nominal";
+                    } else {
+                        encodingObj["type"] = "temporal";
+                    }
                 }
+            } else {
+                encodingObj["type"] = 'nominal';
             }
+
+            
             if (encoding.dtype) {
                 encodingObj["type"] = encoding.dtype;
             }
@@ -278,6 +287,7 @@ export const assembleVegaChart = (
         }
 
         if (encoding.sortBy || encoding.sortOrder) {
+
             let sortOrder = encoding.sortOrder || "ascending";
 
             if (encoding.sortBy == undefined || encoding.sortBy == "default") {
@@ -286,24 +296,27 @@ export const assembleVegaChart = (
                 encodingObj["sort"] = `${sortOrder == "ascending" ? "" : "-"}${encoding.sortBy}`;
             } else {
                 try {
-                    let sortedValues = JSON.parse(encoding.sortBy)['values'];
+                    if (field) {
+                        let fieldMetadata = tableMetadata[field.name];
+                        let sortedValues = JSON.parse(encoding.sortBy);
 
-                    // this is to coordinate with the type conversion of temporal fields
-                    if (field?.type == "date" || field?.semanticType == "Year" || field?.semanticType == "Decade") {
-                        sortedValues = sortedValues.map((v: any) => v.toString());
-                    }
+                        // this is to coordinate with the type conversion of temporal fields
+                        if (fieldMetadata.type == "date" || fieldMetadata.semanticType == "Year" || fieldMetadata.semanticType == "Decade") {
+                            sortedValues = sortedValues.map((v: any) => v.toString());
+                        }
 
-                    encodingObj['sort'] = sortOrder == "ascending" ? sortedValues : sortedValues.reverse();
+                        encodingObj['sort'] = sortOrder == "ascending" ? sortedValues : sortedValues.reverse();
 
-                    // special hack: ensure stack bar and stacked area charts are ordered correctly
-                    if (channel == 'color' && (vgObj['mark'] == 'bar' || vgObj['mark'] == 'area')) {
-                        // this is a very interesting hack, it leverages the hidden derived field name used in compiled Vega script to 
-                        // handle order of stack bar and stacked area charts
-                        vgObj['encoding']['order'] = {
-                            "field": `color_${field?.name}_sort_index`,
+                        // special hack: ensure stack bar and stacked area charts are ordered correctly
+                        if (channel == 'color' && (vgObj['mark'] == 'bar' || vgObj['mark'] == 'area')) {
+                            // this is a very interesting hack, it leverages the hidden derived field name used in compiled Vega script to 
+                            // handle order of stack bar and stacked area charts
+                            vgObj['encoding']['order'] = {
+                                "field": `color_${field?.name}_sort_index`,
+                            }
                         }
                     }
-                } catch {
+                } catch (err) {
                     console.warn(`sort error > ${encoding.sortBy}`)
                 }
             }
@@ -415,15 +428,19 @@ export const assembleVegaChart = (
 
     // this is the data that will be assembled into the vega chart
     let values = structuredClone(workingTable);
-    values = values.map((r: any) => { 
-        let keys = Object.keys(r);
-        let temporalKeys = keys.filter((k: string) => conceptShelfItems.some(concept => concept.name == k 
-            && (concept.type == "date" || concept.semanticType == "Year" || concept.semanticType == "Decade")));
-        for (let temporalKey of temporalKeys) {
-            r[temporalKey] = String(r[temporalKey]);
+    if (values.length > 0) {
+        let keys = Object.keys(values[0]);
+        let temporalKeys = keys.filter((k: string) => 
+            tableMetadata[k] && (tableMetadata[k].type == "date" || tableMetadata[k].semanticType == "Year" || tableMetadata[k].semanticType == "Decade"));
+        if (temporalKeys.length > 0) {
+            values = values.map((r: any) => { 
+                for (let temporalKey of temporalKeys) {
+                    r[temporalKey] = String(r[temporalKey]);
+                }
+                return r;
+            })
         }
-        return r;
-    })
+    }
 
     // Handle nominal axes with many entries
     for (const channel of ['x', 'y', 'column', 'row', 'xOffset']) {
@@ -431,7 +448,10 @@ export const assembleVegaChart = (
         if (encoding?.type === 'nominal') {
             const fieldName = encoding.field;
             const uniqueValues = [...new Set(values.map((r: any) => r[fieldName]))];
-            const fieldOriginalType = getDType(conceptShelfItems.find(f => f.name == fieldName)?.type, workingTable.map(r => r[fieldName]));
+
+            let fieldMetadata = tableMetadata[fieldName];
+            
+            const fieldOriginalType = fieldMetadata ? getDType(fieldMetadata.type, workingTable.map(r => r[fieldName])) : 'nominal';
             
             let valuesToKeep: any[];
             if (uniqueValues.length > maxNominalValues) {
@@ -564,7 +584,7 @@ const analyzeField = (field: FieldItem, table: DictTable): FieldAnalysis => {
         return {
             field,
             fieldType: 'nominal',
-            semanticType: field.semanticType || 'None',
+            semanticType: table.metadata[fieldName].semanticType || 'None',
             cardinality: 0,
             isLowCardinality: false,
             isVeryLowCardinality: false,
@@ -574,7 +594,7 @@ const analyzeField = (field: FieldItem, table: DictTable): FieldAnalysis => {
 
     const values = table.rows.map(row => row[fieldName]);
     const cardinality = new Set(values.filter(v => v != null)).size;
-    const fieldType = getDType(field.type, values);
+    const fieldType = getDType(table.metadata[fieldName].type, values);
     const mightBeTemporal = 
         field.name.toLowerCase().endsWith("year") 
         || field.name.toLowerCase().endsWith("decade") 
@@ -585,7 +605,7 @@ const analyzeField = (field: FieldItem, table: DictTable): FieldAnalysis => {
     return {
         field,
         fieldType,
-        semanticType: field.semanticType || 'None',
+        semanticType: table.metadata[fieldName].semanticType || 'None',
         cardinality,
         isLowCardinality: cardinality <= 20,
         isVeryLowCardinality: cardinality <= 10,
@@ -612,349 +632,11 @@ const isLikelyYear = (values: any[]): boolean => {
     return inYearRange && areIntegers && reasonableRange;
 };
 
-
-export const resolveChartFields = (chart: Chart, allFields: FieldItem[], visFieldNames: string[], table: DictTable) => {
-    // resolve and update chart fields based on refined visualization goal with enhanced encoding strategy
-
-    let visFields = visFieldNames.map(name => allFields.find(c => c.name === name)).filter(f => f != undefined) as FieldItem[];
-    
-    if (visFields.length === 0) {
-        return chart;
+export const resolveChartFields = (chart: Chart, allFields: FieldItem[], chartEncodings: { [key: string]: string }, table: DictTable) => {
+    for (let [key, value] of Object.entries(chartEncodings)) {
+        let field = allFields.find(c => c.name === value);
+        chart.encodingMap[key as Channel] = { fieldID: field?.id };
     }
-    
-    let chartType = chart.chartType;
-    let chartChannels = getChartChannels(chart.chartType);
-
-    // Define chart types that have enhanced encoding strategies (matching Python implementation)
-    const enhancedChartTypes = [
-        'Scatter Plot',
-        'Bar Chart',
-        'Grouped Bar Chart',
-        'Heatmap',
-        'Line Chart',
-        'Custom Area',
-        'Boxplot'
-    ];
-    const hasEnhancedStrategy = enhancedChartTypes.some(type => chartType.includes(type));
-    
-    if (!hasEnhancedStrategy) {
-        return resolveChartFieldsBackup(chart, allFields, visFieldNames, table);
-    }
-    
-    // Enhanced encoding strategy for defined chart types
-    
-    // Analyze field types and properties
-    const fieldAnalyses = visFields.map(field => analyzeField(field, table));
-    
-    // Track used fields and channels
-    const usedFieldIds = new Set<string>();
-    const encodings: { [channel: string]: string } = {};
-    
-    const addEncoding = (channel: string, fieldId: string) => {
-        encodings[channel] = fieldId;
-        usedFieldIds.add(fieldId);
-    };
-    
-    // Get available field analyses (not yet used)
-    const getAvailableFieldAnalyses = () => fieldAnalyses.filter(fa => !usedFieldIds.has(fa.field.id));
-    
-    // Assign primary channels based on chart type
-    const assignPrimaryChannels = () => {
-        if (!chartChannels.includes("x") || !chartChannels.includes("y")) {
-            return;
-        }
-        
-        const availableFields = getAvailableFieldAnalyses();
-        
-        if (chartType == "Bar Chart") {
-            // Bar chart: x = categorical, y = quantitative
-            const preferredXField = availableFields.slice(0, 2).find(fa => 
-                fa.fieldType === "nominal" || fa.fieldType === "ordinal" || (fa.fieldType === "quantitative" && fa.isLowCardinality)
-            );
-            
-            if (preferredXField) {
-                addEncoding("x", preferredXField.field.id);
-            } else if (availableFields.length > 0) {
-                addEncoding("x", availableFields[0].field.id);
-            }
-            
-            const remainingFields = getAvailableFieldAnalyses();
-            const quantitativeField = remainingFields.find(fa => fa.fieldType === "quantitative");
-            
-            if (quantitativeField) {
-                addEncoding("y", quantitativeField.field.id);
-            }
-        }
-        else if (chartType == "Line Chart" || chartType == "Custom Area") {
-            // Line/Area chart: x = temporal/ordinal/quantitative, y = quantitative
-
-            const quantFields = availableFields.filter(fa => fa.fieldType === "quantitative");
-            
-            const preferredXField = availableFields.find(fa => 
-                fa.fieldType === "temporal" || fa.fieldType === "ordinal" 
-                || (quantFields.length >= 2 && fa.fieldType === "quantitative" && fa.isLowCardinality)
-            );
-            
-            if (preferredXField) {
-                addEncoding("x", preferredXField.field.id);
-            } else if (quantFields.length >= 2) {
-                addEncoding("x", availableFields[0].field.id);
-            } else if (availableFields.length > 0) {
-                // need to reserve the quantitative fields for y
-                addEncoding("x", availableFields.filter(fa => fa.fieldType != "quantitative")[0].field.id);
-            }
-            
-            const remainingFields = getAvailableFieldAnalyses();
-            const quantitativeField = remainingFields.find(fa => fa.fieldType === "quantitative");
-            
-            if (quantitativeField) {
-                addEncoding("y", quantitativeField.field.id);
-            }
-        }
-        else if (chartType == "Scatter Plot") {
-            // Point charts: flexible for scatter plots, bubble charts, etc.
-            const quantFields = availableFields.filter(fa => fa.fieldType === "quantitative");
-            const nominalFields = availableFields.filter(fa => 
-                fa.fieldType === "nominal" || fa.fieldType === "ordinal"
-            );
-            
-            if (quantFields.length >= 2) {
-                // Traditional scatter plot with two quantitative axes
-                addEncoding("x", quantFields[0].field.id);
-                addEncoding("y", quantFields[1].field.id);
-            } else if (nominalFields.length >= 1 && quantFields.length >= 1) {
-                // Prefer 1: Bubble chart - two low cardinality nominal fields on x,y
-                if (nominalFields.length >= 2 
-                    && nominalFields[0].cardinality <= 20
-                    && nominalFields[1].cardinality <= 20
-                    && nominalFields[0].cardinality * nominalFields[1].cardinality >= 0.9 * table.rows.length) {
-                    addEncoding("x", nominalFields[0].field.id);
-                    addEncoding("y", nominalFields[1].field.id);
-                } else {
-                    // Prefer 2: use the default order
-                    addEncoding("x", availableFields[0].field.id);
-                    addEncoding("y", availableFields[1].field.id);
-                }
-
-            } else if (availableFields.length >= 2) {
-                // Otherwise: just choose first two fields
-                addEncoding("x", availableFields[0].field.id);
-                addEncoding("y", availableFields[1].field.id);
-            } else if (availableFields.length === 1) {
-                // Single field - use for y-axis
-                addEncoding("y", availableFields[0].field.id);
-            }
-        }
-        else if (chartType == "Heatmap") {
-            // Heatmap: x = categorical, y = categorical, color = quantitative
-            const categoricalFields = availableFields.filter(fa => 
-                fa.fieldType === "nominal" || fa.fieldType === "ordinal"
-            );
-            
-            if (categoricalFields.length >= 2) {
-                addEncoding("x", categoricalFields[0].field.id);
-                addEncoding("y", categoricalFields[1].field.id);
-            } else if (categoricalFields.length >= 1) {
-                addEncoding("x", categoricalFields[0].field.id);
-                
-                // Reserve only the highest cardinality quantitative field for color, choose first remaining
-                const quantitativeFields = getAvailableFieldAnalyses().filter(fa => fa.fieldType === "quantitative");
-                const highestCardQuantField = quantitativeFields.length > 0 ? 
-                    quantitativeFields.reduce((max, current) => 
-                        current.cardinality > max.cardinality ? current : max
-                    ) : null;
-                
-                const remainingFields = getAvailableFieldAnalyses().filter(fa => 
-                    fa.field.id !== categoricalFields[0].field.id &&
-                    !(highestCardQuantField && fa.field.id === highestCardQuantField.field.id)
-                );
-                const otherField = remainingFields[0];
-                if (otherField) {
-                    addEncoding("y", otherField.field.id);
-                }
-            } else if (availableFields.length >= 2) {
-                // Fallback: use any available fields
-                addEncoding("x", availableFields[0].field.id);
-                addEncoding("y", availableFields[1].field.id);
-            }
-        }
-        else if (chartType == "Boxplot") {
-            // Box plot: x = categorical, y = quantitative
-            const categoricalField = availableFields.find(fa => 
-                fa.fieldType === "nominal" || fa.fieldType === "ordinal"
-            );
-            const quantitativeField = availableFields.find(fa => 
-                fa.fieldType === "quantitative"
-            );
-            
-            if (categoricalField) {
-                addEncoding("x", categoricalField.field.id);
-            }
-            
-            if (quantitativeField) {
-                addEncoding("y", quantitativeField.field.id);
-            }
-        }
-        else if (chartType == "Grouped Bar Chart") {
-            // Grouped bar chart: x = categorical, y = quantitative
-
-            let reservedVeryLowCardinalityFields = availableFields.find(fa => fa.cardinality <= 3);
-            let remainingFields = availableFields.filter(fa => fa.field.id !== reservedVeryLowCardinalityFields?.field.id);
-
-            const preferredXField = remainingFields.find(fa => 
-                fa.fieldType === "nominal" || fa.fieldType === "ordinal" 
-                || (fa.fieldType === "quantitative" && fa.isLowCardinality)
-                || (fa.field.name.toLowerCase() == "year" || fa.field.name.toLowerCase() == "decade")
-            );
-            
-            if (preferredXField) {
-                addEncoding("x", preferredXField.field.id);
-            } else if (remainingFields.length >= 1) {
-                addEncoding("x", remainingFields[0].field.id);
-            }
-            
-            const quantitativeField = getAvailableFieldAnalyses().find(fa => 
-                fa.fieldType === "quantitative"
-            );
-            
-            if (quantitativeField) {
-                addEncoding("y", quantitativeField.field.id);
-            }
-        }
-        else {
-            // Default: assign first two available fields
-            const remainingFields = getAvailableFieldAnalyses();
-            if (remainingFields.length >= 1) {
-                addEncoding("x", remainingFields[0].field.id);
-            }
-            if (remainingFields.length >= 2) {
-                addEncoding("y", remainingFields[1].field.id);
-            }
-        }
-    };
-    
-    // Assign aesthetic channels
-    const assignAestheticChannels = () => {
-
-        // Color channel assignment based on chart type
-        if (chartChannels.includes("color")) {
-            const colorFields = getAvailableFieldAnalyses();
-
-            if (chartType === "Heatmap") {
-                // 1. For heatmap: use color for a quantitative field
-                const quantitativeField = colorFields.find(fa => fa.fieldType === "quantitative");
-                if (quantitativeField) {
-                    addEncoding("color", quantitativeField.field.id);
-                }
-            } else if (chartType === "Scatter Plot") {
-                // 2. For scatter plot:
-                const quantitativeFields = colorFields.filter(fa => fa.fieldType === "quantitative");
-                
-                if (quantitativeFields.length >= 1) {
-                    // If there is >=1 quantitative field -- use it for size, and choose any other remaining field for color
-                    // (Size assignment will be handled below, so we pick a non-quantitative field for color)
-                    const nonQuantitativeField = colorFields.find(fa => fa.fieldType !== "quantitative");
-                    if (nonQuantitativeField) {
-                        addEncoding("color", nonQuantitativeField.field.id);
-                    }
-                } else {
-                    // If there is no quantitative field, use any field for color
-                    if (colorFields.length > 0) {
-                        addEncoding("color", colorFields[0].field.id);
-                    }
-                }
-            } else if (chartType == "Grouped Bar Chart") {
-                // 3. For grouped bar chart:
-                let xAnalysis = fieldAnalyses.find(fa => fa.field.id == encodings.x);
-
-                const groupFields = colorFields.filter(fa => (fa.fieldType === "nominal" || fa.fieldType === "ordinal") &&
-                   (fa.cardinality * (xAnalysis?.cardinality || 0) <= 30)
-                );
-                
-                // if we cannot find such field, we will leave it for facet to handle
-                if (groupFields.length >= 1) {
-                    addEncoding("color", groupFields[0].field.id);
-                }
-            } else if (chartType === "Line Chart" || chartType === "Custom Area") {
-                // 3. For line chart and custom area chart:
-                const discreteOrLowCardinalityField = colorFields.filter(
-                    fa => fa.fieldType === "nominal" 
-                    || fa.fieldType === "ordinal" 
-                    || (fa.fieldType === "quantitative" && fa.mightBeTemporal)
-                    || (fa.fieldType === "quantitative" && fa.isVeryLowCardinality));
-                if (discreteOrLowCardinalityField.length >= 1) {
-                    addEncoding("color", discreteOrLowCardinalityField[0].field.id);
-                }
-            } else {
-                // 3. For other chart types: choose the first of leftover fields
-                // Prioritize high cardinality fields / quantitative fields if there are multiple leftover
-                if (colorFields.length > 0) {
-                    // Sort by priority: quantitative first, then by cardinality (higher is better)
-                    const sortedFields = [...colorFields].sort((a, b) => {
-                        if (a.fieldType === "quantitative" && b.fieldType !== "quantitative") return -1;
-                        if (a.fieldType !== "quantitative" && b.fieldType === "quantitative") return 1;
-                        return b.cardinality - a.cardinality; // Higher cardinality first
-                    });
-                    addEncoding("color", sortedFields[0].field.id);
-                }
-            }
-        }
-
-        // Size channel: only allow quantitative fields
-        const sizeFields = getAvailableFieldAnalyses();
-        if (chartChannels.includes("size") && sizeFields.length > 0) {
-            const sizeField = sizeFields.find(fa => fa.fieldType === "quantitative");
-            if (sizeField) {
-                addEncoding("size", sizeField.field.id);
-            }
-        }
-
-        // Shape channel: only allow very low cardinality categorical fields
-        const shapeFields = getAvailableFieldAnalyses();
-        if (chartChannels.includes("shape") && shapeFields.length > 0) {
-            const shapeField = shapeFields.find(fa => 
-                fa.isVeryLowCardinality && (fa.fieldType === "nominal" || fa.fieldType === "ordinal")
-            );
-            if (shapeField) {
-                addEncoding("shape", shapeField.field.id);
-            }
-        }
-    };
-    
-    // Assign faceting channels
-    const assignFacetingChannels = () => {
-        const remainingFields = getAvailableFieldAnalyses();
-        
-        // Column: only allow low cardinality fields
-        if (chartChannels.includes("column") && remainingFields.length > 0) {
-            const colField = remainingFields.find(fa => fa.isVeryLowCardinality);
-            if (colField) {
-                addEncoding("column", colField.field.id);
-            }
-        }
-        
-        // Row: only allow very low cardinality fields
-        const rowFields = getAvailableFieldAnalyses();
-        if (chartChannels.includes("row") && rowFields.length > 0) {
-            const rowField = rowFields.find(fa => fa.isVeryLowCardinality);
-            if (rowField) {
-                addEncoding("row", rowField.field.id);
-            }
-        }
-    };
-    
-    // Execute assignment strategy
-    assignPrimaryChannels();
-    assignAestheticChannels();
-    assignFacetingChannels();
-    
-    // Apply the encodings to the chart
-    for (const [channel, fieldId] of Object.entries(encodings)) {
-        if (chartChannels.includes(channel)) {
-            chart.encodingMap[channel as keyof EncodingMap].fieldID = fieldId;
-        }
-    }
-    
     return chart;
 }
 

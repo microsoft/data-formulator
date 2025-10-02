@@ -315,46 +315,16 @@ export const ConceptCard: FC<ConceptCardProps> = function ConceptCard({ field, s
     const handleDTypeClose = () => {
         setAnchorEl(null);
     };
-    const handleUpdateDtype = (dtype: string) => {
-        let newConcept = duplicateField(field);
-        newConcept.type = dtype as Type;
-        handleUpdateConcept(newConcept);
-        handleDTypeClose();
-    }
 
-    let typeIconMenu = (
-        <div>
-            <Tooltip title={`${field.type} type`} >
-                <IconButton size="small" sx={{ fontSize: "inherit", padding: "2px" }}
-                    color="primary" aria-label={field.type} component="span"
-                    onClick={handleDTypeClick}
-                    aria-controls={open ? 'basic-menu' : undefined}
-                    aria-haspopup="true"
-                    aria-expanded={open ? 'true' : undefined}
-                >
-                    {getIconFromType(field.type)}
-                </IconButton>
-            </Tooltip>
-            <Menu
-                id="basic-menu"
-                anchorEl={anchorEl}
-                open={open}
-                onClose={handleDTypeClose}
-                slotProps={{
-                    list: {
-                        'aria-labelledby': 'basic-button'
-                    }
-                }}
-            >
-                {TypeList.map((t, i) => (
-                    <MenuItem dense onClick={() => { handleUpdateDtype(t) }} value={t} key={i}
-                        selected={t === field.type}
-                    >
-                        {getIconFromType(t)}<Typography component="span" sx={{ fontSize: "inherit", marginLeft: "8px" }}>{t}</Typography>
-                    </MenuItem>
-                ))} 
-            </Menu>
-        </div>
+    let typeIcon = (
+        <IconButton size="small" sx={{ fontSize: "inherit", padding: "2px" }}
+            color="primary" component="span"
+            aria-controls={open ? 'basic-menu' : undefined}
+            aria-haspopup="true"
+            aria-expanded={open ? 'true' : undefined}
+        >
+            {getIconFromType(focusedTable?.metadata[field.name]?.type || Type.Auto)}
+        </IconButton>
     )
 
     let fieldNameEntry = field.name != "" ? <Typography sx={{
@@ -394,11 +364,11 @@ export const ConceptCard: FC<ConceptCardProps> = function ConceptCard({ field, s
                  className={`draggable-card-header draggable-card-inner ${field.source}`}>
                 <Typography className="draggable-card-title" color="text.primary"
                     sx={{ fontSize: 12, height: 24, width: "100%"}} component={'span'} gutterBottom>
-                    {typeIconMenu}
+                    {typeIcon}
                     {fieldNameEntry}
-                    {field.semanticType ? 
+                    {focusedTable?.metadata[field.name]?.semanticType ? 
                         <Typography sx={{fontSize: "xx-small", color: "text.secondary", marginLeft: "6px", fontStyle: 'italic', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center' }}>
-                            <ArrowRightIcon sx={{fontSize: "12px"}} /> {field.semanticType}</Typography> : ""}
+                            <ArrowRightIcon sx={{fontSize: "12px"}} /> {focusedTable?.metadata[field.name].semanticType}</Typography> : ""}
                 </Typography>
                 
                 <Box sx={{ position: "absolute", right: 0, display: "flex", flexDirection: "row", alignItems: "center" }}>
@@ -442,8 +412,6 @@ export const DerivedConceptFormV2: FC<ConceptFormProps> = function DerivedConcep
     const [name, setName] = useState(concept.name);
     const handleNameChange = (event: React.ChangeEvent<HTMLInputElement>) => { setName(event.target.value); };
 
-    const [dtype, setDtype] = useState(concept.name == "" ? "auto" : concept.type as string);
-
     // states related to transformation functions, they are only valid when the type is "derived"
     const [transformCode, setTransformCode] = useState<string>(formattedCode);
     const [transformDesc, setTransformDesc] = useState<string>(conceptTransform.description || "");
@@ -454,8 +422,6 @@ export const DerivedConceptFormV2: FC<ConceptFormProps> = function DerivedConcep
 
     const [codeDialogOpen, setCodeDialogOpen] = useState<boolean>(false);
 
-    // if these two fields are changed from other places, update their values
-    useEffect(() => { setDtype(concept.type) }, [concept.type]);
 
     let dispatch = useDispatch();
 
@@ -663,7 +629,7 @@ export const DerivedConceptFormV2: FC<ConceptFormProps> = function DerivedConcep
     ]
 
     const checkDerivedConceptDiff = () => {
-        let nameTypeNeq = (concept.name != name || concept.type != dtype);
+        let nameTypeNeq = (concept.name != name);
         return (nameTypeNeq
             || formattedCode != transformCode
             || conceptTransform.description != transformDesc
@@ -740,7 +706,6 @@ export const DerivedConceptFormV2: FC<ConceptFormProps> = function DerivedConcep
                     </IconButton>
                     <Button size="small" variant="outlined" onClick={() => {
                         setName(concept.name);
-                        setDtype(concept.type);
 
                         if (checkConceptIsEmpty(concept)) {
                             handleDeleteConcept(concept.id);
@@ -756,7 +721,6 @@ export const DerivedConceptFormV2: FC<ConceptFormProps> = function DerivedConcep
                         
                         let tmpConcept = duplicateField(concept);
                         tmpConcept.name = name;
-                        tmpConcept.type = dtype as Type;
                         tmpConcept.transform = concept.transform ? 
                             { parentIDs: transformParentIDs, 
                               code: transformCode, 

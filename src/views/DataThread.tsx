@@ -65,6 +65,7 @@ import AttachFileIcon from '@mui/icons-material/AttachFile';
 import { alpha } from '@mui/material/styles';
 
 import { dfSelectors } from '../app/dfSlice';
+import { ChartRecBox } from './ChartRecBox';
 
 
 export const ThinkingBanner = (message: string, sx?: SxProps) => (
@@ -285,26 +286,25 @@ const AgentStatusBox = memo<{
                 </Box>
             )}
             {currentActions.map((a, index, array) => {
-                let descriptions =  String(a.description).split('\n');
+                let descriptions = String(a.description).split('\n');
                 return (
                     <React.Fragment key={a.actionId + "-" + index}>
                         <Box sx={{ 
                             position: 'relative',
                         }}>
-                            <Typography variant="body2" sx={{ 
-                                ml: 1, fontSize: 10, 
-                                color: getAgentStatusColor(a.status),
-                                whiteSpace: 'pre-wrap',
-                                wordBreak: 'break-word'
-                            }}>
-                                {descriptions.map((line: string, index: number) => (
-                                    <React.Fragment key={index}>
+                            {descriptions.map((line: string, lineIndex: number) => (
+                                <React.Fragment key={lineIndex}>
+                                    <Typography variant="body2" sx={{ 
+                                        fontSize: 10, 
+                                        color: getAgentStatusColor(a.status),
+                                        whiteSpace: 'pre-wrap',
+                                        wordBreak: 'break-word'
+                                    }}>
                                         {line}
-                                        {index < descriptions.length - 1 && <Divider sx={{ my: 0.5, }} />}
-                                    </React.Fragment>
-                                ))}
-                            </Typography>
-                            
+                                    </Typography>
+                                    {lineIndex < descriptions.length - 1 && <Divider sx={{ my: 0.5, }} />}
+                                </React.Fragment>
+                            ))}
                         </Box>
                         {index < array.length - 1 && array.length > 1 && (
                             <Box sx={{ 
@@ -787,8 +787,6 @@ let SingleThreadGroupView: FC<{
     let triggers = parentTable ? getTriggers(parentTable, tables) : [];
     let tableIdList = parentTable ? [...triggers.map((trigger) => trigger.tableId), parentTable.id] : [];
 
-    let isThreadFocused: boolean = false;
-
     let usedTableIdsInThread = tableIdList.filter(id => usedIntermediateTableIds.includes(id));
     let newTableIds = tableIdList.filter(id => !usedTableIdsInThread.includes(id));
     let newTriggers = triggers.filter(tg => newTableIds.includes(tg.resultTableId));
@@ -796,10 +794,8 @@ let SingleThreadGroupView: FC<{
     let highlightedTableIds: string[] = [];
     if (focusedTableId && leafTableIds.includes(focusedTableId)) {
         highlightedTableIds = [...tableIdList, focusedTableId];
-        isThreadFocused = true;
     } else if (focusedTableId && newTableIds.includes(focusedTableId)) {
         highlightedTableIds = tableIdList.slice(0, tableIdList.indexOf(focusedTableId) + 1);
-        isThreadFocused = true;
     }
 
     let tableElementList = newTableIds.map((tableId, i) => buildTableCard(tableId));
@@ -1032,7 +1028,7 @@ const MemoizedChartObject = memo<{
     }
 
     // prepare the chart to be rendered
-    let assembledChart = assembleVegaChart(chart.chartType, chart.encodingMap, conceptShelfItems, visTableRows, 20);
+    let assembledChart = assembleVegaChart(chart.chartType, chart.encodingMap, conceptShelfItems, visTableRows, table.metadata, 20);
     assembledChart["background"] = "transparent";
 
     // Temporary fix, down sample the dataset
@@ -1218,13 +1214,15 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
 
             let usedIntermediateTableIds = Object.values(leafTableGroups).slice(0, i).flat()
                 .map(x => [ ...getTriggers(x, tables).map(y => y.tableId) || []]).flat();
+            let usedLeafTableIds = Object.values(leafTableGroups).slice(0, i).flat().map(x => x.id);
+                
             return <SingleThreadGroupView
                 key={`thread-${groupId}-${i}`}
                 scrollRef={scrollRef}
                 threadIdx={i} 
                 leafTables={leafTables} 
                 chartElements={chartElements} 
-                usedIntermediateTableIds={usedIntermediateTableIds} 
+                usedIntermediateTableIds={[...usedIntermediateTableIds, ...usedLeafTableIds]} 
                 sx={{
                     backgroundColor: 'white', 
                     borderRadius: 2,

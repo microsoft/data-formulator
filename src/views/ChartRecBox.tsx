@@ -60,7 +60,7 @@ import RotateRightIcon from '@mui/icons-material/RotateRight';
 
 export interface ChartRecBoxProps {
     tableId: string;
-    placeHolderChartId: string;
+    placeHolderChartId?: string;
     sx?: SxProps;
 }
 
@@ -514,7 +514,10 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                 rows: t.rows,
                 attached_metadata: t.attachedMetadata
             })),
-            new_fields: [], // No specific fields, let AI decide
+            
+            chart_type: "",
+            chart_encodings: {},
+
             extra_prompt: instruction,
             model: activeModel,
             max_repair_attempts: config.maxRepairAttempts,
@@ -544,7 +547,9 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                             rows: t.rows, 
                             attached_metadata: t.attachedMetadata 
                         }}),
-                    new_fields: [],
+                    chart_type: "",
+                    chart_encodings: {},
+
                     extra_prompt: instruction,
                     model: activeModel,
                     additional_messages: additionalMessages,
@@ -563,7 +568,10 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                             rows: t.rows, 
                             attached_metadata: t.attachedMetadata 
                         }}),
-                    output_fields: [],
+                        
+                    chart_type: "",
+                    chart_encodings: {},
+                    
                     dialog: currentTable.derive?.dialog,
                     latest_data_sample: currentTable.rows.slice(0, 10),
                     new_instruction: instruction,
@@ -692,7 +700,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
 
                         const chartType = chartTypeMap[refinedGoal?.['chart_type']] || 'Scatter Plot';
                         let newChart = generateFreshChart(candidateTable.id, chartType) as Chart;
-                        newChart = resolveChartFields(newChart, currentConcepts, refinedGoal['visualization_fields'], candidateTable);
+                        newChart = resolveChartFields(newChart, currentConcepts, refinedGoal['chart_encodings'], candidateTable);
 
                         // Create and focus the new chart directly
                         dispatch(dfActions.addChart(newChart));
@@ -922,7 +930,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                 // Resolve chart fields for regular chart if we have them
                 if (chartGoal) {
                     const currentConcepts = [...conceptShelfItems.filter(c => names.includes(c.name)), ...allNewConcepts, ...conceptsToAdd];
-                    newChart = resolveChartFields(newChart, currentConcepts, chartGoal['visualization_fields'], candidateTable);
+                    newChart = resolveChartFields(newChart, currentConcepts, chartGoal['chart_encodings'], candidateTable);
                 }
 
                 createdCharts.push(newChart);

@@ -68,10 +68,11 @@ export interface LittleConceptCardProps {
     channel: Channel,
     field: FieldItem,
     encoding: EncodingItem,
-    handleUnbind: () => void
+    handleUnbind: () => void,
+    tableMetadata: {[key: string]: {type: Type, semanticType: string, levels?: any[]}}
 }
 
-export const LittleConceptCard: FC<LittleConceptCardProps> = function LittleConceptCard({ channel, field, encoding, handleUnbind }) {
+export const LittleConceptCard: FC<LittleConceptCardProps> = function LittleConceptCard({ channel, field, encoding, handleUnbind, tableMetadata }) {
     // concept cards are draggable cards that can be dropped into encoding shelf
 
     let theme = useTheme();
@@ -118,8 +119,9 @@ export const LittleConceptCard: FC<LittleConceptCardProps> = function LittleConc
                     { /*width: "calc(100% - 36px)", maxWidth: "94px"*/ flexGrow: 1, flexShrink: 1, width: 0 }, ".MuiSvgIcon-root": { fontSize: "inherit" }
             }}
             variant="filled"
+            onClick={(event) => {}}
             onDelete={handleUnbind}
-            icon={getIconFromType(field.type)}
+            icon={getIconFromType(tableMetadata[field.name]?.type || Type.Auto)}
         />
     )
 }
@@ -128,25 +130,24 @@ export const LittleConceptCard: FC<LittleConceptCardProps> = function LittleConc
 export interface EncodingBoxProps {
     channel: Channel;
     chartId: string;
+    tableId: string;
 }
 
 // the encoding boxes, allows 
-export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel, chartId }) {
+export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel, chartId, tableId }) {
     let theme = useTheme();
 
     // use tables for infer domains
     const tables = useSelector((state: DataFormulatorState) => state.tables);
-    const focusedTableId = useSelector((state: DataFormulatorState) => state.focusedTableId);
 
     let allCharts = useSelector(dfSelectors.getAllCharts);
     let activeModel = useSelector(dfSelectors.getActiveModel);
     
     let chart = allCharts.find(c => c.id == chartId) as Chart;
-    let focusedTable = tables.find(t => t.id == focusedTableId);
+    let activeTable = tables.find(t => t.id == tableId);
     
     let encoding = chart.encodingMap[channel]; 
 
-        
     let handleSwapEncodingField = (channel1: Channel, channel2: Channel) => {
         dispatch(dfActions.swapChartEncoding({chartId, channel1, channel2}))
     }
@@ -163,18 +164,23 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
 
     let field = conceptShelfItems.find((x: FieldItem) => x.id == encoding.fieldID);
+    let fieldMetadata = field?.name && activeTable?.metadata[field?.name] ? activeTable?.metadata[field?.name] : undefined;
 
-    let [autoSortResult, setAutoSortResult] = useState<{values: any[], reason: string} | undefined>(field?.levels);
+    let [autoSortResult, setAutoSortResult] = useState<any[] | undefined>(fieldMetadata?.levels);
     let [autoSortInferRunning, setAutoSortInferRunning] = useState<boolean>(false);
 
     const dispatch = useDispatch();
 
     useEffect(() => { 
-        setAutoSortResult(field?.levels);
-        if (!chart.chartType.includes("Area") && field?.levels) {
-            updateEncProp('sortBy', JSON.stringify(field?.levels));
+        if (field?.name && activeTable?.metadata[field?.name]) {
+            let levels = activeTable?.metadata[field?.name].levels;
+            setAutoSortResult(levels);
+
+            if (!chart.chartType.includes("Area") && levels && levels.length > 0) {
+                updateEncProp('sortBy', JSON.stringify(levels));
+            }
         }
-    }, [encoding.fieldID, field?.levels])
+    }, [encoding.fieldID, activeTable])
 
     // make this a drop element for concepts
     const [{ canDrop, isOver }, drop] = useDrop(() => ({
@@ -218,7 +224,10 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
     }
 
     let fieldComponent = field === undefined ? "" : (
-        <LittleConceptCard channel={channel} key={`${channel}-${field.name}`} field={field} encoding={encoding} handleUnbind={() => {
+        <LittleConceptCard channel={channel} key={`${channel}-${field.name}`} 
+            tableMetadata={activeTable?.metadata || {}}
+            field={field} encoding={encoding} 
+            handleUnbind={() => {
             handleResetEncoding();
         }} />
     )
@@ -268,7 +277,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
                 }}
             >
                 {radioLabel(getIconFromDtype("auto"), "auto", `dtype-auto`, 40, false, "auto")}
-                {radioLabel(getIconFromDtype("quantitative"), "quantitative", `dtype-quantitative`, 40, field?.type === "string", "quantitative")}
+                {radioLabel(getIconFromDtype("quantitative"), "quantitative", `dtype-quantitative`, 40, false, "quantitative")}
                 {radioLabel(getIconFromDtype("nominal"), "nominal", `dtype-nominal`, 40, false, "nominal")}
                 {radioLabel(getIconFromDtype("temporal"), "temporal", `dtype-temporal`, 40, false, "temporal")}
             </RadioGroup>
@@ -304,7 +313,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
     // deduplicate domain items
     domainItems = [...new Set(domainItems)];
 
-    let autoSortEnabled = field && field?.type == "string" && domainItems.length < 200;
+    let autoSortEnabled = field && fieldMetadata?.type == Type.String && domainItems.length < 200;
 
     let autoSortFunction = () => {
         let token = domainItems.map(x => String(x)).join("--");
@@ -331,12 +340,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
                         
                         if (candidate['status'] == 'ok') {
                             let sortRes = {values: candidate['content']['sorted_values'], reason: candidate['content']['reason']}
-                            setAutoSortResult(sortRes);
-
-                            let tmpConcept = duplicateField(field as FieldItem);
-                            tmpConcept.levels = sortRes;
-
-                            dispatch(dfActions.updateConceptItems(tmpConcept));
+                            setAutoSortResult(sortRes.values);
                         }
                     }
                 } else {
@@ -366,10 +370,10 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
         radioLabel("default", "default", `sort-by-default`)
     ]
     // TODO: check sort options
-    if (channel == "x" && (field?.type == "string" || field?.type == "auto")) {
+    if (channel == "x" && (fieldMetadata?.type == Type.String || fieldMetadata?.type == Type.Auto)) {
         sortByOptions.push(radioLabel("y values", "y", `sort-x-by-y-ascending`, 90));
     }
-    if (channel == "y" && (field?.type == "string" || field?.type == "auto")) {
+    if (channel == "y" && (fieldMetadata?.type == Type.String || fieldMetadata?.type == Type.Auto)) {
         sortByOptions.push(radioLabel("x values", "x", `sort-y-by-x-ascending`, 90));
     }
  
@@ -383,16 +387,12 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
                     label={<LinearProgress color="primary" sx={{ width: "120px", opacity: 0.4 }} />} />
             ]
         } else {
-            if (autoSortResult != undefined) {
+            if (autoSortResult != undefined && autoSortResult.length > 0) {
 
                 let autoSortOptTitle = <Box>
                         <Box>
                             <Typography sx={{fontWeight: 'bold'}} component='span' fontSize='inherit'>Sort Order: </Typography> 
-                             {autoSortResult.values.map(x => x ? x.toString() : 'null').join(", ")}
-                        </Box>
-                        <Box>
-                            <Typography sx={{fontWeight: 'bold'}} component='span' fontSize='inherit'>Reason: </Typography>
-                            {autoSortResult.reason}
+                             {autoSortResult.map(x => x ? x.toString() : 'null').join(", ")}
                         </Box>
                     </Box>
 
@@ -407,7 +407,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
                         },
                       }}>
                         <Typography className="auto-sort-option-label">
-                            {autoSortResult.values.map(x => x ? x.toString() : 'null').join(", ")}
+                            {autoSortResult.map(x => x ? x.toString() : 'null').join(", ")}
                         </Typography>
                     </Tooltip>;
 
@@ -571,7 +571,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
         } else if (groupNames.indexOf(a.group) > groupNames.indexOf(b.group)) {
             return 1;
         } else {
-            return focusedTable && focusedTable.names.includes(a.field.name) && !focusedTable.names.includes(b.field.name) ? -1 : 1;
+            return activeTable && activeTable.names.includes(a.field.name) && !activeTable.names.includes(b.field.name) ? -1 : 1;
         }
     })
 
@@ -661,7 +661,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
             }         
         }}
         renderGroup={(params) => (
-            <Box>
+            <Box key={params.key}>
               <Box className="GroupHeader">{params.group}</Box>
               <Box className="GroupItems" sx={{ 
                 display: 'grid', 
@@ -694,7 +694,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
                 let draggleCardHeaderBgOverlay = 'rgba(255, 255, 255, 0.9)';
                 
                 // Add subtle tint for non-focused fields
-                if (focusedTable && !focusedTable.names.includes(fieldItem.name)) {
+                if (activeTable && !activeTable.names.includes(fieldItem.name)) {
                     draggleCardHeaderBgOverlay = 'rgba(255, 255, 255, 1)';
                 }
 
@@ -737,7 +737,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
                                 alignItems: 'center',
                                 gap: '4px',
                             }} component={'span'}>
-                                {getIconFromType(fieldItem.type)}
+                                {getIconFromType(activeTable?.metadata[fieldItem.name]?.type || Type.Auto)}
                                 <span style={{
                                     whiteSpace: "nowrap",
                                     overflow: "hidden", 

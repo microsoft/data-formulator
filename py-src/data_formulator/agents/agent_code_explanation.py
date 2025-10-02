@@ -60,8 +60,6 @@ Provide the result in the following two sections:
 ```
 '''
 
-print(SYSTEM_PROMPT)
-
 EXAMPLE = '''
 [CONTEXT]
 
