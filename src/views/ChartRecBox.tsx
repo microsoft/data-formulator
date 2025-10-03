@@ -458,6 +458,13 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
             if (prompt.trim() === "") {
                 setPrompt(getQuestion());
             }
+        } else if (event.key === 'Enter' && prompt.trim() !== "") {
+            event.preventDefault();
+            if (mode === "agent") {
+                exploreDataFromNL([prompt.trim()]);
+            } else {
+                deriveDataFromNL(prompt, true);
+            }
         }
     };
 
@@ -706,10 +713,8 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                         dispatch(dfActions.addChart(newChart));
                         if (focusNewChart) {
                             dispatch(dfActions.setFocusedChart(newChart.id));
+                            dispatch(dfActions.setFocusedTable(candidateTable.id));
                         }
-
-                        // Clean up
-                        dispatch(dfActions.setFocusedTable(candidateTable.id));
 
                         dispatch(dfActions.addMessages({
                             "timestamp": Date.now(),
@@ -948,8 +953,8 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                 dispatch(dfActions.addChart(newChart));
                 if (focusNewChart) {
                     dispatch(dfActions.setFocusedChart(newChart.id));
+                    dispatch(dfActions.setFocusedTable(candidateTable.id));
                 }
-                dispatch(dfActions.setFocusedTable(candidateTable.id));
 
                 // Show progress message
                 dispatch(dfActions.addMessages({

@@ -287,13 +287,16 @@ export const assembleVegaChart = (
         }
 
         if (encoding.sortBy || encoding.sortOrder) {
-
-            let sortOrder = encoding.sortOrder || "ascending";
-
-            if (encoding.sortBy == undefined || encoding.sortBy == "default") {
-                encodingObj["sort"] = sortOrder;
+            if (encoding.sortBy == undefined) {
+                if (encoding.sortOrder) {
+                    encodingObj["sort"] = encoding.sortOrder;
+                }
             } else if (encoding.sortBy == 'x' || encoding.sortBy == 'y') {
-                encodingObj["sort"] = `${sortOrder == "ascending" ? "" : "-"}${encoding.sortBy}`;
+                encodingObj["sort"] = `${encoding.sortOrder == "ascending" ? "" : "-"}${encoding.sortBy}`;
+            } else if (encoding.sortBy == 'color') {
+                if (encodingMap.color?.fieldID != undefined) {
+                    encodingObj["sort"] = `${encoding.sortOrder == "ascending" ? "" : "-"}${encoding.sortBy}`;
+                }
             } else {
                 try {
                     if (field) {
@@ -305,7 +308,7 @@ export const assembleVegaChart = (
                             sortedValues = sortedValues.map((v: any) => v.toString());
                         }
 
-                        encodingObj['sort'] = sortOrder == "ascending" ? sortedValues : sortedValues.reverse();
+                        encodingObj['sort'] = (encoding.sortOrder == "ascending" || encoding.sortOrder == undefined) ? sortedValues : sortedValues.reverse();
 
                         // special hack: ensure stack bar and stacked area charts are ordered correctly
                         if (channel == 'color' && (vgObj['mark'] == 'bar' || vgObj['mark'] == 'area')) {
@@ -327,6 +330,38 @@ export const assembleVegaChart = (
             // } else {
             //     encodingObj["sort"] = JSON.parse(encoding.sort);
             // }
+        } else {
+            // Auto-sort: when nominal axis has quantitative opposite axis and no explicit sorting is set
+            // prioritize color field if present, otherwise sort by quantitative axis descending
+            if ((channel === 'x' && encodingObj.type === 'nominal' && encodingMap.y?.fieldID) ||
+                (channel === 'y' && encodingObj.type === 'nominal' && encodingMap.x?.fieldID)) {
+                
+                if (encodingMap.color?.fieldID) {
+                    // If color field exists, sort by color (ascending for nominal, descending for quantitative)
+                    const colorField = _.find(conceptShelfItems, (f) => f.id === encodingMap.color.fieldID);
+                    if (colorField) {
+                        const colorFieldMetadata = tableMetadata[colorField.name];
+                        if (colorFieldMetadata) {
+                            const colorFieldType = getDType(colorFieldMetadata.type, workingTable.map(r => r[colorField.name]));
+                            encodingObj["sort"] = colorFieldType === 'quantitative' ? "-color" : "color";
+                        } else {
+                            encodingObj["sort"] = "color"; // default to ascending if metadata not available
+                        }
+                    } else {
+                        encodingObj["sort"] = "color"; // default to ascending if field not found
+                    }
+                } else {
+                    // Otherwise, sort by the quantitative axis descending
+                    const oppositeChannel = channel === 'x' ? 'y' : 'x';
+                    const oppositeField = _.find(conceptShelfItems, (f) => f.id === encodingMap[oppositeChannel]?.fieldID);
+                    if (oppositeField) {
+                        const oppositeFieldMetadata = tableMetadata[oppositeField.name];
+                        if (oppositeFieldMetadata && getDType(oppositeFieldMetadata.type, workingTable.map(r => r[oppositeField.name])) === 'quantitative') {
+                            encodingObj["sort"] = `-${oppositeChannel}`;
+                        }
+                    }
+                }
+            }
         }
         if (encoding.stack) {
             encodingObj["stack"] = encoding.stack == "layered" ? null : encoding.stack;
@@ -370,11 +405,13 @@ export const assembleVegaChart = (
         }
     }
 
+    
+
     if (vgObj.encoding?.column != undefined && vgObj.encoding?.row == undefined) {
         vgObj['encoding']['facet'] = vgObj['encoding']['column'];
-        vgObj['encoding']['facet']['columns'] = 4;
+        vgObj['encoding']['facet']['columns'] = 6;
         vgObj['resolve'] = {
-            "axis": {
+            "scale": {
                 "x": "independent",
             }
         }
@@ -461,23 +498,84 @@ export const assembleVegaChart = (
                 } else if (channel == 'x' || channel == 'y') {
                     const oppositeChannel = channel === 'x' ? 'y' : 'x';
                     const oppositeEncoding = vgObj.encoding?.[oppositeChannel];
-                    
-                    if (oppositeEncoding?.type === 'quantitative') {
-                        // Sort by the quantitative field and take top maxNominalValues
-                        const quantField = oppositeEncoding.field;
-                        valuesToKeep = uniqueValues
-                            .map(val => ({
-                                value: val,
-                                sum: workingTable
-                                    .filter(r => r[fieldName] === val)
-                                    .reduce((sum, r) => sum + (r[quantField] || 0), 0)
-                            }))
-                            .sort((a, b) => b.sum - a.sum)
-                            .slice(0, maxNominalValues)
-                            .map(v => v.value);
+                    const colorEncoding = vgObj.encoding?.color;
+
+                    // Check if this axis already has a sort configuration
+                    if (encoding.sort) {
+                        // If sort is set to -y, -x, -color, x, y, or color, respect that ordering
+                        if (typeof encoding.sort === 'string' && 
+                            (encoding.sort === '-y' || encoding.sort === '-x' || encoding.sort === '-color' || 
+                             encoding.sort === 'y' || encoding.sort === 'x' || encoding.sort === 'color')) {
+                            
+                            const isDescending = encoding.sort.startsWith('-');
+                            const sortField = isDescending ? encoding.sort.substring(1) : encoding.sort;
+                            
+                            if (sortField === 'color' && colorEncoding?.field && colorEncoding.type === 'quantitative') {
+                                // Sort by color field
+                                valuesToKeep = uniqueValues
+                                    .map(val => ({
+                                        value: val,
+                                        colorValue: workingTable
+                                            .filter(r => r[fieldName] === val)
+                                            .reduce((sum, r) => sum + (r[colorEncoding.field] || 0), 0)
+                                    }))
+                                    .sort((a, b) => isDescending ? b.colorValue - a.colorValue : a.colorValue - b.colorValue)
+                                    .slice(0, maxNominalValues)
+                                    .map(v => v.value);
+                            } else if (sortField === oppositeChannel && oppositeEncoding?.type === 'quantitative') {
+                                // Sort by opposite axis
+                                const quantField = oppositeEncoding.field;
+                                valuesToKeep = uniqueValues
+                                    .map(val => ({
+                                        value: val,
+                                        sum: workingTable
+                                            .filter(r => r[fieldName] === val)
+                                            .reduce((sum, r) => sum + (r[quantField] || 0), 0)
+                                    }))
+                                    .sort((a, b) => isDescending ? b.sum - a.sum : a.sum - b.sum)
+                                    .slice(0, maxNominalValues)
+                                    .map(v => v.value);
+                            } else {
+                                // If sort field is not available or not quantitative, fall back to default
+                                valuesToKeep = uniqueValues.slice(0, maxNominalValues);
+                            }
+                        } else {
+                            // If sort is a custom array or other value, just take first maxNominalValues
+                            valuesToKeep = uniqueValues.slice(0, maxNominalValues);
+                        }
                     } else {
-                        // If no quantitative axis, just take first maxNominalValues
-                        valuesToKeep = uniqueValues.slice(0, maxNominalValues);
+                        // No explicit sort configuration, use the existing inference logic
+                        // Check if color field exists and is quantitative
+                        if (colorEncoding?.field && colorEncoding.type === 'quantitative') {
+                            // Sort by color field descending and take top maxNominalValues
+                            valuesToKeep = uniqueValues
+                                .map(val => ({
+                                    value: val,
+                                    maxColor: workingTable
+                                        .filter(r => r[fieldName] === val)
+                                        .reduce((max, r) => Math.max(max, r[colorEncoding.field] || 0), -Infinity)
+                                }))
+                                .sort((a, b) => b.maxColor - a.maxColor)
+                                .slice(0, maxNominalValues)
+                                .map(v => v.value);
+
+                        } else if (oppositeEncoding?.type === 'quantitative') {
+                            // Sort by the quantitative field and take top maxNominalValues
+                            const quantField = oppositeEncoding.field;
+                            valuesToKeep = uniqueValues
+                                .map(val => ({
+                                    value: val,
+                                    sum: workingTable
+                                        .filter(r => r[fieldName] === val)
+                                        .reduce((sum, r) => sum + (r[quantField] || 0), 0)
+                                }))
+                                .sort((a, b) => b.sum - a.sum)
+                                .slice(0, maxNominalValues)
+                                .map(v => v.value);
+                        } else {
+                            // If no quantitative axis, just take first maxNominalValues
+                            valuesToKeep = uniqueValues.slice(0, maxNominalValues);
+                        }
                     }
                 } else if (channel == 'row') {
                     valuesToKeep = uniqueValues.slice(0, 20);
@@ -634,6 +732,11 @@ const isLikelyYear = (values: any[]): boolean => {
 
 export const resolveChartFields = (chart: Chart, allFields: FieldItem[], chartEncodings: { [key: string]: string }, table: DictTable) => {
     for (let [key, value] of Object.entries(chartEncodings)) {
+
+        if (key == "facet") {
+            key = "column";
+        }
+
         let field = allFields.find(c => c.name === value);
         chart.encodingMap[key as Channel] = { fieldID: field?.id };
     }

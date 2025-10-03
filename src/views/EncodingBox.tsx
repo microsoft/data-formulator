@@ -367,14 +367,16 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
     }
 
     let sortByOptions = [
-        radioLabel("default", "default", `sort-by-default`)
+        radioLabel("auto", "auto", `sort-by-auto`)
     ]
     // TODO: check sort options
     if (channel == "x" && (fieldMetadata?.type == Type.String || fieldMetadata?.type == Type.Auto)) {
-        sortByOptions.push(radioLabel("y values", "y", `sort-x-by-y-ascending`, 90));
+        sortByOptions.push(radioLabel("y", "y", `sort-x-by-y-ascending`, 90));
+        sortByOptions.push(radioLabel("color", "color", `sort-x-by-color-ascending`, 90));
     }
     if (channel == "y" && (fieldMetadata?.type == Type.String || fieldMetadata?.type == Type.Auto)) {
-        sortByOptions.push(radioLabel("x values", "x", `sort-y-by-x-ascending`, 90));
+        sortByOptions.push(radioLabel("x", "x", `sort-y-by-x-ascending`, 90));
+        sortByOptions.push(radioLabel("color", "color", `sort-y-by-color-ascending`, 90));
     }
  
     if (autoSortEnabled) {
@@ -451,7 +453,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
                 row
                 aria-labelledby="sort-option-radio-buttons-group"
                 name="sort-option-radio-buttons-group"
-                value={encoding.sortBy ||  'default'}
+                value={encoding.sortBy ||  'auto'}
                 sx={{ width: 180 }}
                 onChange={(event) => { updateEncProp("sortBy", event.target.value) }}
             >
@@ -473,12 +475,13 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
                 row
                 aria-labelledby="sort-option-radio-buttons-group"
                 name="sort-option-radio-buttons-group"
-                value={encoding.sortOrder || "ascending"}
+                value={encoding.sortOrder || "auto"}
                 sx={{ width: 180 }}
                 onChange={(event) => { updateEncProp("sortOrder", event.target.value) }}
             >
-                {radioLabel("↑ asc", "ascending", `sort-ascending`, 90)}
-                {radioLabel("↓ desc", "descending", `sort-descending`, 90)}
+                {radioLabel("auto", "auto", `sort-auto`, 60)}
+                {radioLabel("↑ asc", "ascending", `sort-ascending`, 60)}
+                {radioLabel("↓ desc", "descending", `sort-descending`, 60)}
             </RadioGroup>
         </FormControl>
     ]

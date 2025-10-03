@@ -417,8 +417,8 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
         let filteredRows = rows.map(row => Object.fromEntries(visFields.filter(f => table.names.includes(f.name)).map(f => [f.name, row[f.name]])));
         let visTable = prepVisTable(filteredRows, conceptShelfItems, focusedChart.encodingMap);
 
-        if (visTable.length > 1000) {
-            let rowSample = _.sampleSize(visTable, 1000);
+        if (visTable.length > 5000) {
+            let rowSample = _.sampleSize(visTable, 5000);
             visTable = structuredClone(rowSample);
         }
 

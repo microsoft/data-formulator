@@ -73,32 +73,17 @@ const scatterPlots: ChartTemplate[] = [
             "mark": "circle",
             "encoding": { }
         },
-        "channels": ["x", "y", "color", "size", "column", "row"],
+        "channels": ["x", "y", "color", "size", "opacity", "column", "row"],
         "paths": {
             "x": ["encoding", "x"],
             "y": ["encoding", "y"],
             "color": ["encoding", "color"],
             "size": ["encoding", "size"],
+            "opacity": ["encoding", "opacity"],
             "column": ["encoding", "column"],
             "row": ["encoding", "row"]
         }
     },
-    // {
-    //     "chart": "Bubble Plot",
-    //     "icon": chartIconBubble,
-    //     "template": {
-    //         "mark": "circle",
-    //         "encoding": { }
-    //     },
-    //     "channels": ["x", "y", "size", "column", "row"],
-    //     "paths": {
-    //         "x": ["encoding", "x"],
-    //         "y": ["encoding", "y"],
-    //         "size": ["encoding", "size"],
-    //         "column": ["encoding", "column"],
-    //         "row": ["encoding", "row"]
-    //     }
-    // },
     {
         "chart": "Linear Regression",
         "icon": <ChartIcon src={chartIconLinearRegression} />,
@@ -200,11 +185,12 @@ const barCharts: ChartTemplate[] = [
             "mark": "bar",
             "encoding": { }
         },
-        "channels": ["x", "y", "color", "column", "row"],
+        "channels": ["x", "y", "color", "opacity", "column", "row"],
         "paths": {
             "x": ["encoding", "x"],
             "y": ["encoding", "y"],
             "color": ["encoding", "color"],
+            "opacity": ["encoding", "opacity"],
             "column": ["encoding", "column"],
             "row": ["encoding", "row"]
         }
@@ -344,11 +330,12 @@ let lineCharts = [
             "mark": "line",
             "encoding": { }
         },
-        "channels": ["x", "y", "color", "column", "row"],
+        "channels": ["x", "y", "color", "opacity", "column", "row"],
         "paths": {
             "x": ["encoding", "x"],
             "y": ["encoding", "y"],
             "color": ["encoding", "color"],
+            "opacity": ["encoding", "opacity"],
             "column": ["encoding", "column"],
             "row": ["encoding", "row"]
         }
@@ -365,6 +352,7 @@ let lineCharts = [
             "x": ["encoding", "x"],
             "y": ["encoding", "y"],
             "color": ["encoding", "color"],
+            "opacity": ["encoding", "opacity"],
             "column": ["encoding", "column"],
             "row": ["encoding", "row"]
         }

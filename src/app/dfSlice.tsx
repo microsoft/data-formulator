@@ -638,9 +638,9 @@ export const dataFormulatorSlice = createSlice({
                 } else if (prop == 'stack') {
                     encoding.stack = value;
                 } else if (prop == "sortOrder") {
-                    encoding.sortOrder = value;
+                    encoding.sortOrder = value == "auto" ? undefined : value;
                 } else if (prop == "sortBy") {
-                    encoding.sortBy = value;
+                    encoding.sortBy = value == "auto" ? undefined : value;
                 } else if (prop == "scheme") {
                     encoding.scheme = value;
                 } else if (prop == "dtype") {
