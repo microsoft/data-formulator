@@ -334,12 +334,14 @@ export const assembleVegaChart = (
             //     encodingObj["sort"] = JSON.parse(encoding.sort);
             // }
         } else {
-            // Auto-sort: when nominal axis has quantitative opposite axis and no explicit sorting is set
+            // Auto-sort: when nominal axis has quantitative opposite axis or color field and no explicit sorting is set
             // prioritize color field if present, otherwise sort by quantitative axis descending
-            if ((channel === 'x' && encodingObj.type === 'nominal' && encodingMap.y?.fieldID) ||
+            if ((channel === 'x' && encodingObj.type === 'nominal' && encodingMap.y?.fieldID ) ||
                 (channel === 'y' && encodingObj.type === 'nominal' && encodingMap.x?.fieldID)) {
                 
-                if (encodingMap.color?.fieldID) {
+                if (chartType.includes("Line") || chartType.includes("Area")) {
+                    // do nothing
+                } else if (encodingMap.color?.fieldID) {
                     // If color field exists, sort by color (ascending for nominal, descending for quantitative)
                     const colorField = _.find(conceptShelfItems, (f) => f.id === encodingMap.color.fieldID);
                     if (colorField) {
@@ -429,7 +431,6 @@ export const assembleVegaChart = (
         }
     }
 
-
     let nominalCount = {
         x: 0,
         y: 0,
@@ -439,7 +440,7 @@ export const assembleVegaChart = (
     }
 
     // Handle nominal axes with many entries
-    for (const channel of ['x', 'y', 'column', 'row', 'xOffset']) {
+    for (const channel of ['x', 'y', 'column', 'row', 'xOffset', "color"]) {
         const encoding = vgObj.encoding?.[channel];
         if (encoding?.type === 'nominal') {
 
@@ -456,8 +457,8 @@ export const assembleVegaChart = (
             let valuesToKeep: any[];
             if (uniqueValues.length > maxNominalValues) {
                 
-                if (fieldOriginalType == 'quantitative') {
-                    valuesToKeep = uniqueValues.sort((a, b) => a - b).slice(0, maxNominalValues);
+                if (fieldOriginalType == 'quantitative' || channel == 'color') {
+                    valuesToKeep = uniqueValues.sort((a, b) => a - b).slice(0, channel == 'color' ? 24 : maxNominalValues);
                 } else if (channel == 'x' || channel == 'y') {
                     const oppositeChannel = channel === 'x' ? 'y' : 'x';
                     const oppositeEncoding = vgObj.encoding?.[oppositeChannel];
@@ -557,7 +558,9 @@ export const assembleVegaChart = (
                 // Filter the working table
                 const omittedCount = uniqueValues.length - maxNominalValues;
                 const placeholder = `...${omittedCount} items omitted`;
-                values = values.filter((row: any) => valuesToKeep.includes(row[fieldName]));
+                if (channel != 'color') {
+                    values = values.filter((row: any) => valuesToKeep.includes(row[fieldName]));
+                }
 
                 // Add text formatting configuration
                 if (!encoding.axis) {
@@ -577,6 +580,11 @@ export const assembleVegaChart = (
                         encoding.scale = {};
                     }
                     encoding.scale.domain = [...valuesToKeep, placeholder]
+                } else if (channel == 'color') {
+                    if (!encoding.legend) {
+                        encoding.legend = {};
+                    }
+                    encoding.legend.values = [...valuesToKeep, placeholder]
                 }
             }
         }
@@ -623,7 +631,7 @@ export const assembleVegaChart = (
 
     let totalFacets = nominalCount.column > 0 ? nominalCount.column : 1;
     totalFacets *= nominalCount.row > 0 ? nominalCount.row : 1;
-    totalFacets *= nominalCount.xOffset > 0 ? nominalCount.xOffset : 1;
+    totalFacets *= nominalCount.xOffset > 0 ? (nominalCount.xOffset * nominalCount.x / 16) : 1;
 
     // Check if y-axis should have independent scaling when columns have vastly different value ranges
     if (vgObj.encoding?.facet != undefined && vgObj.encoding?.y?.type === 'quantitative') {
@@ -677,7 +685,9 @@ export const assembleVegaChart = (
     // Apply 0.75 scale factor for faceted charts
     const widthScale = facetRescaleFactor;
     const heightScale = facetRescaleFactor;
-    const stepSize = 20 * widthScale;
+
+    // special case to handle when x axis has only very few values, we will use a larger (thus math.max), otherwise just scale
+    const stepSize = 20 * Math.min(1, Math.max(1, 20 / Math.max(nominalCount.x, nominalCount.y)) * widthScale);
     
     vgObj['config'] = {
         "view": {
@@ -687,8 +697,12 @@ export const assembleVegaChart = (
                 "step": stepSize,
             } : {},
         },
-        "axisX": {"labelLimit": 100, "labelFontSize": stepSize <= 10 ? 9 : 10},
-        "axisY": {"labelFontSize": stepSize <= 10 ? 9 : 10},
+        "axisX": {"labelLimit": 100, "labelFontSize": stepSize <= 10 ? stepSize : 10},
+        "axisY": {"labelFontSize": stepSize <= 10 ? stepSize : 10},
+        
+    }
+    if (totalFacets > 6) {
+        vgObj['config']['header'] = { labelLimit: 120, labelFontSize: 9 };
     }
 
     return {...vgObj, data: {values: values}}

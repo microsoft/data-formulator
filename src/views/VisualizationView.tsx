@@ -334,7 +334,7 @@ const VegaChartRenderer: FC<{
                 }
             }
         }).catch((error) => {
-            console.error('Chart rendering error:', error);
+            //console.error('Chart rendering error:', error);
         });
 
     }, [chart.id, chart.chartType, chart.encodingMap, conceptShelfItems, visTableRows, tableMetadata, chartWidth, chartHeight, scaleFactor, chartUnavailable]);
@@ -392,8 +392,6 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
     const [chatDialogOpen, setChatDialogOpen] = useState<boolean>(false);
     const [localScaleFactor, setLocalScaleFactor] = useState<number>(1);
 
-    const [chartUpdated, setChartUpdated] = useState<boolean>(false);
-
     // Reset local UI state when focused chart changes
     useEffect(() => {
         setLocalScaleFactor(1);
@@ -421,6 +419,18 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
     let visFieldIds = Object.keys(focusedChart.encodingMap).filter(key => focusedChart.encodingMap[key as keyof EncodingMap].fieldID != undefined).map(key => focusedChart.encodingMap[key as keyof EncodingMap].fieldID);
     let visFields = conceptShelfItems.filter(f => visFieldIds.includes(f.id));
     let dataFieldsAllAvailable = visFields.every(f => table.names.includes(f.name));
+
+    // Create a stable identifier for data requirements (fields + aggregations)
+    const dataRequirements = useMemo(() => {
+        let { aggregateFields, groupByFields } = extractFieldsFromEncodingMap(focusedChart.encodingMap, conceptShelfItems);
+        let sortedFields = [...aggregateFields.map(f => `${f[0]}_${f[1]}`), ...groupByFields].sort();
+
+        return JSON.stringify({
+            chartId: focusedChart.id,
+            tableId: table.id,
+            sortedFields
+        });
+    }, [focusedChart.encodingMap, conceptShelfItems, focusedChart.id, table.id]);
 
     let setSystemMessage = (content: string, severity: "error" | "warning" | "info" | "success") => {
         dispatch(dfActions.addMessages({
@@ -454,12 +464,16 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
     const [visTableRows, setVisTableRows] = useState<any[]>(processedData);
     const [visTableTotalRowCount, setVisTableTotalRowCount] = useState<number>(table.virtual?.rowCount || table.rows.length);
     
-    // Track which chart+table the current data belongs to (prevents showing stale data during transitions)
-    const [dataVersion, setDataVersion] = useState<string>(`${focusedChart.id}-${table.id}`);
+
+    let { aggregateFields, groupByFields } = extractFieldsFromEncodingMap(focusedChart.encodingMap, conceptShelfItems);
+    let sortedVisDataFields = [...aggregateFields.map(f => `${f[0]}_${f[1]}`), ...groupByFields].sort();
+
+    // Track which chart+table+requiredFields the current data belongs to (prevents showing stale data during transitions)
+    const [dataVersion, setDataVersion] = useState<string>(`${focusedChart.id}-${table.id}-${sortedVisDataFields.join("_")}`);
     const currentRequestRef = useRef<string>('');
     
     // Check if current data is stale (belongs to different chart/table)
-    const isDataStale = dataVersion !== `${focusedChart.id}-${table.id}`;
+    const isDataStale = dataVersion !== `${focusedChart.id}-${table.id}-${sortedVisDataFields.join("_")}`;
     
     // Use empty data if stale to avoid showing incorrect data during transitions
     const activeVisTableRows = isDataStale ? [] : visTableRows;
@@ -492,7 +506,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
             .then(data => {
                 // Only update if this is still the current request (not stale)
                 if (currentRequestRef.current === requestId) {
-                    const versionId = `${focusedChart.id}-${table.id}`;
+                    const versionId = `${focusedChart.id}-${table.id}-${sortedVisDataFields.join("_")}`;
                     if (data.status == "success") {
                         setVisTableRows(data.rows);
                         setVisTableTotalRowCount(data.total_row_count);
@@ -516,7 +530,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
             // Randomly sample sampleSize rows from table.rows
             let rowSample = _.sampleSize(table.rows, sampleSize);
             setVisTableRows(structuredClone(rowSample));
-            setDataVersion(`${focusedChart.id}-${table.id}`);
+            setDataVersion(`${focusedChart.id}-${table.id}-${sortedVisDataFields.join("_")}`);
         }
     }
 
@@ -527,12 +541,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
     }, [])
 
     useEffect(() => {
-        const versionId = `${focusedChart.id}-${table.id}`;
-        
-        setChartUpdated(true);
-        setTimeout(() => {
-            setChartUpdated(false);
-        }, 600)
+        const versionId = `${focusedChart.id}-${table.id}-${sortedVisDataFields.join("_")}`;
 
         if (visFields.length > 0 && dataFieldsAllAvailable) {
             // table changed, we need to update the rows to display
@@ -552,41 +561,28 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
             setVisTableTotalRowCount(table.virtual?.rowCount || table.rows.length);
             setDataVersion(versionId);
         }
-    }, [focusedChart, table.id])
+    }, [dataRequirements]) // Changed from [focusedChart, table.id]
     
+
+
+    let encodingShelfEmpty = useMemo(() => {
+        return Object.keys(focusedChart.encodingMap).every(key => 
+            focusedChart.encodingMap[key as keyof EncodingMap].fieldID == undefined && focusedChart.encodingMap[key as keyof EncodingMap].aggregate == undefined);
+    }, [focusedChart.encodingMap]);
+
     // Calculate chart availability in the parent
     const chartUnavailable = useMemo(() => {
         if (focusedChart.chartType === "Auto" || focusedChart.chartType === "Table") {
             return false;
         }
+        
         // Check if fields exist in table and table has rows
         return !(dataFieldsAllAvailable && table.rows.length > 0);
     }, [focusedChart.chartType, dataFieldsAllAvailable, table.rows.length]);
 
     let resultTable = tables.find(t => t.id == trigger?.resultTableId);
 
-    let codeExpl = table.derive?.explanation?.code || ""
-
-    let focusedChartElement = <VegaChartRenderer
-        key={focusedChart.id}
-        chart={focusedChart}
-        conceptShelfItems={conceptShelfItems}
-        visTableRows={activeVisTableRows}
-        tableMetadata={table.metadata}
-        chartWidth={config.defaultChartWidth}
-        chartHeight={config.defaultChartHeight}
-        scaleFactor={localScaleFactor}
-        chartUnavailable={chartUnavailable}
-    />;
-
-    // Use a unique key to ensure the fade animation is triggered when the chart is updated
-    // it will unmount and mount the chart element, causing the fade animation to trigger
-    let focusedElement = <Fade key={`fade-${focusedChart.id}-${dataVersion}-${focusedChart.chartType}-${JSON.stringify(focusedChart.encodingMap)}`} 
-                            in={!isDataStale} timeout={600}>                            
-                            <Box sx={{margin: "auto", display: 'flex', flexDirection: 'row',}}>
-                                {focusedChartElement}
-                            </Box>
-                        </Fade>;
+    let codeExpl = table.derive?.explanation?.code || "";
     
     let saveButton = (
         <Tooltip key="save-copy-tooltip" title="save a copy">
@@ -802,11 +798,13 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
 
     let chartMessage = "";
     if (focusedChart.chartType == "Table") {
-        chartMessage = "Provide a prompt to derive a new data";
+        chartMessage = "Tell me what you want to visualize!";
     } else if (focusedChart.chartType == "Auto") {
         chartMessage = "Say something to get chart recommendations!";
+    } else if (encodingShelfEmpty) {
+        chartMessage = "Put data fields to chart builder or describe what you want!";
     } else if (chartUnavailable) {
-        chartMessage = "To create a chart, put data fields to chart builder.";
+        chartMessage = "Formulate data to create the visualization!";
     } else if (chartSynthesisInProgress.includes(focusedChart.id)) {
         chartMessage = "Synthesis in progress...";
     } else if (table.derive) {
@@ -814,8 +812,8 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
     }
 
     let chartActionItems = isDataStale ? [] : (
-        <>
-            {table.virtual || table.rows.length > 1000 ? (
+        <Box sx={{display: "flex", flexDirection: "column", flex: 1, my: 1}}>
+            {(table.virtual || table.rows.length > 1000) && !(chartUnavailable || encodingShelfEmpty) ? (
                 <Box sx={{ display: 'flex', flexDirection: "row", margin: "auto", justifyContent: 'center', alignItems: 'center'}}>
                     <Typography component="span" fontSize="small" color="text.secondary" sx={{textAlign:'center'}}>
                         visualizing
@@ -843,7 +841,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
             <Typography component="span" fontSize="small" color="text.secondary" sx={{textAlign:'center'}}>
                 {chartMessage}
             </Typography>
-        </>
+        </Box>
     )
     
     let codeExplComp = <MuiMarkdown
@@ -892,12 +890,30 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
     let transformationIndicatorText = table.derive?.source ? 
         `${table.derive.source.map(s => tables.find(t => t.id === s)?.displayId || s).join(", ")} → ${table.displayId || table.id}` : "";
 
+    let focusedElement = <Fade key={`fade-${focusedChart.id}-${dataVersion}-${focusedChart.chartType}-${JSON.stringify(focusedChart.encodingMap)}`} 
+                            in={!isDataStale} timeout={600}>    
+                            <Box sx={{display: "flex", flexDirection: "column", flexShrink: 0}} className="chart-box">
+                                <Box sx={{margin: "auto", minHeight: 240, maxWidth: '90%', overflow: "auto"}}>
+                                    <VegaChartRenderer
+                                        key={focusedChart.id}
+                                        chart={focusedChart}
+                                        conceptShelfItems={conceptShelfItems}
+                                        visTableRows={activeVisTableRows}
+                                        tableMetadata={table.metadata}
+                                        chartWidth={config.defaultChartWidth}
+                                        chartHeight={config.defaultChartHeight}
+                                        scaleFactor={localScaleFactor}
+                                        chartUnavailable={chartUnavailable}
+                                    />
+                                </Box>
+                                {chartActionItems}
+                            </Box>                        
+                        </Fade>;
+
     focusedComponent = [
         <Box key="chart-focused-element"  sx={{ width: "100%", minHeight: "calc(100% - 40px)", margin: "auto", mt: 4, mb: 1, display: "flex", flexDirection: "column"}}>
-            <Box sx={{display: "flex", flexDirection: "column", flexShrink: 0}} className="chart-box">
-                {focusedElement}
-            </Box>
-            {<Box ref={explanationComponentsRef} sx={{width: "100%", margin: "auto"}}>
+            {focusedElement}
+            <Box ref={explanationComponentsRef} sx={{width: "100%", mx: "auto"}}>
                 <Collapse in={conceptExplanationsOpen}>
                     <Box sx={{minWidth: 440, maxWidth: 800, padding: "0px 8px", position: 'relative', margin: '8px auto'}}>
                         <ConceptExplCards 
@@ -962,9 +978,8 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                         </CodeExplanationCard>
                     </Box>
                 </Collapse>
-            </Box>}
-            {chartActionItems}
-            <Box key='chart-action-buttons' sx={{ display: 'flex', flexShrink: 0, flexDirection: "row", mx: "auto", py: 4 }}>
+            </Box>
+            <Box key='chart-action-buttons' sx={{ display: 'flex', flexShrink: 0, flexDirection: "row", mx: "auto", py: 1 }}>
                 {chartActionButtons}
             </Box>
         </Box>

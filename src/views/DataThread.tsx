@@ -1125,10 +1125,8 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
                 conceptShelfItems={conceptShelfItems}
                 status={status}
                 onChartClick={() => {
-                    batch(() => {
-                        dispatch(dfActions.setFocusedChart(chart.id));
-                        dispatch(dfActions.setFocusedTable(table.id));
-                    })
+                    dispatch(dfActions.setFocusedChart(chart.id));
+                    dispatch(dfActions.setFocusedTable(table.id));
                 }}
                 onDelete={() => {dispatch(dfActions.deleteChartById(chart.id))}}
             />;

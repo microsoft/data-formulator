@@ -5,7 +5,7 @@ import React, { FC, useEffect, useMemo } from 'react';
 
 import _ from 'lodash';
 
-import { Typography, Box, Link, Breadcrumbs, useTheme } from '@mui/material';
+import { Typography, Box, Link, Breadcrumbs, useTheme, Fade } from '@mui/material';
 
 import '../scss/DataView.scss';
 
@@ -124,22 +124,22 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView({  $table
             }, ...colDefs]
         }
 
-        return <SelectableDataGrid 
+        return  <Fade in={true} timeout={600} key={targetTable?.id}>
+            <Box sx={{height: 'calc(100% - 28px)'}}>
+                <SelectableDataGrid
                     tableId={targetTable?.id || ""}
                     $tableRef={$tableRef} 
                     tableName={targetTable?.displayId || targetTable?.id || "table"} 
                     rows={rowData} 
                     columnDefs={colDefs}
-                    onSelectionFinished={onRangeSelectionChanged} 
+                    onSelectionFinished={()=>{}} 
                     rowCount={targetTable?.virtual?.rowCount || rowData.length}
                     virtual={targetTable?.virtual ? true : false}
                 />
+            </Box>
+        </Fade>
     }
 
-    // handle when selection changes
-    const onRangeSelectionChanged = (columns: string[], selected: any[]) => {
-        let values = _.uniq(selected);
-    };
 
     let coreTables = tableToRender.filter(t => t.derive == undefined || t.anchored);
     let tempTables = tableToRender.filter(t => t.derive && !t.anchored);
