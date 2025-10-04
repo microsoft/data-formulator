@@ -49,7 +49,7 @@ import _ from 'lodash';
 
 import '../scss/EncodingShelf.scss';
 import AnimateHeight from 'react-animate-height';
-import { getDomains, getIconFromDtype, getIconFromType, groupConceptItems } from './ViewUtils';
+import { getIconFromDtype, getIconFromType, groupConceptItems } from './ViewUtils';
 import { getUrls } from '../app/utils';
 import { Type } from '../data/types';
 
@@ -308,9 +308,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
         </FormControl>
     ] : [];
 
-    let domainItems = field ? getDomains(field as FieldItem, tables)[0] : [];
-
-    // deduplicate domain items
+    let domainItems = field ? activeTable?.rows.map(row => row[field?.name]) : [];
     domainItems = [...new Set(domainItems)];
 
     let autoSortEnabled = field && fieldMetadata?.type == Type.String && domainItems.length < 200;

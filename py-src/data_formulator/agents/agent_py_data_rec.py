@@ -69,24 +69,31 @@ Concretely:
     - "chart_encodings" should specify which fields should be used to create the visualization
         - decide which visual channels should be used to create the visualization appropriate for the chart type.
             - point: x, y, color, size, facet
+            - histogram: x, color, facet
             - bar: x, y, color, facet
             - line: x, y, color, facet
             - area: x, y, color, facet
             - heatmap: x, y, color, facet
             - group_bar: x, y, color, facet
-        - do not include other intermediate fields from "output_fields".
+        - note that all fields used in "chart_encodings" should be included in "output_fields".
+            - all fields you need for visualizations should be transformed into the output fields!
+            - "output_fields" should include important intermediate fields that are not used in visualization but are used for data transformation.
         - typically only 2-3 fields should be used to create the visualization (x, y, color/size), facet use be added if it's a faceted visualization (totally 4 fields used).
     - Guidelines for choosing chart type and visualization fields:
         - Consider chart types as follows:
-             - (point) Scatter Plots: x,y: Quantitative/Categorical, color: Categorical (optional), size: Quantitative (optional for creating bubble chart), 
+            - (point) Scatter Plots: x,y: Quantitative/Categorical, color: Categorical (optional), size: Quantitative (optional for creating bubble chart), 
                 - best for: Relationships, correlations, distributions, forecasting, regression analysis
                 - scatter plots are good default way to visualize data when other chart types are not applicable.
                 - use color to visualize points from different categories.
                 - use size to visualize data points with an additional quantitative dimension of the data points.
-             - (bar) Bar Charts: x: Categorical (nominal/ordinal), y: Quantitative, color: Categorical (optional for group or stacked bar chart), 
+            - (histogram) Histograms: x: Quantitative/Categorical, color: Categorical (optional for creating grouped histogram), 
+                - best for: Distribution of a quantitative field
+                - use x values directly if x values are categorical, and transform the data into bins if the field values are quantitative.
+                - when color is specified, the histogram will be grouped automatically (items with the same x values will be grouped).
+            - (bar) Bar Charts: x: Categorical (nominal/ordinal), y: Quantitative, color: Categorical/Quantitative (for stacked bar chart / showing additional quantitative dimension), 
                 - best for: Comparisons across categories
                 - use (bar) for simple bar chart or stacked bar chart (when it makes sense to add up Y values for each category with the same X value), 
-                    - when color is specified, it will turn the chart into a stacked bar chart.
+                    - when color is specified, the bar will be stacked automatically (items with the same x values will be stacked).
                     - note that when there are multiple rows in the data with same x values, the bar will be stacked automatically.
                         - 1. consider to use an aggregated field for y values if the value is not suitable for stacking.
                         - 2. consider to introduce facets so that each group is visualized in a separate bar.

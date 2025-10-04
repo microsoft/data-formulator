@@ -41,7 +41,7 @@ import _ from 'lodash';
 import '../scss/EncodingShelf.scss';
 import { createDictTable, DictTable } from "../components/ComponentType";
 
-import { getUrls, resolveChartFields, getTriggers, assembleVegaChart } from '../app/utils';
+import { getUrls, resolveChartFields, getTriggers, assembleVegaChart, resolveRecommendedChart } from '../app/utils';
 import { EncodingBox } from './EncodingBox';
 
 import { ChannelGroups, CHART_TEMPLATES, getChartChannels, getChartTemplate } from '../components/ChartTemplates';
@@ -369,6 +369,10 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
 
     let [ideateMode, setIdeateMode] = useState<boolean>(false);
     let [prompt, setPrompt] = useState<string>(trigger?.instruction || "");
+
+    useEffect(() => {
+        setPrompt(trigger?.instruction || "");
+    }, [chartId]);
 
     let encodingMap = chart?.encodingMap;
 
@@ -854,32 +858,19 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                             if (needToCreateNewChart) {
                                 let newChart : Chart; 
                                 if (mode == "ideate" || chart.chartType == "Auto") {
-                                    let chartTypeMap : any = {
-                                        "line" : "Line Chart",
-                                        "bar": "Bar Chart",
-                                        "point": "Scatter Plot",
-                                        "boxplot": "Boxplot",
-                                        "area": "Custom Area",
-                                        "heatmap": "Heatmap",
-                                        "group_bar": "Grouped Bar Chart"
-                                    }
-                                    let chartType = chartTypeMap[refinedGoal['chart_type']] || 'Scatter Plot';
-                                    newChart = generateFreshChart(candidateTable.id, chartType) as Chart;
+                                    newChart = resolveRecommendedChart(refinedGoal, currentConcepts, candidateTable);
+
                                 } else if (chart.chartType == "Table") {
                                     newChart = generateFreshChart(candidateTable.id, 'Table')
                                 } else {
-                                    newChart = JSON.parse(JSON.stringify(chart)) as Chart;
+                                    newChart = structuredClone(chart) as Chart;
                                     newChart.source = "user";
                                     newChart.id = `chart-${Date.now()- Math.floor(Math.random() * 10000)}`;
                                     newChart.saved = false;
                                     newChart.tableRef = candidateTable.id;
+                                    newChart = resolveChartFields(newChart, currentConcepts, refinedGoal['chart_encodings'], candidateTable);
                                 }   
                                 
-                                // there is no need to resolve fields for table chart, just display all fields
-                                if (chart.chartType != "Table") {   
-                                    newChart = resolveChartFields(newChart, currentConcepts, refinedGoal['chart_encodings'], candidateTable);
-                                }
-
                                 dispatch(dfActions.addAndFocusChart(newChart));
                             }
 

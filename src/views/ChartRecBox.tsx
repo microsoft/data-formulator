@@ -43,7 +43,7 @@ import _ from 'lodash';
 import '../scss/EncodingShelf.scss';
 import { createDictTable, DictTable } from "../components/ComponentType";
 
-import { getUrls, resolveChartFields, getTriggers } from '../app/utils';
+import { getUrls, getTriggers, resolveRecommendedChart } from '../app/utils';
 
 import AddIcon from '@mui/icons-material/Add';
 import PrecisionManufacturing from '@mui/icons-material/PrecisionManufacturing';
@@ -695,19 +695,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                         // Create proper chart based on refined goal
                         const currentConcepts = [...conceptShelfItems.filter(c => names.includes(c.name)), ...conceptsToAdd];
                         
-                        let chartTypeMap: any = {
-                            "line": "Line Chart",
-                            "bar": "Bar Chart", 
-                            "point": "Scatter Plot",
-                            "boxplot": "Boxplot",
-                            "area": "Custom Area",
-                            "heatmap": "Heatmap",
-                            "group_bar": "Grouped Bar Chart"
-                        };
-
-                        const chartType = chartTypeMap[refinedGoal?.['chart_type']] || 'Scatter Plot';
-                        let newChart = generateFreshChart(candidateTable.id, chartType) as Chart;
-                        newChart = resolveChartFields(newChart, currentConcepts, refinedGoal['chart_encodings'], candidateTable);
+                        let newChart = resolveRecommendedChart(refinedGoal, currentConcepts, candidateTable);
 
                         // Create and focus the new chart directly
                         dispatch(dfActions.addChart(newChart));
@@ -902,23 +890,6 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
 
                 allNewConcepts.push(...conceptsToAdd);
 
-                // Create chart from refined goal or planning data
-                let chartType = "Scatter Plot"; // default
-                let chartGoal = refinedGoal;
-
-                // Map chart types
-                const chartTypeMap: any = {
-                    "line": "Line Chart",
-                    "bar": "Bar Chart", 
-                    "point": "Scatter Plot",
-                    "boxplot": "Boxplot",
-                    "area": "Custom Area",
-                    "heatmap": "Heatmap",
-                    "group_bar": "Grouped Bar Chart"
-                };
-
-                chartType = chartTypeMap[chartGoal?.chart_type] || "Scatter Plot";
-                
                 // Create trigger chart for derive info
                 let triggerChart = generateFreshChart(actionTables[0].id, 'Auto') as Chart;
                 triggerChart.source = 'trigger';
@@ -928,18 +899,19 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                     candidateTable.derive.trigger.chart = triggerChart;
                 }
 
-                // Create regular chart that belongs to the table for visualization
-                let newChart = generateFreshChart(candidateTable.id, chartType) as Chart;
-                newChart.source = 'user';
-
                 // Resolve chart fields for regular chart if we have them
-                if (chartGoal) {
+                if (refinedGoal) {
                     const currentConcepts = [...conceptShelfItems.filter(c => names.includes(c.name)), ...allNewConcepts, ...conceptsToAdd];
-                    newChart = resolveChartFields(newChart, currentConcepts, chartGoal['chart_encodings'], candidateTable);
+                    let newChart = resolveRecommendedChart(refinedGoal, currentConcepts, candidateTable);
+                    createdCharts.push(newChart);
+
+                    dispatch(dfActions.addChart(newChart));
+                    if (focusNewChart) {
+                        dispatch(dfActions.setFocusedChart(newChart.id));
+                        dispatch(dfActions.setFocusedTable(candidateTable.id));
+                    }
                 }
-
-                createdCharts.push(newChart);
-
+                
                 // Immediately add the new concepts, table, and chart to the state
                 if (conceptsToAdd.length > 0) {
                     dispatch(dfActions.addConceptItems(conceptsToAdd));
@@ -948,13 +920,6 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                 dispatch(dfActions.insertDerivedTables(candidateTable));
                 dispatch(fetchFieldSemanticType(candidateTable));
                 dispatch(fetchCodeExpl(candidateTable));
-
-                // Add and focus on the new chart
-                dispatch(dfActions.addChart(newChart));
-                if (focusNewChart) {
-                    dispatch(dfActions.setFocusedChart(newChart.id));
-                    dispatch(dfActions.setFocusedTable(candidateTable.id));
-                }
 
                 // Show progress message
                 dispatch(dfActions.addMessages({

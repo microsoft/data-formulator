@@ -24,8 +24,13 @@ Given a dataset provided by the user,
 Types to consider include: string, number, date
 Semantic types to consider include: Location, Decade, Year, Month, YearMonth, Day, Date, Time, DateTime, TimeRange, Range, Duration, Name, Percentage, String, Number
 
-Furthermore, if the field is string type and is ordinal (especially for english month name, week name, range), provide the natural sort order of the fields here.
-Otherwise, put sort_order as null (for example, Name should not be sorted).
+
+Sort order:
+
+- if the field is string type and is ordinal, provide the natural sort order of the fields here.
+    - examples: English month name, week name, range, etc.
+- when the natural sort order is alphabetical or there is not natural sort order, there is no need to generate sort_order, examples:
+    - Name, State, City, etc.
 
 Special cases: 
 * sometimes, column name is year like "2020", "2021" but its content is not actually year (e.g., sales), in these cases, the semantic type of the column would not be Year!
@@ -39,7 +44,7 @@ output should be in the format of:
     "suggested_table_name": ..., // the name of the table
     "fields": {
         "field1": {"type": ..., "semantic_type": ..., "sort_order": [...]}, // replace field1 field2 with actual field names, if the field is string type and is ordinal, provide the natural sort order of the fields here 
-        "field2": {"type": ..., "semantic_type": ..., "sort_order": null}, 
+        "field2": {"type": ..., "semantic_type": ...}, // no need to provide sort_order if there is no inherent order of the field values
         ...
     },
     "data summary": ... // a short summary of the data

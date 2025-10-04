@@ -59,6 +59,7 @@ export function getUrls() {
 }
 
 import * as vm from 'vm-browserify';
+import { generateFreshChart } from "./dfSlice";
 
 export function usePrevious<T>(value: T): T | undefined {
     const ref = useRef<T>();
@@ -196,7 +197,9 @@ export const assembleVegaChart = (
     workingTable: any[],
     tableMetadata: {[key: string]: {type: Type, semanticType: string, levels: any[]}},
     maxNominalValues: number = 68,
-    aggrPreprocessed: boolean = false // whether the data has been preprocessed for aggregation and binning
+    aggrPreprocessed: boolean = false, // whether the data has been preprocessed for aggregation and binning
+    defaultChartWidth: number = 100,
+    defaultChartHeight: number = 80,
 ) => {
 
     if (chartType == "Table") {
@@ -405,17 +408,215 @@ export const assembleVegaChart = (
         }
     }
 
-    
+    // use post processor to handle smart chart instantiation
+    if (chartTemplate.postProcessor) {
+        vgObj = chartTemplate.postProcessor(vgObj, workingTable);
+    }
+
+    // this is the data that will be assembled into the vega chart
+    let values = structuredClone(workingTable);
+    if (values.length > 0) {
+        let keys = Object.keys(values[0]);
+        let temporalKeys = keys.filter((k: string) => 
+            tableMetadata[k] && (tableMetadata[k].type == "date" || tableMetadata[k].semanticType == "Year" || tableMetadata[k].semanticType == "Decade"));
+        if (temporalKeys.length > 0) {
+            values = values.map((r: any) => { 
+                for (let temporalKey of temporalKeys) {
+                    r[temporalKey] = String(r[temporalKey]);
+                }
+                return r;
+            })
+        }
+    }
+
+
+    let nominalCount = {
+        x: 0,
+        y: 0,
+        column: 0,
+        row: 0,
+        xOffset: 0,
+    }
+
+    // Handle nominal axes with many entries
+    for (const channel of ['x', 'y', 'column', 'row', 'xOffset']) {
+        const encoding = vgObj.encoding?.[channel];
+        if (encoding?.type === 'nominal') {
+
+            const fieldName = encoding.field;
+            const uniqueValues = [...new Set(values.map((r: any) => r[fieldName]))];
+
+            // count the nominal values in this channel
+            nominalCount[channel as keyof typeof nominalCount] = uniqueValues.length > maxNominalValues ? maxNominalValues : uniqueValues.length;
+
+            let fieldMetadata = tableMetadata[fieldName];
+            
+            const fieldOriginalType = fieldMetadata ? getDType(fieldMetadata.type, workingTable.map(r => r[fieldName])) : 'nominal';
+            
+            let valuesToKeep: any[];
+            if (uniqueValues.length > maxNominalValues) {
+                
+                if (fieldOriginalType == 'quantitative') {
+                    valuesToKeep = uniqueValues.sort((a, b) => a - b).slice(0, maxNominalValues);
+                } else if (channel == 'x' || channel == 'y') {
+                    const oppositeChannel = channel === 'x' ? 'y' : 'x';
+                    const oppositeEncoding = vgObj.encoding?.[oppositeChannel];
+                    const colorEncoding = vgObj.encoding?.color;
+
+                    let isDescending = true;
+                    let sortChannel: string | undefined;
+                    let sortField: string | undefined;
+                    let sortFieldType: string | undefined;
+
+                    // Check if this axis already has a sort configuration
+                    if (encoding.sort) {
+                        // If sort is set to -y, -x, -color, x, y, or color, respect that ordering
+                        if (typeof encoding.sort === 'string' && 
+                            (encoding.sort === '-y' || encoding.sort === '-x' || encoding.sort === '-color' || 
+                             encoding.sort === 'y' || encoding.sort === 'x' || encoding.sort === 'color')) {
+                                
+                            isDescending = encoding.sort.startsWith('-');
+                            sortChannel = isDescending ? encoding.sort.substring(1) : encoding.sort;
+                            sortField = sortChannel == 'color' ? colorEncoding?.field : oppositeEncoding?.field;
+                            sortFieldType = sortChannel == 'color' ? colorEncoding?.type : oppositeEncoding?.type;
+                        } 
+                    } else {
+                        // No explicit sort configuration, use the existing inference logic
+                        // Check if color field exists and is quantitative
+                        if (colorEncoding?.field && colorEncoding.type === 'quantitative') {
+                            // Sort by color field descending and take top maxNominalValues
+                            sortChannel = 'color';
+                            sortField = colorEncoding.field;
+                            sortFieldType = colorEncoding.type;
+                        } else if (oppositeEncoding?.type === 'quantitative') {
+                            // Sort by the quantitative field and take top maxNominalValues
+                            sortChannel = oppositeChannel;
+                            sortField = oppositeEncoding.field;
+                            sortFieldType = oppositeEncoding.type;
+                        } 
+                    }
+
+                    if (sortField != undefined && sortChannel != undefined && sortFieldType === 'quantitative') {
+
+                        let aggregateOp = Math.max;
+                        let initialValue = -Infinity;
+
+                        if (chartType == "Bar" && sortChannel != 'color') {
+                            // bar chart by default will be stacked, so we need to sum the values
+                            aggregateOp = (x: number, y: number) => x + y;
+                            initialValue = 0;
+                        }
+
+                        // Efficient single-pass aggregation + partial sort
+                        const valueAggregates = new Map<string, number>();
+
+                        // Single pass through workingTable to compute aggregates
+                        for (const row of workingTable) {
+                            const fieldValue = row[fieldName];
+                            const sortValue = row[sortField as keyof typeof row] || 0;
+                            
+                            if (valueAggregates.has(fieldValue)) {
+                                valueAggregates.set(fieldValue, aggregateOp(valueAggregates.get(fieldValue)!, sortValue));
+                            } else {
+                                valueAggregates.set(fieldValue, aggregateOp(initialValue, sortValue));
+                            }
+                        }
+
+                        // Convert to array and get top-K efficiently
+                        const valueSortPairs = Array.from(valueAggregates.entries()).map(([value, sortValue]) => ({
+                            value,
+                            sortValue
+                        }));
+
+                        // Use efficient top-K selection
+                        if (valueSortPairs.length <= maxNominalValues) {
+                            valuesToKeep = valueSortPairs
+                                .sort((a, b) => isDescending ? b.sortValue - a.sortValue : a.sortValue - b.sortValue)
+                                .map(v => v.value);
+                        } else {
+                            // For large datasets, use partial sort (more efficient than full sort)
+                            const compareFn = (a: {value: string, sortValue: number}, b: {value: string, sortValue: number}) => 
+                                isDescending ? b.sortValue - a.sortValue : a.sortValue - b.sortValue;
+                            
+                            // Sort only the top K elements
+                            valuesToKeep = valueSortPairs
+                                .sort(compareFn)
+                                .slice(0, maxNominalValues)
+                                .map(v => v.value);
+                        }
+                    } else {
+                        // If sort field is not available or not quantitative, fall back to default
+                        valuesToKeep = uniqueValues.slice(0, maxNominalValues);
+                    }
+                } else if (channel == 'facet' || channel == 'column' || channel == 'row') {
+                    valuesToKeep = uniqueValues.slice(0, maxNominalValues);
+                } else {
+                    valuesToKeep = uniqueValues.slice(0, maxNominalValues);
+                }
+
+                // Filter the working table
+                const omittedCount = uniqueValues.length - maxNominalValues;
+                const placeholder = `...${omittedCount} items omitted`;
+                values = values.filter((row: any) => valuesToKeep.includes(row[fieldName]));
+
+                // Add text formatting configuration
+                if (!encoding.axis) {
+                    encoding.axis = {};
+                }
+                encoding.axis.labelColor = {
+                    condition: {
+                        test: `datum.label == '${placeholder}'`,
+                        value: "#999999"
+                    },
+                    value: "#000000" // default color for other labels
+                };
+
+                // Add placeholder to domain
+                if (channel == 'x' || channel == 'y') {
+                    if (!encoding.scale) {
+                        encoding.scale = {};
+                    }
+                    encoding.scale.domain = [...valuesToKeep, placeholder]
+                }
+            }
+        }
+    }
 
     if (vgObj.encoding?.column != undefined && vgObj.encoding?.row == undefined) {
         vgObj['encoding']['facet'] = vgObj['encoding']['column'];
+
+        let expectedXNominalCount = nominalCount.x;
+        if (nominalCount.xOffset > 0) {
+            expectedXNominalCount = nominalCount.x * nominalCount.xOffset;
+        }
+
         vgObj['encoding']['facet']['columns'] = 6;
-        vgObj['resolve'] = {
-            "scale": {
-                "x": "independent",
+        if (expectedXNominalCount > 40) {
+            vgObj['encoding']['facet']['columns'] = 1;
+        } else if (expectedXNominalCount > 20) {
+            vgObj['encoding']['facet']['columns'] = 3;
+        }
+
+        if (Math.floor(nominalCount.column / vgObj['encoding']['facet']['columns']) >= 3) {
+            vgObj['resolve'] = {
+                "axis": {
+                    "x": "independent",
+                }
             }
         }
+        
         delete vgObj['encoding']['column'];
+    }    
+
+    for (const channel of ['facet', 'column', 'row']) {
+        const encoding = vgObj.encoding?.[channel];
+        if (encoding?.type === 'quantitative') {
+            const fieldName = encoding.field;
+            const uniqueValues = [...new Set(values.map((r: any) => r[fieldName]))];
+            if (uniqueValues.length > maxNominalValues) {
+                encoding.bin = true;
+            }
+        }
     }
 
     // Check if y-axis should have independent scaling when columns have vastly different value ranges
@@ -458,155 +659,35 @@ export const assembleVegaChart = (
         }
     }
 
-    // use post processor to handle smart chart instantiation
-    if (chartTemplate.postProcessor) {
-        vgObj = chartTemplate.postProcessor(vgObj, workingTable);
+    let facetRescaleFactor = 1;
+
+    let totalFacets = nominalCount.column > 0 ? nominalCount.column : 1;
+    totalFacets *= nominalCount.row > 0 ? nominalCount.row : 1;
+    totalFacets *= nominalCount.xOffset > 0 ? nominalCount.xOffset : 1;
+
+    if (totalFacets > 6) {
+        facetRescaleFactor = 0.4;
+    } else if (totalFacets > 4) {
+        facetRescaleFactor = 0.5;
+    } else if (totalFacets > 1) {
+        facetRescaleFactor = 0.75;
     }
 
-    // this is the data that will be assembled into the vega chart
-    let values = structuredClone(workingTable);
-    if (values.length > 0) {
-        let keys = Object.keys(values[0]);
-        let temporalKeys = keys.filter((k: string) => 
-            tableMetadata[k] && (tableMetadata[k].type == "date" || tableMetadata[k].semanticType == "Year" || tableMetadata[k].semanticType == "Decade"));
-        if (temporalKeys.length > 0) {
-            values = values.map((r: any) => { 
-                for (let temporalKey of temporalKeys) {
-                    r[temporalKey] = String(r[temporalKey]);
-                }
-                return r;
-            })
-        }
-    }
-
-    // Handle nominal axes with many entries
-    for (const channel of ['x', 'y', 'column', 'row', 'xOffset']) {
-        const encoding = vgObj.encoding?.[channel];
-        if (encoding?.type === 'nominal') {
-            const fieldName = encoding.field;
-            const uniqueValues = [...new Set(values.map((r: any) => r[fieldName]))];
-
-            let fieldMetadata = tableMetadata[fieldName];
-            
-            const fieldOriginalType = fieldMetadata ? getDType(fieldMetadata.type, workingTable.map(r => r[fieldName])) : 'nominal';
-            
-            let valuesToKeep: any[];
-            if (uniqueValues.length > maxNominalValues) {
-
-                if (fieldOriginalType == 'quantitative') {
-                    valuesToKeep = uniqueValues.sort((a, b) => a - b).slice(0, maxNominalValues);
-                } else if (channel == 'x' || channel == 'y') {
-                    const oppositeChannel = channel === 'x' ? 'y' : 'x';
-                    const oppositeEncoding = vgObj.encoding?.[oppositeChannel];
-                    const colorEncoding = vgObj.encoding?.color;
-
-                    // Check if this axis already has a sort configuration
-                    if (encoding.sort) {
-                        // If sort is set to -y, -x, -color, x, y, or color, respect that ordering
-                        if (typeof encoding.sort === 'string' && 
-                            (encoding.sort === '-y' || encoding.sort === '-x' || encoding.sort === '-color' || 
-                             encoding.sort === 'y' || encoding.sort === 'x' || encoding.sort === 'color')) {
-                            
-                            const isDescending = encoding.sort.startsWith('-');
-                            const sortField = isDescending ? encoding.sort.substring(1) : encoding.sort;
-                            
-                            if (sortField === 'color' && colorEncoding?.field && colorEncoding.type === 'quantitative') {
-                                // Sort by color field
-                                valuesToKeep = uniqueValues
-                                    .map(val => ({
-                                        value: val,
-                                        colorValue: workingTable
-                                            .filter(r => r[fieldName] === val)
-                                            .reduce((sum, r) => sum + (r[colorEncoding.field] || 0), 0)
-                                    }))
-                                    .sort((a, b) => isDescending ? b.colorValue - a.colorValue : a.colorValue - b.colorValue)
-                                    .slice(0, maxNominalValues)
-                                    .map(v => v.value);
-                            } else if (sortField === oppositeChannel && oppositeEncoding?.type === 'quantitative') {
-                                // Sort by opposite axis
-                                const quantField = oppositeEncoding.field;
-                                valuesToKeep = uniqueValues
-                                    .map(val => ({
-                                        value: val,
-                                        sum: workingTable
-                                            .filter(r => r[fieldName] === val)
-                                            .reduce((sum, r) => sum + (r[quantField] || 0), 0)
-                                    }))
-                                    .sort((a, b) => isDescending ? b.sum - a.sum : a.sum - b.sum)
-                                    .slice(0, maxNominalValues)
-                                    .map(v => v.value);
-                            } else {
-                                // If sort field is not available or not quantitative, fall back to default
-                                valuesToKeep = uniqueValues.slice(0, maxNominalValues);
-                            }
-                        } else {
-                            // If sort is a custom array or other value, just take first maxNominalValues
-                            valuesToKeep = uniqueValues.slice(0, maxNominalValues);
-                        }
-                    } else {
-                        // No explicit sort configuration, use the existing inference logic
-                        // Check if color field exists and is quantitative
-                        if (colorEncoding?.field && colorEncoding.type === 'quantitative') {
-                            // Sort by color field descending and take top maxNominalValues
-                            valuesToKeep = uniqueValues
-                                .map(val => ({
-                                    value: val,
-                                    maxColor: workingTable
-                                        .filter(r => r[fieldName] === val)
-                                        .reduce((max, r) => Math.max(max, r[colorEncoding.field] || 0), -Infinity)
-                                }))
-                                .sort((a, b) => b.maxColor - a.maxColor)
-                                .slice(0, maxNominalValues)
-                                .map(v => v.value);
-
-                        } else if (oppositeEncoding?.type === 'quantitative') {
-                            // Sort by the quantitative field and take top maxNominalValues
-                            const quantField = oppositeEncoding.field;
-                            valuesToKeep = uniqueValues
-                                .map(val => ({
-                                    value: val,
-                                    sum: workingTable
-                                        .filter(r => r[fieldName] === val)
-                                        .reduce((sum, r) => sum + (r[quantField] || 0), 0)
-                                }))
-                                .sort((a, b) => b.sum - a.sum)
-                                .slice(0, maxNominalValues)
-                                .map(v => v.value);
-                        } else {
-                            // If no quantitative axis, just take first maxNominalValues
-                            valuesToKeep = uniqueValues.slice(0, maxNominalValues);
-                        }
-                    }
-                } else if (channel == 'row') {
-                    valuesToKeep = uniqueValues.slice(0, 20);
-                } else {
-                    valuesToKeep = uniqueValues.slice(0, maxNominalValues);
-                }
-
-                // Filter the working table
-                const omittedCount = uniqueValues.length - maxNominalValues;
-                const placeholder = `...${omittedCount} items omitted`;
-                values = values.filter((row: any) => valuesToKeep.includes(row[fieldName]));
-
-                // Add text formatting configuration
-                if (!encoding.axis) {
-                    encoding.axis = {};
-                }
-                encoding.axis.labelColor = {
-                    condition: {
-                        test: `datum.label == '${placeholder}'`,
-                        value: "#999999"
-                    },
-                    value: "#000000" // default color for other labels
-                };
-
-                // Add placeholder to domain
-                if (!encoding.scale) {
-                    encoding.scale = {};
-                }
-                encoding.scale.domain = [...valuesToKeep, placeholder]
-            }
-        }
+    // Apply 0.75 scale factor for faceted charts
+    const widthScale = facetRescaleFactor;
+    const heightScale = facetRescaleFactor;
+    const stepSize = 20 * widthScale;
+    
+    vgObj['config'] = {
+        "view": {
+            "continuousWidth": defaultChartWidth * widthScale,
+            "continuousHeight": defaultChartHeight * heightScale,
+            ...totalFacets > 1 ? {
+                "step": stepSize,
+            } : {},
+        },
+        "axisX": {"labelLimit": 100, "labelFontSize": stepSize <= 10 ? 9 : 10},
+        "axisY": {"labelFontSize": stepSize <= 10 ? 9 : 10},
     }
 
     return {...vgObj, data: {values: values}}
@@ -632,103 +713,39 @@ export const adaptChart = (chart: Chart, targetTemplate: ChartTemplate) => {
         }
     }
 
-    if (targetTemplate.chart == "Histogram") {
-        newEncodingMap.y = { aggregate: "count" };
-    }
-
     return { ...chart, chartType: targetTemplate.chart, encodingMap: newEncodingMap }
 }
 
-export const resolveChartFieldsBackup = (chart: Chart, availableFields: FieldItem[], visFieldNames: string[], table: DictTable) => {
-    // resolve and update chart fields based on refined visualization goal
+export const resolveRecommendedChart = (refinedGoal: any, allFields: FieldItem[], table: DictTable) => {
     
-    let visFieldIds : string[] = visFieldNames.map(name => availableFields.find(c => c.name == name)?.id).filter(fid => fid != undefined) as string[];
+    let rawChartType = refinedGoal['chart_type'];
+    let chartEncodings = refinedGoal['chart_encodings'];
 
-    let chartChannels = getChartChannels(chart.chartType);
-
-    let ocupiedChannels = chartChannels.filter(ch => {
-        let fieldId = chart.encodingMap[ch as keyof EncodingMap].fieldID;
-        return  fieldId != undefined && table.names.includes(availableFields.find(c => c.id == fieldId)?.name || "")
-    });
-    let ocupiedFieldIds = ocupiedChannels.map(ch => chart.encodingMap[ch as keyof EncodingMap].fieldID);
-
-    let newAdditionFieldIds = visFieldIds.filter(fid => !ocupiedFieldIds.includes(fid))
-    let channelsToUpdate = [...chartChannels.filter(ch => !ocupiedChannels.includes(ch))];
-
-    for (let i = 0; i < Math.min(newAdditionFieldIds.length, channelsToUpdate.length); i ++) {
-        chart.encodingMap[channelsToUpdate[i] as keyof EncodingMap].fieldID = newAdditionFieldIds[i];
-    }
-    
-    return chart;
-}
-
-
-// Enhanced field analysis interface
-interface FieldAnalysis {
-    field: FieldItem;
-    fieldType: string; // 'quantitative', 'nominal', 'ordinal', 'temporal'
-    semanticType: string; // 'Date', 'Year', 'Decade', ...
-    cardinality: number;
-    isLowCardinality: boolean;
-    isVeryLowCardinality: boolean;
-    mightBeTemporal: boolean;
-}
-
-const analyzeField = (field: FieldItem, table: DictTable): FieldAnalysis => {
-    const fieldName = field.name;
-    const columnIndex = table.names.indexOf(fieldName);
-    
-    if (columnIndex === -1) {
-        return {
-            field,
-            fieldType: 'nominal',
-            semanticType: table.metadata[fieldName].semanticType || 'None',
-            cardinality: 0,
-            isLowCardinality: false,
-            isVeryLowCardinality: false,
-            mightBeTemporal: false
-        };
+    if (chartEncodings == undefined || rawChartType == undefined) {
+        let newChart = generateFreshChart(table.id, 'Scatter Plot') as Chart;
+        let basicEncodings : { [key: string]: string } = table.names.length > 1 ? {x: table.names[0], y: table.names[1]} : {};
+        newChart = resolveChartFields(newChart, allFields, basicEncodings, table);
+        return newChart;
     }
 
-    const values = table.rows.map(row => row[fieldName]);
-    const cardinality = new Set(values.filter(v => v != null)).size;
-    const fieldType = getDType(table.metadata[fieldName].type, values);
-    const mightBeTemporal = 
-        field.name.toLowerCase().endsWith("year") 
-        || field.name.toLowerCase().endsWith("decade") 
-        || field.name.toLowerCase().endsWith("decades")
-        || (fieldType == "quantitative" && values.every(v => typeof v === "number") && 
-            isLikelyYear(values));
-    
-    return {
-        field,
-        fieldType,
-        semanticType: table.metadata[fieldName].semanticType || 'None',
-        cardinality,
-        isLowCardinality: cardinality <= 20,
-        isVeryLowCardinality: cardinality <= 10,
-        mightBeTemporal: mightBeTemporal
-    };
-};
-
-// Helper function to detect if values look like years
-const isLikelyYear = (values: any[]): boolean => {
-    const numericValues = values.filter(v => v != null && typeof v === "number");
-    if (numericValues.length === 0) return false;
-    
-    // Check if values are in reasonable year range
-    const inYearRange = numericValues.every(v => v >= 1900 && v <= 2100);
-    
-    // Check if values are integers (years should be whole numbers)
-    const areIntegers = numericValues.every(v => Number.isInteger(v));
-    
-    // Check if the range is reasonable for years (not too spread out)
-    const min = Math.min(...numericValues);
-    const max = Math.max(...numericValues);
-    const reasonableRange = (max - min) <= 200;
-    
-    return inYearRange && areIntegers && reasonableRange;
-};
+    let chartTypeMap : any = {
+        "line" : "Line Chart",
+        "histogram": "Bar Chart",
+        "bar": "Bar Chart",
+        "point": "Scatter Plot",
+        "boxplot": "Boxplot",
+        "area": "Custom Area",
+        "heatmap": "Heatmap",
+        "group_bar": "Grouped Bar Chart"
+    }
+    let chartType = chartTypeMap[rawChartType] || 'Scatter Plot';
+    let newChart = generateFreshChart(table.id, chartType) as Chart;
+    newChart = resolveChartFields(newChart, allFields, chartEncodings, table);
+    if (rawChartType == "histogram") {
+        newChart.encodingMap.y = { aggregate: "count" };
+    }
+    return newChart;
+}
 
 export const resolveChartFields = (chart: Chart, allFields: FieldItem[], chartEncodings: { [key: string]: string }, table: DictTable) => {
     for (let [key, value] of Object.entries(chartEncodings)) {
@@ -738,7 +755,9 @@ export const resolveChartFields = (chart: Chart, allFields: FieldItem[], chartEn
         }
 
         let field = allFields.find(c => c.name === value);
-        chart.encodingMap[key as Channel] = { fieldID: field?.id };
+        if (field) {
+            chart.encodingMap[key as Channel] = { fieldID: field.id };
+        }
     }
     return chart;
 }

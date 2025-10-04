@@ -15,19 +15,6 @@ import prettier from "prettier";
 import parserBabel from 'prettier/parser-babel';
 import { DictTable } from '../components/ComponentType';
 
-// from a list of potential tables, extract domain of a given basic or custom fields
-export const getDomains = (field: FieldItem, tables: DictTable[]) : any[][] => {
-    
-    let domains = tables.filter(t => Object.keys(t.rows[0]).includes(field.name))
-            .map(t => [...new Set(t.rows.map(row => row[field.name]))])
-    
-    domains = domains.filter((d, i) =>  {
-        return !domains.slice(0, i).some(prevD => JSON.stringify(prevD.slice().sort()) == JSON.stringify(d.slice().sort()));
-    })
-    // if there is no table that includes the given concept, then wrap it around so it is still sound
-    return domains.length == 0 ? [[]] : domains;
-}
-
 export const groupConceptItems = (conceptShelfItems: FieldItem[], tables: DictTable[])  => {
     // group concepts based on which source table they belongs to
     return conceptShelfItems.map(f => {

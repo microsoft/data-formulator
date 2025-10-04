@@ -28,7 +28,7 @@ import {
 import { VegaLite } from 'react-vega'
 
 import '../scss/VisualizationView.scss';
-import { useDispatch, useSelector } from 'react-redux';
+import { batch, useDispatch, useSelector } from 'react-redux';
 import { DataFormulatorState, dfActions, SSEMessage } from '../app/dfSlice';
 import { assembleVegaChart, getTriggers } from '../app/utils';
 import { Chart, DictTable, EncodingItem, FieldItem, Trigger } from "../components/ComponentType";
@@ -1125,8 +1125,10 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
                 conceptShelfItems={conceptShelfItems}
                 status={status}
                 onChartClick={() => {
-                    dispatch(dfActions.setFocusedChart(chart.id));
-                    dispatch(dfActions.setFocusedTable(table.id));
+                    batch(() => {
+                        dispatch(dfActions.setFocusedChart(chart.id));
+                        dispatch(dfActions.setFocusedTable(table.id));
+                    })
                 }}
                 onDelete={() => {dispatch(dfActions.deleteChartById(chart.id))}}
             />;

@@ -51,24 +51,12 @@ export interface ConceptShelfProps {
 
 export const ConceptGroup: FC<{groupName: string, fields: FieldItem[]}> = function ConceptGroup({groupName, fields}) {
 
-    const focusedTableId = useSelector((state: DataFormulatorState) => state.focusedTableId);
-    const tables = useSelector((state: DataFormulatorState) => state.tables);
-
     const [expanded, setExpanded] = useState(false);
     const dispatch = useDispatch();
     const theme = useTheme();   
     const handleCleanUnusedConcepts = () => {
         dispatch(dfActions.clearUnReferencedCustomConcepts());
     };
-
-    useEffect(() => {
-        let focusedTable = tables.find(t => t.id == focusedTableId);
-        if (focusedTableId == groupName || focusedTable?.derive?.source.includes(groupName)) {
-            setExpanded(true);
-        } else if (focusedTableId != groupName && groupName != "new fields") {
-            setExpanded(false);
-        }
-    }, [focusedTableId])
 
     // Separate fields for display logic
     const displayFields = expanded ? fields : fields.slice(0, 6);

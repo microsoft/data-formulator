@@ -160,7 +160,7 @@ export let ChartElementFC: FC<{
 }
 
 export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ chartId }) {
-    const theme = useTheme();
+
     const [collapseEditor, setCollapseEditor] = useState(false);
     const tables = useSelector((state: DataFormulatorState) => state.tables);
     let allCharts = useSelector(dfSelectors.getAllCharts);
