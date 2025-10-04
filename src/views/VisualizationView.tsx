@@ -579,6 +579,8 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
         chartUnavailable={chartUnavailable}
     />;
 
+    // Use a unique key to ensure the fade animation is triggered when the chart is updated
+    // it will unmount and mount the chart element, causing the fade animation to trigger
     let focusedElement = <Fade key={`fade-${focusedChart.id}-${dataVersion}-${focusedChart.chartType}-${JSON.stringify(focusedChart.encodingMap)}`} 
                             in={!isDataStale} timeout={600}>                            
                             <Box sx={{margin: "auto", display: 'flex', flexDirection: 'row',}}>
