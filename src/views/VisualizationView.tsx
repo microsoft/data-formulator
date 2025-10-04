@@ -29,6 +29,8 @@ import {
     Snackbar,
     Alert,
     Collapse,
+    Fade,
+    Grow,
 } from '@mui/material';
 
 import _ from 'lodash';
@@ -291,24 +293,16 @@ const VegaChartRenderer: FC<{
     chartWidth: number;
     chartHeight: number;
     scaleFactor: number;
-    onSetChartUnavailable: (unavailable: boolean) => void;
-}> = React.memo(({ chart, conceptShelfItems, visTableRows, tableMetadata, chartWidth, chartHeight, scaleFactor, onSetChartUnavailable }) => {
+    chartUnavailable: boolean;
+}> = React.memo(({ chart, conceptShelfItems, visTableRows, tableMetadata, chartWidth, chartHeight, scaleFactor, chartUnavailable }) => {
     
     const elementId = `focused-chart-element-${chart.id}`;
     
     useEffect(() => {
         
-        if (chart.chartType === "Auto" || chart.chartType === "Table") {
-            onSetChartUnavailable(false);
+        if (chart.chartType === "Auto" || chart.chartType === "Table" || chartUnavailable) {
             return;
         }
-
-        if (!checkChartAvailabilityOnPreparedData(chart, conceptShelfItems, visTableRows)) {
-            onSetChartUnavailable(true);
-            return;
-        }
-
-        onSetChartUnavailable(false);
 
         const assembledChart = assembleVegaChart(
             chart.chartType, 
@@ -343,7 +337,7 @@ const VegaChartRenderer: FC<{
             console.error('Chart rendering error:', error);
         });
 
-    }, [chart.id, chart.chartType, chart.encodingMap, conceptShelfItems, visTableRows, tableMetadata, chartWidth, chartHeight, scaleFactor]);
+    }, [chart.id, chart.chartType, chart.encodingMap, conceptShelfItems, visTableRows, tableMetadata, chartWidth, chartHeight, scaleFactor, chartUnavailable]);
 
     if (chart.chartType === "Auto") {
         return <Box sx={{ position: "relative", display: "flex", flexDirection: "column", margin: 'auto', color: 'darkgray' }}>
@@ -397,6 +391,8 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
 
     const [chatDialogOpen, setChatDialogOpen] = useState<boolean>(false);
     const [localScaleFactor, setLocalScaleFactor] = useState<number>(1);
+
+    const [chartUpdated, setChartUpdated] = useState<boolean>(false);
 
     // Reset local UI state when focused chart changes
     useEffect(() => {
@@ -457,12 +453,27 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
 
     const [visTableRows, setVisTableRows] = useState<any[]>(processedData);
     const [visTableTotalRowCount, setVisTableTotalRowCount] = useState<number>(table.virtual?.rowCount || table.rows.length);
+    
+    // Track which chart+table the current data belongs to (prevents showing stale data during transitions)
+    const [dataVersion, setDataVersion] = useState<string>(`${focusedChart.id}-${table.id}`);
+    const currentRequestRef = useRef<string>('');
+    
+    // Check if current data is stale (belongs to different chart/table)
+    const isDataStale = dataVersion !== `${focusedChart.id}-${table.id}`;
+    
+    // Use empty data if stale to avoid showing incorrect data during transitions
+    const activeVisTableRows = isDataStale ? [] : visTableRows;
+    const activeVisTableTotalRowCount = isDataStale ? 0 : visTableTotalRowCount;
 
     async function fetchDisplayRows(sampleSize?: number) {
         if (sampleSize == undefined) {
             sampleSize = 1000;
         }
         if (table.virtual) {
+            // Generate unique request ID to track this specific request
+            const requestId = `${focusedChart.id}-${table.id}-${Date.now()}`;
+            currentRequestRef.current = requestId;
+            
             let { aggregateFields, groupByFields } = extractFieldsFromEncodingMap(focusedChart.encodingMap, conceptShelfItems);
             fetch(getUrls().SAMPLE_TABLE, {
                 method: 'POST',
@@ -479,22 +490,33 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
             })
             .then(response => response.json())
             .then(data => {
-                if (data.status == "success") {
-                    setVisTableRows(data.rows);
-                    setVisTableTotalRowCount(data.total_row_count);
-                } else {
-                    setVisTableRows([]);
-                    setVisTableTotalRowCount(0);
-                    setSystemMessage(data.message, "error");
+                // Only update if this is still the current request (not stale)
+                if (currentRequestRef.current === requestId) {
+                    const versionId = `${focusedChart.id}-${table.id}`;
+                    if (data.status == "success") {
+                        setVisTableRows(data.rows);
+                        setVisTableTotalRowCount(data.total_row_count);
+                        setDataVersion(versionId);
+                    } else {
+                        setVisTableRows([]);
+                        setVisTableTotalRowCount(0);
+                        setDataVersion(versionId);
+                        setSystemMessage(data.message, "error");
+                    }
                 }
+                // Else: this response is stale, ignore it
             })
             .catch(error => {
-                console.error('Error sampling table:', error);
+                // Only show error if this is still the current request
+                if (currentRequestRef.current === requestId) {
+                    console.error('Error sampling table:', error);
+                }
             });
         } else {
             // Randomly sample sampleSize rows from table.rows
             let rowSample = _.sampleSize(table.rows, sampleSize);
             setVisTableRows(structuredClone(rowSample));
+            setDataVersion(`${focusedChart.id}-${table.id}`);
         }
     }
 
@@ -505,6 +527,13 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
     }, [])
 
     useEffect(() => {
+        const versionId = `${focusedChart.id}-${table.id}`;
+        
+        setChartUpdated(true);
+        setTimeout(() => {
+            setChartUpdated(false);
+        }, 600)
+
         if (visFields.length > 0 && dataFieldsAllAvailable) {
             // table changed, we need to update the rows to display
             if (table.virtual) {
@@ -515,39 +544,47 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                 const newProcessedData = createVisTableRowsLocal(table.rows);
                 setVisTableRows(newProcessedData);
                 setVisTableTotalRowCount(table.rows.length);
+                setDataVersion(versionId);
             }
         } else if (visFields.length === 0) {
             // If no fields, just use the table rows directly
             setVisTableRows(table.rows);
             setVisTableTotalRowCount(table.virtual?.rowCount || table.rows.length);
+            setDataVersion(versionId);
         }
     }, [focusedChart, table.id])
     
-    const [chartUnavailable, setChartUnavailable] = useState(true);
+    // Calculate chart availability in the parent
+    const chartUnavailable = useMemo(() => {
+        if (focusedChart.chartType === "Auto" || focusedChart.chartType === "Table") {
+            return false;
+        }
+        // Check if fields exist in table and table has rows
+        return !(dataFieldsAllAvailable && table.rows.length > 0);
+    }, [focusedChart.chartType, dataFieldsAllAvailable, table.rows.length]);
+
     let resultTable = tables.find(t => t.id == trigger?.resultTableId);
 
     let codeExpl = table.derive?.explanation?.code || ""
-
-    // Wrap callback in useCallback to prevent VegaChartRenderer from re-rendering
-    const handleSetChartUnavailable = useCallback((unavailable: boolean) => {
-        setChartUnavailable(unavailable);
-    }, []);
 
     let focusedChartElement = <VegaChartRenderer
         key={focusedChart.id}
         chart={focusedChart}
         conceptShelfItems={conceptShelfItems}
-        visTableRows={visTableRows}
+        visTableRows={activeVisTableRows}
         tableMetadata={table.metadata}
         chartWidth={config.defaultChartWidth}
         chartHeight={config.defaultChartHeight}
         scaleFactor={localScaleFactor}
-        onSetChartUnavailable={handleSetChartUnavailable}
+        chartUnavailable={chartUnavailable}
     />;
 
-    let focusedElement = <Box sx={{margin: "auto", display: 'flex', flexDirection: 'row',}}>
+    let focusedElement = <Fade key={`fade-${focusedChart.id}-${dataVersion}-${focusedChart.chartType}-${JSON.stringify(focusedChart.encodingMap)}`} 
+                            in={!isDataStale} timeout={600}>                            
+                            <Box sx={{margin: "auto", display: 'flex', flexDirection: 'row',}}>
                                 {focusedChartElement}
-                        </Box>;
+                            </Box>
+                        </Fade>;
     
     let saveButton = (
         <Tooltip key="save-copy-tooltip" title="save a copy">
@@ -774,7 +811,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
         chartMessage = "AI generated results can be inaccurate, inspect it!";
     }
 
-    let chartActionItems = 
+    let chartActionItems = isDataStale ? [] : (
         <>
             {table.virtual || table.rows.length > 1000 ? (
                 <Box sx={{ display: 'flex', flexDirection: "row", margin: "auto", justifyContent: 'center', alignItems: 'center'}}>
@@ -782,8 +819,8 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                         visualizing
                     </Typography>
                     <SampleSizeEditor 
-                        initialSize={visTableRows.length}
-                        totalSize={visTableTotalRowCount}
+                        initialSize={activeVisTableRows.length}
+                        totalSize={activeVisTableTotalRowCount}
                         onSampleSizeChange={(newSize) => {
                             fetchDisplayRows(newSize);
                         }}
@@ -793,7 +830,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                     </Typography>
                     <Tooltip title="sample again!">
                         <IconButton size="small" color="primary" onClick={() => {
-                            fetchDisplayRows(visTableRows.length);
+                            fetchDisplayRows(activeVisTableRows.length);
                         }}>
                             <CasinoIcon sx={{ fontSize: '14px', 
                                 transition: 'transform 0.5s ease-in-out', '&:hover': { transform: 'rotate(180deg)' } }}/>
@@ -805,6 +842,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                 {chartMessage}
             </Typography>
         </>
+    )
     
     let codeExplComp = <MuiMarkdown
             overrides={{

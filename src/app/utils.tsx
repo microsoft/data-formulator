@@ -619,6 +619,12 @@ export const assembleVegaChart = (
         }
     }
 
+    let facetRescaleFactor = 1;
+
+    let totalFacets = nominalCount.column > 0 ? nominalCount.column : 1;
+    totalFacets *= nominalCount.row > 0 ? nominalCount.row : 1;
+    totalFacets *= nominalCount.xOffset > 0 ? nominalCount.xOffset : 1;
+
     // Check if y-axis should have independent scaling when columns have vastly different value ranges
     if (vgObj.encoding?.facet != undefined && vgObj.encoding?.y?.type === 'quantitative') {
         const yField = vgObj.encoding.y.field;
@@ -646,7 +652,7 @@ export const assembleVegaChart = (
                 const ratio = maxValue / minValue;
                 
                 // If difference is 100x or more, use independent y-axis scaling
-                if (ratio >= 100) {
+                if (ratio >= 100 && totalFacets < 6) {
                     if (!vgObj.resolve) {
                         vgObj.resolve = {};
                     }
@@ -659,11 +665,6 @@ export const assembleVegaChart = (
         }
     }
 
-    let facetRescaleFactor = 1;
-
-    let totalFacets = nominalCount.column > 0 ? nominalCount.column : 1;
-    totalFacets *= nominalCount.row > 0 ? nominalCount.row : 1;
-    totalFacets *= nominalCount.xOffset > 0 ? nominalCount.xOffset : 1;
 
     if (totalFacets > 6) {
         facetRescaleFactor = 0.4;
