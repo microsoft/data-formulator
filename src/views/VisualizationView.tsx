@@ -310,7 +310,7 @@ const VegaChartRenderer: FC<{
             conceptShelfItems, 
             visTableRows, 
             tableMetadata, 
-            Math.min(chartWidth * 2 / 20, 48), 
+            24, 
             true, 
             chartWidth, 
             chartHeight
@@ -354,7 +354,7 @@ const VegaChartRenderer: FC<{
         return generateChartSkeleton(chartTemplate?.icon, 48, 48);
     }
 
-    return <Box id={elementId}></Box>;
+    return <Box id={elementId} sx={{mx: 2}}></Box>;
 });
 
 
@@ -892,8 +892,8 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
 
     let focusedElement = <Fade key={`fade-${focusedChart.id}-${dataVersion}-${focusedChart.chartType}-${JSON.stringify(focusedChart.encodingMap)}`} 
                             in={!isDataStale} timeout={600}>    
-                            <Box sx={{display: "flex", flexDirection: "column", flexShrink: 0}} className="chart-box">
-                                <Box sx={{margin: "auto", minHeight: 240, maxWidth: '90%', overflow: "auto"}}>
+                            <Box sx={{display: "flex", flexDirection: "column", flexShrink: 0, justifyContent: 'center', justifyItems: 'center'}} className="chart-box">
+                                <Box sx={{m: 'auto', minHeight: 240, maxWidth: '90%', overflow: "auto"}}>
                                     <VegaChartRenderer
                                         key={focusedChart.id}
                                         chart={focusedChart}

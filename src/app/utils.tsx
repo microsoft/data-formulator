@@ -196,7 +196,7 @@ export const assembleVegaChart = (
     conceptShelfItems: FieldItem[], 
     workingTable: any[],
     tableMetadata: {[key: string]: {type: Type, semanticType: string, levels: any[]}},
-    maxNominalValues: number = 68,
+    maxFacetNominalValues: number = 30,
     aggrPreprocessed: boolean = false, // whether the data has been preprocessed for aggregation and binning
     defaultChartWidth: number = 100,
     defaultChartHeight: number = 80,
@@ -439,26 +439,32 @@ export const assembleVegaChart = (
         xOffset: 0,
     }
 
-    // Handle nominal axes with many entries
+    // by default, we allow strech width twice and fit as many bars as possible with minStepSize
+    let defaultStepSize = 20;
+    let maxXYToKeep = Math.min(defaultChartWidth * 2 / defaultStepSize, 48);
+
+    // Decide what are top values to keep for each channel
     for (const channel of ['x', 'y', 'column', 'row', 'xOffset', "color"]) {
         const encoding = vgObj.encoding?.[channel];
         if (encoding?.type === 'nominal') {
+
+            let maxNominalValuesToKeep = channel == 'x' || channel == 'y' ?  maxXYToKeep : maxFacetNominalValues;
 
             const fieldName = encoding.field;
             const uniqueValues = [...new Set(values.map((r: any) => r[fieldName]))];
 
             // count the nominal values in this channel
-            nominalCount[channel as keyof typeof nominalCount] = uniqueValues.length > maxNominalValues ? maxNominalValues : uniqueValues.length;
+            nominalCount[channel as keyof typeof nominalCount] = uniqueValues.length > maxNominalValuesToKeep ? maxNominalValuesToKeep : uniqueValues.length;
 
             let fieldMetadata = tableMetadata[fieldName];
             
             const fieldOriginalType = fieldMetadata ? getDType(fieldMetadata.type, workingTable.map(r => r[fieldName])) : 'nominal';
             
             let valuesToKeep: any[];
-            if (uniqueValues.length > maxNominalValues) {
+            if (uniqueValues.length > maxNominalValuesToKeep) {
                 
                 if (fieldOriginalType == 'quantitative' || channel == 'color') {
-                    valuesToKeep = uniqueValues.sort((a, b) => a - b).slice(0, channel == 'color' ? 24 : maxNominalValues);
+                    valuesToKeep = uniqueValues.sort((a, b) => a - b).slice(0, channel == 'color' ? 24 : maxNominalValuesToKeep);
                 } else if (channel == 'x' || channel == 'y') {
                     const oppositeChannel = channel === 'x' ? 'y' : 'x';
                     const oppositeEncoding = vgObj.encoding?.[oppositeChannel];
@@ -494,7 +500,9 @@ export const assembleVegaChart = (
                             sortChannel = oppositeChannel;
                             sortField = oppositeEncoding.field;
                             sortFieldType = oppositeEncoding.type;
-                        } 
+                        } else {
+                            isDescending = false;
+                        }
                     }
 
                     if (sortField != undefined && sortChannel != undefined && sortFieldType === 'quantitative') {
@@ -530,7 +538,7 @@ export const assembleVegaChart = (
                         }));
 
                         // Use efficient top-K selection
-                        if (valueSortPairs.length <= maxNominalValues) {
+                        if (valueSortPairs.length <= maxNominalValuesToKeep) {
                             valuesToKeep = valueSortPairs
                                 .sort((a, b) => isDescending ? b.sortValue - a.sortValue : a.sortValue - b.sortValue)
                                 .map(v => v.value);
@@ -542,26 +550,26 @@ export const assembleVegaChart = (
                             // Sort only the top K elements
                             valuesToKeep = valueSortPairs
                                 .sort(compareFn)
-                                .slice(0, maxNominalValues)
+                                .slice(0, maxNominalValuesToKeep)
                                 .map(v => v.value);
                         }
                     } else {
                         // If sort field is not available or not quantitative, fall back to default
-                        valuesToKeep = uniqueValues.slice(0, maxNominalValues);
+                        valuesToKeep = uniqueValues.slice(0, maxNominalValuesToKeep);
                     }
                 } else if (channel == 'facet' || channel == 'column' || channel == 'row') {
-                    valuesToKeep = uniqueValues.slice(0, maxNominalValues);
+                    valuesToKeep = uniqueValues.slice(0, maxNominalValuesToKeep);
                 } else {
-                    valuesToKeep = uniqueValues.slice(0, maxNominalValues);
+                    valuesToKeep = uniqueValues.slice(0, maxNominalValuesToKeep);
                 }
 
                 // Filter the working table
-                const omittedCount = uniqueValues.length - maxNominalValues;
+                const omittedCount = uniqueValues.length - valuesToKeep.length;
                 const placeholder = `...${omittedCount} items omitted`;
                 if (channel != 'color') {
                     values = values.filter((row: any) => valuesToKeep.includes(row[fieldName]));
                 }
-
+        
                 // Add text formatting configuration
                 if (!encoding.axis) {
                     encoding.axis = {};
@@ -573,7 +581,7 @@ export const assembleVegaChart = (
                     },
                     value: "#000000" // default color for other labels
                 };
-
+        
                 // Add placeholder to domain
                 if (channel == 'x' || channel == 'y') {
                     if (!encoding.scale) {
@@ -591,6 +599,7 @@ export const assembleVegaChart = (
     }
 
     if (vgObj.encoding?.column != undefined && vgObj.encoding?.row == undefined) {
+
         vgObj['encoding']['facet'] = vgObj['encoding']['column'];
 
         let expectedXNominalCount = nominalCount.x;
@@ -614,24 +623,38 @@ export const assembleVegaChart = (
         }
         
         delete vgObj['encoding']['column'];
-    }    
+    }
+
+    // total facets is the product of the number of columns and rows
+    let totalFacets = nominalCount.column > 0 ? nominalCount.column : 1;
+    totalFacets *= nominalCount.row > 0 ? nominalCount.row : 1;
+    totalFacets *= nominalCount.xOffset > 0 ? nominalCount.xOffset : 1;
+
+    let facetRescaleFactor = 1;
+    if (totalFacets > 6) {
+        facetRescaleFactor = 0.4;
+    } else if (totalFacets > 4) {
+        facetRescaleFactor = 0.5;
+    } else if (totalFacets > 1) {
+        facetRescaleFactor = 0.75;
+    }
 
     for (const channel of ['facet', 'column', 'row']) {
         const encoding = vgObj.encoding?.[channel];
         if (encoding?.type === 'quantitative') {
             const fieldName = encoding.field;
             const uniqueValues = [...new Set(values.map((r: any) => r[fieldName]))];
-            if (uniqueValues.length > maxNominalValues) {
+            if (uniqueValues.length > maxFacetNominalValues) {
                 encoding.bin = true;
             }
         }
     }
-
-    let facetRescaleFactor = 1;
-
-    let totalFacets = nominalCount.column > 0 ? nominalCount.column : 1;
-    totalFacets *= nominalCount.row > 0 ? nominalCount.row : 1;
-    totalFacets *= nominalCount.xOffset > 0 ? (nominalCount.xOffset * nominalCount.x / 16) : 1;
+    
+    let xTotalNominalCount = nominalCount.x;
+    if (nominalCount.xOffset > 0) {
+        xTotalNominalCount = nominalCount.x * nominalCount.xOffset;
+    }
+    let yTotalNominalCount = nominalCount.y;
 
     // Check if y-axis should have independent scaling when columns have vastly different value ranges
     if (vgObj.encoding?.facet != undefined && vgObj.encoding?.y?.type === 'quantitative') {
@@ -673,37 +696,27 @@ export const assembleVegaChart = (
         }
     }
 
-
-    if (totalFacets > 6) {
-        facetRescaleFactor = 0.4;
-    } else if (totalFacets > 4) {
-        facetRescaleFactor = 0.5;
-    } else if (totalFacets > 1) {
-        facetRescaleFactor = 0.75;
-    }
-
     // Apply 0.75 scale factor for faceted charts
     const widthScale = facetRescaleFactor;
     const heightScale = facetRescaleFactor;
 
-    // special case to handle when x axis has only very few values, we will use a larger (thus math.max), otherwise just scale
-    const stepSize = 20 * Math.min(1, Math.max(1, 20 / Math.max(nominalCount.x, nominalCount.y)) * widthScale);
-    
+    let stepSize = Math.max(8, Math.min(defaultStepSize, 
+        Math.floor(facetRescaleFactor * defaultChartHeight * 2 / Math.max(xTotalNominalCount, yTotalNominalCount))));
+
     vgObj['config'] = {
         "view": {
             "continuousWidth": defaultChartWidth * widthScale,
             "continuousHeight": defaultChartHeight * heightScale,
-            ...totalFacets > 1 ? {
-                "step": stepSize,
-            } : {},
+            "step": stepSize,
+
         },
         "axisX": {"labelLimit": 100, "labelFontSize": stepSize <= 10 ? stepSize : 10},
         "axisY": {"labelFontSize": stepSize <= 10 ? stepSize : 10},
-        
     }
     if (totalFacets > 6) {
         vgObj['config']['header'] = { labelLimit: 120, labelFontSize: 9 };
     }
+
 
     return {...vgObj, data: {values: values}}
 }

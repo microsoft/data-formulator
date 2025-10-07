@@ -133,7 +133,8 @@ Concretely:
             - the output should be a long format table where actual x, y pairs with a third column "cluster_id" that indicates the cluster id of the data point.
             - the recommended chart should be scatter plot (quantitative x, y)
             
-    2. Then, write a python function based on the inferred goal, the function input is a dataframe "df" (or multiple dataframes based on tables presented in the [CONTEXT] section) and the output is the transformed dataframe "transformed_df". "transformed_df" should contain all "output_fields" from the refined goal.
+    2. Then, write a python function based on the inferred goal, the function input is a dataframe "df" (or multiple dataframes based on tables presented in the [CONTEXT] section) and the output is the transformed dataframe "transformed_df". 
+"transformed_df" should contain all "output_fields" from the refined user intent in the json object.
 The python function must follow the template provided in [TEMPLATE], do not import any other libraries or modify function name. The function should be as simple as possible and easily readable. 
 If there is no data transformation needed based on "output_fields", the transformation function can simply "return df".
 
@@ -159,7 +160,7 @@ note:
     - if the output is time only: convert hour to number if it's just the hour (e.g., 10), but convert hour:min or h:m:s to string object (e.g., "10:30", "10:30:45")
     - never return datetime object directly, convert it to either number (if it only contains year) or string so it's readable.
     
-    3. The output must only contain a json object representing the refined goal and a python code block representing the transformation code, do not add any extra text explanation.
+    3. The output must only contain a json object representing inferred user intent and a python code block representing the transformation code, do not add any extra text explanation.
 '''
 
 example = """

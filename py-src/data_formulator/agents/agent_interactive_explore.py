@@ -6,6 +6,7 @@ import logging
 import pandas as pd
 
 from data_formulator.agents.agent_utils import extract_json_objects, generate_data_summary
+from data_formulator.agents.agent_sql_data_transform import get_sql_table_statistics_str, sanitize_table_name
 
 logger = logging.getLogger(__name__)
 
@@ -112,9 +113,21 @@ data: {"type": "branch" | "deep_dive", "questions": [...], "goal": ..., "difficu
 
 class InteractiveExploreAgent(object):
 
-    def __init__(self, client, agent_exploration_rules=""):
+    def __init__(self, client, agent_exploration_rules="", db_conn=None):
         self.client = client
         self.agent_exploration_rules = agent_exploration_rules
+        self.db_conn = db_conn
+
+    def get_data_summary(self, input_tables):
+        if self.db_conn:
+            data_summary = ""
+            for table in input_tables:
+                table_name = sanitize_table_name(table['name'])
+                table_summary_str = get_sql_table_statistics_str(self.db_conn, table_name)
+                data_summary += f"[TABLE {table_name}]\n\n{table_summary_str}\n\n"
+        else:
+            data_summary = generate_data_summary(input_tables, include_data_samples=False)
+        return data_summary
 
     def run(self, input_tables, start_question=None, exploration_thread=None, 
                   current_data_sample=None, current_chart=None, mode='interactive'):
@@ -133,7 +146,7 @@ class InteractiveExploreAgent(object):
         """
         
         # Generate data summary
-        data_summary = generate_data_summary(input_tables, include_data_samples=False)
+        data_summary = self.get_data_summary(input_tables)
         
         # Build context including exploration thread if available
         context = f"[DATASET]\n\n{data_summary}"
@@ -142,9 +155,7 @@ class InteractiveExploreAgent(object):
             thread_summary = "Tables in this exploration thread:\n"
             for i, table in enumerate(exploration_thread, 1):
                 table_name = table.get('name', f'Table {i}')
-                data_summary = generate_data_summary([{'name': table_name, 'rows': table.get('rows', [])}], 
-                                                     include_data_samples=False,
-                                                     field_sample_size=5)
+                data_summary = self.get_data_summary([{'name': table_name, 'rows': table.get('rows', [])}])
                 table_description = table.get('description', 'No description available')
                 thread_summary += f"{i}. {table_name}: {table_description} \n\n{data_summary}\n\n"
             context += f"\n\n[EXPLORATION THREAD]\n\n{thread_summary}"

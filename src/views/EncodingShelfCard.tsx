@@ -30,6 +30,10 @@ import {
     Theme,
     CircularProgress,
     Button,
+    Dialog,
+    DialogTitle,
+    DialogContent,
+    DialogActions,
 } from '@mui/material';
 
 import React from 'react';
@@ -372,6 +376,9 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
 
     useEffect(() => {
         setPrompt(trigger?.instruction || "");
+        if (!(chartState[chartId] && chartState[chartId].ideas.length > 0)) {
+            setIdeateMode(false);
+        }
     }, [chartId]);
 
     let encodingMap = chart?.encodingMap;
@@ -380,8 +387,6 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
 
     const [chartTypeMenuOpen, setChartTypeMenuOpen] = useState<boolean>(false);
     
-    // Add state for test dialog
-    const [testDialogOpen, setTestDialogOpen] = useState<boolean>(false);
 
     let handleUpdateChartType = (newChartType: string) => {
         dispatch(dfActions.updateChartType({chartId, chartType: newChartType}));
@@ -396,10 +401,43 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
     // Add this state
     const [userSelectedActionTableIds, setUserSelectedActionTableIds] = useState<string[]>([]);
     
-    // Add state for ideas and loading
-    const [ideas, setIdeas] = useState<{text: string, goal: string, difficulty: 'easy' | 'medium' | 'hard'}[]>([]);
-    const [thinkingBuffer, setThinkingBuffer] = useState<string>("");
-    const [isLoadingIdeas, setIsLoadingIdeas] = useState<boolean>(false);
+    // Consolidated chart state - maps chartId to its ideas, thinkingBuffer, and loading state
+    const [chartState, setChartState] = useState<Record<string, {
+        ideas: {text: string, goal: string, difficulty: 'easy' | 'medium' | 'hard'}[],
+        thinkingBuffer: string,
+        isLoading: boolean
+    }>>({});
+    
+    // Get current chart's state
+    const currentState = chartState[chartId] || { ideas: [], thinkingBuffer: "", isLoading: false };
+    const currentChartIdeas = currentState.ideas;
+    const thinkingBuffer = currentState.thinkingBuffer;
+    const isLoadingIdeas = currentState.isLoading;
+    
+    // Helper functions to update current chart's state
+    const setIdeas = (ideas: {text: string, goal: string, difficulty: 'easy' | 'medium' | 'hard'}[]) => {
+        setChartState(prev => ({
+            ...prev,
+            [chartId]: { ...prev[chartId] || { thinkingBuffer: "", isLoading: false }, ideas }
+        }));
+    };
+    
+    const setThinkingBuffer = (thinkingBuffer: string) => {
+        setChartState(prev => ({
+            ...prev,
+            [chartId]: { ...prev[chartId] || { ideas: [], isLoading: false }, thinkingBuffer }
+        }));
+    };
+    
+    const setIsLoadingIdeas = (isLoading: boolean) => {
+        setChartState(prev => ({
+            ...prev,
+            [chartId]: { ...prev[chartId] || { ideas: [], thinkingBuffer: "" }, isLoading }
+        }));
+    };
+    
+    // Add state for developer message dialog
+    const [devMessageOpen, setDevMessageOpen] = useState<boolean>(false);
     
     // Update the handler to use state
     const handleUserSelectedActionTableChange = (newTableIds: string[]) => {
@@ -485,6 +523,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                     rows: rootTable.rows,
                     attached_metadata: rootTable.attachedMetadata
                 }],
+                language: currentTable.virtual ? "sql" : "python",
                 exploration_thread: explorationThread,
                 current_data_sample: currentTable.rows.slice(0, 10),
                 current_chart: currentChartPng,
@@ -923,7 +962,6 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
             });
     }
 
-    let createDisabled = false;
 
     // zip multiple components together
     const w: any = (a: any[], b: any[]) => a.length ? [a[0], ...w(b, a.slice(1))] : b;
@@ -964,7 +1002,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                 <Tooltip title={<Typography sx={{fontSize: 11}}>formulate and override <TableRowsIcon sx={{fontSize: 10, marginBottom: '-1px'}}/>{trigger.resultTableId}</Typography>}>
                     <span>
                         <IconButton sx={{ marginLeft: "0"}} size="small"
-                            disabled={createDisabled} color={"warning"} onClick={() => { 
+                             color={"warning"} onClick={() => { 
                                 deriveNewData(trigger.instruction, 'formulate', trigger.resultTableId); 
                             }}>
                             <ChangeCircleOutlinedIcon fontSize="small" />
@@ -976,7 +1014,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
             <Tooltip title={`Formulate`}>
                 <span>
                     <IconButton sx={{ marginLeft: "0"}} 
-                        disabled={createDisabled} color={"primary"} onClick={() => { deriveNewData(prompt, 'formulate'); }}>
+                         color={"primary"} onClick={() => { deriveNewData(prompt, 'formulate'); }}>
                         <PrecisionManufacturing />
                     </IconButton>
                 </span>
@@ -985,8 +1023,8 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
         
     </Box>
 
-    // Ideas display section
-    let ideasSection = ideas.length > 0 ? (
+    // Ideas display section - get ideas for current chart
+    let ideasSection = currentChartIdeas.length > 0 ? (
         <Box key='ideas-section'>
             <Box sx={{
                 p: 0.5,
@@ -994,7 +1032,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                 flexWrap: 'wrap', 
                 gap: 0.75,
             }}>
-                {ideas.map((idea, index) => (
+                {currentChartIdeas.map((idea, index) => (
                     <IdeaChip
                         mini={true}
                         mode="interactive"
@@ -1002,7 +1040,6 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                         idea={idea}
                         theme={theme}
                         onClick={() => handleIdeaClick(idea.text)}
-                        disabled={createDisabled}
                     />
                 ))}
                 {isLoadingIdeas && thinkingBuffer && (
@@ -1052,7 +1089,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                     }
                 }}
                 onClick={() => {
-                    if (ideas.length > 0) {
+                    if (currentChartIdeas.length > 0) {
                         setIdeateMode(true);
                         setPrompt("");
                     } else {
@@ -1061,24 +1098,22 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                     }
                 }}
             >
-                {ideas.length > 0 ? "Ideas" : "Get Ideas"}
-                {ideas.length == 0 && (
-                    <LightbulbOutlinedIcon 
-                        sx={{
-                            fontSize: 12, 
-                            animation: 'pulse 3s ease-in-out infinite',
-                            '@keyframes pulse': {
-                                '0%': {
-                                },
-                                '50%': {
-                                    color: theme.palette.derived.main,
-                                },
-                                '100%': {
-                                }
+                {currentChartIdeas.length > 0 ? "Ideas" : "Get Ideas"}
+                <LightbulbOutlinedIcon 
+                    sx={{
+                        fontSize: 12, 
+                        animation: 'pulse 3s ease-in-out infinite',
+                        '@keyframes pulse': {
+                            '0%': {
+                            },
+                            '50%': {
+                                color: theme.palette.derived.main,
+                            },
+                            '100%': {
                             }
-                        }} 
-                    />
-                )}
+                        }
+                    }} 
+                />
             </Typography>
             <Typography 
                 sx={{ 
@@ -1099,19 +1134,17 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                 Editor
             </Typography>
             <Box sx={{ flex: 1 }} />
-            <Tooltip title="Test resolveChartFields function">
-                <IconButton
-                    size="small"
-                    onClick={() => setTestDialogOpen(true)}
-                    sx={{ 
-                        width: 20,
-                        height: 20,
-                        fontSize: '10px'
-                    }}
-                >
-                    <BugReportIcon fontSize="inherit" />
-                </IconButton>
-            </Tooltip>
+            <IconButton
+                size="small"
+                onClick={() => setDevMessageOpen(true)}
+                sx={{ 
+                    width: 20,
+                    height: 20,
+                    fontSize: '10px'
+                }}
+            >
+                <BugReportIcon fontSize="inherit" />
+            </IconButton>
         </Box>
     );
 
@@ -1221,13 +1254,14 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
         </Box>);
 
     const encodingShelfCard = (
-        <Card variant='outlined' sx={{ 
-            padding: 0, 
-            maxWidth: "400px", 
-            display: 'flex', 
-            flexDirection: 'column', 
-            backgroundColor: trigger ? "rgba(255, 160, 122, 0.07)" : "" 
-        }}>
+        <>
+            <Card variant='outlined' sx={{ 
+                padding: 0, 
+                maxWidth: "400px", 
+                display: 'flex', 
+                flexDirection: 'column', 
+                backgroundColor: trigger ? "rgba(255, 160, 122, 0.07)" : "" 
+            }}>
             <ModeToggleHeader />
             {ideateMode ? (
                 <Box sx={{ padding: 1 }}>
@@ -1235,7 +1269,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                         <span>
                             <Button 
                                 variant="text"
-                                disabled={createDisabled || isLoadingIdeas} 
+                                disabled={isLoadingIdeas} 
                                 color={"primary"} 
                                 size="small"
                                 onClick={() => { getIdeasForVisualization(); }}
@@ -1245,7 +1279,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                                     textTransform: 'none',
                                 }}
                             >
-                                {isLoadingIdeas ? ThinkingBanner('ideating...') : "Different ideas?"} 
+                                {isLoadingIdeas ? ThinkingBanner('ideating...') : currentChartIdeas.length > 0 ? "Different ideas?" : "Get Ideas?"} 
                             </Button>
                         </span>
                     </Tooltip>
@@ -1257,6 +1291,65 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                 </Box>
             )}
         </Card>
+        <Dialog
+            open={devMessageOpen}
+            onClose={() => setDevMessageOpen(false)}
+            maxWidth="sm"
+            fullWidth
+            PaperProps={{
+                sx: {
+                    borderRadius: 2,
+                    boxShadow: theme.shadows[10],
+                }
+            }}
+        >
+            <DialogTitle sx={{ 
+                pb: 1,
+                fontWeight: 600,
+                fontSize: '1.25rem',
+                color: theme.palette.primary.main
+            }}>
+                👋 Hello from the developers!
+            </DialogTitle>
+            <DialogContent>
+                <Typography variant="body1" sx={{ mb: 2 }}>
+                    How did you find this? We're glad you're exploring!
+                    <br />
+                    Drop us a message at{' '}
+                    <Typography
+                        component="a"
+                        href="https://github.com/microsoft/data-formulator"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        sx={{
+                            fontSize: 'inherit',
+                            color: theme.palette.primary.main,
+                            textDecoration: 'none',
+                            fontWeight: 500,
+                            '&:hover': {
+                                textDecoration: 'underline',
+                            }
+                        }}
+                    >
+                        github.com/microsoft/data-formulator
+                    </Typography>
+                    {' '}if you have any questions or feedback.
+                </Typography>
+            </DialogContent>
+            <DialogActions sx={{ px: 3, pb: 2 }}>
+                <Button 
+                    onClick={() => setDevMessageOpen(false)}
+                    variant="contained"
+                    sx={{
+                        textTransform: 'none',
+                        borderRadius: 1.5,
+                    }}
+                >
+                    Got it!
+                </Button>
+            </DialogActions>
+        </Dialog>
+        </>
     );
 
     return encodingShelfCard;

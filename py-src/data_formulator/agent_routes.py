@@ -643,8 +643,14 @@ def get_recommendation_questions():
 
             client = get_client(content['model'])
 
+            language = content.get("language", "python")
+            if language == "sql":
+                db_conn = db_manager.get_connection(session['session_id'])
+            else:
+                db_conn = None
+
             agent_exploration_rules = content.get("agent_exploration_rules", "")
-            agent = InteractiveExploreAgent(client=client, agent_exploration_rules=agent_exploration_rules)
+            agent = InteractiveExploreAgent(client=client, agent_exploration_rules=agent_exploration_rules, db_conn=db_conn)
 
             # Get input tables from the request
             input_tables = content.get("input_tables", [])

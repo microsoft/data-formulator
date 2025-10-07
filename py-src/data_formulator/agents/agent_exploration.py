@@ -6,6 +6,7 @@ import logging
 import base64
 
 from data_formulator.agents.agent_utils import extract_json_objects, generate_data_summary
+from data_formulator.agents.agent_sql_data_transform import get_sql_table_statistics_str, sanitize_table_name
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +40,7 @@ Guidelines:
 ```json
 {
     "status": "present|warning", // Decision on whether to present findings or warning 
-    "summary": "...", // a string, that provides a clear and concise summary of the findings and insights (or why stop) in bullet points based on all analysis steps.
+    "summary": "...", // a string, a concise summary of the findings and insights (or why stop) in bullet points based on all analysis steps.
 }
 ```
 
@@ -94,8 +95,10 @@ Guidelines:
 
 class ExplorationAgent(object):
 
-    def __init__(self, client):
+    def __init__(self, client, agent_exploration_rules="", db_conn=None):
+        self.agent_exploration_rules = agent_exploration_rules
         self.client = client
+        self.db_conn = db_conn
 
     def process_gpt_response(self, messages, response):
         """Process GPT response to extract exploration plan"""
@@ -151,6 +154,17 @@ class ExplorationAgent(object):
                     "type": "image_url",
                     "image_url": {"url": f"data:image/png;base64,{img_data}"}
                 }
+
+    def get_data_summary(self, input_tables):
+        if self.db_conn:
+            data_summary = ""
+            for table in input_tables:
+                table_name = sanitize_table_name(table['name'])
+                table_summary_str = get_sql_table_statistics_str(self.db_conn, table_name)
+                data_summary += f"[TABLE {table_name}]\n\n{table_summary_str}\n\n"
+        else:
+            data_summary = generate_data_summary(input_tables)
+        return data_summary
             
     def suggest_followup(self, input_tables, completed_steps: list[dict], next_steps: list[str]):
         """
@@ -166,19 +180,19 @@ class ExplorationAgent(object):
             the followup analysis based on the previous results
         """
         
-        data_summary = generate_data_summary(input_tables)
+        data_summary = self.get_data_summary(input_tables)
 
         # Prepare messages for the completion call
         messages = [
-            {"role": "system", "content": FOLLOWUP_PROMPT},
+            {"role": "system", "content": FOLLOWUP_PROMPT + "\n\n[AGENT EXPLORATION RULES]\n" + self.agent_exploration_rules + "\n\nPlease follow the above agent exploration rules when suggesting followup steps."},
             {"role": "user", "content": f"[CONTEXT]\n\n{data_summary}"},
         ]
 
         for i,step in enumerate(completed_steps):
             code = step['code']
-            if 'name' not in step['data']:
+            if 'name' not in step['data'] or step['data']['name'] is None:
                 step['data']['name'] = f'table-s-{i+1}'
-            data = generate_data_summary([step['data']])
+            data = self.get_data_summary([step['data']])
 
             if step['visualization']:
                 chart_message = self.get_chart_message(step['visualization'])

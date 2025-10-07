@@ -334,6 +334,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                     rows: t.rows,
                     attached_metadata: t.attachedMetadata
                 })),
+                language: currentTable.virtual ? "sql" : "python",
                 exploration_thread: explorationThread,
                 agent_exploration_rules: agentRules.exploration
             });
