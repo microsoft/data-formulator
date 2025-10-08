@@ -439,7 +439,6 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
             let lines: string[] = [];
             let buffer = '';
 
-
             let runNextIdea = autoRunFirstIdea;
             let updateState = (lines: string[]) => {
                 let dataBlocks = lines
@@ -469,7 +468,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                         for (let i = 1; i < newIdeas[0].breadth_questions.length; i++) {
                             setTimeout(() => {
                                 deriveDataFromNL(newIdeas[0].breadth_questions[i], true);
-                            }, i * 1000);
+                            }, i + 1 * 1000);
                         }
                     }
                     setAgentIdeas(newIdeas);
@@ -1299,7 +1298,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                                     <span>
                                         <IconButton 
                                             size="medium"
-                                            disabled={isFormulating || !currentTable || prompt.trim() === ""}
+                                            disabled={isFormulating || isLoadingIdeas || !currentTable || prompt.trim() === ""}
                                             sx={{
                                                 color: modeColor,
                                                 '&:hover': {
@@ -1334,7 +1333,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                             <span>
                                 <IconButton 
                                     size="medium"
-                                    disabled={isFormulating || !currentTable || isLoadingIdeas}
+                                    disabled={isFormulating || isLoadingIdeas || !currentTable}
                                     sx={{
                                         color: modeColor,
                                         '&:hover': {
@@ -1427,7 +1426,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                                             setTimeout(() => {
                                                 setPrompt(question);
                                                 deriveDataFromNL(question, index === 0);
-                                            }, index * 1000); // 1000ms delay between each call
+                                            }, (index + 1) * 1000); // 1000ms delay between each call
                                         });
                                     }}
                                     disabled={isFormulating}
