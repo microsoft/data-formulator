@@ -1035,7 +1035,6 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                 {currentChartIdeas.map((idea, index) => (
                     <IdeaChip
                         mini={true}
-                        mode="interactive"
                         key={index}
                         idea={idea}
                         theme={theme}

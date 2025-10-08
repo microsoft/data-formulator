@@ -171,13 +171,12 @@ const NLTableSelector: FC<{
 
 export const IdeaChip: FC<{
     mini?: boolean,
-    mode: 'interactive' | 'agent',
     idea: {text?: string, questions?: string[], goal: string, difficulty: 'easy' | 'medium' | 'hard', type?: 'branch' | 'deep_dive'} 
     theme: Theme, 
     onClick: () => void, 
     sx?: SxProps,
     disabled?: boolean,
-}> = function ({mini, mode, idea, theme, onClick, sx, disabled}) {
+}> = function ({mini, idea, theme, onClick, sx, disabled}) {
 
     const getDifficultyColor = (difficulty: 'easy' | 'medium' | 'hard') => {
         switch (difficulty) {
@@ -194,12 +193,7 @@ export const IdeaChip: FC<{
 
     let styleColor = getDifficultyColor(idea.difficulty || 'medium');
 
-    let ideaText: string = "";
-    if (mode == 'interactive') {
-        ideaText = mini ? idea.goal : idea.text || "";
-    } else if (idea.questions) {
-        ideaText = idea.goal;
-    }
+    let ideaText = idea.goal;
 
     let ideaTextComponent = renderTextWithEmphasis(ideaText, {
         borderRadius: '0px',
@@ -235,8 +229,76 @@ export const IdeaChip: FC<{
             }}
             onClick={disabled ? undefined : onClick}
         >
-            {idea.type === 'branch' && <CallSplitIcon sx={{color: getDifficultyColor(idea.difficulty), fontSize: 18, mr: 0.5, transform: 'rotate(90deg)'}} />}
-            {idea.type === 'deep_dive' && <MovingIcon sx={{color: getDifficultyColor(idea.difficulty), fontSize: 18, mr: 0.5, transform: 'rotate(90deg)'}} />}
+            <Typography component="div" sx={{ fontSize: '11px', color: getDifficultyColor(idea.difficulty || 'medium') }}>
+                {ideaTextComponent}
+            </Typography>
+        </Box>
+    );
+};
+
+export const AgentIdeaChip: FC<{
+    mini?: boolean,
+    idea: {breadth_questions: string[], depth_questions: string[], goal: string, difficulty: 'easy' | 'medium' | 'hard', focus: 'breadth' | 'depth'} 
+    theme: Theme, 
+    onClick: () => void, 
+    sx?: SxProps,
+    disabled?: boolean,
+}> = function ({mini, idea, theme, onClick, sx, disabled}) {
+
+    const getDifficultyColor = (difficulty: 'easy' | 'medium' | 'hard') => {
+        switch (difficulty) {
+            case 'easy':
+                return theme.palette.success.main;
+            case 'medium':
+                return theme.palette.primary.main;
+            case 'hard':
+                return theme.palette.warning.main;
+            default:
+                return theme.palette.text.secondary;
+        }
+    };
+
+    let styleColor = getDifficultyColor(idea.difficulty || 'medium');
+
+
+    let ideaText = idea.goal;
+
+    let ideaTextComponent = renderTextWithEmphasis(ideaText, {
+        borderRadius: '0px',
+        borderBottom: `1px solid`,
+        borderColor: alpha(styleColor, 0.4),
+        fontSize: '11px',
+        lineHeight: 1.4,
+        backgroundColor: alpha(styleColor, 0.05),
+    });
+
+    return (
+        <Box
+            sx={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                padding: '4px 6px',
+                fontSize: '11px',
+                minHeight: '24px',
+                height: 'auto',
+                borderRadius: 2,
+                border: `1px solid ${alpha(styleColor, 0.2)}`,
+                boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
+                transition: 'all 0.2s ease-in-out',
+                backgroundColor: alpha(theme.palette.background.paper, 0.9),
+                cursor: disabled ? 'default' : 'pointer',
+                opacity: disabled ? 0.6 : 1,
+                '&:hover': disabled ? 'none' : {
+                    boxShadow: '0 2px 6px rgba(0,0,0,0.1)',
+                    borderColor: alpha(styleColor, 0.7),
+                    transform: 'translateY(-1px)',
+                },
+                ...sx
+            }}
+            onClick={disabled ? undefined : onClick}
+        >
+            {idea.focus === 'breadth' && <CallSplitIcon sx={{color: getDifficultyColor(idea.difficulty), fontSize: 18, mr: 0.5, transform: 'rotate(90deg)'}} />}
+            {idea.focus === 'depth' && <MovingIcon sx={{color: getDifficultyColor(idea.difficulty), fontSize: 18, mr: 0.5, transform: 'rotate(90deg)'}} />}
             <Typography component="div" sx={{ fontSize: '11px', color: getDifficultyColor(idea.difficulty || 'medium') }}>
                 {ideaTextComponent}
             </Typography>
@@ -257,15 +319,23 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
     const activeChallenges = useSelector((state: DataFormulatorState) => state.activeChallenges);
 
     const [mode, setMode] = useState<'agent' | 'interactive'>("agent");
+    
+    // Color map for different modes - easy to customize!
+    const modeColorMap = {
+        'agent': theme.palette.primary.main,      // purple for agent mode
+        'interactive': theme.palette.secondary.main   // blue for interactive mode
+    };
+    const modeColor = modeColorMap[mode];
+    
     const [prompt, setPrompt] = useState<string>("");
     const [isFormulating, setIsFormulating] = useState<boolean>(false);
     const [ideas, setIdeas] = useState<{text: string, goal: string, difficulty: 'easy' | 'medium' | 'hard'}[]>(
         activeChallenges.find(ac => ac.tableId === tableId)?.challenges || []);
     
     const [agentIdeas, setAgentIdeas] = useState<{
-        questions: string[], goal: string, 
+        breadth_questions: string[], depth_questions: string[], goal: string, 
         difficulty: 'easy' | 'medium' | 'hard', 
-        tag: string, type: 'branch' | 'deep_dive' }[]>([]);
+        focus: 'breadth' | 'depth' }[]>([]);
     const [thinkingBuffer, setThinkingBuffer] = useState<string>("");
     
     // Add state for loading ideas
@@ -276,7 +346,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
 
     const availableTables = tables.filter(t => t.derive === undefined || t.anchored);
     const [additionalTableIds, setAdditionalTableIds] = useState<string[]>([]);
-    
+
     // Combine the main tableId with additional selected tables
     const selectedTableIds = currentTable?.derive ? [...currentTable.derive.source, ...additionalTableIds] : [tableId, ...additionalTableIds];
 
@@ -292,7 +362,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
     };
 
     // Function to get ideas from the interactive explore agent
-    const getIdeasFromAgent = async (mode: 'interactive' | 'agent', startQuestion?: string) => {
+    const getIdeasFromAgent = async (mode: 'interactive' | 'agent', startQuestion?: string, autoRunFirstIdea: boolean = false) => {
         if (!currentTable || isLoadingIdeas) {
             return;
         }
@@ -369,6 +439,8 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
             let lines: string[] = [];
             let buffer = '';
 
+
+            let runNextIdea = autoRunFirstIdea;
             let updateState = (lines: string[]) => {
                 let dataBlocks = lines
                     .map(line => {
@@ -376,23 +448,33 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                     .filter(block => block != null);
 
                 if (mode === "agent") {
-                    let questions = dataBlocks.filter(block => block.type == "branch" || block.type == "deep_dive").map(block => ({
-                        questions: block.questions,
+                    let questions = dataBlocks.map(block => ({
+                        breadth_questions: block.breadth_questions,
+                        depth_questions: block.depth_questions,
                         goal: block.goal,
                         difficulty: block.difficulty,
-                        tag: block.tag,
-                        type: block.type
+                        focus: block.focus
                     }));
                     const newIdeas = questions.map((question: any) => ({
-                        questions: question.questions,
+                        breadth_questions: question.breadth_questions,
+                        depth_questions: question.depth_questions,
                         goal: question.goal,
-                        type: question.type,
                         difficulty: question.difficulty,
-                        tag: question.tag
+                        focus: question.focus
                     }));
+                    if (runNextIdea) {
+                        runNextIdea = false;
+                        
+                        exploreDataFromNL(newIdeas[0].depth_questions);
+                        for (let i = 1; i < newIdeas[0].breadth_questions.length; i++) {
+                            setTimeout(() => {
+                                deriveDataFromNL(newIdeas[0].breadth_questions[i], true);
+                            }, i * 1000);
+                        }
+                    }
                     setAgentIdeas(newIdeas);
                 } else {
-                    let questions = dataBlocks.filter(block => block.type == "question").map(block => ({
+                    let questions = dataBlocks.map(block => ({
                         text: block.text,
                         goal: block.goal,
                         difficulty: block.difficulty,
@@ -462,7 +544,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
         } else if (event.key === 'Enter' && prompt.trim() !== "") {
             event.preventDefault();
             if (mode === "agent") {
-                exploreDataFromNL([prompt.trim()]);
+                exploreDataFromNLWithStartingQuestion(prompt.trim());
             } else {
                 deriveDataFromNL(prompt, true);
             }
@@ -753,6 +835,10 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                 dispatch(dfActions.deleteAgentWorkInProgress(actionId));
             }
         });
+    };
+
+    const exploreDataFromNLWithStartingQuestion = (startingQuestion: string) => {
+        getIdeasFromAgent('agent', `starting question: ${startingQuestion}\n\n generate only one question group based on the starting question`, true);
     };
 
     const exploreDataFromNL = (initialPlan: string[]) => {
@@ -1114,8 +1200,8 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                     }}
                 >
                     <Button variant="text" value="interactive" sx={{ 
-                        color: mode === "interactive" ? "primary" : "text.secondary", 
-                        backgroundColor: mode === "interactive" ? alpha(theme.palette.primary.main, 0.08) : "transparent",
+                        color: mode === "interactive" ? modeColorMap['interactive'] : "text.secondary", 
+                        backgroundColor: mode === "interactive" ? alpha(modeColorMap['interactive'], 0.08) : "transparent",
                         
                     }} onClick={() => {
                         setMode("interactive");
@@ -1123,8 +1209,8 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                         interactive
                     </Button>
                     <Button variant="text" value="agent" sx={{ 
-                            color: mode === "agent" ? "primary" : "text.secondary", 
-                            backgroundColor: mode === "agent" ? alpha(theme.palette.primary.main, 0.08) : "transparent"
+                            color: mode === "agent" ? modeColorMap['agent'] : "text.secondary", 
+                            backgroundColor: mode === "agent" ? alpha(modeColorMap['agent'], 0.08) : "transparent"
                         }} onClick={() => {
                             setMode("agent");
                         }}>
@@ -1139,14 +1225,22 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                 flexDirection: 'column',
                 gap: 1,
                 position: 'relative',
-                boxShadow: `0 0 10px 0 ${alpha(theme.palette.primary.main, 0.3)}`,
-                animation: 'glow 2s ease-in-out infinite alternate',
-                '@keyframes glow': {
+                borderColor: alpha(modeColor, 0.5),
+                animation: mode === "agent" ? 'glowAgent 2s ease-in-out infinite alternate' : 'glowInteractive 2s ease-in-out infinite alternate',
+                '@keyframes glowAgent': {
                     '0%': {
-                        boxShadow: `0 0 5px 0 ${alpha(theme.palette.primary.main, 0.1)}`,
+                        boxShadow: `0 0 5px 0 ${alpha(modeColorMap['agent'], 0.1)}`,
                     },
                     '100%': {
-                        boxShadow: `0 0 10px 0 ${alpha(theme.palette.primary.main, 0.3)}, 0 0 10px 0 ${alpha(theme.palette.primary.main, 0.3)}`,
+                        boxShadow: `0 0 10px 0 ${alpha(modeColorMap['agent'], 0.3)}, 0 0 10px 0 ${alpha(modeColorMap['agent'], 0.3)}`,
+                    }
+                },
+                '@keyframes glowInteractive': {
+                    '0%': {
+                        boxShadow: `0 0 5px 0 ${alpha(modeColorMap['interactive'], 0.1)}`,
+                    },
+                    '100%': {
+                        boxShadow: `0 0 10px 0 ${alpha(modeColorMap['interactive'], 0.3)}, 0 0 10px 0 ${alpha(modeColorMap['interactive'], 0.3)}`,
                     }
                 }
             }}>
@@ -1158,7 +1252,10 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                             left: 0,
                             right: 0,
                             zIndex: 1000,
-                            height: '4px'
+                            height: '4px',
+                            '& .MuiLinearProgress-bar': {
+                                backgroundColor: modeColor
+                            }
                         }} 
                     />
                 )}
@@ -1178,7 +1275,19 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                         sx={{
                             flex: 1,
                             "& .MuiInputLabel-root": { fontSize: '14px' },
-                            "& .MuiInput-input": { fontSize: '14px' }
+                            "& .MuiInputLabel-root.Mui-focused": { 
+                                color: modeColor
+                            },
+                            "& .MuiInput-input": { fontSize: '14px' },
+                            "& .MuiInput-underline:before": {
+                                borderBottomColor: alpha(modeColor, 0.42)
+                            },
+                            "& .MuiInput-underline:hover:not(.Mui-disabled):before": {
+                                borderBottomColor: modeColor
+                            },
+                            "& .MuiInput-underline:after": {
+                                borderBottomColor: modeColor
+                            }
                         }}
                         disabled={isFormulating || isLoadingIdeas}
                         onChange={(event) => setPrompt(event.target.value)}
@@ -1191,11 +1300,16 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                                         <IconButton 
                                             size="medium"
                                             disabled={isFormulating || !currentTable || prompt.trim() === ""}
-                                            color="primary" 
-                                            onClick={() => mode === "agent" ? exploreDataFromNL([prompt.trim()]) : deriveDataFromNL(prompt.trim(), true)}
+                                            sx={{
+                                                color: modeColor,
+                                                '&:hover': {
+                                                    backgroundColor: alpha(modeColor, 0.08)
+                                                }
+                                            }}
+                                            onClick={() => mode === "agent" ? exploreDataFromNLWithStartingQuestion(prompt.trim()) : deriveDataFromNL(prompt.trim(), true)}
                                         >
                                             {isFormulating ? <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
-                                                <CircularProgress size={24} />
+                                                <CircularProgress size={24} sx={{ color: modeColor }} />
                                             </Box> : mode === "agent" ? <MovingIcon sx={{transform: 'rotate(90deg)', fontSize: 24}} /> : <PrecisionManufacturing sx={{fontSize: 24}} />}
                                         </IconButton>
                                     </span>
@@ -1221,11 +1335,16 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                                 <IconButton 
                                     size="medium"
                                     disabled={isFormulating || !currentTable || isLoadingIdeas}
-                                    color="primary" 
+                                    sx={{
+                                        color: modeColor,
+                                        '&:hover': {
+                                            backgroundColor: alpha(modeColor, 0.08)
+                                        }
+                                    }}
                                     onClick={() => getIdeasFromAgent(mode)}
                                 >
                                     {isLoadingIdeas ? <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
-                                        <CircularProgress size={24} />
+                                        <CircularProgress size={24} sx={{ color: modeColor }} />
                                     </Box> : <TipsAndUpdatesIcon sx={{
                                         fontSize: 24,
                                         animation: ideas.length == 0 ? 'colorWipe 5s ease-in-out infinite' : 'none',
@@ -1261,7 +1380,6 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                         }}>
                             {ideas.map((idea, index) => (
                                 <IdeaChip
-                                    mode="interactive"
                                     mini
                                     key={index}
                                     idea={idea}
@@ -1298,23 +1416,19 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                             marginBottom: 1,
                         }}>
                             {agentIdeas.map((idea, index) => (
-                                <IdeaChip
-                                    mode="agent"
+                                <AgentIdeaChip
                                     mini
                                     key={index}
                                     idea={idea}
                                     theme={theme}
                                     onClick={() => {
-                                        if (idea.type === "deep_dive" && idea.questions.length > 0) {
-                                            exploreDataFromNL(idea.questions);
-                                        } else {    
-                                            idea.questions.forEach((question, index) => {
-                                                setTimeout(() => {
-                                                    setPrompt(question);
-                                                    deriveDataFromNL(question, index === 0);
-                                                }, index * 1000); // 1000ms delay between each call
-                                            });
-                                        }
+                                        exploreDataFromNL(idea.depth_questions);
+                                        idea.breadth_questions.forEach((question, index) => {
+                                            setTimeout(() => {
+                                                setPrompt(question);
+                                                deriveDataFromNL(question, index === 0);
+                                            }, index * 1000); // 1000ms delay between each call
+                                        });
                                     }}
                                     disabled={isFormulating}
                                     sx={{

@@ -10,8 +10,7 @@ import {
     Dialog,
     DialogContent,
     DialogActions,
-    Tabs,
-    Tab,
+    Divider,
     IconButton,
     useTheme,
     Badge,
@@ -23,43 +22,9 @@ import { useDispatch, useSelector } from 'react-redux';
 import { DataFormulatorState, dfActions } from '../app/dfSlice';
 import Editor from 'react-simple-code-editor';
 
-interface TabPanelProps {
-    children?: React.ReactNode;
-    index: number;
-    value: number;
-}
-
-function TabPanel(props: TabPanelProps) {
-    const { children, value, index, ...other } = props;
-
-    return (
-        <div
-            role="tabpanel"
-            hidden={value !== index}
-            id={`agent-rules-tabpanel-${index}`}
-            aria-labelledby={`agent-rules-tab-${index}`}
-            {...other}
-        >
-            {value === index && (
-                <Box sx={{ pt: 2 }}>
-                    {children}
-                </Box>
-            )}
-        </div>
-    );
-}
-
-function a11yProps(index: number) {
-    return {
-        id: `agent-rules-tab-${index}`,
-        'aria-controls': `agent-rules-tabpanel-${index}`,
-    };
-}
-
 export const AgentRulesDialog: React.FC = () => {
     const theme = useTheme();
     const [open, setOpen] = useState(false);
-    const [tabValue, setTabValue] = useState(0);
     const dispatch = useDispatch();
     const agentRules = useSelector((state: DataFormulatorState) => state.agentRules);
 
@@ -73,13 +38,11 @@ export const AgentRulesDialog: React.FC = () => {
 ## Computation 
 - ROI (return on investment) should be computed as (revenue - cost) / cost.
 - When compute moving average for date field, the window size should be 7.
-- When compute moving average for other numeric fields, the window size should be 3.
 - When performing forecasting, by default use linear models.
 
 ## Coding
 - When a string column contains placeholder '-' for missing values, convert them to ''.
 - Date should all be formated as 'YYYY-MM-DD'.
-- When visualizing distribution of a single numeric field, include a 'count' column besides the field.
 `;
 
     const explorationPlaceholder = `Example Rules:
@@ -102,10 +65,6 @@ export const AgentRulesDialog: React.FC = () => {
         }
     }, [open, agentRules]);
 
-    const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
-        setTabValue(newValue);
-    };
-
     const handleSaveCoding = () => {
         dispatch(dfActions.setAgentRules({
             coding: codingRules,
@@ -118,14 +77,6 @@ export const AgentRulesDialog: React.FC = () => {
             coding: agentRules.coding,
             exploration: explorationRules
         }));
-    };
-
-    const handleRevertCoding = () => {
-        setCodingRules(agentRules.coding);
-    };
-
-    const handleRevertExploration = () => {
-        setExplorationRules(agentRules.exploration);
     };
 
     const handleClose = () => {
@@ -175,10 +126,10 @@ export const AgentRulesDialog: React.FC = () => {
             <Dialog
                 onClose={handleClose}
                 open={open}
-                sx={{ '& .MuiDialog-paper': { maxWidth: 800, maxHeight: 600, width: '90%' } }}
+                sx={{ '& .MuiDialog-paper': { maxWidth: 800, maxHeight: '90vh', width: '90%' } }}
                 maxWidth={false}
             >
-                <DialogTitle sx={{ pb: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <Typography variant="h6">Agent Rules</Typography>
                     <IconButton
                         aria-label="close"
@@ -188,147 +139,120 @@ export const AgentRulesDialog: React.FC = () => {
                         <CloseIcon />
                     </IconButton>
                 </DialogTitle>
-                <DialogContent sx={{ padding: 1, pb: 2 }}>
-                    <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
-                        <Tabs 
-                            value={tabValue} 
-                            onChange={handleTabChange} 
-                            aria-label="agent rules tabs"
-                            slotProps={{
-                                indicator: {
-                                    sx: {
-                                        backgroundColor: tabValue === 0 ? 'primary.main' : 'secondary.main',
-                                    }
-                                },
-                                scrollButtons: {
-                                    sx: {
-                                        color: tabValue === 0 ? 'primary.main' : 'secondary.main',
-                                    }
-                                }
-                            }}
-                            sx={{ 
-                                '& .MuiTab-root': { 
-                                    textTransform: 'none',
-                                    '&.Mui-selected': {
-                                        color: tabValue === 0 ? 'primary.main' : 'secondary.main',
-                                    }
+                <DialogContent>
+                    {/* Coding Agent Rules Section */}
+                    <Box sx={{ mb: 3 }}>
+                        <Typography variant="body2" sx={{ mb: 1, fontWeight: 600, color: 'primary.main' }}>
+                            Coding Rules
+                            <Typography variant="body2" component="span" color="text.secondary" sx={{ ml: 1, fontSize: 12 }}>
+                                (Rules that guide AI agents when generating code to transform data and recommend visualizations.)
+                            </Typography>
+                        </Typography>
+                        
+                        <Box
+                            sx={{
+                                border: `1px solid ${theme.palette.primary.main}`,
+                                borderRadius: 1,
+                                overflow: 'auto',
+                                height: 180,
+                                boxShadow: `0 2px 8px ${theme.palette.primary.main}40`,
+                                transition: 'box-shadow 0.3s ease-in-out',
+                                '&:hover': {
+                                    boxShadow: `0 4px 12px ${theme.palette.primary.main}60`,
                                 }
                             }}
                         >
-                            <Tab label="Coding Agent Rules" {...a11yProps(0)} />
-                            <Tab label="Exploration Agent Rules" {...a11yProps(1)} />
-                        </Tabs>
+                            <Editor
+                                value={codingRules}
+                                onValueChange={(code) => setCodingRules(code)}
+                                highlight={(code) => code}
+                                padding={16}
+                                placeholder={codingPlaceholder}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Tab' && !codingRules) {
+                                        e.preventDefault();
+                                        setCodingRules(codingPlaceholder);
+                                    }
+                                }}
+                                style={{
+                                    fontFamily: 'Monaco, Menlo, "Ubuntu Mono", monospace',
+                                    fontSize: 10,
+                                    lineHeight: 1.2,
+                                    minHeight: 180,
+                                    whiteSpace: 'pre-wrap',
+                                    outline: 'none',
+                                    resize: 'none',
+                                }}
+                            />
+                        </Box>
                     </Box>
-                    
-                    <TabPanel value={tabValue} index={0}>
-                        <Box sx={{ px: 2 }}>
-                            <Typography variant="body2" sx={{ mb: 2, fontSize: 12 }}>
-                                Rules that guide AI agents when generating code to transform data and recommend visualizations.
+
+                    <Divider sx={{ my: 3 }} />
+
+                    {/* Exploration Agent Rules Section */}
+                    <Box>
+                        <Typography variant="body2" sx={{ mb: 1, fontWeight: 600, color: 'secondary.main' }}>
+                            Exploration Rules
+                            <Typography variant="body2" component="span" color="text.secondary" sx={{ ml: 1, fontSize: 12 }}>
+                                (Rules that guide AI agents when exploring datasets, generating questions, and discovering insights)
                             </Typography>
-                            <Box
-                                sx={{
-                                    border: `1px solid ${theme.palette.primary.main}`,
-                                    borderRadius: 1,
-                                    overflow: 'hidden',
-                                    height: 320,
-                                    boxShadow: `0 2px 8px ${theme.palette.primary.main}40`,
-                                    transition: 'box-shadow 0.3s ease-in-out',
-                                    '&:hover': {
-                                        boxShadow: `0 4px 12px ${theme.palette.primary.main}60`,
+                        </Typography>
+                        <Box
+                            sx={{
+                                border: `1px solid ${theme.palette.secondary.main}`,
+                                borderRadius: 1,
+                                overflow: 'auto',
+                                height: 180,
+                                boxShadow: `0 2px 8px ${theme.palette.secondary.main}40`,
+                                transition: 'box-shadow 0.3s ease-in-out',
+                                '&:hover': {
+                                    boxShadow: `0 4px 12px ${theme.palette.secondary.main}60`,
+                                }
+                            }}
+                        >
+                            <Editor
+                                value={explorationRules}
+                                onValueChange={(code) => setExplorationRules(code)}
+                                highlight={(code) => code}
+                                padding={16}
+                                placeholder={explorationPlaceholder}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Tab' && !explorationRules) {
+                                        e.preventDefault();
+                                        setExplorationRules(explorationPlaceholder);
                                     }
                                 }}
-                            >
-                                <Editor
-                                    value={codingRules}
-                                    onValueChange={(code) => setCodingRules(code)}
-                                    highlight={(code) => code}
-                                    padding={16}
-                                    placeholder={codingPlaceholder}
-                                    onKeyDown={(e) => {
-                                        if (e.key === 'Tab' && !codingRules) {
-                                            e.preventDefault();
-                                            setCodingRules(codingPlaceholder);
-                                        }
-                                    }}
-                                    style={{
-                                        fontFamily: 'Monaco, Menlo, "Ubuntu Mono", monospace',
-                                        fontSize: 11,
-                                        lineHeight: 1.5,
-                                        minHeight: 320,
-                                        whiteSpace: 'pre-wrap',
-                                        outline: 'none',
-                                        resize: 'none',
-                                    }}
-                                />
-                            </Box>
-                            <Box sx={{ mt: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <Button
-                                    variant={"text"}
-                                    disabled={!hasCodingChanges}
-                                    onClick={handleSaveCoding}
-                                    sx={{ ml: 'auto', textTransform: 'none' }}
-                                >
-                                    Save Coding Rules
-                                </Button>
-                            </Box>
-                        </Box>
-                    </TabPanel>
-                    
-                    <TabPanel value={tabValue} index={1}>
-                        <Box sx={{ px: 2 }}>
-                            <Typography variant="body2" sx={{ mb: 2, fontSize: 12 }}>
-                                Rules that guide AI agents when exploring datasets, generating questions, and discovering insights
-                            </Typography>
-                            <Box
-                                sx={{
-                                    border: `1px solid ${theme.palette.secondary.main}`,
-                                    borderRadius: 1,
-                                    overflow: 'hidden',
-                                    height: 320,
-                                    boxShadow: `0 2px 8px ${theme.palette.secondary.main}40`,
-                                    transition: 'box-shadow 0.3s ease-in-out',
-                                    '&:hover': {
-                                        boxShadow: `0 4px 12px ${theme.palette.secondary.main}60`,
-                                    }
+                                style={{
+                                    fontFamily: 'Monaco, Menlo, "Ubuntu Mono", monospace',
+                                    fontSize: 10,
+                                    lineHeight: 1.2,
+                                    minHeight: 180,
+                                    whiteSpace: 'pre-wrap',
+                                    outline: 'none',
+                                    resize: 'none',
                                 }}
-                            >
-                                <Editor
-                                    value={explorationRules}
-                                    onValueChange={(code) => setExplorationRules(code)}
-                                    highlight={(code) => code}
-                                    padding={16}
-                                    placeholder={explorationPlaceholder}
-                                    onKeyDown={(e) => {
-                                        if (e.key === 'Tab' && !explorationRules) {
-                                            e.preventDefault();
-                                            setExplorationRules(explorationPlaceholder);
-                                        }
-                                    }}
-                                    style={{
-                                        fontFamily: 'Monaco, Menlo, "Ubuntu Mono", monospace',
-                                        fontSize: 11,
-                                        lineHeight: 1.5,
-                                        minHeight: 320,
-                                        backgroundColor: 'transparent',
-                                        whiteSpace: 'pre-wrap',
-                                        outline: 'none',
-                                        resize: 'none',
-                                    }}
-                                />
-                            </Box>
-                            <Box sx={{ mt: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <Button
-                                    variant={"text"}
-                                    disabled={!hasExplorationChanges}
-                                    onClick={handleSaveExploration}
-                                    color={'secondary'}
-                                    sx={{ ml: 'auto', textTransform: 'none' }}
-                                >
-                                    Save Exploration Rules
-                                </Button>
-                            </Box>
+                            />
                         </Box>
-                    </TabPanel>
+                        <Box sx={{ mt: 2, display: 'flex', justifyContent: 'flex-end' }}>
+                            <Button
+                                variant="text"
+                                disabled={!hasCodingChanges}
+                                onClick={handleSaveCoding}
+                                sx={{ textTransform: 'none' }}
+                            >
+                                Save Coding Rules
+                            </Button>
+                            <Button
+                                variant="text"
+                                disabled={!hasExplorationChanges}
+                                onClick={handleSaveExploration}
+                                color="secondary"
+                                sx={{ textTransform: 'none' }}
+                            >
+                                Save Exploration Rules
+                            </Button>
+                        </Box>
+                    </Box>
                 </DialogContent>
             </Dialog>
         </>

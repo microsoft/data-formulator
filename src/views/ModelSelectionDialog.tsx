@@ -42,6 +42,7 @@ import {
     OutlinedInput,
     Paper,
     Box,
+    Divider,
 } from '@mui/material';
 
 
@@ -84,7 +85,6 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
         'gemini': [],
         'ollama': []
     });
-    const [isLoadingModelOptions, setIsLoadingModelOptions] = useState<boolean>(false);
     const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
 
     let updateModelStatus = (model: ModelConfig, status: 'ok' | 'error' | 'testing' | 'unknown', message: string) => {
@@ -117,7 +117,6 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
     // Fetch available models from the API
     useEffect(() => {
         const fetchModelOptions = async () => {
-            setIsLoadingModelOptions(true);
             try {
                 const response = await fetch(getUrls().CHECK_AVAILABLE_MODELS);
                 const data = await response.json();
@@ -149,7 +148,6 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
             } catch (error) {
                 console.error("Failed to fetch model options:", error);
             } 
-            setIsLoadingModelOptions(false);
         };
         
         fetchModelOptions();
@@ -193,8 +191,15 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                         const assignedModelId = tempModelSlots[slotType];
                         const assignedModel = assignedModelId ? models.find(m => m.id === assignedModelId) : undefined;
                         
+                        let modelExplanation = "";
+                        if (slotType == 'generation') {
+                            modelExplanation = "(exploration planning, code generation)";
+                        } else if (slotType == 'hint') {
+                            modelExplanation = "(background data type inference, code explanation)";
+                        }
+
                         return (
-                            <Paper 
+                            <Box 
                                 key={slotType} 
                                 sx={{ 
                                     flex: '1 1 250px',
@@ -208,6 +213,9 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                             >
                                 <Typography variant="body2" sx={{ fontWeight: 'bold', mb: 1 }}>
                                     {slotType} tasks
+                                    <Typography variant="caption" color="text.secondary" component="span" sx={{ ml: 1, fontSize: '0.75rem' }}>
+                                        {modelExplanation}
+                                    </Typography>
                                 </Typography>
                                 
                                 <FormControl fullWidth size="small">
@@ -273,12 +281,12 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                                         ))}
                                     </Select>
                                 </FormControl>
-                            </Paper>
+                            </Box>
                         );
                     })}
                 </Box>
                 <Typography variant="caption" sx={{ fontSize: '0.75rem', color: 'text.secondary' }}>
-                    <strong>Note:</strong> Models with strong code generation capabilities are recommended for generation tasks.
+                    <strong>Note:</strong> Models with strong code generation and reasoning capabilities are recommended for generation tasks. Smaller and faster models are suitable for hint tasks.
                 </Typography>
             </Box>
         );
@@ -314,7 +322,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                         slotProps={{
                             input: {
                                 ...params.InputProps,
-                                style: { fontSize: "0.875rem" }
+                                style: { fontSize: "0.75rem" }
                             }
                         }}
                         size="small"
@@ -338,14 +346,14 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                 }}
             />
         </TableCell>
-        <TableCell align="left" >
+        <TableCell align="left" sx={{ minWidth: '180px' }}>
             <TextField fullWidth size="small" type={showKeys ? "text" : "password"} 
                 slotProps={{
                     input: {
-                        style: { fontSize: "0.875rem" }
+                        style: { fontSize: "0.75rem" }
                     }
                 }}
-                placeholder='leave blank if using keyless access'
+                placeholder='optional for keyless endpoint'
                 value={newApiKey}  
                 onChange={(event: any) => { setNewApiKey(event.target.value); }} 
                 autoComplete='off'
@@ -357,7 +365,6 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                 onChange={(event: any, newValue: string | null) => { setNewModel(newValue || ""); }}
                 value={newModel}
                 options={newEndpoint && providerModelOptions[newEndpoint] ? providerModelOptions[newEndpoint] : []}
-                loading={isLoadingModelOptions}
                 loadingText={<Typography sx={{fontSize: "0.875rem"}}>loading...</Typography>}
                 renderOption={(props, option) => {
                     return <Typography {...props} onClick={()=>{ setNewModel(option); }} sx={{fontSize: "small"}}>{option}</Typography>
@@ -370,10 +377,9 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                         slotProps={{
                             input: {
                                 ...params.InputProps,
-                                style: { fontSize: "0.875rem" },
+                                style: { fontSize: "0.75rem" },
                                 endAdornment: (
                                     <>
-                                        {isLoadingModelOptions ? <CircularProgress color="primary" size={20} /> : null}
                                         {params.InputProps.endAdornment}
                                     </>
                                 ),
@@ -409,7 +415,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                 placeholder="api_base"
                 slotProps={{
                     input: {
-                        style: { fontSize: "0.875rem" }
+                        style: { fontSize: "0.75rem" }
                     }
                 }}
                 value={newApiBase}  
@@ -421,16 +427,13 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
             <TextField size="small" type="text" fullWidth
                 slotProps={{
                     input: {
-                        style: { fontSize: "0.875rem" }
+                        style: { fontSize: "0.75rem" }
                     }
                 }}
                 value={newApiVersion}  onChange={(event: any) => { setNewApiVersion(event.target.value); }} 
                 autoComplete='off'
                 placeholder="api_version"
             />
-        </TableCell>
-        <TableCell align="center">
-            {/* Empty cell for Current Assignments */}
         </TableCell>
         <TableCell align="right">
             <Tooltip title={modelExists ? "provider + model already exists" : "add and test model"}>
@@ -509,17 +512,16 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
     </TableRow>
 
     let modelTable = <TableContainer>
-        <Table sx={{ minWidth: 600, "& .MuiTableCell-root": { padding: "8px 12px" } }} size="small" >
+        <Table sx={{ minWidth: 600, "& .MuiTableCell-root": { padding: "4px 8px", borderBottom: "none", fontSize: '0.75rem' } }} size="small" >
             <TableHead >
                 <TableRow>
                     <TableCell sx={{fontWeight: 'bold', width: '120px'}}>Provider</TableCell>
-                    <TableCell sx={{fontWeight: 'bold', width: '140px'}}>API Key</TableCell>
+                    <TableCell sx={{fontWeight: 'bold', width: '160px'}}>API Key</TableCell>
                     <TableCell sx={{fontWeight: 'bold', width: '160px'}} align="left">Model</TableCell>
-                    <TableCell sx={{fontWeight: 'bold', width: '240px'}} align="left">API Base</TableCell>
+                    <TableCell sx={{fontWeight: 'bold', width: '200px'}} align="left">API Base</TableCell>
                     <TableCell sx={{fontWeight: 'bold', width: '120px'}} align="left">API Version</TableCell>
-                    <TableCell sx={{fontWeight: 'bold'}} align="center">Assignments</TableCell>
-                    <TableCell sx={{fontWeight: 'bold'}} align="right">Status</TableCell>
-                    <TableCell sx={{fontWeight: 'bold'}} align="right">Action</TableCell>
+                    <TableCell sx={{fontWeight: 'bold'}} align="left">Status</TableCell>
+                    <TableCell sx={{fontWeight: 'bold'}} align="right"></TableCell>
                 </TableRow>
             </TableHead>
             <TableBody>
@@ -609,35 +611,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                                     </Typography>
                                 )}
                             </TableCell>
-                            <TableCell align="center" sx={{ borderBottom: borderStyle }}>
-                                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, justifyContent: 'center' }}>
-                                    {dfSelectors.getAllSlotTypes().map(slotType => {
-                                        const isAssigned = isModelAssignedToSlot(model.id, slotType);
-                                        return isAssigned ? (
-                                            <Box
-                                                key={slotType}
-                                                sx={{
-                                                    px: 1,
-                                                    py: 0.25,
-                                                    backgroundColor: 'primary.main',
-                                                    color: 'white',
-                                                    borderRadius: 1,
-                                                    fontSize: '0.75rem',
-                                                    textTransform: 'capitalize'
-                                                }}
-                                            >
-                                                {slotType}
-                                            </Box>
-                                        ) : null;
-                                    })}
-                                    {!dfSelectors.getAllSlotTypes().some(slotType => isModelAssignedToSlot(model.id, slotType)) && (
-                                        <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-                                            Not assigned
-                                        </Typography>
-                                    )}
-                                </Box>
-                            </TableCell>
-                            <TableCell sx={{borderBottom: borderStyle}} align="right">
+                            <TableCell sx={{borderBottom: borderStyle}} align="left">
                                 <Tooltip title={
                                     status == 'ok' ? message :  'test model availability'}>
                                     <Button
@@ -647,7 +621,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                                         sx={{ p: 0.75, fontSize: "0.75rem", textTransform: "none" }}
                                         startIcon={statusIcon}
                                     >
-                                        {status == 'ok' ? 'ready' : 'test'}
+                                        {status == 'ok' ? 'ready' : 'click to test'}
                                     </Button>
                                 </Tooltip>
                             </TableCell>
@@ -686,7 +660,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                 })}
                 {newModelEntry}
                 <TableRow>
-                    <TableCell colSpan={8} sx={{ pt: 2, pb: 1, borderTop: '1px solid #e0e0e0' }}>
+                    <TableCell colSpan={8} sx={{ pt: 2, pb: 1 }}>
                         <Typography variant="caption" sx={{ display: 'block', mb: 0.5, fontSize: '0.75rem' }}>
                             <strong>Configuration:</strong> Based on LiteLLM. <a href="https://docs.litellm.ai/docs/" target="_blank" rel="noopener noreferrer">See supported providers</a>.
                             Use 'openai' provider for OpenAI-compatible APIs.
@@ -720,8 +694,11 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
             <DialogTitle sx={{display: "flex",  alignItems: "center"}}>Configure Models for Different Tasks</DialogTitle>
             <DialogContent >
                 <SlotAssignmentSummary />
-                
-                <Typography variant="body1" sx={{ mb: 2, mt: 2, fontWeight: 'bold' }}>Available Models</Typography>
+                <Divider sx={{ my: 2 }} textAlign="left"> 
+                    <Typography variant="caption" sx={{ fontSize: '0.75rem', color: 'text.secondary' }}>
+                    available models
+                    </Typography>
+                </Divider>
                 {modelTable}
             </DialogContent>
             <DialogActions>

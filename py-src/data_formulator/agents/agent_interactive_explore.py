@@ -67,47 +67,54 @@ Given a dataset (or a thread of datasets that have been explored), your task is 
 * when the exploration context is provided, make your suggestion based on the context as well as the original dataset; otherwise leverage the original dataset to suggest questions.
 
 Guidelines for question suggestions:
-1. Suggest interesting analytical questions that are not obvious that can uncover nontrivial insights
+1. Suggest a list of question_groups of interesting analytical questions that are not obvious that can uncover nontrivial insights, including both breadth and depth questions.
+    
 2. Use a diverse language style to display the questions (can be questions, statements etc)
 3. If there are multiple datasets in a thread, consider relationships between them
 4. CONCISENESS: the questions should be concise and to the point
-5. QUESTION: the question should be a new question based on the thread of exploration:
-    - if the user provides a start question, you should suggest a high-level question that can be explored in a sequence based on the start question
-        - refine the start question if it is too vague or too specific
-        - otherwise, you can suggest a high-level question based on the data
-    - Suggest question in two types: branch and deep_dive
-        - a 'branch' question should be a group of questions:
-            - they are related to the user's goal, they should each explore a different aspect of the user's goal in parallel.
-            - questions should consider different fields, metrics and statistical methods.
-            - each question within the group should be distinct from each other that they will lead to different insights and visualizations
-        - a 'deep_dive' question should be a sequence of questions:
-            - start of the question should provide an overview of the data in the direction going to be explored, and it will be refined in the subsequent questions.
-            - they progressively dive deeper into the data, building on top of the previous question.
-            - each question should be related to the previous question, introducing refined analysis (e.g., updated computation, filtering, different grouping, etc.)
-    - each question group should have 2-4 questions based on the user's goal and the data.
-    - do not repeat questions that have already been explored in the thread.
-6. DIVERSITY: the questions should be diverse in difficulty (easy / medium / hard) and the four questions should cover different aspects of the data analysis to expand the user's horizon
-    - simple questions should be short -- single sentence exploratory questions
-    - medium questions can be 1-2 sentences exploratory questions
-    - hard questions should introduce some new analysis concept but still make it concise
-    - if suitable, include a statistical analysis question: forecasting, regression, or clustering.
-7. VISUALIZATION: the question should be visualizable with a series of charts.
-8. FORMATTING: 
-    - For each question group, include a 'goal' that summarzies the goal of the question group. 
+5. QUESTION GROUP GENERATION: 
+    - different questions groups should cover different aspects of the data analysis for user to choose from.
+    - each question_group should include both 'breadth_questions' and 'depth_questions':
+        - breadth_questions: a group of questions that are all relatively simple that helps the user understand the data in a broad sense.
+        - depth_questions: a sequence of questions that build on top of each other to answer a specific aspect of the user's goal.
+    - you have a budget of generating 4-6 questions in total (or as directed by the user).
+        - allocate 2-3 questions to 'breadth_questions' and 2-3 questions to 'depth_questions' based on the user's goal and the data.
+        - each question group should slightly lean towards 'breadth' or 'depth' exploration, but not too much.
+        - the more focused area can have more questions than the other area.
+    - each question group should have a difficulty level (easy / medium / hard),
+        - simple questions should be short -- single sentence exploratory questions
+        - medium questions can be 1-2 sentences exploratory questions
+        - hard questions should introduce some new analysis concept but still make it concise
+    - if suitable, include a group of questions that are related to statistical analysis: forecasting, regression, or clustering.
+6. QUESTIONS WITHIN A QUESTION GROUP:
+    - all questions should be a new question based on the thread of exploration the user provided, do not repeat questions that have already been explored in the thread
+    - if the user provides a start question, suggested questions should be related to the start question.
+    - when suggesting 'breadth_questions' in a question_group, they should be a group of questions:
+        - they are related to the user's goal, they should each explore a different aspect of the user's goal in parallel.
+        - questions should consider different fields, metrics and statistical methods.
+        - each question within the group should be distinct from each other that they will lead to different insights and visualizations
+    - when suggesting 'depth_questions' in a question_group, they should be a sequence of questions:
+        - start of the question should provide an overview of the data in the direction going to be explored, and it will be refined in the subsequent questions.
+        - they progressively dive deeper into the data, building on top of the previous question.
+        - each question should be related to the previous question, introducing refined analysis (e.g., updated computation, filtering, different grouping, etc.)
+    - every question should be answerable with a visualization.
+7. FORMATTING: 
+    - include "breadth_questions" and "depth_questions" in the question group:
+        - each question group should have 2-3 questions (or as directed by the user).
+    - For each question group, include a 'goal' that summarizes the goal of the question group. 
         - The goal should all be a short single sentence (<12 words).
         - Meaning of the 'goal' should be clear that the user won't misunderstand the actual question descibed in 'text'.
         - It should capture the key computation and exploration direction of the question (do not omit any information that may lead to ambiguity), but also keep it concise.
         - include the **bold** keywords for the attributes / metrics that are important to the question, especially when the goal mentions fields / metrics in the original dataset (don't have to be exact match)
     - include 'difficulty' to indicate the difficulty of the question, it should be one of 'easy', 'medium', 'hard'
-    - include a 'tag' to describe the type of the question.
-    - include a 'type' to indicate the type of the question: 'branch' or 'deep_dive'
+    - a 'focus' field to indicate whether the overall question group leans more on 'breadth' or 'depth' exploration.
 
 Output should be a list of json objects in the following format, each line should be a json object representing a question group, starting with 'data: ':
 
 Format:
 
-data: {"type": "branch" | "deep_dive", "questions": [...], "goal": ..., "difficulty": ..., "tag": ...} 
-data: {"type": "branch" | "deep_dive", "questions": [...], "goal": ..., "difficulty": ..., "tag": ...} 
+data: {"breadth_questions": [...], "depth_questions": [...], "goal": ..., "difficulty": ..., "focus": "..."} 
+data: {"breadth_questions": [...], "depth_questions": [...], "goal": ..., "difficulty": ..., "focus": "..."} 
 ... // more question groups
 '''
 

@@ -224,7 +224,7 @@ export const assembleVegaChart = (
             encodingObj["field"] = "_count";
             encodingObj["title"] = "Count";
             encodingObj["type"] = "quantitative";
-        } 
+        }
         
         if (field) {
             // create the encoding
@@ -246,7 +246,10 @@ export const assembleVegaChart = (
                 encodingObj["type"] = 'nominal';
             }
 
-            
+            if ((!encoding.dtype && channel == 'color' && chartType == 'Grouped Bar Chart') || ['column', 'row'].includes(channel)) {
+                encodingObj["type"] = 'nominal';
+            }
+
             if (encoding.dtype) {
                 encodingObj["type"] = encoding.dtype;
             }
@@ -341,7 +344,7 @@ export const assembleVegaChart = (
                 
                 if (chartType.includes("Line") || chartType.includes("Area")) {
                     // do nothing
-                } else if (encodingMap.color?.fieldID) {
+                } else if (encodingMap.color?.fieldID && encodingMap.color?.dtype === 'quantitative') {
                     // If color field exists, sort by color (ascending for nominal, descending for quantitative)
                     const colorField = _.find(conceptShelfItems, (f) => f.id === encodingMap.color.fieldID);
                     if (colorField) {
@@ -405,7 +408,6 @@ export const assembleVegaChart = (
                     let prebuiltEntries = ref[path[path.length - 1]] != undefined ? Object.entries(ref[path[path.length - 1]]) : []
                     ref[path[path.length - 1]] = Object.fromEntries([...prebuiltEntries, ...Object.entries(encodingObj)]);
                 }
-                
             }
         }
     }
@@ -537,6 +539,10 @@ export const assembleVegaChart = (
                             sortValue
                         }));
 
+
+                        console.log('--- valueSortPairs ---');
+                        console.log(valueSortPairs);
+
                         // Use efficient top-K selection
                         if (valueSortPairs.length <= maxNominalValuesToKeep) {
                             valuesToKeep = valueSortPairs
@@ -569,7 +575,7 @@ export const assembleVegaChart = (
                 if (channel != 'color') {
                     values = values.filter((row: any) => valuesToKeep.includes(row[fieldName]));
                 }
-        
+
                 // Add text formatting configuration
                 if (!encoding.axis) {
                     encoding.axis = {};
@@ -581,7 +587,7 @@ export const assembleVegaChart = (
                     },
                     value: "#000000" // default color for other labels
                 };
-        
+
                 // Add placeholder to domain
                 if (channel == 'x' || channel == 'y') {
                     if (!encoding.scale) {

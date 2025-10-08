@@ -168,11 +168,10 @@ Totals (7 entries)	5	5	5	15
 `
 
     const rotatingTexts = [
-        "data from an image",
-        "data from a text block", 
-        "a synthetic dataset",
+        "data tables in an image",
+        "data in a messy text block", 
+        "some synthetic data",
     ];
-
 
     let dataUploadRequestBox = <Box sx={{width: '100vw', overflow: 'auto', display: 'flex', flexDirection: 'column', height: '100%'}}>
         <Box sx={{margin:'auto', pb: '5%', display: "flex", flexDirection: "column", textAlign: "center"}}>
@@ -180,7 +179,7 @@ Totals (7 entries)	5	5	5	15
             <Typography variant="h3" sx={{marginTop: "20px", fontWeight: 200, letterSpacing: '0.05em'}}>
                 {toolName}
             </Typography>
-            <Typography  variant="h4" sx={{mt: 3, fontSize: 28, letterSpacing: '0.02em'}}>
+            <Typography  variant="h4" sx={{mt: 3, fontSize: 28, letterSpacing: '0.02em', textAlign: 'center'}}>
                 <DataLoadingChatDialog buttonElement={"Vibe"}/> with <RotatingTextBlock 
                     texts={rotatingTexts}
                     typingSpeed={50}
