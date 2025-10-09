@@ -351,7 +351,9 @@ const VegaChartRenderer: FC<{
 
     const chartTemplate = getChartTemplate(chart.chartType);
     if (!checkChartAvailabilityOnPreparedData(chart, conceptShelfItems, visTableRows)) {
-        return generateChartSkeleton(chartTemplate?.icon, 48, 48);
+        return <Box sx={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }} >
+            {generateChartSkeleton(chartTemplate?.icon, 48, 48)}
+        </Box>
     }
 
     return <Box id={elementId} sx={{mx: 2}}></Box>;
@@ -474,6 +476,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
     
     // Check if current data is stale (belongs to different chart/table)
     const isDataStale = dataVersion !== `${focusedChart.id}-${table.id}-${sortedVisDataFields.join("_")}`;
+
     
     // Use empty data if stale to avoid showing incorrect data during transitions
     const activeVisTableRows = isDataStale ? [] : visTableRows;
@@ -555,13 +558,13 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                 setVisTableTotalRowCount(table.rows.length);
                 setDataVersion(versionId);
             }
-        } else if (visFields.length === 0) {
+        } else {
             // If no fields, just use the table rows directly
             setVisTableRows(table.rows);
             setVisTableTotalRowCount(table.virtual?.rowCount || table.rows.length);
             setDataVersion(versionId);
         }
-    }, [dataRequirements]) // Changed from [focusedChart, table.id]
+    }, [dataRequirements])
     
 
 

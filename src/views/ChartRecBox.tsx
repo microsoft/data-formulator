@@ -57,6 +57,7 @@ import { renderTextWithEmphasis } from './EncodingShelfCard';
 import CallSplitIcon from '@mui/icons-material/CallSplit';
 import MovingIcon from '@mui/icons-material/Moving';
 import RotateRightIcon from '@mui/icons-material/RotateRight';
+import EditIcon from '@mui/icons-material/Edit';
 
 export interface ChartRecBoxProps {
     tableId: string;
@@ -1396,8 +1397,20 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                                 />
                             ))}
                             {isLoadingIdeas && thinkingBuffer && (
-                                <Typography sx={{ margin: 'auto 0', padding: 0.5, fontSize: 10, color: "darkgray", width: '46%'}}>
-                                    drafting {thinkingBuffer.slice(-60).replace(/[^\s]/g, '·')}
+                                <Typography sx={{ margin: 'auto 0', padding: 0.5, fontSize: 10, color: "darkgray", width: '46%', display: 'flex', alignItems: 'center', gap: 0.3}}>
+                                    {thinkingBuffer.slice(-60).replace(/[^\s]/g, '·')}
+                                    <EditIcon sx={{ 
+                                        fontSize: 12,
+                                        animation: 'writing 1.5s ease-in-out infinite',
+                                        '@keyframes writing': {
+                                            '0%, 100%': {
+                                                transform: 'translate(0, 0) rotate(-5deg)',
+                                            },
+                                            '50%': {
+                                                transform: 'translate(2px, 2px) rotate(5deg)',
+                                            }
+                                        }
+                                    }} />
                                 </Typography>
                             )}
                         </Box>
@@ -1439,8 +1452,20 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                                 />
                             ))}
                             {isLoadingIdeas && thinkingBuffer && (
-                                <Typography sx={{ margin: 'auto 0', padding: 0.5, fontSize: 10, color: "darkgray", width: '46%', maxLines: 3 }}>
+                                <Typography sx={{ margin: 'auto 0', padding: 0.5, fontSize: 10, color: "darkgray", width: '46%', maxLines: 3, display: 'flex', alignItems: 'center', gap: 0.3 }}>
                                     drafting {thinkingBuffer.slice(-60).replace(/[^\s]/g, '·')}
+                                    <EditIcon sx={{ 
+                                        fontSize: 12,
+                                        animation: 'writing 1.5s ease-in-out infinite',
+                                        '@keyframes writing': {
+                                            '0%, 100%': {
+                                                transform: 'translate(0, 0) rotate(-5deg)',
+                                            },
+                                            '50%': {
+                                                transform: 'translate(2px, 2px) rotate(5deg)',
+                                            }
+                                        }
+                                    }} />
                                 </Typography>
                             )}
                         </Box>
