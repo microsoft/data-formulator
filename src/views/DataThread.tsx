@@ -65,8 +65,6 @@ import AttachFileIcon from '@mui/icons-material/AttachFile';
 import { alpha } from '@mui/material/styles';
 
 import { dfSelectors } from '../app/dfSlice';
-import { ChartRecBox } from './ChartRecBox';
-
 
 export const ThinkingBanner = (message: string, sx?: SxProps) => (
     <Box sx={{ 

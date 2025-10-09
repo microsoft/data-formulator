@@ -375,11 +375,24 @@ export const assembleVegaChart = (
             encodingObj["stack"] = encoding.stack == "layered" ? null : encoding.stack;
         }
 
-        if (encoding.scheme) {
-            if ('scale' in encodingObj) {
-                encodingObj["scale"]["scheme"] = encoding.scheme;
+        if (channel == "color") {
+            if (encoding.scheme && encoding.scheme != "default") {
+                if ('scale' in encodingObj) {
+                    encodingObj["scale"]["scheme"] = encoding.scheme;
+                } else {
+                    encodingObj["scale"] =  {"scheme": encoding.scheme };
+                }
             } else {
-                encodingObj["scale"] =  {"scheme": encoding.scheme };
+                if (field) {
+                    let fieldMetadata = tableMetadata[field.name];
+                    if (fieldMetadata && ["Duration", "Range", "Percentage"].includes(fieldMetadata.semanticType) && encodingObj.type == "nominal") {
+                        let candidateSchemes = ['oranges', 'reds', 'blueorange', 'bluepurple'];
+                        if (!('scale' in encodingObj)) {
+                            encodingObj["scale"] = {};
+                        }
+                        encodingObj["scale"]["scheme"] = candidateSchemes[Math.abs(hashCode(field.name) % candidateSchemes.length)];
+                    } 
+                }
             }
         }
 

@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-import { FC, useEffect, useState } from 'react'
+import { FC, useEffect, useState, useRef } from 'react'
 import { useSelector, useDispatch } from 'react-redux'
 import { DataFormulatorState, dfActions, dfSelectors, fetchCodeExpl, fetchFieldSemanticType, generateFreshChart } from '../app/dfSlice';
 
@@ -319,6 +319,8 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
     const activeChallenges = useSelector((state: DataFormulatorState) => state.activeChallenges);
 
     const [mode, setMode] = useState<'agent' | 'interactive'>("agent");
+
+    const focusNextChartRef = useRef<boolean>(true);
     
     // Color map for different modes - easy to customize!
     const modeColorMap = {
@@ -463,13 +465,14 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                     }));
                     if (runNextIdea) {
                         runNextIdea = false;
-                        
-                        exploreDataFromNL(newIdeas[0].depth_questions);
                         for (let i = 1; i < newIdeas[0].breadth_questions.length; i++) {
                             setTimeout(() => {
-                                deriveDataFromNL(newIdeas[0].breadth_questions[i], true);
+                                deriveDataFromNL(newIdeas[0].breadth_questions[i]);
                             }, i + 1 * 1000);
                         }
+                        setTimeout(() => {
+                            exploreDataFromNL(newIdeas[0].depth_questions);
+                        }, newIdeas[0].breadth_questions.length + 1 * 1000);
                     }
                     setAgentIdeas(newIdeas);
                 } else {
@@ -542,15 +545,16 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
             }
         } else if (event.key === 'Enter' && prompt.trim() !== "") {
             event.preventDefault();
+            focusNextChartRef.current = true;
             if (mode === "agent") {
                 exploreDataFromNLWithStartingQuestion(prompt.trim());
             } else {
-                deriveDataFromNL(prompt, true);
+                deriveDataFromNL(prompt.trim());
             }
         }
     };
 
-    const deriveDataFromNL = (instruction: string, focusNewChart: boolean = true) => {
+    const deriveDataFromNL = (instruction: string) => {
 
         if (selectedTableIds.length === 0 || instruction.trim() === "") {
             return;
@@ -714,8 +718,6 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                         const refinedGoal = candidate['refined_goal'];
                         const displayInstruction = refinedGoal['display_instruction'];
 
-                        
-
                         const candidateTableId = candidate["content"]["virtual"] 
                             ? candidate["content"]["virtual"]["table_name"] 
                             : genTableId();
@@ -779,9 +781,10 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                         
                         let newChart = resolveRecommendedChart(refinedGoal, currentConcepts, candidateTable);
 
-                        // Create and focus the new chart directly
                         dispatch(dfActions.addChart(newChart));
-                        if (focusNewChart) {
+                        // Create and focus the new chart directly
+                        if (focusNextChartRef.current) {
+                            focusNextChartRef.current = false;  // Immediate, synchronous update
                             dispatch(dfActions.setFocusedChart(newChart.id));
                             dispatch(dfActions.setFocusedTable(candidateTable.id));
                         }
@@ -892,7 +895,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
         };
 
         // Function to process a single streaming result
-        const processStreamingResult = (result: any, focusNewChart: boolean) => {
+        const processStreamingResult = (result: any) => {
 
             if (result.type === "planning") {
                 dispatch(dfActions.updateAgentWorkInProgress({actionId: actionId, description: result.content.message, status: 'running', hidden: false}));
@@ -992,7 +995,8 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                     createdCharts.push(newChart);
 
                     dispatch(dfActions.addChart(newChart));
-                    if (focusNewChart) {
+                    if (focusNextChartRef.current) {
+                        focusNextChartRef.current = false;  // Immediate, synchronous update
                         dispatch(dfActions.setFocusedChart(newChart.id));
                         dispatch(dfActions.setFocusedTable(candidateTable.id));
                     }
@@ -1080,7 +1084,6 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
 
             const decoder = new TextDecoder();
             let buffer = '';
-            let focusNewChart = true; // Keep this outside the while loop
 
             try {
                 while (true) {
@@ -1105,18 +1108,9 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                                 if (data.token === token) {
                                     if (data.status === "ok" && data.result) {
                                         allResults.push(data.result);
-                                        console.log('focusNewChart', focusNewChart);
                                         
-                                        // Store the current focusNewChart value before processing
-                                        const shouldFocus = focusNewChart;
-                                        processStreamingResult(data.result, shouldFocus);
+                                        processStreamingResult(data.result);
                                         
-                                        // Only set focusNewChart to false if this result created a chart
-                                        // (i.e., if it was a data_transformation result)
-                                        if (data.result.type === "data_transformation" && data.result.status === "success") {
-                                            focusNewChart = false;
-                                        }
-
                                         // Check if this is a completion result
                                         if (data.result.type === "completion") {
                                             handleCompletion();
@@ -1305,7 +1299,14 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                                                     backgroundColor: alpha(modeColor, 0.08)
                                                 }
                                             }}
-                                            onClick={() => mode === "agent" ? exploreDataFromNLWithStartingQuestion(prompt.trim()) : deriveDataFromNL(prompt.trim(), true)}
+                                            onClick={() => { 
+                                                focusNextChartRef.current = true;
+                                                if (mode === "agent") {
+                                                    exploreDataFromNLWithStartingQuestion(prompt.trim());
+                                                } else {
+                                                    deriveDataFromNL(prompt.trim());
+                                                }
+                                            }}
                                         >
                                             {isFormulating ? <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
                                                 <CircularProgress size={24} sx={{ color: modeColor }} />
@@ -1384,8 +1385,9 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                                     idea={idea}
                                     theme={theme}
                                     onClick={() => {
+                                        focusNextChartRef.current = true;
                                         setPrompt(idea.text);
-                                        deriveDataFromNL(idea.text, true);
+                                        deriveDataFromNL(idea.text);
                                     }}
                                     disabled={isFormulating}
                                     sx={{
@@ -1421,11 +1423,12 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                                     idea={idea}
                                     theme={theme}
                                     onClick={() => {
+                                        focusNextChartRef.current = true;
                                         exploreDataFromNL(idea.depth_questions);
                                         idea.breadth_questions.forEach((question, index) => {
                                             setTimeout(() => {
                                                 setPrompt(question);
-                                                deriveDataFromNL(question, index === 0);
+                                                deriveDataFromNL(question);
                                             }, (index + 1) * 1000); // 1000ms delay between each call
                                         });
                                     }}
