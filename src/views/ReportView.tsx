@@ -24,10 +24,13 @@ import {
     ToggleButton,
     ToggleButtonGroup,
     Tooltip,
+    useTheme,
+    alpha,
 } from '@mui/material';
 import Masonry from '@mui/lab/Masonry';
-import ArticleIcon from '@mui/icons-material/Article';
+import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import EditIcon from '@mui/icons-material/Edit';
 import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
 import { useSelector } from 'react-redux';
 import { DataFormulatorState } from '../app/dfSlice';
@@ -55,17 +58,14 @@ const COLOR_SOCIAL_ACCENT = 'rgb(29, 155, 240)';
 
 // Common style patterns
 const COMMON_STYLES = {
-    flexCenter: { display: 'flex', alignItems: 'center' },
     flexColumn: { display: 'flex', flexDirection: 'column' },
     positionAbsolute: { position: 'absolute' },
     border: { border: '1px solid', borderColor: 'divider' },
     borderRadius: { borderRadius: '4px' },
     borderRadiusLarge: { borderRadius: '16px' },
     padding: { p: 2 },
-    paddingLarge: { p: 3 },
     textEllipsis: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
     textNoTransform: { textTransform: 'none' },
-    fullSize: { width: '100%', height: '100%' },
     fontSystem: { fontFamily: FONT_FAMILY_SYSTEM },
     fontWeight600: { fontWeight: 600 },
     fontWeight700: { fontWeight: 700 },
@@ -80,7 +80,7 @@ const HEADING_BASE = {
 
 const BODY_TEXT_BASE = {
     ...COMMON_STYLES.fontSystem,
-    fontSize: '1.0625rem',
+    fontSize: '1rem',
     lineHeight: 1.75,
     fontWeight: 400,
     letterSpacing: '0.003em',
@@ -109,7 +109,7 @@ const notionStyleMarkdownOverrides = {
         sx: { ...HEADING_BASE, fontWeight: 600, fontSize: '1.125rem', lineHeight: 1.5, mb: 1.5, mt: 2 } } },
     h6: { component: Typography, props: { variant: 'subtitle2', gutterBottom: true,
         sx: { ...HEADING_BASE, fontWeight: 600, fontSize: '1rem', lineHeight: 1.5, mb: 1.5, mt: 2 } } },
-    p: { component: Typography, props: { variant: 'body1', paragraph: true,
+    p: { component: Typography, props: { variant: 'body2', paragraph: true,
         sx: { ...BODY_TEXT_BASE, mb: 1.75 } } },
     a: { component: Link, props: { underline: 'hover' as const, color: 'primary' as const, 
         sx: { fontSize: 'inherit', fontWeight: 500 } } },
@@ -170,12 +170,14 @@ const socialStyleMarkdownOverrides = {
 export const ReportView: FC = () => {
     const [selectedChartIds, setSelectedChartIds] = useState<Set<string>>(new Set());
     const [generatedReport, setGeneratedReport] = useState<string>('');
+    const [generatedStyle, setGeneratedStyle] = useState<string>('blog');
     const [chartImages, setChartImages] = useState<Map<string, { url: string; width: number; height: number }>>(new Map());
     const [previewImages, setPreviewImages] = useState<Map<string, { url: string; width: number; height: number }>>(new Map());
     const [isLoadingPreviews, setIsLoadingPreviews] = useState(false);
     const [isGenerating, setIsGenerating] = useState(false);
     const [error, setError] = useState<string>('');
     const [style, setStyle] = useState<string>('blog');
+    const [mode, setMode] = useState<'compose' | 'post'>('compose');
 
     const charts = useSelector((state: DataFormulatorState) => state.charts);
     const tables = useSelector((state: DataFormulatorState) => state.tables);
@@ -183,7 +185,7 @@ export const ReportView: FC = () => {
     const models = useSelector((state: DataFormulatorState) => state.models);
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
     const config = useSelector((state: DataFormulatorState) => state.config);
-
+    const theme = useTheme();
     // Sort charts based on data thread ordering
     const sortedCharts = useMemo(() => {
         // Create table order mapping (anchored tables get higher order)
@@ -417,6 +419,8 @@ export const ReportView: FC = () => {
         setIsGenerating(true);
         setError('');
         setGeneratedReport('');
+        setGeneratedStyle(style);
+
 
         try {
             const model = models.find(m => m.id === modelSlot.generation);
@@ -517,9 +521,12 @@ export const ReportView: FC = () => {
                 }
 
                 accumulatedReport += chunk;
-                
+
                 const processedReport = processReport(accumulatedReport);
                 setGeneratedReport(processedReport);
+                if (mode === 'compose') {
+                    setMode('post');
+                }
             }
 
         } catch (err) {
@@ -530,203 +537,210 @@ export const ReportView: FC = () => {
     };
 
     return (
-        <Box sx={{ ...COMMON_STYLES.fullSize, ...COMMON_STYLES.flexColumn, overflow: 'hidden' }}>
-            {!generatedReport ? (
-                <Box sx={{ ...COMMON_STYLES.paddingLarge, overflowY: 'auto' }}>
-                    <Box sx={{ mb: 2, ...COMMON_STYLES.flexCenter, justifyContent: 'space-between', flexWrap: 'wrap', gap: 2 }}>
-                        <Box sx={{ ...COMMON_STYLES.flexCenter, gap: 1, flexWrap: 'wrap' }}>
-                            <Typography variant="body1">
-                                Create a
+        <Box sx={{ height: '100%', width: '100%', ...COMMON_STYLES.flexColumn, overflow: 'hidden' }}>
+            {mode === 'compose' ? (
+                <Box sx={{  overflowY: 'auto'}}>
+                    <Box sx={{ p: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                            <Typography variant="body2">
+                                Compose a
                             </Typography>
                             <ToggleButtonGroup
                                 value={style}
-                                color="primary"
                                 exclusive
                                 onChange={(e, newStyle) => newStyle && setStyle(newStyle)}
                                 size="small"
-                                sx={{ '& .MuiToggleButtonGroup-grouped': { border: 0 } }}
+                                sx={{ 
+                                    '& .MuiToggleButtonGroup-grouped': {
+                                        border: '1px solid',
+                                        borderColor: 'divider',
+                                        '&:not(:first-of-type)': {
+                                            marginLeft: '-1px',
+                                            borderLeft: '1px solid',
+                                            borderLeftColor: 'divider',
+                                        },
+                                        '&.Mui-selected': {
+                                            backgroundColor: 'primary.main',
+                                            color: 'white',
+                                            borderColor: 'primary.main',
+                                            zIndex: 1,
+                                            '&:hover': {
+                                                backgroundColor: 'primary.dark',
+                                                borderColor: 'primary.dark',
+                                            }
+                                        },
+                                    }
+                                }}
                             >
                                 {[
                                     { value: 'blog', label: 'blog' },
                                     { value: 'social', label: 'social post' },
                                     { value: 'executive', label: 'executive summary' }
-                                ].map((option, idx) => (
-                                    <React.Fragment key={option.value}>
-                                        <ToggleButton 
-                                            value={option.value}
-                                            sx={{ 
-                                                py: 0.5,
-                                                minWidth: 'auto', ...COMMON_STYLES.textNoTransform,
-                                                color: style === option.value ? 'primary.main' : 'text.disabled', 
-                                                fontWeight: style === option.value ? 700 : 400, fontSize: '1rem', lineHeight: 1.5,
-                                                transition: 'color 0.2s ease',
-                                                '&:hover': { 
-                                                    cursor: 'pointer',
-                                                    color: style === option.value ? 'primary.main' : 'text.primary',
-                                                },
-                                            }}
-                                        >
-                                            {option.label}
-                                        </ToggleButton>
-                                    </React.Fragment>
+                                ].map((option) => (
+                                    <ToggleButton 
+                                        key={option.value}
+                                        value={option.value}
+                                        sx={{ 
+                                            px: 1.5,
+                                            py: 0.5,
+                                            ...COMMON_STYLES.textNoTransform,
+                                            fontSize: '0.875rem',
+                                        }}
+                                    >
+                                        {option.label}
+                                    </ToggleButton>
                                 ))}
                             </ToggleButtonGroup>
-                            <Typography variant="body1">
-                                from selected charts
+                            <Typography variant="body2" color={selectedChartIds.size === 0 ? theme.palette.warning.main : "text.secondary"}>
+                                {selectedChartIds.size} chart{selectedChartIds.size !== 1 ? 's' : ''} selected
                             </Typography>
                         </Box>
-                        <Box sx={{ display: 'flex', gap: 1 }}>
+                        <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
                             <Button
                                 variant="contained"
                                 disabled={isGenerating || selectedChartIds.size === 0}
                                 onClick={generateReport}
+                                size="small"
                                 sx={COMMON_STYLES.textNoTransform}
-                                startIcon={isGenerating ? <CircularProgress size={18} /> : <ArticleIcon />}
+                                startIcon={isGenerating ? <CircularProgress size={16} /> : <EditIcon />}
                             >
-                                {isGenerating ? 'Generating...' : 'Generate'}
+                                {isGenerating ? 'composing...' : 'compose'}
+                            </Button>
+                            <Divider orientation="vertical" flexItem />
+                            <Button
+                                variant="text"
+                                disabled={generatedReport === ''}
+                                size="small"
+                                onClick={() => setMode('post')}
+                                sx={COMMON_STYLES.textNoTransform}
+                                startIcon={<ArrowForwardIcon />}
+                            >
+                                view post
                             </Button>
                         </Box>
                     </Box>
-                    <Box sx={{ mb: 2, ...COMMON_STYLES.flexCenter, justifyContent: 'space-between' }}>
-                        <Typography variant="body2" color="text.secondary">
-                            {selectedChartIds.size} chart{selectedChartIds.size !== 1 ? 's' : ''} selected
-                        </Typography>
-                    </Box>
+                    
+                    <Box sx={{ p: 2 }}>
 
-                    {error && (
-                        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>
-                            {error}
-                        </Alert>
-                    )}
+                        {error && (
+                            <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>
+                                {error}
+                            </Alert>
+                        )}
 
-                    {sortedCharts.length === 0 ? (
-                        <Typography color="text.secondary">
-                            No charts available. Create some visualizations first.
-                        </Typography>
-                    ) : isLoadingPreviews ? (
-                        <Box sx={{ ...COMMON_STYLES.flexCenter, justifyContent: 'center', py: 4 }}>
-                            <CircularProgress size={18} sx={{ color: 'text.secondary' }} />
-                            <Typography sx={{ ml: 2 }} color="text.secondary">
-                                loading chart previews...
+                        {sortedCharts.length === 0 ? (
+                            <Typography color="text.secondary">
+                                No charts available. Create some visualizations first.
                             </Typography>
-                        </Box>
-                    ) : (() => {
-                        // Filter out unavailable charts (Table, ?, Auto, and charts without preview images)
-                        const availableCharts = sortedCharts.filter(chart => {
-                            const isUnavailable = chart.chartType === 'Table' || 
-                                                  chart.chartType === '?' || 
-                                                  chart.chartType === 'Auto';
-                            const hasPreview = previewImages.has(chart.id);
-                            return !isUnavailable && hasPreview;
-                        });
-
-                        if (availableCharts.length === 0) {
-                            return (
-                                <Typography color="text.secondary">
-                                    No available charts to display. Charts may still be loading or unavailable.
+                        ) : isLoadingPreviews ? (
+                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', py: 4 }}>
+                                <CircularProgress size={18} sx={{ color: 'text.secondary' }} />
+                                <Typography sx={{ ml: 2 }} color="text.secondary">
+                                    loading chart previews...
                                 </Typography>
-                            );
-                        }
+                            </Box>
+                        ) : (() => {
+                            // Filter out unavailable charts (Table, ?, Auto, and charts without preview images)
+                            const availableCharts = sortedCharts.filter(chart => {
+                                const isUnavailable = chart.chartType === 'Table' || 
+                                                    chart.chartType === '?' || 
+                                                    chart.chartType === 'Auto';
+                                const hasPreview = previewImages.has(chart.id);
+                                return !isUnavailable && hasPreview;
+                            });
 
-                        return (
-                            <Masonry columns={{ xs: 2, sm: 3, md: 4, lg: 5 }} spacing={2}>
-                                {availableCharts.map((chart) => {
-                                    const table = tables.find(t => t.id === chart.tableRef);
-                                    const previewImage = previewImages.get(chart.id);
-                                    
-                                    return (
-                                    <Card
-                                        key={chart.id}
-                                        variant="outlined"
-                                        sx={{
-                                            cursor: 'pointer', position: 'relative', overflow: 'hidden',
-                                            backgroundColor: selectedChartIds.has(chart.id) ? 'action.selected' : 'background.paper',
-                                            '&:hover': { 
-                                                backgroundColor: 'action.hover', boxShadow: 3,
-                                                transform: 'translateY(-2px)', transition: 'all 0.2s ease-in-out'
-                                            },
-                                        }}
-                                        onClick={() => toggleChartSelection(chart.id)}
-                                    >
-                                        <Box sx={{ position: 'relative' }}>
-                                            <Checkbox
-                                                checked={selectedChartIds.has(chart.id)}
-                                                onChange={() => toggleChartSelection(chart.id)}
-                                                onClick={(e) => e.stopPropagation()}
-                                                sx={{ 
-                                                    ...COMMON_STYLES.positionAbsolute, top: 4, right: 4, p: 0.5, zIndex: 3,
-                                                    backgroundColor: 'rgba(255, 255, 255, 0.9)', borderRadius: 1,
-                                                    '&:hover': { backgroundColor: 'rgba(255, 255, 255, 1)' }
-                                                }}
-                                            />
-                                            <Box
-                                                component="img"
-                                                src={previewImage!.url}
-                                                alt={chart.chartType}
-                                                sx={{ width: '100%', height: 'auto', display: 'block', objectFit: 'contain', backgroundColor: 'white' }}
-                                            />
-                                            {/* Selection overlay */}
-                                            {selectedChartIds.has(chart.id) && (
-                                                <Box
-                                                    sx={{
-                                                        ...COMMON_STYLES.positionAbsolute, top: 0, left: 0, right: 0, bottom: 0,
-                                                        backgroundColor: 'primary.main', opacity: 0.08, pointerEvents: 'none', zIndex: 1
+                            if (availableCharts.length === 0) {
+                                return (
+                                    <Typography color="text.secondary">
+                                        No available charts to display. Charts may still be loading or unavailable.
+                                    </Typography>
+                                );
+                            }
+
+                            return (
+                                <Masonry columns={{ xs: 2, sm: 3, md: 4, lg: 5 }} spacing={2}>
+                                    {availableCharts.map((chart) => {
+                                        const table = tables.find(t => t.id === chart.tableRef);
+                                        const previewImage = previewImages.get(chart.id);
+                                        
+                                        return (
+                                        <Card
+                                            key={chart.id}
+                                            variant="outlined"
+                                            sx={{
+                                                cursor: 'pointer', position: 'relative', overflow: 'hidden',
+                                                backgroundColor: selectedChartIds.has(chart.id) ? alpha(theme.palette.primary.main, 0.08) : 'background.paper',
+                                                border:  selectedChartIds.has(chart.id) ? '2px solid' : '1px solid', 
+                                                borderColor: selectedChartIds.has(chart.id) ? 'primary.main' : 'divider',
+                                                '&:hover': { 
+                                                    backgroundColor: 'action.hover', boxShadow: 3,
+                                                    transform: 'translateY(-2px)', transition: 'all 0.2s ease-in-out'
+                                                },
+                                            }}
+                                            onClick={() => toggleChartSelection(chart.id)}
+                                        >
+                                            <Box sx={{ position: 'relative' }}>
+                                                <Checkbox
+                                                    checked={selectedChartIds.has(chart.id)}
+                                                    onChange={() => toggleChartSelection(chart.id)}
+                                                    onClick={(e) => e.stopPropagation()}
+                                                    sx={{ 
+                                                        ...COMMON_STYLES.positionAbsolute, top: 4, right: 4, p: 0.5, zIndex: 3,
+                                                        backgroundColor: 'rgba(255, 255, 255, 0.9)', borderRadius: 1,
+                                                        '&:hover': { backgroundColor: 'rgba(255, 255, 255, 1)' }
                                                     }}
                                                 />
-                                            )}
-                                        </Box>
-                                        <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
-                                            <Typography 
-                                                variant="caption" 
-                                                sx={{ display: 'block', fontWeight: 500, ...COMMON_STYLES.textEllipsis }}
-                                            >
-                                                {chart.chartType}
-                                            </Typography>
-                                            {table?.displayId && (
+                                                <Box
+                                                    component="img"
+                                                    src={previewImage!.url}
+                                                    alt={chart.chartType}
+                                                    sx={{ p: 1, width: `calc(100% - 16px)`, height: 'auto', display: 'block', objectFit: 'contain', backgroundColor: 'white' }}
+                                                />
+                                            </Box>
+                                            <CardContent sx={{ p: 1, '&:last-child': { pb: 1.5 } }}>
                                                 <Typography 
                                                     variant="caption" 
-                                                    color="text.secondary"
-                                                    sx={{ display: 'block', ...COMMON_STYLES.textEllipsis, mt: 0.5 }}
+                                                    sx={{ display: 'block', fontWeight: 500, ...COMMON_STYLES.textEllipsis }}
                                                 >
-                                                    {table.displayId}
+                                                    {chart.chartType}
                                                 </Typography>
-                                            )}
-                                        </CardContent>
-                                    </Card>
-                                );
-                            })}
-                        </Masonry>
-                        );
-                    })()}
+                                                {table?.displayId && (
+                                                    <Typography 
+                                                        variant="caption" 
+                                                        color="text.secondary"
+                                                        sx={{ display: 'block', ...COMMON_STYLES.textEllipsis }}
+                                                    >
+                                                        {table.displayId}
+                                                    </Typography>
+                                                )}
+                                            </CardContent>
+                                        </Card>
+                                    );
+                                })}
+                            </Masonry>
+                            );
+                        })()}
+                    </Box>
                 </Box>
             ) : (
                 <Box sx={{ height: '100%', ...COMMON_STYLES.flexColumn, overflow: 'hidden' }}>
-                    <Box sx={{ ...COMMON_STYLES.padding, ...COMMON_STYLES.flexCenter, justifyContent: 'space-between',  }}>
+                    <Box sx={{ p: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between',  }}>
                         <Button
                             size="small"
+                            disabled={isGenerating}
                             startIcon={<ArrowBackIcon />}
                             sx={COMMON_STYLES.textNoTransform}
-                            onClick={() => {
-                                setGeneratedReport('');
-                                // Clean up chartImages blob URLs (but not previewImages)
-                                chartImages.forEach(({ url }) => {
-                                    if (url.startsWith('blob:')) {
-                                        URL.revokeObjectURL(url);
-                                    }
-                                });
-                                setChartImages(new Map());
-                                setError('');
-                            }}
+                            onClick={() => setMode('compose')}
                         >
-                            back to selection
+                            back to compose
                         </Button>
                         <Typography variant="body2" color="text.secondary">
-                            the report is generated by AI, and it's probably not super accurate!
+                            AI generated the post from the selected charts, and it could be inaccurate!
                         </Typography>
                     </Box>
                     <Box sx={{ flex: 1, overflowY: 'auto' }}>
                         <Box sx={{ display: 'flex', justifyContent: 'center', width: '100%', py: 3 }}>
-                            {style === 'social' ? (
+                            {generatedStyle === 'social' ? (
                                 <Paper
                                     elevation={0}
                                     sx={{
