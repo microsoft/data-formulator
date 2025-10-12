@@ -85,6 +85,8 @@ export interface DataFormulatorState {
     focusedTableId: string | undefined;
     focusedChartId: string | undefined;
 
+    viewMode: 'editor' | 'report';
+
     chartSynthesisInProgress: string[];
 
     serverConfig: ServerConfig;
@@ -139,6 +141,8 @@ const initialState: DataFormulatorState = {
     focusedDataCleanBlockId: undefined,
     focusedTableId: undefined,
     focusedChartId: undefined,
+
+    viewMode: 'editor',
 
     chartSynthesisInProgress: [],
 
@@ -329,6 +333,8 @@ export const dataFormulatorSlice = createSlice({
             state.focusedTableId = undefined;
             state.focusedChartId = undefined;
 
+            state.viewMode = 'editor';
+
             state.chartSynthesisInProgress = [];
 
             state.serverConfig = initialState.serverConfig;
@@ -398,6 +404,9 @@ export const dataFormulatorSlice = createSlice({
             formulateTimeoutSeconds: number, maxRepairAttempts: number, 
             defaultChartWidth: number, defaultChartHeight: number}>) => {
             state.config = action.payload;
+        },
+        setViewMode: (state, action: PayloadAction<'editor' | 'report'>) => {
+            state.viewMode = action.payload;
         },
         setAgentRules: (state, action: PayloadAction<{coding: string, exploration: string}>) => {
             state.agentRules = action.payload;

@@ -49,12 +49,14 @@ import { getUrls } from '../app/utils';
 import { CloudQueue } from '@mui/icons-material';
 import { DataLoadingChatDialog } from './DataLoadingChat';
 import { RotatingTextBlock } from '../components/RotatingTextBlock';
+import { ReportView } from './ReportView';
 
 export const DataFormulatorFC = ({ }) => {
 
     const tables = useSelector((state: DataFormulatorState) => state.tables);
     const models = useSelector((state: DataFormulatorState) => state.models);
     const modelSlots = useSelector((state: DataFormulatorState) => state.modelSlots);
+    const viewMode = useSelector((state: DataFormulatorState) => state.viewMode);
 
     const noBrokenModelSlots= useSelector((state: DataFormulatorState) => {
         const slotTypes = dfSelectors.getAllSlotTypes();
@@ -135,7 +137,7 @@ export const DataFormulatorFC = ({ }) => {
     const fixedSplitPane = ( 
         <Box sx={{display: 'flex', flexDirection: 'row', height: '100%'}}>
             <Box sx={{border: '1px solid lightgray', borderRadius: '4px', margin: '4px 4px 4px 8px', backgroundColor: 'white',
-                 display: 'flex', height: '100%', width: 'fit-content', flexDirection: 'column'}}>
+                    display: 'flex', height: '100%', width: 'fit-content', flexDirection: 'column'}}>
                 {tables.length > 0 ?  <DataThread sx={{
                     minWidth: 201,
                     display: 'flex', 
@@ -149,8 +151,14 @@ export const DataFormulatorFC = ({ }) => {
                 border: '1px solid lightgray', borderRadius: '4px', margin: '4px 8px 4px 4px', backgroundColor: 'white',
                 display: 'flex', height: '100%', flex: 1, overflow: 'hidden', flexDirection: 'row'
             }}>
-                {visPane}
-                <ConceptShelf />
+                {viewMode === 'editor' ? (
+                    <>
+                        {visPane}
+                        <ConceptShelf />
+                    </>
+                ) : (
+                    <ReportView />
+                )}
             </Box>
             
         </Box>

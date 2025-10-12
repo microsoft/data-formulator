@@ -369,12 +369,14 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
     ]
     // TODO: check sort options
     if (channel == "x" && (fieldMetadata?.type == Type.String || fieldMetadata?.type == Type.Auto)) {
-        sortByOptions.push(radioLabel("y", "y", `sort-x-by-y-ascending`, 90));
-        sortByOptions.push(radioLabel("color", "color", `sort-x-by-color-ascending`, 90));
+        sortByOptions.push(radioLabel("x", "x", `sort-x-by-x-ascending`, 80));
+        sortByOptions.push(radioLabel("y", "y", `sort-x-by-y-ascending`, 80));
+        sortByOptions.push(radioLabel("color", "color", `sort-x-by-color-ascending`, 80));
     }
     if (channel == "y" && (fieldMetadata?.type == Type.String || fieldMetadata?.type == Type.Auto)) {
-        sortByOptions.push(radioLabel("x", "x", `sort-y-by-x-ascending`, 90));
-        sortByOptions.push(radioLabel("color", "color", `sort-y-by-color-ascending`, 90));
+        sortByOptions.push(radioLabel("x", "x", `sort-y-by-x-ascending`, 80));
+        sortByOptions.push(radioLabel("y", "y", `sort-y-by-y-ascending`, 80));
+        sortByOptions.push(radioLabel("color", "color", `sort-y-by-color-ascending`, 80));
     }
  
     if (autoSortEnabled) {

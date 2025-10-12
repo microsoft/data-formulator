@@ -73,6 +73,9 @@ import { getUrls } from './utils';
 import { DataLoadingChatDialog } from '../views/DataLoadingChat';
 import ChatIcon from '@mui/icons-material/Chat';
 import { AgentRulesDialog } from '../views/AgentRulesDialog';
+import ArticleIcon from '@mui/icons-material/Article';
+import EditIcon from '@mui/icons-material/Edit';
+import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 
 const AppBar = styled(MuiAppBar)(({ theme }) => ({
     color: 'black',
@@ -494,6 +497,7 @@ const ConfigDialog: React.FC = () => {
 export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
 
     const dispatch = useDispatch<AppDispatch>();
+    const viewMode = useSelector((state: DataFormulatorState) => state.viewMode);
 
     useEffect(() => {
         fetch(getUrls().APP_CONFIG)
@@ -574,6 +578,16 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
                     </Typography>
                 </Button>
                 <Box sx={{ display: 'flex', ml: 'auto', fontSize: 14 }}>
+                    <Button
+                        variant="text"
+                        color={viewMode === 'editor' ? "primary" : "secondary"}
+                        startIcon={viewMode === 'editor' ? <EditIcon /> : <ArrowBackIcon />}
+                        onClick={() => dispatch(dfActions.setViewMode(viewMode === 'editor' ? 'report' : 'editor'))}
+                        sx={{ textTransform: 'none' }}
+                    >
+                        {viewMode === 'editor' ? 'create a report' : 'back to explore'}
+                    </Button>
+                    <Divider orientation="vertical" variant="middle" flexItem />
                     <ConfigDialog />
                     <AgentRulesDialog />
                     <Divider orientation="vertical" variant="middle" flexItem />
@@ -587,6 +601,8 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
                     <Typography fontSize="inherit" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                         <TableMenu />
                     </Typography>
+                    <Divider orientation="vertical" variant="middle" flexItem />
+                    
                     <Divider orientation="vertical" variant="middle" flexItem />
                     <Typography fontSize="inherit" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                         <SessionMenu />

@@ -55,6 +55,7 @@ export function getUrls() {
 
         QUERY_COMPLETION: `/api/agent/query-completion`,
         GET_RECOMMENDATION_QUESTIONS: `/api/agent/get-recommendation-questions`,
+        GENERATE_REPORT_STREAM: `/api/agent/generate-report-stream`,
     };
 }
 
@@ -298,7 +299,12 @@ export const assembleVegaChart = (
                     encodingObj["sort"] = encoding.sortOrder;
                 }
             } else if (encoding.sortBy == 'x' || encoding.sortBy == 'y') {
-                encodingObj["sort"] = `${encoding.sortOrder == "ascending" ? "" : "-"}${encoding.sortBy}`;
+                if (encoding.sortBy == channel) {
+                    encodingObj["sort"] = `${encoding.sortOrder == "descending" ? "-" : ""}${encoding.sortBy}`;
+                } else {
+                    encodingObj["sort"] = `${encoding.sortOrder == "ascending" ? "" : "-"}${encoding.sortBy}`;
+                }
+
             } else if (encoding.sortBy == 'color') {
                 if (encodingMap.color?.fieldID != undefined) {
                     encodingObj["sort"] = `${encoding.sortOrder == "ascending" ? "" : "-"}${encoding.sortBy}`;
@@ -477,10 +483,13 @@ export const assembleVegaChart = (
             
             let valuesToKeep: any[];
             if (uniqueValues.length > maxNominalValuesToKeep) {
-                
+
                 if (fieldOriginalType == 'quantitative' || channel == 'color') {
                     valuesToKeep = uniqueValues.sort((a, b) => a - b).slice(0, channel == 'color' ? 24 : maxNominalValuesToKeep);
+                } else if (channel == 'facet' || channel == 'column' || channel == 'row') {
+                    valuesToKeep = uniqueValues.slice(0, maxNominalValuesToKeep);
                 } else if (channel == 'x' || channel == 'y') {
+
                     const oppositeChannel = channel === 'x' ? 'y' : 'x';
                     const oppositeEncoding = vgObj.encoding?.[oppositeChannel];
                     const colorEncoding = vgObj.encoding?.color;
@@ -492,15 +501,21 @@ export const assembleVegaChart = (
 
                     // Check if this axis already has a sort configuration
                     if (encoding.sort) {
-                        // If sort is set to -y, -x, -color, x, y, or color, respect that ordering
-                        if (typeof encoding.sort === 'string' && 
+                        if (typeof encoding.sort === 'string' && (encoding.sort === 'descending' || encoding.sort === 'ascending')) {
+                            isDescending = encoding.sort === 'descending';
+                            sortChannel = oppositeChannel;
+                            sortField = oppositeEncoding?.field;
+                            sortFieldType = oppositeEncoding?.type;
+                        } else if (typeof encoding.sort === 'string' && 
                             (encoding.sort === '-y' || encoding.sort === '-x' || encoding.sort === '-color' || 
                              encoding.sort === 'y' || encoding.sort === 'x' || encoding.sort === 'color')) {
                                 
                             isDescending = encoding.sort.startsWith('-');
                             sortChannel = isDescending ? encoding.sort.substring(1) : encoding.sort;
-                            sortField = sortChannel == 'color' ? colorEncoding?.field : oppositeEncoding?.field;
-                            sortFieldType = sortChannel == 'color' ? colorEncoding?.type : oppositeEncoding?.type;
+                            if (sortChannel) {
+                                sortField = vgObj.encoding?.[sortChannel]?.field;
+                                sortFieldType = vgObj.encoding?.[sortChannel]?.type;
+                            }
                         } 
                     } else {
                         // No explicit sort configuration, use the existing inference logic
@@ -520,7 +535,8 @@ export const assembleVegaChart = (
                         }
                     }
 
-                    if (sortField != undefined && sortChannel != undefined && sortFieldType === 'quantitative') {
+                    if (!["Line Chart", "Custom Area Chart"].includes(chartType) &&
+                        sortField != undefined && sortChannel != undefined && sortFieldType === 'quantitative') {
 
                         let aggregateOp = Math.max;
                         let initialValue = -Infinity;
@@ -552,10 +568,6 @@ export const assembleVegaChart = (
                             sortValue
                         }));
 
-
-                        console.log('--- valueSortPairs ---');
-                        console.log(valueSortPairs);
-
                         // Use efficient top-K selection
                         if (valueSortPairs.length <= maxNominalValuesToKeep) {
                             valuesToKeep = valueSortPairs
@@ -574,10 +586,18 @@ export const assembleVegaChart = (
                         }
                     } else {
                         // If sort field is not available or not quantitative, fall back to default
-                        valuesToKeep = uniqueValues.slice(0, maxNominalValuesToKeep);
+                        console.log('--- encoding.sort ---');
+                        console.log(channel);
+                        console.log(encoding.sort);
+                        let isDescending = false;
+                        if (typeof encoding.sort === 'string' && 
+                            encoding.sort === 'descending' || encoding.sort === `-${channel}`) {
+                            isDescending = true;
+                            valuesToKeep = uniqueValues.reverse().slice(0, maxNominalValuesToKeep);
+                        } else {
+                            valuesToKeep = uniqueValues.slice(0, maxNominalValuesToKeep);
+                        }
                     }
-                } else if (channel == 'facet' || channel == 'column' || channel == 'row') {
-                    valuesToKeep = uniqueValues.slice(0, maxNominalValuesToKeep);
                 } else {
                     valuesToKeep = uniqueValues.slice(0, maxNominalValuesToKeep);
                 }

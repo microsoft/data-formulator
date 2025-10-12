@@ -33,6 +33,7 @@ from data_formulator.agents.agent_data_clean_stream import DataCleanAgentStream
 from data_formulator.agents.agent_code_explanation import CodeExplanationAgent
 from data_formulator.agents.agent_query_completion import QueryCompletionAgent
 from data_formulator.agents.agent_interactive_explore import InteractiveExploreAgent
+from data_formulator.agents.agent_report_gen import ReportGenAgent
 from data_formulator.agents.client_utils import Client
 
 from data_formulator.db_manager import db_manager
@@ -669,6 +670,50 @@ def get_recommendation_questions():
                 logger.error(e)
                 error_data = { 
                     "content": "unable to process recommendation questions request" 
+                }
+                yield 'error: ' + json.dumps(error_data) + '\n'
+        else:
+            error_data = { 
+                "content": "Invalid request format" 
+            }
+            yield 'error: ' + json.dumps(error_data) + '\n'
+
+    response = Response(
+        stream_with_context(generate()),
+        mimetype='application/json',
+        headers={ 'Access-Control-Allow-Origin': '*',  }
+    )
+    return response
+
+@agent_bp.route('/generate-report-stream', methods=['GET', 'POST'])
+def generate_report_stream():
+    def generate():
+        if request.is_json:
+            logger.info("# generate report stream request")
+            content = request.get_json()
+            token = content.get("token", "")
+
+            client = get_client(content['model'])
+
+            language = content.get("language", "python")
+            if language == "sql":
+                db_conn = db_manager.get_connection(session['session_id'])
+            else:
+                db_conn = None
+
+            agent = ReportGenAgent(client=client, conn=db_conn)
+
+            # Get input tables and charts from the request
+            input_tables = content.get("input_tables", [])
+            charts = content.get("charts", [])
+
+            try:
+                for chunk in agent.stream(input_tables, charts):
+                    yield chunk
+            except Exception as e:
+                logger.error(e)
+                error_data = { 
+                    "content": "unable to process report generation request" 
                 }
                 yield 'error: ' + json.dumps(error_data) + '\n'
         else:

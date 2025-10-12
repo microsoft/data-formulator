@@ -37,7 +37,7 @@ import {
 } from '@mui/material';
 
 import React from 'react';
-
+import { ThinkingBufferEffect } from '../components/FunComponents';
 import { Channel, Chart, FieldItem, Trigger, duplicateChart } from "../components/ComponentType";
 
 import _ from 'lodash';
@@ -397,6 +397,9 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
 
     let currentTable = getDataTable(chart, tables, allCharts, conceptShelfItems);
+
+    // Check if chart is available
+    let isChartAvailable = checkChartAvailability(chart, conceptShelfItems, currentTable.rows);
 
     // Add this state
     const [userSelectedActionTableIds, setUserSelectedActionTableIds] = useState<string[]>([]);
@@ -971,7 +974,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
             id="outlined-multiline-flexible"
             sx={{
                 "& .MuiInputLabel-root": { fontSize: '12px' },
-                "& .MuiInput-input": { fontSize: '12px' }
+                "& .MuiInput-input": { fontSize: '12px' },
             }}
             onChange={(event: any) => {
                 setPrompt(event.target.value);
@@ -989,7 +992,9 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
             }}
             value={prompt}
             label=""
-            placeholder={['Auto'].includes(chart.chartType) ? "what do you want to visualize?" : "formulate data"}
+            placeholder={['Auto'].includes(chart.chartType) 
+                ? (isChartAvailable ? "what do you want to visualize?" : " ✏️ what do you want to visualize?")
+                : (isChartAvailable ? "formulate data" : " ✏️  formulate data")}
             fullWidth
             multiline
             variant="standard"
@@ -1015,7 +1020,22 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                 <span>
                     <IconButton sx={{ marginLeft: "0"}} 
                          color={"primary"} onClick={() => { deriveNewData(prompt, 'formulate'); }}>
-                        <PrecisionManufacturing />
+                        <PrecisionManufacturing sx={{
+                            ...(isChartAvailable ? {} : {
+                                animation: 'pulseAttention 3s ease-in-out infinite',
+                                '@keyframes pulseAttention': {
+                                    '0%, 90%': {
+                                        scale: 1,
+                                    },
+                                    '95%': {
+                                        scale: 1.2,
+                                    },
+                                    '100%': {
+                                        scale: 1,
+                                    },
+                                },
+                            }),
+                        }} />
                     </IconButton>
                 </span>
             </Tooltip>
@@ -1041,21 +1061,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                         onClick={() => handleIdeaClick(idea.text)}
                     />
                 ))}
-                {isLoadingIdeas && thinkingBuffer && (
-                    <Typography sx={{ padding: 0.5, fontSize: 10, color: "darkgray" }}>
-                        drafting {thinkingBuffer
-                            .slice(-80) // Get latest 80 characters
-                            .split('')
-                            .map((char, index) => {
-                                if (/\s/.test(char)) return char; // Keep whitespace
-                                // Use different characters based on position for variety
-                                const chars = ['·'];
-                                return chars[index % chars.length];
-                            })
-                            .join('')
-                        }
-                    </Typography>
-                )}
+                {isLoadingIdeas && thinkingBuffer && <ThinkingBufferEffect text={thinkingBuffer.slice(-40)} sx={{ width: '100%' }} />}
             </Box>
         </Box>
     ) : null;

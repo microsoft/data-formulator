@@ -30,7 +30,7 @@ import { VegaLite } from 'react-vega'
 import '../scss/VisualizationView.scss';
 import { batch, useDispatch, useSelector } from 'react-redux';
 import { DataFormulatorState, dfActions, SSEMessage } from '../app/dfSlice';
-import { assembleVegaChart, getTriggers } from '../app/utils';
+import { assembleVegaChart, getTriggers, prepVisTable } from '../app/utils';
 import { Chart, DictTable, EncodingItem, FieldItem, Trigger } from "../components/ComponentType";
 
 import DeleteIcon from '@mui/icons-material/Delete';
@@ -972,6 +972,9 @@ const MemoizedChartObject = memo<{
         visTableRows = structuredClone(table.rows);
     }
 
+    // Preprocess the data for aggregations (same as VisualizationView)
+    visTableRows = prepVisTable(visTableRows, conceptShelfItems, chart.encodingMap);
+
     let deleteButton = <Box className='data-thread-chart-card-action-button'
         sx={{ zIndex: 10, color: 'blue', position: "absolute", right: 1, background: 'rgba(255, 255, 255, 0.95)' }}>
         <Tooltip title="delete chart">
@@ -1026,7 +1029,7 @@ const MemoizedChartObject = memo<{
     }
 
     // prepare the chart to be rendered
-    let assembledChart = assembleVegaChart(chart.chartType, chart.encodingMap, conceptShelfItems, visTableRows, table.metadata, 20);
+    let assembledChart = assembleVegaChart(chart.chartType, chart.encodingMap, conceptShelfItems, visTableRows, table.metadata, 20, true);
     assembledChart["background"] = "transparent";
 
     // Temporary fix, down sample the dataset
@@ -1071,7 +1074,7 @@ const MemoizedChartObject = memo<{
     // Only re-render if the chart or its dependencies have changed
 
     // when conceptShelfItems change, we only need to re-render the chart if the conceptShelfItems depended by the chart have changed
-    let nextReferredConcepts = Object.values(nextProps.chart.encodingMap).map(e => e.fieldID).filter(f => f != null);
+    let nextReferredConcepts = Object.values(nextProps.chart.encodingMap).filter(e => e.fieldID || e.aggregate).map(e => `${e.fieldID}:${e.aggregate}`);
 
     return (
         prevProps.chart.id === nextProps.chart.id &&
@@ -1081,6 +1084,7 @@ const MemoizedChartObject = memo<{
         _.isEqual(prevProps.chart.encodingMap, nextProps.chart.encodingMap) &&
         // Only check tables/charts that this specific chart depends on
         _.isEqual(prevProps.table, nextProps.table) &&
+        _.isEqual(prevProps.table.attachedMetadata, nextProps.table.attachedMetadata) &&
         // Check if conceptShelfItems have changed
         _.isEqual(
             prevProps.conceptShelfItems.filter(c => nextReferredConcepts.includes(c.id)), 
