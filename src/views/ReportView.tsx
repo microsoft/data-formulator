@@ -168,7 +168,17 @@ const socialStyleMarkdownOverrides = {
 } as any;
 
 export const ReportView: FC = () => {
-    const [selectedChartIds, setSelectedChartIds] = useState<Set<string>>(new Set());
+    const charts = useSelector((state: DataFormulatorState) => state.charts);
+    const tables = useSelector((state: DataFormulatorState) => state.tables);
+    const modelSlot = useSelector((state: DataFormulatorState) => state.modelSlots);
+    const models = useSelector((state: DataFormulatorState) => state.models);
+    const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
+    const config = useSelector((state: DataFormulatorState) => state.config);
+    const focusedChartId = useSelector((state: DataFormulatorState) => state.focusedChartId);
+    const theme = useTheme();
+
+
+    const [selectedChartIds, setSelectedChartIds] = useState<Set<string>>(new Set(focusedChartId ? [focusedChartId] : []));
     const [generatedReport, setGeneratedReport] = useState<string>('');
     const [generatedStyle, setGeneratedStyle] = useState<string>('blog');
     const [chartImages, setChartImages] = useState<Map<string, { url: string; width: number; height: number }>>(new Map());
@@ -179,13 +189,7 @@ export const ReportView: FC = () => {
     const [style, setStyle] = useState<string>('blog');
     const [mode, setMode] = useState<'compose' | 'post'>('compose');
 
-    const charts = useSelector((state: DataFormulatorState) => state.charts);
-    const tables = useSelector((state: DataFormulatorState) => state.tables);
-    const modelSlot = useSelector((state: DataFormulatorState) => state.modelSlots);
-    const models = useSelector((state: DataFormulatorState) => state.models);
-    const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
-    const config = useSelector((state: DataFormulatorState) => state.config);
-    const theme = useTheme();
+    
     // Sort charts based on data thread ordering
     const sortedCharts = useMemo(() => {
         // Create table order mapping (anchored tables get higher order)
@@ -591,8 +595,10 @@ export const ReportView: FC = () => {
                                     </ToggleButton>
                                 ))}
                             </ToggleButtonGroup>
-                            <Typography variant="body2" color={selectedChartIds.size === 0 ? theme.palette.warning.main : "text.secondary"}>
-                                {selectedChartIds.size} chart{selectedChartIds.size !== 1 ? 's' : ''} selected
+                            <Typography variant="body2">
+                                from <Typography variant="body2" component="span" 
+                                    sx={{ color: selectedChartIds.size === 0 ? theme.palette.warning.main : "primary.main", fontWeight: 600 }}>
+                                {selectedChartIds.size}</Typography> selected {selectedChartIds.size <= 1 ? 'chart' : 'charts'}
                             </Typography>
                         </Box>
                         <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
