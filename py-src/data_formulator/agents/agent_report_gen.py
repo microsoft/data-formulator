@@ -37,11 +37,15 @@ Writing style rules:
 - The output should be in markdown format:
     - title should be in `# <title>`
     - the content should just be paragraphs without subsection headers
-    - put image reference [IMAGE(chart_id)] in its own line among the texts at appropriate places.
+    - put image reference [IMAGE(chart_id)] in its own line among the texts at appropriate places (replace the chart_id with the actual chart_id, keep the format of [IMAGE(...)]).
     - be flexible about using markdown syntax like bullet points, italics, bold, code blocks, tables, etc. to make the report more readable.
     - the summary should be in a paragraph start with "**In summary**".
-- The user may provide you a desired writing style, that means the overall language should follow the style.
 - Note that the reader won't be able to see sample data or code, and the report should be self-contained (referring to the charts).
+- The user may provide you a desired writing style, that means the overall language should follow the style (not that the post should still be within 1min reading time).
+    - "blog post": "blog post", -- a blogpost that is published on a blog platform
+    - "social post": "social post", -- a social post that is published on a social media platform (should be shorter than a blog post)
+    - "executive summary": "executive summary", -- a summary of the report for executives, with more formal language and more details, and more bullet points
+    - "short note": "short note", -- a short note that is published on a social media platform, with no more than 300 characters in total, and there should be no more than 3 short sentences.
 
 The report should be lightweight, and respect facts in the data. Do not make up any facts or make judgements about the data.
 The report should be based off the data and visualizations provided by the user, do not make up any facts or make judgements about the data.
@@ -65,7 +69,7 @@ class ReportGenAgent(object):
             data_summary = generate_data_summary(input_tables)
         return data_summary
 
-    def stream(self, input_tables, charts=[], style="twitter"):
+    def stream(self, input_tables, charts=[], style="blog post"):
         """derive a new concept based on the raw input data
         Args:
             - input_tables (list): the input tables to the agent
@@ -78,7 +82,7 @@ class ReportGenAgent(object):
                     "chart_url": ... // base64 encoded image
                 }
             ]
-            - style (str): the style of the report, can be "twitter" or "medium" or "business"
+            - style (str): the style of the report, can be "blog post" or "social post" or "executive summary" or "short note"
         Returns:
             generator: the result of the agent
         """
@@ -114,8 +118,6 @@ class ReportGenAgent(object):
             'role': 'user',
             'content': content + [{'type': 'text', 'text': 'Now based off the data and visualizations provided by the user, generate a report in markdown. The style of the report should be ' + style + '.'}]
         }
-
-        logger.info(user_prompt)
 
         system_message = {
             'role': 'system',

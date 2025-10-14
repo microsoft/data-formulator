@@ -60,11 +60,21 @@ import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
 import { getUrls } from '../app/utils';
 
 
-
 const decodeHtmlEntities = (text: string): string => {
     const textarea = document.createElement('textarea');
     textarea.innerHTML = text;
     return textarea.value;
+};
+
+// Add this helper function at the top of the file, after the imports
+const simpleHash = (str: string): string => {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+        const char = str.charCodeAt(i);
+        hash = ((hash << 5) - hash) + char;
+        hash = hash & hash; // Convert to 32-bit integer
+    }
+    return Math.abs(hash).toString(36);
 };
 
 export const ModelSelectionButton: React.FC<{}> = ({ }) => {
@@ -446,7 +456,9 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
 
                             let endpoint = newEndpoint;
 
-                            let id = `${endpoint}-${newModel}-${newApiKey}-${newApiBase}-${newApiVersion}`;
+                            // Hash the ID to prevent API key exposure
+                            const idString = `${endpoint}-${newModel}-${newApiKey}-${newApiBase}-${newApiVersion}`;
+                            let id = simpleHash(idString);
 
                             let model = {endpoint, model: newModel, api_key: newApiKey, api_base: newApiBase, api_version: newApiVersion, id: id};
 

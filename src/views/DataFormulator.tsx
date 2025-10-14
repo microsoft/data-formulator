@@ -46,7 +46,6 @@ import exampleImageTable from "../assets/example-image-table.png";
 import { ModelSelectionButton } from './ModelSelectionDialog';
 import { DBTableSelectionDialog } from './DBTableManager';
 import { getUrls } from '../app/utils';
-import { CloudQueue } from '@mui/icons-material';
 import { DataLoadingChatDialog } from './DataLoadingChat';
 import { RotatingTextBlock } from '../components/RotatingTextBlock';
 import { ReportView } from './ReportView';
@@ -176,6 +175,7 @@ Totals (7 entries)	5	5	5	15
 `
 
     const rotatingTexts = [
+        "data in a webpage",
         "data tables in an image",
         "data in a messy text block", 
         "some synthetic data",
@@ -190,7 +190,6 @@ Totals (7 entries)	5	5	5	15
             <Typography  variant="h4" sx={{mt: 3, fontSize: 28, letterSpacing: '0.02em', textAlign: 'center'}}>
                 <DataLoadingChatDialog buttonElement={"Vibe"}/> with <RotatingTextBlock 
                     texts={rotatingTexts}
-                    typingSpeed={50}
                     rotationInterval={5000}
                     transitionDuration={300}
                 />

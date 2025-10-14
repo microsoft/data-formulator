@@ -177,16 +177,15 @@ export const ReportView: FC = () => {
     const focusedChartId = useSelector((state: DataFormulatorState) => state.focusedChartId);
     const theme = useTheme();
 
-
     const [selectedChartIds, setSelectedChartIds] = useState<Set<string>>(new Set(focusedChartId ? [focusedChartId] : []));
     const [generatedReport, setGeneratedReport] = useState<string>('');
-    const [generatedStyle, setGeneratedStyle] = useState<string>('blog');
+    const [generatedStyle, setGeneratedStyle] = useState<string>('short note');
     const [chartImages, setChartImages] = useState<Map<string, { url: string; width: number; height: number }>>(new Map());
     const [previewImages, setPreviewImages] = useState<Map<string, { url: string; width: number; height: number }>>(new Map());
     const [isLoadingPreviews, setIsLoadingPreviews] = useState(false);
     const [isGenerating, setIsGenerating] = useState(false);
     const [error, setError] = useState<string>('');
-    const [style, setStyle] = useState<string>('blog');
+    const [style, setStyle] = useState<string>('short note');
     const [mode, setMode] = useState<'compose' | 'post'>('compose');
 
     
@@ -425,7 +424,6 @@ export const ReportView: FC = () => {
         setGeneratedReport('');
         setGeneratedStyle(style);
 
-
         try {
             const model = models.find(m => m.id === modelSlot.generation);
             if (!model) {
@@ -434,7 +432,8 @@ export const ReportView: FC = () => {
 
             const inputTables = tables.filter(t => t.anchored).map(table => ({
                 name: table.id,
-                rows: table.rows
+                rows: table.rows,
+                attached_metadata: table.attachedMetadata
             }));
 
             const newChartImages = new Map<string, { url: string; width: number; height: number }>();
@@ -577,9 +576,10 @@ export const ReportView: FC = () => {
                                 }}
                             >
                                 {[
-                                    { value: 'blog', label: 'blog' },
-                                    { value: 'social', label: 'social post' },
-                                    { value: 'executive', label: 'executive summary' }
+                                    { value: 'short note', label: 'short note' },
+                                    { value: 'blog post', label: 'blog post' },
+                                    { value: 'social post', label: 'social post' },
+                                    { value: 'executive summary', label: 'executive summary' },
                                 ].map((option) => (
                                     <ToggleButton 
                                         key={option.value}
@@ -700,7 +700,7 @@ export const ReportView: FC = () => {
                                                     component="img"
                                                     src={previewImage!.url}
                                                     alt={chart.chartType}
-                                                    sx={{ p: 1, width: `calc(100% - 16px)`, height: 'auto', display: 'block', objectFit: 'contain', backgroundColor: 'white' }}
+                                                    sx={{ p: 1, width: `calc(100% - 16px)`, height: 'auto', maxHeight: config.defaultChartHeight, display: 'block', objectFit: 'contain', backgroundColor: 'white' }}
                                                 />
                                             </Box>
                                             <CardContent sx={{ p: 1, '&:last-child': { pb: 1.5 } }}>
@@ -746,7 +746,7 @@ export const ReportView: FC = () => {
                     </Box>
                     <Box sx={{ flex: 1, overflowY: 'auto' }}>
                         <Box sx={{ display: 'flex', justifyContent: 'center', width: '100%', py: 3 }}>
-                            {generatedStyle === 'social' ? (
+                            {(generatedStyle === 'social post' || generatedStyle === 'short note') ? (
                                 <Paper
                                     elevation={0}
                                     sx={{
@@ -761,10 +761,10 @@ export const ReportView: FC = () => {
                                         },
                                         '& strong': { ...COMMON_STYLES.fontWeight600, color: COLOR_SOCIAL_TEXT },
                                         '& em': { fontStyle: 'italic' },
-                                        '& img': { width: '90%', maxWidth: '90%', height: 'auto', marginTop: '12px', marginBottom: '12px' }
+                                        '& img': { width: '90%', maxWidth: '90%', height: 'auto', maxHeight: config.defaultChartHeight * 1.5, objectFit: 'contain', marginTop: '12px', marginBottom: '12px' }
                                     }}
                                 >
-                                    <MuiMarkdown overrides={socialStyleMarkdownOverrides}>{isGenerating ? `${generatedReport} <span style="opacity: 0.4; margin-left: 2px;">✏️</span>` : generatedReport}</MuiMarkdown>
+                                    <MuiMarkdown overrides={socialStyleMarkdownOverrides}>{isGenerating ? `${generatedReport} <span class="pencil" style="opacity: 0.4; margin-left: 2px;">✏️</span>` : generatedReport}</MuiMarkdown>
                                 </Paper>
                             ) : (
                                 <Box sx={{ 
@@ -778,12 +778,12 @@ export const ReportView: FC = () => {
                                     '& strong': { ...COMMON_STYLES.fontWeight600, color: COLOR_HEADING },
                                     '& em': { fontStyle: 'italic' },
                                     '& img': {
-                                        maxWidth: '75%', maxHeight: config.defaultChartHeight * 2,
+                                        maxWidth: '75%', maxHeight: config.defaultChartHeight * 1.5,
                                         width: 'auto', height: 'auto', objectFit: 'contain', ...COMMON_STYLES.borderRadius,
                                         marginTop: '1.75em', marginBottom: '1.75em',
                                     }
                                 }}>
-                                    <MuiMarkdown overrides={notionStyleMarkdownOverrides}>{isGenerating ? `${generatedReport} <span style="opacity: 0.4; margin-left: 2px;">✏️</span>` : generatedReport}</MuiMarkdown>
+                                    <MuiMarkdown overrides={notionStyleMarkdownOverrides}>{isGenerating ? `${generatedReport} <span class="pencil" style="opacity: 0.4; margin-left: 2px;">✏️</span>` : generatedReport}</MuiMarkdown>
                                 </Box>
                             )}
                         </Box>

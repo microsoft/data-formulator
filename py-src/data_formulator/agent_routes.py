@@ -706,9 +706,10 @@ def generate_report_stream():
             # Get input tables and charts from the request
             input_tables = content.get("input_tables", [])
             charts = content.get("charts", [])
+            style = content.get("style", "blog post")
 
             try:
-                for chunk in agent.stream(input_tables, charts):
+                for chunk in agent.stream(input_tables, charts, style):
                     yield chunk
             except Exception as e:
                 logger.error(e)

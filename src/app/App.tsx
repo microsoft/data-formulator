@@ -579,7 +579,7 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
                 </Button>
                 <Box sx={{ display: 'flex', ml: 'auto', fontSize: 14 }}>
                     <Button
-                        variant="text"
+                        variant={"text"}
                         color={viewMode === 'editor' ? "primary" : "secondary"}
                         startIcon={viewMode === 'editor' ? <EditIcon /> : <ArrowBackIcon />}
                         onClick={() => dispatch(dfActions.setViewMode(viewMode === 'editor' ? 'report' : 'editor'))}

@@ -152,7 +152,7 @@ const initialState: DataFormulatorState = {
     },
 
     config: {
-        formulateTimeoutSeconds: 45,
+        formulateTimeoutSeconds: 60,
         maxRepairAttempts: 1,
         defaultChartWidth: 300,
         defaultChartHeight: 300,

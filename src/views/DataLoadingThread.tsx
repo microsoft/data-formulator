@@ -4,7 +4,7 @@
 import * as React from 'react';
 import { useEffect, useRef, useState } from 'react';
 
-import { Box, Button, Card, CardContent, Divider, IconButton, Paper, Stack, TextField, Typography, alpha, useTheme, Dialog, DialogTitle, DialogContent, Tooltip, LinearProgress, CircularProgress, Chip, SxProps } from '@mui/material';
+import { Box, Button, Card, CardContent, Divider, IconButton, Paper, Stack, TextField, Typography, alpha, useTheme, Dialog, DialogTitle, DialogContent, Tooltip, LinearProgress, CircularProgress, Chip, SxProps, Theme } from '@mui/material';
 import UploadIcon from '@mui/icons-material/Upload';
 import SendIcon from '@mui/icons-material/Send';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
@@ -17,6 +17,10 @@ import LinkIcon from '@mui/icons-material/Link';
 import DeleteIcon from '@mui/icons-material/Delete';
 import PrecisionManufacturingIcon from '@mui/icons-material/PrecisionManufacturing';
 import SouthIcon from '@mui/icons-material/South';
+import LanguageIcon from '@mui/icons-material/Language';
+import ImageIcon from '@mui/icons-material/Image';
+import TextFieldsIcon from '@mui/icons-material/TextFields';
+import DatasetIcon from '@mui/icons-material/Dataset';
 
 import exampleImageTable from "../assets/example-image-table.png";
 
@@ -57,6 +61,71 @@ const getUniqueTableName = (baseName: string, existingNames: Set<string>): strin
         counter += 1;
     }
     return uniqueName;
+};
+
+// Sample task card component
+const SampleTaskChip: React.FC<{
+    task: { text: string; icon?: React.ReactElement; image?: string };
+    theme: Theme;
+    onClick: () => void;
+    disabled?: boolean;
+}> = ({ task, theme, onClick, disabled }) => {
+    return (
+        <Box
+            sx={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                padding: '6px 8px',
+                fontSize: '12px',
+                minHeight: '32px',
+                height: 'auto',
+                borderRadius: 2,
+                border: `1px solid ${alpha(theme.palette.primary.main, 0.2)}`,
+                boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
+                transition: 'all 0.2s ease-in-out',
+                backgroundColor: alpha(theme.palette.background.paper, 0.9),
+                cursor: disabled ? 'default' : 'pointer',
+                opacity: disabled ? 0.6 : 1,
+                '&:hover': disabled ? {} : {
+                    boxShadow: '0 2px 6px rgba(0,0,0,0.1)',
+                    borderColor: alpha(theme.palette.primary.main, 0.5),
+                    transform: 'translateY(-1px)',
+                },
+            }}
+            onClick={disabled ? undefined : onClick}
+        >
+            {task.icon && (
+                <Box sx={{ mr: 1, display: 'flex', alignItems: 'center', color: theme.palette.primary.main }}>
+                    {task.icon}
+                </Box>
+            )}
+            {task.image && (
+                <Box
+                    component="img"
+                    src={task.image}
+                    sx={{
+                        width: 24,
+                        height: 24,
+                        objectFit: 'cover',
+                        borderRadius: 0.5,
+                        mr: 1,
+                        border: '1px solid',
+                        borderColor: 'divider'
+                    }}
+                />
+            )}
+            <Typography
+                component="div"
+                sx={{
+                    fontSize: '12px',
+                    color: theme.palette.text.primary,
+                    lineHeight: 1.4,
+                }}
+            >
+                {task.text}
+            </Typography>
+        </Box>
+    );
 };
 
 export const DataPreviewBox: React.FC<{sx?: SxProps}> = ({sx}) => {
@@ -149,6 +218,7 @@ export const DataPreviewBox: React.FC<{sx?: SxProps}> = ({sx}) => {
 
 export const DataLoadingInputBox = React.forwardRef<(() => void) | null, {maxLines?: number, onStreamingContentUpdate?: (content: string) => void}>(({maxLines = 4, onStreamingContentUpdate}, ref) => {
     const dispatch = useDispatch<AppDispatch>();
+    const theme = useTheme();
     const activeModel = useSelector(dfSelectors.getActiveModel);
     const dataCleanBlocks = useSelector((state: DataFormulatorState) => state.dataCleanBlocks);
     const cleanInProgress = useSelector((state: DataFormulatorState) => state.cleanInProgress);
@@ -159,10 +229,8 @@ export const DataLoadingInputBox = React.forwardRef<(() => void) | null, {maxLin
 
     const [userImages, setUserImages] = useState<string[]>([]);
     const [prompt, setPrompt] = useState('');
-    const [placeholderIndex, setPlaceholderIndex] = useState(0);
 
     const existOutputBlocks = dataCleanBlocks.length > 0;
-    const [streamingContent, setStreamingContent] = useState('');
 
     // Reconstruct dialog from Redux state for API compatibility
     const dialog: DialogMessage[] = (() => {
@@ -210,13 +278,22 @@ export const DataLoadingInputBox = React.forwardRef<(() => void) | null, {maxLin
         return reconstructedDialog;
     })();
 
-    // Add rotating placeholder state
-    const placeholders = (existOutputBlocks || streamingContent) ? [
-        selectedTable && selectedTable.content.type === 'image_url' ? "extract data from this image" : "follow-up instruction (e.g., fix headers, remove totals, generate 15 rows, etc.)"
-    ] : [
-        "get Claude performance data from https://www.anthropic.com/news/claude-sonnet-4-5",
-        "help me extract data from this image",
-        `help me extract sub-segment growth data from this text\n\n\"Revenue in Productivity and Business Processes was $33.1 billion and increased 16% (up 14% in constant currency), with the following business highlights:
+    // Define sample tasks
+    const sampleTasks = [
+        {
+            text: "Extract top repos from GitHub",
+            fullText: "extract the top repos information from https://github.com/microsoft?q=&type=all&language=&sort=stargazers",
+            icon: <LanguageIcon sx={{ fontSize: 18 }} />
+        },
+        {
+            text: "Extract data from this image",
+            fullText: "help me extract data from this image",
+            icon: <ImageIcon sx={{ fontSize: 18 }} />,
+            image: exampleImageTable
+        },
+        {
+            text: "Extract growth data from text",
+            fullText: `help me extract sub-segment growth data from this text\n\n\"Revenue in Productivity and Business Processes was $33.1 billion and increased 16% (up 14% in constant currency), with the following business highlights:
 ·        Microsoft 365 Commercial products and cloud services revenue increased 16% (up 15% in constant currency) driven by Microsoft 365 Commercial cloud revenue growth of 18% (up 16% in constant currency)
 ·        Microsoft 365 Consumer products and cloud services revenue increased 21% driven by Microsoft 365 Consumer cloud revenue growth of 20%
 ·        LinkedIn revenue increased 9% (up 8% in constant currency)
@@ -229,21 +306,20 @@ Revenue in More Personal Computing was $13.5 billion and increased 9%, with the 
 ·        Windows OEM and Devices revenue increased 3%
 ·        Xbox content and services revenue increased 13% (up 12% in constant currency)
 ·        Search and news advertising revenue excluding traffic acquisition costs increased 21% (up 20% in constant currency)\"`,
-        "help me generate a dataset about uk dynasty with their years of reign and their monarchs"
+            icon: <TextFieldsIcon sx={{ fontSize: 18 }} />
+        },
+        {
+            text: "Generate UK dynasty dataset",
+            fullText: "help me generate a dataset about uk dynasty with their years of reign and their monarchs",
+            icon: <DatasetIcon sx={{ fontSize: 18 }} />
+        }
     ];
 
-    // Rotate placeholders every 3.6 seconds
-    useEffect(() => {
-        const interval = setInterval(() => {
-            if (userImages.length > 0 || additionalImages.length > 0) {
-                setPlaceholderIndex(0);
-            } else {
-                setPlaceholderIndex((prevIndex) => (prevIndex + 1) % placeholders.length);
-            }
-        }, 3600);
-
-        return () => clearInterval(interval);
-    }, [userImages, placeholders.length]);
+    const placeholder = (existOutputBlocks) 
+        ? (selectedTable && selectedTable.content.type === 'image_url' 
+            ? "extract data from this image" 
+            : "follow-up instruction (e.g., fix headers, remove totals, generate 15 rows, etc.)")
+        : "describe the data you want to extract or generate...";
 
     let additionalImages = (() => {
         if (selectedTable && selectedTable.content.type === 'image_url') {
@@ -298,13 +374,23 @@ Revenue in More Personal Computing was $13.5 billion and increased 9%, with the 
         setUserImages(prev => prev.filter((_, i) => i !== index));
     };
 
-    const sendRequest = () => {
-        if (!canSend) return;
+    const sendRequest = (promptToUse: string, imagesToUse: string[]) => {        
+        // Check if we can send with the provided or state values
+        const hasPrompt = promptToUse.trim().length > 0;
+        const hasImageData = imagesToUse.length > 0 || additionalImages.length > 0;
+        if (!hasPrompt && !hasImageData) return;
+        if (cleanInProgress) return;
+        
         dispatch(dfActions.setCleanInProgress(true));
         const token = String(Date.now());
 
-        let prompt_to_send = prompt.trim() || (additionalImages.length > 0 ? 'extract data from the image' : '');
-        let images_to_send = [...additionalImages, ...userImages];
+        let prompt_to_send = promptToUse.trim() || (additionalImages.length > 0 ? 'extract data from the image' : 'let extract data');
+        let images_to_send = [...additionalImages, ...imagesToUse];
+
+        // Extract URLs from the prompt
+        const urlRegex = /(https?:\/\/[^\s]+)/gi;
+        const matches = prompt_to_send.match(urlRegex);
+        const extractedUrlsFromPrompt = matches ? [...new Set(matches)] : [];
 
         // Construct payload - simplified to match backend API
         const payload: any = {
@@ -313,19 +399,16 @@ Revenue in More Personal Computing was $13.5 billion and increased 9%, with the 
             prompt: prompt_to_send,
             artifacts: [
                 ...images_to_send.map(image => ({ type: 'image_url', content: image })),
-                ...extractedUrls.map(url => ({ type: 'web_url', content: url })),
+                ...extractedUrlsFromPrompt.map(url => ({ type: 'web_url', content: url })),
             ],
             dialog: dialog
         };
 
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 second timeout
 
         fetch(getUrls().CLEAN_DATA_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload),
-            signal: controller.signal
         })
         .then(async (response) => {
             if (!response.ok) {
@@ -351,7 +434,6 @@ Revenue in More Personal Computing was $13.5 billion and increased 9%, with the 
 
                     buffer += decoder.decode(value, { stream: true });
                     onStreamingContentUpdate?.(buffer);
-                    setStreamingContent(buffer);
 
                     // Split by newlines to get individual JSON objects
                     const lastLine = buffer.split('\n').filter(line => line.trim() !== "").pop();
@@ -390,7 +472,6 @@ Revenue in More Personal Computing was $13.5 billion and increased 9%, with the 
                     };
                     
                     onStreamingContentUpdate?.('');
-                    setStreamingContent('');
                     dispatch(dfActions.addDataCleanBlock(newBlock));
                     dispatch(dfActions.setFocusedDataCleanBlockId({blockId: newBlock.id, itemId: 0}));
                     
@@ -408,21 +489,18 @@ Revenue in More Personal Computing was $13.5 billion and increased 9%, with the 
                     // Clear input fields only after failed completion
                     setPrompt('');
                     onStreamingContentUpdate?.('');
-                    setStreamingContent('');
                     setUserImages([]);
                 }
             } finally {
                 reader.releaseLock();
                 dispatch(dfActions.setCleanInProgress(false));
-                clearTimeout(timeoutId);
             }
         })
         .catch((error) => {
             dispatch(dfActions.setCleanInProgress(false));
-            clearTimeout(timeoutId);
             
             // Generation failed
-            const errorMessage = error.name === 'AbortError' ? 'Data cleaning timed out' : `Server error while processing data: ${error.message}`;
+            const errorMessage = `Server error while processing data: ${error.message}`;
             dispatch(dfActions.addMessages({
                 timestamp: Date.now(),
                 type: 'error',
@@ -432,7 +510,6 @@ Revenue in More Personal Computing was $13.5 billion and increased 9%, with the 
             
             // Clear input fields only after failed completion
             setPrompt('');
-            setStreamingContent('');
             setUserImages([]);
             onStreamingContentUpdate?.('');
         });
@@ -441,7 +518,7 @@ Revenue in More Personal Computing was $13.5 billion and increased 9%, with the 
     // Expose sendRequest function to parent via ref
     React.useEffect(() => {
         if (ref && typeof ref === 'object' && 'current' in ref) {
-            ref.current = sendRequest;
+            ref.current = () => sendRequest(prompt, userImages);
         }
     }, [canSend, prompt, additionalImages, userImages, extractedUrls, dialog, activeModel, focusedDataCleanBlockId, dispatch]);
 
@@ -471,13 +548,13 @@ Revenue in More Personal Computing was $13.5 billion and increased 9%, with the 
                             color="primary"
                             size="small"
                             sx={{
-                                maxWidth: existOutputBlocks || streamingContent ? 280 : 400,
+                                maxWidth: existOutputBlocks ? 280 : 400,
                                 backgroundColor: 'primary.50',
                                 borderColor: 'primary.200',
                                 color: 'primary.700',
                                 borderRadius: 2,
                                 '& .MuiChip-label': {
-                                    fontSize: (existOutputBlocks || streamingContent) ? '11px' : '12px',
+                                    fontSize: existOutputBlocks ? '11px' : '12px',
                                     maxWidth: '100%',
                                     overflow: 'hidden',
                                     textOverflow: 'ellipsis'
@@ -488,18 +565,6 @@ Revenue in More Personal Computing was $13.5 billion and increased 9%, with the 
                 </Box>
             )}
 
-            {!cleanInProgress && inputImages.length == 0 && prompt == "" && placeholders[placeholderIndex] == "help me extract data from this image" && 
-                <Box sx={{ display: 'flex', flexDirection: 'row', flexWrap: 'wrap', gap: 0.5, mt: 0.5, position: 'relative' }}>
-                    <Box component="img"
-                        sx={{ display: 'block', position: 'relative', maxHeight: 600,
-                                    maxWidth: 400,
-                                    objectFit: 'cover',
-                                    borderRadius: 1,
-                                    border: '1px solid',
-                                    borderColor: 'divider' }}
-                        src={exampleImageTable} alt="Example image table" />
-                </Box>
-            }
             {inputImages.length > 0 && (
                 <Box sx={{ display: 'flex', flexDirection: 'row', flexWrap: 'wrap', gap: 0.5, mt: 0.5, position: 'relative' }}>
                     {inputImages.map((imageUrl, index) => (
@@ -536,17 +601,9 @@ Revenue in More Personal Computing was $13.5 billion and increased 9%, with the 
                     '& .MuiInputBase-root': {
                         p: 1,
                         fontSize: existOutputBlocks ? '12px' : '14px'
-                    },
-                    '& .MuiInputBase-input::placeholder': {
-                        transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-                        transform: 'translateY(0)',
-                        '&.placeholder-changing': {
-                            opacity: 0,
-                            transform: 'translateY(-10px)',
-                        }
-                    },
+                    }
                 }}
-                placeholder={cleanInProgress ? 'extracting data...' : placeholders[placeholderIndex]}
+                placeholder={cleanInProgress ? 'extracting data...' : placeholder}
                 variant="standard"
                 multiline
                 value={prompt}
@@ -558,31 +615,12 @@ Revenue in More Personal Computing was $13.5 billion and increased 9%, with the 
                 onKeyDown={(e) => {
                     if (e.key === 'Enter' && !e.shiftKey) {
                         e.preventDefault();
-                        sendRequest();
+                        sendRequest(prompt, userImages);
                     }
                     if (e.key === 'Tab') {
                         e.preventDefault();
                         if (prompt == "") {
-                            if (inputImages.length == 0 && placeholders[placeholderIndex] == "help me extract data from this image") {
-                                // Convert example image to data URL and set it as user image
-                                const convertImageToDataUrl = async () => {
-                                    try {
-                                        const response = await fetch(exampleImageTable);
-                                        const blob = await response.blob();
-                                        const reader = new FileReader();
-                                        reader.onload = () => {
-                                            const dataUrl = reader.result as string;
-                                            setUserImages([dataUrl]);
-                                        };
-                                        reader.readAsDataURL(blob);
-                                    } catch (error) {
-                                        // Fallback to original URL if conversion fails
-                                        //setUserImages([exampleImageTable]);
-                                    }
-                                };
-                                convertImageToDataUrl();
-                            }
-                            setPrompt(placeholders[placeholderIndex]);
+                            setPrompt(placeholder);
                         } else {
                             setPrompt(prompt + '\t');
                         }   
@@ -590,13 +628,66 @@ Revenue in More Personal Computing was $13.5 billion and increased 9%, with the 
                 }}
                 slotProps={{
                     input: {
-                        endAdornment: <IconButton color='primary' size="small" disabled={!canSend || cleanInProgress} onClick={sendRequest}>
+                        endAdornment: <IconButton color='primary' size="small" disabled={!canSend || cleanInProgress} onClick={() => sendRequest(prompt, userImages)}>
                             <PrecisionManufacturingIcon />
                         </IconButton>
                     }
                 }}
                 onPaste={handlePasteImage}
             />
+            
+            {/* Sample Task Cards - Show only when no output blocks exist and not processing */}
+            {!existOutputBlocks && !cleanInProgress && (
+                <Box sx={{ mt: 2, mb: 1 }}>
+                    <Typography sx={{ fontSize: '11px', color: 'text.secondary', mb: 1 }}>
+                        Try these sample tasks:
+                    </Typography>
+                    <Box sx={{
+                        display: 'flex',
+                        flexWrap: 'wrap',
+                        gap: 1,
+                    }}>
+                        {sampleTasks.map((task, index) => (
+                            <SampleTaskChip
+                                key={index}
+                                task={task}
+                                theme={theme}
+                                onClick={async () => {
+                                    let imagesToSend: string[] = [];
+                                    
+                                    if (task.image) {
+                                        // Convert example image to data URL
+                                        try {
+                                            const response = await fetch(task.image);
+                                            const blob = await response.blob();
+                                            const reader = new FileReader();
+                                            
+                                            await new Promise<void>((resolve) => {
+                                                reader.onload = () => {
+                                                    const dataUrl = reader.result as string;
+                                                    imagesToSend = [dataUrl];
+                                                    setUserImages([dataUrl]);
+                                                    resolve();
+                                                };
+                                                reader.readAsDataURL(blob);
+                                            });
+                                        } catch (error) {
+                                            console.error('Failed to load image:', error);
+                                        }
+                                    }
+                                    
+                                    // Set prompt for display
+                                    setPrompt(task.fullText);
+                                    
+                                    // Call sendRequest with explicit parameters
+                                    sendRequest(task.fullText, imagesToSend);
+                                }}
+                                disabled={cleanInProgress}
+                            />
+                        ))}
+                    </Box>
+                </Box>
+            )}
             </Box>
         </Stack>
     );
