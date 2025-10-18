@@ -26,7 +26,19 @@ import {
     IconButton,
     Paper,
     Divider,
+    useTheme,
+    alpha,
 } from '@mui/material';
+import {
+    SmartToy as SmartToyIcon,
+    FolderOpen as FolderOpenIcon,
+    BarChart as BarChartIcon,
+    ContentPaste as ContentPasteIcon,
+    Storage as StorageIcon,
+    Category as CategoryIcon,
+    CloudQueue as CloudQueueIcon,
+    AutoFixNormal as AutoFixNormalIcon,
+} from '@mui/icons-material';
 
 import { FreeDataViewFC } from './DataView';
 import { VisualizationViewFC } from './VisualizationView';
@@ -49,6 +61,7 @@ import { getUrls } from '../app/utils';
 import { DataLoadingChatDialog } from './DataLoadingChat';
 import { RotatingTextBlock } from '../components/RotatingTextBlock';
 import { ReportView } from './ReportView';
+import { ExampleSession, exampleSessions, ExampleSessionCard } from './ExampleSessions';
 
 export const DataFormulatorFC = ({ }) => {
 
@@ -56,6 +69,7 @@ export const DataFormulatorFC = ({ }) => {
     const models = useSelector((state: DataFormulatorState) => state.models);
     const modelSlots = useSelector((state: DataFormulatorState) => state.modelSlots);
     const viewMode = useSelector((state: DataFormulatorState) => state.viewMode);
+    const theme = useTheme();
 
     const noBrokenModelSlots= useSelector((state: DataFormulatorState) => {
         const slotTypes = dfSelectors.getAllSlotTypes();
@@ -64,6 +78,39 @@ export const DataFormulatorFC = ({ }) => {
     });
 
     const dispatch = useDispatch();
+
+    const handleLoadExampleSession = (session: ExampleSession) => {
+        dispatch(dfActions.addMessages({
+            timestamp: Date.now(),
+            type: 'info',
+            component: 'data formulator',
+            value: `Loading example session: ${session.title}`,
+        }));
+        
+        // Load the complete state from the JSON file
+        fetch(session.dataFile)
+            .then(res => res.json())
+            .then(savedState => {
+                // Use loadState to restore the complete session state
+                dispatch(dfActions.loadState(savedState));
+                
+                dispatch(dfActions.addMessages({
+                    timestamp: Date.now(),
+                    type: 'success',
+                    component: 'data formulator',
+                    value: `Successfully loaded ${session.title}`,
+                }));
+            })
+            .catch(error => {
+                console.error('Error loading session:', error);
+                dispatch(dfActions.addMessages({
+                    timestamp: Date.now(),
+                    type: 'error',
+                    component: 'data formulator',
+                    value: `Failed to load ${session.title}: ${error.message}`,
+                }));
+            });
+    };
 
     useEffect(() => {
         document.title = toolName;
@@ -133,9 +180,17 @@ export const DataFormulatorFC = ({ }) => {
             </Allotment>
         </Box>);
 
+    let borderBoxStyle = {
+        border: '1px solid rgba(0,0,0,0.1)', 
+        borderRadius: '16px', 
+        boxShadow: '0 0 5px rgba(0,0,0,0.1)',
+    }
+
     const fixedSplitPane = ( 
         <Box sx={{display: 'flex', flexDirection: 'row', height: '100%'}}>
-            <Box sx={{border: '1px solid lightgray', borderRadius: '4px', margin: '4px 4px 4px 8px', backgroundColor: 'white',
+            <Box sx={{
+                ...borderBoxStyle,
+                    margin: '4px 4px 4px 8px', backgroundColor: 'white',
                     display: 'flex', height: '100%', width: 'fit-content', flexDirection: 'column'}}>
                 {tables.length > 0 ?  <DataThread sx={{
                     minWidth: 201,
@@ -147,7 +202,8 @@ export const DataFormulatorFC = ({ }) => {
                 }}/>  : ""} 
             </Box>
             <Box sx={{
-                border: '1px solid lightgray', borderRadius: '4px', margin: '4px 8px 4px 4px', backgroundColor: 'white',
+                ...borderBoxStyle,
+                margin: '4px 8px 4px 4px', backgroundColor: 'white',
                 display: 'flex', height: '100%', flex: 1, overflow: 'hidden', flexDirection: 'row'
             }}>
                 {viewMode === 'editor' ? (
@@ -174,38 +230,85 @@ export const DataFormulatorFC = ({ }) => {
 Totals (7 entries)	5	5	5	15
 `
 
-    const rotatingTexts = [
-        "data in a webpage",
-        "data tables in an image",
-        "data in a messy text block", 
-        "some synthetic data",
-    ];
-
-    let dataUploadRequestBox = <Box sx={{width: '100vw', overflow: 'auto', display: 'flex', flexDirection: 'column', height: '100%'}}>
-        <Box sx={{margin:'auto', pb: '5%', display: "flex", flexDirection: "column", textAlign: "center"}}>
-            <Box component="img" sx={{  width: 196, margin: "auto" }} alt="" src={dfLogo} />
-            <Typography variant="h3" sx={{marginTop: "20px", fontWeight: 200, letterSpacing: '0.05em'}}>
-                {toolName}
-            </Typography>
-            <Typography  variant="h4" sx={{mt: 3, fontSize: 28, letterSpacing: '0.02em', textAlign: 'center'}}>
-                <DataLoadingChatDialog buttonElement={"Vibe"}/> with <RotatingTextBlock 
-                    texts={rotatingTexts}
-                    rotationInterval={5000}
-                    transitionDuration={300}
-                />
-                <Divider sx={{width: '80px', margin: '10px auto', fontSize: '1.2rem', color: 'text.disabled'}}> or </Divider>
-                Load data from
-                <DatasetSelectionDialog  buttonElement={"Examples"} />, <TableUploadDialog buttonElement={"file"} disabled={false} />, <TableCopyDialogV2 buttonElement={"clipboard"} disabled={false} />, or <DBTableSelectionDialog buttonElement={"Database"} component="dialog" />
-            </Typography>
-            
-            <Typography sx={{  width: 960, margin: "auto" }} variant="body1">
-                Besides formatted data (csv, tsv, xlsx, json or database tables), you can ask AI to extract data from&nbsp;
-                <Tooltip title={<Box>Example of a messy text block: <Typography sx={{fontSize: 10, marginTop: '6px'}} component={"pre"}>{exampleMessyText}</Typography></Box>}><Box component="span" sx={{color: 'secondary.main', cursor: 'help', "&:hover": {textDecoration: 'underline'}}}>a text block</Box></Tooltip> or&nbsp;
-                <Tooltip title={<Box>Example of a table in image format: <Box component="img" sx={{ width: '100%',  marginTop: '6px' }} alt="" src={exampleImageTable} /></Box>}><Box component="span" sx={{color: 'secondary.main', cursor: 'help', "&:hover": {textDecoration: 'underline'}}}>an image</Box></Tooltip>.
-            </Typography>
+    let dataUploadRequestBox = <Box sx={{
+            margin: '4px 4px 4px 8px', 
+            width: 'calc(100vw - 16px)', overflow: 'auto', display: 'flex', flexDirection: 'column', height: '100%',
+        }}
+        >
+        <Box sx={{margin:'auto', pb: '5%', display: "flex", flexDirection: "column", textAlign: "center" }}>
+            <Box sx={{display: 'flex', ml: 2, mb: 2, flexDirection: 'row', alignItems: 'end', justifyContent: 'center'}}>
+                <Box component="img" sx={{  width: 128 }} alt="" src={dfLogo} /> 
+                <Typography sx={{fontSize: 64, ml: 2, marginTop: "20px", letterSpacing: '0.02em', textAlign: 'center'}}>
+                    <Typography fontSize="inherit" sx={{letterSpacing: '0.05em', fontWeight: 200, color: 'text.primary'}}>{toolName}</Typography> 
+                    <Typography fontSize={20} sx={{color: 'text.secondary'}}>What <RotatingTextBlock 
+                        texts={[
+                            "data",
+                            "visualizations",
+                            "insights",
+                        ]}
+                    /> do you want to explore?</Typography>
+                </Typography>
+            </Box>
+            <Box sx={{mt: 4, borderRadius: 8, backgroundColor: alpha(theme.palette.primary.main, 0.04),
+                p: 2}}>
+                <Divider sx={{width: '200px', mx: 'auto', mb: 2, fontSize: '1.2rem', color: 'text.disabled'}}>
+                    <Typography sx={{ fontSize: 14, color: 'text.disabled' }}>
+                        load some data
+                    </Typography>
+                </Divider>
+                <Typography  variant="h4" sx={{mx: 'auto', width: 1080,  fontSize: 24}}>
+                    <DataLoadingChatDialog buttonElement={<><AutoFixNormalIcon sx={{ mr: 1, verticalAlign: 'middle' }} />Messy data</>}/>  
+                    <Box component="span" sx={{ mx: 2, color: 'text.disabled', fontSize: '0.8em' }}>•</Box>
+                    <DatasetSelectionDialog  buttonElement={<><CategoryIcon sx={{ mr: 1, verticalAlign: 'middle' }} />Examples</>} /> 
+                    <Box component="span" sx={{ mx: 2, color: 'text.disabled', fontSize: '0.8em' }}>•</Box>
+                    <TableUploadDialog buttonElement={<><FolderOpenIcon sx={{ mr: 1, verticalAlign: 'middle' }} />files</>} disabled={false} /> 
+                    <Box component="span" sx={{ mx: 2, color: 'text.disabled', fontSize: '0.8em' }}>•</Box>
+                    <TableCopyDialogV2 buttonElement={<><ContentPasteIcon sx={{ mr: 1, verticalAlign: 'middle' }} />clipboard</>} disabled={false} /> 
+                    <Box component="span" sx={{ mx: 2, color: 'text.disabled', fontSize: '0.8em' }}>•</Box>
+                    <DBTableSelectionDialog buttonElement={<><CloudQueueIcon sx={{ mr: 1, verticalAlign: 'middle' }} />Database</>} component="dialog" />
+                    {/* <br /> */}
+                    {/* <Typography sx={{ml: 10, fontSize: 14, color: 'darkgray', transform: 'translateY(-12px)'}}>(csv, tsv, xlsx, json or database)</Typography> */}
+                    <Typography variant="body1" color="text.secondary" sx={{ mt: 2, width: '100%' }}>
+                        Load structured data from CSV, Excel, JSON, database, or extract data from{' '}
+                        <Tooltip title={<Box>Example of a messy text block: <Typography sx={{fontSize: 10, marginTop: '6px'}} component="pre">{exampleMessyText}</Typography></Box>}>
+                            <Box component="span" sx={{color: 'secondary.main', cursor: 'help', "&:hover": {textDecoration: 'underline'}}}>text</Box>
+                        </Tooltip>{' '}
+                        and{' '}
+                        <Tooltip title={<Box>Example of a table in image format: <Box component="img" sx={{ width: '100%', marginTop: '6px' }} alt="" src={exampleImageTable} /></Box>}>
+                            <Box component="span" sx={{color: 'secondary.main', cursor: 'help', "&:hover": {textDecoration: 'underline'}}}>images</Box>
+                        </Tooltip>{' '}
+                        using AI.
+                    </Typography> 
+                </Typography>
+            </Box>
+            <Box sx={{mt: 4, borderRadius: 8, p: 2}}>
+                <Divider sx={{width: '200px', mx: 'auto', mb: 3, fontSize: '1.2rem', color: 'text.disabled'}}>
+                    <Typography sx={{ fontSize: 14, color: 'text.disabled' }}>
+                        or, explore examples
+                    </Typography>
+                </Divider>
+                <Box sx={{ alignItems: 'center' }}>
+                    <Box sx={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        maxWidth: 1200,
+                        margin: '0 auto',
+                        px: 1
+                    }}>
+                        {exampleSessions.map((session) => (
+                            <ExampleSessionCard
+                                key={session.id}
+                                session={session}
+                                theme={theme}
+                                onClick={() => handleLoadExampleSession(session)}
+                            />
+                        ))}
+                    </Box>
+                </Box>
+            </Box>
         </Box>
         <Button size="small" color="inherit" 
-                sx={{position: "absolute", color:'darkgray', bottom: 0, right: 0, textTransform: 'none'}} 
+                sx={{position: "absolute", color:'darkgray', bottom: 8, left: 16, textTransform: 'none'}} 
                 target="_blank" rel="noopener noreferrer" 
                 href="https://privacy.microsoft.com/en-US/data-privacy-notice">view data privacy notice</Button>
     </Box>;

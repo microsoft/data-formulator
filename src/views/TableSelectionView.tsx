@@ -531,16 +531,11 @@ export const TableCopyDialogV2: React.FC<TableCopyDialogProps> = ({ buttonElemen
     let activeModel = useSelector(dfSelectors.getActiveModel);
     
     const [dialogOpen, setDialogOpen] = useState<boolean>(false);
-    const [tableName, setTableName] = useState<string>("");
     
     const [tableContent, setTableContent] = useState<string>("");
-    const [imageCleaningInstr, setImageCleaningInstr] = useState<string>("");
     const [tableContentType, setTableContentType] = useState<'text' | 'image'>('text');
 
     const [cleaningInProgress, setCleaningInProgress] = useState<boolean>(false);
-
-    const [loadFromURL, setLoadFromURL] = useState<boolean>(false);
-    const [url, setURL] = useState<string>("");
 
     // Add new state for display optimization
     const [displayContent, setDisplayContent] = useState<string>("");
@@ -568,7 +563,7 @@ export const TableCopyDialogV2: React.FC<TableCopyDialogProps> = ({ buttonElemen
             return `data-${shortHash}`;
         })();
 
-        const baseName = tableName || defaultName;
+        const baseName = defaultName;
         const uniqueName = getUniqueTableName(baseName, existingNames);
 
         try {
@@ -616,75 +611,6 @@ export const TableCopyDialogV2: React.FC<TableCopyDialogProps> = ({ buttonElemen
         }
     }, [showFullContent, tableContent]);
 
-    let handleLoadURL = () => {
-        console.log("hello hello")
-        setLoadFromURL(!loadFromURL);
-
-        let  parts = url.split('/');
-
-        // Get the last part of the URL, which should be the file name with extension
-        const tableName = parts[parts.length - 1];
-
-        fetch(url)
-        .then(res => res.text())
-        .then(content => {
-            setTableName(tableName);
-            setTableContent(content); 
-            setTableContentType("text");
-        })
-    }
-
-    let handleCleanData = () => {
-        let token = String(Date.now());
-        setCleaningInProgress(true);
-        let message = {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', },
-            body: JSON.stringify({
-                token: token,
-                content_type: tableContentType,
-                prompt: tableContent || imageCleaningInstr,
-                artifacts: [],
-                dialog: [],
-                model: activeModel
-            }),
-        };
-
-        fetch(getUrls().CLEAN_DATA_URL, message)
-            .then((response) => response.json())
-            .then((data) => {
-                setCleaningInProgress(false);
-
-                if (data["status"] == "ok") {
-                    if (data["token"] == token) {
-                        let candidate = data["result"][0];
-                        console.log(candidate)
-
-                        let cleanContent = candidate['content'];
-                        let info = candidate['info'];
-
-                        setTableContent(cleanContent.trim());
-                    }
-                } else {
-                    // TODO: add warnings to show the user
-                    dispatch(dfActions.addMessages({
-                        "timestamp": Date.now(),
-                        "type": "error",
-                        "component": "data loader",
-                        "value": "unable to perform auto-sort."
-                    }));
-                }
-            }).catch((error) => {
-                setCleaningInProgress(false);
-               
-                dispatch(dfActions.addMessages({
-                    "timestamp": Date.now(),
-                    "type": "error",
-                    "component": "data loader",
-                    "value": "unable to perform clean data due to server issue."
-                }));
-            });
-    }
 
     let dialog = <Dialog key="table-selection-dialog" onClose={()=>{setDialogOpen(false)}} open={dialogOpen}
             sx={{ '& .MuiDialog-paper': { maxWidth: '80%', maxHeight: 800, minWidth: 800 } }}
@@ -704,144 +630,80 @@ export const TableCopyDialogV2: React.FC<TableCopyDialogProps> = ({ buttonElemen
             <DialogContent sx={{overflowX: "hidden", padding: 2, display: "flex", 
                                 flexDirection: "column", 
                                 "& .MuiOutlinedInput-root.Mui-disabled": {backgroundColor: 'rgba(0,0,0,0.05)'}}} dividers>
-                <Box sx={{width: '100%', marginBottom: 1, display:'flex'}}>
-                    <TextField sx={{flex: 1}} disabled={loadFromURL} size="small" 
-                            value={tableName} onChange={(event) => { setTableName(event.target.value); }} 
-                           autoComplete='off' id="outlined-basic" label="dataset name" variant="outlined" />
-                    <Divider sx={{margin: 1}} flexItem orientation='vertical'/>
-                    <Button sx={{marginLeft: 0, textTransform: 'none'}} onClick={() => {setLoadFromURL(!loadFromURL)}} 
-                            endIcon={!loadFromURL ? <ChevronLeftIcon/> : <ChevronRightIcon />} >{"load from URL"}</Button>
-                    <Collapse orientation='horizontal' in={loadFromURL}>
-                        <Box component="form" sx={{ p: '2px 4px', display: 'flex', alignItems: 'center', width: 400 }} >
-                            <TextField sx={{width: 420}} size="small" value={url} 
-                                onChange={(event) => { setURL(event.target.value); }} 
-                                onKeyDown={(event)=> { 
-                                    if(event.key == 'Enter'){
-                                        handleLoadURL();
-                                        event.preventDefault();
-                                     }
-                                }}
-                                autoComplete='off' id="outlined-basic" label="url" variant="outlined" />
-                            <Button variant="contained" disabled={url == ""}  sx={{ p: '6px 0px', minWidth: '36px', marginLeft: 1, borderRadius: '32px' }}onClick={handleLoadURL} >
-                                <KeyboardReturnIcon />
-                            </Button>
-                        </Box>
-                    </Collapse>
-                </Box>
                 <Box sx={{width: '100%',  display:'flex', position: 'relative', overflow: 'auto'}}>
                     {cleaningInProgress && tableContentType == "text" ? <LinearProgress sx={{ width: '100%', height: "calc(100% - 8px)", marginTop: 1, minHeight: 200, opacity: 0.1, position: 'absolute', zIndex: 1 }} /> : ""}
-                    { ( tableContentType == "text" ?
-                        <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-                            {/* Content size indicator */}
-                            {isLargeContent && (
-                                <Box sx={{ display: 'flex', alignItems: 'center', marginBottom: 1, padding: 1, backgroundColor: 'rgba(255, 193, 7, 0.1)', borderRadius: 1 }}>
-                                    <Typography variant="caption" sx={{ flex: 1 }}>
-                                        Large content detected ({Math.round(tableContent.length / 1000)}KB). 
-                                        {showFullContent ? 'Showing full content (may be slow)' : 'Showing preview for performance'}
-                                    </Typography>
-                                    <Button 
-                                        size="small" 
-                                        variant="outlined" 
-                                        onClick={toggleFullContent}
-                                        sx={{ textTransform: 'none', minWidth: 'auto' }}
-                                    >
-                                        {showFullContent ? 'Show Preview' : 'Show Full'}
-                                    </Button>
-                                </Box>
-                            )}
-                            
-                            <TextField 
-                                disabled={loadFromURL || cleaningInProgress} 
-                                autoFocus 
-                                size="small" 
-                                sx={{ 
-                                    marginTop: 1, 
-                                    flex: 1, 
-                                    "& .MuiInputBase-input": {
-                                        fontSize: 12, 
-                                        lineHeight: 1.2,
-                                        // Limit height for performance
-                                        maxHeight: isLargeContent && !showFullContent ? '300px' : '400px',
-                                        overflow: 'auto'
-                                    }
-                                }} 
-                                id="upload content" 
-                                value={displayContent} 
-                                maxRows={isLargeContent && !showFullContent ? MAX_DISPLAY_LINES : 25} // Dynamic max rows
-                                minRows={10} // Reduced from 15
-                                onChange={handleContentChange}
-                                slotProps={{
-                                    inputLabel: {
-                                        shrink: true
-                                    }
-                                }}
-                                placeholder="Paste data (in csv, tsv, or json format), or a text snippet / an image that contains data to get started."
-                                onPasteCapture={(e) => {
-                                    console.log(e.clipboardData.files);
-                                    if (e.clipboardData.files.length > 0) {
-                                        let file = e.clipboardData.files[0];
-                                        let read = new FileReader();
+                    <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+                        {/* Content size indicator */}
+                        {isLargeContent && (
+                            <Box sx={{ display: 'flex', alignItems: 'center', marginBottom: 1, padding: 1, backgroundColor: 'rgba(255, 193, 7, 0.1)', borderRadius: 1 }}>
+                                <Typography variant="caption" sx={{ flex: 1 }}>
+                                    Large content detected ({Math.round(tableContent.length / 1000)}KB). 
+                                    {showFullContent ? 'Showing full content (may be slow)' : 'Showing preview for performance'}
+                                </Typography>
+                                <Button 
+                                    size="small" 
+                                    variant="outlined" 
+                                    onClick={toggleFullContent}
+                                    sx={{ textTransform: 'none', minWidth: 'auto' }}
+                                >
+                                    {showFullContent ? 'Show Preview' : 'Show Full'}
+                                </Button>
+                            </Box>
+                        )}
+                        
+                        <TextField 
+                            disabled={cleaningInProgress} 
+                            autoFocus 
+                            size="small" 
+                            sx={{ 
+                                marginTop: 1, 
+                                flex: 1, 
+                                "& .MuiInputBase-input": {
+                                    fontSize: 12, 
+                                    lineHeight: 1.2,
+                                    // Limit height for performance
+                                    maxHeight: isLargeContent && !showFullContent ? '300px' : '400px',
+                                    overflow: 'auto'
+                                }
+                            }} 
+                            id="upload content" 
+                            value={displayContent} 
+                            maxRows={isLargeContent && !showFullContent ? MAX_DISPLAY_LINES : 25} // Dynamic max rows
+                            minRows={10} // Reduced from 15
+                            onChange={handleContentChange}
+                            slotProps={{
+                                inputLabel: {
+                                    shrink: true
+                                }
+                            }}
+                            placeholder="paste data (csv, tsv, or json) and upload it!"
+                            onPasteCapture={(e) => {
+                                if (e.clipboardData.files.length > 0) {
+                                    let file = e.clipboardData.files[0];
+                                    let read = new FileReader();
 
-                                        read.readAsDataURL(file);
-                                        read.onloadend = function(){
-                                            let res = read.result;
-                                            console.log(res);
-                                            if (res) { 
-                                                setTableContent(res as string); 
-                                                setTableContentType("image");
-                                            }
+                                    read.readAsDataURL(file);
+                                    read.onloadend = function(){
+                                        let res = read.result;
+                                        console.log(res);
+                                        if (res) { 
+                                            setTableContent(res as string); 
+                                            setTableContentType("image");
                                         }
                                     }
-                                }}
-                                autoComplete='off'
-                                label="data content" 
-                                variant="outlined" 
-                                multiline 
-                            />
-                        </Box>
-                        :
-                        <Box sx={{display: 'flex', flexDirection: 'column', alignItems: 'center'}}>
-                            <Box sx={{marginTop: 1, position: 'relative'}}>
-                                {cleaningInProgress ? <LinearProgress sx={{ width: '100%', height: "calc(100% - 4px)", opacity: 0.1, position: 'absolute', zIndex: 1 }} /> : ""}
-                                <IconButton size="small" color="primary"
-                                            sx={{  backgroundColor: 'white', 
-                                                width: 16, height: 16, boxShadow: 3, 
-                                                position: 'absolute', right: 4, top: 4,
-                                                "&:hover": { backgroundColor: "white", boxShadow: 8, transform: "translate(0.5px, -0.5px)"  }
-                                                }}
-                                    onClick={() => {
-                                        setTableContent("");
-                                        setTableContentType("text");
-                                        setImageCleaningInstr("");
-                                    }}
-                                >
-                                    <CancelIcon sx={{fontSize: 16}} />
-                                </IconButton>
-                                {validator.isURL(tableContent) || validator.isDataURI(tableContent) ? (
-                                    <img style={{border: '1px lightgray solid', borderRadius: 4, maxWidth: 640, maxHeight: 360}} 
-                                        src={DOMPurify.sanitize(tableContent)} alt="the image is corrupted, please try again." />
-                                ) : (
-                                    <Typography color="error">Invalid image data</Typography>
-                                )}
-                            </Box>
-                            <TextField fullWidth size="small" sx={{ marginTop: 1, "& .MuiInputBase-input" : {fontSize: 14, lineHeight: 1.2 }}} 
-                                value={imageCleaningInstr} onChange={(event) => { setImageCleaningInstr(event.target.value); }} 
-                                variant="standard" placeholder='additional cleaning instructions' />
-                        </Box>)
-                    }
+                                }
+                            }}
+                            autoComplete='off'
+                            label="data content" 
+                            variant="outlined" 
+                            multiline 
+                        />
                     </Box>
+                </Box>
             </DialogContent>
             <DialogActions>
-                <Button disabled={tableContent.trim() == "" || loadFromURL} 
-                    variant={cleaningInProgress ? "outlined" : "contained"} color="primary" size="small" sx={{marginRight: 'auto', textTransform: 'none'}} 
-                        onClick={handleCleanData} endIcon={cleaningInProgress ? <CircularProgress size={24} /> : <AutoFixNormalIcon/> }>
-                    {tableContentType == "text" ? "Clean / Generate Data" : "Extract Data from Image"} 
-                </Button>
-                {/* <Collapse orientation='horizontal' in={cleanTableContent != undefined}>
-                    <Divider sx={{marginLeft: 1}} flexItem orientation='vertical'/>
-                </Collapse> */}
-                <Button variant="contained" size="small" onClick={()=>{ setDialogOpen(false); }}>cancel</Button>
-                <Button disabled={tableContentType != "text" || tableContent.trim() == ""} variant="contained" size="small" 
+                <Button variant="text" sx={{textTransform: 'none'}} size="small" onClick={()=>{ setDialogOpen(false); }}>cancel</Button>
+                <Button disabled={tableContentType != "text" || tableContent.trim() == ""} variant="contained" sx={{textTransform: 'none'}} size="small" 
                     onClick={()=>{ 
                         setDialogOpen(false); 
                         handleSubmitContent(tableContent); // Always use full content for processing

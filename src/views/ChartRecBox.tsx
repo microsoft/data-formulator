@@ -318,9 +318,18 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
     const agentRules = useSelector((state: DataFormulatorState) => state.agentRules);
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
     const activeModel = useSelector(dfSelectors.getActiveModel);
-    const activeChallenges = useSelector((state: DataFormulatorState) => state.activeChallenges);
 
-    const [mode, setMode] = useState<'agent' | 'interactive'>("agent");
+
+    let preferredMode = (
+        activeModel.model == 'gpt-5' ||
+        activeModel.model.startsWith('claude-sonnet-4') ||
+        activeModel.model.startsWith('claude-opus-4') ||
+        activeModel.model.startsWith('o1') ||
+        activeModel.model.startsWith('o3') ||
+        activeModel.model == 'gpt-4.1'
+    ) ? "agent" : "interactive";
+
+    const [mode, setMode] = useState<'agent' | 'interactive'>(preferredMode as 'agent' | 'interactive');
 
     const focusNextChartRef = useRef<boolean>(true);
     
@@ -333,8 +342,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
     
     const [prompt, setPrompt] = useState<string>("");
     const [isFormulating, setIsFormulating] = useState<boolean>(false);
-    const [ideas, setIdeas] = useState<{text: string, goal: string, difficulty: 'easy' | 'medium' | 'hard'}[]>(
-        activeChallenges.find(ac => ac.tableId === tableId)?.challenges || []);
+    const [ideas, setIdeas] = useState<{text: string, goal: string, difficulty: 'easy' | 'medium' | 'hard'}[]>([]);
     
     const [agentIdeas, setAgentIdeas] = useState<{
         breadth_questions: string[], depth_questions: string[], goal: string, 
@@ -1250,6 +1258,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                             right: 0,
                             zIndex: 1000,
                             height: '4px',
+                            backgroundColor: alpha(modeColor, 0.2),
                             '& .MuiLinearProgress-bar': {
                                 backgroundColor: modeColor
                             }

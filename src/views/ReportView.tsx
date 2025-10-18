@@ -26,19 +26,24 @@ import {
     Tooltip,
     useTheme,
     alpha,
+    ImageList,
+    ImageListItem,
 } from '@mui/material';
 import Masonry from '@mui/lab/Masonry';
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import EditIcon from '@mui/icons-material/Edit';
 import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
-import { useSelector } from 'react-redux';
-import { DataFormulatorState } from '../app/dfSlice';
+import HistoryIcon from '@mui/icons-material/History';
+import DeleteIcon from '@mui/icons-material/Delete';
+import { useDispatch, useSelector } from 'react-redux';
+import { DataFormulatorState, dfActions, dfSelectors, GeneratedReport } from '../app/dfSlice';
 import { getUrls, assembleVegaChart, getTriggers, prepVisTable } from '../app/utils';
 import { MuiMarkdown, getOverrides } from 'mui-markdown';
 import embed from 'vega-embed';
 import { getDataTable } from './VisualizationView';
 import { DictTable } from '../components/ComponentType';
+import { AppDispatch } from '../app/store';
 
 // Typography constants
 const FONT_FAMILY_SYSTEM = '-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, "Apple Color Emoji", Arial, sans-serif, "Segoe UI Emoji", "Segoe UI Symbol"';
@@ -178,16 +183,23 @@ export const ReportView: FC = () => {
     const theme = useTheme();
 
     const [selectedChartIds, setSelectedChartIds] = useState<Set<string>>(new Set(focusedChartId ? [focusedChartId] : []));
-    const [generatedReport, setGeneratedReport] = useState<string>('');
-    const [generatedStyle, setGeneratedStyle] = useState<string>('short note');
-    const [chartImages, setChartImages] = useState<Map<string, { url: string; width: number; height: number }>>(new Map());
     const [previewImages, setPreviewImages] = useState<Map<string, { url: string; width: number; height: number }>>(new Map());
     const [isLoadingPreviews, setIsLoadingPreviews] = useState(false);
     const [isGenerating, setIsGenerating] = useState(false);
     const [error, setError] = useState<string>('');
     const [style, setStyle] = useState<string>('short note');
-    const [mode, setMode] = useState<'compose' | 'post'>('compose');
+    const [mode, setMode] = useState<'compose' | 'post' | 'history'>('compose');
 
+    // Local state for current report
+    const [currentReport, setCurrentReport] = useState<GeneratedReport | undefined>(undefined);
+    const [generatedReport, setGeneratedReport] = useState<string>('');
+    const [generatedStyle, setGeneratedStyle] = useState<string>('short note');
+    const [chartImages, setChartImages] = useState<Map<string, { url: string; width: number; height: number }>>(new Map());
+
+    // Get all generated reports from Redux state
+    const allGeneratedReports = useSelector(dfSelectors.getAllGeneratedReports);
+
+    const dispatch = useDispatch<AppDispatch>();
     
     // Sort charts based on data thread ordering
     const sortedCharts = useMemo(() => {
@@ -228,11 +240,13 @@ export const ReportView: FC = () => {
     // Clean up Blob URLs on unmount
     useEffect(() => {
         return () => {
+            // Clean up chart images from current report (only blob URLs, not data URLs)
             chartImages.forEach(({ url }) => {
                 if (url.startsWith('blob:')) {
                     URL.revokeObjectURL(url);
                 }
             });
+            // Clean up preview images (these are always blob URLs)
             previewImages.forEach(({ url }) => {
                 if (url.startsWith('blob:')) {
                     URL.revokeObjectURL(url);
@@ -325,7 +339,8 @@ export const ReportView: FC = () => {
                 30,
                 true,
                 config.defaultChartWidth,
-                config.defaultChartHeight
+                config.defaultChartHeight,
+                true
             );
 
             // Create a temporary container for embedding
@@ -424,6 +439,9 @@ export const ReportView: FC = () => {
         setGeneratedReport('');
         setGeneratedStyle(style);
 
+        // Create a new report ID
+        const reportId = `report-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+
         try {
             const model = models.find(m => m.id === modelSlot.generation);
             if (!model) {
@@ -437,6 +455,7 @@ export const ReportView: FC = () => {
             }));
 
             const newChartImages = new Map<string, { url: string; width: number; height: number }>();
+            const persistentChartImages = new Map<string, { url: string; width: number; height: number }>();
 
             const selectedCharts = await Promise.all(
                 sortedCharts
@@ -453,7 +472,10 @@ export const ReportView: FC = () => {
                     const { dataUrl, blobUrl, width, height } = await getChartImageFromVega(chart, chartTable);
 
                     if (blobUrl) {
+                        // Use blob URL for local display (temporary)
                         newChartImages.set(chart.id, { url: blobUrl, width, height });
+                        // Use data URL for persistent storage
+                        persistentChartImages.set(chart.id, { url: dataUrl, width, height });
                     }
 
                     return {
@@ -469,8 +491,6 @@ export const ReportView: FC = () => {
             );
 
             const validCharts = selectedCharts.filter(c => c !== null);
-
-            setChartImages(newChartImages);
 
             const requestBody = {
                 model: model,
@@ -526,7 +546,28 @@ export const ReportView: FC = () => {
                 accumulatedReport += chunk;
 
                 const processedReport = processReport(accumulatedReport);
+                
+                // Update local state
                 setGeneratedReport(processedReport);
+                setChartImages(newChartImages);
+                
+                // Create the report object for saving to Redux
+                const report: GeneratedReport = {
+                    id: reportId,
+                    content: processedReport,
+                    style: style,
+                    selectedChartIds: Array.from(selectedChartIds),
+                    chartImages: persistentChartImages, // Use persistent data URLs
+                    createdAt: Date.now(),
+                    title: `Report - ${new Date().toLocaleDateString()}`
+                };
+
+                // Save to Redux state
+                dispatch(dfActions.saveGeneratedReport(report));
+                
+                // Update local current report
+                setCurrentReport(report);
+                
                 if (mode === 'compose') {
                     setMode('post');
                 }
@@ -539,12 +580,59 @@ export const ReportView: FC = () => {
         }
     };
 
+    const loadSavedReport = (report: GeneratedReport) => {
+        setCurrentReport(report);
+        setGeneratedReport(report.content);
+        setGeneratedStyle(report.style);
+        // Saved reports contain data URLs, so we can use them directly
+        setChartImages(report.chartImages);
+        setMode('post');
+    };
+
+    const deleteReport = (reportId: string, event: React.MouseEvent) => {
+        event.stopPropagation(); // Prevent triggering the card click
+        dispatch(dfActions.deleteGeneratedReport(reportId));
+    };
+
     return (
         <Box sx={{ height: '100%', width: '100%', ...COMMON_STYLES.flexColumn, overflow: 'hidden' }}>
             {mode === 'compose' ? (
                 <Box sx={{  overflowY: 'auto'}}>
+                    <Box sx={{ p: 2, pb: 0, display: 'flex' }}>
+                        <Button
+                            variant="text"
+                            size="small"
+                            color='secondary'
+                            onClick={() => dispatch(dfActions.setViewMode('editor'))}
+                            sx={COMMON_STYLES.textNoTransform}
+                            startIcon={<ArrowBackIcon />}
+                        >
+                            back to explore
+                        </Button>
+                        <Divider orientation="vertical" sx={{ mx: 1 }} flexItem />
+                        <Button
+                            variant="text"
+                            disabled={generatedReport === ''}
+                            size="small"
+                            onClick={() => setMode('post')}
+                            sx={COMMON_STYLES.textNoTransform}
+                            endIcon={<ArrowForwardIcon />}
+                        >
+                            view post
+                        </Button>
+                        <Divider orientation="vertical" sx={{ mx: 1 }} flexItem />
+                        <Button
+                            variant="text"
+                            size="small"
+                            onClick={() => setMode('history')}
+                            sx={COMMON_STYLES.textNoTransform}
+                        >
+                            view all reports ({allGeneratedReports.length})
+                        </Button>
+                    </Box>
                     <Box sx={{ p: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                        
                             <Typography variant="body2">
                                 Compose a
                             </Typography>
@@ -606,23 +694,12 @@ export const ReportView: FC = () => {
                                 variant="contained"
                                 disabled={isGenerating || selectedChartIds.size === 0}
                                 onClick={generateReport}
-                                size="small"
+                                size="large"
                                 sx={COMMON_STYLES.textNoTransform}
                                 startIcon={isGenerating ? <CircularProgress size={16} /> : <EditIcon />}
                             >
                                 {isGenerating ? 'composing...' : 'compose'}
-                            </Button>
-                            <Divider orientation="vertical" flexItem />
-                            <Button
-                                variant="text"
-                                disabled={generatedReport === ''}
-                                size="small"
-                                onClick={() => setMode('post')}
-                                sx={COMMON_STYLES.textNoTransform}
-                                startIcon={<ArrowForwardIcon />}
-                            >
-                                view post
-                            </Button>
+                            </Button>                            
                         </Box>
                     </Box>
                     
@@ -728,9 +805,10 @@ export const ReportView: FC = () => {
                         })()}
                     </Box>
                 </Box>
-            ) : (
+            ) : mode === 'post' ? (
                 <Box sx={{ height: '100%', ...COMMON_STYLES.flexColumn, overflow: 'hidden' }}>
                     <Box sx={{ p: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between',  }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                         <Button
                             size="small"
                             disabled={isGenerating}
@@ -740,6 +818,15 @@ export const ReportView: FC = () => {
                         >
                             back to compose
                         </Button>
+                        <Button
+                            size="small"
+                            disabled={isGenerating}
+                            sx={COMMON_STYLES.textNoTransform}
+                            onClick={() => setMode('history')}
+                        >
+                            view all reports ({allGeneratedReports.length})
+                        </Button>
+                        </Box>
                         <Typography variant="body2" color="text.secondary">
                             AI generated the post from the selected charts, and it could be inaccurate!
                         </Typography>
@@ -789,7 +876,84 @@ export const ReportView: FC = () => {
                         </Box>
                     </Box>
                 </Box>
-            )}
+            ) : mode === 'history' ? (
+                <Box sx={{ height: '100%', ...COMMON_STYLES.flexColumn, overflow: 'hidden' }}>
+                    <Box sx={{ p: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <Button
+                            size="small"
+                            startIcon={<ArrowBackIcon />}
+                            sx={COMMON_STYLES.textNoTransform}
+                            onClick={() => setMode('compose')}
+                        >
+                            back to compose
+                        </Button>
+                        <Box />
+                    </Box>
+                    <Box sx={{ flex: 1, overflowY: 'auto', p: 2 }}>
+                        {allGeneratedReports.length === 0 ? (
+                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', py: 8 }}>
+                                <Typography color="text.secondary">
+                                    No saved reports yet. Generate a report to see it here.
+                                </Typography>
+                            </Box>
+                        ) : (
+                            <Box sx={{ display: 'flex', flexDirection: 'row', gap: 2, flexWrap: 'wrap' }}>
+                                {allGeneratedReports.map((report) => (
+                                    <Card
+                                        key={report.id}
+                                        variant="outlined"
+                                        sx={{
+                                            width: '48%',
+                                            cursor: 'pointer',
+                                            '&:hover': {
+                                                backgroundColor: 'action.hover',
+                                                boxShadow: 2,
+                                            },
+                                        }}
+                                        onClick={() => loadSavedReport(report)}
+                                    >
+                                        <CardContent>
+                                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
+                                                <Typography variant="body1" sx={{ ...COMMON_STYLES.fontSystem, ...COMMON_STYLES.fontWeight600, flex: 1, mr: 1 }}>
+                                                    {report.content.split('\n')[0] || `Report - ${new Date(report.createdAt).toLocaleDateString()}`}
+                                                </Typography>
+                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                    
+                                                    <Tooltip title="delete report"> 
+                                                        <IconButton
+                                                            size="small"
+                                                            color="warning"
+                                                            onClick={(e) => deleteReport(report.id, e)}
+                                                            sx={{ '&:hover': { transform: 'scale(1.2)' } }}
+                                                        >
+                                                            <DeleteIcon fontSize="small" />
+                                                        </IconButton>
+                                                    </Tooltip>
+                                                </Box>
+                                            </Box>
+                                            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                                                Style: {report.style} • Charts: {report.selectedChartIds.length}
+                                            </Typography>
+                                            <Typography
+                                                variant="body2"
+                                                sx={{
+                                                    display: '-webkit-box',
+                                                    WebkitLineClamp: 3,
+                                                    WebkitBoxOrient: 'vertical',
+                                                    overflow: 'hidden',
+                                                    textOverflow: 'ellipsis',
+                                                }}
+                                            >
+                                                {report.content.split('\n').slice(1).join('\n')?.replace(/<[^>]*>/g, '').substring(0, 200)}...
+                                            </Typography>
+                                        </CardContent>
+                                    </Card>
+                                ))}
+                            </Box>
+                        )}
+                    </Box>
+                </Box>
+            ) : null}
         </Box>
     );
 };

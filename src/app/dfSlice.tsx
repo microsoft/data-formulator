@@ -14,6 +14,8 @@ import { createTableFromFromObjectArray, inferTypeFromValueArray } from '../data
 
 enableMapSet();
 
+// Redux Persist will handle persistence automatically with enableMapSet()
+
 export const generateFreshChart = (tableRef: string, chartType: string, source: "user" | "trigger" = "user") : Chart => {
     return { 
         id: `chart-${Date.now()- Math.floor(Math.random() * 10000)}`, 
@@ -57,6 +59,16 @@ export type ModelSlots = Partial<Record<ModelSlotType, string>>;
 
 
 
+export interface GeneratedReport {
+    id: string;
+    content: string;
+    style: string;
+    selectedChartIds: string[];
+    chartImages: Map<string, { url: string; width: number; height: number }>;
+    createdAt: number;
+    title?: string;
+}
+
 export interface DataFormulatorState {
 
     agentRules: {
@@ -72,8 +84,6 @@ export interface DataFormulatorState {
     tables : DictTable[];
     charts: Chart[];
     
-    activeChallenges: {tableId: string, challenges: { text: string; goal: string; difficulty: 'easy' | 'hard'; }[]}[];
-
     conceptShelfItems: FieldItem[];
 
     // controls logs and message index
@@ -113,6 +123,9 @@ export interface DataFormulatorState {
     // Data cleaning dialog state
     dataCleanBlocks: DataCleanBlock[];
     cleanInProgress: boolean;
+
+    // Generated reports state
+    generatedReports: GeneratedReport[];
 }
 
 // Define the initial state using that type
@@ -131,8 +144,6 @@ const initialState: DataFormulatorState = {
     tables: [],
     charts: [],
 
-    activeChallenges: [],
-    
     conceptShelfItems: [],
 
     messages: [],
@@ -163,7 +174,9 @@ const initialState: DataFormulatorState = {
     agentActions: [],
 
     dataCleanBlocks: [],
-    cleanInProgress: false
+    cleanInProgress: false,
+
+    generatedReports: []
 }
 
 let getUnrefedDerivedTableIds = (state: DataFormulatorState) => {
@@ -321,7 +334,6 @@ export const dataFormulatorSlice = createSlice({
 
             state.tables = [];
             state.charts = [];
-            state.activeChallenges = [];
 
             state.conceptShelfItems = [];
 
@@ -345,6 +357,9 @@ export const dataFormulatorSlice = createSlice({
             state.cleanInProgress = false;
 
             state.agentActions = [];
+
+            state.generatedReports = [];
+            // Redux Persist will handle persistence automatically
             
             //state.dataLoaderConnectParams = initialState.dataLoaderConnectParams;
         },
@@ -352,18 +367,18 @@ export const dataFormulatorSlice = createSlice({
 
             let savedState = action.payload;
 
-            state.agentRules = savedState.agentRules || initialState.agentRules;
-
-            state.models = savedState.models || state.models || [];
-            state.modelSlots = savedState.modelSlots || state.modelSlots || {};
-            state.testedModels = []; // models should be tested again
+            // models should not be loaded again, especially they may be from others
+            state.agentRules = state.agentRules || initialState.agentRules;
+            state.models = state.models || [];
+            state.modelSlots = state.modelSlots || {};
+            state.dataLoaderConnectParams = state.dataLoaderConnectParams || {};
+            state.testedModels = []; 
+            state.serverConfig = initialState.serverConfig;
 
             //state.table = undefined;
             state.tables = savedState.tables || [];
             state.charts = savedState.charts || [];
             
-            state.activeChallenges = savedState.activeChallenges || [];
-
             state.conceptShelfItems = savedState.conceptShelfItems || [];
 
             state.messages = [];
@@ -376,15 +391,14 @@ export const dataFormulatorSlice = createSlice({
 
             state.chartSynthesisInProgress = [];
 
-            state.serverConfig = initialState.serverConfig;
-
             state.config = savedState.config;
 
-            state.dataLoaderConnectParams = savedState.dataLoaderConnectParams || {};
             state.dataCleanBlocks = savedState.dataCleanBlocks || [];
             state.cleanInProgress = false;
 
             state.agentActions = savedState.agentActions || [];
+
+            state.generatedReports = savedState.generatedReports || [];
         },
         updateAgentWorkInProgress: (state, action: PayloadAction<{actionId: string, tableId?: string, description: string, status: 'running' | 'completed' | 'warning' | 'failed', hidden: boolean}>) => {
             if (state.agentActions.some(a => a.actionId == action.payload.actionId)) {
@@ -476,9 +490,6 @@ export const dataFormulatorSlice = createSlice({
             let tableId = action.payload.tableId;
             let attachedMetadata = action.payload.attachedMetadata;
             state.tables = state.tables.map(t => t.id == tableId ? {...t, attachedMetadata} : t);
-        },
-        addChallenges: (state, action: PayloadAction<{tableId: string, challenges: { text: string; goal: string; difficulty: 'easy' | 'hard'; }[]}>) => {
-            state.activeChallenges = [...state.activeChallenges, action.payload];
         },
         extendTableWithNewFields: (state, action: PayloadAction<{tableId: string, columnName: string, values: any[], previousName: string | undefined, parentIDs: string[]}>) => {
             // extend the existing extTable with new columns from the new table
@@ -853,6 +864,27 @@ export const dataFormulatorSlice = createSlice({
         },
         setCleanInProgress: (state, action: PayloadAction<boolean>) => {
             state.cleanInProgress = action.payload;
+        },
+        // Generated reports actions
+        saveGeneratedReport: (state, action: PayloadAction<GeneratedReport>) => {
+            const report = action.payload;
+            // Check if report with same ID already exists and update it, otherwise add new
+            const existingIndex = state.generatedReports.findIndex(r => r.id === report.id);
+            if (existingIndex >= 0) {
+                state.generatedReports[existingIndex] = report;
+            } else {
+                state.generatedReports.unshift(report); // Add to beginning of array
+            }
+            // Redux Persist will handle persistence automatically
+        },
+        deleteGeneratedReport: (state, action: PayloadAction<string>) => {
+            const reportId = action.payload;
+            state.generatedReports = state.generatedReports.filter(r => r.id !== reportId);
+            // Redux Persist will handle persistence automatically
+        },
+        clearGeneratedReports: (state) => {
+            state.generatedReports = [];
+            // Redux Persist will handle persistence automatically
         }
     },
     extraReducers: (builder) => {
@@ -976,6 +1008,10 @@ export const dfSelectors = {
             }
         }
     },
+    // Generated reports selectors
+    getAllGeneratedReports: (state: DataFormulatorState) => state.generatedReports,
+    getReportById: (state: DataFormulatorState, reportId: string) => 
+        state.generatedReports.find(r => r.id === reportId),
 }
 
 // derived field: extra all field items from the table

@@ -21,6 +21,7 @@ import LanguageIcon from '@mui/icons-material/Language';
 import ImageIcon from '@mui/icons-material/Image';
 import TextFieldsIcon from '@mui/icons-material/TextFields';
 import DatasetIcon from '@mui/icons-material/Dataset';
+import StopIcon from '@mui/icons-material/Stop';
 
 import exampleImageTable from "../assets/example-image-table.png";
 
@@ -51,16 +52,6 @@ type DialogMessage = {
 const generateDefaultName = (seed: string) => {
     const hash = seed.split('').reduce((acc, c) => ((acc << 5) - acc) + c.charCodeAt(0) | 0, 0);
     return `data-${Math.abs(hash).toString(36).slice(0, 5)}`;
-};
-
-const getUniqueTableName = (baseName: string, existingNames: Set<string>): string => {
-    let uniqueName = baseName;
-    let counter = 1;
-    while (existingNames.has(uniqueName)) {
-        uniqueName = `${baseName}_${counter}`;
-        counter += 1;
-    }
-    return uniqueName;
 };
 
 // Sample task card component
@@ -94,11 +85,11 @@ const SampleTaskChip: React.FC<{
             }}
             onClick={disabled ? undefined : onClick}
         >
-            {task.icon && (
+            {/* {task.icon && (
                 <Box sx={{ mr: 1, display: 'flex', alignItems: 'center', color: theme.palette.primary.main }}>
                     {task.icon}
                 </Box>
-            )}
+            )} */}
             {task.image && (
                 <Box
                     component="img"
@@ -135,12 +126,8 @@ export const DataPreviewBox: React.FC<{sx?: SxProps}> = ({sx}) => {
     const focusedDataCleanBlockId = useSelector((state: DataFormulatorState) => state.focusedDataCleanBlockId);
     const existingTables = useSelector((state: DataFormulatorState) => state.tables);
     
-    const existingNames = new Set(existingTables.map(t => t.id));
-
-
     let selectedBlock = dataCleanBlocks.find(block => block.id === focusedDataCleanBlockId?.blockId) || dataCleanBlocks[dataCleanBlocks.length - 1];
     let selectedTable = focusedDataCleanBlockId ? selectedBlock?.items?.[focusedDataCleanBlockId.itemId] : undefined;
-
 
     if (!selectedTable) {
         return <Paper variant="outlined" sx={{ p: 1, display: 'flex', flexDirection: 'column', gap: 1, ...sx }}>
@@ -216,7 +203,7 @@ export const DataPreviewBox: React.FC<{sx?: SxProps}> = ({sx}) => {
     </Paper>
 }
 
-export const DataLoadingInputBox = React.forwardRef<(() => void) | null, {maxLines?: number, onStreamingContentUpdate?: (content: string) => void}>(({maxLines = 4, onStreamingContentUpdate}, ref) => {
+export const DataLoadingInputBox = React.forwardRef<(() => void) | null, {maxLines?: number, onStreamingContentUpdate?: (content: string) => void, abortControllerRef?: React.MutableRefObject<AbortController | null>}>(({maxLines = 4, onStreamingContentUpdate, abortControllerRef}, ref) => {
     const dispatch = useDispatch<AppDispatch>();
     const theme = useTheme();
     const activeModel = useSelector(dfSelectors.getActiveModel);
@@ -281,7 +268,7 @@ export const DataLoadingInputBox = React.forwardRef<(() => void) | null, {maxLin
     // Define sample tasks
     const sampleTasks = [
         {
-            text: "Extract top repos from GitHub",
+            text: "Extract top repos from https://github.com/microsoft",
             fullText: "extract the top repos information from https://github.com/microsoft?q=&type=all&language=&sort=stargazers",
             icon: <LanguageIcon sx={{ fontSize: 18 }} />
         },
@@ -319,7 +306,7 @@ Revenue in More Personal Computing was $13.5 billion and increased 9%, with the 
         ? (selectedTable && selectedTable.content.type === 'image_url' 
             ? "extract data from this image" 
             : "follow-up instruction (e.g., fix headers, remove totals, generate 15 rows, etc.)")
-        : "describe the data you want to extract or generate...";
+        : "paste the content (website, image, text block, etc.) and ask AI to extract / clean data from it";
 
     let additionalImages = (() => {
         if (selectedTable && selectedTable.content.type === 'image_url') {
@@ -339,7 +326,14 @@ Revenue in More Personal Computing was $13.5 billion and increased 9%, with the 
     const extractedUrls = (() => {
         const urlRegex = /(https?:\/\/[^\s]+)/gi;
         const matches = prompt.match(urlRegex);
-        return matches ? [...new Set(matches)] : []; // Remove duplicates
+        if (!matches) return [];
+        
+        // Remove trailing commas and periods from URLs
+        const cleanedUrls = matches.map(url => {
+            return url.replace(/[,.]$/, '');
+        });
+        
+        return [...new Set(cleanedUrls)]; // Remove duplicates
     })();
 
     const handlePasteImage = (e: React.ClipboardEvent<HTMLDivElement>) => {
@@ -374,6 +368,12 @@ Revenue in More Personal Computing was $13.5 billion and increased 9%, with the 
         setUserImages(prev => prev.filter((_, i) => i !== index));
     };
 
+    const stopGeneration = () => {
+        if (abortControllerRef?.current) {
+            abortControllerRef.current.abort();
+        }
+    };
+
     const sendRequest = (promptToUse: string, imagesToUse: string[]) => {        
         // Check if we can send with the provided or state values
         const hasPrompt = promptToUse.trim().length > 0;
@@ -384,7 +384,7 @@ Revenue in More Personal Computing was $13.5 billion and increased 9%, with the 
         dispatch(dfActions.setCleanInProgress(true));
         const token = String(Date.now());
 
-        let prompt_to_send = promptToUse.trim() || (additionalImages.length > 0 ? 'extract data from the image' : 'let extract data');
+        let prompt_to_send = promptToUse.trim() || (hasImageData ? 'extract data from the image' : 'let\'s generate some interesting data');
         let images_to_send = [...additionalImages, ...imagesToUse];
 
         // Extract URLs from the prompt
@@ -404,11 +404,17 @@ Revenue in More Personal Computing was $13.5 billion and increased 9%, with the 
             dialog: dialog
         };
 
+        // Create abort controller
+        const controller = new AbortController();
+        if (abortControllerRef) {
+            abortControllerRef.current = controller;
+        }
 
         fetch(getUrls().CLEAN_DATA_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload),
+            signal: controller.signal,
         })
         .then(async (response) => {
             if (!response.ok) {
@@ -494,19 +500,35 @@ Revenue in More Personal Computing was $13.5 billion and increased 9%, with the 
             } finally {
                 reader.releaseLock();
                 dispatch(dfActions.setCleanInProgress(false));
+                if (abortControllerRef) {
+                    abortControllerRef.current = null;
+                }
             }
         })
         .catch((error) => {
             dispatch(dfActions.setCleanInProgress(false));
+            if (abortControllerRef) {
+                abortControllerRef.current = null;
+            }
             
-            // Generation failed
-            const errorMessage = `Server error while processing data: ${error.message}`;
-            dispatch(dfActions.addMessages({
-                timestamp: Date.now(),
-                type: 'error',
-                component: 'data loader',
-                value: errorMessage,
-            }));
+            // Check if this was an abort (user stopped the generation)
+            if (error.name === 'AbortError') {
+                dispatch(dfActions.addMessages({
+                    timestamp: Date.now(),
+                    type: 'info',
+                    component: 'data loader',
+                    value: 'Generation stopped by user',
+                }));
+            } else {
+                // Generation failed
+                const errorMessage = `Server error while processing data: ${error.message}`;
+                dispatch(dfActions.addMessages({
+                    timestamp: Date.now(),
+                    type: 'error',
+                    component: 'data loader',
+                    value: errorMessage,
+                }));
+            }
             
             // Clear input fields only after failed completion
             setPrompt('');
@@ -526,7 +548,7 @@ Revenue in More Personal Computing was $13.5 billion and increased 9%, with the 
 
     return (
         <Stack sx={{ py: 1, position: 'relative' }} direction="row" spacing={1} alignItems="flex-end">
-            {cleanInProgress && <LinearProgress sx={{ width: '100%', height: '100%', position: 'absolute', opacity: 0.1, top: 0, left: 0, right: 0, zIndex: 1 }} />}    
+            {cleanInProgress && <LinearProgress sx={{ width: '100%', height: '100%', position: 'absolute', opacity: 0.1, top: 0, left: 0, right: 0, zIndex: 1, pointerEvents: 'none' }} />}    
             <Box sx={{ flex: 1, position: 'relative' }}>
             
             {/* HTML Address Chips */}
@@ -600,7 +622,9 @@ Revenue in More Personal Computing was $13.5 billion and increased 9%, with the 
                 sx={{
                     '& .MuiInputBase-root': {
                         p: 1,
-                        fontSize: existOutputBlocks ? '12px' : '14px'
+                        fontSize: existOutputBlocks ? '12px' : '14px',
+                        position: 'relative',
+                        zIndex: 2
                     }
                 }}
                 placeholder={cleanInProgress ? 'extracting data...' : placeholder}
@@ -617,20 +641,21 @@ Revenue in More Personal Computing was $13.5 billion and increased 9%, with the 
                         e.preventDefault();
                         sendRequest(prompt, userImages);
                     }
-                    if (e.key === 'Tab') {
-                        e.preventDefault();
-                        if (prompt == "") {
-                            setPrompt(placeholder);
-                        } else {
-                            setPrompt(prompt + '\t');
-                        }   
-                    }
                 }}
                 slotProps={{
                     input: {
-                        endAdornment: <IconButton color='primary' size="small" disabled={!canSend || cleanInProgress} onClick={() => sendRequest(prompt, userImages)}>
-                            <PrecisionManufacturingIcon />
-                        </IconButton>
+                        endAdornment: cleanInProgress ? (
+                            <Tooltip title="Stop generation">
+                                <IconButton color='error' size="small" onClick={stopGeneration}>
+                                    <StopIcon />
+                                </IconButton>
+                            </Tooltip>
+                        ) : (
+                            <IconButton color='primary' size="small" disabled={!canSend} 
+                                onClick={() => sendRequest(prompt, userImages)}>
+                                <PrecisionManufacturingIcon />
+                            </IconButton>
+                        )
                     }
                 }}
                 onPaste={handlePasteImage}
@@ -640,7 +665,7 @@ Revenue in More Personal Computing was $13.5 billion and increased 9%, with the 
             {!existOutputBlocks && !cleanInProgress && (
                 <Box sx={{ mt: 2, mb: 1 }}>
                     <Typography sx={{ fontSize: '11px', color: 'text.secondary', mb: 1 }}>
-                        Try these sample tasks:
+                        examples
                     </Typography>
                     <Box sx={{
                         display: 'flex',

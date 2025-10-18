@@ -94,7 +94,6 @@ export const ThinkingBanner = (message: string, sx?: SxProps) => (
         ...sx
     }}>
         <Box sx={{ 
-            py: 1, 
             display: 'flex', 
             alignItems: 'center', 
             justifyContent: 'left',
@@ -223,7 +222,7 @@ const AgentStatusBox = memo<{
         }
     }
 
-    let currentActions = relevantAgentActions.filter(a => !(a.status == 'running' && Date.now() - a.lastUpdate > 30 * 1000));
+    let currentActions = relevantAgentActions;
 
     if (currentActions.some(a => a.status == 'running')) {
         agentStatus = 'running';
@@ -235,15 +234,13 @@ const AgentStatusBox = memo<{
         agentStatus = 'warning';
     }
     
-    
-
     if (currentActions.length === 0) {
         return null;
     }
 
     return (
         <Box sx={{ padding: '0px 8px' }}>
-            {agentStatus === 'running' ? ThinkingBanner('thinking...', { py: 0.5 }) : (
+            {(
                 <Box sx={{ 
                     py: 1, 
                     display: 'flex', 
@@ -254,6 +251,7 @@ const AgentStatusBox = memo<{
                         color: getAgentStatusColor(agentStatus)
                     },
                 }}>
+                    {agentStatus === 'running' && ThinkingBanner('thinking...', { py: 0.5 })}
                     {agentStatus === 'completed' && <CheckCircleOutlineIcon />}
                     {agentStatus === 'failed' && <CancelOutlinedIcon />}
                     {agentStatus === 'warning' && <HelpOutlineIcon />}
@@ -261,7 +259,10 @@ const AgentStatusBox = memo<{
                         ml: 0.5, 
                         fontSize: 10,
                     }}>
-                        {agentStatus === 'warning' ? 'hmm...' : agentStatus === 'failed' ? 'oops...' : agentStatus}
+                        {agentStatus === 'warning' && 'hmm...'}
+                        {agentStatus === 'failed' && 'oops...'}
+                        {agentStatus === 'completed' && 'completed'}
+                        {agentStatus === 'running' && ''}
                     </Typography>
                     <Tooltip title="Delete message">
                         <IconButton

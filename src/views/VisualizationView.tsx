@@ -313,7 +313,8 @@ const VegaChartRenderer: FC<{
             24, 
             true, 
             chartWidth, 
-            chartHeight
+            chartHeight,
+            true
         );
 
 

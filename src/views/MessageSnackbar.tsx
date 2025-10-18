@@ -147,7 +147,7 @@ export function MessageSnackbar() {
                 <IconButton 
                     className='snackbar-button'
                     color="warning"
-                    sx={{position: "absolute", bottom: 16, right: 8 }}
+                    sx={{position: "absolute", bottom: 16, right: 16 }}
                     onClick={() => setOpenMessages(true)}
                 >
                     <InfoIcon sx={{fontSize: 32}}/>

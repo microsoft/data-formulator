@@ -4,19 +4,10 @@
 import * as React from 'react';
 import { useEffect, useRef, useState } from 'react';
 
-import { Box, Button, Card, CardContent, Divider, IconButton, Paper, Stack, TextField, Typography, alpha, useTheme, Dialog, DialogTitle, DialogContent, Tooltip, LinearProgress, CircularProgress, Chip, SxProps } from '@mui/material';
-import UploadIcon from '@mui/icons-material/Upload';
-import SendIcon from '@mui/icons-material/Send';
+import { Box, Button, Divider, IconButton, Typography, Dialog, DialogTitle, DialogContent, Tooltip, CircularProgress } from '@mui/material';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
-import CancelIcon from '@mui/icons-material/Cancel';
-import PanoramaFishEyeIcon from '@mui/icons-material/PanoramaFishEye';
 import CloseIcon from '@mui/icons-material/Close';
-import CircleIcon from '@mui/icons-material/Circle';
-import TableIcon from '@mui/icons-material/TableChart';
-import LinkIcon from '@mui/icons-material/Link';
-import DeleteIcon from '@mui/icons-material/Delete';
 
-import exampleImageTable from "../assets/example-image-table.png";
 
 import { useDispatch, useSelector } from 'react-redux';
 import { AppDispatch } from '../app/store';
@@ -44,6 +35,7 @@ export const DataLoadingChat: React.FC = () => {
 
     const dispatch = useDispatch<AppDispatch>();
     const inputBoxRef = useRef<(() => void) | null>(null);
+    const abortControllerRef = useRef<AbortController | null>(null);
 
     const cleanInProgress = useSelector((state: DataFormulatorState) => state.cleanInProgress);
     const existingTables = useSelector((state: DataFormulatorState) => state.tables);
@@ -97,7 +89,7 @@ export const DataLoadingChat: React.FC = () => {
 
     if (!existOutputBlocks && !streamingContent) {
         return <Box sx={{ width: 'calc(100% - 32px)', borderRadius: 2, px: 2 }}>
-            <DataLoadingInputBox maxLines={24} onStreamingContentUpdate={setStreamingContent} />
+            <DataLoadingInputBox maxLines={24} onStreamingContentUpdate={setStreamingContent} abortControllerRef={abortControllerRef} />
         </Box>
     }
 
@@ -165,7 +157,7 @@ export const DataLoadingChat: React.FC = () => {
                     overflowY: 'auto', overflowX: 'hidden' }}>
                     {threadsComponent}
                 </Box>
-                <DataLoadingInputBox ref={inputBoxRef} maxLines={4} onStreamingContentUpdate={setStreamingContent} />
+                <DataLoadingInputBox ref={inputBoxRef} maxLines={4} onStreamingContentUpdate={setStreamingContent} abortControllerRef={abortControllerRef} />
             </Box>
 
             <Divider orientation="vertical" flexItem sx={{m: 2, color: 'divider'}} />
@@ -184,7 +176,7 @@ export const DataLoadingChat: React.FC = () => {
                     {thinkingBanner}
                     <Typography variant="body2" color="text.secondary" 
                         sx={{ mt: 4, fontSize: '11px', whiteSpace: 'pre-wrap', overflow: 'clip', maxHeight: '600px', overflowY: 'auto' }}>
-                        {streamingContent.replace('[METADATA]', '').replace('[CONTENT]', '').replace('[TABLE_START]', '').replace('[TABLE_END]', '').replace(/\n\n/g, '\n').trim()}
+                        {streamingContent.trim()}
                     </Typography>
                 </Box>
             )}
@@ -287,7 +279,7 @@ export const DataLoadingChatDialog: React.FC<DataLoadingChatDialogProps> = ({ bu
             <Button 
                 sx={{fontSize: "inherit"}} 
                 variant="text" 
-                color="primary" 
+                color="secondary" 
                 disabled={disabled}
                 onClick={() => setDialogOpen(true)}
             >

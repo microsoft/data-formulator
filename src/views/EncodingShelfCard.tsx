@@ -464,7 +464,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                                 .includes(fieldId)).map(fieldId => conceptShelfItems.find(f => f.id == fieldId) as FieldItem);
     let activeSimpleEncodings: { [key: string]: string } = {};
     for (let channel of getChartChannels(chart.chartType)) {
-        if (chart.encodingMap[channel as Channel].fieldID) {
+        if (chart.encodingMap[channel as Channel]?.fieldID) {
             activeSimpleEncodings[channel] = activeFields.find(f => f.id == chart.encodingMap[channel as Channel].fieldID)?.name as string;
         }
     }

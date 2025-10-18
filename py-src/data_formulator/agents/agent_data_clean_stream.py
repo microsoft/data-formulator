@@ -17,7 +17,9 @@ def parse_table_sections(text):
     tables = []
     
     # Split by [TABLE_START] and process each section
-    sections = text.split('[TABLE_START]')
+    sections = text.strip().split('[TABLE_START]')
+
+    print(sections)
     
     for i, section in enumerate(sections[1:], 1):  # Skip first empty section
         
@@ -72,16 +74,16 @@ Output only extract tables, no other text should be included. Format:
 
 [METADATA]
 
-```
+```json
 {
-    "name": ..., // suggest a descriptive, meaningful but short name for this dataset, no more than 3 words, if there are duplicate names, add a suffix -1, -2, etc. (e.g., "sales-2024", "customer-survey", "weather-forecast")
+    "name": "...", // suggest a descriptive, meaningful but short name for this dataset, no more than 3 words, if there are duplicate names, add a suffix -1, -2, etc. (e.g., "sales-2024", "customer-survey", "weather-forecast")
     "type": "csv" | "image_url",
 }
 ```
 
 [CONTENT]
 
-... // the csv block or image url
+... // the csv block or image url, directly output the content, no other text should be included and don't wrap it in any other tags.
 
 [TABLE_END]
 
@@ -115,7 +117,8 @@ Output only extract tables, no other text should be included. Format:
 - NEVER generate data that has implicit bias as noted above, if that happens, neutralize the data.
 - If the user doesn't indicate how many rows to be generated, plan in generating a dataset with 20-30 rows depending on the content.
 
-**Get all tables**
+**IMPORTANT:**
+- when the user provide an image and ask to extract data, you should extract data from the image into a csv block.
 - get all tables that contain structured data from the raw data, including the csv blocks and image urls.
 '''
 

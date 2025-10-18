@@ -25,8 +25,6 @@ import logging
 import json
 from pathlib import Path
 
-from vega_datasets import data as vega_data
-
 from dotenv import load_dotenv
 import secrets
 import base64
@@ -168,32 +166,55 @@ def get_session_id():
     if request.is_json:
         content = request.get_json()
         current_session_id = content.get("session_id", None)
-        
-    # Create session if it doesn't exist
-    if current_session_id is None:    
-        if 'session_id' not in session:
-            session['session_id'] = secrets.token_hex(16)
-            session.permanent = True
-            logger.info(f"Created new session: {session['session_id']}")
-    else:
-        # override the session_id
-        session['session_id'] = current_session_id
-        session.permanent = True 
     
-    return flask.jsonify({
-        "status": "ok",
-        "session_id": session['session_id']
-    })
+    # Check if database is disabled
+    database_disabled = app.config['CLI_ARGS']['disable_database']
+    
+    if database_disabled:
+        # When database is disabled, don't use Flask sessions (cookies)
+        # Just return the provided session_id or generate a new one
+        if current_session_id is None:
+            current_session_id = secrets.token_hex(16)
+            logger.info(f"Generated session ID for disabled database: {current_session_id}")
+        else:
+            logger.info(f"Using provided session ID for disabled database: {current_session_id}")
+        
+        return flask.jsonify({
+            "status": "ok",
+            "session_id": current_session_id
+        })
+    else:
+        # When database is enabled, use Flask sessions (cookies) as before
+        if current_session_id is None:    
+            if 'session_id' not in session:
+                session['session_id'] = secrets.token_hex(16)
+                session.permanent = True
+                logger.info(f"Created new session: {session['session_id']}")
+        else:
+            # override the session_id
+            session['session_id'] = current_session_id
+            session.permanent = True 
+        
+        return flask.jsonify({
+            "status": "ok",
+            "session_id": session['session_id']
+        })
 
 @app.route('/api/app-config', methods=['GET'])
 def get_app_config():
     """Provide frontend configuration settings from CLI arguments"""
     args = app.config['CLI_ARGS']
+    
+    # When database is disabled, don't try to access session
+    session_id = None
+    if not args['disable_database']:
+        session_id = session.get('session_id', None)
+    
     config = {
         "EXEC_PYTHON_IN_SUBPROCESS": args['exec_python_in_subprocess'],
         "DISABLE_DISPLAY_KEYS": args['disable_display_keys'],
         "DISABLE_DATABASE": args['disable_database'],
-        "SESSION_ID": session.get('session_id', None)
+        "SESSION_ID": session_id
     }
     return flask.jsonify(config)
 

@@ -201,6 +201,7 @@ export const assembleVegaChart = (
     aggrPreprocessed: boolean = false, // whether the data has been preprocessed for aggregation and binning
     defaultChartWidth: number = 100,
     defaultChartHeight: number = 80,
+    addTooltips: boolean = false
 ) => {
 
     if (chartType == "Table") {
@@ -247,14 +248,19 @@ export const assembleVegaChart = (
                 encodingObj["type"] = 'nominal';
             }
 
-            if ((!encoding.dtype && channel == 'color' && chartType == 'Grouped Bar Chart') || ['column', 'row'].includes(channel)) {
-                encodingObj["type"] = 'nominal';
-            }
+           
 
             if (encoding.dtype) {
+                // if the dtype is specified, use it
                 encodingObj["type"] = encoding.dtype;
+            } else if (channel == 'column' || channel == 'row') {
+                // if the column or row channel and no dtype is specified, use nominal
+                encodingObj["type"] = 'nominal';
+            } else if (chartType == 'Grouped Bar Chart' && (channel == 'color' || channel == 'x')) {
+                // if the chart type is grouped bar chart and the channel is color or x, use nominal
+                encodingObj["type"] = 'nominal';
             }
-
+            
             if (aggrPreprocessed) {
                 if (encoding.aggregate) {
                     if (encoding.aggregate == "count") {
@@ -347,31 +353,38 @@ export const assembleVegaChart = (
             // prioritize color field if present, otherwise sort by quantitative axis descending
             if ((channel === 'x' && encodingObj.type === 'nominal' && encodingMap.y?.fieldID ) ||
                 (channel === 'y' && encodingObj.type === 'nominal' && encodingMap.x?.fieldID)) {
-                
+
+
+
                 if (chartType.includes("Line") || chartType.includes("Area")) {
                     // do nothing
-                } else if (encodingMap.color?.fieldID && encodingMap.color?.dtype === 'quantitative') {
-                    // If color field exists, sort by color (ascending for nominal, descending for quantitative)
-                    const colorField = _.find(conceptShelfItems, (f) => f.id === encodingMap.color.fieldID);
+                } else {
+                    let colorField = encodingMap.color?.fieldID ? _.find(conceptShelfItems, (f) => f.id === encodingMap.color.fieldID) : undefined;
+
                     if (colorField) {
-                        const colorFieldMetadata = tableMetadata[colorField.name];
-                        if (colorFieldMetadata) {
-                            const colorFieldType = getDType(colorFieldMetadata.type, workingTable.map(r => r[colorField.name]));
-                            encodingObj["sort"] = colorFieldType === 'quantitative' ? "-color" : "color";
+                        // If color field exists, sort by color (ascending for nominal, descending for quantitative)
+                        
+                        const colorField = _.find(conceptShelfItems, (f) => f.id === encodingMap.color.fieldID);
+                        if (colorField) {
+                            const colorFieldMetadata = tableMetadata[colorField.name];
+                            if (colorFieldMetadata) {
+                                const colorFieldType = getDType(colorFieldMetadata.type, workingTable.map(r => r[colorField.name]));
+                                encodingObj["sort"] = colorFieldType === 'quantitative' ? "-color" : "color";
+                            } else {
+                                encodingObj["sort"] = "color"; // default to ascending if metadata not available
+                            }
                         } else {
-                            encodingObj["sort"] = "color"; // default to ascending if metadata not available
+                            encodingObj["sort"] = "color"; // default to ascending if field not found
                         }
                     } else {
-                        encodingObj["sort"] = "color"; // default to ascending if field not found
-                    }
-                } else {
-                    // Otherwise, sort by the quantitative axis descending
-                    const oppositeChannel = channel === 'x' ? 'y' : 'x';
-                    const oppositeField = _.find(conceptShelfItems, (f) => f.id === encodingMap[oppositeChannel]?.fieldID);
-                    if (oppositeField) {
-                        const oppositeFieldMetadata = tableMetadata[oppositeField.name];
-                        if (oppositeFieldMetadata && getDType(oppositeFieldMetadata.type, workingTable.map(r => r[oppositeField.name])) === 'quantitative') {
-                            encodingObj["sort"] = `-${oppositeChannel}`;
+                        // Otherwise, sort by the quantitative axis descending
+                        const oppositeChannel = channel === 'x' ? 'y' : 'x';
+                        const oppositeField = _.find(conceptShelfItems, (f) => f.id === encodingMap[oppositeChannel]?.fieldID);
+                        if (oppositeField) {
+                            const oppositeFieldMetadata = tableMetadata[oppositeField.name];
+                            if (oppositeFieldMetadata && getDType(oppositeFieldMetadata.type, workingTable.map(r => r[oppositeField.name])) === 'quantitative') {
+                                encodingObj["sort"] = `-${oppositeChannel}`;
+                            }
                         }
                     }
                 }
@@ -586,9 +599,6 @@ export const assembleVegaChart = (
                         }
                     } else {
                         // If sort field is not available or not quantitative, fall back to default
-                        console.log('--- encoding.sort ---');
-                        console.log(channel);
-                        console.log(encoding.sort);
                         let isDescending = false;
                         if (typeof encoding.sort === 'string' && 
                             encoding.sort === 'descending' || encoding.sort === `-${channel}`) {
@@ -667,7 +677,7 @@ export const assembleVegaChart = (
     // total facets is the product of the number of columns and rows
     let totalFacets = nominalCount.column > 0 ? nominalCount.column : 1;
     totalFacets *= nominalCount.row > 0 ? nominalCount.row : 1;
-    totalFacets *= nominalCount.xOffset > 0 ? nominalCount.xOffset : 1;
+    totalFacets *= nominalCount.xOffset > 0 ? Math.min(nominalCount.xOffset, nominalCount.x) : 1;
 
     let facetRescaleFactor = 1;
     if (totalFacets > 6) {
@@ -756,6 +766,18 @@ export const assembleVegaChart = (
         vgObj['config']['header'] = { labelLimit: 120, labelFontSize: 9 };
     }
 
+    if (addTooltips) {
+        // Add tooltip configuration to the mark
+        if (!vgObj.mark) {
+            vgObj.mark = {};
+        }
+        if (typeof vgObj.mark === 'string') {
+            vgObj.mark = { type: vgObj.mark };
+        }
+        
+        // Add tooltip to the mark
+        vgObj.mark.tooltip = true;
+    }
 
     return {...vgObj, data: {values: values}}
 }
@@ -815,8 +837,18 @@ export const resolveRecommendedChart = (refinedGoal: any, allFields: FieldItem[]
 }
 
 export const resolveChartFields = (chart: Chart, allFields: FieldItem[], chartEncodings: { [key: string]: string }, table: DictTable) => {
+    // Get the keys that should be present after this update
+    const newEncodingKeys = new Set(Object.keys(chartEncodings).map(key => key === "facet" ? "column" : key));
+    
+    // Remove encodings that are no longer in chartEncodings
+    for (const key of Object.keys(chart.encodingMap)) {
+        if (!newEncodingKeys.has(key) && chart.encodingMap[key as Channel]?.fieldID != undefined) {
+            chart.encodingMap[key as Channel] = {};
+        }
+    }
+    
+    // Add/update encodings from chartEncodings
     for (let [key, value] of Object.entries(chartEncodings)) {
-
         if (key == "facet") {
             key = "column";
         }
@@ -826,6 +858,7 @@ export const resolveChartFields = (chart: Chart, allFields: FieldItem[], chartEn
             chart.encodingMap[key as Channel] = { fieldID: field.id };
         }
     }
+    
     return chart;
 }
 

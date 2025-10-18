@@ -9,7 +9,6 @@ import {
     DataFormulatorState,
     dfActions,
     fetchAvailableModels,
-    fetchFieldSemanticType,
     getSessionId,
 } from './dfSlice'
 
@@ -37,11 +36,12 @@ import {
     Menu,
     MenuItem,
     TextField,
+    useTheme,
 } from '@mui/material';
 
 
 import MuiAppBar from '@mui/material/AppBar';
-import { createTheme, styled, ThemeProvider } from '@mui/material/styles';
+import { alpha, createTheme, styled, ThemeProvider } from '@mui/material/styles';
 
 import PowerSettingsNewIcon from '@mui/icons-material/PowerSettingsNew';
 import ClearIcon from '@mui/icons-material/Clear';
@@ -76,6 +76,8 @@ import { AgentRulesDialog } from '../views/AgentRulesDialog';
 import ArticleIcon from '@mui/icons-material/Article';
 import EditIcon from '@mui/icons-material/Edit';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import GitHubIcon from '@mui/icons-material/GitHub';
+import UploadIcon from '@mui/icons-material/Upload';
 
 const AppBar = styled(MuiAppBar)(({ theme }) => ({
     color: 'black',
@@ -142,7 +144,7 @@ export const ImportStateButton: React.FC<{}> = ({ }) => {
                 inputRef={inputRef}
                 onChange={handleFileUpload}
             />
-            import a saved session
+            import session
         </Button>
     );
 }
@@ -150,8 +152,26 @@ export const ImportStateButton: React.FC<{}> = ({ }) => {
 export const ExportStateButton: React.FC<{}> = ({ }) => {
     const sessionId = useSelector((state: DataFormulatorState) => state.sessionId);
     const fullStateJson = useSelector((state: DataFormulatorState) => {
-        const { models, modelSlots, testedModels, oaiModels, selectedModel, selectedModelId, ...stateWithoutModels } = state as any;
-        return JSON.stringify(stateWithoutModels);
+        // Fields to exclude from serialization
+        const excludedFields = new Set([
+            'models',
+            'modelSlots', 
+            'testedModels',
+            'dataLoaderConnectParams',
+            'sessionId',
+            'agentRules',
+            'serverConfig',
+        ]);
+        
+        // Build new object with only allowed fields
+        const stateToSerialize: any = {};
+        for (const [key, value] of Object.entries(state)) {
+            if (!excludedFields.has(key)) {
+                stateToSerialize[key] = value;
+            }
+        }
+        
+        return JSON.stringify(stateToSerialize);
     });
 
     return <Tooltip title="save session locally">
@@ -199,7 +219,7 @@ const TableMenu: React.FC = () => {
                 aria-expanded={open ? 'true' : undefined}
                 sx={{ textTransform: 'none' }}
             >
-                Add Data
+                Load Data
             </Button>
             <Menu
                 id="add-table-menu"
@@ -217,7 +237,7 @@ const TableMenu: React.FC = () => {
             >
                 <MenuItem onClick={(e) => {}}>     
                     <DataLoadingChatDialog buttonElement={<Typography fontSize="inherit" sx={{  }}>
-                        from vibe
+                        vibe <span style={{fontSize: '11px'}}>(image/messy text)</span>
                     </Typography>}/>
                 </MenuItem>
                 <MenuItem onClick={(e) => {
@@ -226,14 +246,14 @@ const TableMenu: React.FC = () => {
                 }}>
                     <TableCopyDialogV2 buttonElement={
                         <Typography sx={{  }}>
-                            from clipboard
+                            from clipboard <span style={{fontSize: '11px'}}>(csv/tsv)</span>
                         </Typography>
                     } disabled={false} />
                 </MenuItem>
                 <MenuItem onClick={(e) => {}} >
                     <TableUploadDialog buttonElement={
                         <Typography sx={{ }}>
-                            from file
+                            from files <span style={{fontSize: '11px'}}>(csv/tsv/json)</span>
                         </Typography>
                     } disabled={false} />
                 </MenuItem>
@@ -246,7 +266,10 @@ const SessionMenu: React.FC = () => {
     const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
     const open = Boolean(anchorEl);
     const sessionId = useSelector((state: DataFormulatorState) => state.sessionId);
+    const tables = useSelector((state: DataFormulatorState) => state.tables);
+    const theme = useTheme();
     
+    const dispatch = useDispatch();
     return (
         <>
             <Button 
@@ -268,26 +291,51 @@ const SessionMenu: React.FC = () => {
                 aria-labelledby="session-menu-button"
                 sx={{ '& .MuiMenuItem-root': { padding: 0, margin: 0 } }}
             >
-                {sessionId && (
-                    <MenuItem disabled>
-                        <Typography sx={{ fontSize: 12, color: 'text.secondary'}}>
-                            session id: {sessionId}
-                        </Typography>
-                    </MenuItem>
-                )}
                 <MenuItem onClick={() => {}}>
                     <ExportStateButton />
-                </MenuItem>
-                <MenuItem onClick={() => {
-                    handleDBDownload(sessionId ?? '');
-                }}>
-                    <Button startIcon={<DownloadIcon />} sx={{ fontSize: 14, textTransform: 'none', display: 'flex', alignItems: 'center'}}>
-                        download database
-                    </Button>
                 </MenuItem>
                 <MenuItem onClick={(e) => {}}>
                     <ImportStateButton />
                 </MenuItem>
+                <Divider><Typography variant="caption" sx={{ fontSize: 12, color: 'text.secondary' }}>database file</Typography></Divider>
+                {sessionId && tables.some(t => t.virtual) && 
+                    <Typography fontSize="inherit" sx={{ color: theme.palette.warning.main, width: '160px', display: 'flex', alignItems: 'center', gap: 1, fontSize: 9 }}>
+                        This session contains data stored in the database, export and reload the database to resume the session later.
+                    </Typography>}
+                <MenuItem disabled={!sessionId || !tables.some(t => t.virtual)}  onClick={() => {
+                    handleDBDownload(sessionId ?? '');
+                }}>
+                    <Button startIcon={<DownloadIcon />}
+                        sx={{ fontSize: 14, textTransform: 'none', display: 'flex', alignItems: 'center'}}>
+                        download database
+                    </Button>
+                </MenuItem>
+                <MenuItem onClick={() => {}}>
+                    <Button disabled={!sessionId} startIcon={<UploadIcon />} 
+                        sx={{ fontSize: 14, textTransform: 'none', display: 'flex', alignItems: 'center'}}
+                        component="label">
+                        import database
+                        <input type="file" hidden accept=".db" onChange={async (e) => {
+                            const file = e.target.files?.[0];
+                            if (!file) return;
+                            const formData = new FormData();
+                            formData.append('file', file);
+                            try {
+                                const response = await fetch(getUrls().UPLOAD_DB_FILE, { method: 'POST', body: formData });
+                                const data = await response.json();
+                                if (data.status === 'success') {
+                                    dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "DB Manager", type: "success", value: "Database imported successfully" }));
+                                } else {
+                                    dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "DB Manager", type: "error", value: data.message || 'Import failed' }));
+                                }
+                            } catch (error) {
+                                dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "DB Manager", type: "error", value: 'Import failed' }));
+                            }
+                            e.target.value = '';
+                        }} />
+                    </Button>
+                </MenuItem>
+                
             </Menu>
         </>
     );
@@ -567,17 +615,20 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
             <Toolbar variant="dense" sx={{height: 40, minHeight: 36}}>
                 <Button href={"/"} sx={{
                     display: "flex", flexDirection: "row", textTransform: "none",
+                    alignItems: 'stretch',
                     backgroundColor: 'transparent',
                     "&:hover": {
                         backgroundColor: "transparent"
                     }
                 }} color="inherit">
-                    <Box component="img" sx={{ height: 24, marginRight: "12px" }} alt="" src={dfLogo} />
-                    <Typography noWrap component="h1" sx={{ fontWeight: 300, display: { xs: 'none', sm: 'block' } }}>
-                        {toolName} {process.env.NODE_ENV == "development" ? "" : ""}
-                    </Typography>
+                    <Box component="img" sx={{ height: 20, mr: 0.5 }} alt="" src={dfLogo} />
+                    <Typography noWrap component="h1" sx={{ fontWeight: 300, display: { xs: 'none', sm: 'block' }, letterSpacing: '0.03em' }}>
+                        {toolName}
+                    </Typography>                    
                 </Button>
-                <Box sx={{ display: 'flex', ml: 'auto', fontSize: 14 }}>
+                <Box sx={{ display: 'flex', ml: 'auto', fontSize: 14, mr: 1, px: 0.5,
+                            backgroundColor: alpha(theme.palette.primary.main, 0.02),
+                            borderRadius: 4}}>
                     <Button
                         variant={"text"}
                         color={viewMode === 'editor' ? "primary" : "secondary"}
@@ -593,16 +644,16 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
                     <Divider orientation="vertical" variant="middle" flexItem />
                     <ModelSelectionButton />
                     <Divider orientation="vertical" variant="middle" flexItem />
-                    <DBTableSelectionDialog buttonElement={
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, textTransform: 'none' }}>
-                            <CloudQueueIcon fontSize="small" /> Database
-                        </Box>
-                    } component="dialog" />
+                    <Typography fontSize="inherit" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <DBTableSelectionDialog buttonElement={
+                            <Box sx={{ fontSize: 14, display: 'flex', alignItems: 'center', gap: 1, textTransform: 'none' }}>
+                                <CloudQueueIcon fontSize="inherit" /> Database
+                            </Box>
+                        } component="dialog" />
+                    </Typography>
                     <Typography fontSize="inherit" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                         <TableMenu />
                     </Typography>
-                    <Divider orientation="vertical" variant="middle" flexItem />
-                    
                     <Divider orientation="vertical" variant="middle" flexItem />
                     <Typography fontSize="inherit" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                         <SessionMenu />
@@ -610,6 +661,23 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
                     <Divider orientation="vertical" variant="middle" flexItem />
                     <ResetDialog />
                 </Box>
+                <Tooltip title="View on GitHub">
+                    <Button
+                        component="a"
+                        href="https://github.com/microsoft/data-formulator"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        sx={{ 
+                            minWidth: 'auto', 
+                            color: 'inherit',
+                            '&:hover': {
+                                backgroundColor: 'rgba(0, 0, 0, 0.04)'
+                            }
+                        }}
+                    >
+                        <GitHubIcon fontSize="medium" />
+                    </Button>
+                </Tooltip>
             </Toolbar>
         </AppBar>
     ];
