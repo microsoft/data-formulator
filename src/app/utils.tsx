@@ -360,23 +360,18 @@ export const assembleVegaChart = (
                     // do nothing
                 } else {
                     let colorField = encodingMap.color?.fieldID ? _.find(conceptShelfItems, (f) => f.id === encodingMap.color.fieldID) : undefined;
-
+                    let colorFieldType = undefined;
                     if (colorField) {
-                        // If color field exists, sort by color (ascending for nominal, descending for quantitative)
-                        
-                        const colorField = _.find(conceptShelfItems, (f) => f.id === encodingMap.color.fieldID);
-                        if (colorField) {
-                            const colorFieldMetadata = tableMetadata[colorField.name];
-                            if (colorFieldMetadata) {
-                                const colorFieldType = getDType(colorFieldMetadata.type, workingTable.map(r => r[colorField.name]));
-                                encodingObj["sort"] = colorFieldType === 'quantitative' ? "-color" : "color";
-                            } else {
-                                encodingObj["sort"] = "color"; // default to ascending if metadata not available
-                            }
-                        } else {
-                            encodingObj["sort"] = "color"; // default to ascending if field not found
+                        const colorFieldMetadata = tableMetadata[colorField.name];
+                        if (colorFieldMetadata) {
+                            colorFieldType = getDType(colorFieldMetadata.type, workingTable.map(r => r[colorField.name]));
                         }
-                    } else {
+                    }
+
+                    if (colorField && colorFieldType == 'quantitative') {
+                        // If color field exists, sort by color (ascending for nominal, descending for quantitative)
+                        encodingObj["sort"] = colorFieldType === 'quantitative' ? "-color" : "color";
+                    }  else {
                         // Otherwise, sort by the quantitative axis descending
                         const oppositeChannel = channel === 'x' ? 'y' : 'x';
                         const oppositeField = _.find(conceptShelfItems, (f) => f.id === encodingMap[oppositeChannel]?.fieldID);
@@ -599,10 +594,8 @@ export const assembleVegaChart = (
                         }
                     } else {
                         // If sort field is not available or not quantitative, fall back to default
-                        let isDescending = false;
                         if (typeof encoding.sort === 'string' && 
                             encoding.sort === 'descending' || encoding.sort === `-${channel}`) {
-                            isDescending = true;
                             valuesToKeep = uniqueValues.reverse().slice(0, maxNominalValuesToKeep);
                         } else {
                             valuesToKeep = uniqueValues.slice(0, maxNominalValuesToKeep);

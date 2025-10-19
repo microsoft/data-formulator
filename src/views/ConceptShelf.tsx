@@ -51,7 +51,7 @@ export interface ConceptShelfProps {
 
 export const ConceptGroup: FC<{groupName: string, fields: FieldItem[]}> = function ConceptGroup({groupName, fields}) {
 
-    const [expanded, setExpanded] = useState(false);
+    const [expanded, setExpanded] = useState(true);
     const dispatch = useDispatch();
     const theme = useTheme();   
     const handleCleanUnusedConcepts = () => {

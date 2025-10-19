@@ -294,7 +294,7 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({ tableId,
                 </Box>
             )}
             <Fade in={!isLoading} timeout={{appear: 300, enter: 300, exit: 2000}}>
-                <Box sx={{ flex: '1 1 300px', display: 'flex', flexDirection: 'column' }}>
+                <Box sx={{ flex: '1 1', display: 'flex', flexDirection: 'column' }}>
                     {/* @ts-expect-error */}
                     <SelectableGroup
                         ref={$tableRef}
@@ -308,13 +308,13 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({ tableId,
                         selectOnClick={false}
                         deselectOnEsc={true}
                         resetOnStart={true}
-                        style={{ flex: '1 1 300px' }}
+                        style={{ flex: '1 1' }}
                         onSelectionClear={handleSelectionClear}
                         onSelectionFinish={handleSelectionFinish}
                         ignoreList={[".MuiTableCell-head"]}
                     >
                         <TableVirtuoso
-                            style={{ flex: '1 1 300px' }}
+                            style={{ flex: '1 1' }}
                             data={rowsToDisplay}
                             components={TableComponents}
                             fixedHeaderContent={() => {
