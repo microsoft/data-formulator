@@ -64,9 +64,7 @@ export interface GeneratedReport {
     content: string;
     style: string;
     selectedChartIds: string[];
-    chartImages: Map<string, { url: string; width: number; height: number }>;
     createdAt: number;
-    title?: string;
 }
 
 export interface DataFormulatorState {
@@ -371,8 +369,8 @@ export const dataFormulatorSlice = createSlice({
             state.agentRules = state.agentRules || initialState.agentRules;
             state.models = state.models || [];
             state.modelSlots = state.modelSlots || {};
+            state.testedModels = state.testedModels || [];
             state.dataLoaderConnectParams = state.dataLoaderConnectParams || {};
-            state.testedModels = []; 
             state.serverConfig = initialState.serverConfig;
 
             //state.table = undefined;
@@ -796,6 +794,10 @@ export const dataFormulatorSlice = createSlice({
         setFocusedChart: (state, action: PayloadAction<string | undefined>) => {
             let chartId = action.payload;
             state.focusedChartId = chartId;
+
+            if (state.viewMode == 'report') {
+                state.viewMode = 'editor';
+            }
             
             // Set unread to false when a chart is focused
             if (chartId) {

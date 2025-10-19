@@ -8,6 +8,7 @@ import { useDispatch, useSelector } from "react-redux";
 import {
     DataFormulatorState,
     dfActions,
+    dfSelectors,
     fetchAvailableModels,
     getSessionId,
 } from './dfSlice'
@@ -151,6 +152,7 @@ export const ImportStateButton: React.FC<{}> = ({ }) => {
 
 export const ExportStateButton: React.FC<{}> = ({ }) => {
     const sessionId = useSelector((state: DataFormulatorState) => state.sessionId);
+    const tables = useSelector((state: DataFormulatorState) => state.tables);
     const fullStateJson = useSelector((state: DataFormulatorState) => {
         // Fields to exclude from serialization
         const excludedFields = new Set([
@@ -186,7 +188,8 @@ export const ExportStateButton: React.FC<{}> = ({ }) => {
                     a.download = fileName;
                     a.click();
                 }
-                download(fullStateJson, `df_state_${sessionId?.slice(0, 4)}.json`, 'text/plain');
+                let firstTableName = tables.length > 0 ? tables[0].id: '';
+                download(fullStateJson, `df_state_${firstTableName}_${sessionId?.slice(0, 4)}.json`, 'text/plain');
             }}
             startIcon={<DownloadIcon />}
         >
@@ -219,7 +222,7 @@ const TableMenu: React.FC = () => {
                 aria-expanded={open ? 'true' : undefined}
                 sx={{ textTransform: 'none' }}
             >
-                Load Data
+                Data
             </Button>
             <Menu
                 id="add-table-menu"
@@ -235,9 +238,16 @@ const TableMenu: React.FC = () => {
                     '& .MuiTypography-root': { fontSize: 14, display: 'flex', alignItems: 'center', textTransform: 'none',gap: 1 }
                 }}
             >
+                <MenuItem onClick={(e) => {}}>
+                    <DBTableSelectionDialog buttonElement={
+                        <Typography fontSize="inherit" sx={{  }}>
+                            <CloudQueueIcon fontSize="inherit" /> Database
+                        </Typography>
+                    } component="dialog" />
+                </MenuItem>
                 <MenuItem onClick={(e) => {}}>     
                     <DataLoadingChatDialog buttonElement={<Typography fontSize="inherit" sx={{  }}>
-                        vibe <span style={{fontSize: '11px'}}>(image/messy text)</span>
+                        clean data <span style={{fontSize: '11px'}}>(image/messy text)</span>
                     </Typography>}/>
                 </MenuItem>
                 <MenuItem onClick={(e) => {
@@ -246,14 +256,14 @@ const TableMenu: React.FC = () => {
                 }}>
                     <TableCopyDialogV2 buttonElement={
                         <Typography sx={{  }}>
-                            from clipboard <span style={{fontSize: '11px'}}>(csv/tsv)</span>
+                            paste data <span style={{fontSize: '11px'}}>(csv/tsv)</span>
                         </Typography>
                     } disabled={false} />
                 </MenuItem>
                 <MenuItem onClick={(e) => {}} >
                     <TableUploadDialog buttonElement={
                         <Typography sx={{ }}>
-                            from files <span style={{fontSize: '11px'}}>(csv/tsv/json)</span>
+                            upload data file <span style={{fontSize: '11px'}}>(csv/tsv/json)</span>
                         </Typography>
                     } disabled={false} />
                 </MenuItem>
@@ -278,7 +288,7 @@ const SessionMenu: React.FC = () => {
                 endIcon={<KeyboardArrowDownIcon />} 
                 sx={{ textTransform: 'none' }}
             >
-                Session {sessionId ? `(#${sessionId.substring(sessionId.length - 4)})` : ''}
+                Session
             </Button>
             <Menu
                 id="session-menu"
@@ -429,9 +439,13 @@ const ConfigDialog: React.FC = () => {
                                         setDefaultChartWidth(value);
                                     }}
                                     fullWidth
-                                    inputProps={{
-                                        min: 100,
-                                        max: 1000
+                                    slotProps={{
+                                        input: {
+                                            inputProps: {
+                                                min: 100,
+                                                max: 1000
+                                            }
+                                        }
                                     }}
                                     error={defaultChartWidth < 100 || defaultChartWidth > 1000}
                                     helperText={defaultChartWidth < 100 || defaultChartWidth > 1000 ? 
@@ -452,9 +466,13 @@ const ConfigDialog: React.FC = () => {
                                         setDefaultChartHeight(value);
                                     }}
                                     fullWidth
-                                    inputProps={{
-                                        min: 100,
-                                        max: 1000
+                                    slotProps={{
+                                        input: {
+                                            inputProps: {
+                                                min: 100,
+                                                max: 1000
+                                            }
+                                        }
                                     }}
                                     error={defaultChartHeight < 100 || defaultChartHeight > 1000}
                                     helperText={defaultChartHeight < 100 || defaultChartHeight > 1000 ? 
@@ -500,9 +518,13 @@ const ConfigDialog: React.FC = () => {
                                         setMaxRepairAttempts(value);
                                     }}
                                     fullWidth
-                                    inputProps={{
-                                        min: 1,
-                                        max: 5,
+                                    slotProps={{
+                                        input: {
+                                            inputProps: {
+                                                min: 1,
+                                                max: 5,
+                                            }
+                                        }
                                     }}
                                     error={maxRepairAttempts <= 0 || maxRepairAttempts > 5}
                                     helperText={maxRepairAttempts <= 0 || maxRepairAttempts > 5 ? 
@@ -546,6 +568,8 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
 
     const dispatch = useDispatch<AppDispatch>();
     const viewMode = useSelector((state: DataFormulatorState) => state.viewMode);
+    const generatedReports = useSelector((state: DataFormulatorState) => state.generatedReports);
+    const focusedTableId = useSelector((state: DataFormulatorState) => state.focusedTableId);
 
     useEffect(() => {
         fetch(getUrls().APP_CONFIG)
@@ -629,28 +653,77 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
                 <Box sx={{ display: 'flex', ml: 'auto', fontSize: 14, mr: 1, px: 0.5,
                             backgroundColor: alpha(theme.palette.primary.main, 0.02),
                             borderRadius: 4}}>
-                    <Button
-                        variant={"text"}
-                        color={viewMode === 'editor' ? "primary" : "secondary"}
-                        startIcon={viewMode === 'editor' ? <EditIcon /> : <ArrowBackIcon />}
-                        onClick={() => dispatch(dfActions.setViewMode(viewMode === 'editor' ? 'report' : 'editor'))}
-                        sx={{ textTransform: 'none' }}
+                    {focusedTableId !== undefined && <React.Fragment><ToggleButtonGroup
+                        value={viewMode}
+                        exclusive
+                        onChange={(_, newMode) => {
+                            if (newMode !== null) {
+                                dispatch(dfActions.setViewMode(newMode));
+                            }
+                        }}
+                        sx={{ 
+                            mr: 2,
+                            height: '28px', 
+                            my: 'auto',
+                            borderRadius: 2,
+                            border: '1px solid rgba(0, 0, 0, 0.1)',
+                            boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)',
+                            '& .MuiToggleButton-root': {
+                                textTransform: 'none',
+                                fontSize: '14px',
+                                fontWeight: 500,
+                                border: 'none',
+                                borderRadius: 1,
+                                px: 1,
+                                py: 0.5,
+                                '&:hover': {
+                                    backgroundColor: 'rgba(0, 0, 0, 0.04)',
+                                    color: 'text.primary',
+                                },
+                                '&.Mui-selected': {
+                                    backgroundColor: alpha(theme.palette.primary.main, 0.1),
+                                    color: theme.palette.primary.main,
+                                },
+                                '&:first-of-type': {
+                                    borderTopRightRadius: 0,
+                                    borderBottomRightRadius: 0,
+                                },
+                                '&:last-of-type': {
+                                    borderTopLeftRadius: 0,
+                                    borderBottomLeftRadius: 0,
+                                }
+                            },
+                            '.mode-icon': {
+                                animation: 'pulse 3s ease-out infinite',
+                                '@keyframes pulse': {
+                                    '0%, 80%': { transform: 'scale(1)' },
+                                    '90%': { transform: 'scale(1.3)' },
+                                    '100%': { transform: 'scale(1)' },
+                                },
+                            },
+                        }}
                     >
-                        {viewMode === 'editor' ? 'create a report' : 'back to explore'}
-                    </Button>
-                    <Divider orientation="vertical" variant="middle" flexItem />
+                        <ToggleButton value="editor">
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                <Box className={viewMode === 'report' ? 'mode-icon' : ''} component="span" sx={{ fontSize: '12px' }}>🔍</Box>
+                                <Box component="span">Explore</Box>
+                            </Box>
+                        </ToggleButton>
+                        <ToggleButton value="report">
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                <Box className={viewMode === 'editor' ? 'mode-icon' : ''} component="span" sx={{ fontSize: '12px' }}>✏️</Box>
+                                <Box component="span">
+                                    {generatedReports.length > 0 ? `Reports (${generatedReports.length})` : 'Reports'}
+                                </Box>
+                            </Box>
+                        </ToggleButton>
+                    </ToggleButtonGroup>
                     <ConfigDialog />
                     <AgentRulesDialog />
-                    <Divider orientation="vertical" variant="middle" flexItem />
+                    <Divider orientation="vertical" variant="middle" flexItem /></React.Fragment>}
                     <ModelSelectionButton />
                     <Divider orientation="vertical" variant="middle" flexItem />
-                    <Typography fontSize="inherit" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <DBTableSelectionDialog buttonElement={
-                            <Box sx={{ fontSize: 14, display: 'flex', alignItems: 'center', gap: 1, textTransform: 'none' }}>
-                                <CloudQueueIcon fontSize="inherit" /> Database
-                            </Box>
-                        } component="dialog" />
-                    </Typography>
+                    
                     <Typography fontSize="inherit" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                         <TableMenu />
                     </Typography>

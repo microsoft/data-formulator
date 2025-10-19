@@ -15,7 +15,6 @@ import {
     Link,
     Divider,
     Paper,
-    Table,
     TableBody,
     TableCell,
     TableContainer,
@@ -26,8 +25,6 @@ import {
     Tooltip,
     useTheme,
     alpha,
-    ImageList,
-    ImageListItem,
 } from '@mui/material';
 import Masonry from '@mui/lab/Masonry';
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
@@ -36,8 +33,12 @@ import EditIcon from '@mui/icons-material/Edit';
 import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
 import HistoryIcon from '@mui/icons-material/History';
 import DeleteIcon from '@mui/icons-material/Delete';
+import ShareIcon from '@mui/icons-material/Share';
+import FavoriteIcon from '@mui/icons-material/Favorite';
+import html2canvas from 'html2canvas';
 import { useDispatch, useSelector } from 'react-redux';
 import { DataFormulatorState, dfActions, dfSelectors, GeneratedReport } from '../app/dfSlice';
+import { Message } from './MessageSnackbar';
 import { getUrls, assembleVegaChart, getTriggers, prepVisTable } from '../app/utils';
 import { MuiMarkdown, getOverrides } from 'mui-markdown';
 import embed from 'vega-embed';
@@ -61,31 +62,24 @@ const COLOR_SOCIAL_TEXT = 'rgb(15, 20, 25)';
 const COLOR_SOCIAL_BORDER = 'rgb(207, 217, 222)';
 const COLOR_SOCIAL_ACCENT = 'rgb(29, 155, 240)';
 
-// Common style patterns
-const COMMON_STYLES = {
-    flexColumn: { display: 'flex', flexDirection: 'column' },
-    positionAbsolute: { position: 'absolute' },
-    border: { border: '1px solid', borderColor: 'divider' },
-    borderRadius: { borderRadius: '4px' },
-    borderRadiusLarge: { borderRadius: '16px' },
-    padding: { p: 2 },
-    textEllipsis: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
-    textNoTransform: { textTransform: 'none' },
-    fontSystem: { fontFamily: FONT_FAMILY_SYSTEM },
-    fontWeight600: { fontWeight: 600 },
-    fontWeight700: { fontWeight: 700 },
-} as const;
+// Executive summary style constants (professional/business look)
+const COLOR_EXEC_TEXT = 'rgb(33, 37, 41)';
+const COLOR_EXEC_HEADING = 'rgb(20, 24, 28)';
+const COLOR_EXEC_BORDER = 'rgb(108, 117, 125)';
+const COLOR_EXEC_ACCENT = 'rgb(0, 123, 255)';
+const COLOR_EXEC_BG = 'rgb(248, 249, 250)';
+
 
 const HEADING_BASE = {
-    ...COMMON_STYLES.fontSystem,
+    fontFamily: FONT_FAMILY_SYSTEM,
     color: COLOR_HEADING,
     fontWeight: 700,
     letterSpacing: '-0.01em',
 };
 
 const BODY_TEXT_BASE = {
-    ...COMMON_STYLES.fontSystem,
-    fontSize: '1rem',
+    fontFamily: FONT_FAMILY_SYSTEM,
+    fontSize: '0.9375rem',
     lineHeight: 1.75,
     fontWeight: 400,
     letterSpacing: '0.003em',
@@ -93,8 +87,8 @@ const BODY_TEXT_BASE = {
 };
 
 const TABLE_CELL_BASE = {
-    ...COMMON_STYLES.fontSystem,
-    fontSize: '0.95rem',
+    fontFamily: FONT_FAMILY_SYSTEM,
+    fontSize: '0.875rem',
     py: 1.5,
     px: 2,
 };
@@ -103,17 +97,17 @@ const TABLE_CELL_BASE = {
 const notionStyleMarkdownOverrides = {
     ...getOverrides(),
     h1: { component: Typography, props: { variant: 'h4', gutterBottom: true, 
-        sx: { ...HEADING_BASE, fontSize: '2rem', lineHeight: 1.25, letterSpacing: '-0.02em', pb: 0.5, mb: 3, mt: 4 } } },
+        sx: { ...HEADING_BASE, fontSize: '1.75rem', lineHeight: 1.25, letterSpacing: '-0.02em', pb: 0.5, mb: 3, mt: 4 } } },
     h2: { component: Typography, props: { variant: 'h5', gutterBottom: true,
-        sx: { ...HEADING_BASE, fontSize: '1.625rem', lineHeight: 1.3, pb: 0.5, mb: 2.5, mt: 3.5 } } },
+        sx: { ...HEADING_BASE, fontSize: '1.5rem', lineHeight: 1.3, pb: 0.5, mb: 2.5, mt: 3.5 } } },
     h3: { component: Typography, props: { variant: 'h6', gutterBottom: true,
-        sx: { ...HEADING_BASE, fontWeight: 600, fontSize: '1.375rem', lineHeight: 1.4, letterSpacing: '-0.005em', mb: 2, mt: 3 } } },
+        sx: { ...HEADING_BASE, fontWeight: 600, fontSize: '1.25rem', lineHeight: 1.4, letterSpacing: '-0.005em', mb: 2, mt: 3 } } },
     h4: { component: Typography, props: { variant: 'h6', gutterBottom: true,
-        sx: { ...HEADING_BASE, fontWeight: 600, fontSize: '1.25rem', lineHeight: 1.4, mb: 1.5, mt: 2.5 } } },
+        sx: { ...HEADING_BASE, fontWeight: 600, fontSize: '1.125rem', lineHeight: 1.4, mb: 1.5, mt: 2.5 } } },
     h5: { component: Typography, props: { variant: 'subtitle1', gutterBottom: true,
-        sx: { ...HEADING_BASE, fontWeight: 600, fontSize: '1.125rem', lineHeight: 1.5, mb: 1.5, mt: 2 } } },
-    h6: { component: Typography, props: { variant: 'subtitle2', gutterBottom: true,
         sx: { ...HEADING_BASE, fontWeight: 600, fontSize: '1rem', lineHeight: 1.5, mb: 1.5, mt: 2 } } },
+    h6: { component: Typography, props: { variant: 'subtitle2', gutterBottom: true,
+        sx: { ...HEADING_BASE, fontWeight: 600, fontSize: '0.9375rem', lineHeight: 1.5, mb: 1.5, mt: 2 } } },
     p: { component: Typography, props: { variant: 'body2', paragraph: true,
         sx: { ...BODY_TEXT_BASE, mb: 1.75 } } },
     a: { component: Link, props: { underline: 'hover' as const, color: 'primary' as const, 
@@ -128,18 +122,18 @@ const notionStyleMarkdownOverrides = {
         sx: { ...BODY_TEXT_BASE, mb: 0.5 } } },
     blockquote: { component: Box, props: { sx: { 
         borderLeft: '3px solid', borderColor: 'rgba(0, 0, 0, 0.15)', pl: 2.5, py: 1, my: 2.5,
-        fontFamily: FONT_FAMILY_SERIF, fontStyle: 'italic', color: COLOR_MUTED, fontSize: '1.125rem', lineHeight: 1.7 
+        fontFamily: FONT_FAMILY_SERIF, fontStyle: 'italic', color: COLOR_MUTED, fontSize: '1rem', lineHeight: 1.7 
     } } },
     pre: { component: Paper, props: { elevation: 0, sx: { 
-        backgroundColor: COLOR_BG_LIGHT, p: 2, ...COMMON_STYLES.borderRadius, overflow: 'auto', my: 2, 
-        ...COMMON_STYLES.border, borderColor: 'rgba(0, 0, 0, 0.08)',
+        backgroundColor: COLOR_BG_LIGHT, p: 2, borderRadius: '4px', overflow: 'auto', my: 2, 
+        border: '1px solid', borderColor: 'rgba(0, 0, 0, 0.08)',
         '& code': { 
-            backgroundColor: 'transparent !important', padding: '0 !important', fontSize: '0.875rem',
+            backgroundColor: 'transparent !important', padding: '0 !important', fontSize: '0.8125rem',
             fontFamily: FONT_FAMILY_MONO, lineHeight: 1.7, color: COLOR_BODY
         } 
     } } },
     table: { component: TableContainer, props: { component: Paper, elevation: 0,
-        sx: { my: 2, ...COMMON_STYLES.border } } },
+        sx: { my: 2, border: '1px solid', borderColor: 'divider' } } },
     thead: { component: TableHead, props: { sx: { backgroundColor: COLOR_BG_LIGHT } } },
     tbody: { component: TableBody },
     tr: { component: TableRow },
@@ -152,33 +146,77 @@ const notionStyleMarkdownOverrides = {
     hr: { component: Divider, props: { sx: { my: 3 } } }
 } as any;
 
-// Social post style markdown overrides (more compact styling)
+// Social post style markdown overrides (X/Twitter style)
 const socialStyleMarkdownOverrides = {
     ...notionStyleMarkdownOverrides,
-    h1: { component: Typography, props: { variant: 'h5', gutterBottom: true, 
-        sx: { ...COMMON_STYLES.fontSystem, ...COMMON_STYLES.fontWeight700, fontSize: '1.375rem', 
-            lineHeight: 1.3, color: COLOR_SOCIAL_TEXT, mb: 2, mt: 2 } } },
+    h1: { component: Typography, props: { variant: 'h6', gutterBottom: true, 
+        sx: { fontFamily: FONT_FAMILY_SYSTEM, fontWeight: 700, fontSize: '1.125rem', 
+            lineHeight: 1.25, color: COLOR_SOCIAL_TEXT, mb: 1.5, mt: 1.5 } } },
     h2: { component: Typography, props: { variant: 'h6', gutterBottom: true,
-        sx: { ...COMMON_STYLES.fontSystem, ...COMMON_STYLES.fontWeight700, fontSize: '1.25rem', 
-            lineHeight: 1.3, color: COLOR_SOCIAL_TEXT, mb: 1.5, mt: 2 } } },
+        sx: { fontFamily: FONT_FAMILY_SYSTEM, fontWeight: 700, fontSize: '1rem', 
+            lineHeight: 1.25, color: COLOR_SOCIAL_TEXT, mb: 1.25, mt: 1.5 } } },
+    h3: { component: Typography, props: { variant: 'subtitle1', gutterBottom: true,
+        sx: { fontFamily: FONT_FAMILY_SYSTEM, fontWeight: 600, fontSize: '0.9375rem', 
+            lineHeight: 1.3, color: COLOR_SOCIAL_TEXT, mb: 1, mt: 1.25 } } },
+    p: { component: Typography, props: { variant: 'body2', paragraph: true,
+        sx: { fontFamily: FONT_FAMILY_SYSTEM, fontSize: '0.875rem', lineHeight: 1.4, 
+            fontWeight: 400, mb: 0.75, color: COLOR_SOCIAL_TEXT } } },
+    li: { component: Typography, props: { component: 'li', variant: 'body2',
+        sx: { fontFamily: FONT_FAMILY_SYSTEM, fontSize: '0.875rem', lineHeight: 1.4, 
+            fontWeight: 400, mb: 0.25, color: COLOR_SOCIAL_TEXT } } }
+} as any;
+
+// Executive summary style markdown overrides (compact serif styling)
+const executiveSummaryMarkdownOverrides = {
+    ...getOverrides(),
+    h1: { component: Typography, props: { variant: 'h5', gutterBottom: true, 
+        sx: { fontFamily: FONT_FAMILY_SERIF, fontWeight: 700, fontSize: '1.25rem', lineHeight: 1.3, color: COLOR_EXEC_HEADING, mb: 2, mt: 2.5 } } },
+    h2: { component: Typography, props: { variant: 'h6', gutterBottom: true,
+        sx: { fontFamily: FONT_FAMILY_SERIF, fontWeight: 600, fontSize: '1.125rem', lineHeight: 1.3, color: COLOR_EXEC_HEADING, mb: 1.5, mt: 2 } } },
     h3: { component: Typography, props: { variant: 'h6', gutterBottom: true,
-        sx: { ...COMMON_STYLES.fontSystem, ...COMMON_STYLES.fontWeight600, fontSize: '1.125rem', 
-            lineHeight: 1.4, color: COLOR_SOCIAL_TEXT, mb: 1.5, mt: 1.5 } } },
-    p: { component: Typography, props: { variant: 'body1', paragraph: true,
-        sx: { ...COMMON_STYLES.fontSystem, fontSize: '0.9375rem', lineHeight: 1.5, 
-            fontWeight: 400, mb: 1, color: COLOR_SOCIAL_TEXT } } },
-    li: { component: Typography, props: { component: 'li', variant: 'body1',
-        sx: { ...COMMON_STYLES.fontSystem, fontSize: '0.9375rem', lineHeight: 1.5, 
-            fontWeight: 400, mb: 0.5, color: COLOR_SOCIAL_TEXT } } }
+        sx: { fontFamily: FONT_FAMILY_SERIF, fontWeight: 600, fontSize: '1rem', lineHeight: 1.4, color: COLOR_EXEC_HEADING, mb: 1.25, mt: 1.5 } } },
+    h4: { component: Typography, props: { variant: 'subtitle1', gutterBottom: true,
+        sx: { fontFamily: FONT_FAMILY_SERIF, fontWeight: 600, fontSize: '0.9375rem', lineHeight: 1.4, color: COLOR_EXEC_HEADING, mb: 1, mt: 1.5 } } },
+    p: { component: Typography, props: { variant: 'body2', paragraph: true,
+        sx: { fontFamily: FONT_FAMILY_SERIF, fontSize: '0.875rem', lineHeight: 1.5, fontWeight: 400, color: COLOR_EXEC_TEXT, mb: 1.25, textAlign: 'justify' } } },
+    a: { component: Link, props: { underline: 'hover' as const, color: 'primary' as const, 
+        sx: { fontSize: 'inherit', fontWeight: 500, color: COLOR_EXEC_ACCENT, '&:hover': { color: 'rgb(0, 86, 179)' } } } },
+    ul: { component: 'ul', props: { style: { paddingLeft: '1.5em', marginTop: '0.5em', marginBottom: '1em', fontFamily: FONT_FAMILY_SERIF } } },
+    ol: { component: 'ol', props: { style: { paddingLeft: '1.5em', marginTop: '0.5em', marginBottom: '1em', fontFamily: FONT_FAMILY_SERIF } } },
+    li: { component: Typography, props: { component: 'li', variant: 'body2',
+        sx: { fontFamily: FONT_FAMILY_SERIF, fontSize: '0.875rem', lineHeight: 1.5, fontWeight: 400, color: COLOR_EXEC_TEXT, mb: 0.25 } } },
+    blockquote: { component: Box, props: { sx: { 
+        borderLeft: '2px solid', borderLeftColor: COLOR_EXEC_ACCENT, pl: 2, py: 1, my: 1.5,
+        backgroundColor: COLOR_EXEC_BG, fontFamily: FONT_FAMILY_SERIF, fontStyle: 'italic', color: COLOR_EXEC_TEXT, fontSize: '0.875rem', lineHeight: 1.6
+    } } },
+    pre: { component: Paper, props: { elevation: 0, sx: { 
+        backgroundColor: COLOR_EXEC_BG, p: 1.5, borderRadius: '4px', overflow: 'auto', my: 1.5,
+        '& code': { backgroundColor: 'transparent !important', padding: '0 !important', fontSize: '0.75rem', fontFamily: FONT_FAMILY_MONO, lineHeight: 1.5, color: COLOR_EXEC_TEXT }
+    } } },
+    table: { component: TableContainer, props: { component: Paper, elevation: 0, sx: { my: 1.5, borderRadius: '4px' } } },
+    thead: { component: TableHead, props: { sx: { backgroundColor: COLOR_EXEC_BG } } },
+    tbody: { component: TableBody },
+    tr: { component: TableRow },
+    th: { component: TableCell, props: { sx: { 
+        fontFamily: FONT_FAMILY_SERIF, fontSize: '0.8125rem', py: 1, px: 1.5, fontWeight: 600, borderBottom: '1px solid', borderColor: COLOR_EXEC_BORDER, color: COLOR_EXEC_HEADING
+    } } },
+    td: { component: TableCell, props: { sx: { 
+        fontFamily: FONT_FAMILY_SERIF, fontSize: '0.8125rem', py: 1, px: 1.5, borderBottom: '1px solid', borderColor: COLOR_EXEC_BORDER, lineHeight: 1.5, color: COLOR_EXEC_TEXT
+    } } },
+    hr: { component: Divider, props: { sx: { my: 2, borderColor: COLOR_EXEC_BORDER } } }
 } as any;
 
 export const ReportView: FC = () => {
+    // Get all generated reports from Redux state
+    const dispatch = useDispatch<AppDispatch>();
+
     const charts = useSelector((state: DataFormulatorState) => state.charts);
     const tables = useSelector((state: DataFormulatorState) => state.tables);
     const modelSlot = useSelector((state: DataFormulatorState) => state.modelSlots);
     const models = useSelector((state: DataFormulatorState) => state.models);
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
     const config = useSelector((state: DataFormulatorState) => state.config);
+    const allGeneratedReports = useSelector(dfSelectors.getAllGeneratedReports);
     const focusedChartId = useSelector((state: DataFormulatorState) => state.focusedChartId);
     const theme = useTheme();
 
@@ -188,18 +226,142 @@ export const ReportView: FC = () => {
     const [isGenerating, setIsGenerating] = useState(false);
     const [error, setError] = useState<string>('');
     const [style, setStyle] = useState<string>('short note');
-    const [mode, setMode] = useState<'compose' | 'post' | 'history'>('compose');
+    const [mode, setMode] = useState<'compose' | 'post'>(allGeneratedReports.length > 0 ? 'post' : 'compose');
 
     // Local state for current report
-    const [currentReport, setCurrentReport] = useState<GeneratedReport | undefined>(undefined);
+    const [currentReportId, setCurrentReportId] = useState<string | undefined>(undefined);
     const [generatedReport, setGeneratedReport] = useState<string>('');
     const [generatedStyle, setGeneratedStyle] = useState<string>('short note');
-    const [chartImages, setChartImages] = useState<Map<string, { url: string; width: number; height: number }>>(new Map());
+    const [cachedReportImages, setCachedReportImages] = useState<Record<string, { url: string; width: number; height: number }>>({});
+    const [shareButtonSuccess, setShareButtonSuccess] = useState(false);
 
-    // Get all generated reports from Redux state
-    const allGeneratedReports = useSelector(dfSelectors.getAllGeneratedReports);
+    const updateCachedReportImages = (chartId: string, blobUrl: string, width: number, height: number) => {
+        setCachedReportImages(prev => ({
+            ...prev,
+            [chartId]: { url: blobUrl, width, height }
+        }));
+    };
 
-    const dispatch = useDispatch<AppDispatch>();
+    // Helper function to show messages using dfSlice
+    const showMessage = (message: string, type: 'success' | 'error' | 'info' | 'warning' = 'success') => {
+        const msg: Message = {
+            type,
+            component: 'ReportView',
+            timestamp: Date.now(),
+            value: message
+        };
+        dispatch(dfActions.addMessages(msg));
+    };
+
+    // Function to capture and share report as image
+    const shareReportAsImage = async () => {
+        if (!currentReportId) return;
+
+        try {
+            // Find the report content element
+            const reportElement = document.querySelector('[data-report-content]') as HTMLElement;
+            if (!reportElement) {
+                showMessage('Could not find report content to capture', 'error');
+                return;
+            }
+
+            // Capture the report as canvas with extra padding for borders
+            const canvas = await html2canvas(reportElement, {
+                backgroundColor: '#ffffff',
+                scale: 2, // Higher quality
+                useCORS: true,
+                allowTaint: true,
+                scrollX: 0,
+                scrollY: 0,
+                // Add extra padding to ensure borders are captured
+                width: reportElement.scrollWidth + 4,
+                height: reportElement.scrollHeight + 4,
+                logging: false // Disable console logs
+            });
+
+            // Convert canvas to blob
+            canvas.toBlob((blob: Blob | null) => {
+                if (!blob) {
+                    showMessage('Failed to generate image', 'error');
+                    return;
+                }
+
+                // Copy to clipboard
+                if (navigator.clipboard && navigator.clipboard.write) {
+                    navigator.clipboard.write([
+                        new ClipboardItem({
+                            'image/png': blob
+                        })
+                    ]).then(() => {
+                        showMessage('Report image copied to clipboard! You can now paste it anywhere to share.');
+                        setShareButtonSuccess(true);
+                        setTimeout(() => setShareButtonSuccess(false), 2000);
+                    }).catch(() => {
+                        showMessage('Failed to copy to clipboard. Your browser may not support this feature.', 'error');
+                    });
+                } else {
+                    showMessage('Clipboard API not supported in your browser. Please use a modern browser.', 'error');
+                }
+            }, 'image/png', 0.95);
+
+        } catch (error) {
+            console.error('Error generating report image:', error);
+            showMessage('Failed to generate report image. Please try again.', 'error');
+        }
+    };
+
+
+
+    // Update like this:
+    const processReport = (rawReport: string): string => {
+        const markdownMatch = rawReport.match(/```markdown\n([\s\S]*?)(?:\n```)?$/);
+        let processed = markdownMatch ? markdownMatch[1] : rawReport;
+        
+        Object.entries(cachedReportImages).forEach(([chartId, { url, width, height }]) => {
+            processed = processed.replace(
+                new RegExp(`\\[IMAGE\\(${chartId}\\)\\]`, 'g'),
+                `<img src="${url}" alt="Chart" width="${width}" height="${height}" />`
+            );
+        });
+        
+        return processed;
+    };
+
+    const loadReport = (reportId: string) => {
+        const report = allGeneratedReports.find(r => r.id === reportId);
+        if (report) {
+            setCurrentReportId(reportId);
+            setGeneratedReport(report.content);
+            setGeneratedStyle(report.style);
+
+            // load / assemble chart images for the report
+            report.selectedChartIds.forEach((chartId) => {
+                const chart = charts.find(c => c.id === chartId);
+                if (!chart) return null;
+
+                const chartTable = tables.find(t => t.id === chart.tableRef);
+                if (!chartTable) return null;
+
+                if (chart.chartType === 'Table' || chart.chartType === '?') {
+                    return null;
+                }
+                getChartImageFromVega(chart, chartTable).then(({ blobUrl, width, height }) => {
+                    if (blobUrl) {
+                        // Use blob URL for local display and caching
+                        updateCachedReportImages(chart.id, blobUrl, width, height);
+                    }
+                });
+            });
+        }
+    };
+
+    useEffect(() => {
+        if (currentReportId === undefined && allGeneratedReports.length > 0) {
+            loadReport(allGeneratedReports[0].id);
+        }
+    }, [currentReportId]);
+
+
     
     // Sort charts based on data thread ordering
     const sortedCharts = useMemo(() => {
@@ -240,12 +402,6 @@ export const ReportView: FC = () => {
     // Clean up Blob URLs on unmount
     useEffect(() => {
         return () => {
-            // Clean up chart images from current report (only blob URLs, not data URLs)
-            chartImages.forEach(({ url }) => {
-                if (url.startsWith('blob:')) {
-                    URL.revokeObjectURL(url);
-                }
-            });
             // Clean up preview images (these are always blob URLs)
             previewImages.forEach(({ url }) => {
                 if (url.startsWith('blob:')) {
@@ -454,13 +610,11 @@ export const ReportView: FC = () => {
                 attached_metadata: table.attachedMetadata
             }));
 
-            const newChartImages = new Map<string, { url: string; width: number; height: number }>();
-            const persistentChartImages = new Map<string, { url: string; width: number; height: number }>();
 
             const selectedCharts = await Promise.all(
                 sortedCharts
-                    .filter(chart => selectedChartIds.has(chart.id))
-                    .map(async (chart) => {
+                .filter(chart => selectedChartIds.has(chart.id))
+                .map(async (chart) => {
 
                     const chartTable = tables.find(t => t.id === chart.tableRef);
                     if (!chartTable) return null;
@@ -472,10 +626,8 @@ export const ReportView: FC = () => {
                     const { dataUrl, blobUrl, width, height } = await getChartImageFromVega(chart, chartTable);
 
                     if (blobUrl) {
-                        // Use blob URL for local display (temporary)
-                        newChartImages.set(chart.id, { url: blobUrl, width, height });
-                        // Use data URL for persistent storage
-                        persistentChartImages.set(chart.id, { url: dataUrl, width, height });
+                        // Use blob URL for local display and caching
+                        updateCachedReportImages(chart.id, blobUrl, width, height);
                     }
 
                     return {
@@ -485,7 +637,7 @@ export const ReportView: FC = () => {
                             name: chartTable.id,
                             rows: chartTable.rows
                         },
-                        chart_url: dataUrl
+                        chart_url: dataUrl // use data_url to send to the agent
                     };
                 })
             );
@@ -518,23 +670,21 @@ export const ReportView: FC = () => {
             const decoder = new TextDecoder();
             let accumulatedReport = '';
 
-            const processReport = (rawReport: string): string => {
-                const markdownMatch = rawReport.match(/```markdown\n([\s\S]*?)(?:\n```)?$/);
-                let processed = markdownMatch ? markdownMatch[1] : rawReport;
-                
-                newChartImages.forEach(({ url, width, height }, chartId) => {
-                    processed = processed.replace(
-                        new RegExp(`\\[IMAGE\\(${chartId}\\)\\]`, 'g'),
-                        `<img src="${url}" alt="Chart" width="${width}" height="${height}" />`
-                    );
-                });
-                
-                return processed;
-            };
-
             while (true) {
                 const { done, value } = await reader.read();
-                if (done) break;
+                if (done) {
+                    // Create the report object for saving to Redux
+                    const report: GeneratedReport = {
+                        id: reportId,
+                        content: accumulatedReport,
+                        style: style,
+                        selectedChartIds: Array.from(selectedChartIds),
+                        createdAt: Date.now(),
+                    };
+                    // Save to Redux state
+                    dispatch(dfActions.saveGeneratedReport(report));
+                    break;
+                };
 
                 const chunk = decoder.decode(value, { stream: true });
                 
@@ -545,28 +695,9 @@ export const ReportView: FC = () => {
 
                 accumulatedReport += chunk;
 
-                const processedReport = processReport(accumulatedReport);
-                
                 // Update local state
-                setGeneratedReport(processedReport);
-                setChartImages(newChartImages);
-                
-                // Create the report object for saving to Redux
-                const report: GeneratedReport = {
-                    id: reportId,
-                    content: processedReport,
-                    style: style,
-                    selectedChartIds: Array.from(selectedChartIds),
-                    chartImages: persistentChartImages, // Use persistent data URLs
-                    createdAt: Date.now(),
-                    title: `Report - ${new Date().toLocaleDateString()}`
-                };
-
-                // Save to Redux state
-                dispatch(dfActions.saveGeneratedReport(report));
-                
-                // Update local current report
-                setCurrentReport(report);
+                setGeneratedReport(accumulatedReport);
+                setCurrentReportId(reportId);
                 
                 if (mode === 'compose') {
                     setMode('post');
@@ -580,31 +711,42 @@ export const ReportView: FC = () => {
         }
     };
 
-    const loadSavedReport = (report: GeneratedReport) => {
-        setCurrentReport(report);
-        setGeneratedReport(report.content);
-        setGeneratedStyle(report.style);
-        // Saved reports contain data URLs, so we can use them directly
-        setChartImages(report.chartImages);
-        setMode('post');
-    };
 
     const deleteReport = (reportId: string, event: React.MouseEvent) => {
         event.stopPropagation(); // Prevent triggering the card click
         dispatch(dfActions.deleteGeneratedReport(reportId));
+        
+        // If we're deleting the currently viewed report, switch to another report or clear the view
+        if (currentReportId === reportId) {
+            const remainingReports = allGeneratedReports.filter(r => r.id !== reportId);
+            if (remainingReports.length > 0) {
+                // Switch to the first remaining report
+                loadReport(remainingReports[0].id);
+            } else {
+                // No reports left, clear the view and go back to compose mode
+                setCurrentReportId(undefined);
+                setGeneratedReport('');
+                setGeneratedStyle('short note');
+                setMode('compose');
+            }
+        }
     };
 
+    let displayedReport = isGenerating ? 
+        `${generatedReport} <span class="pencil" style="opacity: 0.4; margin-left: 2px;">✏️</span>` : generatedReport;
+    displayedReport = processReport(displayedReport);
+
     return (
-        <Box sx={{ height: '100%', width: '100%', ...COMMON_STYLES.flexColumn, overflow: 'hidden' }}>
+        <Box sx={{ height: '100%', width: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
             {mode === 'compose' ? (
-                <Box sx={{  overflowY: 'auto'}}>
+                <Box sx={{ overflowY: 'auto', position: 'relative', height: '100%' }}>
                     <Box sx={{ p: 2, pb: 0, display: 'flex' }}>
                         <Button
                             variant="text"
                             size="small"
                             color='secondary'
                             onClick={() => dispatch(dfActions.setViewMode('editor'))}
-                            sx={COMMON_STYLES.textNoTransform}
+                            sx={{ textTransform: 'none' }}
                             startIcon={<ArrowBackIcon />}
                         >
                             back to explore
@@ -612,30 +754,51 @@ export const ReportView: FC = () => {
                         <Divider orientation="vertical" sx={{ mx: 1 }} flexItem />
                         <Button
                             variant="text"
-                            disabled={generatedReport === ''}
+                            disabled={allGeneratedReports.length === 0}
                             size="small"
                             onClick={() => setMode('post')}
-                            sx={COMMON_STYLES.textNoTransform}
+                            sx={{ textTransform: 'none' }}
                             endIcon={<ArrowForwardIcon />}
                         >
-                            view post
-                        </Button>
-                        <Divider orientation="vertical" sx={{ mx: 1 }} flexItem />
-                        <Button
-                            variant="text"
-                            size="small"
-                            onClick={() => setMode('history')}
-                            sx={COMMON_STYLES.textNoTransform}
-                        >
-                            view all reports ({allGeneratedReports.length})
+                            view reports
                         </Button>
                     </Box>
-                    <Box sx={{ p: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                        
-                            <Typography variant="body2">
-                                Compose a
+                    {/* Centered Top Bar */}
+                    <Box sx={{
+                        display: 'flex',
+                        justifyContent: 'center',
+                        p: 2,
+                    }}>
+                        <Paper
+                            elevation={0}
+                            sx={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 1,
+                                p: 1,
+                                borderRadius: 2,
+                                backgroundColor: 'rgba(255, 255, 255, 0.9)',
+                                backdropFilter: 'blur(12px)',
+                                border: '1px solid',
+                                borderColor: 'rgba(0, 0, 0, 0.08)',
+                                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.06)',
+                                '&:hover': {
+                                    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                                    borderColor: 'rgba(0, 0, 0, 0.12)',
+                                    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)',
+                                    transition: 'all 0.2s ease-in-out'
+                                },
+                                '.MuiTypography-root': {
+                                    fontSize: '1rem',
+                                }
+
+                            }}
+                        >
+                            {/* Natural Flow */}
+                            <Typography variant="body2" color="text.primary" sx={{ fontWeight: 500 }}>
+                                Create a
                             </Typography>
+                            
                             <ToggleButtonGroup
                                 value={style}
                                 exclusive
@@ -643,21 +806,18 @@ export const ReportView: FC = () => {
                                 size="small"
                                 sx={{ 
                                     '& .MuiToggleButtonGroup-grouped': {
-                                        border: '1px solid',
-                                        borderColor: 'divider',
-                                        '&:not(:first-of-type)': {
-                                            marginLeft: '-1px',
-                                            borderLeft: '1px solid',
-                                            borderLeftColor: 'divider',
+                                        border: 'none',
+                                        backgroundColor: 'action.hover',
+                                        margin: '0 2px',
+                                        borderRadius: '4px',
+                                        '&:hover': {
+                                            backgroundColor: 'action.selected',
                                         },
                                         '&.Mui-selected': {
                                             backgroundColor: 'primary.main',
                                             color: 'white',
-                                            borderColor: 'primary.main',
-                                            zIndex: 1,
                                             '&:hover': {
                                                 backgroundColor: 'primary.dark',
-                                                borderColor: 'primary.dark',
                                             }
                                         },
                                     }
@@ -673,38 +833,55 @@ export const ReportView: FC = () => {
                                         key={option.value}
                                         value={option.value}
                                         sx={{ 
-                                            px: 1.5,
-                                            py: 0.5,
-                                            ...COMMON_STYLES.textNoTransform,
-                                            fontSize: '0.875rem',
+                                            px: 1,
+                                            py: 0.25,
+                                            textTransform: 'none',
+                                            fontSize: '1rem',
+                                            minWidth: 'auto'
                                         }}
                                     >
                                         {option.label}
                                     </ToggleButton>
                                 ))}
                             </ToggleButtonGroup>
-                            <Typography variant="body2">
-                                from <Typography variant="body2" component="span" 
-                                    sx={{ color: selectedChartIds.size === 0 ? theme.palette.warning.main : "primary.main", fontWeight: 600 }}>
-                                {selectedChartIds.size}</Typography> selected {selectedChartIds.size <= 1 ? 'chart' : 'charts'}
+
+                            <Typography variant="body2" color="text.primary" sx={{ fontWeight: 500 }}>
+                                from
                             </Typography>
-                        </Box>
-                        <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+                            
+                            <Typography variant="body2" 
+                                color={selectedChartIds.size === 0 ? "warning.main" : 'primary.main'} sx={{ fontWeight: 'bold' }}>
+                                {selectedChartIds.size}
+                            </Typography>
+                            
+                            <Typography variant="body2" color="text.primary" sx={{ fontWeight: 500 }}>
+                                {selectedChartIds.size <= 1 ? 'chart' : 'charts'}
+                            </Typography>
+
+                            {/* Generate Button */}
                             <Button
                                 variant="contained"
                                 disabled={isGenerating || selectedChartIds.size === 0}
                                 onClick={generateReport}
-                                size="large"
-                                sx={COMMON_STYLES.textNoTransform}
-                                startIcon={isGenerating ? <CircularProgress size={16} /> : <EditIcon />}
+                                size="small"
+                                sx={{
+                                    textTransform: 'none',
+                                    ml: 2,
+                                    px: 2,
+                                    py: 0.75,
+                                    borderRadius: 1.5,
+                                    fontWeight: 500,
+                                    fontSize: '1rem',
+                                    minWidth: 'auto'
+                                }}
+                                startIcon={isGenerating ? <CircularProgress size={14} /> : <EditIcon sx={{ fontSize: 16 }} />}
                             >
                                 {isGenerating ? 'composing...' : 'compose'}
-                            </Button>                            
-                        </Box>
+                            </Button>
+                        </Paper>
                     </Box>
                     
-                    <Box sx={{ p: 2 }}>
-
+                    <Box sx={{ py: 2, px: 6 }}>
                         {error && (
                             <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>
                                 {error}
@@ -768,7 +945,7 @@ export const ReportView: FC = () => {
                                                     onChange={() => toggleChartSelection(chart.id)}
                                                     onClick={(e) => e.stopPropagation()}
                                                     sx={{ 
-                                                        ...COMMON_STYLES.positionAbsolute, top: 4, right: 4, p: 0.5, zIndex: 3,
+                                                        position: 'absolute', top: 4, right: 4, p: 0.5, zIndex: 3,
                                                         backgroundColor: 'rgba(255, 255, 255, 0.9)', borderRadius: 1,
                                                         '&:hover': { backgroundColor: 'rgba(255, 255, 255, 1)' }
                                                     }}
@@ -783,7 +960,7 @@ export const ReportView: FC = () => {
                                             <CardContent sx={{ p: 1, '&:last-child': { pb: 1.5 } }}>
                                                 <Typography 
                                                     variant="caption" 
-                                                    sx={{ display: 'block', fontWeight: 500, ...COMMON_STYLES.textEllipsis }}
+                                                    sx={{ display: 'block', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
                                                 >
                                                     {chart.chartType}
                                                 </Typography>
@@ -791,7 +968,7 @@ export const ReportView: FC = () => {
                                                     <Typography 
                                                         variant="caption" 
                                                         color="text.secondary"
-                                                        sx={{ display: 'block', ...COMMON_STYLES.textEllipsis }}
+                                                        sx={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
                                                     >
                                                         {table.displayId}
                                                     </Typography>
@@ -806,151 +983,227 @@ export const ReportView: FC = () => {
                     </Box>
                 </Box>
             ) : mode === 'post' ? (
-                <Box sx={{ height: '100%', ...COMMON_STYLES.flexColumn, overflow: 'hidden' }}>
+                <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                     <Box sx={{ p: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between',  }}>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                         <Button
                             size="small"
                             disabled={isGenerating}
                             startIcon={<ArrowBackIcon />}
-                            sx={COMMON_STYLES.textNoTransform}
+                            sx={{ textTransform: 'none' }}
                             onClick={() => setMode('compose')}
                         >
-                            back to compose
+                            create a new report
                         </Button>
-                        <Button
-                            size="small"
-                            disabled={isGenerating}
-                            sx={COMMON_STYLES.textNoTransform}
-                            onClick={() => setMode('history')}
-                        >
-                            view all reports ({allGeneratedReports.length})
-                        </Button>
-                        </Box>
                         <Typography variant="body2" color="text.secondary">
                             AI generated the post from the selected charts, and it could be inaccurate!
                         </Typography>
                     </Box>
-                    <Box sx={{ flex: 1, overflowY: 'auto' }}>
-                        <Box sx={{ display: 'flex', justifyContent: 'center', width: '100%', py: 3 }}>
-                            {(generatedStyle === 'social post' || generatedStyle === 'short note') ? (
-                                <Paper
-                                    elevation={0}
-                                    sx={{
-                                        maxWidth: '600px', width: '100%', ...COMMON_STYLES.borderRadiusLarge,
-                                        border: '1px solid', borderColor: COLOR_SOCIAL_BORDER, p: 3, backgroundColor: 'white',
-                                        ...COMMON_STYLES.fontSystem, fontSize: '0.9375rem', fontWeight: 400, lineHeight: 1.5,
-                                        color: COLOR_SOCIAL_TEXT, WebkitFontSmoothing: 'antialiased', MozOsxFontSmoothing: 'grayscale',
-                                        '& code': {
-                                            backgroundColor: `${COLOR_SOCIAL_ACCENT}1A`, color: COLOR_SOCIAL_ACCENT,
-                                            padding: '0.15em 0.3em', ...COMMON_STYLES.borderRadius,
-                                            fontSize: '0.875rem', fontWeight: 500, fontFamily: FONT_FAMILY_MONO
-                                        },
-                                        '& strong': { ...COMMON_STYLES.fontWeight600, color: COLOR_SOCIAL_TEXT },
-                                        '& em': { fontStyle: 'italic' },
-                                        '& img': { width: '90%', maxWidth: '90%', height: 'auto', maxHeight: config.defaultChartHeight * 1.5, objectFit: 'contain', marginTop: '12px', marginBottom: '12px' }
-                                    }}
-                                >
-                                    <MuiMarkdown overrides={socialStyleMarkdownOverrides}>{isGenerating ? `${generatedReport} <span class="pencil" style="opacity: 0.4; margin-left: 2px;">✏️</span>` : generatedReport}</MuiMarkdown>
-                                </Paper>
-                            ) : (
-                                <Box sx={{ 
-                                    maxWidth: '800px', width: '100%', px: 6, py: 2, backgroundColor: 'background.paper',
-                                    ...BODY_TEXT_BASE, WebkitFontSmoothing: 'antialiased', MozOsxFontSmoothing: 'grayscale',
-                                    '& code': {
-                                        backgroundColor: 'rgba(135, 131, 120, 0.15)', color: '#eb5757',
-                                        padding: '0.2em 0.4em', borderRadius: '3px',
-                                        fontSize: '0.875rem', fontWeight: 500, fontFamily: FONT_FAMILY_MONO
-                                    },
-                                    '& strong': { ...COMMON_STYLES.fontWeight600, color: COLOR_HEADING },
-                                    '& em': { fontStyle: 'italic' },
-                                    '& img': {
-                                        maxWidth: '75%', maxHeight: config.defaultChartHeight * 1.5,
-                                        width: 'auto', height: 'auto', objectFit: 'contain', ...COMMON_STYLES.borderRadius,
-                                        marginTop: '1.75em', marginBottom: '1.75em',
-                                    }
-                                }}>
-                                    <MuiMarkdown overrides={notionStyleMarkdownOverrides}>{isGenerating ? `${generatedReport} <span class="pencil" style="opacity: 0.4; margin-left: 2px;">✏️</span>` : generatedReport}</MuiMarkdown>
-                                </Box>
-                            )}
-                        </Box>
-                    </Box>
-                </Box>
-            ) : mode === 'history' ? (
-                <Box sx={{ height: '100%', ...COMMON_STYLES.flexColumn, overflow: 'hidden' }}>
-                    <Box sx={{ p: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                        <Button
-                            size="small"
-                            startIcon={<ArrowBackIcon />}
-                            sx={COMMON_STYLES.textNoTransform}
-                            onClick={() => setMode('compose')}
-                        >
-                            back to compose
-                        </Button>
-                        <Box />
-                    </Box>
-                    <Box sx={{ flex: 1, overflowY: 'auto', p: 2 }}>
-                        {allGeneratedReports.length === 0 ? (
-                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', py: 8 }}>
-                                <Typography color="text.secondary">
-                                    No saved reports yet. Generate a report to see it here.
-                                </Typography>
-                            </Box>
-                        ) : (
-                            <Box sx={{ display: 'flex', flexDirection: 'row', gap: 2, flexWrap: 'wrap' }}>
+                    <Box sx={{ flex: 1, display: 'flex', overflow: 'hidden', position: 'relative' }}>
+                        {/* Table of Contents Sidebar */}
+                        {allGeneratedReports.length > 0 && (
+                            <Box sx={{ 
+                                position: 'absolute',
+                                top: 0,
+                                left: 0,
+                                zIndex: 1,
+                                width: 200,
+                                display: 'flex',
+                                overflowY: 'auto',
+                                flexDirection: 'column',
+                                borderRight: 1,
+                                borderColor: 'divider',
+                                height: 'fit-content',
+                            }}>
                                 {allGeneratedReports.map((report) => (
-                                    <Card
-                                        key={report.id}
-                                        variant="outlined"
-                                        sx={{
-                                            width: '48%',
-                                            cursor: 'pointer',
-                                            '&:hover': {
-                                                backgroundColor: 'action.hover',
-                                                boxShadow: 2,
-                                            },
-                                        }}
-                                        onClick={() => loadSavedReport(report)}
-                                    >
-                                        <CardContent>
-                                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
-                                                <Typography variant="body1" sx={{ ...COMMON_STYLES.fontSystem, ...COMMON_STYLES.fontWeight600, flex: 1, mr: 1 }}>
-                                                    {report.content.split('\n')[0] || `Report - ${new Date(report.createdAt).toLocaleDateString()}`}
+                                    <Box key={report.id} sx={{ position: 'relative' }}>
+                                        <Button
+                                            variant="text"
+                                            size="small"
+                                            color='primary'
+                                            onClick={() => loadReport(report.id)}
+                                            sx={{
+                                                fontSize: 12,
+                                                textTransform: "none",
+                                                width: '100%',
+                                                justifyContent: 'flex-start',
+                                                textAlign: 'left',
+                                                borderRadius: 0,
+                                                py: 1,
+                                                px: 2,
+                                                color: currentReportId === report.id ? 'primary.main' : 'text.secondary',
+                                                borderRight: currentReportId === report.id ? 2 : 0,
+                                                borderColor: 'primary.main',
+                                            }}
+                                        >
+                                            <Box sx={{ flex: 1, minWidth: 0 }}>
+                                                <Typography 
+                                                    variant="body2" 
+                                                    sx={{ 
+                                                        fontSize: 'inherit',
+                                                        fontWeight: 500, 
+                                                        mb: 0.25
+                                                    }}
+                                                >
+                                                    {report.content.split('\n')[0]}
                                                 </Typography>
-                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                                    
-                                                    <Tooltip title="delete report"> 
-                                                        <IconButton
-                                                            size="small"
-                                                            color="warning"
-                                                            onClick={(e) => deleteReport(report.id, e)}
-                                                            sx={{ '&:hover': { transform: 'scale(1.2)' } }}
-                                                        >
-                                                            <DeleteIcon fontSize="small" />
-                                                        </IconButton>
-                                                    </Tooltip>
-                                                </Box>
+                                                <Typography 
+                                                    variant="caption" 
+                                                    color="text.secondary"
+                                                    sx={{ 
+                                                        fontSize: 10,
+                                                        display: 'block',
+                                                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
+                                                    }}
+                                                >
+                                                    {new Date(report.createdAt).toLocaleDateString()} • {report.style}
+                                                </Typography>
                                             </Box>
-                                            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                                                Style: {report.style} • Charts: {report.selectedChartIds.length}
-                                            </Typography>
-                                            <Typography
-                                                variant="body2"
-                                                sx={{
-                                                    display: '-webkit-box',
-                                                    WebkitLineClamp: 3,
-                                                    WebkitBoxOrient: 'vertical',
-                                                    overflow: 'hidden',
-                                                    textOverflow: 'ellipsis',
+                                        </Button>
+                                        <Tooltip title="Delete report">
+                                            <IconButton
+                                                size="small"
+                                                disabled={isGenerating}
+                                                color='warning'
+                                                onClick={(e) => deleteReport(report.id, e)}
+                                                sx={{ 
+                                                    position: 'absolute',
+                                                    right: 4,
+                                                    top: '50%',
+                                                    transform: 'translateY(-50%)',
+                                                    width: 20,
+                                                    height: 20,
+                                                    '&:hover': { 
+                                                        transform: 'translateY(-50%) scale(1.2)', transition: 'all 0.2s ease-in-out'
+                                                    }
                                                 }}
                                             >
-                                                {report.content.split('\n').slice(1).join('\n')?.replace(/<[^>]*>/g, '').substring(0, 200)}...
-                                            </Typography>
-                                        </CardContent>
-                                    </Card>
+                                                <DeleteIcon sx={{ fontSize: 14 }} />
+                                            </IconButton>
+                                        </Tooltip>
+                                    </Box>
                                 ))}
                             </Box>
                         )}
+                        
+                        {/* Main Content Area */}
+                        <Box sx={{ flex: 1, overflowY: 'auto', position: 'relative' }}>
+                            {/* Share Image Button */}
+                            {currentReportId && (
+                                <Box sx={{ position: 'absolute', top: 16, right: 16, zIndex: 10 }}>
+                                    <Tooltip title="Share report as image">
+                                        <Button
+                                            variant="contained"
+                                            size="small"
+                                            startIcon={
+                                                shareButtonSuccess ? <FavoriteIcon /> : <ShareIcon />
+                                            }
+                                            onClick={shareReportAsImage}
+                                            sx={{
+                                                textTransform: 'none',
+                                                backgroundColor: shareButtonSuccess ? 'success.main' : 'primary.main',
+                                                color: 'white',
+                                                transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
+                                                opacity: shareButtonSuccess ? 0.9 : 1,
+                                                transform: shareButtonSuccess ? 'scale(0.98)' : 'scale(1)',
+                                                animation: shareButtonSuccess ? 'pulse 0.6s ease-in-out' : 'none',
+                                                '@keyframes pulse': {
+                                                    '0%': { transform: 'scale(0.98)' },
+                                                    '50%': { transform: 'scale(1.05)' },
+                                                    '100%': { transform: 'scale(0.98)' }
+                                                },
+                                                '&:hover': {
+                                                    backgroundColor: shareButtonSuccess ? 'success.dark' : 'primary.dark',
+                                                },
+                                            }}
+                                        >
+                                            {shareButtonSuccess ? 'Copied!' : 'Share Image'}
+                                        </Button>
+                                    </Tooltip>
+                                </Box>
+                            )}
+                            
+                            <Box sx={{ display: 'flex', justifyContent: 'center', width: '100%', py: 3 }}>
+                                <Box
+                                    data-report-content
+                                    sx={{
+                                        // Common styles
+                                        width: '100%',
+                                        WebkitFontSmoothing: 'antialiased',
+                                        MozOsxFontSmoothing: 'grayscale',
+                                        '& em': { fontStyle: 'italic' },
+                                        
+                                        // Conditional styles
+                                        ...(generatedStyle === 'social post' || generatedStyle === 'short note' ? {
+                                            maxWidth: '520px', borderRadius: '12px',
+                                            border: '1px solid', borderColor: COLOR_SOCIAL_BORDER, p: 2.5, backgroundColor: 'white',
+                                            fontFamily: FONT_FAMILY_SYSTEM, fontSize: '0.875rem', fontWeight: 400, lineHeight: 1.4,
+                                            color: COLOR_SOCIAL_TEXT,
+                                            '& code': {
+                                                backgroundColor: `${COLOR_SOCIAL_ACCENT}1A`, color: COLOR_SOCIAL_ACCENT,
+                                                padding: '0.1em 0.25em', borderRadius: '3px',
+                                                fontSize: '0.8125rem', fontWeight: 500, fontFamily: FONT_FAMILY_MONO
+                                            },
+                                            '& strong': { fontWeight: 600, color: COLOR_SOCIAL_TEXT },
+                                            '& img': { width: '100%', maxWidth: '100%', height: 'auto', maxHeight: '280px', objectFit: 'contain', borderRadius: '8px', marginTop: '8px', marginBottom: '8px' }
+                                        } : generatedStyle === 'executive summary' ? {
+                                            maxWidth: '700px', p: 2.5, backgroundColor: 'white',
+                                            fontFamily: FONT_FAMILY_SERIF, fontSize: '0.875rem', lineHeight: 1.5, color: COLOR_EXEC_TEXT,
+                                            '& code': { backgroundColor: COLOR_EXEC_BG, color: COLOR_EXEC_ACCENT, padding: '0.1em 0.25em', borderRadius: '2px', fontSize: '0.75rem', fontFamily: FONT_FAMILY_MONO },
+                                            '& strong': { fontWeight: 600, color: COLOR_EXEC_HEADING },
+                                            '& img': { maxWidth: '70%', maxHeight: config.defaultChartHeight * 1.5, objectFit: 'contain', width: 'auto', height: 'auto', borderRadius: '3px', marginTop: '1em', marginBottom: '1em' }
+                                        } : { 
+                                            maxWidth: '800px', px: 6, py: 0, backgroundColor: 'background.paper',
+                                            ...BODY_TEXT_BASE,
+                                            '& code': {
+                                                backgroundColor: 'rgba(135, 131, 120, 0.15)', color: '#eb5757',
+                                                padding: '0.2em 0.4em', borderRadius: '3px',
+                                                fontSize: '0.875rem', fontWeight: 500, fontFamily: FONT_FAMILY_MONO
+                                            },
+                                            '& strong': { fontWeight: 600, color: COLOR_HEADING },
+                                            '& img': {
+                                                maxWidth: '75%', maxHeight: config.defaultChartHeight * 1.5,
+                                                width: 'auto', height: 'auto', objectFit: 'contain', borderRadius: '4px',
+                                                marginTop: '1.75em', marginBottom: '1.75em',
+                                            }
+                                        })
+                                    }}
+                                >
+                                    <MuiMarkdown overrides={
+                                        generatedStyle === 'social post' || generatedStyle === 'short note' 
+                                            ? socialStyleMarkdownOverrides 
+                                            : generatedStyle === 'executive summary'
+                                            ? executiveSummaryMarkdownOverrides
+                                            : notionStyleMarkdownOverrides
+                                    }>{displayedReport}</MuiMarkdown>
+                                    
+                                    {/* Attribution */}
+                                    <Box sx={{ 
+                                        mt: 3, 
+                                        pt: 2, 
+                                        borderTop: '1px solid #e0e0e0',
+                                        textAlign: 'center',
+                                        fontSize: '0.75rem',
+                                        color: '#666'
+                                    }}>
+                                        created with{' '}
+                                        <Link 
+                                            href="https://github.com/microsoft/data-formulator" 
+                                            target="_blank" 
+                                            rel="noopener noreferrer"
+                                            sx={{ 
+                                                color: '#1976d2',
+                                                textDecoration: 'none',
+                                                '&:hover': {
+                                                    textDecoration: 'underline'
+                                                }
+                                            }}
+                                        >
+                                            https://github.com/microsoft/data-formulator
+                                        </Link>
+                                    </Box>
+                                </Box>
+                            </Box>
+                        </Box>
                     </Box>
                 </Box>
             ) : null}

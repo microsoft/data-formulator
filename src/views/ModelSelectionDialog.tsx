@@ -689,7 +689,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
 
     return <>
         <Tooltip title="Configure model assignments for different task types">
-            <Button sx={{fontSize: "inherit", textTransform: "none"}} variant="text" color="primary" onClick={()=>{setModelDialogOpen(true)}}>
+            <Button sx={{fontSize: "inherit", textTransform: "none"}} variant="text" color={notAllSlotsReady ? 'warning' : "primary"} onClick={()=>{setModelDialogOpen(true)}}>
                 {notAllSlotsReady ? 'Select Models' : 
                     `${Object.entries(modelSlots).filter(([slotType, modelId]) => modelId).map(([slotType, modelId]) => models.find(m => m.id == modelId)?.model).join('/')}`}
             </Button>
