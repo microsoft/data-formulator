@@ -48,7 +48,6 @@ import {
 
 import { alpha, styled, useTheme } from '@mui/material/styles';
 
-import SettingsIcon from '@mui/icons-material/Settings';
 import AddCircleIcon from '@mui/icons-material/AddCircle';
 import ClearIcon from '@mui/icons-material/Clear';
 import VisibilityIcon from '@mui/icons-material/Visibility';
@@ -203,9 +202,9 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                         
                         let modelExplanation = "";
                         if (slotType == 'generation') {
-                            modelExplanation = "(exploration planning, code generation)";
+                            modelExplanation = "exploration planning, code generation";
                         } else if (slotType == 'hint') {
-                            modelExplanation = "(background data type inference, code explanation)";
+                            modelExplanation = "background data type inference, code explanation";
                         }
 
                         return (
@@ -216,18 +215,19 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                                     minWidth: '250px',
                                     p: 1.5, 
                                     border: '1px solid #e0e0e0', 
+                                    backgroundColor: assignedModel && getStatus(assignedModelId) == 'ok' ? alpha(theme.palette.success.main, 0.05) : 
+                                        assignedModel && getStatus(assignedModelId) == 'error' ? alpha(theme.palette.error.main, 0.05) : alpha(theme.palette.warning.main, 0.05),
                                     borderRadius: 1,
                                     borderColor: assignedModel && getStatus(assignedModelId) == 'ok' ? theme.palette.success.main : 
                                         getStatus(assignedModelId) == 'error' ? theme.palette.error.main : theme.palette.warning.main
                                 }}
                             >
-                                <Typography variant="body2" sx={{ fontWeight: 'bold', mb: 1 }}>
-                                    {slotType} tasks
-                                    <Typography variant="caption" color="text.secondary" component="span" sx={{ ml: 1, fontSize: '0.75rem' }}>
-                                        {modelExplanation}
-                                    </Typography>
+                                <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
+                                    Model for {slotType}
                                 </Typography>
-                                
+                                <Typography color="text.secondary" sx={{fontSize: '0.75rem', mt: 0.5, mb: 1 }}>
+                                    - {modelExplanation}
+                                </Typography>
                                 <FormControl fullWidth size="small">
                                     <Select
                                         required
@@ -296,7 +296,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                     })}
                 </Box>
                 <Typography variant="caption" sx={{ fontSize: '0.75rem', color: 'text.secondary' }}>
-                    <strong>Note:</strong> Models with strong code generation and reasoning capabilities are recommended for generation tasks. Smaller and faster models are suitable for hint tasks.
+                    <strong>💡 Tip:</strong> Use powerful models for generation tasks and faster models for hints.
                 </Typography>
             </Box>
         );
@@ -304,7 +304,8 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
 
     let newModelEntry = <TableRow
         key={`new-model-entry`}
-        sx={{ '&:last-child td, &:last-child th': { border: 0 }, padding: "6px 6px" }}
+        sx={{ '&:last-child td, &:last-child th': { border: 0 }, 
+        padding: "6px 6px"}}
     >
         <TableCell align="left">
             <Autocomplete
@@ -370,52 +371,17 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
             />
         </TableCell>
         <TableCell align="left">
-            <Autocomplete
-                freeSolo
-                onChange={(event: any, newValue: string | null) => { setNewModel(newValue || ""); }}
+            <TextField
+                size="small"
+                fullWidth
                 value={newModel}
-                options={newEndpoint && providerModelOptions[newEndpoint] ? providerModelOptions[newEndpoint] : []}
-                loadingText={<Typography sx={{fontSize: "0.875rem"}}>loading...</Typography>}
-                renderOption={(props, option) => {
-                    return <Typography {...props} onClick={()=>{ setNewModel(option); }} sx={{fontSize: "small"}}>{option}</Typography>
-                }}
-                renderInput={(params) => (
-                    <TextField
-                        error={newEndpoint != "" && !newModel}
-                        {...params}
-                        placeholder="model name"
-                        slotProps={{
-                            input: {
-                                ...params.InputProps,
-                                style: { fontSize: "0.75rem" },
-                                endAdornment: (
-                                    <>
-                                        {params.InputProps.endAdornment}
-                                    </>
-                                ),
-                            },
-                            htmlInput: {
-                                ...params.inputProps,
-                                'aria-label': 'Select or enter a model',
-                            }
-                        }}
-                        size="small"
-                        onChange={(event: any) => { setNewModel(event.target.value); }}
-                    />
-                )}
+                onChange={(event) => { setNewModel(event.target.value); }}
+                placeholder="model name"
+                error={newEndpoint != "" && !newModel}
                 slotProps={{
-                    listbox: {
-                        style: { padding: 0 }
-                    },
-                }}
-                slots={{
-                    paper: (props) => {
-                        return <Paper {...props}>
-                            <Typography sx={{ p: 1, color: 'gray', fontStyle: 'italic', fontSize: 'small' }}>
-                                examples
-                            </Typography>
-                            {props.children}    
-                        </Paper>
+                    input: {
+                        style: { fontSize: "0.75rem" },
+                        'aria-label': 'Enter a model name',
                     }
                 }}
             />
@@ -543,12 +509,12 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                     let statusIcon = status  == "unknown" ? <HelpOutlineIcon color="warning" fontSize="small" /> : ( status == 'testing' ? <CircularProgress size={20} />:
                             (status == "ok" ? <CheckCircleOutlineIcon color="success" fontSize="small"/> : <ErrorOutlineIcon color="error" fontSize="small"/> ))
                     
-                    let message = "the model is ready to use";
+                    let message = "Model is ready to use";
                     if (status == "unknown") {
-                        message = "click the status icon to test the model availability.";
+                        message = "Click to test if this model is working";
                     } else if (status == "error") {
                         const rawMessage = testedModels.find(t => t.id == model.id)?.message || "Unknown error";
-                        message = decodeHtmlEntities(rawMessage);
+                        message = `Error: ${decodeHtmlEntities(rawMessage)}. Click to retest.`;
                     }
 
                     const borderStyle = ['error'].includes(status) ? '1px dashed lightgray' : undefined;
@@ -624,8 +590,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                                 )}
                             </TableCell>
                             <TableCell sx={{borderBottom: borderStyle}} align="left">
-                                <Tooltip title={
-                                    status == 'ok' ? message :  'test model availability'}>
+                                <Tooltip title={message}>
                                     <Button
                                         size="small"
                                         color={status == 'ok' ?  'success' : status == 'error' ? 'error' : 'warning'}
@@ -633,7 +598,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                                         sx={{ p: 0.75, fontSize: "0.75rem", textTransform: "none" }}
                                         startIcon={statusIcon}
                                     >
-                                        {status == 'ok' ? 'ready' : 'click to test'}
+                                        {status == 'ok' ? 'Ready' : status == 'error' ? 'Retest' : 'Test'}
                                     </Button>
                                 </Tooltip>
                             </TableCell>
@@ -673,7 +638,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                 {newModelEntry}
                 <TableRow>
                     <TableCell colSpan={8} sx={{ pt: 2, pb: 1 }}>
-                        <Typography variant="caption" sx={{ display: 'block', mb: 0.5, fontSize: '0.75rem' }}>
+                        <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mb: 0.5, fontSize: '0.75rem' }}>
                             <strong>Configuration:</strong> Based on LiteLLM. <a href="https://docs.litellm.ai/docs/" target="_blank" rel="noopener noreferrer">See supported providers</a>.
                             Use 'openai' provider for OpenAI-compatible APIs.
                         </Typography>

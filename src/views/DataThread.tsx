@@ -1104,16 +1104,64 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
 
     let [threadDrawerOpen, setThreadDrawerOpen] = useState<boolean>(false);
+    const [panelWidth, setPanelWidth] = useState<number>(720); // Default width for the panel
+    const [isDragging, setIsDragging] = useState<boolean>(false);
 
     const scrollRef = useRef<null | HTMLDivElement>(null)
 
-    const executeScroll = () => { if (scrollRef.current != null) scrollRef.current.scrollIntoView() }
-    // run this function from an event handler or an effect to execute scroll 
+    const executeScroll = (smooth: boolean = true) => { 
+        if (scrollRef.current != null) {
+            scrollRef.current.scrollIntoView({ 
+                behavior: smooth ? 'smooth' : 'auto', 
+                block: 'center'
+            }) 
+        }
+    }
+    // run this function from an event handler or an effect to execute scroll
+
+    // Dragging functionality
+    const handleMouseDown = useCallback((e: React.MouseEvent) => {
+        e.preventDefault();
+        setIsDragging(true);
+    }, []);
+
+    const handleMouseMove = useCallback((e: MouseEvent) => {
+        if (!isDragging) return;
+        
+        const newWidth = Math.max(245, Math.min(720, e.clientX)); // Min 256px, max 720px
+        setPanelWidth(newWidth);
+    }, [isDragging]);
+
+    const handleMouseUp = useCallback(() => {
+        setIsDragging(false);
+    }, []);
+
+    useEffect(() => {
+        if (isDragging) {
+            document.addEventListener('mousemove', handleMouseMove);
+            document.addEventListener('mouseup', handleMouseUp);
+            document.body.style.cursor = 'col-resize';
+            document.body.style.userSelect = 'none';
+        } else {
+            document.removeEventListener('mousemove', handleMouseMove);
+            document.removeEventListener('mouseup', handleMouseUp);
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+        }
+
+        return () => {
+            document.removeEventListener('mousemove', handleMouseMove);
+            document.removeEventListener('mouseup', handleMouseUp);
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+        };
+    }, [isDragging, handleMouseMove, handleMouseUp]); 
 
     const dispatch = useDispatch();
 
     useEffect(() => {
-        executeScroll();
+        // make it smooth when drawer from open -> close, otherwise just jump
+        executeScroll(!threadDrawerOpen);
     }, [threadDrawerOpen])
 
     // Now use useMemo to memoize the chartElements array
@@ -1201,12 +1249,12 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
 
     let collaposedViewWidth = Math.max(...Object.values(leafTableGroups).map(x => x.length)) > 1 ? 248 : 232
 
-    let view = <Box maxWidth={drawerOpen ? 720 : collaposedViewWidth} sx={{ 
+    let view = <Box maxWidth={drawerOpen ? Math.min(960, panelWidth) : collaposedViewWidth} sx={{ 
         overflow: 'auto', // Add horizontal scroll when drawer is open
         position: 'relative',
         display: 'flex', 
         flexDirection: 'column',
-        transition: 'all 0.3s ease',
+        transition: isDragging ? 'none' : 'all 0.3s ease', // Disable transition while dragging
         direction: 'ltr',
         height: 'calc(100% - 16px)',
         flexWrap: drawerOpen ? 'wrap' : 'nowrap',
@@ -1309,7 +1357,7 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
     let jumpButtons = drawerOpen ? jumpButtonsDrawerOpen : jumpButtonDrawerClosed;
 
     let carousel = (
-        <Box className="data-thread" sx={{ ...sx }}>
+        <Box className="data-thread" sx={{ ...sx, position: 'relative' }}>
             <Box sx={{
                 direction: 'ltr', display: 'flex',
                 paddingLeft: '12px', alignItems: 'center', justifyContent: 'space-between',
@@ -1321,17 +1369,33 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
                     {jumpButtons}
                 </Box>
                 
-                <Tooltip title={drawerOpen ? "collapse" : "expand"}>
-                    <span>
-                        <IconButton size={'small'} color="primary" disabled={leafTables.length <= 1} onClick={() => { setThreadDrawerOpen(!threadDrawerOpen); }}>
-                            {drawerOpen ? <ChevronLeftIcon /> : <ChevronRightIcon />}
-                        </IconButton>
-                    </span>
-                </Tooltip>
+                <Box sx={{ display: 'flex', alignItems: 'center' }}>   
+                    <Tooltip title={"collapse"}>
+                        <span>
+                            <IconButton size={'small'} color="primary" 
+                            disabled={drawerOpen === false} onClick={() => { setThreadDrawerOpen(false); }}>
+                                <ChevronLeftIcon />
+                            </IconButton>
+                        </span>
+                    </Tooltip>
+                    <Tooltip title={"expand"}>
+                        <span>
+                            <IconButton size={'small'} color="primary" 
+                                disabled={leafTables.length <= 1} onClick={() => { 
+                                    if (drawerOpen) {
+                                        setPanelWidth(720); 
+                                    }
+                                    setThreadDrawerOpen(true); 
+                                }}>
+                                <ChevronRightIcon />
+                            </IconButton>
+                        </span>
+                    </Tooltip>
+                </Box>
             </Box>
 
             <Box sx={{
-                    transition: 'width 200ms cubic-bezier(0.4, 0, 0.2, 1) 0ms',
+                    transition: isDragging ? 'none' : 'width 200ms cubic-bezier(0.4, 0, 0.2, 1) 0ms',
                     overflow: 'hidden', 
                     direction: 'rtl', 
                     display: 'block', 
@@ -1340,6 +1404,26 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
                 }}>
                 {view}
             </Box>
+
+            {/* Draggable border */}
+            <Box
+                display={drawerOpen ? 'block' : 'none'}
+                onMouseDown={handleMouseDown}
+                sx={{
+                    position: 'absolute',
+                    right: 0,
+                    top: 20,
+                    bottom: 20,
+                    width: '4px',
+                    cursor: 'col-resize',
+                    backgroundColor: isDragging ? 'primary.main' : 'transparent',
+                    '&:hover': {
+                        backgroundColor: 'primary.light',
+                    },
+                    transition: 'background-color 0.2s ease',
+                    zIndex: 10,
+                }}
+            />
         </Box>
     );
 

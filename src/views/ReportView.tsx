@@ -34,7 +34,7 @@ import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
 import HistoryIcon from '@mui/icons-material/History';
 import DeleteIcon from '@mui/icons-material/Delete';
 import ShareIcon from '@mui/icons-material/Share';
-import FavoriteIcon from '@mui/icons-material/Favorite';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import html2canvas from 'html2canvas';
 import { useDispatch, useSelector } from 'react-redux';
 import { DataFormulatorState, dfActions, dfSelectors, GeneratedReport } from '../app/dfSlice';
@@ -1095,7 +1095,7 @@ export const ReportView: FC = () => {
                                             variant="contained"
                                             size="small"
                                             startIcon={
-                                                shareButtonSuccess ? <FavoriteIcon /> : <ShareIcon />
+                                                shareButtonSuccess ? <CheckCircleIcon /> : <ShareIcon />
                                             }
                                             onClick={shareReportAsImage}
                                             sx={{
@@ -1185,7 +1185,7 @@ export const ReportView: FC = () => {
                                         fontSize: '0.75rem',
                                         color: '#666'
                                     }}>
-                                        created with{' '}
+                                        created with AI using{' '}
                                         <Link 
                                             href="https://github.com/microsoft/data-formulator" 
                                             target="_blank" 
