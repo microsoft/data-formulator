@@ -43,6 +43,7 @@ from typing import Dict, Any
 
 app = Flask(__name__, static_url_path='', static_folder=os.path.join(APP_ROOT, "dist"))
 app.secret_key = secrets.token_hex(16)  # Generate a random secret key for sessions
+app.json.sort_keys = False
 
 class CustomJSONEncoder(json.JSONEncoder):
     def default(self, obj):

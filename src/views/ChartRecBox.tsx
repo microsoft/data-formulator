@@ -60,6 +60,8 @@ import RotateRightIcon from '@mui/icons-material/RotateRight';
 import EditIcon from '@mui/icons-material/Edit';
 import { ThinkingBufferEffect } from '../components/FunComponents';
 
+const AUTO_FOCUS_NEW_CHART = true;
+
 export interface ChartRecBoxProps {
     tableId: string;
     placeHolderChartId?: string;
@@ -795,7 +797,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
 
                         dispatch(dfActions.addChart(newChart));
                         // Create and focus the new chart directly
-                        if (focusNextChartRef.current) {
+                        if (focusNextChartRef.current || AUTO_FOCUS_NEW_CHART) {
                             focusNextChartRef.current = false;  // Immediate, synchronous update
                             dispatch(dfActions.setFocusedChart(newChart.id));
                             dispatch(dfActions.setFocusedTable(candidateTable.id));
@@ -852,12 +854,14 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
     };
 
     const exploreDataFromNLWithStartingQuestion = (startingQuestion: string) => {
-        getIdeasFromAgent('agent', `starting question: ${startingQuestion}\n\n generate only one question group based on the starting question`, true);
+        getIdeasFromAgent('agent', `starting question: ${startingQuestion}\n\n generate only one question group that contains a deepdive question with 3 steps based on the starting question`, true);
     };
 
     const exploreDataFromNL = (initialPlan: string[]) => {
 
         let actionId = `exploreDataFromNL_${String(Date.now())}`;
+
+        console.log('initialPlan', initialPlan)
 
         if (selectedTableIds.length === 0 || initialPlan.length === 0 || initialPlan[0].trim() === "") {
             return;
@@ -1007,7 +1011,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                     createdCharts.push(newChart);
 
                     dispatch(dfActions.addChart(newChart));
-                    if (focusNextChartRef.current) {
+                    if (focusNextChartRef.current || AUTO_FOCUS_NEW_CHART) {
                         focusNextChartRef.current = false;  // Immediate, synchronous update
                         dispatch(dfActions.setFocusedChart(newChart.id));
                         dispatch(dfActions.setFocusedTable(candidateTable.id));

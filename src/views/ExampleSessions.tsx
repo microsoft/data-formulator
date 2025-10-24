@@ -11,12 +11,6 @@ import {
     alpha,
     useTheme,
 } from '@mui/material';
-import PlayArrowIcon from '@mui/icons-material/PlayArrow';
-import AccessTimeIcon from '@mui/icons-material/AccessTime';
-import TableIcon from '@mui/icons-material/TableChart';
-import ImageIcon from '@mui/icons-material/Image';
-import LanguageIcon from '@mui/icons-material/Language';
-import DatasetIcon from '@mui/icons-material/Dataset';
 
 // Example session data for pre-built sessions
 export interface ExampleSession {

@@ -114,6 +114,28 @@ All natural disasters,1914,289'''
 11,2407,COMPUTER ENGINEERING,41542,33258,8284,Engineering,0.199412643,399,32506,30315,5146,23621,2275,0.065409275,60000,45000,75000,23694,5721,980'''
             }
         ]
+    },{
+        'source': 'bls.gov',
+        'name': 'Consumer Price Index',
+        'description': 'Average price of consumer goods and services in the United States',
+        'tables': [
+            {
+                "format": 'csv',
+                "url": 'https://gist.githubusercontent.com/Chenglong-MS/75827bc7daac7ba407863f499c494b37/raw/95af6fd0cc978932af9f6cacc7cd3c0c01d4dffa/average-price-data.csv',
+                "sample": '''Month,"Bananas per lb.","Oranges Navel per lb.","Bread white pan per lb.","Tomatoes field grown per lb.","Chicken fresh whole per lb.",Electricity per KWH,"Eggs grade A large per doz.","Gasoline unleaded regular per gallon","Ground chuck 100% beef per lb.",Utility (piped) gas per therm,"Milk fresh whole fortified per gal."
+2005-08-01,0.487,,1.06,1.416,1.042,0.105,1.166,2.506,2.502,1.189,3.136
+2005-09-01,0.485,1.363,1.052,1.429,1.056,0.106,1.279,2.927,2.535,1.324,3.133
+2005-10-01,0.491,1.388,1.043,1.547,1.062,0.102,1.264,2.785,2.564,1.512,3.171
+2005-11-01,0.48,1.172,1.055,1.574,1.059,0.102,1.279,2.343,2.568,1.548,3.211
+2005-12-01,0.482,0.885,1.046,1.848,1.061,0.102,1.35,2.186,2.606,1.498,3.241
+2006-01-01,0.49,0.837,1.046,2.162,1.062,0.108,1.449,2.315,2.607,1.531,3.197
+2006-02-01,0.508,0.915,1.029,1.91,1.045,0.108,1.328,2.31,2.556,1.402,3.224
+2006-03-01,0.508,0.888,1.04,1.649,1.047,0.109,1.302,2.401,2.568,1.335,3.161
+2006-04-01,0.508,0.876,1.072,1.573,1.054,0.109,1.283,2.757,2.599,1.278,3.123
+2006-05-01,0.514,0.99,1.086,1.543,1.034,0.11,1.206,2.947,2.508,1.263,3.066
+2006-06-01,0.511,1.119,1.074,1.457,1.055,0.118,1.242,2.917,2.543,1.21,3.001''',
+            }
+        ]
     },
     {
         'source': 'tidytuesday',

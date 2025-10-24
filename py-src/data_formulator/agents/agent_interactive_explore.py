@@ -77,7 +77,7 @@ Guidelines for question suggestions:
     - each question_group should include both 'breadth_questions' and 'depth_questions':
         - breadth_questions: a group of questions that are all relatively simple that helps the user understand the data in a broad sense.
         - depth_questions: a sequence of questions that build on top of each other to answer a specific aspect of the user's goal.
-    - you have a budget of generating 4-6 questions in total (or as directed by the user).
+    - you have a budget of generating 4 questions in total (or as directed by the user).
         - allocate 2-3 questions to 'breadth_questions' and 2-3 questions to 'depth_questions' based on the user's goal and the data.
         - each question group should slightly lean towards 'breadth' or 'depth' exploration, but not too much.
         - the more focused area can have more questions than the other area.

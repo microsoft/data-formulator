@@ -33,7 +33,7 @@ Guidelines:
     - Current results are very ambiguous and deviate from the original plans.
     - The analysis is tunnel vision and not exploring the data in a comprehensive way.
 - If you decide to present findings, you should format as follows:
-    - set status to "present" and provide a breif summary of what you have explored in bullet points in 'summary' (very concise, no more than 3 bullet points).
+    - set status to "present" and provide a breif summary of what you have explored in bullet points in 'summary' (very concise, no more than 3 bullet points, no more than 20 words).
     - if the question and the context mismatch or has confusion, set status to "warning" and explain very briefly why stop and what you need from the user in 'instruction' (make it very concise and polite with 'it looks like...').
 - Output format (don't include any other text):
 

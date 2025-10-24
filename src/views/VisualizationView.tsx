@@ -347,7 +347,9 @@ const VegaChartRenderer: FC<{
     }
 
     if (chart.chartType === "Table") {
-        return renderTableChart(chart, conceptShelfItems, visTableRows);
+        return visTableRows.length > 0 ? renderTableChart(chart, conceptShelfItems, visTableRows) : <Box sx={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }} >
+            <InsightsIcon fontSize="large"/>
+        </Box>;
     }
 
     const chartTemplate = getChartTemplate(chart.chartType);

@@ -1096,7 +1096,7 @@ const MemoizedChartObject = memo<{
 export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
 
     let tables = useSelector((state: DataFormulatorState) => state.tables);
-
+    let focusedTableId = useSelector((state: DataFormulatorState) => state.focusedTableId);
     let charts = useSelector(dfSelectors.getAllCharts);
 
     let chartSynthesisInProgress = useSelector((state: DataFormulatorState) => state.chartSynthesisInProgress);
@@ -1104,8 +1104,6 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
 
     let [threadDrawerOpen, setThreadDrawerOpen] = useState<boolean>(false);
-    const [panelWidth, setPanelWidth] = useState<number>(720); // Default width for the panel
-    const [isDragging, setIsDragging] = useState<boolean>(false);
 
     const scrollRef = useRef<null | HTMLDivElement>(null)
 
@@ -1119,50 +1117,20 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
     }
     // run this function from an event handler or an effect to execute scroll
 
-    // Dragging functionality
-    const handleMouseDown = useCallback((e: React.MouseEvent) => {
-        e.preventDefault();
-        setIsDragging(true);
-    }, []);
-
-    const handleMouseMove = useCallback((e: MouseEvent) => {
-        if (!isDragging) return;
-        
-        const newWidth = Math.max(245, Math.min(720, e.clientX)); // Min 256px, max 720px
-        setPanelWidth(newWidth);
-    }, [isDragging]);
-
-    const handleMouseUp = useCallback(() => {
-        setIsDragging(false);
-    }, []);
-
-    useEffect(() => {
-        if (isDragging) {
-            document.addEventListener('mousemove', handleMouseMove);
-            document.addEventListener('mouseup', handleMouseUp);
-            document.body.style.cursor = 'col-resize';
-            document.body.style.userSelect = 'none';
-        } else {
-            document.removeEventListener('mousemove', handleMouseMove);
-            document.removeEventListener('mouseup', handleMouseUp);
-            document.body.style.cursor = '';
-            document.body.style.userSelect = '';
-        }
-
-        return () => {
-            document.removeEventListener('mousemove', handleMouseMove);
-            document.removeEventListener('mouseup', handleMouseUp);
-            document.body.style.cursor = '';
-            document.body.style.userSelect = '';
-        };
-    }, [isDragging, handleMouseMove, handleMouseUp]); 
-
+  
     const dispatch = useDispatch();
 
     useEffect(() => {
         // make it smooth when drawer from open -> close, otherwise just jump
         executeScroll(!threadDrawerOpen);
     }, [threadDrawerOpen])
+
+    useEffect(() => {
+        // load the example datasets
+        if (focusedTableId) {
+            executeScroll(true);
+        }
+    }, [focusedTableId]);
 
     // Now use useMemo to memoize the chartElements array
     let chartElements = useMemo(() => {
@@ -1244,22 +1212,20 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
         return groups;
     }, {});
 
-    let drawerOpen = leafTables.length > 1 && threadDrawerOpen;
-    //let threadDrawerWidth = Math.max(Math.min(696, leafTables.length * 216), 232)
-
+    let drawerOpen = threadDrawerOpen && leafTables.length > 1;
     let collaposedViewWidth = Math.max(...Object.values(leafTableGroups).map(x => x.length)) > 1 ? 248 : 232
 
-    let view = <Box maxWidth={drawerOpen ? Math.min(960, panelWidth) : collaposedViewWidth} sx={{ 
+    let view = <Box maxWidth={drawerOpen ? 720 : collaposedViewWidth} sx={{ 
         overflow: 'auto', // Add horizontal scroll when drawer is open
         position: 'relative',
         display: 'flex', 
         flexDirection: 'column',
-        transition: isDragging ? 'none' : 'all 0.3s ease', // Disable transition while dragging
         direction: 'ltr',
         height: 'calc(100% - 16px)',
         flexWrap: drawerOpen ? 'wrap' : 'nowrap',
         gap: 1,
         p: 1,
+        transition: 'max-width 0.3s ease-in-out', // Smooth width transition
     }}>
         {Object.entries(leafTableGroups).map(([groupId, leafTables], i) => {
 
@@ -1382,9 +1348,6 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
                         <span>
                             <IconButton size={'small'} color="primary" 
                                 disabled={leafTables.length <= 1} onClick={() => { 
-                                    if (drawerOpen) {
-                                        setPanelWidth(720); 
-                                    }
                                     setThreadDrawerOpen(true); 
                                 }}>
                                 <ChevronRightIcon />
@@ -1395,35 +1358,15 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
             </Box>
 
             <Box sx={{
-                    transition: isDragging ? 'none' : 'width 200ms cubic-bezier(0.4, 0, 0.2, 1) 0ms',
                     overflow: 'hidden', 
                     direction: 'rtl', 
                     display: 'block', 
                     flex: 1,
                     height: 'calc(100% - 48px)',
+                    transition: 'width 0.3s ease-in-out', // Smooth width transition for container
                 }}>
                 {view}
             </Box>
-
-            {/* Draggable border */}
-            <Box
-                display={drawerOpen ? 'block' : 'none'}
-                onMouseDown={handleMouseDown}
-                sx={{
-                    position: 'absolute',
-                    right: 0,
-                    top: 20,
-                    bottom: 20,
-                    width: '4px',
-                    cursor: 'col-resize',
-                    backgroundColor: isDragging ? 'primary.main' : 'transparent',
-                    '&:hover': {
-                        backgroundColor: 'primary.light',
-                    },
-                    transition: 'background-color 0.2s ease',
-                    zIndex: 10,
-                }}
-            />
         </Box>
     );
 

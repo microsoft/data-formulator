@@ -326,7 +326,9 @@ export const dataFormulatorSlice = createSlice({
             //state.table = undefined;
             
             // state.modelSlots = {};
-            state.agentRules = initialState.agentRules;
+            //state.agentRules = initialState.agentRules;
+            //state.config = initialState.config;
+            //state.dataLoaderConnectParams = initialState.dataLoaderConnectParams;
 
             state.testedModels = [];
 
@@ -349,8 +351,6 @@ export const dataFormulatorSlice = createSlice({
 
             state.serverConfig = initialState.serverConfig;
 
-            state.config = initialState.config;
-
             state.dataCleanBlocks = [];
             state.cleanInProgress = false;
 
@@ -359,7 +359,6 @@ export const dataFormulatorSlice = createSlice({
             state.generatedReports = [];
             // Redux Persist will handle persistence automatically
             
-            //state.dataLoaderConnectParams = initialState.dataLoaderConnectParams;
         },
         loadState: (state, action: PayloadAction<any>) => {
 

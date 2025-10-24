@@ -45,6 +45,10 @@ import embed from 'vega-embed';
 import { getDataTable } from './VisualizationView';
 import { DictTable } from '../components/ComponentType';
 import { AppDispatch } from '../app/store';
+import TableRowsIcon from '@mui/icons-material/TableRows';
+import { Collapse } from '@mui/material';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 
 // Typography constants
 const FONT_FAMILY_SYSTEM = '-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, "Apple Color Emoji", Arial, sans-serif, "Segoe UI Emoji", "Segoe UI Symbol"';
@@ -234,6 +238,7 @@ export const ReportView: FC = () => {
     const [generatedStyle, setGeneratedStyle] = useState<string>('short note');
     const [cachedReportImages, setCachedReportImages] = useState<Record<string, { url: string; width: number; height: number }>>({});
     const [shareButtonSuccess, setShareButtonSuccess] = useState(false);
+    const [hideTableOfContents, setHideTableOfContents] = useState(false);
 
     const updateCachedReportImages = (chartId: string, blobUrl: string, width: number, height: number) => {
         setCachedReportImages(prev => ({
@@ -1004,7 +1009,7 @@ export const ReportView: FC = () => {
                             <Box sx={{ 
                                 position: 'absolute',
                                 top: 0,
-                                left: 0,
+                                left: 8,
                                 zIndex: 1,
                                 width: 200,
                                 display: 'flex',
@@ -1013,8 +1018,23 @@ export const ReportView: FC = () => {
                                 borderRight: 1,
                                 borderColor: 'divider',
                                 height: 'fit-content',
+                                background: alpha(theme.palette.background.paper, 0.9),
                             }}>
-                                {allGeneratedReports.map((report) => (
+                                <Button size='small' color='primary' onClick={() => setHideTableOfContents(!hideTableOfContents)}
+                                sx={{
+                                    width: '100%',
+                                    justifyContent: 'flex-start',
+                                    textAlign: 'left',
+                                    borderRadius: 0,
+                                    textTransform: 'none',
+                                    fontSize: 12,
+                                    py: 1,
+                                    px: 2,
+                                }}>
+                                    {hideTableOfContents ? <ExpandMoreIcon sx={{ fontSize: 16, mr: 1 }} /> 
+                                    : <ExpandLessIcon sx={{ fontSize: 16, mr: 1 }} /> } {hideTableOfContents ? 'show all reports' : 'reports'}
+                                </Button> 
+                                <Collapse in={!hideTableOfContents}>{allGeneratedReports.map((report) => (
                                     <Box key={report.id} sx={{ position: 'relative' }}>
                                         <Button
                                             variant="text"
@@ -1082,6 +1102,7 @@ export const ReportView: FC = () => {
                                         </Tooltip>
                                     </Box>
                                 ))}
+                                </Collapse>
                             </Box>
                         )}
                         
