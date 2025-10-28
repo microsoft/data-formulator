@@ -236,20 +236,31 @@ Totals (7 entries)	5	5	5	15
         }}
         >
         <Box sx={{margin:'auto', pb: '5%', display: "flex", flexDirection: "column", textAlign: "center" }}>
-            <Box sx={{display: 'flex', ml: 2, mb: 2, flexDirection: 'row', alignItems: 'end', justifyContent: 'center'}}>
-                <Box component="img" sx={{  width: 128 }} alt="" src={dfLogo} /> 
-                <Typography sx={{fontSize: 64, ml: 2, marginTop: "20px", letterSpacing: '0.02em', textAlign: 'center'}}>
-                    <Typography fontSize="inherit" sx={{letterSpacing: '0.05em', fontWeight: 200, color: 'text.primary'}}>{toolName}</Typography> 
-                    <Typography fontSize={20} sx={{color: 'text.secondary'}}>What <RotatingTextBlock 
-                        texts={[
-                            "data",
-                            "visualizations",
-                            "insights",
-                        ]}
-                    /> do you want to explore?</Typography>
-                </Typography>
+            <Box sx={{display: 'flex', mx: 'auto', mb: 2, width: 'fit-content', flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+                background: `
+                linear-gradient(90deg, ${alpha(theme.palette.text.secondary, 0.02)} 1px, transparent 1px),
+                linear-gradient(0deg, ${alpha(theme.palette.text.secondary, 0.02)} 1px, transparent 1px)
+            `,
+            backgroundSize: '16px 16px',
+            p: 2,
+            borderRadius: '8px',
+            }}>
+                <Box component="img" sx={{  width: 84,  }} alt="" src={dfLogo} /> 
+                <Typography fontSize={64} sx={{ml: 2, letterSpacing: '0.05em', fontWeight: 200, color: 'text.primary'}}>{toolName}</Typography> 
             </Box>
-            <Box sx={{mt: 4, borderRadius: 8, backgroundColor: alpha(theme.palette.primary.main, 0.04),
+            <Typography fontSize={20} sx={{color: 'text.secondary'}}>What <RotatingTextBlock 
+                texts={[
+                    "data",
+                    "visualizations",
+                    "insights",
+                ]}
+                /> do you want to explore?</Typography>
+            <Box sx={{mt: 4, width: '100%', borderRadius: 8, 
+                background: `
+                    linear-gradient(90deg, ${alpha(theme.palette.text.secondary, 0.02)} 1px, transparent 1px),
+                    linear-gradient(0deg, ${alpha(theme.palette.text.secondary, 0.02)} 1px, transparent 1px)
+                `,
+                backgroundSize: '16px 16px',
                 p: 2}}>
                 <Divider sx={{width: '200px', mx: 'auto', mb: 2, fontSize: '1.2rem', color: 'text.disabled'}}>
                     <Typography sx={{ fontSize: 14, color: 'text.disabled' }}>
@@ -270,18 +281,24 @@ Totals (7 entries)	5	5	5	15
                     {/* <Typography sx={{ml: 10, fontSize: 14, color: 'darkgray', transform: 'translateY(-12px)'}}>(csv, tsv, xlsx, json or database)</Typography> */}
                     <Typography variant="body1" color="text.secondary" sx={{ mt: 2, width: '100%' }}>
                         Load structured data from CSV, Excel, JSON, database, or extract data from{' '}
-                        <Tooltip title={<Box>Example of a messy text block: <Typography sx={{fontSize: 10, marginTop: '6px'}} component="pre">{exampleMessyText}</Typography></Box>}>
-                            <Box component="span" sx={{color: 'secondary.main', cursor: 'help', "&:hover": {textDecoration: 'underline'}}}>text</Box>
+                        <Tooltip title={<Box>Example of a screenshot of data: <Box component="img" sx={{ width: '100%', marginTop: '6px' }} alt="" src={exampleImageTable} /></Box>}>
+                            <Box component="span" sx={{color: 'secondary.main', cursor: 'help', "&:hover": {textDecoration: 'underline'}}}>screenshots</Box>
                         </Tooltip>{' '}
                         and{' '}
-                        <Tooltip title={<Box>Example of a table in image format: <Box component="img" sx={{ width: '100%', marginTop: '6px' }} alt="" src={exampleImageTable} /></Box>}>
-                            <Box component="span" sx={{color: 'secondary.main', cursor: 'help', "&:hover": {textDecoration: 'underline'}}}>images</Box>
+                        <Tooltip title={<Box>Example of a messy text block: <Typography sx={{fontSize: 10, marginTop: '6px'}} component="pre">{exampleMessyText}</Typography></Box>}>
+                            <Box component="span" sx={{color: 'secondary.main', cursor: 'help', "&:hover": {textDecoration: 'underline'}}}>text blocks</Box>
                         </Tooltip>{' '}
                         using AI.
                     </Typography> 
                 </Typography>
             </Box>
-            <Box sx={{mt: 4, borderRadius: 8, p: 2}}>
+            <Box sx={{mt: 4, borderRadius: 8, p: 2,
+                 background: `
+                 linear-gradient(90deg, ${alpha(theme.palette.text.secondary, 0.02)} 1px, transparent 1px),
+                 linear-gradient(0deg, ${alpha(theme.palette.text.secondary, 0.02)} 1px, transparent 1px)
+             `,
+             backgroundSize: '16px 16px',
+            }}>
                 <Divider sx={{width: '200px', mx: 'auto', mb: 3, fontSize: '1.2rem', color: 'text.disabled'}}>
                     <Typography sx={{ fontSize: 14, color: 'text.disabled' }}>
                         or, explore examples
