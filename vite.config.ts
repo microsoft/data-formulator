@@ -12,6 +12,13 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
+  css: {
+    preprocessorOptions: {
+      scss: {
+        api: 'modern-compiler',
+      },
+    },
+  },
   build: {
     outDir: path.join(__dirname, 'py-src', 'data_formulator', "dist"),
     rollupOptions: {

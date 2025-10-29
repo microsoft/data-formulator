@@ -248,13 +248,7 @@ Totals (7 entries)	5	5	5	15
                 <Box component="img" sx={{  width: 84,  }} alt="" src={dfLogo} /> 
                 <Typography fontSize={64} sx={{ml: 2, letterSpacing: '0.05em', fontWeight: 200, color: 'text.primary'}}>{toolName}</Typography> 
             </Box>
-            <Typography fontSize={20} sx={{color: 'text.secondary'}}>What <RotatingTextBlock 
-                texts={[
-                    "data",
-                    "visualizations",
-                    "insights",
-                ]}
-                /> do you want to explore?</Typography>
+            <Typography fontSize={24} sx={{color: 'text.secondary'}}>Turn data into insights with AI agents, with the exploration pathes you choose.</Typography>
             <Box sx={{mt: 4, width: '100%', borderRadius: 8, 
                 background: `
                     linear-gradient(90deg, ${alpha(theme.palette.text.secondary, 0.02)} 1px, transparent 1px),
@@ -293,11 +287,11 @@ Totals (7 entries)	5	5	5	15
                 </Typography>
             </Box>
             <Box sx={{mt: 4, borderRadius: 8, p: 2,
-                 background: `
+                background: `
                  linear-gradient(90deg, ${alpha(theme.palette.text.secondary, 0.02)} 1px, transparent 1px),
                  linear-gradient(0deg, ${alpha(theme.palette.text.secondary, 0.02)} 1px, transparent 1px)
-             `,
-             backgroundSize: '16px 16px',
+                `,
+                backgroundSize: '16px 16px',
             }}>
                 <Divider sx={{width: '200px', mx: 'auto', mb: 3, fontSize: '1.2rem', color: 'text.disabled'}}>
                     <Typography sx={{ fontSize: 14, color: 'text.disabled' }}>
@@ -308,7 +302,7 @@ Totals (7 entries)	5	5	5	15
                     <Box sx={{
                         display: 'flex',
                         justifyContent: 'space-between',
-                        maxWidth: 1200,
+                        maxWidth: 1000,
                         margin: '0 auto',
                         px: 1
                     }}>
