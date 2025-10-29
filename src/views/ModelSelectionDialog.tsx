@@ -652,11 +652,14 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
     let notAllSlotsReady = Object.values(tempModelSlots).filter(id => id).length !== dfSelectors.getAllSlotTypes().length 
     || Object.values(tempModelSlots).filter(id => id).some(id => getStatus(id) !== 'ok');
 
+    let genModelName = models.find(m => m.id == modelSlots['generation'])?.model || 'Unknown';
+    let hintModelName = models.find(m => m.id == modelSlots['hint'])?.model || 'Unknown';
+    let modelNames = (genModelName == hintModelName) ? genModelName : `${genModelName} / ${hintModelName}`;
+
     return <>
         <Tooltip title="Configure model assignments for different task types">
             <Button sx={{fontSize: "inherit", textTransform: "none"}} variant="text" color={notAllSlotsReady ? 'warning' : "primary"} onClick={()=>{setModelDialogOpen(true)}}>
-                {notAllSlotsReady ? 'Select Models' : 
-                    `${Object.entries(modelSlots).filter(([slotType, modelId]) => modelId).map(([slotType, modelId]) => models.find(m => m.id == modelId)?.model).join('/')}`}
+                {notAllSlotsReady ? 'Select Models' : modelNames}
             </Button>
         </Tooltip>
         <Dialog 

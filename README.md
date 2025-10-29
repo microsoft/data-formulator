@@ -1,5 +1,5 @@
 <h1>
-    <img src="./public/favicon.ico" alt="Data Formulator icon" width="28"> <b>Data Formulator: Create Rich Visualizations with AI</b>
+    <img src="./public/favicon.ico" alt="Data Formulator icon" width="28"> <b>Data Formulator v0.5: Interactive Data Exploration with AI Agents</b>
 </h1>
 
 <div>
@@ -12,19 +12,23 @@
 
 </div>
 
-Transform data and create rich visualizations iteratively with AI 🪄. Try Data Formulator now!
+🪄 Turn data into insights with AI Agents, with the exploration paths you choose. Try Data Formulator now!
 
 Any questions? Ask on the Discord channel! [![Discord](https://img.shields.io/badge/discord-chat-green?logo=discord)](https://discord.gg/mYCZMQKYZb)
 
 <!-- [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/microsoft/data-formulator?quickstart=1) -->
 
 <kbd>
-  <a target="_blank" rel="noopener noreferrer" href="https://codespaces.new/microsoft/data-formulator?quickstart=1" title="open Data Formulator in GitHub Codespaces"><img src="public/data-formulator-screenshot.png"></a>
+  <a target="_blank" rel="noopener noreferrer" href="https://codespaces.new/microsoft/data-formulator?quickstart=1" title="open Data Formulator in GitHub Codespaces"><img src="public/data-formulator-screenshot-v0.5.png"></a>
 </kbd>
 
 
-
 ## News 🔥🔥🔥
+- [11-07-2025] Data Formulator 0.5: Vibe with your data, in the exploration paths you choose.
+  - Need more automation? *Agent mode*: provide a high-level goal and let the agents plan and explore data for you. 🤖
+  - Need more control? Let's go *interactive*: choose a different path to explore, update the chart design, or followup with a new question. ✎
+  - Data to analyze is not structured? *Extract data* wtih agents from screenshots or text blocks to start exploration. 🫧
+
 - [07-10-2025] Data Formulator 0.2.2: Start with an analysis goal
   - Some key frontend performance updates. 
   - You can start your exploration with a goal, or, tab and see if the agent can recommend some good exploration ideas for you. [Demo](https://github.com/microsoft/data-formulator/pull/176)
