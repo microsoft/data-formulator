@@ -16,6 +16,7 @@
         "allotment": "^1.20.4",
         "d3": "^7.3.0",
         "dompurify": "^3.2.4",
+        "exceljs": "^4.4.0",
         "html2canvas": "^1.4.1",
         "katex": "^0.16.22",
         "localforage": "^1.10.0",
@@ -46,8 +47,7 @@
         "vega": "^5.32.0",
         "vega-embed": "^6.21.0",
         "vega-lite": "^5.5.0",
-        "vm-browserify": "^1.1.2",
-        "xlsx": "^0.18.5"
+        "vm-browserify": "^1.1.2"
     },
     "scripts": {
         "lint": "eslint -c eslint.config.js src/**/*.{ts,tsx} --fix",

@@ -381,15 +381,25 @@ export const TableUploadDialog: React.FC<TableUploadDialogProps> = ({ buttonElem
                            file.name.endsWith('.xls')) {
                     // Handle Excel files
                     const reader = new FileReader();
-                    reader.onload = (e) => {
+                    reader.onload = async (e) => {
                         const arrayBuffer = e.target?.result as ArrayBuffer;
                         if (arrayBuffer) {
-                            let tables = loadBinaryDataWrapper(uniqueName, arrayBuffer);
-                            for (let table of tables) {
-                                dispatch(dfActions.loadTable(table));
-                                dispatch(fetchFieldSemanticType(table));
-                            }
-                            if (tables.length == 0) {
+                            try {
+                                let tables = await loadBinaryDataWrapper(uniqueName, arrayBuffer);
+                                for (let table of tables) {
+                                    dispatch(dfActions.loadTable(table));
+                                    dispatch(fetchFieldSemanticType(table));
+                                }
+                                if (tables.length == 0) {
+                                    dispatch(dfActions.addMessages({
+                                        "timestamp": Date.now(),
+                                        "type": "error",
+                                        "component": "data loader",
+                                        "value": `Failed to parse Excel file ${file.name}. Please check the file format.`
+                                    }));
+                                }
+                            } catch (error) {
+                                console.error('Error processing Excel file:', error);
                                 dispatch(dfActions.addMessages({
                                     "timestamp": Date.now(),
                                     "type": "error",

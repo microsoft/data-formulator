@@ -142,7 +142,6 @@ export function MessageSnackbar() {
             boxShadow: '0 0 10px rgba(0,0,0,0.1)',
             transition: 'all 0.3s ease'
         }}}>
-            
             <Tooltip placement="left" title="view system messages">
                 <IconButton 
                     className='snackbar-button'
