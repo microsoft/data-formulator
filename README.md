@@ -1,5 +1,5 @@
 <h1>
-    <img src="./public/favicon.ico" alt="Data Formulator icon" width="28"> <b>Data Formulator v0.5: Interactive Data Exploration with AI Agents</b>
+    <img src="./public/favicon.ico" alt="Data Formulator icon" width="28"> <b>Data Formulator: Data Exploration with AI Agents</b>
 </h1>
 
 <div>
@@ -24,10 +24,10 @@ Any questions? Ask on the Discord channel! [![Discord](https://img.shields.io/ba
 
 
 ## News 🔥🔥🔥
-- [11-07-2025] Data Formulator 0.5: Vibe with your data, in the exploration paths you choose.
-  - Need more automation? *Agent mode*: provide a high-level goal and let the agents plan and explore data for you. 🤖
-  - Need more control? Let's go *interactive*: choose a different path to explore, update the chart design, or followup with a new question. ✎
-  - Data to analyze is not structured? *Extract data* wtih agents from screenshots or text blocks to start exploration. 🫧
+- [11-07-2025] Data Formulator 0.5 🔥: Vibe with your data, in the exploration paths you choose.
+  - Need more automation? **Agent mode**: provide a high-level goal and let the agents plan and explore data for you. 🤖
+  - Need more control? Let's go **interactive**: choose a different path to explore, update the chart design, or followup with a new question. ✎
+  - Data to analyze is not structured? **Extract data** wtih agents from screenshots or text blocks to start exploration. 🫧
 
 - [07-10-2025] Data Formulator 0.2.2: Start with an analysis goal
   - Some key frontend performance updates. 
