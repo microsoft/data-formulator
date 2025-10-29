@@ -31,7 +31,7 @@ import ReactDiffViewer from 'react-diff-viewer'
 
 import { DataFormulatorState, dfActions, dfSelectors, fetchFieldSemanticType } from '../app/dfSlice';
 import { useDispatch, useSelector } from 'react-redux';
-import { useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { AppDispatch } from '../app/store';
 
 interface TabPanelProps {
@@ -68,118 +68,202 @@ function a11yProps(index: number) {
   };
 }
 
-export interface TableChallenges {
+// Update the interface to support multiple tables per dataset
+export interface DatasetMetadata {
     name: string;
-    challenges: { text: string; difficulty: 'easy' | 'medium' | 'hard'; }[];
-    table: DictTable;
+    description: string;
+    source: string;
+    tables: {
+        table_name: string;
+        url: string;
+        format: string;
+        sample: any[];
+    }[];
 }
 
-
-export interface TableSelectionViewProps {
-    tableChallenges: TableChallenges[];
-    handleDeleteTable?: (index: number) => void;
-    handleSelectTable: (tableChallenges: TableChallenges) => void;
+export interface DatasetSelectionViewProps {
+    datasets: DatasetMetadata[];
+    handleSelectDataset: (datasetMetadata: DatasetMetadata) => void;
     hideRowNum?: boolean;
 }
 
 
-export const TableSelectionView: React.FC<TableSelectionViewProps> = function TableSelectionView({ tableChallenges, handleDeleteTable, handleSelectTable, hideRowNum  }) {
+export const DatasetSelectionView: React.FC<DatasetSelectionViewProps> = function DatasetSelectionView({ datasets, handleSelectDataset, hideRowNum  }) {
 
-    const [value, setValue] = React.useState(0);
+    const [selectedDatasetName, setSelectedDatasetName] = React.useState<string | undefined>(undefined);
 
-    const handleChange = (event: React.SyntheticEvent, newValue: number) => {
-        setValue(newValue);
+    useEffect(() => {
+        if (datasets.length > 0) {
+            setSelectedDatasetName(datasets[0].name);
+        }
+    }, [datasets]);
+
+    const handleDatasetSelect = (index: number) => {
+        setSelectedDatasetName(datasets[index].name);
     };
 
-    let tabTitiles : string[] = [];
-    for (let i = 0; i < tableChallenges.length; i ++) {
+    let datasetTitles : string[] = [];
+    for (let i = 0; i < datasets.length; i ++) {
         let k = 0;
-        let title = tableChallenges[i].name;
-        while (tabTitiles.includes(title)) {
+        let title = datasets[i].name;
+        while (datasetTitles.includes(title)) {
             k = k + 1;
             title = `${title}_${k}`;
         }
-        tabTitiles.push(title);
+        datasetTitles.push(title);
     }
 
     return (
-        <Box sx={{ flexGrow: 1, bgcolor: 'background.paper', display: 'flex', maxHeight: 600 }} >
-        <Tabs
-            orientation="vertical"
-            variant="scrollable"
-            value={value}
-            onChange={handleChange}
-            aria-label="Vertical tabs"
-            sx={{ borderRight: 1, borderColor: 'divider', minWidth: 120 }}
-        >
-            {tabTitiles.map((title, i) => <Tab wrapped key={i} label={title} sx={{textTransform: "none", width: 120}} {...a11yProps(0)} />)}
-        </Tabs>
-        {tableChallenges.map((tc, i) => {
-            let t = tc.table;
-            let sampleRows = [...t.rows.slice(0,9), Object.fromEntries(t.names.map(n => [n, "..."]))];
-            let colDefs = t.names.map(name => { return {
-                id: name, label: name, minWidth: 60, align: undefined, format: (v: any) => v,
-            }})
-            
-            let challengeView = <Box sx={{margin: "6px 0px"}}>
-                <Typography variant="subtitle2" sx={{marginLeft: "6px", fontSize: 12}}>Try these data visualization challenges with this dataset:</Typography>
-                {tc.challenges.map((c, j) => <Box key={j} sx={{display: 'flex', alignItems: 'flex-start', pl: 1}}>
-                    <Typography sx={{fontSize: 11, color: c.difficulty === 'easy' ? 'success.main' : 
-                                                        c.difficulty === 'medium' ? 'warning.main' : 
-                                                        'error.main'}}>[{c.difficulty}] {c.text}</Typography>
-                </Box>)}
-            </Box>  
-
-            let content = <Paper variant="outlined" key={t.names.join("-")} sx={{width: 800, maxWidth: '100%', padding: "0px", marginBottom: "8px"}}>
-                <CustomReactTable rows={sampleRows} columnDefs={colDefs} rowsPerPageNum={-1} compact={false} />
-                {challengeView}
-            </Paper>
-
-            return  <TabPanel 
+        <Box sx={{ flexGrow: 1, bgcolor: 'background.paper', display: 'flex', height: 600, borderRadius: 2 }} >
+            {/* Button navigation */}
+            <Box sx={{ 
+                minWidth: 180, 
+                display: 'flex',
+                flexDirection: 'column',
+                borderRight: 1,
+                borderColor: 'divider'
+            }}>
+                {datasetTitles.map((title, i) => (
+                    <Button
                         key={i}
-                        value={value} index={i} >
-                        {content}
-                        <Box width="100%" sx={{display: "flex"}}>
-                            <Typography sx={{fontSize: 10, color: "text.secondary"}}>{Object.keys(t.rows[0]).length} columns{hideRowNum ? "" : ` ⨉ ${t.rows.length} rows`}</Typography>
-                            <Box sx={{marginLeft: "auto"}} >
-                                {handleDeleteTable == undefined ? "" : 
-                                    <IconButton size="small" color="primary" sx={{marginRight: "12px"}}
-                                        onClick={(event: React.MouseEvent<HTMLElement>) => { 
-                                            handleDeleteTable(i);
-                                            setValue(i - 1 < 0 ? 0 : i - 1);
-                                        }}
-                                    >
-                                        <DeleteIcon fontSize="inherit"/>
-                                    </IconButton>}
-                                <Button size="small" variant="contained" 
-                                        onClick={(event: React.MouseEvent<HTMLElement>) => {
-                                            handleSelectTable(tc);
-                                        }}>
-                                    load table
-                                </Button>
+                        variant="text"
+                        size="small"
+                        color='primary'
+                        onClick={() => handleDatasetSelect(i)}
+                        sx={{
+                            fontSize: 12,
+                            textTransform: "none",
+                            width: 180,
+                            justifyContent: 'flex-start',
+                            textAlign: 'left',
+                            borderRadius: 0,
+                            py: 1,
+                            px: 2,
+                            color: selectedDatasetName === title ? 'primary.main' : 'text.secondary',
+                            borderRight: selectedDatasetName === title ? 2 : 0,
+                            borderColor: 'primary.main',
+                        }}
+                    >
+                        {title}
+                    </Button>
+                ))}
+            </Box>
+
+            {/* Content area */}
+            <Box sx={{ flex: 1, overflow: 'auto', p: 2 }}>
+                {datasets.map((dataset, i) => {
+                    if (dataset.name !== selectedDatasetName) return null;
+
+                    let tableComponents = dataset.tables.map((table, j) => {
+                        let t = createTableFromFromObjectArray(table.table_name, table.sample, true);
+                        let maxDisplayRows = dataset.tables.length > 1 ? 5 : 9;
+                        if (t.rows.length < maxDisplayRows) {
+                            maxDisplayRows = t.rows.length - 1;
+                        }
+                        let sampleRows = [
+                            ...t.rows.slice(0,maxDisplayRows), 
+                            Object.fromEntries(t.names.map(n => [n, "..."]))
+                        ];
+                        let colDefs = t.names.map(name => { return {
+                            id: name, label: name, minWidth: 60, align: undefined, format: (v: any) => v,
+                        }})
+
+                        let content = <Paper variant="outlined" key={t.names.join("-")} sx={{width: 800, maxWidth: '100%', padding: "0px", marginBottom: "8px"}}>
+                            <CustomReactTable rows={sampleRows} columnDefs={colDefs} rowsPerPageNum={-1} compact={false} />
+                        </Paper>
+
+                        return (
+                            <Box key={j}>
+                                <Typography variant="subtitle2" sx={{ mb: 1, fontSize: 12}} color="text.secondary">
+                                    {table.url.split("/").pop()?.split(".")[0]}  ({Object.keys(t.rows[0]).length} columns{hideRowNum ? "" : ` ⨉ ${t.rows.length} rows`})
+                                </Typography>
+                                {content}
                             </Box>
+                        )
+                    });
+                    
+                    return (
+                        <Box key={i}>
+                            <Box sx={{mb: 1, gap: 1, maxWidth: 800, display: "flex", alignItems: "center"}}>
+                                <Typography sx={{fontSize: 12}}>
+                                    {dataset.description} <Typography variant="caption" sx={{color: "primary.light", fontSize: 10, mx: 0.5}}>[from {dataset.source}]</Typography> 
+                                </Typography>
+                                <Box sx={{marginLeft: "auto", flexShrink: 0}} >
+                                    <Button size="small" variant="contained" 
+                                            onClick={(event: React.MouseEvent<HTMLElement>) => {
+                                                handleSelectDataset(dataset);
+                                            }}>
+                                        load dataset
+                                    </Button>
+                                </Box>
+                            </Box>
+                            {tableComponents}
                         </Box>
-                    </TabPanel>
-        })}
+                    );
+                })}
+            </Box>
         </Box>
     );
 }
 
-export const TableSelectionDialog: React.FC<{ buttonElement: any }> = function TableSelectionDialog({ buttonElement }) {
+export const DatasetSelectionDialog: React.FC<{ buttonElement: any }> = function DatasetSelectionDialog({ buttonElement }) {
 
-    const [datasetPreviews, setDatasetPreviews] = React.useState<TableChallenges[]>([]);
+    const [datasetPreviews, setDatasetPreviews] = React.useState<DatasetMetadata[]>([]);
     const [tableDialogOpen, setTableDialogOpen] = useState<boolean>(false);
 
     React.useEffect(() => {
         // Show a loading animation/message while loading
-        fetch(`${getUrls().VEGA_DATASET_LIST}`)
+        fetch(`${getUrls().EXAMPLE_DATASETS}`)
             .then((response) => response.json())
             .then((result) => {
-                let tableChallenges : TableChallenges[] = result.map((info: any) => {
-                    let table = createTableFromFromObjectArray(info["name"], JSON.parse(info["snapshot"]), true)
-                    return {table: table, challenges: info["challenges"], name: info["name"]}
-                }).filter((t : TableChallenges | undefined) => t != undefined);
-                setDatasetPreviews(tableChallenges);
+                let datasets : DatasetMetadata[] = result.map((info: any) => {
+                    let tables = info["tables"].map((table: any) => {
+
+                        if (table["format"] == "json") {
+                            return {
+                                table_name: table["name"],
+                                url: table["url"],
+                                format: table["format"],
+                                sample: table["sample"],
+                            }
+                        }
+                        else if (table["format"] == "csv" || table["format"] == "tsv") {
+                            const delimiter = table["format"] === "csv" ? "," : "\t";
+                            const rows = table["sample"]
+                                .split("\n")
+                                .map((row: string) => row.split(delimiter));
+                            
+                            // Treat first row as headers and convert to object array
+                            if (rows.length > 0) {
+                                const headers = rows[0];
+                                const dataRows = rows.slice(1);
+                                const sampleData = dataRows.map((row: string[]) => {
+                                    const obj: any = {};
+                                    headers.forEach((header: string, index: number) => {
+                                        obj[header] = row[index] || '';
+                                    });
+                                    return obj;
+                                });
+                                
+                                return {
+                                    table_name: table["name"],
+                                    url: table["url"],
+                                    format: table["format"],
+                                    sample: sampleData,
+                                };
+                            }
+                            
+                            return {
+                                table_name: table["name"],
+                                url: table["url"],
+                                format: table["format"],
+                                sample: [],
+                            };
+                        }
+                    })
+                    return {tables: tables, name: info["name"], description: info["description"], source: info["source"]}
+                }).filter((t : DatasetMetadata | undefined) => t != undefined);
+                setDatasetPreviews(datasets);
             });
       }, []);
 
@@ -195,7 +279,7 @@ export const TableSelectionDialog: React.FC<{ buttonElement: any }> = function T
                 open={tableDialogOpen}
                 sx={{ '& .MuiDialog-paper': { maxWidth: '100%', maxHeight: 840, minWidth: 800 } }}
             >
-                <DialogTitle sx={{display: "flex"}}>Explore Sample Datasets
+                <DialogTitle sx={{display: "flex"}}>Explore
                     <IconButton
                         sx={{marginLeft: "auto"}}
                         edge="start"
@@ -207,43 +291,33 @@ export const TableSelectionDialog: React.FC<{ buttonElement: any }> = function T
                         <CloseIcon fontSize="inherit"/>
                     </IconButton>
                 </DialogTitle>
-                <DialogContent sx={{overflowX: "hidden", padding: 0}} dividers>
-                    <TableSelectionView tableChallenges={datasetPreviews} hideRowNum
-                        handleDeleteTable={undefined}
-                        handleSelectTable={(tableChallenges) => {
-                            fetch(`${getUrls().VEGA_DATASET_REQUEST_PREFIX}${tableChallenges.table.id}`)
-                                .then((response) => {
-                                    return response.text()
-                                })
-                                .then((text) => {         
-                                    let fullTable = createTableFromFromObjectArray(tableChallenges.table.id, JSON.parse(text), true);
-                                    if (fullTable) {
-                                        dispatch(dfActions.loadTable(fullTable));
-                                        dispatch(fetchFieldSemanticType(fullTable));
-                                        dispatch(dfActions.addChallenges({
-                                            tableId: tableChallenges.table.id,
-                                            challenges: tableChallenges.challenges
-                                        }));
-                                    } else {
-                                        throw "";
+                <DialogContent sx={{overflowX: "hidden", padding: 1}}>
+                    <DatasetSelectionView datasets={datasetPreviews} hideRowNum
+                        handleSelectDataset={(dataset) => {
+                            setTableDialogOpen(false);
+                            for (let table of dataset.tables) { 
+                                fetch(table.url)
+                                .then(res => res.text())
+                                .then(textData => {
+                                    let tableName = table.url.split("/").pop()?.split(".")[0] || 'table-' + Date.now().toString().substring(0, 8);
+                                    let dictTable;
+                                    if (table.format == "csv") {
+                                        dictTable = createTableFromText(tableName, textData);
+                                    } else if (table.format == "json") {
+                                        dictTable = createTableFromFromObjectArray(tableName, JSON.parse(textData), true);
+                                    } 
+                                    if (dictTable) {
+                                        dispatch(dfActions.loadTable(dictTable));
+                                        dispatch(fetchFieldSemanticType(dictTable));
                                     }
-                                    setTableDialogOpen(false); 
-                                })
-                                .catch((error) => {
-                                    console.log(error)
-                                    dispatch(dfActions.addMessages({
-                                        "timestamp": Date.now(),
-                                        "type": "error",
-                                        "component": "data loader",
-                                        "value": `Unable to load the sample dataset ${tableChallenges.table.id}, please try again later or upload your data.`
-                                    }));
-                                })
+                                    
+                                });
+                            } 
                         }}/>
-                </ DialogContent>
+                </DialogContent>
             </Dialog>
     </>
 }
-
 
 export interface TableUploadDialogProps {
     buttonElement: any;
@@ -445,7 +519,7 @@ export const TableURLDialog: React.FC<TableURLDialogProps> = ({ buttonElement, d
     return <>
         <Button sx={{fontSize: "inherit"}} variant="text" color="primary" 
                     disabled={disabled} onClick={()=>{setDialogOpen(true)}}>
-                {buttonElement}
+            {buttonElement}
         </Button>
         {dialog}
     </>;
@@ -457,22 +531,20 @@ export const TableCopyDialogV2: React.FC<TableCopyDialogProps> = ({ buttonElemen
     let activeModel = useSelector(dfSelectors.getActiveModel);
     
     const [dialogOpen, setDialogOpen] = useState<boolean>(false);
-    const [tableName, setTableName] = useState<string>("");
     
     const [tableContent, setTableContent] = useState<string>("");
-    const [imageCleaningInstr, setImageCleaningInstr] = useState<string>("");
     const [tableContentType, setTableContentType] = useState<'text' | 'image'>('text');
 
     const [cleaningInProgress, setCleaningInProgress] = useState<boolean>(false);
-    const [cleanTableContent, setCleanTableContent] = useState<{content: string, reason: string, mode: string} | undefined>(undefined);
 
-    let viewTable = cleanTableContent == undefined ?  undefined : createTableFromText(tableName || "clean-table", cleanTableContent.content)
- 
-
-    const [loadFromURL, setLoadFromURL] = useState<boolean>(false);
-    const [url, setURL] = useState<string>("");
-
-    let theme = useTheme()
+    // Add new state for display optimization
+    const [displayContent, setDisplayContent] = useState<string>("");
+    const [isLargeContent, setIsLargeContent] = useState<boolean>(false);
+    const [showFullContent, setShowFullContent] = useState<boolean>(false);
+    
+    // Constants for content size limits
+    const MAX_DISPLAY_LINES = 20; // Reduced from 30
+    const LARGE_CONTENT_THRESHOLD = 50000; // ~50KB threshold
 
     const dispatch = useDispatch<AppDispatch>();
     const existingTables = useSelector((state: DataFormulatorState) => state.tables);
@@ -491,7 +563,7 @@ export const TableCopyDialogV2: React.FC<TableCopyDialogProps> = ({ buttonElemen
             return `data-${shortHash}`;
         })();
 
-        const baseName = tableName || defaultName;
+        const baseName = defaultName;
         const uniqueName = getUniqueTableName(baseName, existingNames);
 
         try {
@@ -506,82 +578,39 @@ export const TableCopyDialogV2: React.FC<TableCopyDialogProps> = ({ buttonElemen
         }        
     };
 
-    let handleLoadURL = () => {
-        console.log("hello hello")
-        setLoadFromURL(!loadFromURL);
+    // Optimized content change handler
+    const handleContentChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+        const newContent = event.target.value;
+        setTableContent(newContent);
+        
+        // Check if content is large
+        const isLarge = newContent.length > LARGE_CONTENT_THRESHOLD;
+        setIsLargeContent(isLarge);
+        
+        if (isLarge && !showFullContent) {
+            // For large content, only show a preview in the TextField
+            const lines = newContent.split('\n');
+            const previewLines = lines.slice(0, MAX_DISPLAY_LINES);
+            const preview = previewLines.join('\n') + (lines.length > MAX_DISPLAY_LINES ? '\n... (truncated for performance)' : '');
+            setDisplayContent(preview);
+        } else {
+            setDisplayContent(newContent);
+        }
+    }, [showFullContent]);
 
-        let  parts = url.split('/');
+    // Toggle between preview and full content
+    const toggleFullContent = useCallback(() => {
+        setShowFullContent(!showFullContent);
+        if (!showFullContent) {
+            setDisplayContent(tableContent);
+        } else {
+            const lines = tableContent.split('\n');
+            const previewLines = lines.slice(0, MAX_DISPLAY_LINES);
+            const preview = previewLines.join('\n') + (lines.length > MAX_DISPLAY_LINES ? '\n... (truncated for performance)' : '');
+            setDisplayContent(preview);
+        }
+    }, [showFullContent, tableContent]);
 
-        // Get the last part of the URL, which should be the file name with extension
-        const tableName = parts[parts.length - 1];
-
-        fetch(url)
-        .then(res => res.text())
-        .then(content => {
-            setTableName(tableName);
-            setTableContent(content); 
-            setTableContentType("text");
-        })
-    }
-
-    let handleCleanData = () => {
-        //setCleanTableContent("hehehao\n\n" + tableContent);
-        let token = String(Date.now());
-        setCleaningInProgress(true);
-        setCleanTableContent(undefined);
-        let message = {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', },
-            body: JSON.stringify({
-                token: token,
-                content_type: tableContentType,
-                raw_data: tableContent,
-                image_cleaning_instruction: imageCleaningInstr,
-                model: activeModel
-            }),
-        };
-
-        fetch(getUrls().CLEAN_DATA_URL, message)
-            .then((response) => response.json())
-            .then((data) => {
-                setCleaningInProgress(false);
-                console.log(data);
-                console.log(token);
-
-                if (data["status"] == "ok") {
-                    if (data["token"] == token) {
-                        let candidate = data["result"][0];
-                        console.log(candidate)
-
-                        let cleanContent = candidate['content'];
-                        let info = candidate['info'];
-
-                        setCleanTableContent({content: cleanContent.trim(), reason: info['reason'], mode: info['mode']});
-                        console.log(`data cleaning reason:`)
-                        console.log(info);
-                    }
-                } else {
-                    // TODO: add warnings to show the user
-                    dispatch(dfActions.addMessages({
-                        "timestamp": Date.now(),
-                        "type": "error",
-                        "component": "data loader",
-                        "value": "unable to perform auto-sort."
-                    }));
-                    setCleanTableContent(undefined);
-                }
-            }).catch((error) => {
-                setCleaningInProgress(false);
-                setCleanTableContent(undefined);
-               
-                dispatch(dfActions.addMessages({
-                    "timestamp": Date.now(),
-                    "type": "error",
-                    "component": "data loader",
-                    "value": "unable to perform clean data due to server issue."
-                }));
-            });
-    }
 
     let dialog = <Dialog key="table-selection-dialog" onClose={()=>{setDialogOpen(false)}} open={dialogOpen}
             sx={{ '& .MuiDialog-paper': { maxWidth: '80%', maxHeight: 800, minWidth: 800 } }}
@@ -601,64 +630,59 @@ export const TableCopyDialogV2: React.FC<TableCopyDialogProps> = ({ buttonElemen
             <DialogContent sx={{overflowX: "hidden", padding: 2, display: "flex", 
                                 flexDirection: "column", 
                                 "& .MuiOutlinedInput-root.Mui-disabled": {backgroundColor: 'rgba(0,0,0,0.05)'}}} dividers>
-                <Box sx={{width: '100%', marginBottom: 1, display:'flex'}}>
-                    <TextField sx={{flex: 1}} disabled={loadFromURL} size="small" 
-                            value={tableName} onChange={(event) => { setTableName(event.target.value); }} 
-                           autoComplete='off' id="outlined-basic" label="dataset name" variant="outlined" />
-                    <Divider sx={{margin: 1}} flexItem orientation='vertical'/>
-                    <Button sx={{marginLeft: 0, textTransform: 'none'}} onClick={() => {setLoadFromURL(!loadFromURL)}} 
-                            endIcon={!loadFromURL ? <ChevronLeftIcon/> : <ChevronRightIcon />} >{"load from URL"}</Button>
-                    <Collapse orientation='horizontal' in={loadFromURL}>
-                        <Box component="form" sx={{ p: '2px 4px', display: 'flex', alignItems: 'center', width: 400 }} >
-                            <TextField sx={{width: 420}} size="small" value={url} 
-                                onChange={(event) => { setURL(event.target.value); }} 
-                                onKeyDown={(event)=> { 
-                                    if(event.key == 'Enter'){
-                                        handleLoadURL();
-                                        event.preventDefault();
-                                     }
-                                }}
-                                autoComplete='off' id="outlined-basic" label="url" variant="outlined" />
-                            <Button variant="contained" disabled={url == ""}  sx={{ p: '6px 0px', minWidth: '36px', marginLeft: 1, borderRadius: '32px' }}onClick={handleLoadURL} >
-                                <KeyboardReturnIcon />
-                            </Button>
-                        </Box>
-                    </Collapse>
-                </Box>
                 <Box sx={{width: '100%',  display:'flex', position: 'relative', overflow: 'auto'}}>
                     {cleaningInProgress && tableContentType == "text" ? <LinearProgress sx={{ width: '100%', height: "calc(100% - 8px)", marginTop: 1, minHeight: 200, opacity: 0.1, position: 'absolute', zIndex: 1 }} /> : ""}
-                    {viewTable  ? 
-                    <>
-                        <CustomReactTable
-                            rows={viewTable.rows} 
-                            rowsPerPageNum={-1} compact={false}
-                            columnDefs={viewTable.names.map(name => { 
-                                return { id: name, label: name, minWidth: 60, align: undefined, format: (v: any) => v}
-                            })}  
-                        />
-                        {/* <Typography>{cleanTableContent.reason}</Typography> */}
-                    </>
-                    : ( tableContentType == "text" ?
-                        <TextField disabled={loadFromURL || cleaningInProgress} autoFocus 
-                            size="small" sx={{ marginTop: 1, flex: 1, "& .MuiInputBase-input" : {fontSize: tableContent.length > 1000 ? 12 : 14, lineHeight: 1.2 }}} 
-                            id="upload content" value={tableContent} maxRows={30}
-                            onChange={(event) => { 
-                                setTableContent(event.target.value); 
-                            }}
+                    <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+                        {/* Content size indicator */}
+                        {isLargeContent && (
+                            <Box sx={{ display: 'flex', alignItems: 'center', marginBottom: 1, padding: 1, backgroundColor: 'rgba(255, 193, 7, 0.1)', borderRadius: 1 }}>
+                                <Typography variant="caption" sx={{ flex: 1 }}>
+                                    Large content detected ({Math.round(tableContent.length / 1000)}KB). 
+                                    {showFullContent ? 'Showing full content (may be slow)' : 'Showing preview for performance'}
+                                </Typography>
+                                <Button 
+                                    size="small" 
+                                    variant="outlined" 
+                                    onClick={toggleFullContent}
+                                    sx={{ textTransform: 'none', minWidth: 'auto' }}
+                                >
+                                    {showFullContent ? 'Show Preview' : 'Show Full'}
+                                </Button>
+                            </Box>
+                        )}
+                        
+                        <TextField 
+                            disabled={cleaningInProgress} 
+                            autoFocus 
+                            size="small" 
+                            sx={{ 
+                                marginTop: 1, 
+                                flex: 1, 
+                                "& .MuiInputBase-input": {
+                                    fontSize: 12, 
+                                    lineHeight: 1.2,
+                                    // Limit height for performance
+                                    maxHeight: isLargeContent && !showFullContent ? '300px' : '400px',
+                                    overflow: 'auto'
+                                }
+                            }} 
+                            id="upload content" 
+                            value={displayContent} 
+                            maxRows={isLargeContent && !showFullContent ? MAX_DISPLAY_LINES : 25} // Dynamic max rows
+                            minRows={10} // Reduced from 15
+                            onChange={handleContentChange}
                             slotProps={{
                                 inputLabel: {
                                     shrink: true
                                 }
                             }}
-                            placeholder="Paste data (in csv, tsv, or json format), or a text snippet / an image that contains data to get started."
+                            placeholder="paste data (csv, tsv, or json) and upload it!"
                             onPasteCapture={(e) => {
-                                console.log(e.clipboardData.files);
                                 if (e.clipboardData.files.length > 0) {
                                     let file = e.clipboardData.files[0];
                                     let read = new FileReader();
 
                                     read.readAsDataURL(file);
-
                                     read.onloadend = function(){
                                         let res = read.result;
                                         console.log(res);
@@ -670,67 +694,19 @@ export const TableCopyDialogV2: React.FC<TableCopyDialogProps> = ({ buttonElemen
                                 }
                             }}
                             autoComplete='off'
-                            label="data content" variant="outlined" multiline minRows={15} 
+                            label="data content" 
+                            variant="outlined" 
+                            multiline 
                         />
-                        :
-                        <Box sx={{display: 'flex', flexDirection: 'column', alignItems: 'center'}}>
-                            <Box sx={{marginTop: 1, position: 'relative'}}>
-                                {cleaningInProgress ? <LinearProgress sx={{ width: '100%', height: "calc(100% - 4px)", opacity: 0.1, position: 'absolute', zIndex: 1 }} /> : ""}
-                                <IconButton size="small" color="primary"
-                                            sx={{  backgroundColor: 'white', 
-                                                width: 16, height: 16, boxShadow: 3, 
-                                                position: 'absolute', right: 4, top: 4,
-                                                "&:hover": { backgroundColor: "white", boxShadow: 8, transform: "translate(0.5px, -0.5px)"  }
-                                                }}
-                                    onClick={() => {
-                                        setTableContent("");
-                                        setTableContentType("text");
-                                        setImageCleaningInstr("");
-                                    }}
-                                >
-                                    <CancelIcon sx={{fontSize: 16}} />
-                                </IconButton>
-                                {validator.isURL(tableContent) || validator.isDataURI(tableContent) ? (
-                                    <img style={{border: '1px lightgray solid', borderRadius: 4, maxWidth: 640, maxHeight: 360}} 
-                                        src={DOMPurify.sanitize(tableContent)} alt="the image is corrupted, please try again." />
-                                ) : (
-                                    <Typography color="error">Invalid image data</Typography>
-                                )}
-                            </Box>
-                            <TextField fullWidth size="small" sx={{ marginTop: 1, "& .MuiInputBase-input" : {fontSize: 14, lineHeight: 1.2 }}} 
-                                value={imageCleaningInstr} onChange={(event) => { setImageCleaningInstr(event.target.value); }} 
-                                variant="standard" placeholder='additional cleaning instructions' />
-                        </Box>)
-                    }
                     </Box>
-            </ DialogContent>
+                </Box>
+            </DialogContent>
             <DialogActions>
-                { cleanTableContent != undefined ? 
-                    <Box sx={{display: 'flex', marginRight: 'auto'}}>
-                        <Button sx={{}} variant="contained" color="warning" size="small" onClick={()=>{ setCleanTableContent(undefined); }} >
-                            Revert
-                        </Button>
-                        <Button sx={{marginLeft: 1}} variant="contained" size="small" 
-                                onClick={()=>{ 
-                                    setTableContent(cleanTableContent?.content || ""); 
-                                    setTableContentType("text");
-                                    setCleanTableContent(undefined); 
-                                }} >
-                            Edit Data
-                        </Button>
-                    </Box> : <Button disabled={tableContent.trim() == "" || loadFromURL} 
-                    variant={cleaningInProgress ? "outlined" : "contained"} color="primary" size="small" sx={{marginRight: 'auto', textTransform: 'none'}} 
-                        onClick={handleCleanData} endIcon={cleaningInProgress ? <CircularProgress size={24} /> : <AutoFixNormalIcon/> }>
-                    {tableContentType == "text" ? "Clean / Generate Data" : "Extract Data from Image"} {cleanTableContent ? "(again)" : ""}
-                </Button>}
-                {/* <Collapse orientation='horizontal' in={cleanTableContent != undefined}>
-                    <Divider sx={{marginLeft: 1}} flexItem orientation='vertical'/>
-                </Collapse> */}
-                <Button disabled={cleanTableContent != undefined} variant="contained" size="small" onClick={()=>{ setDialogOpen(false); }}>cancel</Button>
-                <Button disabled={cleanTableContent?.content == undefined && (tableContentType != "text" || tableContent.trim() == "")} variant="contained" size="small" 
+                <Button variant="text" sx={{textTransform: 'none'}} size="small" onClick={()=>{ setDialogOpen(false); }}>cancel</Button>
+                <Button disabled={tableContentType != "text" || tableContent.trim() == ""} variant="contained" sx={{textTransform: 'none'}} size="small" 
                     onClick={()=>{ 
                         setDialogOpen(false); 
-                        handleSubmitContent(cleanTableContent?.content || tableContent); 
+                        handleSubmitContent(tableContent); // Always use full content for processing
                     }} >
                     {"upload"}
                 </Button>

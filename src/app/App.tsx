@@ -8,8 +8,8 @@ import { useDispatch, useSelector } from "react-redux";
 import {
     DataFormulatorState,
     dfActions,
+    dfSelectors,
     fetchAvailableModels,
-    fetchFieldSemanticType,
     getSessionId,
 } from './dfSlice'
 
@@ -37,11 +37,12 @@ import {
     Menu,
     MenuItem,
     TextField,
+    useTheme,
 } from '@mui/material';
 
 
 import MuiAppBar from '@mui/material/AppBar';
-import { createTheme, styled, ThemeProvider } from '@mui/material/styles';
+import { alpha, createTheme, styled, ThemeProvider } from '@mui/material/styles';
 
 import PowerSettingsNewIcon from '@mui/icons-material/PowerSettingsNew';
 import ClearIcon from '@mui/icons-material/Clear';
@@ -67,14 +68,22 @@ import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import ContentPasteIcon from '@mui/icons-material/ContentPaste';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 import DownloadIcon from '@mui/icons-material/Download';
-import { DBTableManager, DBTableSelectionDialog, handleDBDownload } from '../views/DBTableManager';
+import { DBTableSelectionDialog, handleDBDownload } from '../views/DBTableManager';
 import CloudQueueIcon from '@mui/icons-material/CloudQueue';
-import { connectToSSE } from '../views/SSEClient';
+import { getUrls } from './utils';
+import { DataLoadingChatDialog } from '../views/DataLoadingChat';
+import ChatIcon from '@mui/icons-material/Chat';
+import { AgentRulesDialog } from '../views/AgentRulesDialog';
+import ArticleIcon from '@mui/icons-material/Article';
+import EditIcon from '@mui/icons-material/Edit';
+import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import GitHubIcon from '@mui/icons-material/GitHub';
+import UploadIcon from '@mui/icons-material/Upload';
 
 const AppBar = styled(MuiAppBar)(({ theme }) => ({
     color: 'black',
-    backgroundColor: "white",
-    borderBottom: "1px solid #C3C3C3",
+    backgroundColor: "transparent",
+    //borderBottom: "1px solid #C3C3C3",
     boxShadow: "none",
     transition: theme.transitions.create(['margin', 'width'], {
         easing: theme.transitions.easing.sharp,
@@ -136,14 +145,36 @@ export const ImportStateButton: React.FC<{}> = ({ }) => {
                 inputRef={inputRef}
                 onChange={handleFileUpload}
             />
-            import a saved session
+            import session
         </Button>
     );
 }
 
 export const ExportStateButton: React.FC<{}> = ({ }) => {
     const sessionId = useSelector((state: DataFormulatorState) => state.sessionId);
-    const fullStateJson = useSelector((state: DataFormulatorState) => JSON.stringify(state));
+    const tables = useSelector((state: DataFormulatorState) => state.tables);
+    const fullStateJson = useSelector((state: DataFormulatorState) => {
+        // Fields to exclude from serialization
+        const excludedFields = new Set([
+            'models',
+            'modelSlots', 
+            'testedModels',
+            'dataLoaderConnectParams',
+            'sessionId',
+            'agentRules',
+            'serverConfig',
+        ]);
+        
+        // Build new object with only allowed fields
+        const stateToSerialize: any = {};
+        for (const [key, value] of Object.entries(state)) {
+            if (!excludedFields.has(key)) {
+                stateToSerialize[key] = value;
+            }
+        }
+        
+        return JSON.stringify(stateToSerialize);
+    });
 
     return <Tooltip title="save session locally">
         <Button 
@@ -157,7 +188,8 @@ export const ExportStateButton: React.FC<{}> = ({ }) => {
                     a.download = fileName;
                     a.click();
                 }
-                download(fullStateJson, `df_state_${sessionId?.slice(0, 4)}.json`, 'text/plain');
+                let firstTableName = tables.length > 0 ? tables[0].id: '';
+                download(fullStateJson, `df_state_${firstTableName}_${sessionId?.slice(0, 4)}.json`, 'text/plain');
             }}
             startIcon={<DownloadIcon />}
         >
@@ -190,7 +222,7 @@ const TableMenu: React.FC = () => {
                 aria-expanded={open ? 'true' : undefined}
                 sx={{ textTransform: 'none' }}
             >
-                Add Table
+                Data
             </Button>
             <Menu
                 id="add-table-menu"
@@ -201,24 +233,37 @@ const TableMenu: React.FC = () => {
                     paper: { sx: { py: '4px', px: '8px' } }
                 }}
                 aria-labelledby="add-table-button"
-                sx={{ '& .MuiMenuItem-root': { padding: 0, margin: 0 } }}
+                sx={{ 
+                    '& .MuiMenuItem-root': { padding: 0, margin: 0 } ,
+                    '& .MuiTypography-root': { fontSize: 14, display: 'flex', alignItems: 'center', textTransform: 'none',gap: 1 }
+                }}
             >
+                <MenuItem onClick={(e) => {}}>
+                    <DBTableSelectionDialog buttonElement={
+                        <Typography fontSize="inherit" sx={{  }}>
+                            <CloudQueueIcon fontSize="inherit" /> Database
+                        </Typography>
+                    } component="dialog" />
+                </MenuItem>
+                <MenuItem onClick={(e) => {}}>     
+                    <DataLoadingChatDialog buttonElement={<Typography fontSize="inherit" sx={{  }}>
+                        clean data <span style={{fontSize: '11px'}}>(image/messy text)</span>
+                    </Typography>}/>
+                </MenuItem>
                 <MenuItem onClick={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
                 }}>
                     <TableCopyDialogV2 buttonElement={
-                        <Typography sx={{ fontSize: 14, textTransform: 'none', display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <ContentPasteIcon fontSize="small" />
-                            from clipboard
+                        <Typography sx={{  }}>
+                            paste data <span style={{fontSize: '11px'}}>(csv/tsv)</span>
                         </Typography>
                     } disabled={false} />
                 </MenuItem>
                 <MenuItem onClick={(e) => {}} >
                     <TableUploadDialog buttonElement={
-                        <Typography sx={{ fontSize: 14, textTransform: 'none', display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <UploadFileIcon fontSize="small" />
-                            from file
+                        <Typography sx={{ }}>
+                            upload data file <span style={{fontSize: '11px'}}>(csv/tsv/json)</span>
                         </Typography>
                     } disabled={false} />
                 </MenuItem>
@@ -231,7 +276,10 @@ const SessionMenu: React.FC = () => {
     const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
     const open = Boolean(anchorEl);
     const sessionId = useSelector((state: DataFormulatorState) => state.sessionId);
+    const tables = useSelector((state: DataFormulatorState) => state.tables);
+    const theme = useTheme();
     
+    const dispatch = useDispatch();
     return (
         <>
             <Button 
@@ -240,7 +288,7 @@ const SessionMenu: React.FC = () => {
                 endIcon={<KeyboardArrowDownIcon />} 
                 sx={{ textTransform: 'none' }}
             >
-                Session {sessionId ? `(${sessionId.substring(0, 8)}...)` : ''}
+                Session
             </Button>
             <Menu
                 id="session-menu"
@@ -253,26 +301,51 @@ const SessionMenu: React.FC = () => {
                 aria-labelledby="session-menu-button"
                 sx={{ '& .MuiMenuItem-root': { padding: 0, margin: 0 } }}
             >
-                {sessionId && (
-                    <MenuItem disabled>
-                        <Typography sx={{ fontSize: 12, color: 'text.secondary'}}>
-                            session id: {sessionId}
-                        </Typography>
-                    </MenuItem>
-                )}
                 <MenuItem onClick={() => {}}>
                     <ExportStateButton />
-                </MenuItem>
-                <MenuItem onClick={() => {
-                    handleDBDownload(sessionId ?? '');
-                }}>
-                    <Button startIcon={<DownloadIcon />} sx={{ fontSize: 14, textTransform: 'none', display: 'flex', alignItems: 'center'}}>
-                        download database
-                    </Button>
                 </MenuItem>
                 <MenuItem onClick={(e) => {}}>
                     <ImportStateButton />
                 </MenuItem>
+                <Divider><Typography variant="caption" sx={{ fontSize: 12, color: 'text.secondary' }}>database file</Typography></Divider>
+                {sessionId && tables.some(t => t.virtual) && 
+                    <Typography fontSize="inherit" sx={{ color: theme.palette.warning.main, width: '160px', display: 'flex', alignItems: 'center', gap: 1, fontSize: 9 }}>
+                        This session contains data stored in the database, export and reload the database to resume the session later.
+                    </Typography>}
+                <MenuItem disabled={!sessionId || !tables.some(t => t.virtual)}  onClick={() => {
+                    handleDBDownload(sessionId ?? '');
+                }}>
+                    <Button startIcon={<DownloadIcon />}
+                        sx={{ fontSize: 14, textTransform: 'none', display: 'flex', alignItems: 'center'}}>
+                        download database
+                    </Button>
+                </MenuItem>
+                <MenuItem onClick={() => {}}>
+                    <Button disabled={!sessionId} startIcon={<UploadIcon />} 
+                        sx={{ fontSize: 14, textTransform: 'none', display: 'flex', alignItems: 'center'}}
+                        component="label">
+                        import database
+                        <input type="file" hidden accept=".db" onChange={async (e) => {
+                            const file = e.target.files?.[0];
+                            if (!file) return;
+                            const formData = new FormData();
+                            formData.append('file', file);
+                            try {
+                                const response = await fetch(getUrls().UPLOAD_DB_FILE, { method: 'POST', body: formData });
+                                const data = await response.json();
+                                if (data.status === 'success') {
+                                    dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "DB Manager", type: "success", value: "Database imported successfully" }));
+                                } else {
+                                    dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "DB Manager", type: "error", value: data.message || 'Import failed' }));
+                                }
+                            } catch (error) {
+                                dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "DB Manager", type: "error", value: 'Import failed' }));
+                            }
+                            e.target.value = '';
+                        }} />
+                    </Button>
+                </MenuItem>
+                
             </Menu>
         </>
     );
@@ -286,16 +359,17 @@ const ResetDialog: React.FC = () => {
         <>
             <Button 
                 variant="text" 
+                sx={{textTransform: 'none'}}
                 onClick={() => setOpen(true)} 
                 endIcon={<PowerSettingsNewIcon />}
             >
-                Reset session
+                Reset
             </Button>
             <Dialog onClose={() => setOpen(false)} open={open}>
                 <DialogTitle sx={{ display: "flex", alignItems: "center" }}>Reset Session?</DialogTitle>
                 <DialogContent>
                     <DialogContentText>
-                        <Typography>All unexported content (charts, derived data, concepts) will be lost upon reset.</Typography>
+                        All unexported content (charts, derived data, concepts) will be lost upon reset.
                     </DialogContentText>
                 </DialogContent>
                 <DialogActions>
@@ -341,123 +415,127 @@ const ConfigDialog: React.FC = () => {
     return (
         <>
             <Button variant="text" sx={{textTransform: 'none'}} onClick={() => setOpen(true)} startIcon={<SettingsIcon />}>
-                 <Box component="span" sx={{lineHeight: 1.2, display: 'flex', flexDirection: 'column', alignItems: 'left'}}>
-                    <Box component="span" sx={{py: 0, my: 0, fontSize: '10px', mr: 'auto'}}>default_timeout={config.formulateTimeoutSeconds}s</Box>
-                    <Box component="span" sx={{py: 0, my: 0, fontSize: '10px', mr: 'auto'}}>chart_size={config.defaultChartWidth}x{config.defaultChartHeight}</Box>
-                </Box>
+                Settings
             </Button>
             <Dialog onClose={() => setOpen(false)} open={open}>
-                <DialogTitle>Data Formulator Configuration</DialogTitle>
+                <DialogTitle>Settings</DialogTitle>
                 <DialogContent>
-                    <DialogContentText>
-                        <Box sx={{ 
-                            display: 'flex', 
-                            flexDirection: 'column', 
-                            gap: 3,
-                            maxWidth: 400
-                        }}>
-                            <Divider><Typography variant="caption">Frontend configuration</Typography></Divider>
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                                <Box sx={{ flex: 1 }}>
-                                    <TextField
-                                        label="default chart width"
-                                        type="number"
-                                        variant="outlined"
-                                        value={defaultChartWidth}
-                                        onChange={(e) => {
-                                            const value = parseInt(e.target.value);
-                                            setDefaultChartWidth(value);
-                                        }}
-                                        fullWidth
-                                        inputProps={{
-                                            min: 100,
-                                            max: 1000
-                                        }}
-                                        error={defaultChartWidth < 100 || defaultChartWidth > 1000}
-                                        helperText={defaultChartWidth < 100 || defaultChartWidth > 1000 ? 
-                                            "Value must be between 100 and 1000 pixels" : ""}
-                                    />
-                                </Box>
-                                <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
-                                    <ClearIcon fontSize="small" />
-                                </Typography>
-                                <Box sx={{ flex: 1 }}>
-                                    <TextField
-                                        label="default chart height"
-                                        type="number"
-                                        variant="outlined"
-                                        value={defaultChartHeight}
-                                        onChange={(e) => {
-                                            const value = parseInt(e.target.value);
-                                            setDefaultChartHeight(value);
-                                        }}
-                                        fullWidth
-                                        inputProps={{
-                                            min: 100,
-                                            max: 1000
-                                        }}
-                                        error={defaultChartHeight < 100 || defaultChartHeight > 1000}
-                                        helperText={defaultChartHeight < 100 || defaultChartHeight > 1000 ? 
-                                            "Value must be between 100 and 1000 pixels" : ""}
-                                    />
-                                </Box>
+                    <Box sx={{ 
+                        display: 'flex', 
+                        flexDirection: 'column', 
+                        gap: 3,
+                        maxWidth: 400
+                    }}>
+                        <Divider><Typography variant="caption">Frontend</Typography></Divider>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                            <Box sx={{ flex: 1 }}>
+                                <TextField
+                                    label="default chart width"
+                                    type="number"
+                                    variant="outlined"
+                                    value={defaultChartWidth}
+                                    onChange={(e) => {
+                                        const value = parseInt(e.target.value);
+                                        setDefaultChartWidth(value);
+                                    }}
+                                    fullWidth
+                                    slotProps={{
+                                        input: {
+                                            inputProps: {
+                                                min: 100,
+                                                max: 1000
+                                            }
+                                        }
+                                    }}
+                                    error={defaultChartWidth < 100 || defaultChartWidth > 1000}
+                                    helperText={defaultChartWidth < 100 || defaultChartWidth > 1000 ? 
+                                        "Value must be between 100 and 1000 pixels" : ""}
+                                />
                             </Box>
-                            <Divider><Typography variant="caption">Backend configuration</Typography></Divider>
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                                <Box sx={{ flex: 1 }}>
-                                    <TextField
-                                        label="formulate timeout (seconds)"
-                                        type="number"
-                                        variant="outlined"
-                                        value={formulateTimeoutSeconds}
-                                        onChange={(e) => {
-                                            const value = parseInt(e.target.value);
-                                            setFormulateTimeoutSeconds(value);
-                                        }}
-                                        inputProps={{
-                                            min: 0,
-                                            max: 3600,
-                                        }}
-                                        error={formulateTimeoutSeconds <= 0 || formulateTimeoutSeconds > 3600}
-                                        helperText={formulateTimeoutSeconds <= 0 || formulateTimeoutSeconds > 3600 ? 
-                                            "Value must be between 1 and 3600 seconds" : ""}
-                                        fullWidth
-                                    />
-                                    <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
-                                        Maximum time allowed for the formulation process before timing out. 
-                                    </Typography>
-                                </Box>
-                            </Box>
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                                <Box sx={{ flex: 1 }}>
-                                    <TextField
-                                        label="max repair attempts"
-                                        type="number"
-                                        variant="outlined"
-                                        value={maxRepairAttempts}
-                                        onChange={(e) => {
-                                            const value = parseInt(e.target.value);
-                                            setMaxRepairAttempts(value);
-                                        }}
-                                        fullWidth
-                                        inputProps={{
-                                            min: 1,
-                                            max: 5,
-                                        }}
-                                        error={maxRepairAttempts <= 0 || maxRepairAttempts > 5}
-                                        helperText={maxRepairAttempts <= 0 || maxRepairAttempts > 5 ? 
-                                            "Value must be between 1 and 5" : ""}
-                                    />
-                                    <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
-                                        Maximum number of times the LLM will attempt to repair code if generated code fails to execute (recommended = 1).
-                                    </Typography>
-                                    <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
-                                        Higher values might slightly increase the chance of success but can crash the backend. Repair time is as part of the formulate timeout.
-                                    </Typography>
-                                </Box>
+                            <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+                                <ClearIcon fontSize="small" />
+                            </Typography>
+                            <Box sx={{ flex: 1 }}>
+                                <TextField
+                                    label="default chart height"
+                                    type="number"
+                                    variant="outlined"
+                                    value={defaultChartHeight}
+                                    onChange={(e) => {
+                                        const value = parseInt(e.target.value);
+                                        setDefaultChartHeight(value);
+                                    }}
+                                    fullWidth
+                                    slotProps={{
+                                        input: {
+                                            inputProps: {
+                                                min: 100,
+                                                max: 1000
+                                            }
+                                        }
+                                    }}
+                                    error={defaultChartHeight < 100 || defaultChartHeight > 1000}
+                                    helperText={defaultChartHeight < 100 || defaultChartHeight > 1000 ? 
+                                        "Value must be between 100 and 1000 pixels" : ""}
+                                />
                             </Box>
                         </Box>
-                    </DialogContentText>
+                        <Divider><Typography variant="caption">Backend</Typography></Divider>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                            <Box sx={{ flex: 1 }}>
+                                <TextField
+                                    label="formulate timeout (seconds)"
+                                    type="number"
+                                    variant="outlined"
+                                    value={formulateTimeoutSeconds}
+                                    onChange={(e) => {
+                                        const value = parseInt(e.target.value);
+                                        setFormulateTimeoutSeconds(value);
+                                    }}
+                                    inputProps={{
+                                        min: 0,
+                                        max: 3600,
+                                    }}
+                                    error={formulateTimeoutSeconds <= 0 || formulateTimeoutSeconds > 3600}
+                                    helperText={formulateTimeoutSeconds <= 0 || formulateTimeoutSeconds > 3600 ? 
+                                        "Value must be between 1 and 3600 seconds" : ""}
+                                    fullWidth
+                                />
+                                <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+                                    Maximum time allowed for the formulation process before timing out. 
+                                </Typography>
+                            </Box>
+                        </Box>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                            <Box sx={{ flex: 1 }}>
+                                <TextField
+                                    label="max repair attempts"
+                                    type="number"
+                                    variant="outlined"
+                                    value={maxRepairAttempts}
+                                    onChange={(e) => {
+                                        const value = parseInt(e.target.value);
+                                        setMaxRepairAttempts(value);
+                                    }}
+                                    fullWidth
+                                    slotProps={{
+                                        input: {
+                                            inputProps: {
+                                                min: 1,
+                                                max: 5,
+                                            }
+                                        }
+                                    }}
+                                    error={maxRepairAttempts <= 0 || maxRepairAttempts > 5}
+                                    helperText={maxRepairAttempts <= 0 || maxRepairAttempts > 5 ? 
+                                        "Value must be between 1 and 5" : ""}
+                                />
+                                <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+                                    How many attempts LLM will make to repair code if code fails to execute (recommended = 1, higher values might increase the chance of success but it's slow).
+                                </Typography>
+                            </Box>
+                        </Box>
+                    </Box>
                 </DialogContent>
                 <DialogActions sx={{'.MuiButton-root': {textTransform: 'none'}}}>
                     <Button sx={{marginRight: 'auto'}} onClick={() => {
@@ -488,16 +566,17 @@ const ConfigDialog: React.FC = () => {
 
 export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
 
-    const visViewMode = useSelector((state: DataFormulatorState) => state.visViewMode);
-    const tables = useSelector((state: DataFormulatorState) => state.tables);
     const dispatch = useDispatch<AppDispatch>();
+    const viewMode = useSelector((state: DataFormulatorState) => state.viewMode);
+    const generatedReports = useSelector((state: DataFormulatorState) => state.generatedReports);
+    const focusedTableId = useSelector((state: DataFormulatorState) => state.focusedTableId);
 
     useEffect(() => {
-        const sseConnection = connectToSSE(dispatch);
-        return () => {
-            console.log("closing sse connection because of unmount of AppFC")
-            sseConnection.close();
-        };
+        fetch(getUrls().APP_CONFIG)
+            .then(response => response.json())
+            .then(data => {
+                dispatch(dfActions.setServerConfig(data));
+            });
     }, []);
 
     // if the user has logged in
@@ -555,77 +634,123 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
         },
     });
 
-    let switchers = (
-        <Box sx={{ display: "flex" }} key="switchers">
-            <ToggleButtonGroup
-                color="primary"
-                value={visViewMode}
-                exclusive
-                size="small"
-                onChange={(
-                    event: React.MouseEvent<HTMLElement>,
-                    newViewMode: string | null,
-                ) => {
-                    if (newViewMode === "gallery" || newViewMode === "carousel") {
-                        dispatch(dfActions.setVisViewMode(newViewMode));
-                    }
-                }}
-                aria-label="View Mode"
-                sx={{ marginRight: "8px", height: 32, padding: "4px 0px", marginTop: "2px", "& .MuiToggleButton-root": { padding: "0px 6px" } }}
-            >
-                <ToggleButton value="carousel" aria-label="view list">
-                    <Tooltip title="view list">
-                        <ViewSidebarIcon fontSize="small" sx={{ transform: "scaleX(-1)" }} />
-                    </Tooltip>
-                </ToggleButton>
-                <ToggleButton value="gallery" aria-label="view grid">
-                    <Tooltip title="view grid">
-                        <GridViewIcon fontSize="small" />
-                    </Tooltip>
-                </ToggleButton>
-            </ToggleButtonGroup>
-        </Box>
-    )
-
     let appBar = [
-        <AppBar className="app-bar" position="static" key="app-bar-main">
-            <Toolbar variant="dense">
+        <AppBar position="static" key="app-bar-main" >
+            <Toolbar variant="dense" sx={{height: 40, minHeight: 36}}>
                 <Button href={"/"} sx={{
                     display: "flex", flexDirection: "row", textTransform: "none",
+                    alignItems: 'stretch',
                     backgroundColor: 'transparent',
                     "&:hover": {
                         backgroundColor: "transparent"
                     }
                 }} color="inherit">
-                    <Box component="img" sx={{ height: 32, marginRight: "12px" }} alt="" src={dfLogo} />
-                    <Typography variant="h6" noWrap component="h1" sx={{ fontWeight: 300, display: { xs: 'none', sm: 'block' } }}>
-                        {toolName} {process.env.NODE_ENV == "development" ? "" : ""}
-                    </Typography>
+                    <Box component="img" sx={{ height: 20, mr: 0.5 }} alt="" src={dfLogo} />
+                    <Typography noWrap component="h1" sx={{ fontWeight: 300, display: { xs: 'none', sm: 'block' }, letterSpacing: '0.03em' }}>
+                        {toolName}
+                    </Typography>                    
                 </Button>
-                <Box sx={{ flexGrow: 1, textAlign: 'center', display: 'flex', justifyContent: 'center' }} >
-                    {switchers}
-                </Box>
-                <Box sx={{ display: 'flex', fontSize: 14 }}>
+                <Box sx={{ display: 'flex', ml: 'auto', fontSize: 14, mr: 1, px: 0.5,
+                            backgroundColor: alpha(theme.palette.primary.main, 0.02),
+                            borderRadius: 4}}>
+                    {focusedTableId !== undefined && <React.Fragment><ToggleButtonGroup
+                        value={viewMode}
+                        exclusive
+                        onChange={(_, newMode) => {
+                            if (newMode !== null) {
+                                dispatch(dfActions.setViewMode(newMode));
+                            }
+                        }}
+                        sx={{ 
+                            mr: 2,
+                            height: '28px', 
+                            my: 'auto',
+                            borderRadius: 2,
+                            border: '1px solid rgba(0, 0, 0, 0.1)',
+                            boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)',
+                            '& .MuiToggleButton-root': {
+                                textTransform: 'none',
+                                fontSize: '14px',
+                                fontWeight: 500,
+                                border: 'none',
+                                borderRadius: 1,
+                                px: 1,
+                                py: 0.5,
+                                '&:hover': {
+                                    backgroundColor: 'rgba(0, 0, 0, 0.04)',
+                                    color: 'text.primary',
+                                },
+                                '&.Mui-selected': {
+                                    backgroundColor: alpha(theme.palette.primary.main, 0.1),
+                                    color: theme.palette.primary.main,
+                                },
+                                '&:first-of-type': {
+                                    borderTopRightRadius: 0,
+                                    borderBottomRightRadius: 0,
+                                },
+                                '&:last-of-type': {
+                                    borderTopLeftRadius: 0,
+                                    borderBottomLeftRadius: 0,
+                                }
+                            },
+                            '.mode-icon': {
+                                animation: 'pulse 3s ease-out infinite',
+                                '@keyframes pulse': {
+                                    '0%, 80%': { transform: 'scale(1)' },
+                                    '90%': { transform: 'scale(1.3)' },
+                                    '100%': { transform: 'scale(1)' },
+                                },
+                            },
+                        }}
+                    >
+                        <ToggleButton value="editor">
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                <Box className={viewMode === 'report' ? 'mode-icon' : ''} component="span" sx={{ fontSize: '12px' }}>🔍</Box>
+                                <Box component="span">Explore</Box>
+                            </Box>
+                        </ToggleButton>
+                        <ToggleButton value="report">
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                <Box className={viewMode === 'editor' ? 'mode-icon' : ''} component="span" sx={{ fontSize: '12px' }}>✏️</Box>
+                                <Box component="span">
+                                    {generatedReports.length > 0 ? `Reports (${generatedReports.length})` : 'Reports'}
+                                </Box>
+                            </Box>
+                        </ToggleButton>
+                    </ToggleButtonGroup>
                     <ConfigDialog />
-                    <Divider orientation="vertical" variant="middle" flexItem />
-                    <DBTableSelectionDialog buttonElement={
-                        <Typography sx={{ display: 'flex', fontSize: 14, alignItems: 'center', gap: 1, textTransform: 'none' }}>
-                            <CloudQueueIcon fontSize="small" /> Database
-                        </Typography>
-                    } />
-                    <Divider orientation="vertical" variant="middle" flexItem />
+                    <AgentRulesDialog />
+                    <Divider orientation="vertical" variant="middle" flexItem /></React.Fragment>}
                     <ModelSelectionButton />
                     <Divider orientation="vertical" variant="middle" flexItem />
-                    <Typography sx={{ display: 'flex', fontSize: 14, alignItems: 'center', gap: 1 }}>
+                    
+                    <Typography fontSize="inherit" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                         <TableMenu />
                     </Typography>
                     <Divider orientation="vertical" variant="middle" flexItem />
-                    <Typography sx={{ display: 'flex', fontSize: 14, alignItems: 'center', gap: 1 }}>
+                    <Typography fontSize="inherit" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                         <SessionMenu />
                     </Typography>
                     <Divider orientation="vertical" variant="middle" flexItem />
                     <ResetDialog />
                 </Box>
+                <Tooltip title="View on GitHub">
+                    <Button
+                        component="a"
+                        href="https://github.com/microsoft/data-formulator"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        sx={{ 
+                            minWidth: 'auto', 
+                            color: 'inherit',
+                            '&:hover': {
+                                backgroundColor: 'rgba(0, 0, 0, 0.04)'
+                            }
+                        }}
+                    >
+                        <GitHubIcon fontSize="medium" />
+                    </Button>
+                </Tooltip>
             </Toolbar>
         </AppBar>
     ];
@@ -646,6 +771,7 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
     let app =
         <Box sx={{ 
             position: 'absolute',
+            backgroundColor: 'rgba(255, 255, 255, 0.3)',
             top: 0,
             left: 0,
             right: 0,
@@ -653,7 +779,7 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
             '& > *': {
                 minWidth: '1000px',
                 minHeight: '800px'
-            }
+            },
         }}>
             <Box sx={{ 
                 display: 'flex',

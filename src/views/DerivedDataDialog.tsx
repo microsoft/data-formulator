@@ -59,7 +59,7 @@ export const DerivedDataDialog: FC<DerivedDataDialogProps> = function DerivedDat
                 let code = table.derive?.code || "";
                 let extTable = structuredClone(table.rows);
             
-                let assembledChart: any = assembleVegaChart(chart.chartType, chart.encodingMap, conceptShelfItems, extTable);
+                let assembledChart: any = assembleVegaChart(chart.chartType, chart.encodingMap, conceptShelfItems, extTable, table.metadata);
                 assembledChart["background"] = "transparent";
                 // chart["autosize"] = {
                 //     "type": "fit",

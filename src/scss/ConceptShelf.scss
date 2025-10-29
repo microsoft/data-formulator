@@ -2,13 +2,11 @@
 // Licensed under the MIT License.
 
 .concept-shelf {
-    //min-height: 400px;
-    //max-height: 600px;
     width: 100%;
     display: flex;
     flex-direction: column;
     overflow-y: hidden;
-    margin: 10px;
+    margin: 8px 8px 8px 0px;
 
     .data-fields-group {
         //height: calc(100% - 30px);
@@ -101,7 +99,6 @@
         height: auto;
         padding: 1px 8px 1px 0px;
         margin-left: 8px;
-        background-color: rgba(255, 255, 255, 0.93);
         position: relative;
 
         .draggable-card-title {

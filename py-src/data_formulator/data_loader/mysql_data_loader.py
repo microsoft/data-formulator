@@ -4,7 +4,10 @@ import pandas as pd
 import duckdb
 
 from data_formulator.data_loader.external_data_loader import ExternalDataLoader, sanitize_table_name
-from typing import Dict, Any
+
+from data_formulator.security import validate_sql_query
+from typing import Dict, Any, Optional
+
 
 class MySQLDataLoader(ExternalDataLoader):
 
@@ -111,7 +114,7 @@ MySQL Connection Instructions:
             
         return results
 
-    def ingest_data(self, table_name: str, name_as: str | None = None, size: int = 1000000):
+    def ingest_data(self, table_name: str, name_as: Optional[str] = None, size: int = 1000000):
         # Create table in the main DuckDB database from MySQL data
         if name_as is None:
             name_as = table_name.split('.')[-1]
@@ -125,10 +128,18 @@ MySQL Connection Instructions:
         """)
 
     def view_query_sample(self, query: str) -> str:
+        result, error_message = validate_sql_query(query)
+        if not result:
+            raise ValueError(error_message)
+        
         return json.loads(self.duck_db_conn.execute(query).df().head(10).to_json(orient="records"))
 
     def ingest_data_from_query(self, query: str, name_as: str) -> pd.DataFrame:
         # Execute the query and get results as a DataFrame
+        result, error_message = validate_sql_query(query)
+        if not result:
+            raise ValueError(error_message)
+        
         df = self.duck_db_conn.execute(query).df()
         # Use the base class's method to ingest the DataFrame
         self.ingest_df_to_duckdb(df, sanitize_table_name(name_as))

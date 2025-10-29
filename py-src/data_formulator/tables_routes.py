@@ -22,14 +22,7 @@ from data_formulator.data_loader import DATA_LOADERS
 import re
 from typing import Tuple
 
-# Configure root logger for general application logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[logging.StreamHandler(sys.stdout)]
-)
-
-# Get logger for this module
+# Get logger for this module (logging config done in app.py)
 logger = logging.getLogger(__name__)
 
 import os
@@ -60,9 +53,6 @@ def list_tables():
                 if database_name in ['system', 'temp']:
                     continue
                 
-                
-                print(f"table_metadata: {table_metadata}")
-
                 try:
                     # Get column information
                     columns = db.execute(f"DESCRIBE {table_name}").fetchall()
@@ -96,7 +86,6 @@ def list_tables():
             "tables": result
         })
     except Exception as e:
-        logger.error(f"Error listing tables: {str(e)}")
         safe_msg, status_code = sanitize_db_error_message(e)
         return jsonify({
             "status": "error",
@@ -171,7 +160,6 @@ def sample_table():
         method = data.get('method', 'random') # one of 'random', 'head', 'bottom'
         order_by_fields = data.get('order_by_fields', [])
 
-        print(f"sample_table: {table_id}, {sample_size}, {aggregate_fields_and_functions}, {select_fields}, {method}, {order_by_fields}")
         
         total_row_count = 0
         # Validate field names against table columns to prevent SQL injection
@@ -179,7 +167,6 @@ def sample_table():
             # Get valid column names
             columns = [col[0] for col in db.execute(f"DESCRIBE {table_id}").fetchall()]
 
-            print(f"columns: {columns}")
             
             # Filter order_by_fields to only include valid column names
             valid_order_by_fields = [field for field in order_by_fields if field in columns]
@@ -191,15 +178,12 @@ def sample_table():
 
             query, output_column_names = assemble_query(valid_aggregate_fields_and_functions, valid_select_fields, columns, table_id)
 
-            print(f"query: {query}")
-            print(f"output_column_names: {output_column_names}")
 
             # Modify the original query to include the count:
             count_query = f"SELECT *, COUNT(*) OVER () as total_count FROM ({query}) as subq LIMIT 1"
             result = db.execute(count_query).fetchone()
             total_row_count = result[-1] if result else 0
 
-            print(f"total_row_count: {total_row_count}")
 
             # Add ordering and limit to the main query
             if method == 'random':
@@ -219,11 +203,9 @@ def sample_table():
                 else:
                     query += f" ORDER BY ROWID DESC LIMIT {sample_size}"
 
-            print(f"query: {query}")
 
             result = db.execute(query).fetchdf()
 
-            print(f"result: {result}")
         
         return jsonify({
             "status": "success",
@@ -565,36 +547,6 @@ def reset_db_file():
             "message": safe_msg
         }), status_code
 
-
-@tables_bp.route('/query', methods=['POST'])
-def query_table():
-    """Execute a query on a table"""
-    try:
-        data = request.get_json()
-
-        query = data.get('query')
-
-        if not query:
-            return jsonify({"status": "error", "message": "No query provided"}), 400
-        
-        with db_manager.connection(session['session_id']) as db:
-            result = db.execute(query).fetch_df()
-        
-            return jsonify({
-                "status": "success",
-                "rows": json.loads(result.to_json(orient='records', date_format='iso')),
-                "columns": list(result.columns)
-            })
-    
-    except Exception as e:
-        logger.error(f"Error querying table: {str(e)}")
-        safe_msg, status_code = sanitize_db_error_message(e)
-        return jsonify({
-            "status": "error",
-            "message": safe_msg
-        }), status_code
-
-
 # Example of a more complex query endpoint
 @tables_bp.route('/analyze', methods=['POST'])
 def analyze_table():
@@ -790,7 +742,6 @@ def data_loader_list_tables():
 
     except Exception as e:
         logger.error(f"Error listing tables from data loader: {str(e)}")
-        #print(traceback.format_exc())
         safe_msg, status_code = sanitize_db_error_message(e)
         return jsonify({
             "status": "error", 

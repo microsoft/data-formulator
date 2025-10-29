@@ -2,7 +2,7 @@
 // Licensed under the MIT License.
 
 import { createAsyncThunk, createSlice, PayloadAction, createSelector } from '@reduxjs/toolkit'
-import { Channel, Chart, ChartTemplate, EncodingItem, EncodingMap, FieldItem, Trigger } from '../components/ComponentType'
+import { Channel, Chart, ChartTemplate, DataCleanBlock, EncodingItem, EncodingMap, FieldItem, Trigger } from '../components/ComponentType'
 import { enableMapSet } from 'immer';
 import { DictTable } from "../components/ComponentType";
 import { Message } from '../views/MessageSnackbar';
@@ -10,11 +10,11 @@ import { getChartTemplate, getChartChannels } from "../components/ChartTemplates
 import { getDataTable } from '../views/VisualizationView';
 import { adaptChart, getTriggers, getUrls } from './utils';
 import { Type } from '../data/types';
-import { TableChallenges } from '../views/TableSelectionView';
 import { createTableFromFromObjectArray, inferTypeFromValueArray } from '../data/utils';
-import { handleSSEMessage } from './SSEActions';
 
 enableMapSet();
+
+// Redux Persist will handle persistence automatically with enableMapSet()
 
 export const generateFreshChart = (tableRef: string, chartType: string, source: "user" | "trigger" = "user") : Chart => {
     return { 
@@ -24,6 +24,7 @@ export const generateFreshChart = (tableRef: string, chartType: string, source: 
         tableRef: tableRef,
         saved: false,
         source: source,
+        unread: true,
     }
 }
 
@@ -32,6 +33,12 @@ export interface SSEMessage {
     text: string;
     data?: Record<string, any>;
     timestamp: number;
+}
+
+// Add interface for app configuration
+export interface ServerConfig {
+    DISABLE_DISPLAY_KEYS: boolean;
+    DISABLE_DATABASE: boolean;
 }
 
 export interface ModelConfig {
@@ -50,8 +57,23 @@ export type ModelSlotType = typeof MODEL_SLOT_TYPES[number];
 // Derive ModelSlots interface from the constant
 export type ModelSlots = Partial<Record<ModelSlotType, string>>;
 
-// Define a type for the slice state
+
+
+export interface GeneratedReport {
+    id: string;
+    content: string;
+    style: string;
+    selectedChartIds: string[];
+    createdAt: number;
+}
+
 export interface DataFormulatorState {
+
+    agentRules: {
+        coding: string;
+        exploration: string;
+    };
+
     sessionId: string | undefined;
     models: ModelConfig[];
     modelSlots: ModelSlots;
@@ -60,24 +82,22 @@ export interface DataFormulatorState {
     tables : DictTable[];
     charts: Chart[];
     
-    activeChallenges: {tableId: string, challenges: { text: string; difficulty: 'easy' | 'medium' | 'hard'; }[]}[];
-
     conceptShelfItems: FieldItem[];
-
-    displayPanelSize: number;
-    visPaneSize: number;
-    conceptShelfPaneSize: number;
 
     // controls logs and message index
     messages: Message[];
     displayedMessageIdx: number;
 
-    visViewMode: "gallery" | "carousel";
+    focusedDataCleanBlockId: {blockId: string, itemId: number} | undefined;
 
     focusedTableId: string | undefined;
     focusedChartId: string | undefined;
 
+    viewMode: 'editor' | 'report';
+
     chartSynthesisInProgress: string[];
+
+    serverConfig: ServerConfig;
 
     config: {
         formulateTimeoutSeconds: number;
@@ -88,11 +108,32 @@ export interface DataFormulatorState {
 
     dataLoaderConnectParams: Record<string, Record<string, string>>; // {table_name: {param_name: param_value}}
     
-    pendingSSEActions: SSEMessage[]; // Actions taken by the server but not yet completed
+    // which table is the agent working on
+    agentActions: {
+        actionId: string, 
+        tableId: string, 
+        description: string, 
+        status: 'running' | 'completed' | 'warning' | 'failed',
+        lastUpdate: number, // the time the action is last updated
+        hidden: boolean // whether the action is hidden
+    }[];
+
+    // Data cleaning dialog state
+    dataCleanBlocks: DataCleanBlock[];
+    cleanInProgress: boolean;
+
+    // Generated reports state
+    generatedReports: GeneratedReport[];
 }
 
 // Define the initial state using that type
 const initialState: DataFormulatorState = {
+
+    agentRules: {
+        coding: "",
+        exploration: "",
+    },
+
     sessionId: undefined,
     models: [],
     modelSlots: {},
@@ -101,27 +142,26 @@ const initialState: DataFormulatorState = {
     tables: [],
     charts: [],
 
-    activeChallenges: [],
-    
     conceptShelfItems: [],
-
-    //synthesizerRunning: false,
-    displayPanelSize: 550,
-    visPaneSize: 640,
-    conceptShelfPaneSize: 240, // 300 is a good number for derived concept cards
 
     messages: [],
     displayedMessageIdx: -1,
 
-    visViewMode: "carousel",
-
+    focusedDataCleanBlockId: undefined,
     focusedTableId: undefined,
     focusedChartId: undefined,
 
+    viewMode: 'editor',
+
     chartSynthesisInProgress: [],
 
+    serverConfig: {
+        DISABLE_DISPLAY_KEYS: false,
+        DISABLE_DATABASE: false,
+    },
+
     config: {
-        formulateTimeoutSeconds: 30,
+        formulateTimeoutSeconds: 60,
         maxRepairAttempts: 1,
         defaultChartWidth: 300,
         defaultChartHeight: 300,
@@ -129,15 +169,21 @@ const initialState: DataFormulatorState = {
 
     dataLoaderConnectParams: {},
     
-    pendingSSEActions: [],
+    agentActions: [],
+
+    dataCleanBlocks: [],
+    cleanInProgress: false,
+
+    generatedReports: []
 }
 
 let getUnrefedDerivedTableIds = (state: DataFormulatorState) => {
     // find tables directly referred by charts
     let allCharts = dfSelectors.getAllCharts(state);
     let chartRefedTables = allCharts.map(chart => getDataTable(chart, state.tables, allCharts, state.conceptShelfItems)).map(t => t.id);
+    let tableWithDescendants = state.tables.filter(table => state.tables.some(t => t.derive?.trigger.tableId == table.id)).map(t => t.id);
 
-    return state.tables.filter(table => table.derive && !chartRefedTables.includes(table.id)).map(t => t.id);
+    return state.tables.filter(table => table.derive && !tableWithDescendants.includes(table.id) && !chartRefedTables.includes(table.id)).map(t => t.id);
 } 
 
 let deleteChartsRoutine = (state: DataFormulatorState, chartIds: string[]) => {
@@ -155,9 +201,18 @@ let deleteChartsRoutine = (state: DataFormulatorState, chartIds: string[]) => {
     // update focusedChart and activeThreadChart
     state.charts = charts;
     state.focusedChartId = focusedChartId;
+    
+    // Set unread to false for the newly focused chart
+    if (focusedChartId) {
+        let chart = charts.find(c => c.id === focusedChartId);
+        if (chart) {
+            chart.unread = false;
+        }
+    }
 
     let unrefedDerivedTableIds = getUnrefedDerivedTableIds(state);
     let tableIdsToDelete = state.tables.filter(t => !t.anchored && unrefedDerivedTableIds.includes(t.id)).map(t => t.id);
+   
     state.tables = state.tables.filter(t => !tableIdsToDelete.includes(t.id));
 }
 
@@ -201,8 +256,12 @@ export const fetchCodeExpl = createAsyncThunk(
             body: JSON.stringify({
                 token: Date.now(),
                 input_tables: derivedTable.derive?.source
-                                    .map(tId => state.tables.find(t => t.id == tId) as DictTable)
-                                    .map(t => {return {name: t.id, rows: t.rows}}),
+                                .map(tId => state.tables.find(t => t.id == tId) as DictTable)
+                                .map(t => ({ 
+                                    name: t.id, 
+                                    rows: t.rows, 
+                                    attached_metadata: t.attachedMetadata
+                                })),
                 code: derivedTable.derive?.code,
                 model: dfSelectors.getActiveModel(state)
             }),
@@ -214,7 +273,7 @@ export const fetchCodeExpl = createAsyncThunk(
 
         let response = await fetch(getUrls().CODE_EXPL_URL, {...message, signal: controller.signal })
 
-        return response.text();
+        return response.json();
     }
 );
 
@@ -266,48 +325,63 @@ export const dataFormulatorSlice = createSlice({
         resetState: (state, action: PayloadAction<undefined>) => {
             //state.table = undefined;
             
-            // avoid resetting inputted models
-            // state.oaiModels = state.oaiModels.filter((m: any) => m.endpoint != 'default');
-
             // state.modelSlots = {};
+            //state.agentRules = initialState.agentRules;
+            //state.config = initialState.config;
+            //state.dataLoaderConnectParams = initialState.dataLoaderConnectParams;
+
             state.testedModels = [];
 
             state.tables = [];
             state.charts = [];
-            state.activeChallenges = [];
 
             state.conceptShelfItems = [];
 
             state.messages = [];
             state.displayedMessageIdx = -1;
 
+            state.focusedDataCleanBlockId = undefined;
+
             state.focusedTableId = undefined;
             state.focusedChartId = undefined;
 
+            state.viewMode = 'editor';
+
             state.chartSynthesisInProgress = [];
 
-            state.config = initialState.config;
+            state.serverConfig = initialState.serverConfig;
+
+            state.dataCleanBlocks = [];
+            state.cleanInProgress = false;
+
+            state.agentActions = [];
+
+            state.generatedReports = [];
+            // Redux Persist will handle persistence automatically
             
-            //state.dataLoaderConnectParams = initialState.dataLoaderConnectParams;
         },
         loadState: (state, action: PayloadAction<any>) => {
 
             let savedState = action.payload;
 
-            state.models = savedState.models;
-            state.modelSlots = savedState.modelSlots || {};
-            state.testedModels = []; // models should be tested again
+            // models should not be loaded again, especially they may be from others
+            state.agentRules = state.agentRules || initialState.agentRules;
+            state.models = state.models || [];
+            state.modelSlots = state.modelSlots || {};
+            state.testedModels = state.testedModels || [];
+            state.dataLoaderConnectParams = state.dataLoaderConnectParams || {};
+            state.serverConfig = initialState.serverConfig;
 
             //state.table = undefined;
             state.tables = savedState.tables || [];
             state.charts = savedState.charts || [];
             
-            state.activeChallenges = savedState.activeChallenges || [];
-
             state.conceptShelfItems = savedState.conceptShelfItems || [];
 
             state.messages = [];
             state.displayedMessageIdx = -1;
+
+            state.focusedDataCleanBlockId = savedState.focusedDataCleanBlockId || undefined;
 
             state.focusedTableId = savedState.focusedTableId || undefined;
             state.focusedChartId = savedState.focusedChartId || undefined;
@@ -316,12 +390,37 @@ export const dataFormulatorSlice = createSlice({
 
             state.config = savedState.config;
 
-            state.dataLoaderConnectParams = savedState.dataLoaderConnectParams || {};
+            state.dataCleanBlocks = savedState.dataCleanBlocks || [];
+            state.cleanInProgress = false;
+
+            state.agentActions = savedState.agentActions || [];
+
+            state.generatedReports = savedState.generatedReports || [];
+        },
+        updateAgentWorkInProgress: (state, action: PayloadAction<{actionId: string, tableId?: string, description: string, status: 'running' | 'completed' | 'warning' | 'failed', hidden: boolean}>) => {
+            if (state.agentActions.some(a => a.actionId == action.payload.actionId)) {
+                state.agentActions = state.agentActions.map(a => a.actionId == action.payload.actionId ? 
+                    {...a, ...action.payload, lastUpdate: Date.now()} : a);
+            } else {
+                state.agentActions = [...state.agentActions, {...action.payload, tableId: action.payload.tableId || "", lastUpdate: Date.now(), hidden: action.payload.hidden}];
+            }
+        },
+        deleteAgentWorkInProgress: (state, action: PayloadAction<string>) => {
+            state.agentActions = state.agentActions.filter(a => a.actionId != action.payload);
+        },
+        setServerConfig: (state, action: PayloadAction<ServerConfig>) => {
+            state.serverConfig = action.payload;
         },
         setConfig: (state, action: PayloadAction<{
             formulateTimeoutSeconds: number, maxRepairAttempts: number, 
             defaultChartWidth: number, defaultChartHeight: number}>) => {
             state.config = action.payload;
+        },
+        setViewMode: (state, action: PayloadAction<'editor' | 'report'>) => {
+            state.viewMode = action.payload;
+        },
+        setAgentRules: (state, action: PayloadAction<{coding: string, exploration: string}>) => {
+            state.agentRules = action.payload;
         },
         selectModel: (state, action: PayloadAction<string | undefined>) => {
             state.modelSlots = { ...state.modelSlots, generation: action.payload };
@@ -356,13 +455,12 @@ export const dataFormulatorSlice = createSlice({
         },
         loadTable: (state, action: PayloadAction<DictTable>) => {
             let table = action.payload;
-            let freshChart = generateFreshChart(table.id, '?') as Chart;
             state.tables = [...state.tables, table];
-            state.charts = [...state.charts, freshChart];
+            state.charts = [...state.charts];
             state.conceptShelfItems = [...state.conceptShelfItems, ...getDataFieldItems(table)];
 
             state.focusedTableId = table.id;
-            state.focusedChartId = freshChart.id;
+            state.focusedChartId = undefined;
         },
         deleteTable: (state, action: PayloadAction<string>) => {
             let tableId = action.payload;
@@ -385,8 +483,10 @@ export const dataFormulatorSlice = createSlice({
             let displayId = action.payload.displayId;
             state.tables = state.tables.map(t => t.id == tableId ? {...t, displayId} : t);
         },
-        addChallenges: (state, action: PayloadAction<{tableId: string, challenges: { text: string; difficulty: 'easy' | 'medium' | 'hard'; }[]}>) => {
-            state.activeChallenges = [...state.activeChallenges, action.payload];
+        updateTableAttachedMetadata: (state, action: PayloadAction<{tableId: string, attachedMetadata: string}>) => {
+            let tableId = action.payload.tableId;
+            let attachedMetadata = action.payload.attachedMetadata;
+            state.tables = state.tables.map(t => t.id == tableId ? {...t, attachedMetadata} : t);
         },
         extendTableWithNewFields: (state, action: PayloadAction<{tableId: string, columnName: string, values: any[], previousName: string | undefined, parentIDs: string[]}>) => {
             // extend the existing extTable with new columns from the new table
@@ -403,17 +503,19 @@ export const dataFormulatorSlice = createSlice({
             let table = state.tables.find(t => t.id == tableId) as DictTable;
 
             let newNames = [];
-            let newTypes = [];
             if (previousName && table.names.indexOf(previousName) != -1) {
                 let replacePosition = table.names.indexOf(previousName);
                 newNames[replacePosition] = columnName;
-                newTypes[replacePosition] = inferTypeFromValueArray(newValues);
             } else {            
                 let insertPosition = lastParentName ? table.names.indexOf(lastParentName) : table.names.length - 1;
                 newNames = table.names.slice(0, insertPosition + 1).concat(columnName).concat(table.names.slice(insertPosition + 1));
-                newTypes = table.types.slice(0, insertPosition + 1).concat(inferTypeFromValueArray(newValues)).concat(table.types.slice(insertPosition + 1));
             }
-            
+
+            let newMetadata = structuredClone(table.metadata);
+            for (let name of newNames) {
+                newMetadata[name] = {type: inferTypeFromValueArray(newValues), semanticType: "", levels: []};
+            }
+
             // Create new rows with the column positioned after the first parent
             let newRows = table.rows.map((row, i) => {
                 let newRow: {[key: string]: any} = {};
@@ -433,7 +535,7 @@ export const dataFormulatorSlice = createSlice({
             });
             
             table.names = newNames;
-            table.types = newTypes;
+            table.metadata = newMetadata;
             table.rows = newRows;
         },
         removeDerivedField: (state, action: PayloadAction<{tableId: string, fieldId: string}>) => {
@@ -445,7 +547,7 @@ export const dataFormulatorSlice = createSlice({
             let fieldIndex = table.names.indexOf(fieldName);  
             if (fieldIndex != -1) {
                 table.names = table.names.slice(0, fieldIndex).concat(table.names.slice(fieldIndex + 1));
-                table.types = table.types.slice(0, fieldIndex).concat(table.types.slice(fieldIndex + 1));
+                delete table.metadata[fieldName];
                 table.rows = table.rows.map(r => {
                     delete r[fieldName];
                     return r;
@@ -459,20 +561,29 @@ export const dataFormulatorSlice = createSlice({
             state.charts = [ freshChart , ...state.charts];
             state.focusedTableId = tableId;
             state.focusedChartId = freshChart.id;
+            freshChart.unread = false;
+        },
+        addChart: (state, action: PayloadAction<Chart>) => {
+            let chart = action.payload;
+            state.charts = [chart, ...state.charts];
         },
         addAndFocusChart: (state, action: PayloadAction<Chart>) => {
             let chart = action.payload;
             state.charts = [chart, ...state.charts];
             state.focusedChartId = chart.id;
+            // Set unread to false when focusing the chart
+            chart.unread = false;
         },
         duplicateChart: (state, action: PayloadAction<string>) => {
             let chartId = action.payload;
 
             let chartCopy = JSON.parse(JSON.stringify(state.charts.find(chart => chart.id == chartId) as Chart)) as Chart;
-            chartCopy = { ...chartCopy, saved: false }
+            chartCopy = { ...chartCopy, saved: false, unread: true }
             chartCopy.id = `chart-${Date.now()- Math.floor(Math.random() * 10000)}`;
             state.charts.push(chartCopy);
             state.focusedChartId = chartCopy.id;
+            // Set unread to false when focusing the duplicated chart
+            chartCopy.unread = false;
         },
         saveUnsaveChart: (state, action: PayloadAction<string>) => {
             let chartId = action.payload;
@@ -526,6 +637,7 @@ export const dataFormulatorSlice = createSlice({
             let prop = action.payload.prop;
             let value = action.payload.value;
             let chart = dfSelectors.getAllCharts(state).find(c => c.id == chartId);
+            let table = state.tables.find(t => t.id == chart?.tableRef) as DictTable;
             
             if (chart) {
                 //TODO: check this, finding reference and directly update??
@@ -535,19 +647,21 @@ export const dataFormulatorSlice = createSlice({
 
                     // automatcially fetch the auto-sort order from the field
                     let field = state.conceptShelfItems.find(f => f.id == value);
-                    if (field?.levels) {
-                        encoding.sortBy = JSON.stringify(field.levels);
+                    if (table && field && table.metadata[field.name] && table.metadata[field.name].levels && table.metadata[field.name].levels.length > 0) {
+                        encoding.sortBy = JSON.stringify(table.metadata[field.name].levels);
                     }
                 } else if (prop == 'aggregate') {
                     encoding.aggregate = value;
                 } else if (prop == 'stack') {
                     encoding.stack = value;
                 } else if (prop == "sortOrder") {
-                    encoding.sortOrder = value;
+                    encoding.sortOrder = value == "auto" ? undefined : value;
                 } else if (prop == "sortBy") {
-                    encoding.sortBy = value;
+                    encoding.sortBy = value == "auto" ? undefined : value;
                 } else if (prop == "scheme") {
                     encoding.scheme = value;
+                } else if (prop == "dtype") {
+                    encoding.dtype = value;
                 }
             }
         },
@@ -561,8 +675,8 @@ export const dataFormulatorSlice = createSlice({
                 let enc1 = chart.encodingMap[channel1];
                 let enc2 = chart.encodingMap[channel2];
 
-                chart.encodingMap[channel1] = { fieldID: enc2.fieldID, aggregate: enc2.aggregate, sortBy: enc2.sortBy };
-                chart.encodingMap[channel2] = { fieldID: enc1.fieldID, aggregate: enc1.aggregate, sortBy: enc1.sortBy };
+                chart.encodingMap[channel1] = { fieldID: enc2.fieldID, aggregate: enc2.aggregate, sortBy: enc2.sortBy, sortOrder: enc2.sortOrder };
+                chart.encodingMap[channel2] = { fieldID: enc1.fieldID, aggregate: enc1.aggregate, sortBy: enc1.sortBy, sortOrder: enc1.sortOrder };
             }
         },
         addConceptItems: (state, action: PayloadAction<FieldItem[]>) => {
@@ -598,7 +712,7 @@ export const dataFormulatorSlice = createSlice({
                     let table = state.tables.find(t => t.id == field.tableRef) as DictTable;
                     let fieldIndex = table.names.indexOf(field.name);
                     table.names = table.names.slice(0, fieldIndex).concat(table.names.slice(fieldIndex + 1));
-                    table.types = table.types.slice(0, fieldIndex).concat(table.types.slice(fieldIndex + 1));
+                    delete table.metadata[field.name];
                     table.rows = table.rows.map(row => {
                         delete row[field.name];
                         return row;
@@ -664,15 +778,6 @@ export const dataFormulatorSlice = createSlice({
             // consider cleaning up other fields if 
 
         },
-        setVisPaneSize: (state, action: PayloadAction<number>) => {
-            state.visPaneSize = action.payload;
-        },
-        setDisplayPanelSize: (state, action: PayloadAction<number>) => {
-            state.displayPanelSize = action.payload;
-        },
-        setConceptShelfPaneSize: (state, action: PayloadAction<number>) => {
-            state.conceptShelfPaneSize = action.payload;
-        },
         addMessages: (state, action: PayloadAction<Message>) => {
             state.messages = [...state.messages, action.payload];
         },
@@ -682,13 +787,31 @@ export const dataFormulatorSlice = createSlice({
         setFocusedTable: (state, action: PayloadAction<string | undefined>) => {
             state.focusedTableId = action.payload;
         },
+        setFocusedDataCleanBlockId: (state, action: PayloadAction<{blockId: string, itemId: number} | undefined>) => {
+            state.focusedDataCleanBlockId = action.payload;
+        },
         setFocusedChart: (state, action: PayloadAction<string | undefined>) => {
             let chartId = action.payload;
             state.focusedChartId = chartId;
-            state.visViewMode = "carousel";
-        },
-        setVisViewMode: (state, action: PayloadAction<"carousel" | "gallery">) => {
-            state.visViewMode = action.payload;
+
+            if (state.viewMode == 'report') {
+                state.viewMode = 'editor';
+            }
+            
+            // Set unread to false when a chart is focused
+            if (chartId) {
+                // Find the chart in the charts array
+                let chart = state.charts.find(c => c.id === chartId);
+                if (chart) {
+                    chart.unread = false;
+                } else {
+                    // Check if it's a trigger chart in tables
+                    let table = state.tables.find(t => t.derive?.trigger?.chart?.id === chartId);
+                    if (table?.derive?.trigger?.chart) {
+                        table.derive.trigger.chart.unread = false;
+                    }
+                }
+            }
         },
         changeChartRunningStatus: (state, action: PayloadAction<{chartId: string, status: boolean}>) => {
             if (action.payload.status) {
@@ -718,11 +841,51 @@ export const dataFormulatorSlice = createSlice({
             let dataLoaderType = action.payload;
             delete state.dataLoaderConnectParams[dataLoaderType];
         },
-        handleSSEMessage: (state, action: PayloadAction<SSEMessage>) => {
-            handleSSEMessage(state, action.payload);
-        },
         clearMessages: (state) => {
             state.messages = [];
+        },
+        // Data cleaning dialog actions
+        addDataCleanBlock: (state, action: PayloadAction<DataCleanBlock>) => {
+            state.dataCleanBlocks = [...state.dataCleanBlocks, action.payload];
+        },
+        removeDataCleanBlocks: (state, action: PayloadAction<{blockIds: string[]}>) => {
+            state.dataCleanBlocks = state.dataCleanBlocks.filter(block => !action.payload.blockIds.includes(block.id));
+        },
+        resetDataCleanBlocks: (state) => {
+            state.dataCleanBlocks = [];
+        },
+        updateLastDataCleanBlock: (state, action: PayloadAction<Partial<DataCleanBlock>>) => {
+            if (state.dataCleanBlocks.length > 0) {
+                const lastIndex = state.dataCleanBlocks.length - 1;
+                state.dataCleanBlocks[lastIndex] = { 
+                    ...state.dataCleanBlocks[lastIndex], 
+                    ...action.payload 
+                };
+            }
+        },
+        setCleanInProgress: (state, action: PayloadAction<boolean>) => {
+            state.cleanInProgress = action.payload;
+        },
+        // Generated reports actions
+        saveGeneratedReport: (state, action: PayloadAction<GeneratedReport>) => {
+            const report = action.payload;
+            // Check if report with same ID already exists and update it, otherwise add new
+            const existingIndex = state.generatedReports.findIndex(r => r.id === report.id);
+            if (existingIndex >= 0) {
+                state.generatedReports[existingIndex] = report;
+            } else {
+                state.generatedReports.unshift(report); // Add to beginning of array
+            }
+            // Redux Persist will handle persistence automatically
+        },
+        deleteGeneratedReport: (state, action: PayloadAction<string>) => {
+            const reportId = action.payload;
+            state.generatedReports = state.generatedReports.filter(r => r.id !== reportId);
+            // Redux Persist will handle persistence automatically
+        },
+        clearGeneratedReports: (state) => {
+            state.generatedReports = [];
+            // Redux Persist will handle persistence automatically
         }
     },
     extraReducers: (builder) => {
@@ -730,25 +893,31 @@ export const dataFormulatorSlice = createSlice({
         .addCase(fetchFieldSemanticType.fulfilled, (state, action) => {
             let data = action.payload;
             let tableId = action.meta.arg.id;
+            let table = state.tables.find(t => t.id == tableId) as DictTable;
 
             if (data["status"] == "ok" && data["result"].length > 0) {
                 let typeMap = data['result'][0]['fields'];
-                state.conceptShelfItems = state.conceptShelfItems.map(field => {
-                    if (((field.source == "original" && field.tableRef == tableId ) || field.source == "custom") && Object.keys(typeMap).includes(field.name)) {
-                        field.semanticType = typeMap[field.name]['semantic_type'];
-                        field.type = typeMap[field.name]['type'] as Type;
-                        if (typeMap[field.name]['sort_order']) {
-                            field.levels = { "values": typeMap[field.name]['sort_order'], "reason": "natural sort order"}
-                        }
-                        return field;
-                    } else {
-                        return field;
-                    }
-                })
 
-                if (data["result"][0]["explorative_questions"] && data["result"][0]["explorative_questions"].length > 0) {
-                    let table = state.tables.find(t => t.id == tableId) as DictTable;
-                    table.explorativeQuestions = data["result"][0]["explorative_questions"] as string[];
+                for (let name of table.names) {
+                    table.metadata[name] = { 
+                        type: typeMap[name]['type'] as Type, 
+                        semanticType: typeMap[name]['semantic_type'], 
+                        levels: typeMap[name]['sort_order'] || undefined
+                    };
+                }
+
+                if (data["result"][0]["suggested_table_name"]) {
+                    // avoid duplicate display ids
+                    let existingDisplayIds = state.tables.filter(t => t.id != tableId).map(t => t.displayId);
+                    let suffix = "";
+                    let displayId = `${data["result"][0]["suggested_table_name"] as string}${suffix}`;
+                    let suffixId = 1;
+                    while (existingDisplayIds.includes(displayId)) {
+                        displayId = `${data["result"][0]["suggested_table_name"] as string}${suffixId}`;
+                        suffixId++;
+                        suffix = `-${suffixId}`;
+                    }
+                    table.displayId = displayId;
                 }
             }
         })
@@ -780,11 +949,12 @@ export const dataFormulatorSlice = createSlice({
             // console.log("state.models", state.models);
         })
         .addCase(fetchCodeExpl.fulfilled, (state, action) => {
-            let codeExpl = action.payload;
+            let codeExplResponse = action.payload;
             let derivedTableId = action.meta.arg.id;
             let derivedTable = state.tables.find(t => t.id == derivedTableId)
             if (derivedTable?.derive) {
-                derivedTable.derive.codeExpl = codeExpl;
+                // The response is now an object with code and concepts
+                derivedTable.derive.explanation = codeExplResponse;
             }
             console.log("fetched codeExpl");
             console.log(action.payload);
@@ -839,18 +1009,24 @@ export const dfSelectors = {
             }
         }
     },
+    // Generated reports selectors
+    getAllGeneratedReports: (state: DataFormulatorState) => state.generatedReports,
+    getReportById: (state: DataFormulatorState, reportId: string) => 
+        state.generatedReports.find(r => r.id === reportId),
 }
 
 // derived field: extra all field items from the table
 export const getDataFieldItems = (baseTable: DictTable): FieldItem[] => {
-    return baseTable.names.map((name, index) => {
+
+    let dataFieldItems = baseTable.names.map((name, index) => {
         const id = `original--${baseTable.id}--${name}`;
         const columnValues = baseTable.rows.map((r) => r[name]);
-        const type = baseTable.types[index];
+        const type = baseTable.metadata[name].type;
         const uniqueValues = Array.from(new Set(columnValues));
-        const domain = uniqueValues; //Array.from(columnValues);
-        return { id, name, type, source: "original", domain, description: "", tableRef: baseTable.id };
+        return { id, name, type, source: "original", description: "", tableRef: baseTable.id } as FieldItem;
     }) || [];
+
+    return dataFieldItems;
 }
 
 // Action creators are generated for each case reducer function

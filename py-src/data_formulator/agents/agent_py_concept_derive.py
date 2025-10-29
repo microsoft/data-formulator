@@ -2,6 +2,7 @@
 # Licensed under the MIT License.
 
 import time
+import json
 
 from data_formulator.agents.agent_utils import generate_data_summary, extract_code_from_gpt_response
 import data_formulator.py_sandbox as py_sandbox
@@ -134,7 +135,7 @@ class PyConceptDeriveAgent(object):
 
                     if result['status'] == 'ok':
                         result['content'] = {
-                            'rows': result['content'].to_dict(orient='records'),
+                            'rows': json.loads(result['content'].to_json(orient='records')),
                         }
                     else:
                         print(result['content'])

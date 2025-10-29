@@ -42,12 +42,12 @@ import {
     OutlinedInput,
     Paper,
     Box,
+    Divider,
 } from '@mui/material';
 
 
 import { alpha, styled, useTheme } from '@mui/material/styles';
 
-import SettingsIcon from '@mui/icons-material/Settings';
 import AddCircleIcon from '@mui/icons-material/AddCircle';
 import ClearIcon from '@mui/icons-material/Clear';
 import VisibilityIcon from '@mui/icons-material/Visibility';
@@ -58,15 +58,22 @@ import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
 
 import { getUrls } from '../app/utils';
 
-// Add interface for app configuration
-interface AppConfig {
-    DISABLE_DISPLAY_KEYS: boolean;
-}
 
 const decodeHtmlEntities = (text: string): string => {
     const textarea = document.createElement('textarea');
     textarea.innerHTML = text;
     return textarea.value;
+};
+
+// Add this helper function at the top of the file, after the imports
+const simpleHash = (str: string): string => {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+        const char = str.charCodeAt(i);
+        hash = ((hash << 5) - hash) + char;
+        hash = hash & hash; // Convert to 32-bit integer
+    }
+    return Math.abs(hash).toString(36);
 };
 
 export const ModelSelectionButton: React.FC<{}> = ({ }) => {
@@ -87,22 +94,8 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
         'gemini': [],
         'ollama': []
     });
-    const [isLoadingModelOptions, setIsLoadingModelOptions] = useState<boolean>(false);
-    const [appConfig, setAppConfig] = useState<AppConfig>({ DISABLE_DISPLAY_KEYS: false });
+    const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
 
-    // Fetch app configuration
-    useEffect(() => {
-        fetch(getUrls().APP_CONFIG)
-            .then(response => response.json())
-            .then(data => {
-                setAppConfig(data);
-            })
-            .catch(error => {
-                console.error("Failed to fetch app configuration:", error);
-            });
-    }, []);
-
-    
     let updateModelStatus = (model: ModelConfig, status: 'ok' | 'error' | 'testing' | 'unknown', message: string) => {
         dispatch(dfActions.updateModelStatus({id: model.id, status, message}));
     }
@@ -133,7 +126,6 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
     // Fetch available models from the API
     useEffect(() => {
         const fetchModelOptions = async () => {
-            setIsLoadingModelOptions(true);
             try {
                 const response = await fetch(getUrls().CHECK_AVAILABLE_MODELS);
                 const data = await response.json();
@@ -165,7 +157,6 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
             } catch (error) {
                 console.error("Failed to fetch model options:", error);
             } 
-            setIsLoadingModelOptions(false);
         };
         
         fetchModelOptions();
@@ -209,23 +200,34 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                         const assignedModelId = tempModelSlots[slotType];
                         const assignedModel = assignedModelId ? models.find(m => m.id === assignedModelId) : undefined;
                         
+                        let modelExplanation = "";
+                        if (slotType == 'generation') {
+                            modelExplanation = "exploration planning, code generation";
+                        } else if (slotType == 'hint') {
+                            modelExplanation = "background data type inference, code explanation";
+                        }
+
                         return (
-                            <Paper 
+                            <Box 
                                 key={slotType} 
                                 sx={{ 
                                     flex: '1 1 250px',
                                     minWidth: '250px',
                                     p: 1.5, 
                                     border: '1px solid #e0e0e0', 
+                                    backgroundColor: assignedModel && getStatus(assignedModelId) == 'ok' ? alpha(theme.palette.success.main, 0.05) : 
+                                        assignedModel && getStatus(assignedModelId) == 'error' ? alpha(theme.palette.error.main, 0.05) : alpha(theme.palette.warning.main, 0.05),
                                     borderRadius: 1,
                                     borderColor: assignedModel && getStatus(assignedModelId) == 'ok' ? theme.palette.success.main : 
                                         getStatus(assignedModelId) == 'error' ? theme.palette.error.main : theme.palette.warning.main
                                 }}
                             >
-                                <Typography variant="body2" sx={{ fontWeight: 'bold', mb: 1 }}>
-                                    {slotType} tasks
+                                <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
+                                    Model for {slotType}
                                 </Typography>
-                                
+                                <Typography color="text.secondary" sx={{fontSize: '0.75rem', mt: 0.5, mb: 1 }}>
+                                    - {modelExplanation}
+                                </Typography>
                                 <FormControl fullWidth size="small">
                                     <Select
                                         required
@@ -289,12 +291,12 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                                         ))}
                                     </Select>
                                 </FormControl>
-                            </Paper>
+                            </Box>
                         );
                     })}
                 </Box>
                 <Typography variant="caption" sx={{ fontSize: '0.75rem', color: 'text.secondary' }}>
-                    <strong>Note:</strong> Models with strong code generation capabilities are recommended for generation tasks.
+                    <strong>💡 Tip:</strong> Use powerful models for generation tasks and faster models for hints.
                 </Typography>
             </Box>
         );
@@ -302,7 +304,8 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
 
     let newModelEntry = <TableRow
         key={`new-model-entry`}
-        sx={{ '&:last-child td, &:last-child th': { border: 0 }, padding: "6px 6px" }}
+        sx={{ '&:last-child td, &:last-child th': { border: 0 }, 
+        padding: "6px 6px"}}
     >
         <TableCell align="left">
             <Autocomplete
@@ -330,7 +333,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                         slotProps={{
                             input: {
                                 ...params.InputProps,
-                                style: { fontSize: "0.875rem" }
+                                style: { fontSize: "0.75rem" }
                             }
                         }}
                         size="small"
@@ -354,68 +357,31 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                 }}
             />
         </TableCell>
-        <TableCell align="left" >
+        <TableCell align="left" sx={{ minWidth: '180px' }}>
             <TextField fullWidth size="small" type={showKeys ? "text" : "password"} 
                 slotProps={{
                     input: {
-                        style: { fontSize: "0.875rem" }
+                        style: { fontSize: "0.75rem" }
                     }
                 }}
-                placeholder='leave blank if using keyless access'
+                placeholder='optional for keyless endpoint'
                 value={newApiKey}  
                 onChange={(event: any) => { setNewApiKey(event.target.value); }} 
                 autoComplete='off'
             />
         </TableCell>
         <TableCell align="left">
-            <Autocomplete
-                freeSolo
-                onChange={(event: any, newValue: string | null) => { setNewModel(newValue || ""); }}
+            <TextField
+                size="small"
+                fullWidth
                 value={newModel}
-                options={newEndpoint && providerModelOptions[newEndpoint] ? providerModelOptions[newEndpoint] : []}
-                loading={isLoadingModelOptions}
-                loadingText={<Typography sx={{fontSize: "0.875rem"}}>loading...</Typography>}
-                renderOption={(props, option) => {
-                    return <Typography {...props} onClick={()=>{ setNewModel(option); }} sx={{fontSize: "small"}}>{option}</Typography>
-                }}
-                renderInput={(params) => (
-                    <TextField
-                        error={newEndpoint != "" && !newModel}
-                        {...params}
-                        placeholder="model name"
-                        slotProps={{
-                            input: {
-                                ...params.InputProps,
-                                style: { fontSize: "0.875rem" },
-                                endAdornment: (
-                                    <>
-                                        {isLoadingModelOptions ? <CircularProgress color="primary" size={20} /> : null}
-                                        {params.InputProps.endAdornment}
-                                    </>
-                                ),
-                            },
-                            htmlInput: {
-                                ...params.inputProps,
-                                'aria-label': 'Select or enter a model',
-                            }
-                        }}
-                        size="small"
-                        onChange={(event: any) => { setNewModel(event.target.value); }}
-                    />
-                )}
+                onChange={(event) => { setNewModel(event.target.value); }}
+                placeholder="model name"
+                error={newEndpoint != "" && !newModel}
                 slotProps={{
-                    listbox: {
-                        style: { padding: 0 }
-                    },
-                }}
-                slots={{
-                    paper: (props) => {
-                        return <Paper {...props}>
-                            <Typography sx={{ p: 1, color: 'gray', fontStyle: 'italic', fontSize: 'small' }}>
-                                examples
-                            </Typography>
-                            {props.children}    
-                        </Paper>
+                    input: {
+                        style: { fontSize: "0.75rem" },
+                        'aria-label': 'Enter a model name',
                     }
                 }}
             />
@@ -425,7 +391,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                 placeholder="api_base"
                 slotProps={{
                     input: {
-                        style: { fontSize: "0.875rem" }
+                        style: { fontSize: "0.75rem" }
                     }
                 }}
                 value={newApiBase}  
@@ -437,7 +403,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
             <TextField size="small" type="text" fullWidth
                 slotProps={{
                     input: {
-                        style: { fontSize: "0.875rem" }
+                        style: { fontSize: "0.75rem" }
                     }
                 }}
                 value={newApiVersion}  onChange={(event: any) => { setNewApiVersion(event.target.value); }} 
@@ -445,63 +411,64 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                 placeholder="api_version"
             />
         </TableCell>
-        <TableCell align="center">
-            {/* Empty cell for Current Assignments */}
-        </TableCell>
         <TableCell align="right">
             <Tooltip title={modelExists ? "provider + model already exists" : "add and test model"}>
-                <IconButton color={modelExists ? 'error' : 'primary'}
-                    disabled={!readyToTest}
-                    sx={{cursor: modelExists ? 'help' : 'pointer'}}
-                    onClick={(event) => {
-                        event.stopPropagation()
+                <span>  
+                    <IconButton color={modelExists ? 'error' : 'primary'}
+                        disabled={!readyToTest}
+                        sx={{cursor: modelExists ? 'help' : 'pointer'}}
+                        onClick={(event) => {
+                            event.stopPropagation()
 
-                        let endpoint = newEndpoint;
+                            let endpoint = newEndpoint;
 
-                        let id = `${endpoint}-${newModel}-${newApiKey}-${newApiBase}-${newApiVersion}`;
+                            // Hash the ID to prevent API key exposure
+                            const idString = `${endpoint}-${newModel}-${newApiKey}-${newApiBase}-${newApiVersion}`;
+                            let id = simpleHash(idString);
 
-                        let model = {endpoint, model: newModel, api_key: newApiKey, api_base: newApiBase, api_version: newApiVersion, id: id};
+                            let model = {endpoint, model: newModel, api_key: newApiKey, api_base: newApiBase, api_version: newApiVersion, id: id};
 
-                        dispatch(dfActions.addModel(model));
+                            dispatch(dfActions.addModel(model));
 
-                        // Create a custom test function that assigns to slot on success
-                        const testAndAssignModel = (model: ModelConfig) => {
-                            updateModelStatus(model, 'testing', "");
-                            let message = {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json', },
-                                body: JSON.stringify({
-                                    model: model,
-                                }),
-                            };
-                            fetch(getUrls().TEST_MODEL, {...message })
-                                .then((response) => response.json())
-                                .then((data) => {
-                                    let status = data["status"] || 'error';
-                                    updateModelStatus(model, status, data["message"] || "");
-                                    // Only assign to slot if test is successful
-                                    if (status === 'ok') {
-                                        for (let slotType of dfSelectors.getAllSlotTypes()) {
-                                            if (!tempModelSlots[slotType]) {
-                                                updateTempSlot(slotType, id);
+                            // Create a custom test function that assigns to slot on success
+                            const testAndAssignModel = (model: ModelConfig) => {
+                                updateModelStatus(model, 'testing', "");
+                                let message = {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json', },
+                                    body: JSON.stringify({
+                                        model: model,
+                                    }),
+                                };
+                                fetch(getUrls().TEST_MODEL, {...message })
+                                    .then((response) => response.json())
+                                    .then((data) => {
+                                        let status = data["status"] || 'error';
+                                        updateModelStatus(model, status, data["message"] || "");
+                                        // Only assign to slot if test is successful
+                                        if (status === 'ok') {
+                                            for (let slotType of dfSelectors.getAllSlotTypes()) {
+                                                if (!tempModelSlots[slotType]) {
+                                                    updateTempSlot(slotType, id);
+                                                }
                                             }
                                         }
-                                    }
-                                }).catch((error) => {
-                                    updateModelStatus(model, 'error', error.message)
-                                });
-                        };
+                                    }).catch((error) => {
+                                        updateModelStatus(model, 'error', error.message)
+                                    });
+                            };
 
-                        testAndAssignModel(model); 
-                        
-                        setNewEndpoint("");
-                        setNewModel("");
-                        setNewApiKey("");
-                        setNewApiBase("");
-                        setNewApiVersion("");
-                    }}>
-                    <AddCircleIcon />
-                </IconButton>
+                            testAndAssignModel(model); 
+                            
+                            setNewEndpoint("");
+                            setNewModel("");
+                            setNewApiKey("");
+                            setNewApiBase("");
+                            setNewApiVersion("");
+                        }}>
+                        <AddCircleIcon />
+                    </IconButton>
+                </span>
             </Tooltip>
         </TableCell>
         <TableCell align="right">
@@ -523,17 +490,16 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
     </TableRow>
 
     let modelTable = <TableContainer>
-        <Table sx={{ minWidth: 600, "& .MuiTableCell-root": { padding: "8px 12px" } }} size="small" >
+        <Table sx={{ minWidth: 600, "& .MuiTableCell-root": { padding: "4px 8px", borderBottom: "none", fontSize: '0.75rem' } }} size="small" >
             <TableHead >
                 <TableRow>
                     <TableCell sx={{fontWeight: 'bold', width: '120px'}}>Provider</TableCell>
-                    <TableCell sx={{fontWeight: 'bold', width: '140px'}}>API Key</TableCell>
+                    <TableCell sx={{fontWeight: 'bold', width: '160px'}}>API Key</TableCell>
                     <TableCell sx={{fontWeight: 'bold', width: '160px'}} align="left">Model</TableCell>
-                    <TableCell sx={{fontWeight: 'bold', width: '240px'}} align="left">API Base</TableCell>
+                    <TableCell sx={{fontWeight: 'bold', width: '200px'}} align="left">API Base</TableCell>
                     <TableCell sx={{fontWeight: 'bold', width: '120px'}} align="left">API Version</TableCell>
-                    <TableCell sx={{fontWeight: 'bold'}} align="center">Assignments</TableCell>
-                    <TableCell sx={{fontWeight: 'bold'}} align="right">Status</TableCell>
-                    <TableCell sx={{fontWeight: 'bold'}} align="right">Action</TableCell>
+                    <TableCell sx={{fontWeight: 'bold'}} align="left">Status</TableCell>
+                    <TableCell sx={{fontWeight: 'bold'}} align="right"></TableCell>
                 </TableRow>
             </TableHead>
             <TableBody>
@@ -543,12 +509,12 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                     let statusIcon = status  == "unknown" ? <HelpOutlineIcon color="warning" fontSize="small" /> : ( status == 'testing' ? <CircularProgress size={20} />:
                             (status == "ok" ? <CheckCircleOutlineIcon color="success" fontSize="small"/> : <ErrorOutlineIcon color="error" fontSize="small"/> ))
                     
-                    let message = "the model is ready to use";
+                    let message = "Model is ready to use";
                     if (status == "unknown") {
-                        message = "click the status icon to test the model availability.";
+                        message = "Click to test if this model is working";
                     } else if (status == "error") {
                         const rawMessage = testedModels.find(t => t.id == model.id)?.message || "Unknown error";
-                        message = decodeHtmlEntities(rawMessage);
+                        message = `Error: ${decodeHtmlEntities(rawMessage)}. Click to retest.`;
                     }
 
                     const borderStyle = ['error'].includes(status) ? '1px dashed lightgray' : undefined;
@@ -623,37 +589,8 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                                     </Typography>
                                 )}
                             </TableCell>
-                            <TableCell align="center" sx={{ borderBottom: borderStyle }}>
-                                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, justifyContent: 'center' }}>
-                                    {dfSelectors.getAllSlotTypes().map(slotType => {
-                                        const isAssigned = isModelAssignedToSlot(model.id, slotType);
-                                        return isAssigned ? (
-                                            <Box
-                                                key={slotType}
-                                                sx={{
-                                                    px: 1,
-                                                    py: 0.25,
-                                                    backgroundColor: 'primary.main',
-                                                    color: 'white',
-                                                    borderRadius: 1,
-                                                    fontSize: '0.75rem',
-                                                    textTransform: 'capitalize'
-                                                }}
-                                            >
-                                                {slotType}
-                                            </Box>
-                                        ) : null;
-                                    })}
-                                    {!dfSelectors.getAllSlotTypes().some(slotType => isModelAssignedToSlot(model.id, slotType)) && (
-                                        <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-                                            Not assigned
-                                        </Typography>
-                                    )}
-                                </Box>
-                            </TableCell>
-                            <TableCell sx={{borderBottom: borderStyle}} align="right">
-                                <Tooltip title={
-                                    status == 'ok' ? message :  'test model availability'}>
+                            <TableCell sx={{borderBottom: borderStyle}} align="left">
+                                <Tooltip title={message}>
                                     <Button
                                         size="small"
                                         color={status == 'ok' ?  'success' : status == 'error' ? 'error' : 'warning'}
@@ -661,7 +598,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                                         sx={{ p: 0.75, fontSize: "0.75rem", textTransform: "none" }}
                                         startIcon={statusIcon}
                                     >
-                                        {status == 'ok' ? 'ready' : 'test'}
+                                        {status == 'ok' ? 'Ready' : status == 'error' ? 'Retest' : 'Test'}
                                     </Button>
                                 </Tooltip>
                             </TableCell>
@@ -700,8 +637,8 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                 })}
                 {newModelEntry}
                 <TableRow>
-                    <TableCell colSpan={8} sx={{ pt: 2, pb: 1, borderTop: '1px solid #e0e0e0' }}>
-                        <Typography variant="caption" sx={{ display: 'block', mb: 0.5, fontSize: '0.75rem' }}>
+                    <TableCell colSpan={8} sx={{ pt: 2, pb: 1 }}>
+                        <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mb: 0.5, fontSize: '0.75rem' }}>
                             <strong>Configuration:</strong> Based on LiteLLM. <a href="https://docs.litellm.ai/docs/" target="_blank" rel="noopener noreferrer">See supported providers</a>.
                             Use 'openai' provider for OpenAI-compatible APIs.
                         </Typography>
@@ -717,9 +654,9 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
 
     return <>
         <Tooltip title="Configure model assignments for different task types">
-            <Button sx={{fontSize: "inherit", textTransform: "none"}} variant="text" color="primary" onClick={()=>{setModelDialogOpen(true)}}>
-                {notAllSlotsReady ? 'Configure Model Slots' : 
-                    `Models: ${Object.entries(modelSlots).filter(([slotType, modelId]) => modelId).map(([slotType, modelId]) => models.find(m => m.id == modelId)?.model).join('/')}`}
+            <Button sx={{fontSize: "inherit", textTransform: "none"}} variant="text" color={notAllSlotsReady ? 'warning' : "primary"} onClick={()=>{setModelDialogOpen(true)}}>
+                {notAllSlotsReady ? 'Select Models' : 
+                    `${Object.entries(modelSlots).filter(([slotType, modelId]) => modelId).map(([slotType, modelId]) => models.find(m => m.id == modelId)?.model).join('/')}`}
             </Button>
         </Tooltip>
         <Dialog 
@@ -734,12 +671,15 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
             <DialogTitle sx={{display: "flex",  alignItems: "center"}}>Configure Models for Different Tasks</DialogTitle>
             <DialogContent >
                 <SlotAssignmentSummary />
-                
-                <Typography variant="body1" sx={{ mb: 2, mt: 2, fontWeight: 'bold' }}>Available Models</Typography>
+                <Divider sx={{ my: 2 }} textAlign="left"> 
+                    <Typography variant="caption" sx={{ fontSize: '0.75rem', color: 'text.secondary' }}>
+                    available models
+                    </Typography>
+                </Divider>
                 {modelTable}
             </DialogContent>
             <DialogActions>
-                {!appConfig.DISABLE_DISPLAY_KEYS && (
+                {!serverConfig.DISABLE_DISPLAY_KEYS && (
                     <Button sx={{marginRight: 'auto'}} endIcon={showKeys ? <VisibilityOffIcon /> : <VisibilityIcon />} onClick={()=>{
                         setShowKeys(!showKeys);}}>
                             {showKeys ? 'hide' : 'show'} keys

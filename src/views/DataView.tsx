@@ -5,12 +5,8 @@ import React, { FC, useEffect, useMemo } from 'react';
 
 import _ from 'lodash';
 
-import { Typography, Box, Link, Breadcrumbs, useTheme } from '@mui/material';
+import { Typography, Box, Link, Breadcrumbs, useTheme, Fade } from '@mui/material';
 
-import 'ag-grid-enterprise';
-
-import 'ag-grid-community/styles/ag-grid.css';
-import 'ag-grid-community/styles/ag-theme-material.css';
 import '../scss/DataView.scss';
 
 import { DictTable } from '../components/ComponentType';
@@ -63,9 +59,19 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView({  $table
     // given a table render the table
     let renderTableBody = (targetTable: DictTable | undefined) => {
 
-        const rowData = targetTable ? 
-            targetTable.virtual ? targetTable.rows : targetTable.rows.map((r: any, i: number) => ({ ...r, "#rowId": i })) 
-            : [];
+        let rowData = [];
+        if (targetTable) {
+            if (targetTable.virtual) {
+                rowData = targetTable.rows;
+            } else {
+                if (targetTable.rows.length > 10000) {
+                    rowData = _.sampleSize(targetTable.rows, 10000);
+                } else {
+                    rowData = targetTable.rows;
+                }
+                rowData = rowData.map((r: any, i: number) => ({ ...r, "#rowId": i }));
+            }
+        }
 
         // Randomly sample up to 29 rows for column width calculation
         const sampleSize = Math.min(29, rowData.length);
@@ -104,7 +110,7 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView({  $table
                 width, 
                 align: undefined, 
                 format: (value: any) => <Typography fontSize="inherit">{`${value}`}</Typography>, 
-                dataType: targetTable?.types[i] as Type,
+                dataType: targetTable?.metadata[name].type as Type,
                 source: conceptShelfItems.find(f => f.name == name)?.source || "original", 
             };
         }) : [];
@@ -118,22 +124,22 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView({  $table
             }, ...colDefs]
         }
 
-        return <SelectableDataGrid 
+        return  <Fade in={true} timeout={600} key={targetTable?.id}>
+            <Box sx={{height: 'calc(100% - 28px)'}}>
+                <SelectableDataGrid
                     tableId={targetTable?.id || ""}
                     $tableRef={$tableRef} 
                     tableName={targetTable?.displayId || targetTable?.id || "table"} 
                     rows={rowData} 
                     columnDefs={colDefs}
-                    onSelectionFinished={onRangeSelectionChanged} 
+                    onSelectionFinished={()=>{}} 
                     rowCount={targetTable?.virtual?.rowCount || rowData.length}
                     virtual={targetTable?.virtual ? true : false}
                 />
+            </Box>
+        </Fade>
     }
 
-    // handle when selection changes
-    const onRangeSelectionChanged = (columns: string[], selected: any[]) => {
-        let values = _.uniq(selected);
-    };
 
     let coreTables = tableToRender.filter(t => t.derive == undefined || t.anchored);
     let tempTables = tableToRender.filter(t => t.derive && !t.anchored);

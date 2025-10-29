@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import '../scss/App.scss';
 
 import { useDispatch, useSelector } from "react-redux"; /* code change */
@@ -13,18 +13,32 @@ import {
 
 import _ from 'lodash';
 
-import SplitPane from "react-split-pane";
+import { Allotment } from "allotment";
+import "allotment/dist/style.css";
+
 import {
 
     Typography,
     Box,
     Tooltip,
     Button,
+    Collapse,
+    IconButton,
+    Paper,
+    Divider,
+    useTheme,
+    alpha,
 } from '@mui/material';
-
-
-
-import { styled } from '@mui/material/styles';
+import {
+    SmartToy as SmartToyIcon,
+    FolderOpen as FolderOpenIcon,
+    BarChart as BarChartIcon,
+    ContentPaste as ContentPasteIcon,
+    Storage as StorageIcon,
+    Category as CategoryIcon,
+    CloudQueue as CloudQueueIcon,
+    AutoFixNormal as AutoFixNormalIcon,
+} from '@mui/icons-material';
 
 import { FreeDataViewFC } from './DataView';
 import { VisualizationViewFC } from './VisualizationView';
@@ -34,7 +48,7 @@ import { DndProvider } from 'react-dnd'
 import { HTML5Backend } from 'react-dnd-html5-backend'
 
 import { SelectableGroup } from 'react-selectable-fast';
-import { TableCopyDialogV2, TableSelectionDialog } from './TableSelectionView';
+import { TableCopyDialogV2, DatasetSelectionDialog } from './TableSelectionView';
 import { TableUploadDialog } from './TableSelectionView';
 import { toolName } from '../app/App';
 import { DataThread } from './DataThread';
@@ -43,21 +57,20 @@ import dfLogo from '../assets/df-logo.png';
 import exampleImageTable from "../assets/example-image-table.png";
 import { ModelSelectionButton } from './ModelSelectionDialog';
 import { DBTableSelectionDialog } from './DBTableManager';
-import { connectToSSE } from './SSEClient';
 import { getUrls } from '../app/utils';
-
-//type AppProps = ConnectedProps<typeof connector>;
+import { DataLoadingChatDialog } from './DataLoadingChat';
+import { RotatingTextBlock } from '../components/RotatingTextBlock';
+import { ReportView } from './ReportView';
+import { ExampleSession, exampleSessions, ExampleSessionCard } from './ExampleSessions';
 
 export const DataFormulatorFC = ({ }) => {
 
-    const displayPanelSize = useSelector((state: DataFormulatorState) => state.displayPanelSize);
-    const visPaneSize = useSelector((state: DataFormulatorState) => state.visPaneSize);
     const tables = useSelector((state: DataFormulatorState) => state.tables);
-
     const models = useSelector((state: DataFormulatorState) => state.models);
     const modelSlots = useSelector((state: DataFormulatorState) => state.modelSlots);
-    const testedModels = useSelector((state: DataFormulatorState) => state.testedModels);
-    
+    const viewMode = useSelector((state: DataFormulatorState) => state.viewMode);
+    const theme = useTheme();
+
     const noBrokenModelSlots= useSelector((state: DataFormulatorState) => {
         const slotTypes = dfSelectors.getAllSlotTypes();
         return slotTypes.every(
@@ -65,6 +78,39 @@ export const DataFormulatorFC = ({ }) => {
     });
 
     const dispatch = useDispatch();
+
+    const handleLoadExampleSession = (session: ExampleSession) => {
+        dispatch(dfActions.addMessages({
+            timestamp: Date.now(),
+            type: 'info',
+            component: 'data formulator',
+            value: `Loading example session: ${session.title}`,
+        }));
+        
+        // Load the complete state from the JSON file
+        fetch(session.dataFile)
+            .then(res => res.json())
+            .then(savedState => {
+                // Use loadState to restore the complete session state
+                dispatch(dfActions.loadState(savedState));
+                
+                dispatch(dfActions.addMessages({
+                    timestamp: Date.now(),
+                    type: 'success',
+                    component: 'data formulator',
+                    value: `Successfully loaded ${session.title}`,
+                }));
+            })
+            .catch(error => {
+                console.error('Error loading session:', error);
+                dispatch(dfActions.addMessages({
+                    timestamp: Date.now(),
+                    type: 'error',
+                    component: 'data formulator',
+                    value: `Failed to load ${session.title}: ${error.message}`,
+                }));
+            });
+    };
 
     useEffect(() => {
         document.title = toolName;
@@ -109,12 +155,6 @@ export const DataFormulatorFC = ({ }) => {
         }
     }, []);
 
-    let conceptEncodingPanel = (
-        <Box sx={{display: "flex", flexDirection: "row", width: '100%', flexGrow: 1, overflow: "hidden"}}>
-            <ConceptShelf />
-        </Box>
-    )
-
     const visPaneMain = (
         <Box sx={{ width: "100%", overflow: "hidden", display: "flex", flexDirection: "row" }}>
             <VisualizationViewFC />
@@ -122,52 +162,62 @@ export const DataFormulatorFC = ({ }) => {
 
     let $tableRef = React.createRef<SelectableGroup>();
 
-    const visPane = (// @ts-ignore
-        <SplitPane split="horizontal"
-            minSize={100} size={visPaneSize}
-            className={'vis-split-pane'}
-            style={{}}
-            pane2Style={{overflowY: "hidden"}}
-            onDragFinished={size => { dispatch(dfActions.setVisPaneSize(size)) }}>
-            {visPaneMain}
-            <Box className="table-box">
-                <FreeDataViewFC $tableRef={$tableRef}/>
-            </Box>
-        </SplitPane>);
+    const visPane = (
+        <Box sx={{width: '100%', height: '100%', 
+            "& .split-view-view:first-of-type": {
+                display: 'flex',
+                overflow: 'hidden',
+        }}}>
+            <Allotment vertical>
+                <Allotment.Pane minSize={200} >
+                {visPaneMain}
+                </Allotment.Pane>
+                <Allotment.Pane minSize={120} preferredSize={200}>
+                    <Box className="table-box">
+                        <FreeDataViewFC $tableRef={$tableRef}/>
+                    </Box>
+                </Allotment.Pane>
+            </Allotment>
+        </Box>);
 
-    const splitPane = ( // @ts-ignore
-        <SplitPane split="vertical"
-            maxSize={440}
-            minSize={320}
-            primary="second"
-            size={displayPanelSize}
-            style={{width: "100%", height: '100%', position: 'relative'}}
-            onDragFinished={size => { dispatch(dfActions.setDisplayPanelSize(size)) }}>
-            <Box sx={{display: 'flex', width: `100%`, height: '100%'}}>
-                {tables.length > 0 ? 
-                        <DataThread />   //<Carousel />
-                        : ""} 
-                    {visPane}
-            </Box>
-            <Box className="data-editor">
-                {conceptEncodingPanel}
-                {/* <InfoPanelFC $tableRef={$tableRef}/> */}
-            </Box>
-        </SplitPane>);
+    let borderBoxStyle = {
+        border: '1px solid rgba(0,0,0,0.1)', 
+        borderRadius: '16px', 
+        boxShadow: '0 0 5px rgba(0,0,0,0.1)',
+    }
 
     const fixedSplitPane = ( 
         <Box sx={{display: 'flex', flexDirection: 'row', height: '100%'}}>
-            <Box sx={{display: 'flex', width: `calc(100% - ${280}px)`}}>
-            {tables.length > 0 ? 
-                    <DataThread />   //<Carousel />
-                    : ""} 
-                {visPane}
+            <Box sx={{
+                ...borderBoxStyle,
+                    margin: '4px 4px 4px 8px', backgroundColor: 'white',
+                    display: 'flex', height: '100%', width: 'fit-content', flexDirection: 'column'}}>
+                {tables.length > 0 ?  <DataThread sx={{
+                    minWidth: 201,
+                    display: 'flex', 
+                    flexDirection: 'column',
+                    overflow: 'hidden',
+                    alignContent: 'flex-start',
+                    height: '100%',
+                }}/>  : ""} 
             </Box>
-            <Box className="data-editor" sx={{width: 280, borderLeft: '1px solid lightgray'}}>
-                {conceptEncodingPanel}
-                {/* <InfoPanelFC $tableRef={$tableRef}/> */}
+            <Box sx={{
+                ...borderBoxStyle,
+                margin: '4px 8px 4px 4px', backgroundColor: 'white',
+                display: 'flex', height: '100%', flex: 1, overflow: 'hidden', flexDirection: 'row'
+            }}>
+                {viewMode === 'editor' ? (
+                    <>
+                        {visPane}
+                        <ConceptShelf />
+                    </>
+                ) : (
+                    <ReportView />
+                )}
             </Box>
-        </Box>);
+            
+        </Box>
+    );
 
     let exampleMessyText=`Rank	NOC	Gold	Silver	Bronze	Total
 1	 South Korea	5	1	1	7
@@ -180,39 +230,116 @@ export const DataFormulatorFC = ({ }) => {
 Totals (7 entries)	5	5	5	15
 `
 
-    let dataUploadRequestBox = <Box sx={{width: '100vw'}}>
-        <Box sx={{paddingTop: "8%", display: "flex", flexDirection: "column", textAlign: "center"}}>
-            <Box component="img" sx={{  width: 256, margin: "auto" }} alt="" src={dfLogo} />
-            <Typography variant="h3" sx={{marginTop: "20px"}}>
-                {toolName}
-            </Typography>
-            
-            <Typography variant="h4">
-                Load data from
-                <TableSelectionDialog  buttonElement={"Examples"} />, <TableUploadDialog buttonElement={"file"} disabled={false} />, <TableCopyDialogV2 buttonElement={"clipboard"} disabled={false} /> or <DBTableSelectionDialog buttonElement={"Database"} />
-            </Typography>
-            <Typography sx={{  width: 960, margin: "auto" }} variant="body1">
-                Besides formatted data (csv, tsv or json), you can copy-paste&nbsp;
-                <Tooltip title={<Box>Example of a messy text block: <Typography sx={{fontSize: 10, marginTop: '6px'}} component={"pre"}>{exampleMessyText}</Typography></Box>}><Typography color="secondary" display="inline" sx={{cursor: 'help', "&:hover": {textDecoration: 'underline'}}}>a text block</Typography></Tooltip> or&nbsp;
-                <Tooltip title={<Box>Example of a table in image format: <Box component="img" sx={{ width: '100%',  marginTop: '6px' }} alt="" src={exampleImageTable} /></Box>}><Typography color="secondary"  display="inline" sx={{cursor: 'help', "&:hover": {textDecoration: 'underline'}}}>an image</Typography></Tooltip> that contain data into clipboard to get started.
-            </Typography>
+    let dataUploadRequestBox = <Box sx={{
+            margin: '4px 4px 4px 8px', 
+            width: 'calc(100vw - 16px)', overflow: 'auto', display: 'flex', flexDirection: 'column', height: '100%',
+        }}
+        >
+        <Box sx={{margin:'auto', pb: '5%', display: "flex", flexDirection: "column", textAlign: "center" }}>
+            <Box sx={{display: 'flex', mx: 'auto', mb: 2, width: 'fit-content', flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+                background: `
+                linear-gradient(90deg, ${alpha(theme.palette.text.secondary, 0.02)} 1px, transparent 1px),
+                linear-gradient(0deg, ${alpha(theme.palette.text.secondary, 0.02)} 1px, transparent 1px)
+            `,
+            backgroundSize: '16px 16px',
+            p: 2,
+            borderRadius: '8px',
+            }}>
+                <Box component="img" sx={{  width: 84,  }} alt="" src={dfLogo} /> 
+                <Typography fontSize={64} sx={{ml: 2, letterSpacing: '0.05em', fontWeight: 200, color: 'text.primary'}}>{toolName}</Typography> 
+            </Box>
+            <Typography fontSize={20} sx={{color: 'text.secondary'}}>What <RotatingTextBlock 
+                texts={[
+                    "data",
+                    "visualizations",
+                    "insights",
+                ]}
+                /> do you want to explore?</Typography>
+            <Box sx={{mt: 4, width: '100%', borderRadius: 8, 
+                background: `
+                    linear-gradient(90deg, ${alpha(theme.palette.text.secondary, 0.02)} 1px, transparent 1px),
+                    linear-gradient(0deg, ${alpha(theme.palette.text.secondary, 0.02)} 1px, transparent 1px)
+                `,
+                backgroundSize: '16px 16px',
+                p: 2}}>
+                <Divider sx={{width: '200px', mx: 'auto', mb: 2, fontSize: '1.2rem', color: 'text.disabled'}}>
+                    <Typography sx={{ fontSize: 14, color: 'text.disabled' }}>
+                        load some data
+                    </Typography>
+                </Divider>
+                <Typography  variant="h4" sx={{mx: 'auto', width: 1080,  fontSize: 24}}>
+                    <DataLoadingChatDialog buttonElement={<><AutoFixNormalIcon sx={{ mr: 1, verticalAlign: 'middle' }} />Messy data</>}/>  
+                    <Box component="span" sx={{ mx: 2, color: 'text.disabled', fontSize: '0.8em' }}>•</Box>
+                    <DatasetSelectionDialog  buttonElement={<><CategoryIcon sx={{ mr: 1, verticalAlign: 'middle' }} />Examples</>} /> 
+                    <Box component="span" sx={{ mx: 2, color: 'text.disabled', fontSize: '0.8em' }}>•</Box>
+                    <TableUploadDialog buttonElement={<><FolderOpenIcon sx={{ mr: 1, verticalAlign: 'middle' }} />files</>} disabled={false} /> 
+                    <Box component="span" sx={{ mx: 2, color: 'text.disabled', fontSize: '0.8em' }}>•</Box>
+                    <TableCopyDialogV2 buttonElement={<><ContentPasteIcon sx={{ mr: 1, verticalAlign: 'middle' }} />clipboard</>} disabled={false} /> 
+                    <Box component="span" sx={{ mx: 2, color: 'text.disabled', fontSize: '0.8em' }}>•</Box>
+                    <DBTableSelectionDialog buttonElement={<><CloudQueueIcon sx={{ mr: 1, verticalAlign: 'middle' }} />Database</>} component="dialog" />
+                    {/* <br /> */}
+                    {/* <Typography sx={{ml: 10, fontSize: 14, color: 'darkgray', transform: 'translateY(-12px)'}}>(csv, tsv, xlsx, json or database)</Typography> */}
+                    <Typography variant="body1" color="text.secondary" sx={{ mt: 2, width: '100%' }}>
+                        Load structured data from CSV, Excel, JSON, database, or extract data from{' '}
+                        <Tooltip title={<Box>Example of a screenshot of data: <Box component="img" sx={{ width: '100%', marginTop: '6px' }} alt="" src={exampleImageTable} /></Box>}>
+                            <Box component="span" sx={{color: 'secondary.main', cursor: 'help', "&:hover": {textDecoration: 'underline'}}}>screenshots</Box>
+                        </Tooltip>{' '}
+                        and{' '}
+                        <Tooltip title={<Box>Example of a messy text block: <Typography sx={{fontSize: 10, marginTop: '6px'}} component="pre">{exampleMessyText}</Typography></Box>}>
+                            <Box component="span" sx={{color: 'secondary.main', cursor: 'help', "&:hover": {textDecoration: 'underline'}}}>text blocks</Box>
+                        </Tooltip>{' '}
+                        using AI.
+                    </Typography> 
+                </Typography>
+            </Box>
+            <Box sx={{mt: 4, borderRadius: 8, p: 2,
+                 background: `
+                 linear-gradient(90deg, ${alpha(theme.palette.text.secondary, 0.02)} 1px, transparent 1px),
+                 linear-gradient(0deg, ${alpha(theme.palette.text.secondary, 0.02)} 1px, transparent 1px)
+             `,
+             backgroundSize: '16px 16px',
+            }}>
+                <Divider sx={{width: '200px', mx: 'auto', mb: 3, fontSize: '1.2rem', color: 'text.disabled'}}>
+                    <Typography sx={{ fontSize: 14, color: 'text.disabled' }}>
+                        or, explore examples
+                    </Typography>
+                </Divider>
+                <Box sx={{ alignItems: 'center' }}>
+                    <Box sx={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        maxWidth: 1200,
+                        margin: '0 auto',
+                        px: 1
+                    }}>
+                        {exampleSessions.map((session) => (
+                            <ExampleSessionCard
+                                key={session.id}
+                                session={session}
+                                theme={theme}
+                                onClick={() => handleLoadExampleSession(session)}
+                            />
+                        ))}
+                    </Box>
+                </Box>
+            </Box>
         </Box>
         <Button size="small" color="inherit" 
-                sx={{position: "absolute", color:'darkgray', bottom: 0, right: 0, textTransform: 'none'}} 
+                sx={{position: "absolute", color:'darkgray', bottom: 8, left: 16, textTransform: 'none'}} 
                 target="_blank" rel="noopener noreferrer" 
                 href="https://privacy.microsoft.com/en-US/data-privacy-notice">view data privacy notice</Button>
     </Box>;
 
-    let modelSelectionDialogBox = <Box sx={{width: '100vw'}}>
-        <Box sx={{paddingTop: "8%", display: "flex", flexDirection: "column", textAlign: "center"}}>
-            <Box component="img" sx={{  width: 256, margin: "auto" }} alt="" src={dfLogo} />
-            <Typography variant="h3" sx={{marginTop: "20px"}}>
+    let modelSelectionDialogBox = <Box sx={{width: '100vw', display: 'flex', flexDirection: 'column', height: '100%'}}>
+        <Box sx={{margin:'auto', pb: '5%', display: "flex", flexDirection: "column", textAlign: "center"}}>
+            <Box component="img" sx={{  width: 196, margin: "auto" }} alt="" src={dfLogo} />
+            <Typography variant="h3" sx={{marginTop: "20px", fontWeight: 200, letterSpacing: '0.05em'}}>
                 {toolName}
             </Typography>
-            <Typography variant="h4">
+            <Typography  variant="h4" sx={{mt: 3, fontSize: 28, letterSpacing: '0.02em'}}>
                 Let's <ModelSelectionButton />
             </Typography>
-            <Typography variant="body1">Specify an OpenAI or Azure OpenAI endpoint to run {toolName}.</Typography>
+            <Typography variant="body1">Specify an AI endpoint to run {toolName}.</Typography>
         </Box>
         <Button size="small" color="inherit" 
                 sx={{position: "absolute", color:'darkgray', bottom: 0, right: 0, textTransform: 'none'}} 
@@ -221,9 +348,9 @@ Totals (7 entries)	5	5	5	15
     </Box>;
 
     return (
-        <Box sx={{ display: 'block', width: "100%", height: 'calc(100% - 49px)' }}>
+        <Box sx={{ display: 'block', width: "100%", height: 'calc(100% - 54px)' }}>
             <DndProvider backend={HTML5Backend}>
-                {!noBrokenModelSlots ? modelSelectionDialogBox : (tables.length > 0 ? fixedSplitPane : dataUploadRequestBox)} 
+                {!noBrokenModelSlots ? modelSelectionDialogBox : (tables.length > 0 ? fixedSplitPane : dataUploadRequestBox)}
             </DndProvider>
         </Box>);
 }

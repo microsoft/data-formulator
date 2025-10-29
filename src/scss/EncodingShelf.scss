@@ -27,16 +27,6 @@
 }
 
 .encoding-shelf-compact {
-    //padding: 10px;
-    //width: 100%;
-    width: 236px;
-    overflow-y: auto;
-    transition: height 300ms cubic-bezier(0.4, 0, 0.2, 1) 0ms;
-    //overflow: hidden;
-    align-items: flex-start;
-    padding-right: 8px;
-    padding-left: 8px;
-    //background-color: rgba(0,0,0,0.02);
 
     .example-panel {
         display: flex;
