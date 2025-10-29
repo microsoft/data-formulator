@@ -24,7 +24,7 @@
         "mui-markdown": "^1.1.13",
         "prettier": "^2.8.3",
         "prism-react-renderer": "^1.3.5",
-        "prismjs": "^1.29.0",
+        "prismjs": "^1.30.0",
         "react": "^18.2.0",
         "react-animate-height": "^3.0.4",
         "react-animate-on-change": "^2.2.0",
@@ -42,7 +42,7 @@
         "redux": "^4.2.0",
         "redux-persist": "^6.0.0",
         "typescript": "^4.9.5",
-        "validator": "^13.12.0",
+        "validator": "^13.15.20",
         "vega": "^5.32.0",
         "vega-embed": "^6.21.0",
         "vega-lite": "^5.5.0",
@@ -84,6 +84,6 @@
         "globals": "^15.12.0",
         "sass": "^1.77.6",
         "typescript-eslint": "^8.16.0",
-        "vite": "^5.4.19"
+        "vite": "^5.4.21"
     }
 }
