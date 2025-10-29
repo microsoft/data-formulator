@@ -60,7 +60,8 @@ import RotateRightIcon from '@mui/icons-material/RotateRight';
 import EditIcon from '@mui/icons-material/Edit';
 import { ThinkingBufferEffect } from '../components/FunComponents';
 
-const AUTO_FOCUS_NEW_CHART = true;
+// when this is set to true, the new chart will be focused automatically
+const AUTO_FOCUS_NEW_CHART = false;
 
 export interface ChartRecBoxProps {
     tableId: string;

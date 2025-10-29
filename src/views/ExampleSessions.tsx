@@ -62,7 +62,9 @@ export const ExampleSessionCard: React.FC<{
     return (
         <Card
             sx={{
-                width: 240,
+                width: 'clamp(180px, 18vw, 240px)',
+                minWidth: '180px',
+                flex: '1 1 auto',
                 borderRadius: 3,
                 border: `1px solid ${alpha(theme.palette.primary.main, 0.2)}`,
                 boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
