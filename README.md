@@ -140,7 +140,15 @@ Play with Data Formulator with one of the following options:
 
 ## Using Data Formulator
 
-Once you've completed the setup using either option, follow these steps to start using Data Formulator:
+Once you've completed the setup using either option, here are four levels to works with data formulator that trades off between control (more reliable) and vibe (more automation):
+
+- Level 1 (most control): Create charts with UI (when the data is prepared for the chart design) via drag-and-drop.
+- Level 2: Specify chart design with natural language + NL to describe new fields to be visualized, and ask AI to transform data to realize the design.
+- Level 3: Ask AI agents to provide chart or exploration direction recommendations based on analysis threads.
+- Level 4 (most vibe): In agent mode, provide a high-level goal and let AI agents automatically plan and explore data in multiple turns. An exploration thread will be created for you.
+
+In your exploration, leverage all of them to keep up both vibe and control!
+
 <!-- 
 ### The basics of data visualization
 * Set up model provider, for agentic experience, model with reasoning and strong code generation ablity is recommended.
