@@ -24,14 +24,16 @@ Any questions? Ask on the Discord channel! [![Discord](https://img.shields.io/ba
 
 
 ## News 🔥🔥🔥
-- [11-07-2025] Data Formulator 0.5 -- Vibe with your data, with control 🔥
-  - **Load (almost) any data**: load structured data, extract data from screenshots, messy text blocks or connect to databases.
-  - **Explore data with AI agents**: 
-    - Agent mode: Provide a high-level goal and ask agents to explore data for you.
-    - Directly interact with agent to stay in control: ask for recommendations or specify chart designs with UI + NL inputs, and AI agents will formulate data to realize your design.
-    - Use data threads to choose control exploration directions: backtrack, branch, or followup.
-    - Verify AI generated results by inspecting data, formulas, explanations and code.
-  - **Create reports to share insights**: choose charts you want to share, and ask agents to create reports grounded on data formulated throughout exploration.
+
+[11-07-2025] Data Formulator 0.5 -- Vibe with your data, with control 🔥
+
+- 📂 **Load (almost) any data**: load structured data, extract data from screenshots, messy text blocks or connect to databases.
+- 🤖 **Explore data with AI agents**: 
+  - Agent mode: Provide a high-level goal and ask agents to explore data for you.
+  - Directly interact with agent to stay in control: ask for recommendations or specify chart designs with UI + NL inputs, and AI agents will formulate data to realize your design.
+  - Use data threads to choose control exploration directions: backtrack, branch, or followup.
+- ✅ **Verify AI generated results**: interact with charts, inspect data, formulas, explanations and code.
+- 📝 **Create reports to share insights**: choose charts you want to share, and ask agents to create reports grounded on data formulated throughout exploration.
 
 ## Previous Updates
 
