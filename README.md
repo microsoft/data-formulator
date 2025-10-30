@@ -24,10 +24,31 @@ Any questions? Ask on the Discord channel! [![Discord](https://img.shields.io/ba
 
 
 ## News 🔥🔥🔥
-- [11-07-2025] Data Formulator 0.5 🔥: Vibe with your data, in the exploration paths you choose.
-  - Need more automation? **Agent mode**: provide a high-level goal and let the agents plan and explore data for you. 🤖
-  - Need more control? Let's go **interactive**: choose a different path to explore, update the chart design, or followup with a new question. ✎
-  - Data to analyze is not structured? **Extract data** wtih agents from screenshots or text blocks to start exploration. 🫧
+- [11-07-2025] Data Formulator 0.5 -- Vibe with your data, with control 🔥
+  - **Load (almost) any data**: load structured data, extract data from screenshots, messy text blocks or connect to databases.
+  - **Explore data with AI agents**: 
+    - Agent mode: Provide a high-level goal and ask agents to explore data for you.
+    - Directly interact with agent to stay in control: ask for recommendations or specify chart designs with UI + NL inputs, and AI agents will formulate data to realize your design.
+    - Use data threads to choose control exploration directions: backtrack, branch, or followup.
+    - Verify AI generated results by inspecting data, formulas, explanations and code.
+  - **Create reports to share insights**: choose charts you want to share, and ask agents to create reports grounded on data formulated throughout exploration.
+
+## Previous Updates
+
+Here are milestones that lead to the current design:
+- **v0.2.2** ([Demo](https://github.com/microsoft/data-formulator/pull/176)): Goal-driven exploration with agent recommendations and performance improvements
+- **v0.2.1.3/4** ([Readme](https://github.com/microsoft/data-formulator/tree/main/py-src/data_formulator/data_loader) | [Demo](https://github.com/microsoft/data-formulator/pull/155)): External data loaders (MySQL, PostgreSQL, MSSQL, Azure Data Explorer, S3, Azure Blob)
+- **v0.2** ([Demos](https://github.com/microsoft/data-formulator/releases/tag/0.2)): Large data support with DuckDB integration
+- **v0.1.7** ([Demos](https://github.com/microsoft/data-formulator/releases/tag/0.1.7)): Dataset anchoring for cleaner workflows
+- **v0.1.6** ([Demo](https://github.com/microsoft/data-formulator/releases/tag/0.1.6)): Multi-table support with automatic joins
+- **Model Support**: OpenAI, Azure, Ollama, Anthropic via [LiteLLM](https://github.com/BerriAI/litellm) ([feedback](https://github.com/microsoft/data-formulator/issues/49))
+- **Python Package**: Easy local installation ([try it](#get-started))
+- **Visualization Challenges**: Test your skills ([challenges](https://github.com/microsoft/data-formulator/issues/53))
+- **Data Extraction**: Parse data from images and text ([demo](https://github.com/microsoft/data-formulator/pull/31#issuecomment-2403652717))
+- **Initial Release**: [Blog](https://www.microsoft.com/en-us/research/blog/data-formulator-exploring-how-ai-can-help-analysts-create-rich-data-visualizations/) | [Video](https://youtu.be/3ndlwt0Wi3c)
+
+<details>
+<summary><b>View detailed update history</b></summary>
 
 - [07-10-2025] Data Formulator 0.2.2: Start with an analysis goal
   - Some key frontend performance updates. 
@@ -78,11 +99,13 @@ Any questions? Ask on the Discord channel! [![Discord](https://img.shields.io/ba
   
 - [10-01-2024] Initial release of Data Formulator, check out our [[blog]](https://www.microsoft.com/en-us/research/blog/data-formulator-exploring-how-ai-can-help-analysts-create-rich-data-visualizations/) and [[video]](https://youtu.be/3ndlwt0Wi3c)!
 
+</details>
+
 ## Overview
 
-**Data Formulator** is an application from Microsoft Research that uses large language models to transform data, expediting the practice of data visualization.
+**Data Formulator** is an application from Microsoft Research that uses AI agents to make it easier to turn data into insights.
 
-Data Formulator is an AI-powered tool for analysts to iteratively create rich visualizations. Unlike most chat-based AI tools where users need to describe everything in natural language, Data Formulator combines *user interface interactions (UI)* and *natural language (NL) inputs* for easier interaction. This blended approach makes it easier for users to describe their chart designs while delegating data transformation to AI. 
+Data Formulator is an AI-powered tool for analysts to iteratively explore and visualize data. Started with data in any format (screenshot, text, csv, or database), users can work with AI agents with a novel blended interface that combines *user interface interactions (UI)* and *natural language (NL) inputs* to communicate their intents, control branching exploration directions, and create reports to share their insights. 
 
 ## Get Started
 
@@ -96,16 +119,13 @@ Play with Data Formulator with one of the following options:
   # install data_formulator
   pip install data_formulator
 
-  # start data_formulator
-  data_formulator 
-  
-  # alternatively, you can run data formulator with this command
+  # Run data formulator with this command
   python -m data_formulator
   ```
 
   Data Formulator will be automatically opened in the browser at [http://localhost:5000](http://localhost:5000).
 
-  *Update: you can specify the port number (e.g., 8080) by `python -m data_formulator --port 8080` if the default port is occupied.*
+  *you can specify the port number (e.g., 8080) by `python -m data_formulator --port 8080` if the default port is occupied.*
 
 - **Option 2: Codespaces (5 minutes)**
   
@@ -115,16 +135,16 @@ Play with Data Formulator with one of the following options:
 
 - **Option 3: Working in the developer mode**
   
-  You can build Data Formulator locally if you prefer full control over your development environment and the ability to customize the setup to your specific needs. For detailed instructions, refer to [DEVELOPMENT.md](DEVELOPMENT.md).
+  You can build Data Formulator locally if you prefer full control over your development environment and develop your own version on top. For detailed instructions, refer to [DEVELOPMENT.md](DEVELOPMENT.md).
 
 
 ## Using Data Formulator
 
 Once you've completed the setup using either option, follow these steps to start using Data Formulator:
-
+<!-- 
 ### The basics of data visualization
-* Provide OpenAI keys and select a model (GPT-4o suggested) and choose a dataset.
-* Choose a chart type, and then drag-and-drop data fields to chart properties (x, y, color, ...) to specify visual encodings.
+* Set up model provider, for agentic experience, model with reasoning and strong code generation ablity is recommended.
+* Describe the exploration 
 
 https://github.com/user-attachments/assets/0fbea012-1d2d-46c3-a923-b1fc5eb5e5b8
 
@@ -144,7 +164,7 @@ https://github.com/user-attachments/assets/160c69d2-f42d-435c-9ff3-b1229b5bddba
 
 https://github.com/user-attachments/assets/c93b3e84-8ca8-49ae-80ea-f91ceef34acb
 
-Repeat this process as needed to explore and understand your data. Your explorations are trackable in the **Data Threads** panel. 
+Repeat this process as needed to explore and understand your data. Your explorations are trackable in the **Data Threads** panel.  -->
 
 ## Developers' Guide
 
