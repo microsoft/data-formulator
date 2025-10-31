@@ -35,6 +35,42 @@ def download_html_content(url: str, timeout: int = 30, headers: Optional[dict] =
     parsed_url = urlparse(url)
     if not parsed_url.scheme or not parsed_url.netloc:
         raise ValueError(f"Invalid URL format: {url}")
+
+    # Block SSRF: Only allow http/https schemes
+    if parsed_url.scheme.lower() not in ("http", "https"):
+        raise ValueError(f"Unsupported URL scheme: {parsed_url.scheme}")
+
+    # Block SSRF: Disallow internal/private IP addresses and localhost
+    import socket
+    import ipaddress
+    try:
+        # Resolve all addresses for the hostname (handles IPv6 and IPv4)
+        hostname = parsed_url.hostname
+        addresses = set()
+        for res in socket.getaddrinfo(hostname, None):
+            addr = res[4][0]
+            try:
+                ip_obj = ipaddress.ip_address(addr)
+                if (
+                    ip_obj.is_private or
+                    ip_obj.is_loopback or
+                    ip_obj.is_link_local or
+                    ip_obj.is_multicast or
+                    ip_obj.is_reserved or
+                    ip_obj.is_unspecified
+                ):
+                    raise ValueError(f"URL points to a local or private IP address: {addr}")
+                # Block access to typical cloud metadata endpoints
+                if addr.startswith("169.254.169.254"):
+                    raise ValueError(f"URL points to a restricted cloud metadata IP: {addr}")
+                addresses.add(addr)
+            except ValueError:
+                # Not an IP address, skip
+                continue
+    except socket.gaierror as e:
+        raise ValueError(f"Could not resolve hostname: {hostname}") from e
+    
+    # If desired, impose further restrictions here, e.g. domain allowlist
     
     # Set default headers if none provided
     if headers is None:
