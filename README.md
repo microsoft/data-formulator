@@ -1,5 +1,5 @@
 <h1>
-    <img src="./public/favicon.ico" alt="Data Formulator icon" width="28"> <b>Data Formulator: Data Exploration with AI Agents</b>
+    <img src="./public/favicon.ico" alt="Data Formulator icon" width="28"> <b>Data Formulator: Vibe with data, in control</b>
 </h1>
 
 <div>
@@ -25,15 +25,15 @@ Any questions? Ask on the Discord channel! [![Discord](https://img.shields.io/ba
 
 ## News 🔥🔥🔥
 
-[11-07-2025] Data Formulator 0.5 -- Vibe with your data, with control 🔥
+[11-07-2025] Data Formulator 0.5: Vibe with your data, in control 🔥
 
-- 📂 **Load (almost) any data**: load structured data, extract data from screenshots, messy text blocks or connect to databases.
+- 📊 **Load (almost) any data**: load structured data, extract data from screenshots, from messy text blocks, or connect to databases.
 - 🤖 **Explore data with AI agents**: 
-  - Agent mode: Provide a high-level goal and ask agents to explore data for you.
-  - Directly interact with agent to stay in control: ask for recommendations or specify chart designs with UI + NL inputs, and AI agents will formulate data to realize your design.
-  - Use data threads to choose control exploration directions: backtrack, branch, or followup.
-- ✅ **Verify AI generated results**: interact with charts, inspect data, formulas, explanations and code.
-- 📝 **Create reports to share insights**: choose charts you want to share, and ask agents to create reports grounded on data formulated throughout exploration.
+  - In agent mode, provide a high-level goal and ask agents to explore data for you.
+  - To stay in control, directly interact with agents: ask for recommendations or specify chart designs with UI + NL inputs, and AI agents will formulate data to realize your design.
+  - Use data threads to control branching exploration paths: backtrack, branch, or follow up.
+- ✅ **Verify AI generated results**: interact with charts and inspect data, formulas, explanations, and code.
+- 📝 **Create reports to share insights**: choose charts you want to share, and ask agents to create reports grounded in data formulated throughout exploration.
 
 ## Previous Updates
 
@@ -149,7 +149,9 @@ Once you've completed the setup using either option, here are four levels to wor
 - Level 3: Ask AI agents to provide chart or exploration direction recommendations based on analysis threads.
 - Level 4 (most vibe): In agent mode, provide a high-level goal and let AI agents automatically plan and explore data in multiple turns. An exploration thread will be created for you.
 
-In your exploration, leverage all of them to keep up both vibe and control!
+https://github.com/user-attachments/assets/164aff58-9f93-4792-b8ed-9944578fbb72
+
+In your exploration, leverage all of them to keep up both vibe and control (i.e., level 5)!
 
 <!-- 
 ### The basics of data visualization

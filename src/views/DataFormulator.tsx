@@ -248,7 +248,7 @@ Totals (7 entries)	5	5	5	15
                 <Box component="img" sx={{  width: 84,  }} alt="" src={dfLogo} /> 
                 <Typography fontSize={64} sx={{ml: 2, letterSpacing: '0.05em', fontWeight: 200, color: 'text.primary'}}>{toolName}</Typography> 
             </Box>
-            <Typography fontSize={24} sx={{color: 'text.secondary'}}>Turn data into insights with AI agents, with the exploration pathes you choose.</Typography>
+            <Typography fontSize={24} sx={{color: 'text.secondary'}}>Turn data into insights with AI agents, with the exploration paths you choose.</Typography>
             <Box sx={{mt: 4, width: '100%', borderRadius: 8, 
                 background: `
                     linear-gradient(90deg, ${alpha(theme.palette.text.secondary, 0.02)} 1px, transparent 1px),
