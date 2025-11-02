@@ -8,17 +8,123 @@ import logging
 from urllib.parse import urlparse
 import tempfile
 import os
+import socket
+import ipaddress
 
 logger = logging.getLogger(__name__)
 
 
+def _is_private_ip(ip_str: str) -> bool:
+    """
+    Check if an IP address is private, internal, or otherwise restricted.
+    
+    Args:
+        ip_str: IP address as a string
+        
+    Returns:
+        bool: True if IP is private/restricted, False if public
+    """
+    try:
+        ip_obj = ipaddress.ip_address(ip_str)
+        
+        # Check if IP is private, loopback, link-local, multicast, reserved, or unspecified
+        if (
+            ip_obj.is_private or
+            ip_obj.is_loopback or
+            ip_obj.is_link_local or
+            ip_obj.is_multicast or
+            ip_obj.is_reserved or
+            ip_obj.is_unspecified
+        ):
+            return True
+        
+        # Explicitly block cloud metadata endpoints
+        # AWS/Azure/GCP metadata endpoint
+        if ip_str == "169.254.169.254":
+            return True
+            
+        # AWS IPv6 metadata endpoint
+        if ip_str.startswith("fd00:ec2::"):
+            return True
+            
+        return False
+        
+    except ValueError:
+        # Not a valid IP address
+        return False
+
+
+def _validate_url_for_ssrf(url: str) -> str:
+    """
+    Validate a URL to prevent SSRF attacks.
+    
+    Performs the following checks:
+    1. Protocol validation (HTTP/HTTPS only)
+    2. Private IP blocking
+    
+    Args:
+        url: The URL to validate
+        
+    Returns:
+        str: The validated URL
+        
+    Raises:
+        ValueError: If the URL fails any security checks
+    """
+    if not url:
+        raise ValueError("URL cannot be empty")
+    
+    # Parse and validate URL format
+    parsed_url = urlparse(url)
+    if not parsed_url.scheme or not parsed_url.netloc:
+        raise ValueError(f"Invalid URL format: {url}")
+    
+    # Protection 1: Only allow HTTP/HTTPS schemes
+    if parsed_url.scheme.lower() not in ("http", "https"):
+        raise ValueError(
+            f"Blocked: Unsupported URL scheme '{parsed_url.scheme}'. "
+            f"Only HTTP and HTTPS are allowed to prevent SSRF attacks."
+        )
+    
+    hostname = parsed_url.hostname
+    if not hostname:
+        raise ValueError(f"Could not extract hostname from URL: {url}")
+    
+    # Protection 2: Block requests to private/internal IP addresses
+    try:
+        # Resolve all addresses for the hostname (handles both IPv4 and IPv6)
+        addr_info = socket.getaddrinfo(hostname, None)
+        
+        for res in addr_info:
+            addr = res[4][0]
+            
+            # Check if this resolved IP is private/internal
+            if _is_private_ip(addr):
+                raise ValueError(
+                    f"Blocked: URL '{url}' resolves to private/internal IP address {addr}. "
+                    f"Access to private networks is not allowed to prevent SSRF attacks."
+                )
+                
+    except socket.gaierror as e:
+        raise ValueError(f"Could not resolve hostname '{hostname}': {str(e)}") from e
+    
+    return url
+
+
 def download_html_content(url: str, timeout: int = 30, headers: Optional[dict] = None) -> str:
     """
-    Download HTML content from a given URL.
+    Download HTML content from a given URL with SSRF protection.
+    
+    This function implements comprehensive SSRF protection:
+    1. Protocol validation (HTTP/HTTPS only)
+    2. Private IP blocking (before request)
+    3. Redirect validation (validates all redirect destinations)
+    4. Timeout limits (prevents slowloris attacks)
+    5. Logging of all accessed URLs (for security auditing)
     
     Args:
         url (str): The URL to download HTML from
-        timeout (int): Request timeout in seconds (default: 30)
+        timeout (int): Request timeout in seconds (default: 30, max: 60)
         headers (dict, optional): Custom headers for the request
         
     Returns:
@@ -26,51 +132,20 @@ def download_html_content(url: str, timeout: int = 30, headers: Optional[dict] =
         
     Raises:
         requests.RequestException: If the request fails
-        ValueError: If the URL is invalid
+        ValueError: If the URL is invalid or blocked by SSRF protection
     """
-    if not url:
-        raise ValueError("URL cannot be empty")
+    # Protection 5: Log all URL access attempts for security auditing
+    logger.info(f"Attempting to download HTML from URL: {url}")
     
-    # Validate URL format
-    parsed_url = urlparse(url)
-    if not parsed_url.scheme or not parsed_url.netloc:
-        raise ValueError(f"Invalid URL format: {url}")
-
-    # Block SSRF: Only allow http/https schemes
-    if parsed_url.scheme.lower() not in ("http", "https"):
-        raise ValueError(f"Unsupported URL scheme: {parsed_url.scheme}")
-
-    # Block SSRF: Disallow internal/private IP addresses and localhost
-    import socket
-    import ipaddress
-    try:
-        # Resolve all addresses for the hostname (handles IPv6 and IPv4)
-        hostname = parsed_url.hostname
-        addresses = set()
-        for res in socket.getaddrinfo(hostname, None):
-            addr = res[4][0]
-            try:
-                ip_obj = ipaddress.ip_address(addr)
-                if (
-                    ip_obj.is_private or
-                    ip_obj.is_loopback or
-                    ip_obj.is_link_local or
-                    ip_obj.is_multicast or
-                    ip_obj.is_reserved or
-                    ip_obj.is_unspecified
-                ):
-                    raise ValueError(f"URL points to a local or private IP address: {addr}")
-                # Block access to typical cloud metadata endpoints
-                if addr.startswith("169.254.169.254"):
-                    raise ValueError(f"URL points to a restricted cloud metadata IP: {addr}")
-                addresses.add(addr)
-            except ValueError:
-                # Not an IP address, skip
-                continue
-    except socket.gaierror as e:
-        raise ValueError(f"Could not resolve hostname: {hostname}") from e
+    # Protection 1 & 2: Validate URL for SSRF (protocol and IP checks)
+    _validate_url_for_ssrf(url)
     
-    # If desired, impose further restrictions here, e.g. domain allowlist
+    # Protection 4: Enforce reasonable timeout limits (prevent slowloris)
+    if timeout <= 0:
+        timeout = 30
+    elif timeout > 60:
+        logger.warning(f"Timeout of {timeout}s exceeds maximum, capping at 60s")
+        timeout = 60
     
     # Set default headers if none provided
     if headers is None:
@@ -84,17 +159,54 @@ def download_html_content(url: str, timeout: int = 30, headers: Optional[dict] =
         }
     
     try:
-        response = requests.get(url, timeout=timeout, headers=headers)
-        response.raise_for_status()
+        # Protection 3: Use a session to handle and validate redirects
+        with requests.Session() as session:
+            # Create a custom adapter to hook into redirect handling
+            class SSRFSafeHTTPAdapter(requests.adapters.HTTPAdapter):
+                def send(self, request, **kwargs):
+                    # Validate each request (including redirects)
+                    try:
+                        _validate_url_for_ssrf(request.url)
+                    except ValueError as e:
+                        # Log the blocked redirect attempt
+                        logger.error(f"Blocked redirect to unsafe URL: {request.url} - {str(e)}")
+                        raise
+                    return super().send(request, **kwargs)
+            
+            # Mount the adapter for both HTTP and HTTPS
+            adapter = SSRFSafeHTTPAdapter()
+            session.mount('http://', adapter)
+            session.mount('https://', adapter)
+            
+            # Make the request (redirects will be validated automatically)
+            response = session.get(
+                url, 
+                timeout=timeout, 
+                headers=headers,
+                allow_redirects=True  # Safe because we validate each redirect
+            )
+            response.raise_for_status()
+            
+            # Log successful access and any redirects that occurred
+            if response.history:
+                redirect_chain = " -> ".join([r.url for r in response.history] + [response.url])
+                logger.info(f"Successfully downloaded HTML with redirects: {redirect_chain}")
+            else:
+                logger.info(f"Successfully downloaded HTML from: {url}")
+            
+            # Ensure we're getting HTML content
+            content_type = response.headers.get('content-type', '').lower()
+            if 'text/html' not in content_type and 'application/xhtml' not in content_type:
+                logger.warning(f"Content-Type is {content_type}, but proceeding anyway")
+            
+            return response.text
         
-        # Ensure we're getting HTML content
-        content_type = response.headers.get('content-type', '').lower()
-        if 'text/html' not in content_type and 'application/xhtml' not in content_type:
-            logger.warning(f"Content-Type is {content_type}, but proceeding anyway")
-        
-        return response.text
-        
+    except ValueError as e:
+        # SSRF protection blocked the request
+        logger.error(f"SSRF protection blocked request to {url}: {str(e)}")
+        raise
     except requests.RequestException as e:
+        # Network or HTTP error
         logger.error(f"Failed to download HTML from {url}: {str(e)}")
         raise
 
