@@ -597,7 +597,7 @@ Revenue in More Personal Computing was $13.5 billion and increased 9%, with the 
                                 alt={`Pasted image ${index + 1}`}
                                 sx={{
                                     maxHeight: existOutputBlocks ? 60 : 600,
-                                    maxWidth: inputImages.length > 1 ? '30%' : 400,
+                                    maxWidth: inputImages.length > 1 ? '30%' : 600,
                                     objectFit: 'cover',
                                     borderRadius: 1,
                                     border: '1px solid',

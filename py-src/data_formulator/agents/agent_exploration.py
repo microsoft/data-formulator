@@ -147,13 +147,7 @@ class ExplorationAgent(object):
                 "image_url": {"url": visualization}
             }
         else:
-            # Assume it's a file path, convert to data URL
-            with open(visualization, 'rb') as img_file:
-                img_data = base64.b64encode(img_file.read()).decode()
-                return {
-                    "type": "image_url",
-                    "image_url": {"url": f"data:image/png;base64,{img_data}"}
-                }
+            return {"type": "text", "text": "The visualization is not available."}
 
     def get_data_summary(self, input_tables):
         if self.db_conn:

@@ -142,16 +142,28 @@ Play with Data Formulator with one of the following options:
 
 ## Using Data Formulator
 
-Once you've completed the setup using either option, here are four levels to works with data formulator that trades off between control (more reliable) and vibe (more automation):
+### Load Data
 
-- Level 1 (most control): Create charts with UI (when the data is prepared for the chart design) via drag-and-drop.
-- Level 2: Specify chart design with natural language + NL to describe new fields to be visualized, and ask AI to transform data to realize the design.
-- Level 3: Ask AI agents to provide chart or exploration direction recommendations based on analysis threads.
-- Level 4 (most vibe): In agent mode, provide a high-level goal and let AI agents automatically plan and explore data in multiple turns. An exploration thread will be created for you.
+Besides uploading csv, tsv or xlsx files that contain structured data, you can ask Data Formulator to extract data from screenshots, text blocks or websites, or load data from databases use connectors. Then you are ready to explore.
+
+<img width="1920" alt="image" src="https://github.com/user-attachments/assets/e23cdb47-984c-4ce4-a014-8f36e025e393" />
+
+### Explore Data
+
+There are four levels to explore data based depending on whether you want more vibe or more control:
+
+- Level 1 (most control): Create charts with UI via drag-and-drop, if all fields to be visualized are already in the data.
+- Level 2: Specify chart designs with natural language + NL. Describe how new fields should be visualized in your chart, AI will automatically transform data to realize the design.
+- Level 3: Get recommendations: Ask AI agents to recommend charts directly from NL descriptions, or even directly ask for exploration ideas.
+- Level 4 (most vibe): In agent mode, provide a high-level goal and let AI agents automatically plan and explore data in multiple turns. Exploration threads will be created automatically.
 
 https://github.com/user-attachments/assets/164aff58-9f93-4792-b8ed-9944578fbb72
 
-In your exploration, leverage all of them to keep up both vibe and control (i.e., level 5)!
+- Level 5: In practice, leverage all of them to keep up with both vibe and control!
+
+### Create Reports
+
+Use the report builder to compose a report of the style you like, based on selected charts. Then share the reports to others!
 
 <!-- 
 ### The basics of data visualization
