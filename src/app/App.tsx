@@ -79,6 +79,7 @@ import EditIcon from '@mui/icons-material/Edit';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import GitHubIcon from '@mui/icons-material/GitHub';
 import UploadIcon from '@mui/icons-material/Upload';
+import InfoIcon from '@mui/icons-material/Info';
 
 const AppBar = styled(MuiAppBar)(({ theme }) => ({
     color: 'black',
@@ -635,7 +636,7 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
     });
 
     // Check if we're on the about page
-    const isAboutPage = window.location.pathname === '/';
+    const isAboutPage = window.location.pathname === '/about';
 
     let appBar =  [
         <AppBar position="static" key="app-bar-main" >
@@ -653,6 +654,67 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
                         {toolName}
                     </Typography>                    
                 </Button>
+                <ToggleButtonGroup
+                    value={isAboutPage ? 'about' : 'app'}
+                    exclusive
+                    sx={{ 
+                        ml: 2,
+                        height: '28px', 
+                        my: 'auto',
+                        borderRadius: 2,
+                        border: '1px solid rgba(0, 0, 0, 0.05)',
+                        boxShadow: 'none',
+                        '& .MuiToggleButton-root': {
+                            textTransform: 'none',
+                            fontSize: '13px',
+                            fontWeight: 400,
+                            border: 'none',
+                            borderRadius: 1,
+                            px: 1.5,
+                            py: 0.5,
+                            color: 'text.secondary',
+                            '&:hover': {
+                                backgroundColor: 'rgba(0, 0, 0, 0.02)',
+                                color: 'text.primary',
+                            },
+                            '&.Mui-selected': {
+                                backgroundColor: 'rgba(0, 0, 0, 0.03)',
+                                color: 'text.primary',
+                            },
+                            '&:first-of-type': {
+                                borderTopRightRadius: 0,
+                                borderBottomRightRadius: 0,
+                            },
+                            '&:last-of-type': {
+                                borderTopLeftRadius: 0,
+                                borderBottomLeftRadius: 0,
+                            }
+                        },
+                    }}
+                >
+                    <ToggleButton 
+                        value="app" 
+                        component="a" 
+                        href="/"
+                        sx={{ textDecoration: 'none' }}
+                    >
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                            <GridViewIcon fontSize="small" />
+                            <Box component="span">App</Box>
+                        </Box>
+                    </ToggleButton>
+                    <ToggleButton 
+                        value="about" 
+                        component="a" 
+                        href="/about"
+                        sx={{ textDecoration: 'none' }}
+                    >
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                            <InfoIcon fontSize="small" />
+                            <Box component="span">About</Box>
+                        </Box>
+                    </ToggleButton>
+                </ToggleButtonGroup>
                 {!isAboutPage && (
                     <Box sx={{ display: 'flex', ml: 'auto', fontSize: 14, mr: 1, px: 0.5,
                                 backgroundColor: alpha(theme.palette.primary.main, 0.02),
@@ -763,7 +825,7 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
 
     let router = createBrowserRouter([
         {
-            path: "/",
+            path: "/about",
             element: <About />,
         }, {
             path: "*",

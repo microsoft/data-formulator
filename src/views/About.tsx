@@ -8,6 +8,7 @@ import ArrowForwardIosIcon from '@mui/icons-material/ArrowForwardIos';
 import YouTubeIcon from '@mui/icons-material/YouTube';
 import GitHubIcon from '@mui/icons-material/GitHub';
 import PublicIcon from '@mui/icons-material/Public';
+import GridViewIcon from '@mui/icons-material/GridView';
 
 import dfLogo from '../assets/df-logo.png';
 import { toolName } from "../app/App";
@@ -118,6 +119,22 @@ export const About: FC<{}> = function About({ }) {
                 <Box sx={{ display: 'flex', justifyContent: 'center', gap: 1, mb: 4, flexWrap: 'wrap' }}>
                     <Button 
                         size="small"
+                        variant="contained"
+                        startIcon={<GridViewIcon sx={{ fontSize: '1rem' }} />}
+                        href="/app"
+                        sx={{ 
+                            textTransform: 'none',
+                            fontSize: '0.8rem',
+                            px: 1.5,
+                            py: 0.5,
+                           
+                        }}
+                    >
+                        Start Exploring
+                    </Button>
+                    <Divider orientation="vertical" sx={{ mx: 1 }} />
+                    <Button 
+                        size="small"
                         variant="text"
                         startIcon={<YouTubeIcon sx={{ fontSize: '1rem', color: '#FF0000' }} />}
                         href="https://youtu.be/3ndlwt0Wi3c"
@@ -179,25 +196,7 @@ export const About: FC<{}> = function About({ }) {
                     >
                         Pip Install
                     </Button>
-                    <Button 
-                        size="small"
-                        variant="text"
-                        startIcon={<PublicIcon sx={{ fontSize: '1rem', color: '#1976d2' }} />}
-                        href="/app"
-                        sx={{ 
-                            textTransform: 'none',
-                            fontSize: '0.8rem',
-                            px: 1.5,
-                            py: 0.5,
-                            color: 'text.secondary',
-                            '&:hover': {
-                                color: 'text.primary',
-                                backgroundColor: alpha(theme.palette.text.secondary, 0.05)
-                            }
-                        }}
-                    >
-                        Online Demo (limited features)
-                    </Button>
+                    
                     <Button 
                         size="small"
                         variant="text"
@@ -443,16 +442,6 @@ export const About: FC<{}> = function About({ }) {
                         >
                             Start exploring your data now →
                         </Typography>
-                        <Box 
-                            component="img" 
-                            src={dfLogo} 
-                            alt="Data Formulator Logo"
-                            sx={{ 
-                                width: 300, 
-                                height: 'auto',
-                                mb: 2
-                            }} 
-                        />
                     </Box>
                 </Box>
             </Box>
