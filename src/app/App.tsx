@@ -38,6 +38,8 @@ import {
     MenuItem,
     TextField,
     useTheme,
+    SvgIcon,
+    IconButton,
 } from '@mui/material';
 
 
@@ -79,7 +81,16 @@ import EditIcon from '@mui/icons-material/Edit';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import GitHubIcon from '@mui/icons-material/GitHub';
 import UploadIcon from '@mui/icons-material/Upload';
-import InfoIcon from '@mui/icons-material/Info';
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
+import YouTubeIcon from '@mui/icons-material/YouTube';
+import PublicIcon from '@mui/icons-material/Public';
+
+// Discord Icon Component
+const DiscordIcon: FC<{ sx?: any }> = ({ sx }) => (
+    <SvgIcon sx={sx} viewBox="0 0 24 24">
+        <path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515a.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0a12.64 12.64 0 0 0-.617-1.25a.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057a19.9 19.9 0 0 0 5.993 3.03a.078.078 0 0 0 .084-.028a14.09 14.09 0 0 0 1.226-1.994a.076.076 0 0 0-.041-.106a13.107 13.107 0 0 1-1.872-.892a.077.077 0 0 1-.008-.128a10.2 10.2 0 0 0 .372-.292a.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127a12.299 12.299 0 0 1-1.873.892a.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028a19.839 19.839 0 0 0 6.002-3.03a.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419c0-1.333.956-2.419 2.157-2.419c1.21 0 2.176 1.096 2.157 2.42c0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419c0-1.333.955-2.419 2.157-2.419c1.21 0 2.176 1.096 2.157 2.42c0 1.333-.946 2.418-2.157 2.418z" fill="currentColor"/>
+    </SvgIcon>
+);
 
 const AppBar = styled(MuiAppBar)(({ theme }) => ({
     color: 'black',
@@ -641,7 +652,7 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
     let appBar =  [
         <AppBar position="static" key="app-bar-main" >
             <Toolbar variant="dense" sx={{height: 40, minHeight: 36}}>
-                <Button href={"/"} sx={{
+                <Button sx={{
                     display: "flex", flexDirection: "row", textTransform: "none",
                     alignItems: 'stretch',
                     backgroundColor: 'transparent',
@@ -661,24 +672,20 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
                         ml: 2,
                         height: '28px', 
                         my: 'auto',
-                        borderRadius: 2,
-                        border: '1px solid rgba(0, 0, 0, 0.05)',
-                        boxShadow: 'none',
                         '& .MuiToggleButton-root': {
                             textTransform: 'none',
                             fontSize: '13px',
                             fontWeight: 400,
                             border: 'none',
-                            borderRadius: 1,
+                            borderRadius: 0,
                             px: 1.5,
                             py: 0.5,
                             color: 'text.secondary',
+                            bgColor: 'rgba(0, 0, 0, 0.02)',
                             '&:hover': {
-                                backgroundColor: 'rgba(0, 0, 0, 0.02)',
                                 color: 'text.primary',
                             },
                             '&.Mui-selected': {
-                                backgroundColor: 'rgba(0, 0, 0, 0.03)',
                                 color: 'text.primary',
                             },
                             '&:first-of-type': {
@@ -693,25 +700,23 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
                     }}
                 >
                     <ToggleButton 
-                        value="app" 
-                        component="a" 
-                        href="/"
-                        sx={{ textDecoration: 'none' }}
-                    >
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                            <GridViewIcon fontSize="small" />
-                            <Box component="span">App</Box>
-                        </Box>
-                    </ToggleButton>
-                    <ToggleButton 
                         value="about" 
                         component="a" 
                         href="/about"
                         sx={{ textDecoration: 'none' }}
                     >
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                            <InfoIcon fontSize="small" />
                             <Box component="span">About</Box>
+                        </Box>
+                    </ToggleButton>
+                    <ToggleButton 
+                        value="app" 
+                        component="a" 
+                        href="/"
+                        sx={{ textDecoration: 'none' }}
+                    >
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                            <Box component="span">App</Box>
                         </Box>
                     </ToggleButton>
                 </ToggleButtonGroup>
@@ -801,24 +806,93 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
                         <ResetDialog />
                     </Box>
                 )}
-                {isAboutPage && <Box sx={{ ml: 'auto' }} />}
-                <Tooltip title="View on GitHub">
-                    <Button
-                        component="a"
-                        href="https://github.com/microsoft/data-formulator"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        sx={{ 
-                            minWidth: 'auto', 
-                            color: 'inherit',
-                            '&:hover': {
-                                backgroundColor: 'rgba(0, 0, 0, 0.04)'
-                            }
-                        }}
-                    >
-                        <GitHubIcon fontSize="medium" />
-                    </Button>
-                </Tooltip>
+                {isAboutPage && (
+                    <Box sx={{ ml: 'auto', display: 'flex', gap: 0.5 }}>
+                        <Tooltip title="Watch Video">
+                            <IconButton
+                                component="a"
+                                href="https://youtu.be/3ndlwt0Wi3c"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                sx={{ 
+                                    color: 'inherit',
+                                    '&:hover': {
+                                        backgroundColor: 'rgba(0, 0, 0, 0.04)'
+                                    }
+                                }}
+                            >
+                                <YouTubeIcon fontSize="small" />
+                            </IconButton>
+                        </Tooltip>
+                        <Tooltip title="View on GitHub">
+                            <IconButton
+                                component="a"
+                                href="https://github.com/microsoft/data-formulator"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                sx={{ 
+                                    color: 'inherit',
+                                    '&:hover': {
+                                        backgroundColor: 'rgba(0, 0, 0, 0.04)'
+                                    }
+                                }}
+                            >
+                                <GitHubIcon fontSize="small" />
+                            </IconButton>
+                        </Tooltip>
+                        <Tooltip title="Pip Install">
+                            <IconButton
+                                component="a"
+                                href="https://pypi.org/project/data-formulator/"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                sx={{ 
+                                    color: 'inherit',
+                                    '&:hover': {
+                                        backgroundColor: 'rgba(0, 0, 0, 0.04)'
+                                    }
+                                }}
+                            >
+                                <Box component="img" src="/pip-logo.svg" sx={{ width: 20, height: 20 }} />
+                            </IconButton>
+                        </Tooltip>
+                        <Tooltip title="Join Discord">
+                            <IconButton
+                                component="a"
+                                href="https://discord.gg/mYCZMQKYZb"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                sx={{ 
+                                    color: 'inherit',
+                                    '&:hover': {
+                                        backgroundColor: 'rgba(0, 0, 0, 0.04)'
+                                    }
+                                }}
+                            >
+                                <DiscordIcon sx={{ fontSize: 20 }} />
+                            </IconButton>
+                        </Tooltip>
+                    </Box>
+                )}
+                {!isAboutPage && (
+                    <Tooltip title="View on GitHub">
+                        <Button
+                            component="a"
+                            href="https://github.com/microsoft/data-formulator"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            sx={{ 
+                                minWidth: 'auto', 
+                                color: 'inherit',
+                                '&:hover': {
+                                    backgroundColor: 'rgba(0, 0, 0, 0.04)'
+                                }
+                            }}
+                        >
+                            <GitHubIcon fontSize="medium" />
+                        </Button>
+                    </Tooltip>
+                )}
             </Toolbar>
         </AppBar>
     ];
