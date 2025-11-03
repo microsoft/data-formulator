@@ -582,6 +582,7 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
     const viewMode = useSelector((state: DataFormulatorState) => state.viewMode);
     const generatedReports = useSelector((state: DataFormulatorState) => state.generatedReports);
     const focusedTableId = useSelector((state: DataFormulatorState) => state.focusedTableId);
+    const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
 
     useEffect(() => {
         fetch(getUrls().APP_CONFIG)
@@ -647,7 +648,8 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
     });
 
     // Check if we're on the about page
-    const isAboutPage = window.location.pathname === '/about';
+    const isAboutPage = (window.location.pathname === '/about' 
+            || (window.location.pathname === '/' && serverConfig.PROJECT_FRONT_PAGE));
 
     let appBar =  [
         <AppBar position="static" key="app-bar-main" >
@@ -712,7 +714,7 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
                     <ToggleButton 
                         value="app" 
                         component="a" 
-                        href="/"
+                        href="/app"
                         sx={{ textDecoration: 'none' }}
                     >
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
@@ -901,6 +903,9 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
         {
             path: "/about",
             element: <About />,
+        }, {
+            path: "/",
+            element: serverConfig.PROJECT_FRONT_PAGE ? <About /> : <DataFormulatorFC />,
         }, {
             path: "*",
             element: <DataFormulatorFC />,

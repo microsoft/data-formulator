@@ -321,7 +321,7 @@ Totals (7 entries)	5	5	5	15
         <Button size="small" color="inherit" 
                 sx={{position: "absolute", color:'darkgray', bottom: 8, left: 16, textTransform: 'none'}} 
                 target="_blank" rel="noopener noreferrer" 
-                href="https://privacy.microsoft.com/en-US/data-privacy-notice">view data privacy notice</Button>
+                href="https://www.microsoft.com/en-us/privacy/privacystatement">Privacy & Cookies</Button>
     </Box>;
 
     let modelSelectionDialogBox = <Box sx={{width: '100vw', display: 'flex', flexDirection: 'column', height: '100%'}}>
@@ -338,7 +338,7 @@ Totals (7 entries)	5	5	5	15
         <Button size="small" color="inherit" 
                 sx={{position: "absolute", color:'darkgray', bottom: 0, right: 0, textTransform: 'none'}} 
                 target="_blank" rel="noopener noreferrer" 
-                href="https://privacy.microsoft.com/en-US/data-privacy-notice">view data privacy notice</Button>
+                href="https://www.microsoft.com/en-us/privacy/privacystatement">Privacy & Cookies</Button>
     </Box>;
 
     return (

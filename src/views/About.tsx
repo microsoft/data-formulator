@@ -1,14 +1,19 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-import { Box, Typography, Button, useTheme, alpha, IconButton } from "@mui/material";
+import { Box, Typography, Button, useTheme, alpha, IconButton, Divider } from "@mui/material";
 import React, { FC, useState } from "react";
 import ArrowBackIosNewIcon from '@mui/icons-material/ArrowBackIosNew';
 import ArrowForwardIosIcon from '@mui/icons-material/ArrowForwardIos';
 import GridViewIcon from '@mui/icons-material/GridView';
+import GitHubIcon from '@mui/icons-material/GitHub';
+import YouTubeIcon from '@mui/icons-material/YouTube';
 
 import dfLogo from '../assets/df-logo.png';
 import { toolName } from "../app/App";
+import { useSelector } from "react-redux";
+import { DataFormulatorState } from "../app/dfSlice";
+
 
 interface Feature {
     title: string;
@@ -44,9 +49,18 @@ const features: Feature[] = [
     }
 ];
 
+const screenshots: {url: string, description: string}[] = [
+    {url: "/data-formulator-screenshot-v0.5.png", description: "Explore consumer price trends from 2005 to 2025"},
+    {url: "/screenshot-movies-report.png", description: "Report: Top directors by their revenue"},
+    {url: "/screenshot-renewable-energy.png", description: "Renewable energy percentage by country"},
+    {url: '/screenshot-unemployment.png', description: 'Report: Unemployment rate affected by 2008 financial crisis'},
+    {url: '/screenshot-claude-performance.png', description: 'Compare Claude models\' performance on different tasks'},
+];
+
 export const About: FC<{}> = function About({ }) {
     const theme = useTheme();
     const [currentFeature, setCurrentFeature] = useState(0);
+    const [currentScreenshot, setCurrentScreenshot] = useState(0);
 
     const handlePrevious = () => {
         setCurrentFeature((prev) => (prev === 0 ? features.length - 1 : prev - 1));
@@ -55,6 +69,52 @@ export const About: FC<{}> = function About({ }) {
     const handleNext = () => {
         setCurrentFeature((prev) => (prev === features.length - 1 ? 0 : prev + 1));
     };
+
+    const handleScreenshotPrevious = () => {
+        setCurrentScreenshot((prev) => (prev === 0 ? screenshots.length - 1 : prev - 1));
+    };
+
+    const handleScreenshotNext = () => {
+        setCurrentScreenshot((prev) => (prev === screenshots.length - 1 ? 0 : prev + 1));
+    };
+
+    const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
+
+    let actionButtons = !serverConfig.PROJECT_FRONT_PAGE ? (
+        <Box sx={{ display: 'flex', justifyContent: 'center', gap: 1, mb: 4, flexWrap: 'wrap' }}>
+            <Button size="large" variant="contained" color="primary" 
+                startIcon={<GridViewIcon sx={{ fontSize: '1rem' }} />}
+                href="/app"
+            >Start Exploration</Button>
+        </Box>
+    ) : (
+        <Box sx={{ display: 'flex', justifyContent: 'center', gap: 2, mb: 4, flexWrap: 'wrap', '.MuiButton-root': { textTransform: 'none' } }}>
+            <Button size="large" variant="outlined" color="primary" 
+                startIcon={<YouTubeIcon sx={{ fontSize: '1rem' }} />}
+                target="_blank"
+                rel="noopener noreferrer"
+                href="https://www.youtube.com/watch?v=3ndlwt0Wi3c"
+            >What's New in v0.5?</Button>
+            <Button size="large" variant="outlined" color="primary" 
+                startIcon={<GitHubIcon sx={{ fontSize: '1rem' }} />}
+                target="_blank"
+                rel="noopener noreferrer"
+                href="https://github.com/microsoft/data-formulator"
+            >GitHub</Button>
+            <Divider orientation="vertical" sx={{ mx: 1 }} flexItem />
+            <Button size="large" variant="outlined" color="primary" 
+                startIcon={<Box component="img" sx={{ width: 24, height: 24 }} alt="" src="/pip-logo.svg" />}
+                target="_blank"
+                rel="noopener noreferrer"
+                href="https://pypi.org/project/data-formulator/"
+            >Install Locally</Button>
+            <Button size="large" variant="outlined" color="primary" 
+                startIcon={<GridViewIcon sx={{ fontSize: '1rem' }} />}
+                href="/app"
+            >Online Demo (limited features)</Button>
+            
+        </Box>
+    );
 
     return (
         <Box sx={{
@@ -93,12 +153,7 @@ export const About: FC<{}> = function About({ }) {
                 <Typography fontSize={18} sx={{mb: 4, color: 'text.secondary', lineHeight: 1.8}}>
                     Turn (almost) any data into insights with AI agents, with the exploration paths you choose. 
                 </Typography>
-                <Box sx={{ display: 'flex', justifyContent: 'center', gap: 1, mb: 6, flexWrap: 'wrap' }}>
-                    <Button size="large" variant="contained" color="primary" 
-                        startIcon={<GridViewIcon sx={{ fontSize: '1rem' }} />}
-                        href="/app"
-                    >Start Exploration</Button>
-                </Box>
+                {actionButtons}
 
                 {/* Interactive Features Carousel */}
                 <Box sx={{
@@ -249,78 +304,137 @@ export const About: FC<{}> = function About({ }) {
                     </Box>
                 </Box>
                 
-                {/* Screenshot Section */}
-                <Box 
-                    component="a"
-                    href="/app"
-                    sx={{
-                        mt: 6,
-                        borderRadius: 8,
-                        overflow: 'hidden',
-                        border: '1px solid rgba(0,0,0,0.1)',
-                        boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
-                        mx: 2,
-                        position: 'relative',
-                        display: 'block',
-                        cursor: 'pointer',
-                        textDecoration: 'none',
-                        transition: 'all 0.3s ease',
-                        '&:hover': {
-                            boxShadow: '0 8px 24px rgba(0,0,0,0.2)',
-                            transform: 'translateY(-2px)',
-                            '& .hover-overlay': {
-                                opacity: 1,
-                            }
-                        }
-                    }}
-                >
-                    <Box 
-                        component="img" 
-                        sx={{
-                            width: '100%',
-                            height: 'auto',
-                            display: 'block'
-                        }} 
-                        alt="Data Formulator screenshot" 
-                        src={"/data-formulator-screenshot.png"} 
-                    />
-                    <Box
-                        className="hover-overlay"
-                        sx={{
-                            position: 'absolute',
-                            top: 0,
-                            left: 0,
-                            right: 0,
-                            bottom: 0,
-                            backgroundColor: 'rgba(255, 255, 255, 0.9)',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            opacity: 0,
-                            transition: 'opacity 0.3s ease',
-                            flexDirection: 'column',
-                            gap: 2
-                        }}
-                    >
-                        <Typography 
-                            variant="h4" 
-                            sx={{ 
-                                color: 'text.primary', 
-                                fontWeight: 300,
-                                letterSpacing: '0.05em',
-                                mb: 1
+                {/* Screenshots Carousel Section */}
+                <Box sx={{ mt: 6, mx: 2 }}>
+                    <Box sx={{ 
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        gap: 3
+                    }}>
+                        {/* Screenshot Container */}
+                        <Box 
+                            key={currentScreenshot}
+                            onClick={() => setCurrentScreenshot((currentScreenshot + 1) % screenshots.length)}
+                            sx={{
+                                height: 680,
+                                width: 'auto',
+                                borderRadius: 8,
+                                cursor: 'pointer',
+                                overflow: 'hidden',
+                                border: '1px solid rgba(0,0,0,0.1)',
+                                boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+                                position: 'relative',
+                                display: 'flex',
+                                justifyContent: 'center',
+                                textDecoration: 'none',
+                                transition: 'box-shadow 0.3s ease',
+                                animation: 'fadeSlideIn 0.5s ease-out',
+                                '@keyframes fadeSlideIn': {
+                                    '0%': {
+                                        opacity: 0,
+                                        transform: 'translateX(30px)',
+                                    },
+                                    '100%': {
+                                        opacity: 1,
+                                        transform: 'translateX(0)',
+                                    }
+                                },
+                                '&:hover': {
+                                    boxShadow: '0 8px 24px rgba(0,0,0,0.2)',
+                                    '& .description-overlay': {
+                                        opacity: 1,
+                                    }
+                                }
                             }}
                         >
-                            Click to Get Started
+                            <Box 
+                                component="img" 
+                                sx={{
+                                    display: 'block',
+                                    clipPath: 'inset(2px 0 0 0)'
+                                }} 
+                                alt={screenshots[currentScreenshot].description} 
+                                src={screenshots[currentScreenshot].url} 
+                            />
+                            <Box
+                                className="description-overlay"
+                                sx={{
+                                    position: 'absolute',
+                                    bottom: 0,
+                                    left: 0,
+                                    right: 0,
+                                    backgroundColor: 'rgba(250, 250, 250, 0.6)',
+                                    backdropFilter: 'blur(8px)',
+                                    padding: 2,
+                                    opacity: 0,
+                                    transition: 'opacity 0.3s ease',
+                                }}
+                            >
+                                <Typography 
+                                    variant="body1" 
+                                    color="text.secondary"
+                                    sx={{ 
+                                        fontSize: '2rem',
+                                        fontWeight: 400,
+                                        textAlign: 'center'
+                                    }}
+                                >
+                                    {screenshots[currentScreenshot].description}
+                                </Typography>
+                            </Box>
+                        </Box>
+
+                        {/* Screenshot Indicators */}
+                        <Box sx={{ display: 'flex', gap: 1 }}>
+                            {screenshots.map((_, index) => (
+                                <Box
+                                    key={index}
+                                    onClick={() => setCurrentScreenshot(index)}
+                                    sx={{
+                                        width: 32,
+                                        height: 4,
+                                        borderRadius: 2,
+                                        bgcolor: index === currentScreenshot 
+                                            ? theme.palette.primary.main 
+                                            : alpha(theme.palette.text.secondary, 0.2),
+                                        cursor: 'pointer',
+                                        transition: 'all 0.3s ease',
+                                        '&:hover': {
+                                            bgcolor: index === currentScreenshot 
+                                                ? theme.palette.primary.main 
+                                                : alpha(theme.palette.text.secondary, 0.4),
+                                        }
+                                    }}
+                                />
+                            ))}
+                        </Box>
+                    </Box>
+                </Box>
+
+                <Box sx={{ mt: 6, mx: 2 }}>
+                    <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                        <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600, letterSpacing: '0.02em' }}>
+                            How Data Formulator handles your data?
                         </Typography>
                         <Typography 
-                            variant="h6" 
+                            component="ul" 
+                            variant="caption" 
                             sx={{ 
-                                color: 'text.secondary',
-                                fontWeight: 300
+                                fontWeight: 300, 
+                                mt: 1,
+                                color: 'text.primary', 
+                                letterSpacing: '0.02em',
+                                textAlign: 'left',
+                                maxWidth: 1000
                             }}
                         >
-                            Start exploring your data now →
+                            <li>Uploaded data is stored in your browser's local storage. They are sent to server for data transformations but not stored on the server.</li>
+                            <li>When using database functions from a locally installed Data Formulator, a local database (DuckDB .db file) is created to store data in your local machine in temp directory.</li>
+                            <li>LLM endpoints have access to small data samples sent along with the prompt. Use your trusted model provider if working with private data.</li>
+                        </Typography>
+                        <Typography variant="caption" sx={{ mt: 4,color: 'text.secondary', fontWeight: 300, letterSpacing: '0.02em' }}>
+                            Prototype from Microsoft Research
                         </Typography>
                     </Box>
                 </Box>
@@ -339,9 +453,9 @@ export const About: FC<{}> = function About({ }) {
                 }} 
                 target="_blank" 
                 rel="noopener noreferrer" 
-                href="https://privacy.microsoft.com/en-US/data-privacy-notice"
+                href="https://www.microsoft.com/en-us/privacy/privacystatement"
             >
-                view data privacy notice
+                Privacy & Cookies
             </Button>
         </Box>)
 }

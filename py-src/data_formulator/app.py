@@ -64,7 +64,9 @@ load_dotenv(os.path.join(APP_ROOT, '.env'))
 app.config['CLI_ARGS'] = {
     'exec_python_in_subprocess': os.environ.get('EXEC_PYTHON_IN_SUBPROCESS', 'false').lower() == 'true',
     'disable_display_keys': os.environ.get('DISABLE_DISPLAY_KEYS', 'false').lower() == 'true',
-    'disable_database': os.environ.get('DISABLE_DATABASE', 'false').lower() == 'true'       
+    'disable_database': os.environ.get('DISABLE_DATABASE', 'false').lower() == 'true',
+    'disable_file_upload': os.environ.get('DISABLE_FILE_UPLOAD', 'false').lower() == 'true',
+    'project_front_page': os.environ.get('PROJECT_FRONT_PAGE', 'false').lower() == 'true'
 }
 
 # register blueprints
@@ -215,6 +217,8 @@ def get_app_config():
         "EXEC_PYTHON_IN_SUBPROCESS": args['exec_python_in_subprocess'],
         "DISABLE_DISPLAY_KEYS": args['disable_display_keys'],
         "DISABLE_DATABASE": args['disable_database'],
+        "DISABLE_FILE_UPLOAD": args['disable_file_upload'],
+        "PROJECT_FRONT_PAGE": args['project_front_page'],
         "SESSION_ID": session_id
     }
     return flask.jsonify(config)
@@ -244,6 +248,10 @@ def parse_args() -> argparse.Namespace:
         help="Whether disable displaying keys in the frontend UI, recommended to turn on if you host the app not just for yourself.")
     parser.add_argument("--disable-database", action='store_true', default=False,
         help="Disable database functionality and table routes. This prevents creation of local database files and disables table-related endpoints.")
+    parser.add_argument("--disable-file-upload", action='store_true', default=False,
+        help="Disable file upload functionality. This prevents the app from uploading files to the server.")
+    parser.add_argument("--project-front-page", action='store_true', default=False,
+        help="Project the front page as the main page instead of the app.")
     parser.add_argument("--dev", action='store_true', default=False,
         help="Launch the app in development mode (prevents the app from opening the browser automatically)")
     return parser.parse_args()
@@ -259,7 +267,9 @@ def run_app():
     app.config['CLI_ARGS'] = {
         'exec_python_in_subprocess': args.exec_python_in_subprocess,
         'disable_display_keys': args.disable_display_keys,
-        'disable_database': args.disable_database
+        'disable_database': args.disable_database,
+        'disable_file_upload': args.disable_file_upload,
+        'project_front_page': args.project_front_page
     }
     
     # Update database manager state

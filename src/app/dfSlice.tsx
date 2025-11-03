@@ -39,6 +39,8 @@ export interface SSEMessage {
 export interface ServerConfig {
     DISABLE_DISPLAY_KEYS: boolean;
     DISABLE_DATABASE: boolean;
+    DISABLE_FILE_UPLOAD: boolean;
+    PROJECT_FRONT_PAGE: boolean;
 }
 
 export interface ModelConfig {
@@ -158,6 +160,8 @@ const initialState: DataFormulatorState = {
     serverConfig: {
         DISABLE_DISPLAY_KEYS: false,
         DISABLE_DATABASE: false,
+        DISABLE_FILE_UPLOAD: false,
+        PROJECT_FRONT_PAGE: false,
     },
 
     config: {
