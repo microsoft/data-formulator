@@ -194,6 +194,13 @@ Repeat this process as needed to explore and understand your data. Your explorat
 
 Follow the [developers' instructions](DEVELOPMENT.md) to build your new data analysis tools on top of Data Formulator.
 
+Help wanted:
+
+* Add more database connectors (https://github.com/microsoft/data-formulator/issues/156)
+* Scaling up messy data extractor: more document types and larger files.
+* Adding more chart templates (e.g., maps).
+* other ideas?
+
 ## Research Papers
 * [Data Formulator 2: Iteratively Creating Rich Visualizations with AI](https://arxiv.org/abs/2408.16119)
 

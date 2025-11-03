@@ -634,7 +634,10 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
         },
     });
 
-    let appBar = [
+    // Check if we're on the about page
+    const isAboutPage = window.location.pathname === '/';
+
+    let appBar =  [
         <AppBar position="static" key="app-bar-main" >
             <Toolbar variant="dense" sx={{height: 40, minHeight: 36}}>
                 <Button href={"/"} sx={{
@@ -650,90 +653,93 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
                         {toolName}
                     </Typography>                    
                 </Button>
-                <Box sx={{ display: 'flex', ml: 'auto', fontSize: 14, mr: 1, px: 0.5,
-                            backgroundColor: alpha(theme.palette.primary.main, 0.02),
-                            borderRadius: 4}}>
-                    {focusedTableId !== undefined && <React.Fragment><ToggleButtonGroup
-                        value={viewMode}
-                        exclusive
-                        onChange={(_, newMode) => {
-                            if (newMode !== null) {
-                                dispatch(dfActions.setViewMode(newMode));
-                            }
-                        }}
-                        sx={{ 
-                            mr: 2,
-                            height: '28px', 
-                            my: 'auto',
-                            borderRadius: 2,
-                            border: '1px solid rgba(0, 0, 0, 0.1)',
-                            boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)',
-                            '& .MuiToggleButton-root': {
-                                textTransform: 'none',
-                                fontSize: '14px',
-                                fontWeight: 500,
-                                border: 'none',
-                                borderRadius: 1,
-                                px: 1,
-                                py: 0.5,
-                                '&:hover': {
-                                    backgroundColor: 'rgba(0, 0, 0, 0.04)',
-                                    color: 'text.primary',
-                                },
-                                '&.Mui-selected': {
-                                    backgroundColor: alpha(theme.palette.primary.main, 0.1),
-                                    color: theme.palette.primary.main,
-                                },
-                                '&:first-of-type': {
-                                    borderTopRightRadius: 0,
-                                    borderBottomRightRadius: 0,
-                                },
-                                '&:last-of-type': {
-                                    borderTopLeftRadius: 0,
-                                    borderBottomLeftRadius: 0,
+                {!isAboutPage && (
+                    <Box sx={{ display: 'flex', ml: 'auto', fontSize: 14, mr: 1, px: 0.5,
+                                backgroundColor: alpha(theme.palette.primary.main, 0.02),
+                                borderRadius: 4}}>
+                        {focusedTableId !== undefined && <React.Fragment><ToggleButtonGroup
+                            value={viewMode}
+                            exclusive
+                            onChange={(_, newMode) => {
+                                if (newMode !== null) {
+                                    dispatch(dfActions.setViewMode(newMode));
                                 }
-                            },
-                            '.mode-icon': {
-                                animation: 'pulse 3s ease-out infinite',
-                                '@keyframes pulse': {
-                                    '0%, 80%': { transform: 'scale(1)' },
-                                    '90%': { transform: 'scale(1.3)' },
-                                    '100%': { transform: 'scale(1)' },
+                            }}
+                            sx={{ 
+                                mr: 2,
+                                height: '28px', 
+                                my: 'auto',
+                                borderRadius: 2,
+                                border: '1px solid rgba(0, 0, 0, 0.1)',
+                                boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)',
+                                '& .MuiToggleButton-root': {
+                                    textTransform: 'none',
+                                    fontSize: '14px',
+                                    fontWeight: 500,
+                                    border: 'none',
+                                    borderRadius: 1,
+                                    px: 1,
+                                    py: 0.5,
+                                    '&:hover': {
+                                        backgroundColor: 'rgba(0, 0, 0, 0.04)',
+                                        color: 'text.primary',
+                                    },
+                                    '&.Mui-selected': {
+                                        backgroundColor: alpha(theme.palette.primary.main, 0.1),
+                                        color: theme.palette.primary.main,
+                                    },
+                                    '&:first-of-type': {
+                                        borderTopRightRadius: 0,
+                                        borderBottomRightRadius: 0,
+                                    },
+                                    '&:last-of-type': {
+                                        borderTopLeftRadius: 0,
+                                        borderBottomLeftRadius: 0,
+                                    }
                                 },
-                            },
-                        }}
-                    >
-                        <ToggleButton value="editor">
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                <Box className={viewMode === 'report' ? 'mode-icon' : ''} component="span" sx={{ fontSize: '12px' }}>🔍</Box>
-                                <Box component="span">Explore</Box>
-                            </Box>
-                        </ToggleButton>
-                        <ToggleButton value="report">
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                <Box className={viewMode === 'editor' ? 'mode-icon' : ''} component="span" sx={{ fontSize: '12px' }}>✏️</Box>
-                                <Box component="span">
-                                    {generatedReports.length > 0 ? `Reports (${generatedReports.length})` : 'Reports'}
+                                '.mode-icon': {
+                                    animation: 'pulse 3s ease-out infinite',
+                                    '@keyframes pulse': {
+                                        '0%, 80%': { transform: 'scale(1)' },
+                                        '90%': { transform: 'scale(1.3)' },
+                                        '100%': { transform: 'scale(1)' },
+                                    },
+                                },
+                            }}
+                        >
+                            <ToggleButton value="editor">
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                    <Box className={viewMode === 'report' ? 'mode-icon' : ''} component="span" sx={{ fontSize: '12px' }}>🔍</Box>
+                                    <Box component="span">Explore</Box>
                                 </Box>
-                            </Box>
-                        </ToggleButton>
-                    </ToggleButtonGroup>
-                    <ConfigDialog />
-                    <AgentRulesDialog />
-                    <Divider orientation="vertical" variant="middle" flexItem /></React.Fragment>}
-                    <ModelSelectionButton />
-                    <Divider orientation="vertical" variant="middle" flexItem />
-                    
-                    <Typography fontSize="inherit" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <TableMenu />
-                    </Typography>
-                    <Divider orientation="vertical" variant="middle" flexItem />
-                    <Typography fontSize="inherit" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <SessionMenu />
-                    </Typography>
-                    <Divider orientation="vertical" variant="middle" flexItem />
-                    <ResetDialog />
-                </Box>
+                            </ToggleButton>
+                            <ToggleButton value="report">
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                    <Box className={viewMode === 'editor' ? 'mode-icon' : ''} component="span" sx={{ fontSize: '12px' }}>✏️</Box>
+                                    <Box component="span">
+                                        {generatedReports.length > 0 ? `Reports (${generatedReports.length})` : 'Reports'}
+                                    </Box>
+                                </Box>
+                            </ToggleButton>
+                        </ToggleButtonGroup>
+                        <ConfigDialog />
+                        <AgentRulesDialog />
+                        <Divider orientation="vertical" variant="middle" flexItem /></React.Fragment>}
+                        <ModelSelectionButton />
+                        <Divider orientation="vertical" variant="middle" flexItem />
+                        
+                        <Typography fontSize="inherit" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <TableMenu />
+                        </Typography>
+                        <Divider orientation="vertical" variant="middle" flexItem />
+                        <Typography fontSize="inherit" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <SessionMenu />
+                        </Typography>
+                        <Divider orientation="vertical" variant="middle" flexItem />
+                        <ResetDialog />
+                    </Box>
+                )}
+                {isAboutPage && <Box sx={{ ml: 'auto' }} />}
                 <Tooltip title="View on GitHub">
                     <Button
                         component="a"
@@ -757,7 +763,7 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
 
     let router = createBrowserRouter([
         {
-            path: "/about",
+            path: "/",
             element: <About />,
         }, {
             path: "*",
