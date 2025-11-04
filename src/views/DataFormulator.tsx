@@ -46,8 +46,6 @@ import { VisualizationViewFC } from './VisualizationView';
 import { ConceptShelf } from './ConceptShelf';
 import { DndProvider } from 'react-dnd'
 import { HTML5Backend } from 'react-dnd-html5-backend'
-
-import { SelectableGroup } from 'react-selectable-fast';
 import { TableCopyDialogV2, DatasetSelectionDialog } from './TableSelectionView';
 import { TableUploadDialog } from './TableSelectionView';
 import { toolName } from '../app/App';
@@ -69,6 +67,7 @@ export const DataFormulatorFC = ({ }) => {
     const models = useSelector((state: DataFormulatorState) => state.models);
     const modelSlots = useSelector((state: DataFormulatorState) => state.modelSlots);
     const viewMode = useSelector((state: DataFormulatorState) => state.viewMode);
+    const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
     const theme = useTheme();
 
     const noBrokenModelSlots= useSelector((state: DataFormulatorState) => {
@@ -160,8 +159,6 @@ export const DataFormulatorFC = ({ }) => {
             <VisualizationViewFC />
         </Box>);
 
-    let $tableRef = React.createRef<SelectableGroup>();
-
     const visPane = (
         <Box sx={{width: '100%', height: '100%', 
             "& .split-view-view:first-of-type": {
@@ -174,7 +171,7 @@ export const DataFormulatorFC = ({ }) => {
                 </Allotment.Pane>
                 <Allotment.Pane minSize={120} preferredSize={200}>
                     <Box className="table-box">
-                        <FreeDataViewFC $tableRef={$tableRef}/>
+                        <FreeDataViewFC />
                     </Box>
                 </Allotment.Pane>
             </Allotment>

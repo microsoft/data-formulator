@@ -11,7 +11,7 @@ import Typography from '@mui/material/Typography';
 import Box from '@mui/material/Box';
 import { alpha, Button, Collapse, Dialog, DialogActions, DialogContent, DialogTitle, Divider, 
          IconButton, Input, CircularProgress, LinearProgress, Paper, TextField, useTheme, 
-         Card} from '@mui/material';
+         Card, Tooltip, Link} from '@mui/material';
 import { CustomReactTable } from './ReactTable';
 import { DictTable } from "../components/ComponentType";
 
@@ -20,14 +20,6 @@ import { getUrls } from '../app/utils';
 import { createTableFromFromObjectArray, createTableFromText, loadTextDataWrapper, loadBinaryDataWrapper } from '../data/utils';
 
 import CloseIcon from '@mui/icons-material/Close';
-import KeyboardReturnIcon from '@mui/icons-material/KeyboardReturn';
-import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
-import ChevronRightIcon from '@mui/icons-material/ChevronRight';
-import AutoFixNormalIcon from '@mui/icons-material/AutoFixNormal';
-import OpenInNewIcon from '@mui/icons-material/OpenInNew';
-import CancelIcon from '@mui/icons-material/Cancel';
-
-import ReactDiffViewer from 'react-diff-viewer'
 
 import { DataFormulatorState, dfActions, dfSelectors, fetchFieldSemanticType } from '../app/dfSlice';
 import { useDispatch, useSelector } from 'react-redux';
@@ -339,6 +331,7 @@ export const TableUploadDialog: React.FC<TableUploadDialogProps> = ({ buttonElem
     const inputRef = React.useRef<HTMLInputElement>(null);
     const existingTables = useSelector((state: DataFormulatorState) => state.tables);
     const existingNames = new Set(existingTables.map(t => t.id));
+    const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
 
     let handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>): void => {
         const files = event.target.files;
@@ -439,15 +432,35 @@ export const TableUploadDialog: React.FC<TableUploadDialogProps> = ({ buttonElem
                 inputRef={inputRef}
                 onChange={handleFileUpload}
             />
-            <Button 
-                sx={{fontSize: "inherit"}} 
-                variant="text" 
-                color="primary" 
-                disabled={disabled}
-                onClick={() => inputRef.current?.click()}
+            <Tooltip 
+                title={serverConfig.DISABLE_FILE_UPLOAD ? (
+                    <Typography sx={{ fontSize: '11px' }}>
+                        Install Data Formulator locally to enable file upload. <br />
+                        Link: <Link 
+                            href="https://github.com/microsoft/data-formulator" 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            sx={{ color: 'inherit', textDecoration: 'underline' }}
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            https://github.com/microsoft/data-formulator
+                        </Link>
+                    </Typography>
+                ) : ""}
+                placement="top"
             >
-                {buttonElement}
-            </Button>
+                <span style={{cursor: serverConfig.DISABLE_FILE_UPLOAD ? 'help' : 'pointer'}}>
+                    <Button 
+                        sx={{fontSize: "inherit"}} 
+                        variant="text" 
+                        color="primary" 
+                        disabled={disabled || serverConfig.DISABLE_FILE_UPLOAD}
+                        onClick={() => inputRef.current?.click()}
+                    >
+                        {buttonElement}
+                    </Button>
+                </span>
+            </Tooltip>
         </>
     );
 }
@@ -538,8 +551,6 @@ export const TableURLDialog: React.FC<TableURLDialogProps> = ({ buttonElement, d
 
 export const TableCopyDialogV2: React.FC<TableCopyDialogProps> = ({ buttonElement, disabled }) => {
 
-    let activeModel = useSelector(dfSelectors.getActiveModel);
-    
     const [dialogOpen, setDialogOpen] = useState<boolean>(false);
     
     const [tableContent, setTableContent] = useState<string>("");
@@ -551,10 +562,12 @@ export const TableCopyDialogV2: React.FC<TableCopyDialogProps> = ({ buttonElemen
     const [displayContent, setDisplayContent] = useState<string>("");
     const [isLargeContent, setIsLargeContent] = useState<boolean>(false);
     const [showFullContent, setShowFullContent] = useState<boolean>(false);
+    const [isOverSizeLimit, setIsOverSizeLimit] = useState<boolean>(false);
     
     // Constants for content size limits
     const MAX_DISPLAY_LINES = 20; // Reduced from 30
     const LARGE_CONTENT_THRESHOLD = 50000; // ~50KB threshold
+    const MAX_CONTENT_SIZE = 2 * 1024 * 1024; // 2MB in bytes (same as file upload limit)
 
     const dispatch = useDispatch<AppDispatch>();
     const existingTables = useSelector((state: DataFormulatorState) => state.tables);
@@ -593,6 +606,11 @@ export const TableCopyDialogV2: React.FC<TableCopyDialogProps> = ({ buttonElemen
         const newContent = event.target.value;
         setTableContent(newContent);
         
+        // Check if content exceeds size limit
+        const contentSizeBytes = new Blob([newContent]).size;
+        const isOverLimit = contentSizeBytes > MAX_CONTENT_SIZE;
+        setIsOverSizeLimit(isOverLimit);
+        
         // Check if content is large
         const isLarge = newContent.length > LARGE_CONTENT_THRESHOLD;
         setIsLargeContent(isLarge);
@@ -606,7 +624,7 @@ export const TableCopyDialogV2: React.FC<TableCopyDialogProps> = ({ buttonElemen
         } else {
             setDisplayContent(newContent);
         }
-    }, [showFullContent]);
+    }, [showFullContent, dispatch, MAX_CONTENT_SIZE]);
 
     // Toggle between preview and full content
     const toggleFullContent = useCallback(() => {
@@ -622,7 +640,17 @@ export const TableCopyDialogV2: React.FC<TableCopyDialogProps> = ({ buttonElemen
     }, [showFullContent, tableContent]);
 
 
-    let dialog = <Dialog key="table-selection-dialog" onClose={()=>{setDialogOpen(false)}} open={dialogOpen}
+    const handleCloseDialog = useCallback(() => {
+        setDialogOpen(false);
+        // Reset state when closing
+        setTableContent("");
+        setDisplayContent("");
+        setIsLargeContent(false);
+        setIsOverSizeLimit(false);
+        setShowFullContent(false);
+    }, []);
+
+    let dialog = <Dialog key="table-selection-dialog" onClose={handleCloseDialog} open={dialogOpen}
             sx={{ '& .MuiDialog-paper': { maxWidth: '80%', maxHeight: 800, minWidth: 800 } }}
         >
             <DialogTitle  sx={{display: "flex"}}>Paste & Upload Data
@@ -631,7 +659,7 @@ export const TableCopyDialogV2: React.FC<TableCopyDialogProps> = ({ buttonElemen
                     edge="start"
                     size="small"
                     color="inherit"
-                    onClick={()=>{ setDialogOpen(false); }}
+                    onClick={handleCloseDialog}
                     aria-label="close"
                 >
                     <CloseIcon fontSize="inherit"/>
@@ -643,8 +671,18 @@ export const TableCopyDialogV2: React.FC<TableCopyDialogProps> = ({ buttonElemen
                 <Box sx={{width: '100%',  display:'flex', position: 'relative', overflow: 'auto'}}>
                     {cleaningInProgress && tableContentType == "text" ? <LinearProgress sx={{ width: '100%', height: "calc(100% - 8px)", marginTop: 1, minHeight: 200, opacity: 0.1, position: 'absolute', zIndex: 1 }} /> : ""}
                     <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+                        {/* Size limit warning */}
+                        {isOverSizeLimit && (
+                            <Box sx={{ display: 'flex', alignItems: 'center', marginBottom: 1, padding: 1, backgroundColor: 'rgba(244, 67, 54, 0.1)', borderRadius: 1, border: '1px solid rgba(244, 67, 54, 0.3)' }}>
+                                <Typography variant="caption" sx={{ flex: 1, color: 'error.main', fontWeight: 500 }}>
+                                    ⚠️ Content exceeds {(MAX_CONTENT_SIZE / (1024 * 1024)).toFixed(0)}MB size limit. 
+                                    Current size: {(new Blob([tableContent]).size / (1024 * 1024)).toFixed(2)}MB. 
+                                    Please use the DATABASE option for large datasets.
+                                </Typography>
+                            </Box>
+                        )}
                         {/* Content size indicator */}
-                        {isLargeContent && (
+                        {isLargeContent && !isOverSizeLimit && (
                             <Box sx={{ display: 'flex', alignItems: 'center', marginBottom: 1, padding: 1, backgroundColor: 'rgba(255, 193, 7, 0.1)', borderRadius: 1 }}>
                                 <Typography variant="caption" sx={{ flex: 1 }}>
                                     Large content detected ({Math.round(tableContent.length / 1000)}KB). 
@@ -712,14 +750,18 @@ export const TableCopyDialogV2: React.FC<TableCopyDialogProps> = ({ buttonElemen
                 </Box>
             </DialogContent>
             <DialogActions>
-                <Button variant="text" sx={{textTransform: 'none'}} size="small" onClick={()=>{ setDialogOpen(false); }}>cancel</Button>
-                <Button disabled={tableContentType != "text" || tableContent.trim() == ""} variant="contained" sx={{textTransform: 'none'}} size="small" 
-                    onClick={()=>{ 
-                        setDialogOpen(false); 
-                        handleSubmitContent(tableContent); // Always use full content for processing
-                    }} >
-                    {"upload"}
-                </Button>
+                <Button variant="text" sx={{textTransform: 'none'}} size="small" onClick={handleCloseDialog}>cancel</Button>
+                <Tooltip title={isOverSizeLimit ? `Content exceeds ${(MAX_CONTENT_SIZE / (1024 * 1024)).toFixed(0)}MB size limit` : ""} placement="top">
+                    <span>
+                        <Button disabled={tableContentType != "text" || tableContent.trim() == "" || isOverSizeLimit} variant="contained" sx={{textTransform: 'none'}} size="small" 
+                            onClick={()=>{ 
+                                handleCloseDialog(); 
+                                handleSubmitContent(tableContent); // Always use full content for processing
+                            }} >
+                            {"upload"}
+                        </Button>
+                    </span>
+                </Tooltip>
             </DialogActions>
             
         </Dialog>;

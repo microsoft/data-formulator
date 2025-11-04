@@ -75,12 +75,14 @@ export const DataLoadingChat: React.FC = () => {
 
     const handleUpload = () => {
         if (!selectedTable) return;
-        
+
         const suggestedName = selectedTable.name || generateDefaultName(selectedTable.content.value.slice(0, 96));
         
+        console.log(selectedTable);
+
         const base = suggestedName.trim();
         const unique = getUniqueTableName(base, existingNames);
-        const table = createTableFromText(unique, selectedTable.content.value);
+        const table = createTableFromText(unique, selectedTable.content.value, selectedTable.context);
         if (table) {
             dispatch(dfActions.loadTable(table));
             dispatch(fetchFieldSemanticType(table));
@@ -279,7 +281,7 @@ export const DataLoadingChatDialog: React.FC<DataLoadingChatDialogProps> = ({ bu
             <Button 
                 sx={{fontSize: "inherit"}} 
                 variant="text" 
-                color="secondary" 
+                color="primary" 
                 disabled={disabled}
                 onClick={() => setDialogOpen(true)}
             >

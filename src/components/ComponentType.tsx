@@ -53,8 +53,7 @@ export interface Trigger {
 // Define data cleaning message types
 export type DataCleanTableOutput = {
     name: string;
-    description?: string;
-    reason?: string;
+    context: string;
     content: {
         type: 'csv' | 'image_url' | 'web_url';
         value: string;

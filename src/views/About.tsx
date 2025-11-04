@@ -434,7 +434,7 @@ export const About: FC<{}> = function About({ }) {
                             <li>LLM endpoints have access to small data samples sent along with the prompt. Use your trusted model provider if working with private data.</li>
                         </Typography>
                         <Typography variant="caption" sx={{ mt: 4,color: 'text.secondary', fontWeight: 300, letterSpacing: '0.02em' }}>
-                            Prototype from Microsoft Research
+                            Research Prototype @ Microsoft Research
                         </Typography>
                     </Box>
                 </Box>

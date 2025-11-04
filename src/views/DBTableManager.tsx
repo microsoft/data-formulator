@@ -33,7 +33,8 @@ import {
   styled,
   ToggleButtonGroup,
   ToggleButton,
-  useTheme
+  useTheme,
+  Link
 } from '@mui/material';
 
 import DeleteIcon from '@mui/icons-material/Delete';
@@ -942,7 +943,20 @@ export const DBTableSelectionDialog: React.FC<{
         return (
             <>
                 <Tooltip 
-                    title={serverConfig.DISABLE_DATABASE ? "Install Data Formulator locally to enable database access (visit https://github.com/microsoft/data-formulator)" : ""}
+                    title={serverConfig.DISABLE_DATABASE ? (
+                        <Typography sx={{ fontSize: '11px' }}>
+                            Install Data Formulator locally to use database. <br />
+                            Link: <Link 
+                                href="https://github.com/microsoft/data-formulator" 
+                                target="_blank" 
+                                rel="noopener noreferrer"
+                                sx={{ color: 'inherit', textDecoration: 'underline' }}
+                                onClick={(e) => e.stopPropagation()}
+                            >
+                                https://github.com/microsoft/data-formulator
+                            </Link>
+                    </Typography>
+                ) : ""}
                     placement="top"
                 >
                     <span style={{cursor: serverConfig.DISABLE_DATABASE ? 'help' : 'pointer'}}>

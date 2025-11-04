@@ -14,18 +14,15 @@ import { DataFormulatorState, dfActions } from '../app/dfSlice';
 import { useDispatch, useSelector } from 'react-redux';
 import { Type } from '../data/types';
 import { createTableFromFromObjectArray } from '../data/utils';
-import { SelectableGroup } from 'react-selectable-fast';
 import { SelectableDataGrid } from './SelectableDataGrid';
 
 import ParkIcon from '@mui/icons-material/Park';
 import AnchorIcon from '@mui/icons-material/Anchor';
 
 export interface FreeDataViewProps {
-    $tableRef: React.RefObject<SelectableGroup>;
-    onSelectionChanged?: (values: any[]) => void;
 }
 
-export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView({  $tableRef }) {
+export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView() {
 
     const dispatch = useDispatch();
     const tables = useSelector((state: DataFormulatorState) => state.tables);
@@ -64,11 +61,7 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView({  $table
             if (targetTable.virtual) {
                 rowData = targetTable.rows;
             } else {
-                if (targetTable.rows.length > 10000) {
-                    rowData = _.sampleSize(targetTable.rows, 10000);
-                } else {
-                    rowData = targetTable.rows;
-                }
+                rowData = targetTable.rows;
                 rowData = rowData.map((r: any, i: number) => ({ ...r, "#rowId": i }));
             }
         }
@@ -128,12 +121,10 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView({  $table
             <Box sx={{height: 'calc(100% - 28px)'}}>
                 <SelectableDataGrid
                     tableId={targetTable?.id || ""}
-                    $tableRef={$tableRef} 
                     tableName={targetTable?.displayId || targetTable?.id || "table"} 
                     rows={rowData} 
                     columnDefs={colDefs}
-                    onSelectionFinished={()=>{}} 
-                    rowCount={targetTable?.virtual?.rowCount || rowData.length}
+                    rowCount={targetTable?.virtual?.rowCount || targetTable?.rows.length || 0}
                     virtual={targetTable?.virtual ? true : false}
                 />
             </Box>

@@ -12,84 +12,20 @@ import TableRow from '@mui/material/TableRow';
 import { Box } from '@mui/system';
 
 import { useTheme } from '@mui/material/styles';
-import { alpha, Collapse, Divider, Paper, ToggleButton, Tooltip, CircularProgress, Fade } from "@mui/material";
+import { alpha, Paper, Tooltip, CircularProgress, Fade } from "@mui/material";
 
-import { TSelectableItemProps, createSelectable } from 'react-selectable-fast';
-import { SelectableGroup } from 'react-selectable-fast';
 import { Type } from '../data/types';
 import { getIconFromType } from './ViewUtils';
 
-import { IconButton, InputAdornment, OutlinedInput, TableSortLabel, Typography } from '@mui/material';
-import SearchIcon from '@mui/icons-material/Search';
-import ArrowBack from '@mui/icons-material/ArrowBack';
-import AutoFixNormalIcon from '@mui/icons-material/AutoFixNormal';
+import { IconButton, TableSortLabel, Typography } from '@mui/material';
 
 import _ from 'lodash';
 import { FieldSource } from '../components/ComponentType';
 
-import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import FileDownloadIcon from '@mui/icons-material/FileDownload';
 import CloudQueueIcon from '@mui/icons-material/CloudQueue';
 import CasinoIcon from '@mui/icons-material/Casino';
-import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
-import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
-import Button from '@mui/material/Button';
 import { getUrls } from '../app/utils';
-import Menu from '@mui/material/Menu';
-import MenuItem from '@mui/material/MenuItem';
-import ListItemIcon from '@mui/material/ListItemIcon';
-import ListItemText from '@mui/material/ListItemText';
-
-interface SelectableCellProps {
-    align: any;
-    value: any;
-    column: ColumnDef;
-    sx?: any;
-    // source: FieldSource;
-    indices: number[];
-    selectedBounds: number[];
-    onClick: (event: any) => void;
-    selected?: boolean;
-}
-
-const SelectableCell = createSelectable<SelectableCellProps>((props: TSelectableItemProps & SelectableCellProps) => {
-    let { selectableRef, selected, isSelected, column, isSelecting, value, align, indices, selectedBounds, onClick } = props;
-    let theme = useTheme();
-    
-
-    // Kind of a hack to change selected bounds but didn't want to redraw every cell
-    const classNames = [
-        'item',
-        isSelecting && 'selecting',
-        (selected || isSelected) && 'selected',
-        //column.source,
-    ]
-    .filter(Boolean)
-    .join(' ');
-
-    let backgroundColor = "white";
-    if (column.source == "derived") {
-        backgroundColor = alpha(theme.palette.derived.main, 0.05);
-    } else if (column.source == "custom") {
-        backgroundColor = alpha(theme.palette.custom.main, 0.05);
-    } else {
-        backgroundColor = "rgba(255,255,255,0.05)";
-    }
-
-    return (
-
-        <TableCell
-            key={`row-${indices[0]}-col-${indices[1]}`}
-            ref={selectableRef}
-            sx={{backgroundColor}}
-            className={classNames}
-            align={align || 'left'}
-            onClick={onClick}
-        >
-            {value}
-        </TableCell>
-    )
-});
 
 export interface ColumnDef {
     id: string;
@@ -109,8 +45,6 @@ interface SelectableDataGridProps {
     rowCount: number;
     virtual: boolean;
     columnDefs: ColumnDef[];
-    onSelectionFinished: (columns: string[], values: any[]) => void;
-    $tableRef: React.RefObject<SelectableGroup>;
 }
 
 function descendingComparator<T>(a: T, b: T, orderBy: keyof T) {
@@ -135,12 +69,11 @@ function getComparator<Key extends keyof any>(
         : (a, b) => -descendingComparator(a, b, orderBy);
 }
 
-export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({ tableId, rows, tableName, columnDefs, $tableRef, onSelectionFinished, rowCount, virtual }) => {
+export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({ 
+    tableId, rows, tableName, columnDefs, rowCount, virtual }) => {
 
     const [orderBy, setOrderBy] = React.useState<string | undefined>(undefined);
     const [order, setOrder] = React.useState<'asc' | 'desc'>('asc');
-
-    const [selectedCells, setSelectedCells] = React.useState<[number, number][]>([]);
 
     let theme = useTheme();
 
@@ -153,75 +86,31 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({ tableId,
     React.useEffect(() => {
         setIsLoading(false);
     }, []);
-    
-    React.useEffect(() => {
-        // use this to handle cases when the table add new columns/remove new columns etc
-        $tableRef.current?.clearSelection();
-    }, [columnDefs.length])
 
     React.useEffect(() => {
         if (orderBy && !isLoading) {
-            setRowsToDisplay(rows.slice().sort(getComparator(order, orderBy)))
+            setRowsToDisplay(rows.slice().sort(getComparator(order, orderBy)));
         } else {
-            setRowsToDisplay(rows)
+            setRowsToDisplay(rows);
         }
     }, [rows, order, orderBy])
 
-    const onClickCell = (event: any, rowIndex: number, colIndex: number) => {
-        for (let i = 0; i < selectedCells.length; i++) {
-            const [r, c] = selectedCells[i];
-            if (r === rowIndex && c === colIndex) {
-                selectedCells.splice(i, 1)
-                setSelectedCells([...selectedCells]);
-                return;
-            }
-        }
-        selectedCells.splice(_.sortedIndex(selectedCells, [rowIndex, colIndex]), 0, [rowIndex, colIndex]);
-        setSelectedCells([...selectedCells]);
-    }
-
     const TableComponents = {
-        Scroller: TableContainer,
-        Table: Table,
-        TableHead: React.forwardRef<HTMLTableSectionElement, any>((props, ref) => <TableHead {...props} ref={ref} className='table-header-container' />) as any,
+        Scroller: React.forwardRef<HTMLDivElement>((props, ref) => (
+            <TableContainer {...props} ref={ref} />
+        )),
+        Table: (props: any) => <Table {...props} />,
+        TableHead: React.forwardRef<HTMLTableSectionElement>((props, ref) => (
+            <TableHead {...props} ref={ref} className='table-header-container' />
+        )),
         TableRow: (props: any) => {
             const index = props['data-index'];
             return <TableRow {...props} style={{backgroundColor: index % 2 == 0 ? "rgba(255, 255, 255, 0.05)" : "rgba(0, 0, 0, 0.02)"}}/>
         },
-        TableBody: TableBody,
+        TableBody: React.forwardRef<HTMLTableSectionElement>((props, ref) => (
+            <TableBody {...props} ref={ref} />
+        )),
     }
-
-    const handleSelectionClear = () => {
-        setSelectedCells([]);
-    }
-
-    const handleSelectionFinish = (selected: any[]) => {
-        let newSelectedCells = _.uniq(selected.map(x => x.props.indices));
-        setSelectedCells(newSelectedCells);
-        let values = selected.map(x => x.props.value);
-        let columns = _.uniq(selected.map(x => x.props.column.id));
-
-        onSelectionFinished(columns, values);
-    }
-
-    React.useEffect(() => {
-        const handleClickOutside = (event: MouseEvent) => {
-            const menuEl = document.getElementById('sampling-menu');
-            if (menuEl && menuEl.style.display === 'block') {
-                const isClickInsideMenu = menuEl.contains(event.target as Node);
-                const isClickOnButton = (event.target as Element).closest('[data-sampling-button]') !== null;
-                
-                if (!isClickInsideMenu && !isClickOnButton) {
-                    menuEl.style.display = 'none';
-                }
-            }
-        };
-
-        document.addEventListener('mousedown', handleClickOutside);
-        return () => {
-            document.removeEventListener('mousedown', handleClickOutside);
-        };
-    }, []);
 
     const fetchVirtualData = (sortByColumnIds: string[], sortOrder: 'asc' | 'desc') => {
         // Set loading to true when starting the fetch
@@ -295,25 +184,7 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({ tableId,
             )}
             <Fade in={!isLoading} timeout={{appear: 300, enter: 300, exit: 2000}}>
                 <Box sx={{ flex: '1 1', display: 'flex', flexDirection: 'column' }}>
-                    {/* @ts-expect-error */}
-                    <SelectableGroup
-                        ref={$tableRef}
-                        className={'custom-row-selector'}
-                        tolerance={0}
-                        allowAltClick={true}
-                        allowCtrlClick={true}
-                        allowMetaClick={true}
-                        allowShiftClick={true}
-                        enableDeselect={true}
-                        selectOnClick={false}
-                        deselectOnEsc={true}
-                        resetOnStart={true}
-                        style={{ flex: '1 1' }}
-                        onSelectionClear={handleSelectionClear}
-                        onSelectionFinish={handleSelectionFinish}
-                        ignoreList={[".MuiTableCell-head"]}
-                    >
-                        <TableVirtuoso
+                    <TableVirtuoso
                             style={{ flex: '1 1' }}
                             data={rowsToDisplay}
                             components={TableComponents}
@@ -388,34 +259,40 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({ tableId,
                         return (
                             <>
                                 {columnDefs.map((column, colIndex) => {
+                                    let backgroundColor = "white";
+                                    if (column.source == "derived") {
+                                        backgroundColor = alpha(theme.palette.derived.main, 0.05);
+                                    } else if (column.source == "custom") {
+                                        backgroundColor = alpha(theme.palette.custom.main, 0.05);
+                                    } else {
+                                        backgroundColor = "rgba(255,255,255,0.05)";
+                                    }
+
                                     return (
-                                        <SelectableCell
+                                        <TableCell
                                             key={`col-${colIndex}-row-${rowIndex}`}
-                                            selected={selectedCells.some(([r, c]) => r === rowIndex && c === colIndex)}
-                                            align={column.align}
-                                            column={column}
-                                            indices={[rowIndex, colIndex]}
-                                            onClick={(event) => onClickCell(event, rowIndex, colIndex)}
-                                            value={column.format ? column.format(data[column.id]) : data[column.id]}
-                                            selectedBounds={[]} />
+                                            sx={{backgroundColor}}
+                                            align={column.align || 'left'}
+                                        >
+                                            {column.format ? column.format(data[column.id]) : data[column.id]}
+                                        </TableCell>
                                     )
                                 })}
                             </>
                         )
                     }}
                 />
-                    </SelectableGroup>
                 </Box>
             </Fade>
             <Paper className="table-footer-container" variant="outlined"
-                sx={{ display: 'flex', flexDirection: 'row',  position: 'absolute', bottom: 6, right: 6 }}>
+                sx={{ display: 'flex', flexDirection: 'row',  position: 'absolute', bottom: 6, right: 12 }}>
                 <Box sx={{display: 'flex', alignItems: 'center', mx: 1}}>
                     <Typography  minHeight={32} className="table-footer-number" sx={{display: 'flex', alignItems: 'center'}}>
                         {virtual && <CloudQueueIcon sx={{fontSize: 16, mr: 1}}/> }
-                        {virtual ? `${rowCount} rows` : `${rowsToDisplay.length} rows`}
+                        {`${rowCount} rows`}
                     </Typography>
                     {virtual && rowCount > 10000 && (
-                        <Tooltip title="view 1000 random rows from this table">
+                        <Tooltip title="view 10000 random rows from this table">
                             <IconButton 
                                 size="small" 
                                 color="primary" 

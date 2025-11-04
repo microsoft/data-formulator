@@ -44,6 +44,7 @@ def parse_table_sections(text):
             # Create table object
             table = {
                 "name": metadata_json.get('name', 'unknown'),
+                "context": metadata_json.get('context', ''),
                 "content": {
                     "type": metadata_json.get('type', 'csv'),
                     "value": content_block
@@ -78,6 +79,7 @@ Output only extract tables, no other text should be included. Format:
 {
     "name": "...", // suggest a descriptive, meaningful but short name for this dataset, no more than 3 words, if there are duplicate names, add a suffix -1, -2, etc. (e.g., "sales-2024", "customer-survey", "weather-forecast")
     "type": "csv" | "image_url",
+    "context": "..." // a short paragraph describing the context of the table -- what is the table about? Any additional information that helps the user understand the table. (no more than 50 words)
 }
 ```
 

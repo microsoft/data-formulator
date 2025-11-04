@@ -7,4 +7,4 @@
 
 #env FLASK_APP=py-src/data_formulator/app.py FLASK_RUN_PORT=5000 FLASK_RUN_HOST=0.0.0.0 flask run
 export FLASK_RUN_PORT=5000
-python -m py-src.data_formulator.app --port ${FLASK_RUN_PORT} --dev --project-front-page
+python -m py-src.data_formulator.app --port ${FLASK_RUN_PORT} --dev
