@@ -197,7 +197,7 @@ export const ConceptExplCards: FC<ConceptExplCardsProps> = ({
             {/* Concepts Grid */}
             <Box sx={{ 
                     display: 'grid', 
-                    gridTemplateColumns: 'repeat(auto-fill, minmax(36   0px, 1fr))',  // Increased from 180px
+                    gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))',  // Increased from 180px
                     gap: 1,
                     overflow: 'hidden',
                 }}>
