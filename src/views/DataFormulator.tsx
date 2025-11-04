@@ -22,19 +22,13 @@ import {
     Box,
     Tooltip,
     Button,
-    Collapse,
-    IconButton,
-    Paper,
     Divider,
     useTheme,
     alpha,
 } from '@mui/material';
 import {
-    SmartToy as SmartToyIcon,
     FolderOpen as FolderOpenIcon,
-    BarChart as BarChartIcon,
     ContentPaste as ContentPasteIcon,
-    Storage as StorageIcon,
     Category as CategoryIcon,
     CloudQueue as CloudQueueIcon,
     AutoFixNormal as AutoFixNormalIcon,
@@ -57,7 +51,6 @@ import { ModelSelectionButton } from './ModelSelectionDialog';
 import { DBTableSelectionDialog } from './DBTableManager';
 import { getUrls } from '../app/utils';
 import { DataLoadingChatDialog } from './DataLoadingChat';
-import { RotatingTextBlock } from '../components/RotatingTextBlock';
 import { ReportView } from './ReportView';
 import { ExampleSession, exampleSessions, ExampleSessionCard } from './ExampleSessions';
 
@@ -67,7 +60,6 @@ export const DataFormulatorFC = ({ }) => {
     const models = useSelector((state: DataFormulatorState) => state.models);
     const modelSlots = useSelector((state: DataFormulatorState) => state.modelSlots);
     const viewMode = useSelector((state: DataFormulatorState) => state.viewMode);
-    const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
     const theme = useTheme();
 
     const noBrokenModelSlots= useSelector((state: DataFormulatorState) => {

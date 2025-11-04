@@ -2,12 +2,13 @@
 // Licensed under the MIT License.
 
 import { Box, Typography, Button, useTheme, alpha, IconButton, Divider } from "@mui/material";
-import React, { FC, useState } from "react";
+import React, { FC, useState, useEffect } from "react";
 import ArrowBackIosNewIcon from '@mui/icons-material/ArrowBackIosNew';
 import ArrowForwardIosIcon from '@mui/icons-material/ArrowForwardIos';
 import GridViewIcon from '@mui/icons-material/GridView';
 import GitHubIcon from '@mui/icons-material/GitHub';
 import YouTubeIcon from '@mui/icons-material/YouTube';
+import PrecisionManufacturingIcon from '@mui/icons-material/PrecisionManufacturing';
 
 import dfLogo from '../assets/df-logo.png';
 import { toolName } from "../app/App";
@@ -26,26 +27,26 @@ const features: Feature[] = [
     {
         title: "Load (Almost) Any Data",
         description: "Load structured data, connect to databases. Ask AI agents to extract and clean (small) ad-hoc data from screenshots, text blocks.",
-        media: "/extract-data.mp4",
+        media: "/feature-extract-data.mp4",
         mediaType: "video"
     },
     {
         title: "Agent Mode",
         description: "Vibe with your data. Hands-off and let agents automatically explore and visualize data from high-level goals.",
-        media: "/agent-mode.mp4",
+        media: "/feature-agent-mode.mp4",
         mediaType: "video"
     },
     {
         title: "Interactive Control",
         description: "Use UI interactions and natural language to precisely describe chart designs. Ask AI agents for recommendations. Use Data Threads to backtrack, explore new branches, or follow up.",
-        media: "/data-formulator-screenshot-v0.5.png",
-        mediaType: "image"
+        media: "/feature-interactive-control.mp4",
+        mediaType: "video"
     },
     {
         title: "Verify & Share Insights",
         description: "Interact with charts, inspect data, formulas, and code. Create reports to share insights grounded in your exploration.",
-        media: "/unemployment.png",
-        mediaType: "image"
+        media: "/feature-generate-report.mp4",
+        mediaType: "video"
     }
 ];
 
@@ -78,25 +79,56 @@ export const About: FC<{}> = function About({ }) {
         setCurrentScreenshot((prev) => (prev === screenshots.length - 1 ? 0 : prev + 1));
     };
 
+    // Preload adjacent carousel items for smoother transitions
+    useEffect(() => {
+        const preloadMedia = (index: number) => {
+            const feature = features[index];
+            if (feature.mediaType === 'video') {
+                const video = document.createElement('video');
+                video.src = feature.media;
+                video.preload = 'metadata';
+            } else {
+                const img = new Image();
+                img.src = feature.media;
+            }
+        };
+
+        // Preload next and previous features
+        const nextIndex = (currentFeature + 1) % features.length;
+        const prevIndex = currentFeature === 0 ? features.length - 1 : currentFeature - 1;
+        
+        preloadMedia(nextIndex);
+        preloadMedia(prevIndex);
+
+        // Preload next and previous screenshots
+        const nextScreenshot = (currentScreenshot + 1) % screenshots.length;
+        const prevScreenshot = currentScreenshot === 0 ? screenshots.length - 1 : currentScreenshot - 1;
+        
+        const img1 = new Image();
+        img1.src = screenshots[nextScreenshot].url;
+        const img2 = new Image();
+        img2.src = screenshots[prevScreenshot].url;
+    }, [currentFeature, currentScreenshot]);
+
     const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
 
     let actionButtons = !serverConfig.PROJECT_FRONT_PAGE ? (
         <Box sx={{ display: 'flex', justifyContent: 'center', gap: 1, mb: 4, flexWrap: 'wrap' }}>
             <Button size="large" variant="contained" color="primary" 
-                startIcon={<GridViewIcon sx={{ fontSize: '1rem' }} />}
+                startIcon={<PrecisionManufacturingIcon sx={{ fontSize: '1rem' }} />}
                 href="/app"
             >Start Exploration</Button>
         </Box>
     ) : (
         <Box sx={{ display: 'flex', justifyContent: 'center', gap: 2, mb: 4, flexWrap: 'wrap', '.MuiButton-root': { textTransform: 'none' } }}>
             <Button size="large" variant="outlined" color="primary" 
-                startIcon={<YouTubeIcon sx={{ fontSize: '1rem' }} />}
+                startIcon={<YouTubeIcon sx={{ fontSize: '1rem', color: '#FF0000' }} />}
                 target="_blank"
                 rel="noopener noreferrer"
                 href="https://www.youtube.com/watch?v=3ndlwt0Wi3c"
             >What's New in v0.5?</Button>
             <Button size="large" variant="outlined" color="primary" 
-                startIcon={<GitHubIcon sx={{ fontSize: '1rem' }} />}
+                startIcon={<GitHubIcon sx={{ fontSize: '1rem', color: '#000000' }} />}
                 target="_blank"
                 rel="noopener noreferrer"
                 href="https://github.com/microsoft/data-formulator"
@@ -111,8 +143,10 @@ export const About: FC<{}> = function About({ }) {
             <Button size="large" variant="outlined" color="primary" 
                 startIcon={<GridViewIcon sx={{ fontSize: '1rem' }} />}
                 href="/app"
-            >Online Demo (limited features)</Button>
-            
+            >Online Demo</Button>
+            <Typography variant="caption" sx={{ mt: 1.5, color: 'text.secondary', fontStyle: 'italic' }}>
+                Psst — install locally for the full experience ✨. The online demo is a bit slow & has limited features (at the moment).
+            </Typography>
         </Box>
     );
 
@@ -262,11 +296,13 @@ export const About: FC<{}> = function About({ }) {
                                 {features[currentFeature].mediaType === 'video' ? (
                                     <Box
                                         component="video"
+                                        key={features[currentFeature].media}
                                         src={features[currentFeature].media}
                                         autoPlay
                                         loop
                                         muted
                                         playsInline
+                                        preload="metadata"
                                         sx={{
                                             width: '100%',
                                             height: 'auto',
@@ -278,6 +314,7 @@ export const About: FC<{}> = function About({ }) {
                                         component="img"
                                         src={features[currentFeature].media}
                                         alt={features[currentFeature].title}
+                                        loading="lazy"
                                         sx={{
                                             width: '100%',
                                             height: 'auto',
@@ -355,7 +392,8 @@ export const About: FC<{}> = function About({ }) {
                                     clipPath: 'inset(2px 0 0 0)'
                                 }} 
                                 alt={screenshots[currentScreenshot].description} 
-                                src={screenshots[currentScreenshot].url} 
+                                src={screenshots[currentScreenshot].url}
+                                loading="lazy"
                             />
                             <Box
                                 className="description-overlay"
@@ -415,7 +453,7 @@ export const About: FC<{}> = function About({ }) {
                 <Box sx={{ mt: 6, mx: 2 }}>
                     <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
                         <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600, letterSpacing: '0.02em' }}>
-                            How Data Formulator handles your data?
+                            How does Data Formulator handle your data?
                         </Typography>
                         <Typography 
                             component="ul" 
@@ -429,9 +467,12 @@ export const About: FC<{}> = function About({ }) {
                                 maxWidth: 1000
                             }}
                         >
-                            <li>Uploaded data is stored in your browser's local storage. They are sent to server for data transformations but not stored on the server.</li>
-                            <li>When using database functions from a locally installed Data Formulator, a local database (DuckDB .db file) is created to store data in your local machine in temp directory.</li>
-                            <li>LLM endpoints have access to small data samples sent along with the prompt. Use your trusted model provider if working with private data.</li>
+                            <ul>
+                                <li>📦 <strong>Data Storage:</strong> Uploaded data (csv, xlsx, json, clipboard, messy data etc.) is stored in browser's local storage only</li>
+                                <li>⚙️ <strong>Data Processing:</strong> Local installation runs Python on your machine; online demo sends the data to server for data transformations (but not stored)</li>
+                                <li>🗄️ <strong>Database:</strong> Only available for locally installed Data Formulator (a DuckDB database file is created in temp directory to store data); not available in online demo</li>
+                                <li>🤖 <strong>LLM Endpoints:</strong> Small data samples are sent to LLM endpoints along with the prompt. Use your trusted model provider if working with private data.</li>
+                            </ul>
                         </Typography>
                         <Typography variant="caption" sx={{ mt: 4,color: 'text.secondary', fontWeight: 300, letterSpacing: '0.02em' }}>
                             Research Prototype @ Microsoft Research
