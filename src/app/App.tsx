@@ -255,7 +255,7 @@ const TableMenu: React.FC = () => {
                         <Typography fontSize="inherit" sx={{  }}>
                             <CloudQueueIcon fontSize="inherit" /> Database
                         </Typography>
-                    } component="dialog" />
+                    } />
                 </MenuItem>
                 <MenuItem onClick={(e) => {}}>     
                     <DataLoadingChatDialog buttonElement={<Typography fontSize="inherit" sx={{  }}>
@@ -914,6 +914,24 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
             </Box>
         }
     ]);
+
+    let footer = <Box sx={{ zIndex: 0, position: 'absolute', bottom: 0, left: 0, right: 0, color: 'text.secondary', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <Button size="small" color="inherit" 
+                sx={{ textTransform: 'none'}} 
+                target="_blank" rel="noopener noreferrer" 
+                href="https://www.microsoft.com/en-us/privacy/privacystatement">Privacy & Cookies</Button>
+        <Divider orientation="vertical" variant="middle" flexItem sx={{ mx: 1 }} />
+        <Button size="small" color="inherit" 
+                sx={{ textTransform: 'none'}} 
+                target="_blank" rel="noopener noreferrer" 
+                href="Microsoft Azure Website Terms of Use">Terms of Use</Button>
+        <Divider orientation="vertical" variant="middle" flexItem sx={{ mx: 1 }} />
+        <Button size="small" color="inherit" 
+                sx={{ textTransform: 'none'}} 
+                target="_blank" rel="noopener noreferrer" 
+                href="https://github.com/microsoft/data-formulator/issues">Contact Us</Button>
+        <Typography sx={{ display: 'inline', fontSize: '12px', ml: 1 }}>@ {new Date().getFullYear()}</Typography>
+    </Box>
 
     let app =
         <Box sx={{ 

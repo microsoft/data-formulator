@@ -240,6 +240,17 @@ export const assembleVegaChart = (
                         encodingObj["type"] = "nominal";
                     } else if (fieldMetadata.type == "string" && (fieldMetadata.semanticType == "Decade" || fieldMetadata.semanticType == "Year")) {
                         encodingObj["type"] = "nominal";
+                    } else if (fieldMetadata.semanticType == 'YearMonth') {
+                        let sampleValues = workingTable.map(r => r[field.name]).slice(0, 10);
+                        // Check if values are in yyyy-mm format (temporal) or yyyy-Aug/yyyy-Q1 format (nominal)
+                        let isNumericMonth = sampleValues.some(val => {
+                            if (val && typeof val === 'string') {
+                                // Match yyyy-mm format (e.g., 2023-01, 2023-12)
+                                return /^\d{4}-\d{2}$/.test(val.trim());
+                            }
+                            return false;
+                        });
+                        encodingObj["type"] = isNumericMonth ? "temporal" : "nominal";
                     } else {
                         encodingObj["type"] = "temporal";
                     }

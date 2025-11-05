@@ -223,11 +223,9 @@ export class TableStatisticsView extends React.Component<TableStatisticsViewProp
 
 export const DBTableSelectionDialog: React.FC<{ 
     buttonElement: any, 
-    component: 'dialog' | 'box',
     sx?: SxProps
 }> = function DBTableSelectionDialog({ 
     buttonElement,
-    component,
     sx,
 }) {
     
@@ -261,7 +259,7 @@ export const DBTableSelectionDialog: React.FC<{
     }
 
     useEffect(() => {
-        //fetchTables();
+        if (serverConfig.DISABLE_DATABASE)  return;
         fetchDataLoaders();
     }, []);
 
@@ -275,6 +273,7 @@ export const DBTableSelectionDialog: React.FC<{
 
     // Fetch list of tables
     const fetchTables = async () => {
+        if (serverConfig.DISABLE_DATABASE) return;
         try {
             const response = await fetch(getUrls().LIST_TABLES);
             const data = await response.json();
@@ -939,98 +938,75 @@ export const DBTableSelectionDialog: React.FC<{
             {tableView}
         </Box>  
 
-    if (component === 'dialog') {
-        return (
-            <>
-                <Tooltip 
-                    title={serverConfig.DISABLE_DATABASE ? (
-                        <Typography sx={{ fontSize: '11px' }}>
-                            Install Data Formulator locally to use database. <br />
-                            Link: <Link 
-                                href="https://github.com/microsoft/data-formulator" 
-                                target="_blank" 
-                                rel="noopener noreferrer"
-                                sx={{ color: 'inherit', textDecoration: 'underline' }}
-                                onClick={(e) => e.stopPropagation()}
-                            >
-                                https://github.com/microsoft/data-formulator
-                            </Link>
-                    </Typography>
-                ) : ""}
-                    placement="top"
-                >
-                    <span style={{cursor: serverConfig.DISABLE_DATABASE ? 'help' : 'pointer'}}>
-                        <Button variant="text"   sx={{fontSize: "inherit", gap: 1}} disabled={serverConfig.DISABLE_DATABASE} onClick={() => {
-                            setTableDialogOpen(true);
-                        }}>
-                            {buttonElement}
-                        </Button>
-                    </span>
-                </Tooltip>
-                <Dialog
-                    key="db-table-selection-dialog" 
-                    onClose={() => {setTableDialogOpen(false)}} 
-                    open={tableDialogOpen}
-                    sx={{ '& .MuiDialog-paper': { maxWidth: '100%', maxHeight: 800, minWidth: 800 } }}
-                >
-                    <DialogTitle sx={{display: "flex" }} >
-                        Database
-                        <IconButton
-                            sx={{marginLeft: "auto"}}
-                            edge="start"
-                            size="small"
-                            color="inherit"
-                            aria-label="close"
-                            onClick={() => setTableDialogOpen(false)}
+    return (
+        <>
+            <Tooltip 
+                title={serverConfig.DISABLE_DATABASE ? (
+                    <Typography sx={{ fontSize: '11px' }}>
+                        Install Data Formulator locally to use database. <br />
+                        Link: <Link 
+                            href="https://github.com/microsoft/data-formulator" 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            sx={{ color: 'inherit', textDecoration: 'underline' }}
+                            onClick={(e) => e.stopPropagation()}
                         >
-                            <CloseIcon fontSize="inherit"/>
-                        </IconButton>
-                    </DialogTitle>
-                    <DialogContent  sx={{p: 1, position: "relative"}}>
-                        {mainContent}
-                        {isUploading && (
-                            <Box sx={{ 
-                                position: 'absolute', 
-                                top: 0, 
-                                left: 0, 
-                                width: '100%', 
-                                height: '100%', 
-                                display: 'flex', 
-                                alignItems: 'center', 
-                                justifyContent: 'center',
-                                backgroundColor: 'rgba(255, 255, 255, 0.7)',
-                                zIndex: 1000
-                            }}>
-                                <CircularProgress size={60} thickness={5} />
-                            </Box>
-                        )}
-                    </DialogContent>
-                </Dialog>
-            </>
-        );
-    } else {
-        return (
-            <Box sx={{...sx}}>
-                {mainContent}
-                {isUploading && (
-                    <Box sx={{ 
-                        position: 'absolute', 
-                        top: 0, 
-                        left: 0, 
-                        width: '100%', 
-                        height: '100%', 
-                        display: 'flex', 
-                        alignItems: 'center', 
-                        justifyContent: 'center',
-                        backgroundColor: 'rgba(255, 255, 255, 0.7)',
-                        zIndex: 1000
+                            https://github.com/microsoft/data-formulator
+                        </Link>
+                </Typography>
+            ) : ""}
+                placement="top"
+            >
+                <span style={{cursor: serverConfig.DISABLE_DATABASE ? 'help' : 'pointer'}}>
+                    <Button variant="text"   sx={{fontSize: "inherit", gap: 1}} disabled={serverConfig.DISABLE_DATABASE} onClick={() => {
+                        setTableDialogOpen(true);
                     }}>
-                        <CircularProgress size={60} thickness={5} />
-                    </Box>
-                )}
-            </Box>
-        );
-    }
+                        {buttonElement}
+                    </Button>
+                </span>
+            </Tooltip>
+            <Dialog
+                key="db-table-selection-dialog" 
+                onClose={() => {setTableDialogOpen(false)}} 
+                open={tableDialogOpen}
+                sx={{ '& .MuiDialog-paper': { maxWidth: '100%', maxHeight: 800, minWidth: 800 } }}
+            >
+                <DialogTitle sx={{display: "flex" }} >
+                    Database
+                    <IconButton
+                        sx={{marginLeft: "auto"}}
+                        edge="start"
+                        size="small"
+                        color="inherit"
+                        aria-label="close"
+                        onClick={() => setTableDialogOpen(false)}
+                    >
+                        <CloseIcon fontSize="inherit"/>
+                    </IconButton>
+                </DialogTitle>
+                <DialogContent  sx={{p: 1, position: "relative"}}>
+                    {mainContent}
+                    {isUploading && (
+                        <Box sx={{ 
+                            position: 'absolute', 
+                            top: 0, 
+                            left: 0, 
+                            width: '100%', 
+                            height: '100%', 
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            justifyContent: 'center',
+                            backgroundColor: 'rgba(255, 255, 255, 0.7)',
+                            zIndex: 1000
+                        }}>
+                            <CircularProgress size={60} thickness={5} />
+                        </Box>
+                    )}
+                </DialogContent>
+            </Dialog>
+        </>
+    );
+  
 }
 
 export const DataLoaderForm: React.FC<{

@@ -159,7 +159,7 @@ const initialState: DataFormulatorState = {
 
     serverConfig: {
         DISABLE_DISPLAY_KEYS: false,
-        DISABLE_DATABASE: false,
+        DISABLE_DATABASE: true, // disable database by default
         DISABLE_FILE_UPLOAD: false,
         PROJECT_FRONT_PAGE: false,
     },

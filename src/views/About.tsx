@@ -71,14 +71,6 @@ export const About: FC<{}> = function About({ }) {
         setCurrentFeature((prev) => (prev === features.length - 1 ? 0 : prev + 1));
     };
 
-    const handleScreenshotPrevious = () => {
-        setCurrentScreenshot((prev) => (prev === 0 ? screenshots.length - 1 : prev - 1));
-    };
-
-    const handleScreenshotNext = () => {
-        setCurrentScreenshot((prev) => (prev === screenshots.length - 1 ? 0 : prev + 1));
-    };
-
     // Preload adjacent carousel items for smoother transitions
     useEffect(() => {
         const preloadMedia = (index: number) => {
@@ -475,28 +467,31 @@ export const About: FC<{}> = function About({ }) {
                             </ul>
                         </Typography>
                         <Typography variant="caption" sx={{ mt: 4,color: 'text.secondary', fontWeight: 300, letterSpacing: '0.02em' }}>
-                            Research Prototype @ Microsoft Research
+                            Research Prototype from Microsoft Research
                         </Typography>
                     </Box>
                 </Box>
             </Box>
 
             {/* Footer */}
-            <Button 
-                size="small" 
-                color="inherit" 
-                sx={{
-                    position: "absolute", 
-                    color:'darkgray', 
-                    bottom: 8, 
-                    left: 16, 
-                    textTransform: 'none'
-                }} 
-                target="_blank" 
-                rel="noopener noreferrer" 
-                href="https://www.microsoft.com/en-us/privacy/privacystatement"
-            >
-                Privacy & Cookies
-            </Button>
+            <Box sx={{ color: 'text.secondary', display: 'flex', 
+                        backgroundColor: 'rgba(255, 255, 255, 0.89)',
+                        alignItems: 'center', justifyContent: 'center' }}>
+                <Button size="small" color="inherit" 
+                        sx={{ textTransform: 'none'}} 
+                        target="_blank" rel="noopener noreferrer" 
+                        href="https://www.microsoft.com/en-us/privacy/privacystatement">Privacy & Cookies</Button>
+                <Divider orientation="vertical" variant="middle" flexItem sx={{ mx: 1 }} />
+                <Button size="small" color="inherit" 
+                        sx={{ textTransform: 'none'}} 
+                        target="_blank" rel="noopener noreferrer" 
+                        href="https://www.microsoft.com/en-us/legal/intellectualproperty/copyright">Terms of Use</Button>
+                <Divider orientation="vertical" variant="middle" flexItem sx={{ mx: 1 }} />
+                <Button size="small" color="inherit" 
+                        sx={{ textTransform: 'none'}} 
+                        target="_blank" rel="noopener noreferrer" 
+                        href="https://github.com/microsoft/data-formulator/issues">Contact Us</Button>
+                <Typography sx={{ display: 'inline', fontSize: '12px', ml: 1 }}> @ {new Date().getFullYear()}</Typography>
+            </Box>
         </Box>)
 }

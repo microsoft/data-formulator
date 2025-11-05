@@ -257,6 +257,26 @@ export const DataFormulatorFC = ({ }) => {
 Totals (7 entries)	5	5	5	15
 `
 
+    let footer = <Box sx={{ color: 'text.secondary', display: 'flex', 
+            backgroundColor: 'rgba(255, 255, 255, 0.89)',
+            alignItems: 'center', justifyContent: 'center' }}>
+        <Button size="small" color="inherit" 
+            sx={{ textTransform: 'none'}} 
+            target="_blank" rel="noopener noreferrer" 
+            href="https://www.microsoft.com/en-us/privacy/privacystatement">Privacy & Cookies</Button>
+        <Divider orientation="vertical" variant="middle" flexItem sx={{ mx: 1 }} />
+        <Button size="small" color="inherit" 
+            sx={{ textTransform: 'none'}} 
+            target="_blank" rel="noopener noreferrer" 
+            href="https://www.microsoft.com/en-us/legal/intellectualproperty/copyright">Terms of Use</Button>
+        <Divider orientation="vertical" variant="middle" flexItem sx={{ mx: 1 }} />
+        <Button size="small" color="inherit" 
+            sx={{ textTransform: 'none'}} 
+            target="_blank" rel="noopener noreferrer" 
+            href="https://github.com/microsoft/data-formulator/issues">Contact Us</Button>
+        <Typography sx={{ display: 'inline', fontSize: '12px', ml: 1 }}> @ {new Date().getFullYear()}</Typography>
+    </Box>
+
     let dataUploadRequestBox = <Box sx={{
             margin: '4px 4px 4px 8px', 
             width: 'calc(100vw - 16px)', overflow: 'auto', display: 'flex', flexDirection: 'column', height: '100%',
@@ -297,7 +317,7 @@ Totals (7 entries)	5	5	5	15
                     <Box component="span" sx={{ mx: 2, color: 'text.disabled', fontSize: '0.8em' }}>•</Box>
                     <TableCopyDialogV2 buttonElement={<><ContentPasteIcon sx={{ mr: 1, verticalAlign: 'middle' }} />clipboard</>} disabled={false} /> 
                     <Box component="span" sx={{ mx: 2, color: 'text.disabled', fontSize: '0.8em' }}>•</Box>
-                    <DBTableSelectionDialog buttonElement={<><CloudQueueIcon sx={{ mr: 1, verticalAlign: 'middle' }} />Database</>} component="dialog" />
+                    <DBTableSelectionDialog buttonElement={<><CloudQueueIcon sx={{ mr: 1, verticalAlign: 'middle' }} />Database</>} />
                     {/* <br /> */}
                     {/* <Typography sx={{ml: 10, fontSize: 14, color: 'darkgray', transform: 'translateY(-12px)'}}>(csv, tsv, xlsx, json or database)</Typography> */}
                     <Typography variant="body1" color="text.secondary" sx={{ mt: 2, width: '100%' }}>
@@ -345,12 +365,9 @@ Totals (7 entries)	5	5	5	15
                 </Box>
             </Box>
         </Box>
-        <Button size="small" color="inherit" 
-                sx={{position: "absolute", color:'darkgray', bottom: 8, left: 16, textTransform: 'none'}} 
-                target="_blank" rel="noopener noreferrer" 
-                href="https://www.microsoft.com/en-us/privacy/privacystatement">Privacy & Cookies</Button>
+        {footer}
     </Box>;
-
+    
     return (
         <Box sx={{ display: 'block', width: "100%", height: 'calc(100% - 54px)', position: 'relative' }}>
             <DndProvider backend={HTML5Backend}>
@@ -376,13 +393,9 @@ Totals (7 entries)	5	5	5	15
                             <Typography  variant="h4" sx={{mt: 3, fontSize: 28, letterSpacing: '0.02em'}}>
                                 First, let's <ModelSelectionButton />
                             </Typography>
-                            <Typography  color="text.primary" variant="body1" sx={{mt: 2}}>Specify an AI endpoint to run {toolName}.</Typography>
                             <Typography  color="text.secondary" variant="body1" sx={{mt: 2, width: 600}}>💡 Models with strong code generation capabilities (e.g., gpt-5, claude-sonnet-4-5) provide best experience with Data Formulator.</Typography>
                         </Box>
-                        <Button size="small" color="inherit" 
-                                sx={{position: "absolute", color:'darkgray', bottom: 0, right: 0, textTransform: 'none'}} 
-                                target="_blank" rel="noopener noreferrer" 
-                                href="https://www.microsoft.com/en-us/privacy/privacystatement">Privacy & Cookies</Button>
+                        {footer}
                     </Box>
                 )}
             </DndProvider>
