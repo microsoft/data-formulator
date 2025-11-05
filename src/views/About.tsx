@@ -51,11 +51,11 @@ const features: Feature[] = [
 ];
 
 const screenshots: {url: string, description: string}[] = [
-    {url: "/data-formulator-screenshot-v0.5.png", description: "Explore consumer price trends from 2005 to 2025"},
-    {url: "/screenshot-movies-report.png", description: "Report: Top directors by their revenue"},
-    {url: "/screenshot-renewable-energy.png", description: "Renewable energy percentage by country"},
-    {url: '/screenshot-unemployment.png', description: 'Report: Unemployment rate affected by 2008 financial crisis'},
-    {url: '/screenshot-claude-performance.png', description: 'Compare Claude models\' performance on different tasks'},
+    {url: "/data-formulator-screenshot-v0.5.webp", description: "Explore consumer price trends from 2005 to 2025"},
+    {url: "/screenshot-movies-report.webp", description: "Report: Top directors by their revenue"},
+    {url: "/screenshot-renewable-energy.webp", description: "Renewable energy percentage by country"},
+    {url: '/screenshot-unemployment.webp', description: 'Report: Unemployment rate affected by 2008 financial crisis'},
+    {url: '/screenshot-claude-performance.webp', description: 'Compare Claude models\' performance on different tasks'},
 ];
 
 export const About: FC<{}> = function About({ }) {

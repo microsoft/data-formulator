@@ -26,28 +26,28 @@ export const exampleSessions: ExampleSession[] = [
         id: 'gas-prices',
         title: 'Gas Prices',
         description: 'Weekly gas prices across different grades and formulations',
-        previewImage: '/gas_prices-thumbnail.png',
+        previewImage: '/gas_prices-thumbnail.webp',
         dataFile: '/df_gas_prices.json',
     },
     {
         id: 'global-energy',
         title: 'Global Energy',
         description: 'Explore global energy consumption and CO2 emissions data',
-        previewImage: '/global_energy-thumbnail.png',
+        previewImage: '/global_energy-thumbnail.webp',
         dataFile: '/df_global_energy.json',
     },
     {
         id: 'movies',
         title: 'Movies',
         description: 'Analyze movie performance, budgets, and ratings data',
-        previewImage: '/movies-thumbnail.png',
+        previewImage: '/movies-thumbnail.webp',
         dataFile: '/df_movies.json',
     },
     {
         id: 'unemployment',
         title: 'Unemployment',
         description: 'Unemployment rates across different industries over time',
-        previewImage: '/unemployment-thumbnail.png',
+        previewImage: '/unemployment-thumbnail.webp',
         dataFile: '/df_unemployment.json',
     }
 ];

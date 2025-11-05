@@ -105,6 +105,33 @@ export const DataFormulatorFC = ({ }) => {
 
     useEffect(() => {
         document.title = toolName;
+        
+        // Preload imported images (public images are preloaded in index.html)
+        const imagesToPreload = [
+            { src: dfLogo, type: 'image/png' },
+            { src: exampleImageTable, type: 'image/png' },
+        ];
+        
+        const preloadLinks: HTMLLinkElement[] = [];
+        imagesToPreload.forEach(({ src, type }) => {
+            // Use link preload for better priority
+            const link = document.createElement('link');
+            link.rel = 'preload';
+            link.as = 'image';
+            link.href = src;
+            link.type = type;
+            document.head.appendChild(link);
+            preloadLinks.push(link);
+        });
+        
+        // Cleanup function to remove preload links when component unmounts
+        return () => {
+            preloadLinks.forEach(link => {
+                if (link.parentNode) {
+                    link.parentNode.removeChild(link);
+                }
+            });
+        };
     }, []);
 
     useEffect(() => {
@@ -112,29 +139,40 @@ export const DataFormulatorFC = ({ }) => {
             let assignedModels = models.filter(m => Object.values(modelSlots).includes(m.id));
             let unassignedModels = models.filter(m => !Object.values(modelSlots).includes(m.id));
             
-            // Combine both arrays: assigned models first, then unassigned models
-            let allModelsToTest = [...assignedModels, ...unassignedModels];
-
-            for (let i = 0; i < allModelsToTest.length; i++) {
-                let model = allModelsToTest[i];
-                let isAssignedModel = i < assignedModels.length;
-
+            // Test assigned models in parallel for faster loading
+            const assignedPromises = assignedModels.map(async (model) => {
                 const message = {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', },
-                    body: JSON.stringify({
-                        model: model,
-                    }),
+                    body: JSON.stringify({ model }),
                 };
                 try {
                     const response = await fetch(getUrls().TEST_MODEL, {...message });
                     const data = await response.json();
                     const status = data["status"] || 'error';
                     dispatch(dfActions.updateModelStatus({id: model.id, status, message: data["message"] || ""}));
-                    // For unassigned models, break when we find a working one
-                    if (!isAssignedModel && status == 'ok') {
-                        break;
-                    }
+                    return { model, status };
+                } catch (error) {
+                    dispatch(dfActions.updateModelStatus({id: model.id, status: 'error', message: (error as Error).message || 'Failed to test model'}));
+                    return { model, status: 'error' };
+                }
+            });
+            
+            await Promise.all(assignedPromises);
+            
+            // Then test unassigned models sequentially until one works
+            for (let model of unassignedModels) {
+                const message = {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', },
+                    body: JSON.stringify({ model }),
+                };
+                try {
+                    const response = await fetch(getUrls().TEST_MODEL, {...message });
+                    const data = await response.json();
+                    const status = data["status"] || 'error';
+                    dispatch(dfActions.updateModelStatus({id: model.id, status, message: data["message"] || ""}));
+                    if (status == 'ok') break;
                 } catch (error) {
                     dispatch(dfActions.updateModelStatus({id: model.id, status: 'error', message: (error as Error).message || 'Failed to test model'}));
                 }
@@ -234,7 +272,7 @@ Totals (7 entries)	5	5	5	15
             p: 2,
             borderRadius: '8px',
             }}>
-                <Box component="img" sx={{  width: 84,  }} alt="" src={dfLogo} /> 
+                <Box component="img" sx={{  width: 84,  }} alt="" src={dfLogo} fetchPriority="high" /> 
                 <Typography fontSize={64} sx={{ml: 2, letterSpacing: '0.05em', fontWeight: 200, color: 'text.primary'}}>{toolName}</Typography> 
             </Box>
             <Typography fontSize={24} sx={{color: 'text.secondary'}}>Turn data into insights with AI agents, with the exploration paths you choose.</Typography>
@@ -313,27 +351,40 @@ Totals (7 entries)	5	5	5	15
                 href="https://www.microsoft.com/en-us/privacy/privacystatement">Privacy & Cookies</Button>
     </Box>;
 
-    let modelSelectionDialogBox = <Box sx={{width: '100vw', display: 'flex', flexDirection: 'column', height: '100%'}}>
-        <Box sx={{margin:'auto', pb: '5%', display: "flex", flexDirection: "column", textAlign: "center"}}>
-            <Box component="img" sx={{  width: 196, margin: "auto" }} alt="" src={dfLogo} />
-            <Typography variant="h3" sx={{marginTop: "20px", fontWeight: 200, letterSpacing: '0.05em'}}>
-                {toolName}
-            </Typography>
-            <Typography  variant="h4" sx={{mt: 3, fontSize: 28, letterSpacing: '0.02em'}}>
-                Let's <ModelSelectionButton />
-            </Typography>
-            <Typography variant="body1">Specify an AI endpoint to run {toolName}.</Typography>
-        </Box>
-        <Button size="small" color="inherit" 
-                sx={{position: "absolute", color:'darkgray', bottom: 0, right: 0, textTransform: 'none'}} 
-                target="_blank" rel="noopener noreferrer" 
-                href="https://www.microsoft.com/en-us/privacy/privacystatement">Privacy & Cookies</Button>
-    </Box>;
-
     return (
-        <Box sx={{ display: 'block', width: "100%", height: 'calc(100% - 54px)' }}>
+        <Box sx={{ display: 'block', width: "100%", height: 'calc(100% - 54px)', position: 'relative' }}>
             <DndProvider backend={HTML5Backend}>
-                {!noBrokenModelSlots ? modelSelectionDialogBox : (tables.length > 0 ? fixedSplitPane : dataUploadRequestBox)}
+                {tables.length > 0 ? fixedSplitPane : dataUploadRequestBox}
+                {!noBrokenModelSlots && (
+                    <Box sx={{
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        backgroundColor: alpha(theme.palette.background.default, 0.85),
+                        backdropFilter: 'blur(4px)',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        zIndex: 1000,
+                    }}>
+                        <Box sx={{margin:'auto', pb: '5%', display: "flex", flexDirection: "column", textAlign: "center"}}>
+                            <Box component="img" sx={{  width: 196, margin: "auto" }} alt="" src={dfLogo} fetchPriority="high" />
+                            <Typography variant="h3" sx={{marginTop: "20px", fontWeight: 200, letterSpacing: '0.05em'}}>
+                                {toolName}
+                            </Typography>
+                            <Typography  variant="h4" sx={{mt: 3, fontSize: 28, letterSpacing: '0.02em'}}>
+                                First, let's <ModelSelectionButton />
+                            </Typography>
+                            <Typography  color="text.primary" variant="body1" sx={{mt: 2}}>Specify an AI endpoint to run {toolName}.</Typography>
+                            <Typography  color="text.secondary" variant="body1" sx={{mt: 2, width: 600}}>💡 Models with strong code generation capabilities (e.g., gpt-5, claude-sonnet-4-5) provide best experience with Data Formulator.</Typography>
+                        </Box>
+                        <Button size="small" color="inherit" 
+                                sx={{position: "absolute", color:'darkgray', bottom: 0, right: 0, textTransform: 'none'}} 
+                                target="_blank" rel="noopener noreferrer" 
+                                href="https://www.microsoft.com/en-us/privacy/privacystatement">Privacy & Cookies</Button>
+                    </Box>
+                )}
             </DndProvider>
         </Box>);
 }
