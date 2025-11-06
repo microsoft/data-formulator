@@ -117,7 +117,7 @@ export const About: FC<{}> = function About({ }) {
                 startIcon={<YouTubeIcon sx={{ fontSize: '1rem', color: '#FF0000' }} />}
                 target="_blank"
                 rel="noopener noreferrer"
-                href="https://www.youtube.com/watch?v=3ndlwt0Wi3c"
+                href="https://www.youtube.com/watch?v=GfTE2FLyMrs"
             >What's New in v0.5?</Button>
             <Button size="large" variant="outlined" color="primary" 
                 startIcon={<GitHubIcon sx={{ fontSize: '1rem', color: '#000000' }} />}
