@@ -242,15 +242,22 @@ export const assembleVegaChart = (
                         encodingObj["type"] = "nominal";
                     } else if (fieldMetadata.semanticType == 'YearMonth') {
                         let sampleValues = workingTable.map(r => r[field.name]).slice(0, 10);
-                        // Check if values are in yyyy-mm format (temporal) or yyyy-Aug/yyyy-Q1 format (nominal)
-                        let isNumericMonth = sampleValues.some(val => {
+                        // Check if values can be parsed as valid temporal dates (Vega-Lite compatible)
+                        // Temporal: yyyy-mm, yyyy-mm-dd, ISO date formats
+                        // Nominal: 2021-Aug, Q1-2024, etc.
+                        let isValidTemporal = sampleValues.some(val => {
                             if (val && typeof val === 'string') {
-                                // Match yyyy-mm format (e.g., 2023-01, 2023-12)
-                                return /^\d{4}-\d{2}$/.test(val.trim());
+                                const trimmed = val.trim();
+                                // Try to parse as date
+                                const date = new Date(trimmed);
+                                // Check if it's a valid date and follows ISO-like format
+                                // (no letters except 'T' for datetime separator, 'Z' for timezone)
+                                const isISOLike = /^[\d\-:.TZ+]+$/.test(trimmed);
+                                return !isNaN(date.getTime()) && isISOLike;
                             }
                             return false;
                         });
-                        encodingObj["type"] = isNumericMonth ? "temporal" : "nominal";
+                        encodingObj["type"] = isValidTemporal ? "temporal" : "nominal";
                     } else {
                         encodingObj["type"] = "temporal";
                     }
