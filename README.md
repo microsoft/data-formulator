@@ -6,7 +6,7 @@
     
 [![arxiv](https://img.shields.io/badge/Paper-arXiv:2408.16119-b31b1b.svg)](https://arxiv.org/abs/2408.16119)&ensp;
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)&ensp;
-[![YouTube](https://img.shields.io/badge/YouTube-white?logo=youtube&logoColor=%23FF0000)](https://youtu.be/3ndlwt0Wi3c)&ensp;
+[![YouTube](https://img.shields.io/badge/YouTube-white?logo=youtube&logoColor=%23FF0000)](https://www.youtube.com/watch?v=GfTE2FLyMrs)&ensp;
 [![build](https://github.com/microsoft/data-formulator/actions/workflows/python-build.yml/badge.svg)](https://github.com/microsoft/data-formulator/actions/workflows/python-build.yml)
 [![Discord](https://img.shields.io/badge/discord-chat-green?logo=discord)](https://discord.gg/mYCZMQKYZb)
 
@@ -14,18 +14,22 @@
 
 🪄 Turn data into insights with AI Agents, with the exploration paths you choose. Try Data Formulator now!
 
-Any questions? Ask on the Discord channel! [![Discord](https://img.shields.io/badge/discord-chat-green?logo=discord)](https://discord.gg/mYCZMQKYZb)
+- 🤖 New in v0.5: agent model + interative control [(video)](https://www.youtube.com/watch?v=GfTE2FLyMrs)
+- 🔥🔥🔥 Try our online demo at [https://data-formulator.ai](https://data-formulator.ai)
+- Any questions, thoughts? Discuss in the Discord channel! [![Discord](https://img.shields.io/badge/discord-chat-green?logo=discord)](https://discord.gg/mYCZMQKYZb)
 
 <!-- [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/microsoft/data-formulator?quickstart=1) -->
 
-<kbd>
+https://github.com/user-attachments/assets/8ca57b68-4d7a-42cb-bcce-43f8b1681ce2
+
+<!-- <kbd>
   <a target="_blank" rel="noopener noreferrer" href="https://codespaces.new/microsoft/data-formulator?quickstart=1" title="open Data Formulator in GitHub Codespaces"><img src="public/data-formulator-screenshot-v0.5.png"></a>
-</kbd>
+</kbd> -->
 
 
 ## News 🔥🔥🔥
 
-[11-07-2025] Data Formulator 0.5: Vibe with your data, in control 🔥
+[11-07-2025] Data Formulator 0.5: Vibe with your data, in control
 
 - 📊 **Load (almost) any data**: load structured data, extract data from screenshots, from messy text blocks, or connect to databases.
 - 🤖 **Explore data with AI agents**: 
