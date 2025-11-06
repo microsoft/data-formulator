@@ -9,23 +9,11 @@ import { Type } from "../data/types";
 import { BooleanIcon, NumericalIcon, StringIcon, DateIcon, UnknownIcon } from '../icons';
 
 import AutoFixHighIcon from '@mui/icons-material/AutoFixHigh';
+import BarChartIcon from '@mui/icons-material/BarChart';
 
 import prettier from "prettier";
 import parserBabel from 'prettier/parser-babel';
 import { DictTable } from '../components/ComponentType';
-
-// from a list of potential tables, extract domain of a given basic or custom fields
-export const getDomains = (field: FieldItem, tables: DictTable[]) : any[][] => {
-    
-    let domains = tables.filter(t => Object.keys(t.rows[0]).includes(field.name))
-            .map(t => [...new Set(t.rows.map(row => row[field.name]))])
-    
-    domains = domains.filter((d, i) =>  {
-        return !domains.slice(0, i).some(prevD => JSON.stringify(prevD.slice().sort()) == JSON.stringify(d.slice().sort()));
-    })
-    // if there is no table that includes the given concept, then wrap it around so it is still sound
-    return domains.length == 0 ? [[]] : domains;
-}
 
 export const groupConceptItems = (conceptShelfItems: FieldItem[], tables: DictTable[])  => {
     // group concepts based on which source table they belongs to
@@ -55,6 +43,22 @@ export const getIconFromType = (t: Type | undefined): JSX.Element => {
         case Type.String:
             return <StringIcon fontSize="inherit" />;
         case Type.Auto:
+            return <AutoFixHighIcon fontSize="inherit" />;
+    }
+    return <UnknownIcon fontSize="inherit" />;
+};
+
+export const getIconFromDtype = (t: "quantitative" | "nominal" | "ordinal" | "temporal" | "auto"): JSX.Element => {
+    switch (t) {
+        case "quantitative":
+            return <NumericalIcon fontSize="inherit" />;
+        case "nominal":
+            return <StringIcon fontSize="inherit" />;
+        case "ordinal":
+            return <BarChartIcon fontSize="inherit" />;
+        case "temporal":
+            return <DateIcon fontSize="inherit" />;
+        case "auto":
             return <AutoFixHighIcon fontSize="inherit" />;
     }
     return <UnknownIcon fontSize="inherit" />;

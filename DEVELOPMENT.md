@@ -106,5 +106,41 @@ How to set up your local machine.
     Open [http://localhost:5000](http://localhost:5000) to view it in the browser.
 
 
+## Security Considerations for Production Deployment
+
+⚠️ **IMPORTANT SECURITY WARNING FOR PRODUCTION DEPLOYMENT**
+
+When deploying Data Formulator to production, please be aware of the following security considerations:
+
+### Database Storage Security
+
+1. **Local DuckDB Files**: When database functionality is enabled (default), Data Formulator stores DuckDB database files locally on the server. These files contain user data and are stored in the system's temporary directory or a configured `LOCAL_DB_DIR`.
+
+2. **Session Management**: 
+   - When database is **enabled**: Session IDs are stored in Flask sessions (cookies) and linked to local DuckDB files
+   - When database is **disabled**: No persistent storage is used, and no cookies are set. Session IDs are generated per request for API consistency
+
+3. **Data Persistence**: User data processed through Data Formulator may be temporarily stored in these local DuckDB files, which could be a security risk in multi-tenant environments.
+
+### Recommended Security Measures
+
+For production deployment, consider:
+
+1. **Use `--disable-database` flag** for stateless deployments where no data persistence is needed
+2. **Implement proper authentication, authorization, and other security measures** as needed for your specific use case, for example:
+   - Store DuckDB file in a database
+   - User authentication (OAuth, JWT tokens, etc.)
+   - Role-based access control
+   - API rate limiting
+   - HTTPS/TLS encryption
+   - Input validation and sanitization 
+
+### Configuration for Production
+
+```bash
+# For stateless deployment (recommended for public hosting)
+python -m data_formulator.app --disable-database
+```
+
 ## Usage
 See the [Usage section on the README.md page](README.md#usage).

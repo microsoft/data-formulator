@@ -33,7 +33,8 @@ import {
   styled,
   ToggleButtonGroup,
   ToggleButton,
-  useTheme
+  useTheme,
+  Link
 } from '@mui/material';
 
 import DeleteIcon from '@mui/icons-material/Delete';
@@ -109,37 +110,6 @@ interface DBTable {
     row_count: number;
     sample_rows: any[];
     view_source: string | null;
-}
-
-interface TabPanelProps {
-  children?: React.ReactNode;
-  key: string;
-  show: boolean;
-  sx?: SxProps;
-}
-
-function TabPanel(props: TabPanelProps, sx: SxProps) {
-    const { children, show, key, ...other } = props;
-
-    return (
-        <Box role="tabpanel" hidden={!show}
-            id={`vertical-tabpanel-${key}`}
-            aria-labelledby={`vertical-tab-${key}`}
-            style={{maxWidth: '100%'}}
-            sx={sx} {...other}
-        >
-            <Box sx={{ p: 2 }}>
-                {children}
-            </Box>
-        </Box>
-    );
-}
-
-function a11yProps(key: string) {
-    return {
-        id: `vertical-tab-${key}`,
-        'aria-controls': `vertical-tabpanel-${key}`,
-    };
 }
 
 interface ColumnStatistics {
@@ -251,17 +221,20 @@ export class TableStatisticsView extends React.Component<TableStatisticsViewProp
     }
 }
 
-export const DBTableManager: React.FC = () => {
-    return (
-        <DBTableSelectionDialog buttonElement={<Button>DB Tables</Button>} />
-    );
-}
-
-export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function DBTableSelectionDialog({ buttonElement }) {
+export const DBTableSelectionDialog: React.FC<{ 
+    buttonElement: any, 
+    sx?: SxProps
+}> = function DBTableSelectionDialog({ 
+    buttonElement,
+    sx,
+}) {
     
+    const theme = useTheme();
+
     const dispatch = useDispatch<AppDispatch>();
     const sessionId = useSelector((state: DataFormulatorState) => state.sessionId);
     const tables = useSelector((state: DataFormulatorState) => state.tables);
+    const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
 
     const [tableDialogOpen, setTableDialogOpen] = useState<boolean>(false);
     const [tableAnalysisMap, setTableAnalysisMap] = useState<Record<string, ColumnStatistics[] | null>>({});
@@ -286,7 +259,7 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
     }
 
     useEffect(() => {
-        fetchTables();
+        if (serverConfig.DISABLE_DATABASE)  return;
         fetchDataLoaders();
     }, []);
 
@@ -300,6 +273,7 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
 
     // Fetch list of tables
     const fetchTables = async () => {
+        if (serverConfig.DISABLE_DATABASE) return;
         try {
             const response = await fetch(getUrls().LIST_TABLES);
             const data = await response.json();
@@ -535,14 +509,22 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
             id: dbTable.name,
             displayId: dbTable.name,
             names: dbTable.columns.map((col: any) => col.name),
-            types: dbTable.columns.map((col: any) => convertSqlTypeToAppType(col.type)),
+            metadata: dbTable.columns.reduce((acc: Record<string, {type: Type, semanticType: string, levels: any[]}>, col: any) => ({
+                ...acc,
+                [col.name]: {
+                    type: convertSqlTypeToAppType(col.type),
+                    semanticType: "",
+                    levels: []
+                }
+            }), {}),
             rows: dbTable.sample_rows,
             virtual: {
                 tableId: dbTable.name,
                 rowCount: dbTable.row_count,
             },
             anchored: true, // by default, db tables are anchored
-            explorativeQuestions: []
+            createdBy: 'user',
+            attachedMetadata: ''
         }
        dispatch(dfActions.loadTable(table));
        dispatch(fetchFieldSemanticType(table));
@@ -561,196 +543,262 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
 
     let importButton = (buttonElement: React.ReactNode) => {
         return <Tooltip title="import a duckdb .db file to the local database">
-            <Button variant="text" sx={{fontSize: "inherit", minWidth: "auto"}} component="label" disabled={isUploading}>
-                {buttonElement}
-                <input type="file" hidden onChange={handleDBUpload} accept=".db" disabled={isUploading} />
-            </Button>
+            <span>
+                <Button variant="text" sx={{fontSize: "inherit", minWidth: "auto"}} component="label" disabled={isUploading}>
+                    {buttonElement}
+                    <input type="file" hidden onChange={handleDBUpload} accept=".db" disabled={isUploading} />
+                </Button>
+            </span>
         </Tooltip>
     }
 
     let exportButton = 
         <Tooltip title="save the local database to a duckdb .db file">
-            <Button variant="text" size="small" onClick={() => {
-                handleDBDownload(sessionId ?? '')
-                    .catch(error => {
-                        console.error('Failed to download database:', error);
-                        setSystemMessage('Failed to download database file', "error");
-                    });
-            }} disabled={isUploading || dbTables.length === 0}>
-                export
-            </Button>
+            <span>
+                <Button variant="text" size="small" onClick={() => {
+                    handleDBDownload(sessionId ?? '')
+                        .catch(error => {
+                            console.error('Failed to download database:', error);
+                            setSystemMessage('Failed to download database file', "error");
+                        });
+                }} disabled={isUploading || dbTables.length === 0}>
+                    export
+                </Button>
+            </span>
         </Tooltip>
 
     function uploadFileButton(element: React.ReactNode, buttonSx?: SxProps) {
         return (
             <Tooltip title="upload a csv/tsv file to the local database">
-                <Button
-                    variant="text"
-                    component="label"
-                    sx={{ fontSize: "inherit", ...buttonSx}}                    
-                    disabled={isUploading}
-                >
-                    {element}
-                    <input
-                        type="file"
-                        hidden
-                        onChange={handleDBFileUpload}
-                        accept=".csv,.xlsx,.json"
+                <span>
+                    <Button
+                        variant="text"
+                        component="label"
+                        sx={{ fontSize: "inherit", ...buttonSx}}                    
                         disabled={isUploading}
-                    />
-                </Button>
+                    >
+                        {element}
+                        <input
+                            type="file"
+                            hidden
+                            onChange={handleDBFileUpload}
+                            accept=".csv,.xlsx,.json"
+                            disabled={isUploading}
+                        />
+                    </Button>
+                </span>
             </Tooltip>
         );
     }
 
-    let mainContent =  
-        <Box sx={{flexGrow: 1, bgcolor: 'background.paper', display: 'flex', flexDirection: 'row', minHeight: 400 }}>
-            <Box sx={{display: "flex", flexDirection: "column", width: "180px", borderRight: 1, borderColor: 'divider'}}>
-                <Tabs
-                    value={0} // not used, just to keep MUI happy
-                    orientation="vertical"
-                    variant="scrollable"
-                    scrollButtons={dbTables.length > 8 ? "auto" : false}
-                    allowScrollButtonsMobile
-                    aria-label="Database tables"
-                    sx={{ 
-                        maxHeight: '360px',
-                        px: 0.5,
-                        pt: 1,
-                        '& .MuiTabs-scrollButtons.Mui-disabled': {
-                            opacity: 0.3,
-                        },
-                    }}
-                >
-                    <Typography variant="caption" sx={{color: "text.secondary", fontWeight: "bold", px: 1 }}>
-                        available tables
-                        <Tooltip title="refresh the table list">
-                            <IconButton size="small" color="primary" sx={{
-                                '&:hover': {
-                                    transform: 'rotate(180deg)',
-                                },
-                                transition: 'transform 0.3s ease-in-out',
-                            }} onClick={() => {
-                                fetchTables();
-                            }}>
-                                <RefreshIcon sx={{fontSize: 14}} />
-                            </IconButton>
-                        </Tooltip>
+    let hasDerivedViews = dbTables.filter(t => t.view_source !== null).length > 0;
+
+    let dataLoaderPanel = <Box sx={{ p: 1, display: 'flex', flexDirection: 'column', backgroundColor: alpha(theme.palette.secondary.main, 0.02) }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', px: 1, mb: 1 }}>
+            <Typography variant="caption" sx={{
+                color: "text.disabled", 
+                fontWeight: "500", 
+                flexGrow: 1,
+                fontSize: "0.75rem",
+            }}>
+                Data Connectors
+            </Typography>
+        </Box>
+        
+        {["file upload", ...Object.keys(dataLoaderMetadata ?? {})].map((dataLoaderType, i) => (
+            <Button
+                key={`dataLoader:${dataLoaderType}`}
+                variant="text"
+                size="small"
+                onClick={() => {
+                    setSelectedTabKey('dataLoader:' + dataLoaderType);
+                }}
+                color='secondary'
+                sx={{
+                    textTransform: "none",
+                    width: 120,
+                    justifyContent: 'flex-start',
+                    textAlign: 'left',
+                    borderRadius: 0,
+                    py: 0.5,
+                    px: 2,
+                    color: selectedTabKey === 'dataLoader:' + dataLoaderType ? 'secondary.main' : 'text.secondary',
+                    borderRight: selectedTabKey === 'dataLoader:' + dataLoaderType ? 2 : 0,
+                    borderColor: 'secondary.main',
+                }}
+            >
+                <Typography 
+                    fontSize='inherit'
+                    sx={{
+                        textTransform: "none", 
+                        width: "calc(100% - 4px)", 
+                        textAlign: 'left', 
+                        textOverflow: 'ellipsis', 
+                        overflow: 'hidden', 
+                        whiteSpace: 'nowrap',
+                    }}>
+                    {dataLoaderType}
+                </Typography>
+            </Button>
+        ))}
+    </Box>;
+
+    let tableSelectionPanel = <Box sx={{ px: 0.5, pt: 1, display: 'flex', flexDirection: 'column', backgroundColor: alpha(theme.palette.primary.main, 0.02) }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', px: 1, mb: 1 }}>
+            <Typography variant="caption" sx={{
+                color: "text.disabled", 
+                fontWeight: "500", 
+                flexGrow: 1,
+                fontSize: "0.75rem",
+            }}>
+                Data Tables
+            </Typography>
+            <Tooltip title="refresh the table list">
+                <IconButton size="small" color="primary" sx={{
+                    '&:hover': {
+                        transform: 'rotate(180deg)',
+                    },
+                    transition: 'transform 0.3s ease-in-out',
+                }} onClick={() => {
+                    fetchTables();
+                }}>
+                    <RefreshIcon sx={{fontSize: 14}} />
+                </IconButton>
+            </Tooltip>
+        </Box>
+        
+        {dbTables.length == 0 && 
+            <Typography variant="caption" sx={{color: "lightgray", px: 2, py: 0.5, fontStyle: "italic"}}>
+                no tables available
+            </Typography>
+        }
+        
+        {/* Regular Tables */}
+        {dbTables.filter(t => t.view_source === null).map((t, i) => (
+            <Button
+                key={t.name}
+                variant="text"
+                size="small"
+                color='primary'
+                onClick={() => {
+                    setSelectedTabKey(t.name);
+                }}
+                sx={{
+                    textTransform: "none",
+                    width: 160,
+                    justifyContent: 'flex-start',
+                    textAlign: 'left',
+                    borderRadius: 0,
+                    py: 0.5,
+                    px: 2,
+                    color: selectedTabKey === t.name ? 'primary.main' : 'text.secondary',
+                    borderRight: selectedTabKey === t.name ? 2 : 0,
+                }}
+            >
+                <Typography 
+                    fontSize='inherit'
+                    sx={{
+                        width: "calc(100% - 4px)", 
+                        textAlign: 'left', 
+                        textOverflow: 'ellipsis', 
+                        overflow: 'hidden', 
+                        whiteSpace: 'nowrap',
+                    }}>
+                    {t.name}
+                </Typography>
+            </Button>
+        ))}
+        
+        {/* Derived Views Section */}
+        {hasDerivedViews && (
+            <Box sx={{ mt: 2, display: 'flex', flexDirection: 'column' }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', px: 1, mb: 1 }}>
+                    <Typography variant="caption" sx={{
+                        color: "text.disabled", 
+                        fontWeight: "500", 
+                        flexGrow: 1,
+                        fontSize: "0.75rem",
+                    }}>
+                        Derived Views
                     </Typography>
-                    {dbTables.length == 0 && 
-                        <Typography variant="caption" sx={{color: "lightgray", px: 2, py: 0.5, fontStyle: "italic"}}>no tables available</Typography>}
-                    {/* <Typography variant="caption" color='text.secondary' sx={{fontStyle: "italic", px: 1, fontSize: 10, opacity: 0.8}}>tables</Typography> */}
-                    {dbTables.filter(t => t.view_source === null).map((t, i) => (
-                        <Tab 
-                            key={t.name} 
-                            value={t.name}
-                            wrapped 
-                            label={
-                                <Typography variant="caption" 
-                                    sx={{textTransform: "none", width: "calc(100% - 4px)", textAlign: 'left', 
-                                         textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap'}}>
-                                    <Typography variant="caption" sx={{fontSize: 12}}>{t.name}</Typography>
-                                </Typography>
-                            } 
-                            onClick={() => {
-                                setSelectedTabKey(t.name);
-                            }}
-                            sx={{textTransform: "none", minHeight: 24, p: 0.5, ml: 2,
-                                backgroundColor: selectedTabKey === t.name ? (theme) => alpha(theme.palette.primary.light, 0.1) : 'transparent',
-                            }}
-                            {...a11yProps(t.name)} 
-                        />
-                    ))}
-                   {dbTables.filter(t => t.view_source !== null).length > 0 && <Typography variant="caption" color='text.secondary' sx={{fontStyle: "italic", px: 1, fontSize: 10, opacity: 0.8}}>
-                        derived views
-                        <Tooltip title="clean up unreferenced derived views">
-                            <IconButton size="small" color="primary" sx={{
-                                '&:hover': {
-                                    transform: 'rotate(180deg)',
-                                },
-                                transition: 'transform 0.3s ease-in-out',
-                            }} 
-                            disabled={dbTables.filter(t => t.view_source !== null).length === 0}
-                            onClick={() => {
-                                handleCleanDerivedViews();
+                    <Tooltip title="clean up unreferenced derived views">
+                        <IconButton size="small" color="primary" sx={{
+                            '&:hover': {
+                                transform: 'rotate(180deg)',
+                            },
+                            transition: 'transform 0.3s ease-in-out',
+                        }} 
+                        disabled={dbTables.filter(t => t.view_source !== null).length === 0}
+                        onClick={() => {
+                            handleCleanDerivedViews();
+                        }}>
+                            <CleaningServicesIcon sx={{fontSize: 14}} />
+                        </IconButton>
+                    </Tooltip>
+                </Box>
+                
+                {dbTables.filter(t => t.view_source !== null).map((t, i) => (
+                    <Button
+                        key={t.name}
+                        variant="text"
+                        size="small"
+                        onClick={() => {
+                            setSelectedTabKey(t.name);
+                        }}
+                        sx={{
+                            textTransform: "none",
+                            width: 160,
+                            justifyContent: 'flex-start',
+                            textAlign: 'left',
+                            borderRadius: 0,
+                            py: 0.5,
+                            px: 2,
+                            color: selectedTabKey === t.name ? 'primary.main' : 'text.secondary',
+                            backgroundColor: 'transparent',
+                            borderRight: selectedTabKey === t.name ? 2 : 0,
+                            borderColor: 'primary.main',
+                            '&:hover': {
+                                backgroundColor: selectedTabKey === t.name ? 'primary.100' : 'primary.50'
+                            }
+                        }}
+                    >
+                        <Typography 
+                            fontSize='inherit'
+                            sx={{
+                                width: "calc(100% - 4px)", 
+                                textAlign: 'left', 
+                                textOverflow: 'ellipsis', 
+                                overflow: 'hidden', 
+                                whiteSpace: 'nowrap',
+                                
                             }}>
-                                <CleaningServicesIcon sx={{fontSize: 14}} />
-                            </IconButton>
-                        </Tooltip>
-                    </Typography>}
-                    {dbTables.filter(t => t.view_source !== null).map((t, i) => (
-                        <Tab 
-                            key={t.name} 
-                            value={t.name}
-                            wrapped 
-                            label={
-                                <Typography variant="caption" 
-                                    sx={{textTransform: "none", width: "calc(100% - 4px)", textAlign: 'left', 
-                                         textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap'}}>
-                                    <Typography variant="caption" sx={{fontSize: 12}}>{t.name}</Typography>
-                                </Typography>
-                            } 
-                            onClick={() => {
-                                setSelectedTabKey(t.name);
-                            }}
-                            sx={{textTransform: "none", minHeight: 24, p: 0.5, ml: 2,
-                                backgroundColor: selectedTabKey === t.name ? (theme) => alpha(theme.palette.primary.light, 0.1) : 'transparent',
-                            }}
-                            {...a11yProps(t.name)} 
-                        />
-                    ))}
-                </Tabs>
-                <Divider sx={{my: 1}} />
-                <Tabs
-                    orientation="vertical"
-                    textColor="secondary"
-                    indicatorColor="secondary"
-                    value={0} // not used, just to keep MUI happy
-                    sx={{px: 0.5}}
-                >
-                    <Typography variant="caption" sx={{color: "text.secondary", fontWeight: "bold", px: 1}}>
-                        external data loaders
-                        <Tooltip title="refresh the data loader list">
-                            <IconButton size="small" color="primary" sx={{
-                                '&:hover': {
-                                    transform: 'rotate(180deg)',
-                                },
-                                transition: 'transform 0.3s ease-in-out',
-                            }} onClick={() => {
-                                fetchDataLoaders();
-                            }}>
-                                <RefreshIcon sx={{fontSize: 14}} />
-                            </IconButton>
-                        </Tooltip>
-                    </Typography>
-                    {["file upload", ...Object.keys(dataLoaderMetadata ?? {})].map((dataLoaderType, i) => (
-                        <Tab 
-                            key={`dataLoader:${dataLoaderType}`} 
-                            wrapped 
-                            label={<Typography variant="caption" 
-                                        sx={{textTransform: "none", width: "calc(100% - 4px)", textAlign: 'left', 
-                                            textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap'}}>
-                                    {dataLoaderType}</Typography>} 
-                            onClick={() => {
-                                setSelectedTabKey('dataLoader:' + dataLoaderType);
-                            }}
-                            sx={{textTransform: "none", minHeight: 24, p: 0.5, ml: 2,
-                                backgroundColor: selectedTabKey === 'dataLoader:' + dataLoaderType ? (theme) => alpha(theme.palette.secondary.light, 0.1) : 'transparent',
-                            }}
-                            {...a11yProps(dataLoaderType)} 
-                        />
-                    ))}
-                </Tabs> 
+                            {t.name}
+                        </Typography>
+                    </Button>
+                ))}
             </Box>
-            <TabPanel key={`dataLoader:note`} sx={{width: 960, }} show={selectedTabKey === ''}>
-                <Typography variant="caption" sx={{color: "text.secondary",  px: 1}}>The database is empty, refresh the table list or import some data to get started.</Typography>
-            </TabPanel>
-            <TabPanel key={`dataLoader:file upload`} sx={{width: 960, }} show={selectedTabKey === 'dataLoader:file upload'}>
+        )}
+    </Box>
+
+    let tableView = <Box sx={{ flex: 1, width: 880, overflow: 'auto', p: 2 }}>
+        {/* Empty state */}
+        {selectedTabKey === '' && (
+            <Typography variant="caption" sx={{color: "text.secondary", px: 1}}>
+                The database is empty, refresh the table list or import some data to get started.
+            </Typography>
+        )}
+        
+        {/* File upload */}
+        {selectedTabKey === 'dataLoader:file upload' && (
+            <Box>
                 {uploadFileButton(<Typography component="span" fontSize={18} textTransform="none">{isUploading ? 'uploading...' : 'upload a csv/tsv file to the local database'}</Typography>)} 
-            </TabPanel>
-            {dataLoaderMetadata && Object.entries(dataLoaderMetadata).map(([dataLoaderType, metadata]) => (
-                <TabPanel key={`dataLoader:${dataLoaderType}`} sx={{width: 960, position: "relative", maxWidth: '100%'}} 
-                    show={selectedTabKey === 'dataLoader:' + dataLoaderType}>
+            </Box>
+        )}
+        
+        {/* Data loader forms */}
+        {dataLoaderMetadata && Object.entries(dataLoaderMetadata).map(([dataLoaderType, metadata]) => (
+            selectedTabKey === 'dataLoader:' + dataLoaderType && (
+                <Box key={`dataLoader:${dataLoaderType}`} sx={{ position: "relative", maxWidth: '100%' }}>
                     <DataLoaderForm 
                         key={`data-loader-form-${dataLoaderType}`}
                         dataLoaderType={dataLoaderType} 
@@ -767,86 +815,163 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
                             }
                         }} 
                     />
-                </TabPanel>
-            ))}
-            {dbTables.map((t, i) => {
-                const currentTable = t;
-                const showingAnalysis = tableAnalysisMap[currentTable.name] !== undefined;
-                return (
-                    <TabPanel key={t.name} sx={{width: 960, maxWidth: '100%', overflowX: 'auto'}} show={selectedTabKey === t.name}>
-                        <Paper variant="outlined" sx={{width: "100%"}}>
-                            <Box sx={{ px: 1, display: 'flex', alignItems: 'center', borderBottom: '1px solid rgba(0,0,0,0.1)' }}>
-                                <Typography variant="caption" sx={{  }}>
-                                    {showingAnalysis ? "column stats for " : "sample data from "} 
-                                    <Typography component="span" sx={{fontSize: 12, fontWeight: "bold"}}>
-                                        {currentTable.name}
-                                    </Typography>
-                                    <Typography component="span" sx={{ml: 1, fontSize: 10, color: "text.secondary"}}>
-                                        ({currentTable.columns.length} columns × {currentTable.row_count} rows)
-                                    </Typography>
+                </Box>
+            )
+        ))}
+        
+        {/* Table content */}
+        {dbTables.map((t, i) => {
+            if (selectedTabKey !== t.name) return null;
+            
+            const currentTable = t;
+            const showingAnalysis = tableAnalysisMap[currentTable.name] !== undefined;
+            return (
+                <Box key={t.name} sx={{ maxWidth: '100%', overflowX: 'auto', display: 'flex', flexDirection: 'column', gap: 1 }}>
+                    <Paper variant="outlined">
+                        <Box sx={{ px: 1, display: 'flex', alignItems: 'center', borderBottom: '1px solid rgba(0,0,0,0.1)' }}>
+                            <Typography variant="caption" sx={{  }}>
+                                {showingAnalysis ? "column stats for " : "sample data from "} 
+                                <Typography component="span" sx={{fontSize: 12, fontWeight: "bold"}}>
+                                    {currentTable.name}
                                 </Typography>
-                                <Box sx={{ marginLeft: 'auto', display: 'flex', gap: 1 }}>
-                                    <Button 
-                                        size="small"
-                                        color={showingAnalysis ? "secondary" : "primary"}
-                                        onClick={() => toggleAnalysisView(currentTable.name)}
-                                        startIcon={<AnalyticsIcon fontSize="small" />}
-                                        sx={{textTransform: "none"}}
-                                    >
-                                        {showingAnalysis ? "show data samples" : "show column stats"}
-                                    </Button>
-                                    <IconButton 
-                                        size="small" 
-                                        color="error"
-                                        onClick={() => handleDropTable(currentTable.name)}
-                                        title="Drop Table"
-                                    >
-                                        <DeleteIcon fontSize="small" />
-                                    </IconButton>
-                                </Box>
+                                <Typography component="span" sx={{ml: 1, fontSize: 10, color: "text.secondary"}}>
+                                    ({currentTable.columns.length} columns × {currentTable.row_count} rows)
+                                </Typography>
+                            </Typography>
+                            <Box sx={{ marginLeft: 'auto', display: 'flex', gap: 1 }}>
+                                <Button 
+                                    size="small"
+                                    color={showingAnalysis ? "secondary" : "primary"}
+                                    onClick={() => toggleAnalysisView(currentTable.name)}
+                                    startIcon={<AnalyticsIcon fontSize="small" />}
+                                    sx={{textTransform: "none"}}
+                                >
+                                    {showingAnalysis ? "show data samples" : "show column stats"}
+                                </Button>
+                                <IconButton 
+                                    size="small" 
+                                    color="error"
+                                    onClick={() => handleDropTable(currentTable.name)}
+                                    title="Drop Table"
+                                >
+                                    <DeleteIcon fontSize="small" />
+                                </IconButton>
                             </Box>
-                            {showingAnalysis ? (
-                                <TableStatisticsView 
-                                    tableName={currentTable.name}
-                                    columnStats={tableAnalysisMap[currentTable.name] ?? []}
-                                />
-                            ) : (
-                                <CustomReactTable 
-                                    rows={currentTable.sample_rows.map((row: any) => {
-                                        return Object.fromEntries(Object.entries(row).map(([key, value]: [string, any]) => {
-                                            return [key, String(value)];
-                                        }));
-                                    }).slice(0, 9)} 
-                                    columnDefs={currentTable.columns.map(col => ({
-                                        id: col.name,
-                                        label: col.name,
-                                        minWidth: 60
-                                    }))}
-                                    rowsPerPageNum={-1}
-                                    compact={false}
-                                    isIncompleteTable={currentTable.row_count > 10}
-                                />
-                            )}
-                        </Paper>
-                    </TabPanel>
-                );
-            })}
+                        </Box>
+                        {showingAnalysis ? (
+                            <TableStatisticsView 
+                                tableName={currentTable.name}
+                                columnStats={tableAnalysisMap[currentTable.name] ?? []}
+                            />
+                        ) : (
+                            <CustomReactTable 
+                                rows={currentTable.sample_rows.map((row: any) => {
+                                    return Object.fromEntries(Object.entries(row).map(([key, value]: [string, any]) => {
+                                        return [key, String(value)];
+                                    }));
+                                }).slice(0, 9)} 
+                                columnDefs={currentTable.columns.map(col => ({
+                                    id: col.name,
+                                    label: col.name,
+                                    minWidth: 60
+                                }))}
+                                rowsPerPageNum={-1}
+                                compact={false}
+                                isIncompleteTable={currentTable.row_count > 10}
+                            />
+                        )}
+                    </Paper>
+                    <Button 
+                        variant="contained"
+                        size="small"
+                        sx={{ml: 'auto'}}
+                        disabled={isUploading || dbTables.length === 0 || dbTables.find(t => t.name === selectedTabKey) === undefined}
+                        onClick={() => {
+                            let t = dbTables.find(t => t.name === selectedTabKey);
+                            if (t) {
+                                handleAddTableToDF(t);
+                                setTableDialogOpen(false);
+                            }
+                        }}>
+                        Load Table
+                    </Button>
+                </Box>
+            );
+        })}
+    </Box>;
+
+    let mainContent =  
+        <Box sx={{ display: 'flex', flexDirection: 'row', minHeight: 400, borderRadius: 2, width: 'fit-content', bgcolor: 'white' }}>
+            {/* Button navigation - similar to TableSelectionView */}
+            <Box sx={{ display: 'flex', flexDirection: 'column', px: 1, borderRight: 1, borderColor: 'divider' }}>
+                <Box sx={{ 
+                    minWidth: 180, 
+                    display: 'flex',
+                    flexDirection: 'row',
+                    flexWrap: 'nowrap',
+                    overflowY: 'auto',
+                    flexGrow: 1
+                }}>
+                    {/* External Data Loaders Section */}
+                    {dataLoaderPanel}
+                    {/* Available Tables Section */}
+                    {tableSelectionPanel}
+                </Box>
+                <Typography variant="caption" sx={{ mr: 'auto', mt: 'auto', mb: 1, textWrap: 'wrap', '& .MuiButton-root': { minWidth: 'auto',  textTransform: "none" } }}>
+                    {importButton(<Typography component="span" fontSize="inherit">Import</Typography>)}
+                    ,
+                    {exportButton}
+                    or
+                    <Button
+                        variant="text" size="small"
+                        color="warning"
+                        onClick={handleDBReset}
+                        disabled={isUploading}
+                        //endIcon={<RestartAltIcon />}
+                    >
+                        reset
+                    </Button>
+                    the backend database
+                </Typography>
+            </Box>
+            {/* Content area - using conditional rendering instead of TabPanel */}
+            {tableView}
         </Box>  
 
     return (
         <>
-            <Button sx={{fontSize: "inherit"}} onClick={() => {
-                setTableDialogOpen(true);
-            }}>
-                {buttonElement}
-            </Button>
-            <Dialog 
+            <Tooltip 
+                title={serverConfig.DISABLE_DATABASE ? (
+                    <Typography sx={{ fontSize: '11px' }}>
+                        Install Data Formulator locally to use database. <br />
+                        Link: <Link 
+                            href="https://github.com/microsoft/data-formulator" 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            sx={{ color: 'inherit', textDecoration: 'underline' }}
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            https://github.com/microsoft/data-formulator
+                        </Link>
+                </Typography>
+            ) : ""}
+                placement="top"
+            >
+                <span style={{cursor: serverConfig.DISABLE_DATABASE ? 'help' : 'pointer'}}>
+                    <Button variant="text"   sx={{fontSize: "inherit", gap: 1}} disabled={serverConfig.DISABLE_DATABASE} onClick={() => {
+                        setTableDialogOpen(true);
+                    }}>
+                        {buttonElement}
+                    </Button>
+                </span>
+            </Tooltip>
+            <Dialog
                 key="db-table-selection-dialog" 
                 onClose={() => {setTableDialogOpen(false)}} 
                 open={tableDialogOpen}
                 sx={{ '& .MuiDialog-paper': { maxWidth: '100%', maxHeight: 800, minWidth: 800 } }}
             >
-                <DialogTitle sx={{display: "flex"}}>
+                <DialogTitle sx={{display: "flex" }} >
                     Database
                     <IconButton
                         sx={{marginLeft: "auto"}}
@@ -859,7 +984,7 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
                         <CloseIcon fontSize="inherit"/>
                     </IconButton>
                 </DialogTitle>
-                <DialogContent sx={{overflowX: "hidden", padding: 0, width: "100%", position: "relative"}} dividers>
+                <DialogContent  sx={{p: 1, position: "relative"}}>
                     {mainContent}
                     {isUploading && (
                         <Box sx={{ 
@@ -878,40 +1003,10 @@ export const DBTableSelectionDialog: React.FC<{ buttonElement: any }> = function
                         </Box>
                     )}
                 </DialogContent>
-                <DialogActions>
-                    <Typography variant="caption" sx={{ mr: 'auto', '& .MuiButton-root': { minWidth: 'auto',  textTransform: "none" } }}>
-                        {importButton(<Typography component="span" fontSize="inherit">Import</Typography>)}
-                        ,
-                        {exportButton}
-                        or
-                        <Button
-                            variant="text" size="small"
-                            color="warning"
-                            onClick={handleDBReset}
-                            disabled={isUploading}
-                            //endIcon={<RestartAltIcon />}
-                        >
-                            reset
-                        </Button>
-                        the backend database
-                    </Typography>
-                    <Button 
-                        variant="contained"
-                        size="small"
-                        disabled={isUploading || dbTables.length === 0 || dbTables.find(t => t.name === selectedTabKey) === undefined}
-                        onClick={() => {
-                            let t = dbTables.find(t => t.name === selectedTabKey);
-                            if (t) {
-                                handleAddTableToDF(t);
-                                setTableDialogOpen(false);
-                            }
-                        }}>
-                        Load Table
-                    </Button>
-                </DialogActions>
             </Dialog>
         </>
     );
+  
 }
 
 export const DataLoaderForm: React.FC<{
@@ -967,7 +1062,7 @@ export const DataLoaderForm: React.FC<{
             </ToggleButtonGroup>
             <Typography variant="body2" sx={{mb: 1,}}></Typography>
         </Box>,
-        mode === "view tables" && <TableContainer component={Paper} sx={{maxHeight: 400, overflowY: "auto"}} >
+        mode === "view tables" && <TableContainer component={Paper} sx={{maxHeight: 360, overflowY: "auto"}} >
             <Table sx={{ minWidth: 650 }} size="small" aria-label="simple table">
             <TableBody>
                 {Object.entries(tableMetadata).map(([tableName, metadata]) => {
@@ -1173,8 +1268,8 @@ export const DataLoaderForm: React.FC<{
                 {displayAuthInstructions ? "hide" : "show"} authentication instructions
             </Button>
             {<Collapse in={displayAuthInstructions} timeout="auto" unmountOnExit>
-                <Paper sx={{px: 1, py: 0.5}}>
-                    <Typography variant="body2" sx={{color: "text.secondary", fontSize: 12, whiteSpace: "pre-wrap", p: 1}}>
+                <Paper sx={{px: 1, py: 0.5, maxHeight: 300, overflowY: "auto"}}>
+                    <Typography variant="body2" sx={{fontSize: 12, whiteSpace: "pre-wrap", p: 1}}>
                         {authInstructions.trim()}
                     </Typography>
                 </Paper>
@@ -1319,7 +1414,7 @@ export const DataQueryForm: React.FC<{
         });
     }
 
-    let queryResultBox = queryResult?.status === "success" ? [
+    let queryResultBox = queryResult?.status === "success" && queryResult.sample.length > 0 ? [
          <Box key="query-result-table" sx={{display: "flex", flexDirection: "row", gap: 1, justifyContent: "space-between"}}>
             <CustomReactTable rows={queryResult.sample} columnDefs={Object.keys(queryResult.sample[0]).map((t: any) => ({id: t, label: t}))} rowsPerPageNum={-1} compact={false} />
         </Box>,

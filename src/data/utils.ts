@@ -3,7 +3,7 @@
 
 import * as d3 from 'd3';
 import Column from './column';
-import * as XLSX from 'xlsx';
+import * as ExcelJS from 'exceljs';
 
 import { DictTable } from '../components/ComponentType';
 import { CoerceType, TestType, Type } from './types';
@@ -23,7 +23,7 @@ export const loadTextDataWrapper = (title: string, text: string, fileType: strin
     return table;
 };
 
-export const createTableFromText = (title: string, text: string): DictTable | undefined => {
+export const createTableFromText = (title: string, text: string, context?: string): DictTable | undefined => {
     // Check for empty strings, bad data, anything else?
     if (!text || text.trim() === '') {
         console.log('Invalid text provided for data. Could not load.');
@@ -75,11 +75,19 @@ export const createTableFromText = (title: string, text: string): DictTable | un
         }
         return record;
     });
-    
-    return createTableFromFromObjectArray(title, records, true);
+
+    return createTableFromFromObjectArray(title, records, true, undefined, context);
 };
 
-export const createTableFromFromObjectArray = (title: string, values: any[], anchored: boolean, derive?: any): DictTable => {
+export const createTableFromFromObjectArray = (title: string, values: any[], anchored: boolean, derive?: any, context?: string): DictTable => {
+    /*
+    * title: the title of the table
+    * values: the values of the table
+    * anchored: whether the table is anchored
+    * derive: the derive of the table
+    * context: the context of the table that will be attached to table metadata
+    */
+
     const len = values.length;
     let names: string[] = [];
     let cleanNames: string[] = [];
@@ -121,10 +129,19 @@ export const createTableFromFromObjectArray = (title: string, values: any[], anc
         id: title,
         displayId: `${title}`,
         names: columnTable.names(),
-        types: columnTable.names().map(name => (columnTable.column(name) as Column).type),
+        metadata: columnTable.names().reduce((acc, name) => ({
+            ...acc,
+            [name]: {
+                type: (columnTable.column(name) as Column).type,
+                semanticType: "",
+                levels: []
+            }
+        }), {}),
         rows: columnTable.objects(),
         derive: derive,
-        anchored: anchored
+        anchored: anchored,
+        createdBy: "user",
+        attachedMetadata: context || ''
     }
 };
 
@@ -178,28 +195,45 @@ export function tupleEqual(a: any[], b: any[]) {
     return true;
 }
 
-export const loadBinaryDataWrapper = (title: string, arrayBuffer: ArrayBuffer): DictTable[] => {
+export const loadBinaryDataWrapper = async (title: string, arrayBuffer: ArrayBuffer): Promise<DictTable[]> => {
     try {
         // Read the Excel file
-        const workbook = XLSX.read(arrayBuffer, { type: 'array' });
-        
-        // Get all sheet names
-        const sheetNames = workbook.SheetNames;
+        const workbook = new ExcelJS.Workbook();
+        await workbook.xlsx.load(arrayBuffer);
         
         // Create tables for each sheet
         const tables: DictTable[] = [];
         
-        for (const sheetName of sheetNames) {
-            // Get the worksheet
-            const worksheet = workbook.Sheets[sheetName];
+        workbook.eachSheet((worksheet, sheetId) => {
+            const jsonData: any[] = [];
             
-            // Convert the worksheet to JSON
-            const jsonData = XLSX.utils.sheet_to_json(worksheet);
+            // Get the first row as headers
+            const headerRow = worksheet.getRow(1);
+            const headers: string[] = [];
+            headerRow.eachCell((cell, colNumber) => {
+                headers[colNumber - 1] = cell.value?.toString() || `Column${colNumber}`;
+            });
+            
+            // Process data rows (skip header row)
+            worksheet.eachRow((row, rowNumber) => {
+                if (rowNumber === 1) return; // Skip header row
+                
+                const rowData: any = {};
+                row.eachCell((cell, colNumber) => {
+                    const header = headers[colNumber - 1] || `Column${colNumber}`;
+                    rowData[header] = cell.value;
+                });
+                
+                // Only add row if it has data
+                if (Object.keys(rowData).length > 0) {
+                    jsonData.push(rowData);
+                }
+            });
             
             // Create a table from the JSON data with sheet name included in the title
-            const sheetTable = createTableFromFromObjectArray(`${title}-${sheetName}`, jsonData, true);
+            const sheetTable = createTableFromFromObjectArray(`${title}-${worksheet.name}`, jsonData, true);
             tables.push(sheetTable);
-        }
+        });
         
         return tables;
     } catch (error) {

@@ -50,8 +50,8 @@
     }
 
     .vega-thumbnail-box:hover {
-        transform: translateY(1px) translateX(-1px);
-        box-shadow: 0 0 10px rgba(33,33,33,.4);
+        transform: translateY(-1px);
+        box-shadow: '0 2px 6px rgba(0,0,0,0.1)',
     }
 }
 
@@ -171,11 +171,11 @@ $accelerate-ease: cubic-bezier(0.4, 0.0, 1, 1);
         overflow: auto;
         
         .chart-box {
+            width: calc(100% - 48px);
+            overflow: auto;
             display: flex;
             color: #fff;
-            padding: 5px;
             border-radius: 3px;
-            margin: auto;
         }
       
         .chart-box-animation {
@@ -201,24 +201,13 @@ $accelerate-ease: cubic-bezier(0.4, 0.0, 1, 1);
 
 }
 
-.vis-split-pane {
-    position: relative !important;
-}
-
 .data-thread {
-    min-width: 201px;
-    display: flex;
-    flex-direction: column;
-    overflow-y: scroll;
-    border-right: 1px lightgray solid;
-    align-content: flex-start;
-    height: calc(100vh - 50px);
+    
 
     .thread-view-animation {
         transform-origin: bottom left;
         animation: appear 0.5s ease-out
     }
-
 
     .vega-thumbnail {
 
@@ -265,9 +254,14 @@ $accelerate-ease: cubic-bezier(0.4, 0.0, 1, 1);
 }
 
 .data-thread-card:hover {
-    transform: translateY(1px);
+    transform: translateY(-1px);
     box-shadow: 0 0 3px rgba(33,33,33,.2);
     z-index: 1;
+}
+
+.unread-card {
+    border: 2px solid red !important;
+    border-color: #f44336 !important;
 }
 
 .hover-card {
@@ -278,7 +272,7 @@ $accelerate-ease: cubic-bezier(0.4, 0.0, 1, 1);
 }
 
 .hover-card:hover {
-    transform: translateY(1px);
+    transform: translateY(-1px);
     box-shadow: 0 0 3px rgba(33,33,33,.2);
 }
 

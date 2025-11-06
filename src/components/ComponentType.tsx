@@ -17,29 +17,22 @@ export type FieldSource =  "original" | "derived" | "custom";
 export interface FieldItem {
     id: string;
     name: string;
-    type: Type;
+
     source: FieldSource;
-    domain: any[];
     tableRef: string; // which table it belongs to, it matters when it's an original field or a derived field
 
     transform?: ConceptTransformation;
     temporary?: true; // the field is temporary, and it will be deleted unless it's saved
-    levels?: {values: any[], reason: string}; // the order in which values in this field would be sorted
-    semanticType?: string; // the semantic type of the object, inferred by the model
 }
 
 export const duplicateField = (field: FieldItem) => {
     let newConcept = {
         id: field.id,
         name: field.name,
-        type: field.type,
         source: field.source,
-        domain: field.domain,
         transform: field.transform,
         tableRef: field.tableRef,
         temporary: field.temporary,
-        levels: field.levels,
-        semanticType: field.semanticType
     } as FieldItem;
     return newConcept;
 }
@@ -50,20 +43,61 @@ export interface Trigger {
     sourceTableIds: string[], // which tables are used in the trigger
 
     chart?: Chart, // what's the intented chart from the user when running formulation
-    instruction: string
+    instruction: string,
+    displayInstruction: string, // the short instruction that will be displayed to the user
+
+
     resultTableId: string,
+}
+
+// Define data cleaning message types
+export type DataCleanTableOutput = {
+    name: string;
+    context: string;
+    content: {
+        type: 'csv' | 'image_url' | 'web_url';
+        value: string;
+        incomplete?: boolean;
+    };
+};
+
+export interface DataCleanBlock {
+    id: string; // the id of the item
+
+    items: DataCleanTableOutput[]; // the items that are cleaned in this block
+
+    derive: {
+        sourceId: string | undefined; // the source of the block that leads to this block
+        prompt: string;
+        artifacts: {type: 'image_url' | 'web_url', value: string}[]; // images sent along with the prompt
+    }
+
+    // For output messages  
+    dialogItem?: any; // Store the dialog item from the model response
 }
 
 export interface DictTable {
     id: string; // name/id of the table
     displayId: string; // display id of the table 
+    
     names: string[]; // column names
-    types: Type[]; // column types
+    metadata: {[key: string]: {
+        type: Type,
+        semanticType: string, 
+        levels: any[]
+    }}; // metadata of the table
+
     rows: any[]; // table content, each entry is a row
     derive?: { // how is this table derived
         source: string[], // which tables are this table computed from
         code: string,
-        codeExpl: string,
+        explanation?: {
+            code: string, // explanation of the code
+            concepts: {
+                field: string,
+                explanation: string
+            }[]
+        },
         dialog: any[], // the log of how the data is derived with LLM (the LLM conversation log)
         // tracks how this derivation is triggered, as we as user instruction used to do the formulation,
         // there is a subtle difference between trigger and source, trigger identifies the occasion when the derivision is called,
@@ -76,16 +110,19 @@ export interface DictTable {
         rowCount: number; // total number of rows in the full table
     };
     anchored: boolean; // whether this table is anchored as a persistent table used to derive other tables
-    explorativeQuestions: string[]; // a list of (3-5) explorative questions that can help users get started with data visualizations
+    createdBy: 'user' | 'agent'; // whether this table is created by the user or the agent
+    attachedMetadata: string; // a string of attached metadata explaining what the table is about (used for prompt)
 }
 
 export function createDictTable(
     id: string, rows: any[], 
-    derive: {code: string, codeExpl: string, source: string[], dialog: any[], 
+    derive: {code: string, explanation?: {code: string, concepts: {field: string, explanation: string}[]}, source: string[], dialog: any[], 
              trigger: Trigger} | undefined = undefined,
     virtual: {tableId: string, rowCount: number} | undefined = undefined,
     anchored: boolean = false,
-    explorativeQuestions: string[] = []) : DictTable {
+    createdBy: 'user' | 'agent' = 'user', // by default, all tables are created by the user
+    attachedMetadata: string = ''
+) : DictTable {
     
     let names = Object.keys(rows[0])
 
@@ -94,11 +131,19 @@ export function createDictTable(
         displayId: `${id}`,
         names, 
         rows,
-        types: names.map(name => inferTypeFromValueArray(rows.map(r => r[name]))),
+        metadata: names.reduce((acc, name) => ({
+            ...acc,
+            [name]: {
+                type: inferTypeFromValueArray(rows.map(r => r[name])),
+                semanticType: "",
+                levels: []
+            }
+        }), {}),
         derive,
         virtual,
         anchored,
-        explorativeQuestions
+        createdBy,
+        attachedMetadata
     }
 }
 
@@ -109,6 +154,7 @@ export type Chart = {
     tableRef: string, 
     saved: boolean,
     source: "user" | "trigger",
+    unread: boolean,
 }
 
 export let duplicateChart = (chart: Chart) : Chart => {
@@ -119,6 +165,7 @@ export let duplicateChart = (chart: Chart) : Chart => {
         tableRef: chart.tableRef,
         saved: false,
         source: chart.source,
+        unread: false,
     }
 }
 
@@ -128,6 +175,7 @@ export type EncodingMap = { [key in Channel]: EncodingItem; }
 export interface EncodingItem {
     //channel: Channel, // the channel ID
     fieldID?: string, // the fieldID
+    dtype?: "quantitative" | "nominal" | "ordinal" | "temporal",
     aggregate?: AggrOp,
     stack?: "layered" | "zero" | "center" | "normalize",
     //sort?: "ascending" | "descending" | string,

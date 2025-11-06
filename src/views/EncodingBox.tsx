@@ -25,6 +25,7 @@ import {
     FormControlLabel,
     CardContent,
     ClickAwayListener,
+    Popper,
 } from '@mui/material';
 
 import Autocomplete, { createFilterOptions } from '@mui/material/Autocomplete';
@@ -35,7 +36,10 @@ import React from 'react';
 
 import ArrowDropDownIcon from '@mui/icons-material/ArrowDropDown';
 import RefreshIcon from '@mui/icons-material/Refresh';
-
+import BarChartIcon from '@mui/icons-material/BarChart';
+import CategoryIcon from '@mui/icons-material/Category';
+import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
+import QuestionMarkIcon from '@mui/icons-material/QuestionMark';
 
 import { FieldItem, Channel, EncodingItem, AggrOp, AGGR_OP_LIST, 
         ConceptTransformation, Chart, duplicateField } from "../components/ComponentType";
@@ -45,7 +49,7 @@ import _ from 'lodash';
 
 import '../scss/EncodingShelf.scss';
 import AnimateHeight from 'react-animate-height';
-import { getDomains, getIconFromType, groupConceptItems } from './ViewUtils';
+import { getIconFromDtype, getIconFromType, groupConceptItems } from './ViewUtils';
 import { getUrls } from '../app/utils';
 import { Type } from '../data/types';
 
@@ -64,10 +68,11 @@ export interface LittleConceptCardProps {
     channel: Channel,
     field: FieldItem,
     encoding: EncodingItem,
-    handleUnbind: () => void
+    handleUnbind: () => void,
+    tableMetadata: {[key: string]: {type: Type, semanticType: string, levels?: any[]}}
 }
 
-export const LittleConceptCard: FC<LittleConceptCardProps> = function LittleConceptCard({ channel, field, encoding, handleUnbind }) {
+export const LittleConceptCard: FC<LittleConceptCardProps> = function LittleConceptCard({ channel, field, encoding, handleUnbind, tableMetadata }) {
     // concept cards are draggable cards that can be dropped into encoding shelf
 
     let theme = useTheme();
@@ -114,8 +119,9 @@ export const LittleConceptCard: FC<LittleConceptCardProps> = function LittleConc
                     { /*width: "calc(100% - 36px)", maxWidth: "94px"*/ flexGrow: 1, flexShrink: 1, width: 0 }, ".MuiSvgIcon-root": { fontSize: "inherit" }
             }}
             variant="filled"
+            onClick={(event) => {}}
             onDelete={handleUnbind}
-            icon={getIconFromType(field.type)}
+            icon={getIconFromType(tableMetadata[field.name]?.type || Type.Auto)}
         />
     )
 }
@@ -124,10 +130,11 @@ export const LittleConceptCard: FC<LittleConceptCardProps> = function LittleConc
 export interface EncodingBoxProps {
     channel: Channel;
     chartId: string;
+    tableId: string;
 }
 
 // the encoding boxes, allows 
-export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel, chartId }) {
+export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel, chartId, tableId }) {
     let theme = useTheme();
 
     // use tables for infer domains
@@ -137,9 +144,10 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
     let activeModel = useSelector(dfSelectors.getActiveModel);
     
     let chart = allCharts.find(c => c.id == chartId) as Chart;
+    let activeTable = tables.find(t => t.id == tableId);
     
     let encoding = chart.encodingMap[channel]; 
-        
+
     let handleSwapEncodingField = (channel1: Channel, channel2: Channel) => {
         dispatch(dfActions.swapChartEncoding({chartId, channel1, channel2}))
     }
@@ -156,18 +164,23 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
 
     let field = conceptShelfItems.find((x: FieldItem) => x.id == encoding.fieldID);
+    let fieldMetadata = field?.name && activeTable?.metadata[field?.name] ? activeTable?.metadata[field?.name] : undefined;
 
-    let [autoSortResult, setAutoSortResult] = useState<{values: any[], reason: string} | undefined>(field?.levels);
+    let [autoSortResult, setAutoSortResult] = useState<any[] | undefined>(fieldMetadata?.levels);
     let [autoSortInferRunning, setAutoSortInferRunning] = useState<boolean>(false);
 
     const dispatch = useDispatch();
 
     useEffect(() => { 
-        setAutoSortResult(field?.levels);
-        if (field?.levels) {
-            updateEncProp('sortBy', JSON.stringify(field?.levels));
+        if (field?.name && activeTable?.metadata[field?.name]) {
+            let levels = activeTable?.metadata[field?.name].levels;
+            setAutoSortResult(levels);
+
+            if (!chart.chartType.includes("Area") && levels && levels.length > 0) {
+                updateEncProp('sortBy', JSON.stringify(levels));
+            }
         }
-    }, [encoding.fieldID, field])
+    }, [encoding.fieldID, activeTable])
 
     // make this a drop element for concepts
     const [{ canDrop, isOver }, drop] = useDrop(() => ({
@@ -211,7 +224,10 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
     }
 
     let fieldComponent = field === undefined ? "" : (
-        <LittleConceptCard channel={channel} key={`${channel}-${field.name}`} field={field} encoding={encoding} handleUnbind={() => {
+        <LittleConceptCard channel={channel} key={`${channel}-${field.name}`} 
+            tableMetadata={activeTable?.metadata || {}}
+            field={field} encoding={encoding} 
+            handleUnbind={() => {
             handleResetEncoding();
         }} />
     )
@@ -219,10 +235,54 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
     // define anchor open
     let channelDisplay = getChannelDisplay(channel);
 
-    let radioLabel = (label: string, value: any, key: string, width: number = 80) => {
-        return <FormControlLabel sx={{ width: width, margin: 0 }} key={key}
-                    value={value} control={<Radio size="small" sx={{ padding: "4px" }} />} label={label} />
+    let radioLabel = (label: string | React.ReactNode, value: any, key: string, width: number = 80, disabled: boolean = false, tooltip: string = "") => {
+        let comp = <FormControlLabel sx={{ width: width, margin: 0 }} key={key}
+                    disabled={disabled}
+                    value={value} control={<Radio size="small" sx={{ padding: "4px" }} />} label={<Box sx={{display: 'flex', alignItems: 'center', gap: '4px'}}>
+                        {label}
+                </Box>} />
+        if (tooltip != "") {
+            comp = <Tooltip key={`${key}-tooltip`} title={tooltip} arrow slotProps={{
+                tooltip: {
+                    sx: { bgcolor: 'rgba(255, 255, 255, 0.95)', color: 'rgba(0,0,0,0.95)', border: '1px solid darkgray' },
+                },
+            }}>{comp}</Tooltip>
+        }
+        return comp;
     }
+
+    
+
+
+    let dataTypeOpt = [
+        <FormLabel key={`enc-box-${channel}-data-type-label`} sx={{ fontSize: "inherit" }} id="data-type-option-radio-buttons-group" >Data Type</FormLabel>,
+        <FormControl
+            key={`enc-box-${channel}-data-type-form-control`}
+            sx={{
+                paddingBottom: "2px", '& .MuiTypography-root': { fontSize: "inherit" }, flexDirection: "row",
+                '& .MuiFormLabel-root': { fontSize: "inherit" }
+            }}>
+            <RadioGroup
+                row
+                aria-labelledby="data-type-option-radio-buttons-group"
+                name="data-type-option-radio-buttons-group"
+                value={encoding.dtype || "auto"}
+                sx={{ width: 160 }}
+                onChange={(event) => { 
+                    if (event.target.value == "auto") {
+                        updateEncProp("dtype", undefined);
+                    } else {
+                        updateEncProp("dtype", event.target.value as "quantitative" | "qualitative" | "temporal");
+                    }
+                }}
+            >
+                {radioLabel(getIconFromDtype("auto"), "auto", `dtype-auto`, 40, false, "auto")}
+                {radioLabel(getIconFromDtype("quantitative"), "quantitative", `dtype-quantitative`, 40, false, "quantitative")}
+                {radioLabel(getIconFromDtype("nominal"), "nominal", `dtype-nominal`, 40, false, "nominal")}
+                {radioLabel(getIconFromDtype("temporal"), "temporal", `dtype-temporal`, 40, false, "temporal")}
+            </RadioGroup>
+        </FormControl>
+    ];
 
     let stackOpt = (chart.chartType == "bar" || chart.chartType == "area") && (channel == "x" || channel == "y") ? [
         <FormLabel key={`enc-box-${channel}-stack-label`} sx={{ fontSize: "inherit" }} id="normalized-option-radio-buttons-group" >Stack</FormLabel>,
@@ -248,12 +308,10 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
         </FormControl>
     ] : [];
 
-    let domainItems = field ? getDomains(field as FieldItem, tables)[0] : [];
-
-    // deduplicate domain items
+    let domainItems = field ? activeTable?.rows.map(row => row[field?.name]) : [];
     domainItems = [...new Set(domainItems)];
 
-    let autoSortEnabled = field && field?.type == "string" && domainItems.length < 200;
+    let autoSortEnabled = field && fieldMetadata?.type == Type.String && domainItems.length < 200;
 
     let autoSortFunction = () => {
         let token = domainItems.map(x => String(x)).join("--");
@@ -273,24 +331,14 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
             .then((response) => response.json())
             .then((data) => {
                 setAutoSortInferRunning(false);
-                console.log(data);
-                console.log(token);
 
                 if (data["status"] == "ok") {
                     if (data["token"] == token) {
                         let candidate = data["result"][0];
-                        console.log(candidate)
-                        console.log(candidate['status'])
                         
                         if (candidate['status'] == 'ok') {
                             let sortRes = {values: candidate['content']['sorted_values'], reason: candidate['content']['reason']}
-                            console.log(sortRes)
-                            setAutoSortResult(sortRes);
-
-                            let tmpConcept = duplicateField(field as FieldItem);
-                            tmpConcept.levels = sortRes;
-
-                            dispatch(dfActions.updateConceptItems(tmpConcept));
+                            setAutoSortResult(sortRes.values);
                         }
                     }
                 } else {
@@ -317,14 +365,18 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
     }
 
     let sortByOptions = [
-        radioLabel("default", "default", `sort-by-default`)
+        radioLabel("auto", "auto", `sort-by-auto`)
     ]
     // TODO: check sort options
-    if (channel == "x" && (field?.type == "string" || field?.type == "auto")) {
-        sortByOptions.push(radioLabel("y values", "y", `sort-x-by-y-ascending`, 90));
+    if (channel == "x" && (fieldMetadata?.type == Type.String || fieldMetadata?.type == Type.Auto)) {
+        sortByOptions.push(radioLabel("x", "x", `sort-x-by-x-ascending`, 80));
+        sortByOptions.push(radioLabel("y", "y", `sort-x-by-y-ascending`, 80));
+        sortByOptions.push(radioLabel("color", "color", `sort-x-by-color-ascending`, 80));
     }
-    if (channel == "y" && (field?.type == "string" || field?.type == "auto")) {
-        sortByOptions.push(radioLabel("x values", "x", `sort-y-by-x-ascending`, 90));
+    if (channel == "y" && (fieldMetadata?.type == Type.String || fieldMetadata?.type == Type.Auto)) {
+        sortByOptions.push(radioLabel("x", "x", `sort-y-by-x-ascending`, 80));
+        sortByOptions.push(radioLabel("y", "y", `sort-y-by-y-ascending`, 80));
+        sortByOptions.push(radioLabel("color", "color", `sort-y-by-color-ascending`, 80));
     }
  
     if (autoSortEnabled) {
@@ -337,16 +389,12 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
                     label={<LinearProgress color="primary" sx={{ width: "120px", opacity: 0.4 }} />} />
             ]
         } else {
-            if (autoSortResult != undefined) {
+            if (autoSortResult != undefined && autoSortResult.length > 0) {
 
                 let autoSortOptTitle = <Box>
                         <Box>
                             <Typography sx={{fontWeight: 'bold'}} component='span' fontSize='inherit'>Sort Order: </Typography> 
-                             {autoSortResult.values.map(x => x ? x.toString() : 'null').join(", ")}
-                        </Box>
-                        <Box>
-                            <Typography sx={{fontWeight: 'bold'}} component='span' fontSize='inherit'>Reason: </Typography>
-                            {autoSortResult.reason}
+                             {autoSortResult.map(x => x ? x.toString() : 'null').join(", ")}
                         </Box>
                     </Box>
 
@@ -361,7 +409,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
                         },
                       }}>
                         <Typography className="auto-sort-option-label">
-                            {autoSortResult.values.map(x => x ? x.toString() : 'null').join(", ")}
+                            {autoSortResult.map(x => x ? x.toString() : 'null').join(", ")}
                         </Typography>
                     </Tooltip>;
 
@@ -405,7 +453,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
                 row
                 aria-labelledby="sort-option-radio-buttons-group"
                 name="sort-option-radio-buttons-group"
-                value={encoding.sortBy ||  'default'}
+                value={encoding.sortBy ||  'auto'}
                 sx={{ width: 180 }}
                 onChange={(event) => { updateEncProp("sortBy", event.target.value) }}
             >
@@ -427,12 +475,13 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
                 row
                 aria-labelledby="sort-option-radio-buttons-group"
                 name="sort-option-radio-buttons-group"
-                value={encoding.sortOrder || "ascending"}
+                value={encoding.sortOrder || "auto"}
                 sx={{ width: 180 }}
                 onChange={(event) => { updateEncProp("sortOrder", event.target.value) }}
             >
-                {radioLabel("↑ asc", "ascending", `sort-ascending`, 90)}
-                {radioLabel("↓ desc", "descending", `sort-descending`, 90)}
+                {radioLabel("auto", "auto", `sort-auto`, 60)}
+                {radioLabel("↑ asc", "ascending", `sort-ascending`, 60)}
+                {radioLabel("↓ desc", "descending", `sort-descending`, 60)}
             </RadioGroup>
         </FormControl>
     ]
@@ -477,6 +526,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
             margin: '0px 12px', padding: "6px", fontSize: "12px"
         }} >
             <Box sx={{margin: 'auto', display: "flex",  width: "fit-content", textAlign: "center", flexDirection: "column", alignItems: "flex-start" }}>
+                {dataTypeOpt}
                 {stackOpt}
                 {sortByOpt}
                 {sortOrderOpt}
@@ -500,13 +550,12 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
             //console.log(`yah-haha: ${option}`);
             updateEncProp("fieldID", (conceptShelfItems.find(f => f.name == option) as FieldItem).id);
         } else {
-            if (option == "...") {
+            if (option == "") {
                 console.log("nothing happens")
             } else {
-                console.log(`about to add ${option}`)
                 let newConept = {
                     id: `concept-${Date.now()}`, name: option, type: "auto" as Type, 
-                    description: "", source: "custom", domain: [], tableRef: "custom",
+                    description: "", source: "custom", tableRef: "custom",
                 } as FieldItem;
                 dispatch(dfActions.updateConceptItems(newConept));
                 updateEncProp("fieldID", newConept.id);
@@ -515,12 +564,62 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
         }
     }
 
+
     let conceptGroups = groupConceptItems(conceptShelfItems, tables);
+
+    let groupNames = [...new Set(conceptGroups.map(g => g.group))];
+    conceptGroups.sort((a, b) => {
+        if (groupNames.indexOf(a.group) < groupNames.indexOf(b.group)) {
+            return -1;
+        } else if (groupNames.indexOf(a.group) > groupNames.indexOf(b.group)) {
+            return 1;
+        } else {
+            return activeTable && activeTable.names.includes(a.field.name) && !activeTable.names.includes(b.field.name) ? -1 : 1;
+        }
+    })
+
+    // Smart Popper component that switches between bottom-end and top-end
+    const CustomPopper = (props: any) => {
+        return (
+            <Popper 
+                {...props} 
+                placement="bottom-end"
+                modifiers={[
+                    {
+                        name: 'flip',
+                        enabled: true,
+                        options: {
+                            fallbackPlacements: ['top-end'], // Only flip to top-end
+                        },
+                    },
+                    {
+                        name: 'preventOverflow',
+                        enabled: true,
+                        options: {
+                            boundary: 'viewport',
+                            padding: 8,
+                        },
+                    },
+                    {
+                        name: 'offset',
+                        options: {
+                            offset: [0, 8], // [horizontal, vertical] offset
+                        },
+                    },
+                ]}
+                style={{
+                    zIndex: 1300, // Ensure it's above other elements
+                }}
+            />
+        );
+    };
 
     let createConceptInputBox = <Autocomplete
         key="concept-create-input-box"
+        slots={{
+            popper: CustomPopper // Try changing to: CustomPopperCSS
+        }}
         onChange={(event, value) => {
-            console.log(`change: ${value}`)
             if (value != null) {
                 handleSelectOption(value)
             }
@@ -531,20 +630,27 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
             const { inputValue } = params;
             // Suggest the creation of a new value
             const isExisting = options.some((option) => inputValue === option);
-            if (inputValue !== '' && !isExisting) {
+            if (!isExisting) {
                 return [`${inputValue}`, ...filtered,  ]
             } else {
                 return [...filtered];
             }
         }}
-        sx={{ flexGrow: 1, flexShrink: 1, "& .MuiInput-input": { padding: "0px 8px !important"}}}
+        sx={{ 
+            flexGrow: 1, 
+            flexShrink: 1, 
+            "& .MuiInput-input": { padding: "0px 8px !important"},
+            "& .MuiAutocomplete-listbox": {
+                maxHeight: '600px !important'
+            }
+        }}
         fullWidth
         selectOnFocus
         clearOnBlur
         handleHomeEndKeys
         autoHighlight
-        id="free-solo-with-text-demo"
-        options={conceptShelfItems.map(f => f.name).filter(name => name != "")}
+        id={`autocomplete-${chartId}-${channel}`}
+        options={conceptGroups.map(g => g.field.name).filter(name => name != "")}
         getOptionLabel={(option) => {
             // Value selected with enter, right from the input
             return option;
@@ -552,30 +658,145 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
         groupBy={(option) => {
             let groupItem = conceptGroups.find(item => item.field.name == option);
             if (groupItem && groupItem.field.name != "") {
-                return `from ${groupItem.group}`;
+                return `${groupItem.group}`;
             } else {
                 return "create a new field"
             }         
         }}
         renderGroup={(params) => (
-            <Box>
+            <Box key={params.key}>
               <Box className="GroupHeader">{params.group}</Box>
-              <Box className="GroupItems">{params.children}</Box>
+              <Box className="GroupItems" sx={{ 
+                display: 'grid', 
+                gridTemplateColumns: 'repeat(2, 1fr)', 
+                padding: '4px'
+              }}>
+                {params.children}
+              </Box>
             </Box>
-          )}
+        )}
         renderOption={(props, option) => {
-            let renderOption = (conceptShelfItems.map(f => f.name).includes(option) || option == "...") ? option : `"${option}"`;
-            let otherStyle = option == `...` ? {color: "darkgray"} : {}
+            let renderOption = (conceptShelfItems.map(f => f.name).includes(option)) ? option : `${option}`;
+            let otherStyle = option == `` ? {color: "darkgray", fontStyle: "italic"} : {}
 
-            return <Typography {...props} onClick={()=>{
-                handleSelectOption(option);
-            }} sx={{fontSize: "small", ...otherStyle}}>{renderOption}</Typography>
+            // Find the field item for this option
+            const fieldItem = conceptShelfItems.find(f => f.name === option);
+            
+            if (fieldItem) {
+                // Create a mini concept card
+                let backgroundColor = theme.palette.primary.main;
+                if (fieldItem.source == "original") {
+                    backgroundColor = theme.palette.primary.light;
+                } else if (fieldItem.source == "custom") {
+                    backgroundColor = theme.palette.custom.main;
+                } else if (fieldItem.source == "derived") {
+                    backgroundColor = theme.palette.derived.main;
+                }
+
+                // Add overlay logic similar to ConceptCard - make fields not in focused table more transparent
+                let draggleCardHeaderBgOverlay = 'rgba(255, 255, 255, 0.9)';
+                
+                // Add subtle tint for non-focused fields
+                if (activeTable && !activeTable.names.includes(fieldItem.name)) {
+                    draggleCardHeaderBgOverlay = 'rgba(255, 255, 255, 1)';
+                }
+
+                // Extract only the compatible props for Card
+                const { key, ...cardProps } = props;
+
+                return (
+                    <Card 
+                        key={key}
+                        onClick={() => handleSelectOption(option)}
+                        sx={{ 
+                            minWidth: 80, 
+                            backgroundColor, 
+                            position: "relative",
+                            border: "none",
+                            cursor: "pointer",
+                            margin: '2px 4px',
+                            "&:hover": {
+                                boxShadow: "0 2px 4px 0 rgb(0 0 0 / 20%)"
+                            }
+                        }}
+                        variant="outlined"
+                        className={`data-field-list-item draggable-card`}
+                    >
+                        <Box sx={{ 
+                                cursor: "pointer", 
+                                background: draggleCardHeaderBgOverlay,
+                                display: 'flex',
+                                alignItems: 'center',
+                                minHeight: '20px',
+                                ml: 0.5
+                            }}
+                            className={`draggable-card-inner ${fieldItem.source}`}
+                        >
+                            <Typography sx={{
+                                margin: '0px 4px',
+                                fontSize: 10, 
+                                width: "100%",
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                            }} component={'span'}>
+                                {getIconFromType(activeTable?.metadata[fieldItem.name]?.type || Type.Auto)}
+                                <span style={{
+                                    whiteSpace: "nowrap",
+                                    overflow: "hidden", 
+                                    textOverflow: "ellipsis",
+                                    flexShrink: 1
+                                }}>
+                                    {fieldItem.name}
+                                </span>
+                            </Typography>
+                        </Box>
+                    </Card>
+                );
+            } else {
+                // For non-existing options (like new field creation)
+                return (
+                    <Typography 
+                        {...props} 
+                        onClick={() => handleSelectOption(option)}
+                        sx={{
+                            fontSize: "10px", 
+                            padding: '4px 6px',
+                            margin: '2px 4px',
+                            cursor: 'pointer',
+                            border: '1px dashed #ccc',
+                            borderRadius: '4px',
+                            backgroundColor: 'rgba(0,0,0,0.02)',
+                            height: '24px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            "&:hover": {
+                                backgroundColor: 'rgba(0,0,0,0.05)'
+                            },
+                            ...otherStyle
+                        }}
+                    >
+                        {renderOption || "type a new field name"}
+                    </Typography>
+                );
+            }
         }}
         freeSolo
         renderInput={(params) => (
             <TextField {...params} variant="standard" autoComplete='off' placeholder='field'
                 sx={{height: "24px", "& .MuiInput-root": {height: "24px", fontSize: "small"}}} />
         )}
+        slotProps={{
+            paper: { // Use paper instead of popper for styling
+                sx: {
+                    width: '300px',
+                    maxWidth: '300px',
+                    '& .MuiAutocomplete-listbox': {
+                        maxHeight: '600px !important'
+                    },
+                }
+            }
+        }}
     />
 
     const filter = createFilterOptions<string>();

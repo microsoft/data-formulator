@@ -1,14 +1,12 @@
 jupyter
 pandas
-docker
-namedlist
-matplotlib
+numpy
 flask
+flask-cors
 openai
 azure-identity
 azure-kusto-data
 azure-keyvault-secrets
-azure-kusto-data
 azure-storage-blob
 python-dotenv
 vega_datasets
@@ -16,4 +14,8 @@ litellm
 duckdb
 boto3
 pyodbc
+vl-convert-python
+backoff
+beautifulsoup4
+scikit-learn
 -e . #also need to install data formulator itself
