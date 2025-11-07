@@ -259,7 +259,6 @@ export const DBTableSelectionDialog: React.FC<{
     }
 
     useEffect(() => {
-        if (serverConfig.DISABLE_DATABASE)  return;
         fetchDataLoaders();
     }, []);
 
