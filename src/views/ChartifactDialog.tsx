@@ -14,6 +14,7 @@ import {
 } from '@mui/material';
 import { Chart, DictTable, FieldItem } from '../components/ComponentType';
 import { assembleVegaChart, prepVisTable, exportTableToDsv } from '../app/utils';
+import { ClientConfig } from '../app/dfSlice';
 
 // Chartifact library type declarations
 interface SpecReview<T> {
@@ -78,7 +79,7 @@ interface ChartifactDialogProps {
     charts: Chart[];
     tables: DictTable[];
     conceptShelfItems: FieldItem[];
-    config: { defaultChartWidth: number; defaultChartHeight: number };
+    config: ClientConfig;
 }
 
 export const ChartifactDialog: FC<ChartifactDialogProps> = ({
