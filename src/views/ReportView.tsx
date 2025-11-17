@@ -50,7 +50,7 @@ import TableRowsIcon from '@mui/icons-material/TableRows';
 import { Collapse } from '@mui/material';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
-import { ChartifactDialog } from './ChartifactDialog';
+import { convertToChartifact, openChartifactViewer } from './ChartifactDialog';
 
 // Typography constants
 const FONT_FAMILY_SYSTEM = '-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, "Apple Color Emoji", Arial, sans-serif, "Segoe UI Emoji", "Segoe UI Symbol"';
@@ -233,7 +233,6 @@ export const ReportView: FC = () => {
     const [error, setError] = useState<string>('');
     const [style, setStyle] = useState<string>('short note');
     const [mode, setMode] = useState<'compose' | 'post'>(allGeneratedReports.length > 0 ? 'post' : 'compose');
-    const [chartifactDialogOpen, setChartifactDialogOpen] = useState(false);
 
     // Local state for current report
     const [currentReportId, setCurrentReportId] = useState<string | undefined>(undefined);
@@ -1118,7 +1117,18 @@ export const ReportView: FC = () => {
                                         <Button
                                             variant="contained"
                                             size="small"
-                                            onClick={() => setChartifactDialogOpen(true)}
+                                            onClick={() => {
+                                                // Convert report to Chartifact markdown format
+                                                const chartifactMarkdown = convertToChartifact(
+                                                    generatedReport,
+                                                    generatedStyle,
+                                                    charts,
+                                                    tables,
+                                                    conceptShelfItems,
+                                                    config
+                                                );
+                                                openChartifactViewer(chartifactMarkdown);
+                                            }}
                                             sx={{
                                                 textTransform: 'none',
                                                 backgroundColor: 'primary.main',
@@ -1249,18 +1259,6 @@ export const ReportView: FC = () => {
                     </Box>
                 </Box>
             ) : null}
-
-            {/* Chartifact Dialog */}
-            <ChartifactDialog
-                open={chartifactDialogOpen}
-                onClose={() => setChartifactDialogOpen(false)}
-                reportContent={generatedReport}
-                reportStyle={generatedStyle}
-                charts={charts}
-                tables={tables}
-                conceptShelfItems={conceptShelfItems}
-                config={config}
-            />
         </Box>
     );
 };

@@ -486,7 +486,7 @@ strong {
 };
 
 // Function to convert report markdown to Chartifact format
-const convertToChartifact = async (reportMarkdown: string, reportStyle: string, charts: Chart[], tables: DictTable[], conceptShelfItems: FieldItem[], config: ClientConfig): Promise<string> => {
+export const convertToChartifact = (reportMarkdown: string, reportStyle: string, charts: Chart[], tables: DictTable[], conceptShelfItems: FieldItem[], config: ClientConfig) => {
     try {
         // Extract chart IDs from the report markdown images
         // Images are in format: [IMAGE(chart-id)]
@@ -590,3 +590,57 @@ ${JSON.stringify(modifiedSpec, null, 2)}
     }
 };
 
+
+// Function to open Chartifact in a new tab and send markdown via postMessage
+export const openChartifactViewer = async (chartifactMarkdown: string) => {
+    try {
+        // Open the Chartifact viewer in a new tab
+        const chartifactWindow = window.open(
+            'https://microsoft.github.io/chartifact/view/',
+            '_blank'
+        );
+
+        if (!chartifactWindow) {
+            //showMessage('Failed to open Chartifact viewer. Please allow popups.', 'error');
+            return;
+        }
+
+        // Listen for hostStatus messages from the Chartifact viewer
+        const handleMessage = (event: MessageEvent) => {
+            // Verify the message is from the Chartifact viewer
+            if (event.origin !== 'https://microsoft.github.io') {
+                return;
+            }
+
+            const message = event.data;
+
+            // Check if this is a hostStatus message
+            if (message.type === 'hostStatus' && message.hostStatus === 'ready') {
+                // Send the render request when the host is ready
+                const renderRequest: {
+                    type: 'hostRenderRequest';
+                    title: string;
+                    markdown?: string;
+                    interactiveDocument?: any;
+                } = {
+                    type: 'hostRenderRequest',
+                    title: 'Data Formulator Report',
+                    markdown: chartifactMarkdown
+                };
+
+                chartifactWindow.postMessage(renderRequest, 'https://microsoft.github.io');
+                
+                // Remove the event listener after sending
+                window.removeEventListener('message', handleMessage);
+            }
+        };
+
+        // Add event listener for messages from the Chartifact viewer
+        window.addEventListener('message', handleMessage);
+
+        //showMessage('Opened Chartifact viewer in a new tab', 'success');
+    } catch (error) {
+        console.error('Error opening Chartifact viewer:', error);
+        //showMessage('Failed to prepare Chartifact report', 'error');
+    }
+};
