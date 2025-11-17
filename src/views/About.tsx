@@ -2,7 +2,7 @@
 // Licensed under the MIT License.
 
 import { Box, Typography, Button, useTheme, alpha, IconButton, Divider } from "@mui/material";
-import React, { FC, useState, useEffect } from "react";
+import React, { FC, useState, useEffect, useRef } from "react";
 import ArrowBackIosNewIcon from '@mui/icons-material/ArrowBackIosNew';
 import ArrowForwardIosIcon from '@mui/icons-material/ArrowForwardIos';
 import GridViewIcon from '@mui/icons-material/GridView';
@@ -62,6 +62,8 @@ export const About: FC<{}> = function About({ }) {
     const theme = useTheme();
     const [currentFeature, setCurrentFeature] = useState(0);
     const [currentScreenshot, setCurrentScreenshot] = useState(0);
+    const videoRef = useRef<HTMLVideoElement | null>(null);
+    const videoDurationsRef = useRef<Map<string, number>>(new Map());
 
     const handlePrevious = () => {
         setCurrentFeature((prev) => (prev === 0 ? features.length - 1 : prev - 1));
@@ -70,6 +72,27 @@ export const About: FC<{}> = function About({ }) {
     const handleNext = () => {
         setCurrentFeature((prev) => (prev === features.length - 1 ? 0 : prev + 1));
     };
+
+    // Auto-advance features based on video duration
+    useEffect(() => {
+        const currentMedia = features[currentFeature].media;
+        const isVideo = features[currentFeature].mediaType === 'video';
+        
+        // Default duration for images or if video duration is not yet loaded
+        let duration = 10000; // 10 seconds for images
+        
+        if (isVideo && videoDurationsRef.current.has(currentMedia)) {
+            // Use the stored video duration (in milliseconds)
+            duration = videoDurationsRef.current.get(currentMedia)! * 1000;
+            duration = duration + 3000; // add 3 seconds to the video duration
+        }
+
+        const timeoutId = setTimeout(() => {
+            setCurrentFeature((prev) => (prev + 1) % features.length);
+        }, duration);
+
+        return () => clearTimeout(timeoutId);
+    }, [currentFeature]);
 
     // Preload adjacent carousel items for smoother transitions
     useEffect(() => {
@@ -133,11 +156,26 @@ export const About: FC<{}> = function About({ }) {
                 href="https://pypi.org/project/data-formulator/"
             >Install Locally</Button>
             <Button size="large" variant="outlined" color="primary" 
+                sx={{
+                    animation: 'subtleGlow 2s ease-in-out infinite',
+                    '@keyframes subtleGlow': {
+                        '0%, 100%': {
+                            boxShadow: `0 0 8px ${alpha(theme.palette.primary.main, 0.4)}, 0 0 16px ${alpha(theme.palette.primary.main, 0.2)}`,
+                        },
+                        '50%': {
+                            boxShadow: `0 0 12px ${alpha(theme.palette.primary.main, 0.6)}, 0 0 24px ${alpha(theme.palette.primary.main, 0.3)}, 0 0 32px ${alpha(theme.palette.primary.main, 0.1)}`,
+                        }
+                    },
+                    '&:hover': {
+                        animation: 'subtleGlow 1.5s ease-in-out infinite',
+                        boxShadow: `0 0 16px ${alpha(theme.palette.primary.main, 0.7)}, 0 0 32px ${alpha(theme.palette.primary.main, 0.4)} !important`,
+                    }
+                }}
                 startIcon={<GridViewIcon sx={{ fontSize: '1rem' }} />}
                 href="/app"
-            >Online Demo</Button>
+            >Try Online Demo</Button>
             <Typography variant="caption" sx={{ mt: 1.5, color: 'text.secondary', fontStyle: 'italic' }}>
-                Psst — install locally for the full experience ✨. The online demo is a bit slow & has limited features (at the moment).
+                Psst — install locally for the full experience ✨. The online demo has limited features (at the moment).
             </Typography>
         </Box>
     );
@@ -290,11 +328,21 @@ export const About: FC<{}> = function About({ }) {
                                         component="video"
                                         key={features[currentFeature].media}
                                         src={features[currentFeature].media}
+                                        ref={videoRef}
                                         autoPlay
                                         loop
                                         muted
                                         playsInline
                                         preload="metadata"
+                                        onLoadedMetadata={(e) => {
+                                            const video = e.currentTarget as HTMLVideoElement;
+                                            if (video.duration && !isNaN(video.duration)) {
+                                                videoDurationsRef.current.set(
+                                                    features[currentFeature].media,
+                                                    video.duration
+                                                );
+                                            }
+                                        }}
                                         sx={{
                                             width: '100%',
                                             height: 'auto',

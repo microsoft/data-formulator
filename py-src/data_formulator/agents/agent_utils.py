@@ -234,10 +234,13 @@ def generate_data_summary(input_tables, include_data_samples=True, field_sample_
         return summary_str
 
     table_summaries = [assemble_table_summary(input_table, i) for i, input_table in enumerate(input_tables)]
-
+    
+    # Join with newline (extracted from f-string for Python 3.9/3.10 compatibility)
+    joined_summaries = '\n'.join(table_summaries)
+    
     full_summary = f'''Here are our datasets, here are their summaries and samples:
 
-{'\n'.join(table_summaries)}
+{joined_summaries}
 '''
 
     return full_summary

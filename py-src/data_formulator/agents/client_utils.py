@@ -112,7 +112,7 @@ class Client(object):
             }
 
             if self.model.startswith("gpt-5") or self.model.startswith("o1") or self.model.startswith("o3"):
-                completion_params["reasoning_effort"] = "minimal"
+                completion_params["reasoning_effort"] = "low"
             
             return client.chat.completions.create(**completion_params, stream=stream)
         else:
