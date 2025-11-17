@@ -238,7 +238,7 @@ export const openChartifactViewer = async (chartifactMarkdown: string) => {
     try {
         // Open the Chartifact viewer in a new tab
         const chartifactWindow = window.open(
-            'https://microsoft.github.io/chartifact/view/',
+            'https://microsoft.github.io/chartifact/view/?post',
             '_blank'
         );
 
