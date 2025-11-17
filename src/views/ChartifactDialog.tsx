@@ -213,118 +213,13 @@ export const ChartifactDialog: FC<ChartifactDialogProps> = ({
                 setSandboxReady(false);
             }
         };
-    }, [open, chartifactLoaded, source, parentElement]);
-
-    // Function to convert report markdown to Chartifact format
-    const convertToChartifact = async (reportMarkdown: string): Promise<string> => {
-        try {
-            // Extract chart IDs from the report markdown images
-            // Images are in format: [IMAGE(chart-id)]
-            const imageRegex = /\[IMAGE\(([^)]+)\)\]/g;
-            let result = reportMarkdown;
-            let match;
-            const chartReplacements: Array<{ original: string; specReplacement: string; dataName: string; csvContent: string }> = [];
-
-            while ((match = imageRegex.exec(reportMarkdown)) !== null) {
-                const [fullMatch, chartId] = match;
-
-                // Find the chart in the store using the chart ID
-                const chart = charts.find(c => c.id === chartId);
-                if (!chart) {
-                    console.warn(`Chart with id ${chartId} not found in store`);
-                    continue;
-                }
-
-                // Get the chart's data table from the store using chart.tableRef
-                const chartTable = tables.find(t => t.id === chart.tableRef);
-                if (!chartTable) {
-                    console.warn(`Table for chart ${chartId} not found`);
-                    continue;
-                }
-
-                // Skip non-visual chart types
-                if (chart.chartType === 'Table' || chart.chartType === '?') {
-                    continue;
-                }
-
-                try {
-                    // Preprocess the data for aggregations
-                    const processedRows = prepVisTable(chartTable.rows, conceptShelfItems, chart.encodingMap);
-
-                    // Assemble the Vega-Lite spec
-                    const vegaSpec = assembleVegaChart(
-                        chart.chartType,
-                        chart.encodingMap,
-                        conceptShelfItems,
-                        processedRows,
-                        chartTable.metadata,
-                        30,
-                        true,
-                        config.defaultChartWidth,
-                        config.defaultChartHeight,
-                        true
-                    );
-
-                    // Convert the spec to use named data source
-                    const dataName = `chartData_${chartId.replace(/[^a-zA-Z0-9]/g, '_')}`;
-                    const modifiedSpec = {
-                        ...vegaSpec,
-                        data: { name: dataName }
-                    };
-
-                    // Convert table rows to CSV format using the utility function
-                    const csvContent = exportTableToDsv(chartTable, ',');
-
-                    // Create the Chartifact spec replacement (without CSV)
-                    const specReplacement = `
-
-\`\`\`json vega-lite
-${JSON.stringify(modifiedSpec, null, 2)}
-\`\`\`
-`;
-
-                    chartReplacements.push({
-                        original: fullMatch,
-                        specReplacement,
-                        dataName,
-                        csvContent
-                    });
-                } catch (error) {
-                    console.error(`Error processing chart ${chartId}:`, error);
-                }
-            }
-
-            // Apply spec replacements to the markdown
-            for (const { original, specReplacement } of chartReplacements) {
-                result = result.replace(original, specReplacement);
-            }
-
-            result += '\n\n---\ncreated with AI using [Data Formulator](https://github.com/microsoft/data-formulator)\n\n';
-
-            // Prepend CSS styling based on report type
-            const cssStyles = generateStyleCSS(reportStyle);
-            result += cssStyles;
-
-            // Append all CSV data blocks at the bottom
-            if (chartReplacements.length > 0) {
-                result += '\n\n';
-                for (const { dataName, csvContent } of chartReplacements) {
-                    result += `\n\`\`\`csv ${dataName}\n${csvContent}\n\`\`\`\n`;
-                }
-            }
-
-            return result;
-        } catch (error) {
-            console.error('Error converting to Chartifact:', error);
-            throw error;
-        }
-    };
+    }, [open, chartifactLoaded, source, parentElement, charts, tables, conceptShelfItems, config]);
 
     // Convert report content when dialog opens
     useEffect(() => {
         if (open && reportContent) {
             setIsConverting(true);
-            convertToChartifact(reportContent)
+            convertToChartifact(reportContent, reportStyle, charts, tables, conceptShelfItems, config)
                 .then(chartifactMarkdown => {
                     setSource(chartifactMarkdown);
                     setIsConverting(false);
@@ -589,3 +484,109 @@ strong {
 `;
     }
 };
+
+// Function to convert report markdown to Chartifact format
+const convertToChartifact = async (reportMarkdown: string, reportStyle: string, charts: Chart[], tables: DictTable[], conceptShelfItems: FieldItem[], config: ClientConfig): Promise<string> => {
+    try {
+        // Extract chart IDs from the report markdown images
+        // Images are in format: [IMAGE(chart-id)]
+        const imageRegex = /\[IMAGE\(([^)]+)\)\]/g;
+        let result = reportMarkdown;
+        let match;
+        const chartReplacements: Array<{ original: string; specReplacement: string; dataName: string; csvContent: string }> = [];
+
+        while ((match = imageRegex.exec(reportMarkdown)) !== null) {
+            const [fullMatch, chartId] = match;
+
+            // Find the chart in the store using the chart ID
+            const chart = charts.find(c => c.id === chartId);
+            if (!chart) {
+                console.warn(`Chart with id ${chartId} not found in store`);
+                continue;
+            }
+
+            // Get the chart's data table from the store using chart.tableRef
+            const chartTable = tables.find(t => t.id === chart.tableRef);
+            if (!chartTable) {
+                console.warn(`Table for chart ${chartId} not found`);
+                continue;
+            }
+
+            // Skip non-visual chart types
+            if (chart.chartType === 'Table' || chart.chartType === '?') {
+                continue;
+            }
+
+            try {
+                // Preprocess the data for aggregations
+                const processedRows = prepVisTable(chartTable.rows, conceptShelfItems, chart.encodingMap);
+
+                // Assemble the Vega-Lite spec
+                const vegaSpec = assembleVegaChart(
+                    chart.chartType,
+                    chart.encodingMap,
+                    conceptShelfItems,
+                    processedRows,
+                    chartTable.metadata,
+                    30,
+                    true,
+                    config.defaultChartWidth,
+                    config.defaultChartHeight,
+                    true
+                );
+
+                // Convert the spec to use named data source
+                const dataName = `chartData_${chartId.replace(/[^a-zA-Z0-9]/g, '_')}`;
+                const modifiedSpec = {
+                    ...vegaSpec,
+                    data: { name: dataName }
+                };
+
+                // Convert table rows to CSV format using the utility function
+                const csvContent = exportTableToDsv(chartTable, ',');
+
+                // Create the Chartifact spec replacement (without CSV)
+                const specReplacement = `
+
+\`\`\`json vega-lite
+${JSON.stringify(modifiedSpec, null, 2)}
+\`\`\`
+`;
+
+                chartReplacements.push({
+                    original: fullMatch,
+                    specReplacement,
+                    dataName,
+                    csvContent
+                });
+            } catch (error) {
+                console.error(`Error processing chart ${chartId}:`, error);
+            }
+        }
+
+        // Apply spec replacements to the markdown
+        for (const { original, specReplacement } of chartReplacements) {
+            result = result.replace(original, specReplacement);
+        }
+
+        result += '\n\n---\ncreated with AI using [Data Formulator](https://github.com/microsoft/data-formulator)\n\n';
+
+        // Prepend CSS styling based on report type
+        const cssStyles = generateStyleCSS(reportStyle);
+        result += cssStyles;
+
+        // Append all CSV data blocks at the bottom
+        if (chartReplacements.length > 0) {
+            result += '\n\n';
+            for (const { dataName, csvContent } of chartReplacements) {
+                result += `\n\`\`\`csv ${dataName}\n${csvContent}\n\`\`\`\n`;
+            }
+        }
+
+        return result;
+    } catch (error) {
+        console.error('Error converting to Chartifact:', error);
+        throw error;
+    }
+};
+
