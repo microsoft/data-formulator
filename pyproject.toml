@@ -4,9 +4,9 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "data_formulator"
-version = "0.5.0.1"
+version = "0.5.0.2"
 
-requires-python = ">=3.12"
+requires-python = ">=3.9"
 authors = [
   {name = "Chenglong Wang", email = "chenglong.wang@microsoft.com"},
   {name = "Dan Marshall", email = "danmar@microsoft.com"},
