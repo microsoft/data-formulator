@@ -44,7 +44,7 @@
         "redux-persist": "^6.0.0",
         "typescript": "^4.9.5",
         "validator": "^13.15.20",
-        "vega": "^5.32.0",
+        "vega": "^6.2.0",
         "vega-embed": "^6.21.0",
         "vega-lite": "^5.5.0",
         "vm-browserify": "^1.1.2"
