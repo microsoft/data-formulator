@@ -2,7 +2,8 @@
 // Licensed under the MIT License.
 
 import { Chart, DictTable, FieldItem } from '../components/ComponentType';
-import { assembleVegaChart, prepVisTable, exportTableToDsv } from '../app/utils';
+import { assembleVegaChart, prepVisTable } from '../app/utils';
+import { exportTableToDsv } from '../data/utils';
 import { ClientConfig } from '../app/dfSlice';
 
 // Function to generate CSS styling based on report type
