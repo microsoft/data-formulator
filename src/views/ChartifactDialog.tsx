@@ -272,6 +272,17 @@ export const openChartifactViewer = async (chartifactMarkdown: string) => {
                 };
 
                 chartifactWindow.postMessage(renderRequest, 'https://microsoft.github.io');
+
+                //Call here to show source
+                const toolbarControl: {
+                    type: 'hostToolbarControl';
+                    showSource?: boolean;
+                } = {
+                    type: 'hostToolbarControl',
+                    showSource: true
+                };
+
+                chartifactWindow.postMessage(toolbarControl, 'https://microsoft.github.io');
                 
                 // Remove the event listener after sending
                 window.removeEventListener('message', handleMessage);
