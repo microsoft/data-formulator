@@ -29,6 +29,7 @@ import {
 import Masonry from '@mui/lab/Masonry';
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import CreateChartifact from '@mui/icons-material/Description';
 import EditIcon from '@mui/icons-material/Edit';
 import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
 import HistoryIcon from '@mui/icons-material/History';
@@ -49,6 +50,7 @@ import TableRowsIcon from '@mui/icons-material/TableRows';
 import { Collapse } from '@mui/material';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
+import { convertToChartifact, openChartifactViewer } from './ChartifactDialog';
 
 // Typography constants
 const FONT_FAMILY_SYSTEM = '-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, "Apple Color Emoji", Arial, sans-serif, "Segoe UI Emoji", "Segoe UI Symbol"';
@@ -1108,9 +1110,38 @@ export const ReportView: FC = () => {
                         
                         {/* Main Content Area */}
                         <Box sx={{ flex: 1, overflowY: 'auto', position: 'relative' }}>
-                            {/* Share Image Button */}
+                            {/* Action Buttons */}
                             {currentReportId && (
-                                <Box sx={{ position: 'absolute', top: 16, right: 16, zIndex: 10 }}>
+                                <Box sx={{ position: 'absolute', top: 16, right: 16, zIndex: 10, display: 'flex', gap: 1 }}>
+                                    <Tooltip title="Create Chartifact report">
+                                        <Button
+                                            variant="contained"
+                                            size="small"
+                                            onClick={() => {
+                                                // Convert report to Chartifact markdown format
+                                                const chartifactMarkdown = convertToChartifact(
+                                                    generatedReport,
+                                                    generatedStyle,
+                                                    charts,
+                                                    tables,
+                                                    conceptShelfItems,
+                                                    config
+                                                );
+                                                openChartifactViewer(chartifactMarkdown);
+                                            }}
+                                            sx={{
+                                                textTransform: 'none',
+                                                backgroundColor: 'primary.main',
+                                                color: 'white',
+                                                '&:hover': {
+                                                    backgroundColor: 'primary.dark',
+                                                },
+                                            }}
+                                            startIcon={<CreateChartifact />}
+                                        >
+                                            Create Chartifact
+                                        </Button>
+                                    </Tooltip>
                                     <Tooltip title="Share report as image">
                                         <Button
                                             variant="contained"

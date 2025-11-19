@@ -59,7 +59,12 @@ export type ModelSlotType = typeof MODEL_SLOT_TYPES[number];
 // Derive ModelSlots interface from the constant
 export type ModelSlots = Partial<Record<ModelSlotType, string>>;
 
-
+export interface ClientConfig {
+    formulateTimeoutSeconds: number;
+    maxRepairAttempts: number;
+    defaultChartWidth: number;
+    defaultChartHeight: number;
+}
 
 export interface GeneratedReport {
     id: string;
@@ -101,12 +106,7 @@ export interface DataFormulatorState {
 
     serverConfig: ServerConfig;
 
-    config: {
-        formulateTimeoutSeconds: number;
-        maxRepairAttempts: number;
-        defaultChartWidth: number;
-        defaultChartHeight: number;
-    }   
+    config: ClientConfig;
 
     dataLoaderConnectParams: Record<string, Record<string, string>>; // {table_name: {param_name: param_value}}
     
@@ -415,9 +415,7 @@ export const dataFormulatorSlice = createSlice({
         setServerConfig: (state, action: PayloadAction<ServerConfig>) => {
             state.serverConfig = action.payload;
         },
-        setConfig: (state, action: PayloadAction<{
-            formulateTimeoutSeconds: number, maxRepairAttempts: number, 
-            defaultChartWidth: number, defaultChartHeight: number}>) => {
+        setConfig: (state, action: PayloadAction<ClientConfig>) => {
             state.config = action.payload;
         },
         setViewMode: (state, action: PayloadAction<'editor' | 'report'>) => {

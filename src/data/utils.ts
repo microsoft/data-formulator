@@ -241,3 +241,14 @@ export const loadBinaryDataWrapper = async (title: string, arrayBuffer: ArrayBuf
         return [];
     }
 };
+
+/**
+ * Exports a DictTable to DSV format using d3.dsvFormat
+ * @param table - The DictTable to export
+ * @param delimiter - The delimiter to use (e.g., "," for CSV, "\t" for TSV)
+ * @returns DSV string representation of the table
+ */
+export const exportTableToDsv = (table: DictTable, delimiter: string): string => {
+    // Use d3.dsvFormat to convert the rows array to DSV
+    return d3.dsvFormat(delimiter).format(table.rows);
+};
