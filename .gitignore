@@ -405,3 +405,108 @@ FodyWeavers.xsd
 # JetBrains Rider
 *.sln.iml
 venv
+
+# ============================================
+# Custom additions for data-formulator project
+# ============================================
+
+# Python virtual environments
+venv/
+env/
+ENV/
+.venv/
+
+# Python cache and compiled files
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# DuckDB database files (local development)
+*.duckdb
+*.duckdb.wal
+*.db
+*.sqlite
+*.sqlite3
+
+# Task and development notes
+Task.md
+TODO.md
+NOTES.md
+
+# API keys and secrets (already covered but being explicit)
+api-keys.env
+.env.local
+.env.*.local
+
+# macOS specific
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.apdisk
+
+# Node.js and npm
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.npm
+.yarn-integrity
+package-lock.json.bak
+
+# Build outputs
+dist/
+build/
+py-src/data_formulator/dist/
+*.egg-info/
+.eggs/
+
+# IDE and editor files
+.idea/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+*.sublime-project
+*.sublime-workspace
+
+# Testing and coverage
+.coverage
+.pytest_cache/
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb
+
+# Local development files
+*.local
+.cache/
+.temp/
+tmp/
+temp/
+
+# OS generated files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/

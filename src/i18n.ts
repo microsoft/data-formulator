@@ -22,18 +22,22 @@ i18n
     .use(initReactI18next)
     .init({
         resources,
-        fallbackLng: 'ru',
-        lng: 'ru', // default language
+        fallbackLng: 'en', // Changed to 'en' to ensure fallback works
+        lng: 'en', // Changed to 'en' as default
         debug: false,
-        
+
         interpolation: {
             escapeValue: false // React already escapes values
         },
-        
+
         detection: {
             order: ['localStorage', 'navigator'],
             caches: ['localStorage'],
             lookupLocalStorage: 'i18nextLng'
+        },
+
+        react: {
+            useSuspense: false, // Disable suspense to prevent rendering issues
         }
     });
 

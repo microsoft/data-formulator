@@ -136,7 +136,12 @@
         "postgres": "PostgreSQL",
         "mysql": "MySQL",
         "mssql": "MS SQL Server",
-        "oracle": "Oracle"
+        "oracle": "Oracle",
+        "clickhouse": "ClickHouse",
+        "snowflake": "Snowflake",
+        "supabase": "Supabase",
+        "bigquery": "Google BigQuery",
+        "mongodb": "MongoDB"
     },
     "modelSelection": {
         "title": "Выбор модели",
