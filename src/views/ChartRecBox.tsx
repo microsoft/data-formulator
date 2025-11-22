@@ -59,6 +59,7 @@ import MovingIcon from '@mui/icons-material/Moving';
 import RotateRightIcon from '@mui/icons-material/RotateRight';
 import EditIcon from '@mui/icons-material/Edit';
 import { ThinkingBufferEffect } from '../components/FunComponents';
+import { useTranslation } from 'react-i18next';
 
 // when this is set to true, the new chart will be focused automatically
 const AUTO_FOCUS_NEW_CHART = false;
@@ -95,7 +96,7 @@ const NLTableSelector: FC<{
     };
 
     return (
-        <Box sx={{ 
+        <Box sx={{
             display: 'flex',
             flexWrap: 'wrap',
             gap: '2px',
@@ -129,7 +130,7 @@ const NLTableSelector: FC<{
                 <IconButton
                     size="small"
                     onClick={handleClick}
-                    sx={{ 
+                    sx={{
                         width: 16,
                         height: 16,
                         fontSize: '10px',
@@ -150,11 +151,11 @@ const NLTableSelector: FC<{
                         const isSelected = selectedTableIds.includes(table.id);
                         const isRequired = requiredTableIds.includes(table.id);
                         return (
-                            <MenuItem 
+                            <MenuItem
                                 disabled={isSelected}
                                 key={table.id}
                                 onClick={() => handleTableSelect(table)}
-                                sx={{ 
+                                sx={{
                                     fontSize: '12px',
                                     display: 'flex',
                                     justifyContent: 'space-between',
@@ -176,12 +177,12 @@ const NLTableSelector: FC<{
 
 export const IdeaChip: FC<{
     mini?: boolean,
-    idea: {text?: string, questions?: string[], goal: string, difficulty: 'easy' | 'medium' | 'hard', type?: 'branch' | 'deep_dive'} 
-    theme: Theme, 
-    onClick: () => void, 
+    idea: { text?: string, questions?: string[], goal: string, difficulty: 'easy' | 'medium' | 'hard', type?: 'branch' | 'deep_dive' }
+    theme: Theme,
+    onClick: () => void,
     sx?: SxProps,
     disabled?: boolean,
-}> = function ({mini, idea, theme, onClick, sx, disabled}) {
+}> = function ({ mini, idea, theme, onClick, sx, disabled }) {
 
     const getDifficultyColor = (difficulty: 'easy' | 'medium' | 'hard') => {
         switch (difficulty) {
@@ -243,12 +244,12 @@ export const IdeaChip: FC<{
 
 export const AgentIdeaChip: FC<{
     mini?: boolean,
-    idea: {breadth_questions: string[], depth_questions: string[], goal: string, difficulty: 'easy' | 'medium' | 'hard', focus: 'breadth' | 'depth'} 
-    theme: Theme, 
-    onClick: () => void, 
+    idea: { breadth_questions: string[], depth_questions: string[], goal: string, difficulty: 'easy' | 'medium' | 'hard', focus: 'breadth' | 'depth' }
+    theme: Theme,
+    onClick: () => void,
     sx?: SxProps,
     disabled?: boolean,
-}> = function ({mini, idea, theme, onClick, sx, disabled}) {
+}> = function ({ mini, idea, theme, onClick, sx, disabled }) {
 
     const getDifficultyColor = (difficulty: 'easy' | 'medium' | 'hard') => {
         switch (difficulty) {
@@ -302,8 +303,8 @@ export const AgentIdeaChip: FC<{
             }}
             onClick={disabled ? undefined : onClick}
         >
-            {idea.focus === 'breadth' && <CallSplitIcon sx={{color: getDifficultyColor(idea.difficulty), fontSize: 18, mr: 0.5, transform: 'rotate(90deg)'}} />}
-            {idea.focus === 'depth' && <MovingIcon sx={{color: getDifficultyColor(idea.difficulty), fontSize: 18, mr: 0.5, transform: 'rotate(90deg)'}} />}
+            {idea.focus === 'breadth' && <CallSplitIcon sx={{ color: getDifficultyColor(idea.difficulty), fontSize: 18, mr: 0.5, transform: 'rotate(90deg)' }} />}
+            {idea.focus === 'depth' && <MovingIcon sx={{ color: getDifficultyColor(idea.difficulty), fontSize: 18, mr: 0.5, transform: 'rotate(90deg)' }} />}
             <Typography component="div" sx={{ fontSize: '11px', color: getDifficultyColor(idea.difficulty || 'medium') }}>
                 {ideaTextComponent}
             </Typography>
@@ -312,6 +313,7 @@ export const AgentIdeaChip: FC<{
 };
 
 export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolderChartId, sx }) {
+    const { t } = useTranslation();
     const dispatch = useDispatch<AppDispatch>();
     const theme = useTheme();
 
@@ -335,26 +337,27 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
     const [mode, setMode] = useState<'agent' | 'interactive'>(preferredMode as 'agent' | 'interactive');
 
     const focusNextChartRef = useRef<boolean>(true);
-    
+
     // Color map for different modes - easy to customize!
     const modeColorMap = {
         'agent': theme.palette.primary.main,      // purple for agent mode
         'interactive': theme.palette.secondary.main   // blue for interactive mode
     };
     const modeColor = modeColorMap[mode];
-    
+
     const [prompt, setPrompt] = useState<string>("");
     const [isFormulating, setIsFormulating] = useState<boolean>(false);
-    const [ideas, setIdeas] = useState<{text: string, goal: string, difficulty: 'easy' | 'medium' | 'hard'}[]>([]);
-    
+    const [ideas, setIdeas] = useState<{ text: string, goal: string, difficulty: 'easy' | 'medium' | 'hard' }[]>([]);
+
     const [agentIdeas, setAgentIdeas] = useState<{
-        breadth_questions: string[], depth_questions: string[], goal: string, 
-        difficulty: 'easy' | 'medium' | 'hard', 
-        focus: 'breadth' | 'depth' }[]>([]);
+        breadth_questions: string[], depth_questions: string[], goal: string,
+        difficulty: 'easy' | 'medium' | 'hard',
+        focus: 'breadth' | 'depth'
+    }[]>([]);
     const [thinkingBuffer, setThinkingBuffer] = useState<string>("");
 
     let thinkingBufferEffect = <ThinkingBufferEffect text={thinkingBuffer.slice(-60)} sx={{ width: '46%' }} />;
-    
+
     // Add state for loading ideas
     const [isLoadingIdeas, setIsLoadingIdeas] = useState<boolean>(false);
 
@@ -401,7 +404,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
             if (currentTable.derive && !currentTable.anchored) {
                 // Find the root table (anchored or not derived)
                 let triggers = getTriggers(currentTable, tables);
-                
+
                 // Build exploration thread with all derived tables in the chain
                 explorationThread = triggers
                     .map(trigger => ({
@@ -428,7 +431,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
 
             const engine = getUrls().GET_RECOMMENDATION_QUESTIONS;
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), config.formulateTimeoutSeconds * 1000); 
+            const timeoutId = setTimeout(() => controller.abort(), config.formulateTimeoutSeconds * 1000);
 
             const response = await fetch(engine, {
                 method: 'POST',
@@ -460,7 +463,8 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
             let updateState = (lines: string[]) => {
                 let dataBlocks = lines
                     .map(line => {
-                        try { return JSON.parse(line.trim()); } catch (e) { return null; }})
+                        try { return JSON.parse(line.trim()); } catch (e) { return null; }
+                    })
                     .filter(block => block != null);
 
                 if (mode === "agent") {
@@ -533,7 +537,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                 "timestamp": Date.now(),
                 "type": "error",
                 "component": "chart builder",
-                "value": "Failed to get ideas from the exploration agent. Please try again.",
+                "value": t('chart.failedToGetIdeas'),
                 "detail": error instanceof Error ? error.message : 'Unknown error'
             }));
         } finally {
@@ -548,7 +552,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
         } else {
             setIdeas([]);
         }
-        
+
     }, [tableId]);
 
     // Handle tab key press for auto-completion
@@ -579,14 +583,14 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
 
         if (placeHolderChartId) {
             //dispatch(dfActions.updateChartType({chartType: "Auto", chartId: placeHolderChartId}));
-            dispatch(dfActions.changeChartRunningStatus({chartId: placeHolderChartId, status: true}));
+            dispatch(dfActions.changeChartRunningStatus({ chartId: placeHolderChartId, status: true }));
             originateChartId = placeHolderChartId;
-        } 
+        }
 
         const actionTables = selectedTableIds.map(id => tables.find(t => t.id === id) as DictTable);
 
         const actionId = `deriveDataFromNL_${String(Date.now())}`;
-        dispatch(dfActions.updateAgentWorkInProgress({actionId: actionId, tableId: tableId, description: instruction, status: 'running', hidden: false}));
+        dispatch(dfActions.updateAgentWorkInProgress({ actionId: actionId, tableId: tableId, description: instruction, status: 'running', hidden: false }));
 
         // Validate table selection
         const firstTableId = selectedTableIds[0];
@@ -595,7 +599,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                 "timestamp": Date.now(),
                 "type": "error",
                 "component": "chart builder",
-                "value": "No table selected for data formulation.",
+                "value": t('chart.noTableSelected'),
             }));
             return;
         }
@@ -622,7 +626,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                 rows: t.rows,
                 attached_metadata: t.attachedMetadata
             })),
-            
+
             chart_type: "",
             chart_encodings: {},
 
@@ -633,11 +637,11 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
             language: actionTables.some(t => t.virtual) ? "sql" : "python"
         });
         let engine = getUrls().DERIVE_DATA;
-        
+
         if (currentTable && currentTable.derive?.dialog && !currentTable.anchored) {
             let sourceTableIds = currentTable.derive?.source;
 
-            let startNewDialog = (!sourceTableIds.every(id => selectedTableIds.includes(id)) || 
+            let startNewDialog = (!sourceTableIds.every(id => selectedTableIds.includes(id)) ||
                 !selectedTableIds.every(id => sourceTableIds.includes(id)));
 
             // Compare if source and base table IDs are different
@@ -650,11 +654,12 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                     token: token,
                     mode: 'formulate',
                     input_tables: actionTables.map(t => {
-                        return { 
-                            name: t.virtual?.tableId || t.id.replace(/\.[^/.]+$/ , ""), 
-                            rows: t.rows, 
-                            attached_metadata: t.attachedMetadata 
-                        }}),
+                        return {
+                            name: t.virtual?.tableId || t.id.replace(/\.[^/.]+$/, ""),
+                            rows: t.rows,
+                            attached_metadata: t.attachedMetadata
+                        }
+                    }),
                     chart_type: "",
                     chart_encodings: {},
 
@@ -671,15 +676,16 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                     token: token,
                     mode: 'formulate',
                     input_tables: actionTables.map(t => {
-                        return { 
-                            name: t.virtual?.tableId || t.id.replace(/\.[^/.]+$/ , ""), 
-                            rows: t.rows, 
-                            attached_metadata: t.attachedMetadata 
-                        }}),
-                        
+                        return {
+                            name: t.virtual?.tableId || t.id.replace(/\.[^/.]+$/, ""),
+                            rows: t.rows,
+                            attached_metadata: t.attachedMetadata
+                        }
+                    }),
+
                     chart_type: "",
                     chart_encodings: {},
-                    
+
                     dialog: currentTable.derive?.dialog,
                     latest_data_sample: currentTable.rows.slice(0, 10),
                     new_instruction: instruction,
@@ -689,9 +695,9 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                     language: actionTables.some(t => t.virtual) ? "sql" : "python"
                 })
                 engine = getUrls().REFINE_DATA;
-            } 
+            }
         }
-        
+
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), config.formulateTimeoutSeconds * 1000);
 
@@ -703,155 +709,155 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
             body: messageBody,
             signal: controller.signal
         })
-        .then((response) => response.json())
-        .then((data) => {
-            setIsFormulating(false);
-
-            dispatch(dfActions.changeChartRunningStatus({chartId: originateChartId, status: false}));
-
-            if (data.results.length > 0) {
-                if (data["token"] === token) {
-                    const candidates = data["results"].filter((item: any) => item["status"] === "ok");
-
-                    if (candidates.length === 0) {
-                        const errorMessage = data.results[0].content;
-                        const code = data.results[0].code;
-
-                        dispatch(dfActions.addMessages({
-                            "timestamp": Date.now(),
-                            "type": "error",
-                            "component": "chart builder",
-                            "value": `Data formulation failed, please try again.`,
-                            "code": code,
-                            "detail": errorMessage
-                        }));
-                    } else {
-                        const candidate = candidates[0];
-                        const code = candidate["code"];
-                        const rows = candidate["content"]["rows"];
-                        const dialog = candidate["dialog"];
-                        const refinedGoal = candidate['refined_goal'];
-                        const displayInstruction = refinedGoal['display_instruction'];
-
-                        const candidateTableId = candidate["content"]["virtual"] 
-                            ? candidate["content"]["virtual"]["table_name"] 
-                            : genTableId();
-
-                        // Create new table
-                        const candidateTable = createDictTable(
-                            candidateTableId,
-                            rows,
-                            undefined // No derive info for ChartRecBox - it's NL-driven without triggers
-                        );
-
-                        let refChart = generateFreshChart(tableId, 'Auto') as Chart;
-                        refChart.source = 'trigger';
-                        
-                        // Add derive info manually since ChartRecBox doesn't use triggers
-                        candidateTable.derive = {
-                            code: code,
-                            source: selectedTableIds,
-                            dialog: dialog,
-                            trigger: {
-                                tableId: tableId,
-                                sourceTableIds: selectedTableIds,
-                                instruction: instruction,
-                                displayInstruction: displayInstruction,
-                                chart: refChart, // No upfront chart reference
-                                resultTableId: candidateTableId
-                            }
-                        };
-
-                        if (candidate["content"]["virtual"] != null) {
-                            candidateTable.virtual = {
-                                tableId: candidate["content"]["virtual"]["table_name"],
-                                rowCount: candidate["content"]["virtual"]["row_count"]
-                            };
-                        }
-
-                        dispatch(dfActions.insertDerivedTables(candidateTable));
-
-                        // Add missing concept items
-                        const names = candidateTable.names;
-                        const missingNames = names.filter(name => 
-                            !conceptShelfItems.some(field => field.name === name)
-                        );
-
-                        const conceptsToAdd = missingNames.map((name) => ({
-                            id: `concept-${name}-${Date.now()}`,
-                            name: name,
-                            type: "auto" as Type,
-                            description: "",
-                            source: "custom",
-                            tableRef: "custom",
-                            temporary: true,
-                        } as FieldItem));
-
-                        dispatch(dfActions.addConceptItems(conceptsToAdd));
-                        dispatch(fetchFieldSemanticType(candidateTable));
-                        dispatch(fetchCodeExpl(candidateTable));
-
-                        // Create proper chart based on refined goal
-                        const currentConcepts = [...conceptShelfItems.filter(c => names.includes(c.name)), ...conceptsToAdd];
-                        
-                        let newChart = resolveRecommendedChart(refinedGoal, currentConcepts, candidateTable);
-
-                        dispatch(dfActions.addChart(newChart));
-                        // Create and focus the new chart directly
-                        if (focusNextChartRef.current || AUTO_FOCUS_NEW_CHART) {
-                            focusNextChartRef.current = false;  // Immediate, synchronous update
-                            dispatch(dfActions.setFocusedChart(newChart.id));
-                            dispatch(dfActions.setFocusedTable(candidateTable.id));
-                        }
-
-                        dispatch(dfActions.addMessages({
-                            "timestamp": Date.now(),
-                            "component": "chart builder",
-                            "type": "success",
-                            "value": `Data formulation: "${displayInstruction}"`
-                        }));
-
-                        // Clear the prompt after successful formulation
-                        setPrompt("");
-                    }
-                }
-                dispatch(dfActions.deleteAgentWorkInProgress(actionId));
-            } else {
-                dispatch(dfActions.addMessages({
-                    "timestamp": Date.now(),
-                    "component": "chart builder", 
-                    "type": "error",
-                    "value": "No result is returned from the data formulation agent. Please try again."
-                }));
-                
+            .then((response) => response.json())
+            .then((data) => {
                 setIsFormulating(false);
-                dispatch(dfActions.deleteAgentWorkInProgress(actionId));
-            }
-        })
-        .catch((error) => {
-            setIsFormulating(false);
-            dispatch(dfActions.changeChartRunningStatus({chartId: originateChartId, status: false}));   
 
-            if (error.name === 'AbortError') {
-                dispatch(dfActions.addMessages({
-                    "timestamp": Date.now(),
-                    "component": "chart builder",
-                    "type": "error", 
-                    "value": `Data formulation timed out after ${config.formulateTimeoutSeconds} seconds. Consider breaking down the task, using a different model or prompt, or increasing the timeout limit.`,
-                    "detail": "Request exceeded timeout limit"
-                }));
-                dispatch(dfActions.deleteAgentWorkInProgress(actionId));
-            } else {
-                dispatch(dfActions.addMessages({
-                    "timestamp": Date.now(),
-                    "component": "chart builder",
-                    "type": "error",
-                    "value": `Data formulation failed, please try again.`,
-                    "detail": error.message
-                }));
-                dispatch(dfActions.deleteAgentWorkInProgress(actionId));
-            }
-        });
+                dispatch(dfActions.changeChartRunningStatus({ chartId: originateChartId, status: false }));
+
+                if (data.results.length > 0) {
+                    if (data["token"] === token) {
+                        const candidates = data["results"].filter((item: any) => item["status"] === "ok");
+
+                        if (candidates.length === 0) {
+                            const errorMessage = data.results[0].content;
+                            const code = data.results[0].code;
+
+                            dispatch(dfActions.addMessages({
+                                "timestamp": Date.now(),
+                                "type": "error",
+                                "component": "chart builder",
+                                "value": `Data formulation failed, please try again.`,
+                                "code": code,
+                                "detail": errorMessage
+                            }));
+                        } else {
+                            const candidate = candidates[0];
+                            const code = candidate["code"];
+                            const rows = candidate["content"]["rows"];
+                            const dialog = candidate["dialog"];
+                            const refinedGoal = candidate['refined_goal'];
+                            const displayInstruction = refinedGoal['display_instruction'];
+
+                            const candidateTableId = candidate["content"]["virtual"]
+                                ? candidate["content"]["virtual"]["table_name"]
+                                : genTableId();
+
+                            // Create new table
+                            const candidateTable = createDictTable(
+                                candidateTableId,
+                                rows,
+                                undefined // No derive info for ChartRecBox - it's NL-driven without triggers
+                            );
+
+                            let refChart = generateFreshChart(tableId, 'Auto') as Chart;
+                            refChart.source = 'trigger';
+
+                            // Add derive info manually since ChartRecBox doesn't use triggers
+                            candidateTable.derive = {
+                                code: code,
+                                source: selectedTableIds,
+                                dialog: dialog,
+                                trigger: {
+                                    tableId: tableId,
+                                    sourceTableIds: selectedTableIds,
+                                    instruction: instruction,
+                                    displayInstruction: displayInstruction,
+                                    chart: refChart, // No upfront chart reference
+                                    resultTableId: candidateTableId
+                                }
+                            };
+
+                            if (candidate["content"]["virtual"] != null) {
+                                candidateTable.virtual = {
+                                    tableId: candidate["content"]["virtual"]["table_name"],
+                                    rowCount: candidate["content"]["virtual"]["row_count"]
+                                };
+                            }
+
+                            dispatch(dfActions.insertDerivedTables(candidateTable));
+
+                            // Add missing concept items
+                            const names = candidateTable.names;
+                            const missingNames = names.filter(name =>
+                                !conceptShelfItems.some(field => field.name === name)
+                            );
+
+                            const conceptsToAdd = missingNames.map((name) => ({
+                                id: `concept-${name}-${Date.now()}`,
+                                name: name,
+                                type: "auto" as Type,
+                                description: "",
+                                source: "custom",
+                                tableRef: "custom",
+                                temporary: true,
+                            } as FieldItem));
+
+                            dispatch(dfActions.addConceptItems(conceptsToAdd));
+                            dispatch(fetchFieldSemanticType(candidateTable));
+                            dispatch(fetchCodeExpl(candidateTable));
+
+                            // Create proper chart based on refined goal
+                            const currentConcepts = [...conceptShelfItems.filter(c => names.includes(c.name)), ...conceptsToAdd];
+
+                            let newChart = resolveRecommendedChart(refinedGoal, currentConcepts, candidateTable);
+
+                            dispatch(dfActions.addChart(newChart));
+                            // Create and focus the new chart directly
+                            if (focusNextChartRef.current || AUTO_FOCUS_NEW_CHART) {
+                                focusNextChartRef.current = false;  // Immediate, synchronous update
+                                dispatch(dfActions.setFocusedChart(newChart.id));
+                                dispatch(dfActions.setFocusedTable(candidateTable.id));
+                            }
+
+                            dispatch(dfActions.addMessages({
+                                "timestamp": Date.now(),
+                                "component": "chart builder",
+                                "type": "success",
+                                "value": `Data formulation: "${displayInstruction}"`
+                            }));
+
+                            // Clear the prompt after successful formulation
+                            setPrompt("");
+                        }
+                    }
+                    dispatch(dfActions.deleteAgentWorkInProgress(actionId));
+                } else {
+                    dispatch(dfActions.addMessages({
+                        "timestamp": Date.now(),
+                        "component": "chart builder",
+                        "type": "error",
+                        "value": t('chart.noResultReturned')
+                    }));
+
+                    setIsFormulating(false);
+                    dispatch(dfActions.deleteAgentWorkInProgress(actionId));
+                }
+            })
+            .catch((error) => {
+                setIsFormulating(false);
+                dispatch(dfActions.changeChartRunningStatus({ chartId: originateChartId, status: false }));
+
+                if (error.name === 'AbortError') {
+                    dispatch(dfActions.addMessages({
+                        "timestamp": Date.now(),
+                        "component": "chart builder",
+                        "type": "error",
+                        "value": `Data formulation timed out after ${config.formulateTimeoutSeconds} seconds. Consider breaking down the task, using a different model or prompt, or increasing the timeout limit.`,
+                        "detail": t('chart.requestTimeout')
+                    }));
+                    dispatch(dfActions.deleteAgentWorkInProgress(actionId));
+                } else {
+                    dispatch(dfActions.addMessages({
+                        "timestamp": Date.now(),
+                        "component": "chart builder",
+                        "type": "error",
+                        "value": `Data formulation failed, please try again.`,
+                        "detail": error.message
+                    }));
+                    dispatch(dfActions.deleteAgentWorkInProgress(actionId));
+                }
+            });
     };
 
     const exploreDataFromNLWithStartingQuestion = (startingQuestion: string) => {
@@ -869,7 +875,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
         }
 
         setIsFormulating(true);
-        dispatch(dfActions.updateAgentWorkInProgress({actionId: actionId, tableId: tableId, description: initialPlan[0], status: 'running', hidden: false}));
+        dispatch(dfActions.updateAgentWorkInProgress({ actionId: actionId, tableId: tableId, description: initialPlan[0], status: 'running', hidden: false }));
 
         let actionTables = selectedTableIds.map(id => tables.find(t => t.id === id) as DictTable);
 
@@ -889,7 +895,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
             agent_coding_rules: agentRules.coding,
             language: actionTables.some(t => t.virtual) ? "sql" : "python",
         });
-        
+
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), config.formulateTimeoutSeconds * 6 * 1000);
 
@@ -915,23 +921,23 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
         const processStreamingResult = (result: any) => {
 
             if (result.type === "planning") {
-                dispatch(dfActions.updateAgentWorkInProgress({actionId: actionId, description: result.content.message, status: 'running', hidden: false}));
+                dispatch(dfActions.updateAgentWorkInProgress({ actionId: actionId, description: result.content.message, status: 'running', hidden: false }));
             }
 
             if (result.type === "data_transformation" && result.status === "success") {
                 // Extract from the new structure: content.result instead of transform_result
                 const transformResult = result.content.result;
-                
+
                 if (!transformResult || transformResult.status !== 'ok') {
                     return; // Skip failed transformations
                 }
-                
+
                 const transformedData = transformResult.content;
                 const code = transformResult.code;
                 const dialog = transformResult.dialog;
                 const refinedGoal = transformResult.refined_goal;
                 const question = result.content.question;
-                
+
                 if (!transformedData || !transformedData.rows || transformedData.rows.length === 0) {
                     return; // Skip empty results
                 }
@@ -975,11 +981,11 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
 
                 createdTables.push(candidateTable);
 
-                dispatch(dfActions.updateAgentWorkInProgress({actionId: actionId, tableId: candidateTable.id, description: '', status: 'running', hidden: false}));
+                dispatch(dfActions.updateAgentWorkInProgress({ actionId: actionId, tableId: candidateTable.id, description: '', status: 'running', hidden: false }));
 
                 // Add missing concept items for this table
                 const names = candidateTable.names;
-                const missingNames = names.filter(name => 
+                const missingNames = names.filter(name =>
                     !conceptShelfItems.some(field => field.name === name) &&
                     !allNewConcepts.some(concept => concept.name === name)
                 );
@@ -1018,7 +1024,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                         dispatch(dfActions.setFocusedTable(candidateTable.id));
                     }
                 }
-                
+
                 // Immediately add the new concepts, table, and chart to the state
                 if (conceptsToAdd.length > 0) {
                     dispatch(dfActions.addConceptItems(conceptsToAdd));
@@ -1054,7 +1060,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
             if (completionResult) {
                 // Get completion message from completion result if available
                 let summary = completionResult.content.message || "";
-                let status : "running" | "completed" | "warning" | "failed" = completionResult.status === "success" ? "completed" : "warning";
+                let status: "running" | "completed" | "warning" | "failed" = completionResult.status === "success" ? "completed" : "warning";
 
                 dispatch(dfActions.updateAgentWorkInProgress({
                     actionId: actionId, description: summary, status: status, hidden: false
@@ -1072,13 +1078,13 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                 // Clear the prompt after successful exploration
                 setPrompt("");
             } else {
-                dispatch(dfActions.updateAgentWorkInProgress({actionId: actionId, description: "The agent got lost in the data.", status: 'warning', hidden: false}));
+                dispatch(dfActions.updateAgentWorkInProgress({ actionId: actionId, description: t('chart.agentLost'), status: 'warning', hidden: false }));
 
                 dispatch(dfActions.addMessages({
                     "timestamp": Date.now(),
                     "component": "chart builder",
                     "type": "error",
-                    "value": "The agent got lost in the data. Please try again."
+                    "value": t('chart.agentLostTryAgain')
                 }));
             }
         };
@@ -1089,102 +1095,102 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
             body: messageBody,
             signal: controller.signal
         })
-        .then(async (response) => {
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
+            .then(async (response) => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
 
-            const reader = response.body?.getReader();
-            if (!reader) {
-                throw new Error('No response body reader available');
-            }
+                const reader = response.body?.getReader();
+                if (!reader) {
+                    throw new Error('No response body reader available');
+                }
 
-            const decoder = new TextDecoder();
-            let buffer = '';
+                const decoder = new TextDecoder();
+                let buffer = '';
 
-            try {
-                while (true) {
-                    const { done, value } = await reader.read();
-                    
-                    if (done) {
-                        handleCompletion();
-                        break;
-                    }
+                try {
+                    while (true) {
+                        const { done, value } = await reader.read();
 
-                    buffer += decoder.decode(value, { stream: true });
-                    
-                    // Split by newlines to get individual JSON objects
-                    const lines = buffer.split('\n');
-                    buffer = lines.pop() || ''; // Keep the last incomplete line in buffer
+                        if (done) {
+                            handleCompletion();
+                            break;
+                        }
 
-                    // should be only one message per line
-                    for (let line of lines) {
-                        if (line.trim() !== "") {
-                            try {
-                                const data = JSON.parse(line);
-                                if (data.token === token) {
-                                    if (data.status === "ok" && data.result) {
-                                        allResults.push(data.result);
-                                        
-                                        processStreamingResult(data.result);
-                                        
-                                        // Check if this is a completion result
-                                        if (data.result.type === "completion") {
-                                            handleCompletion();
+                        buffer += decoder.decode(value, { stream: true });
+
+                        // Split by newlines to get individual JSON objects
+                        const lines = buffer.split('\n');
+                        buffer = lines.pop() || ''; // Keep the last incomplete line in buffer
+
+                        // should be only one message per line
+                        for (let line of lines) {
+                            if (line.trim() !== "") {
+                                try {
+                                    const data = JSON.parse(line);
+                                    if (data.token === token) {
+                                        if (data.status === "ok" && data.result) {
+                                            allResults.push(data.result);
+
+                                            processStreamingResult(data.result);
+
+                                            // Check if this is a completion result
+                                            if (data.result.type === "completion") {
+                                                handleCompletion();
+                                                return;
+                                            }
+                                        } else if (data.status === "error") {
+                                            setIsFormulating(false);
+                                            clearTimeout(timeoutId);
+
+                                            // Clean up the inprogress thinking when streaming fails
+                                            dispatch(dfActions.updateAgentWorkInProgress({ actionId: actionId, description: data.error_message || t('chart.errorDuringExploration'), status: 'failed', hidden: false }));
+
+                                            dispatch(dfActions.addMessages({
+                                                "timestamp": Date.now(),
+                                                "component": "chart builder",
+                                                "type": "error",
+                                                "value": data.error_message || t('chart.errorDuringExploration') + ". Please try again."
+                                            }));
                                             return;
                                         }
-                                    } else if (data.status === "error") {
-                                        setIsFormulating(false);
-                                        clearTimeout(timeoutId);
-                                        
-                                        // Clean up the inprogress thinking when streaming fails
-                                        dispatch(dfActions.updateAgentWorkInProgress({actionId: actionId, description: data.error_message || "Error during data exploration", status: 'failed', hidden: false}));
-                                        
-                                        dispatch(dfActions.addMessages({
-                                            "timestamp": Date.now(),
-                                            "component": "chart builder", 
-                                            "type": "error",
-                                            "value": data.error_message || "Error during data exploration. Please try again."
-                                        }));
-                                        return;
                                     }
+                                } catch (parseError) {
+                                    console.warn('Failed to parse streaming response:', parseError);
                                 }
-                            } catch (parseError) {
-                                console.warn('Failed to parse streaming response:', parseError);
                             }
                         }
                     }
+                } finally {
+                    reader.releaseLock();
                 }
-            } finally {
-                reader.releaseLock();
-            }
-        })
-        .catch((error) => {
-            setIsFormulating(false);
-            clearTimeout(timeoutId);
-            
-            // Clean up the inprogress thinking when network errors occur
-            const errorMessage = error.name === 'AbortError' ? "Data exploration timed out" : `Data exploration failed: ${error.message}`;
-            dispatch(dfActions.updateAgentWorkInProgress({actionId: actionId, description: errorMessage, status: 'failed', hidden: false}));
-            
-            if (error.name === 'AbortError') {
-                dispatch(dfActions.addMessages({
-                    "timestamp": Date.now(),
-                    "component": "chart builder",
-                    "type": "error",
-                    "value": "Data exploration timed out. Please try again.",
-                    "detail": error.message
-                }));
-            } else {
-                dispatch(dfActions.addMessages({
-                    "timestamp": Date.now(),
-                    "component": "chart builder",
-                    "type": "error",
-                    "value": `Data exploration failed: ${error.message}`,
-                    "detail": error.message
-                }));
-            }
-        });
+            })
+            .catch((error) => {
+                setIsFormulating(false);
+                clearTimeout(timeoutId);
+
+                // Clean up the inprogress thinking when network errors occur
+                const errorMessage = error.name === 'AbortError' ? t('chart.explorationTimedOut') : t('chart.explorationFailed', { error: error.message });
+                dispatch(dfActions.updateAgentWorkInProgress({ actionId: actionId, description: errorMessage, status: 'failed', hidden: false }));
+
+                if (error.name === 'AbortError') {
+                    dispatch(dfActions.addMessages({
+                        "timestamp": Date.now(),
+                        "component": "chart builder",
+                        "type": "error",
+                        "value": t('chart.explorationTimedOutTryAgain'),
+                        "detail": error.message
+                    }));
+                } else {
+                    dispatch(dfActions.addMessages({
+                        "timestamp": Date.now(),
+                        "component": "chart builder",
+                        "type": "error",
+                        "value": `Data exploration failed: ${error.message}`,
+                        "detail": error.message
+                    }));
+                }
+            });
     };
 
     const showTableSelector = availableTables.length > 1 && currentTable;
@@ -1209,29 +1215,29 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                         },
                     }}
                 >
-                    <Button variant="text" value="interactive" sx={{ 
-                        color: mode === "interactive" ? modeColorMap['interactive'] : "text.secondary", 
+                    <Button variant="text" value="interactive" sx={{
+                        color: mode === "interactive" ? modeColorMap['interactive'] : "text.secondary",
                         backgroundColor: mode === "interactive" ? alpha(modeColorMap['interactive'], 0.08) : "transparent",
-                        
+
                     }} onClick={() => {
                         setMode("interactive");
                     }}>
                         interactive
                     </Button>
-                    <Button variant="text" value="agent" sx={{ 
-                            color: mode === "agent" ? modeColorMap['agent'] : "text.secondary", 
-                            backgroundColor: mode === "agent" ? alpha(modeColorMap['agent'], 0.08) : "transparent"
-                        }} onClick={() => {
-                            setMode("agent");
-                        }}>
+                    <Button variant="text" value="agent" sx={{
+                        color: mode === "agent" ? modeColorMap['agent'] : "text.secondary",
+                        backgroundColor: mode === "agent" ? alpha(modeColorMap['agent'], 0.08) : "transparent"
+                    }} onClick={() => {
+                        setMode("agent");
+                    }}>
                         agent
                     </Button>
                 </ButtonGroup>
             </Box>
-            <Card variant='outlined' sx={{ 
-                padding: 2, 
-                maxWidth: "600px", 
-                display: 'flex', 
+            <Card variant='outlined' sx={{
+                padding: 2,
+                maxWidth: "600px",
+                display: 'flex',
                 flexDirection: 'column',
                 gap: 1,
                 position: 'relative',
@@ -1255,8 +1261,8 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                 }
             }}>
                 {isFormulating && (
-                    <LinearProgress 
-                        sx={{ 
+                    <LinearProgress
+                        sx={{
                             position: 'absolute',
                             top: 0,
                             left: 0,
@@ -1267,7 +1273,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                             '& .MuiLinearProgress-bar': {
                                 backgroundColor: modeColor
                             }
-                        }} 
+                        }}
                     />
                 )}
                 {showTableSelector && (
@@ -1286,7 +1292,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                         sx={{
                             flex: 1,
                             "& .MuiInputLabel-root": { fontSize: '14px' },
-                            "& .MuiInputLabel-root.Mui-focused": { 
+                            "& .MuiInputLabel-root.Mui-focused": {
                                 color: modeColor
                             },
                             "& .MuiInput-input": { fontSize: '14px' },
@@ -1306,9 +1312,9 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                         slotProps={{
                             inputLabel: { shrink: true },
                             input: {
-                                endAdornment: <Tooltip title="Generate chart from description">
+                                endAdornment: <Tooltip title={t('chart.generateFromDescription')}>
                                     <span>
-                                        <IconButton 
+                                        <IconButton
                                             size="medium"
                                             disabled={isFormulating || isLoadingIdeas || !currentTable || prompt.trim() === ""}
                                             sx={{
@@ -1317,7 +1323,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                                                     backgroundColor: alpha(modeColor, 0.08)
                                                 }
                                             }}
-                                            onClick={() => { 
+                                            onClick={() => {
                                                 focusNextChartRef.current = true;
                                                 if (mode === "agent") {
                                                     exploreDataFromNLWithStartingQuestion(prompt.trim());
@@ -1326,16 +1332,16 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                                                 }
                                             }}
                                         >
-                                            {isFormulating ? <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
+                                            {isFormulating ? <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                                 <CircularProgress size={24} sx={{ color: modeColor }} />
-                                            </Box> : mode === "agent" ? <MovingIcon sx={{transform: 'rotate(90deg)', fontSize: 24}} /> : <PrecisionManufacturing sx={{fontSize: 24}} />}
+                                            </Box> : mode === "agent" ? <MovingIcon sx={{ transform: 'rotate(90deg)', fontSize: 24 }} /> : <PrecisionManufacturing sx={{ fontSize: 24 }} />}
                                         </IconButton>
                                     </span>
                                 </Tooltip>
                             }
                         }}
                         value={prompt}
-                        label={mode === "agent" ? "Where should the agent go?" : "What do you want to explore?"}
+                        label={mode === "agent" ? t('chart.whereAgentGo') : t('chart.whatToExplore')}
                         placeholder={`${getQuestion()}`}
                         fullWidth
                         multiline
@@ -1344,13 +1350,13 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                         minRows={1}
                     />
                     {<Divider orientation="vertical" flexItem />}
-                    {<Box sx={{display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 0.5, my: 1}}>
+                    {<Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 0.5, my: 1 }}>
                         <Typography sx={{ fontSize: 10, color: "text.secondary", marginBottom: 0.5 }}>
                             ideas?
                         </Typography>
-                        <Tooltip title="Get some ideas!">   
+                        <Tooltip title={t('chart.getSomeIdeas')}>
                             <span>
-                                <IconButton 
+                                <IconButton
                                     size="medium"
                                     disabled={isFormulating || isLoadingIdeas || !currentTable}
                                     sx={{
@@ -1361,7 +1367,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                                     }}
                                     onClick={() => getIdeasFromAgent(mode)}
                                 >
-                                    {isLoadingIdeas ? <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
+                                    {isLoadingIdeas ? <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                         <CircularProgress size={24} sx={{ color: modeColor }} />
                                     </Box> : <TipsAndUpdatesIcon sx={{
                                         fontSize: 24,
@@ -1386,14 +1392,14 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                 {/* Ideas Chips Section */}
                 {mode === 'interactive' && (ideas.length > 0 || thinkingBuffer) && (
                     <Box>
-                       {ideas.length > 0 && ( <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, marginBottom: 1 }}>
+                        {ideas.length > 0 && (<Box sx={{ display: 'flex', alignItems: 'center', gap: 1, marginBottom: 1 }}>
                             <Typography sx={{ fontSize: 12, color: "text.secondary" }}>
                                 ideas
                             </Typography>
                         </Box>)}
                         <Box sx={{
-                            display: 'flex', 
-                            flexWrap: 'wrap', 
+                            display: 'flex',
+                            flexWrap: 'wrap',
                             gap: 0.5,
                         }}>
                             {ideas.map((idea, index) => (
@@ -1420,13 +1426,13 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                 {mode === 'agent' && (agentIdeas.length > 0 || thinkingBuffer) && (
                     <Box>
                         {agentIdeas.length > 0 && <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, marginBottom: 1 }}>
-                            <Typography sx={{ fontSize: 12, color: "text.secondary", ".MuiSvgIcon-root": { cursor: 'help', transform: 'rotate(90deg)', verticalAlign: 'middle', fontSize: 12} }}>
+                            <Typography sx={{ fontSize: 12, color: "text.secondary", ".MuiSvgIcon-root": { cursor: 'help', transform: 'rotate(90deg)', verticalAlign: 'middle', fontSize: 12 } }}>
                                 directions <Tooltip title="deep dive"><MovingIcon /></Tooltip>  <Tooltip title="branch"><CallSplitIcon /></Tooltip>
                             </Typography>
                         </Box>}
                         <Box sx={{
-                            display: 'flex', 
-                            flexWrap: 'wrap', 
+                            display: 'flex',
+                            flexWrap: 'wrap',
                             gap: 0.5,
                             marginBottom: 1,
                         }}>

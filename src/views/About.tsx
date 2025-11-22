@@ -14,6 +14,7 @@ import dfLogo from '../assets/df-logo.png';
 import { toolName } from "../app/App";
 import { useSelector } from "react-redux";
 import { DataFormulatorState } from "../app/dfSlice";
+import { useTranslation } from 'react-i18next';
 
 
 interface Feature {
@@ -50,15 +51,16 @@ const features: Feature[] = [
     }
 ];
 
-const screenshots: {url: string, description: string}[] = [
-    {url: "/data-formulator-screenshot-v0.5.webp", description: "Explore consumer price trends from 2005 to 2025"},
-    {url: "/screenshot-movies-report.webp", description: "Report: Top directors by their revenue"},
-    {url: "/screenshot-renewable-energy.webp", description: "Renewable energy percentage by country"},
-    {url: '/screenshot-unemployment.webp', description: 'Report: Unemployment rate affected by 2008 financial crisis'},
-    {url: '/screenshot-claude-performance.webp', description: 'Compare Claude models\' performance on different tasks'},
+const screenshots: { url: string, description: string }[] = [
+    { url: "/data-formulator-screenshot-v0.5.webp", description: "Explore consumer price trends from 2005 to 2025" },
+    { url: "/screenshot-movies-report.webp", description: "Report: Top directors by their revenue" },
+    { url: "/screenshot-renewable-energy.webp", description: "Renewable energy percentage by country" },
+    { url: '/screenshot-unemployment.webp', description: 'Report: Unemployment rate affected by 2008 financial crisis' },
+    { url: '/screenshot-claude-performance.webp', description: 'Compare Claude models\' performance on different tasks' },
 ];
 
 export const About: FC<{}> = function About({ }) {
+    const { t } = useTranslation();
     const theme = useTheme();
     const [currentFeature, setCurrentFeature] = useState(0);
     const [currentScreenshot, setCurrentScreenshot] = useState(0);
@@ -77,10 +79,10 @@ export const About: FC<{}> = function About({ }) {
     useEffect(() => {
         const currentMedia = features[currentFeature].media;
         const isVideo = features[currentFeature].mediaType === 'video';
-        
+
         // Default duration for images or if video duration is not yet loaded
         let duration = 10000; // 10 seconds for images
-        
+
         if (isVideo && videoDurationsRef.current.has(currentMedia)) {
             // Use the stored video duration (in milliseconds)
             duration = videoDurationsRef.current.get(currentMedia)! * 1000;
@@ -111,14 +113,14 @@ export const About: FC<{}> = function About({ }) {
         // Preload next and previous features
         const nextIndex = (currentFeature + 1) % features.length;
         const prevIndex = currentFeature === 0 ? features.length - 1 : currentFeature - 1;
-        
+
         preloadMedia(nextIndex);
         preloadMedia(prevIndex);
 
         // Preload next and previous screenshots
         const nextScreenshot = (currentScreenshot + 1) % screenshots.length;
         const prevScreenshot = currentScreenshot === 0 ? screenshots.length - 1 : currentScreenshot - 1;
-        
+
         const img1 = new Image();
         img1.src = screenshots[nextScreenshot].url;
         const img2 = new Image();
@@ -129,33 +131,33 @@ export const About: FC<{}> = function About({ }) {
 
     let actionButtons = !serverConfig.PROJECT_FRONT_PAGE ? (
         <Box sx={{ display: 'flex', justifyContent: 'center', gap: 1, mb: 4, flexWrap: 'wrap' }}>
-            <Button size="large" variant="contained" color="primary" 
+            <Button size="large" variant="contained" color="primary"
                 startIcon={<PrecisionManufacturingIcon sx={{ fontSize: '1rem' }} />}
                 href="/app"
-            >Start Exploration</Button>
+            >{t('about.startExploration')}</Button>
         </Box>
     ) : (
         <Box sx={{ display: 'flex', justifyContent: 'center', gap: 2, mb: 4, flexWrap: 'wrap', '.MuiButton-root': { textTransform: 'none' } }}>
-            <Button size="large" variant="outlined" color="primary" 
+            <Button size="large" variant="outlined" color="primary"
                 startIcon={<YouTubeIcon sx={{ fontSize: '1rem', color: '#FF0000' }} />}
                 target="_blank"
                 rel="noopener noreferrer"
                 href="https://www.youtube.com/watch?v=GfTE2FLyMrs"
-            >What's New in v0.5?</Button>
-            <Button size="large" variant="outlined" color="primary" 
+            >{t('about.whatsNew')}</Button>
+            <Button size="large" variant="outlined" color="primary"
                 startIcon={<GitHubIcon sx={{ fontSize: '1rem', color: '#000000' }} />}
                 target="_blank"
                 rel="noopener noreferrer"
                 href="https://github.com/microsoft/data-formulator"
-            >GitHub</Button>
+            >{t('about.github')}</Button>
             <Divider orientation="vertical" sx={{ mx: 1 }} flexItem />
-            <Button size="large" variant="outlined" color="primary" 
+            <Button size="large" variant="outlined" color="primary"
                 startIcon={<Box component="img" sx={{ width: 24, height: 24 }} alt="" src="/pip-logo.svg" />}
                 target="_blank"
                 rel="noopener noreferrer"
                 href="https://pypi.org/project/data-formulator/"
-            >Install Locally</Button>
-            <Button size="large" variant="outlined" color="primary" 
+            >{t('about.installLocally')}</Button>
+            <Button size="large" variant="outlined" color="primary"
                 sx={{
                     animation: 'subtleGlow 2s ease-in-out infinite',
                     '@keyframes subtleGlow': {
@@ -173,49 +175,49 @@ export const About: FC<{}> = function About({ }) {
                 }}
                 startIcon={<GridViewIcon sx={{ fontSize: '1rem' }} />}
                 href="/app"
-            >Try Online Demo</Button>
+            >{t('about.tryOnlineDemo')}</Button>
             <Typography variant="caption" sx={{ mt: 1.5, color: 'text.secondary', fontStyle: 'italic' }}>
-                Psst — install locally for the full experience ✨. The online demo has limited features (at the moment).
+                {t('about.onlineDemoNote')}
             </Typography>
         </Box>
     );
 
     return (
         <Box sx={{
-            display: "flex", 
-            flexDirection: "column", 
-            textAlign: "center", 
+            display: "flex",
+            flexDirection: "column",
+            textAlign: "center",
             overflowY: "auto",
             width: '100%',
             height: '100%',
         }}>
-            <Box sx={{margin:'auto', pb: '5%', display: "flex", flexDirection: "column", textAlign: "center", maxWidth: 1200}}>
+            <Box sx={{ margin: 'auto', pb: '5%', display: "flex", flexDirection: "column", textAlign: "center", maxWidth: 1200 }}>
                 {/* Header with logo and title */}
                 <Box sx={{
-                    display: 'flex', 
-                    mx: 'auto', 
+                    display: 'flex',
+                    mx: 'auto',
                     mt: 6,
                     mb: 2,
-                    width: 'fit-content', 
-                    flexDirection: 'row', 
-                    alignItems: 'center', 
+                    width: 'fit-content',
+                    flexDirection: 'row',
+                    alignItems: 'center',
                     justifyContent: 'center',
                 }}>
-                    <Box component="img" sx={{ width: 96 }} alt="" src={dfLogo} /> 
+                    <Box component="img" sx={{ width: 96 }} alt="" src={dfLogo} />
                     <Typography fontSize={72} sx={{
-                        ml: 2, 
-                        letterSpacing: '0.05em', 
-                        fontWeight: 200, 
+                        ml: 2,
+                        letterSpacing: '0.05em',
+                        fontWeight: 200,
                         color: 'text.primary',
                         display: 'flex',
                         flexDirection: 'row',
                         alignItems: 'baseline',
                     }}>
-                        {toolName} <Typography fontSize={18} sx={{ color: 'text.secondary', ml: 1 }}>v0.5</Typography>
-                    </Typography> 
+                        {toolName} <Typography fontSize={18} sx={{ color: 'text.secondary', ml: 1 }}>{t('about.version')}</Typography>
+                    </Typography>
                 </Box>
-                <Typography fontSize={18} sx={{mb: 4, color: 'text.secondary', lineHeight: 1.8}}>
-                    Turn (almost) any data into insights with AI agents, with the exploration paths you choose. 
+                <Typography fontSize={18} sx={{ mb: 4, color: 'text.secondary', lineHeight: 1.8 }}>
+                    {t('about.tagline')}
                 </Typography>
                 {actionButtons}
 
@@ -223,7 +225,7 @@ export const About: FC<{}> = function About({ }) {
                 <Box sx={{
                     mx: 'auto',
                     maxWidth: 1200,
-                    borderRadius: 3, 
+                    borderRadius: 3,
                     background: `
                         linear-gradient(90deg, ${alpha(theme.palette.text.secondary, 0.02)} 1px, transparent 1px),
                         linear-gradient(0deg, ${alpha(theme.palette.text.secondary, 0.02)} 1px, transparent 1px)
@@ -231,17 +233,17 @@ export const About: FC<{}> = function About({ }) {
                     backgroundSize: '16px 16px',
                     position: 'relative',
                 }}>
-                    <Box sx={{ 
-                        display: 'flex', 
-                        alignItems: 'center', 
+                    <Box sx={{
+                        display: 'flex',
+                        alignItems: 'center',
                         gap: 3,
                         height: '40vh',
                         minHeight: 320,
                     }}>
                         {/* Left Arrow */}
-                        <IconButton 
+                        <IconButton
                             onClick={handlePrevious}
-                            sx={{ 
+                            sx={{
                                 flexShrink: 0,
                                 bgcolor: alpha(theme.palette.primary.main, 0.1),
                                 '&:hover': {
@@ -253,41 +255,41 @@ export const About: FC<{}> = function About({ }) {
                         </IconButton>
 
                         {/* Feature Content */}
-                        <Box sx={{ 
-                            flex: 1, 
-                            display: 'flex', 
+                        <Box sx={{
+                            flex: 1,
+                            display: 'flex',
                             flexDirection: 'row',
                             gap: 4,
                             alignItems: 'center',
                         }}>
                             {/* Text Content */}
-                            <Box sx={{ 
+                            <Box sx={{
                                 flex: 1,
                                 textAlign: 'left',
                                 minWidth: 300,
                             }}>
-                                <Typography 
-                                    variant="h4" 
-                                    sx={{ 
-                                        mb: 2, 
+                                <Typography
+                                    variant="h4"
+                                    sx={{
+                                        mb: 2,
                                         fontWeight: 300,
                                         color: 'text.primary',
                                         letterSpacing: '0.02em'
                                     }}
                                 >
-                                    {features[currentFeature].title}
+                                    {t(`about.features.${['loadData', 'agentMode', 'interactiveControl', 'verifyShare'][currentFeature]}.title`)}
                                 </Typography>
-                                <Typography 
-                                    variant="body1" 
-                                    sx={{ 
+                                <Typography
+                                    variant="body1"
+                                    sx={{
                                         color: 'text.secondary',
                                         lineHeight: 1.8,
                                         fontSize: '1.1rem'
                                     }}
                                 >
-                                    {features[currentFeature].description}
+                                    {t(`about.features.${['loadData', 'agentMode', 'interactiveControl', 'verifyShare'][currentFeature]}.description`)}
                                 </Typography>
-                                
+
                                 {/* Feature Indicators */}
                                 <Box sx={{ display: 'flex', gap: 1, mt: 3 }}>
                                     {features.map((_, index) => (
@@ -298,14 +300,14 @@ export const About: FC<{}> = function About({ }) {
                                                 width: 32,
                                                 height: 4,
                                                 borderRadius: 2,
-                                                bgcolor: index === currentFeature 
-                                                    ? theme.palette.primary.main 
+                                                bgcolor: index === currentFeature
+                                                    ? theme.palette.primary.main
                                                     : alpha(theme.palette.text.secondary, 0.2),
                                                 cursor: 'pointer',
                                                 transition: 'all 0.3s ease',
                                                 '&:hover': {
-                                                    bgcolor: index === currentFeature 
-                                                        ? theme.palette.primary.main 
+                                                    bgcolor: index === currentFeature
+                                                        ? theme.palette.primary.main
                                                         : alpha(theme.palette.text.secondary, 0.4),
                                                 }
                                             }}
@@ -315,7 +317,7 @@ export const About: FC<{}> = function About({ }) {
                             </Box>
 
                             {/* Media Content */}
-                            <Box sx={{ 
+                            <Box sx={{
                                 flex: 1,
                                 borderRadius: 2,
                                 overflow: 'hidden',
@@ -366,9 +368,9 @@ export const About: FC<{}> = function About({ }) {
                         </Box>
 
                         {/* Right Arrow */}
-                        <IconButton 
+                        <IconButton
                             onClick={handleNext}
-                            sx={{ 
+                            sx={{
                                 flexShrink: 0,
                                 bgcolor: alpha(theme.palette.primary.main, 0.1),
                                 '&:hover': {
@@ -380,17 +382,17 @@ export const About: FC<{}> = function About({ }) {
                         </IconButton>
                     </Box>
                 </Box>
-                
+
                 {/* Screenshots Carousel Section */}
                 <Box sx={{ mt: 6, mx: 2 }}>
-                    <Box sx={{ 
+                    <Box sx={{
                         display: 'flex',
                         flexDirection: 'column',
                         alignItems: 'center',
                         gap: 3
                     }}>
                         {/* Screenshot Container */}
-                        <Box 
+                        <Box
                             key={currentScreenshot}
                             onClick={() => setCurrentScreenshot((currentScreenshot + 1) % screenshots.length)}
                             sx={{
@@ -425,13 +427,13 @@ export const About: FC<{}> = function About({ }) {
                                 }
                             }}
                         >
-                            <Box 
-                                component="img" 
+                            <Box
+                                component="img"
                                 sx={{
                                     display: 'block',
                                     clipPath: 'inset(2px 0 0 0)'
-                                }} 
-                                alt={screenshots[currentScreenshot].description} 
+                                }}
+                                alt={screenshots[currentScreenshot].description}
                                 src={screenshots[currentScreenshot].url}
                                 loading="lazy"
                             />
@@ -449,10 +451,10 @@ export const About: FC<{}> = function About({ }) {
                                     transition: 'opacity 0.3s ease',
                                 }}
                             >
-                                <Typography 
-                                    variant="body1" 
+                                <Typography
+                                    variant="body1"
                                     color="text.secondary"
-                                    sx={{ 
+                                    sx={{
                                         fontSize: '2rem',
                                         fontWeight: 400,
                                         textAlign: 'center'
@@ -473,14 +475,14 @@ export const About: FC<{}> = function About({ }) {
                                         width: 32,
                                         height: 4,
                                         borderRadius: 2,
-                                        bgcolor: index === currentScreenshot 
-                                            ? theme.palette.primary.main 
+                                        bgcolor: index === currentScreenshot
+                                            ? theme.palette.primary.main
                                             : alpha(theme.palette.text.secondary, 0.2),
                                         cursor: 'pointer',
                                         transition: 'all 0.3s ease',
                                         '&:hover': {
-                                            bgcolor: index === currentScreenshot 
-                                                ? theme.palette.primary.main 
+                                            bgcolor: index === currentScreenshot
+                                                ? theme.palette.primary.main
                                                 : alpha(theme.palette.text.secondary, 0.4),
                                         }
                                     }}
@@ -493,52 +495,54 @@ export const About: FC<{}> = function About({ }) {
                 <Box sx={{ mt: 6, mx: 2 }}>
                     <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
                         <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600, letterSpacing: '0.02em' }}>
-                            How does Data Formulator handle your data?
+                            {t('about.dataHandling.title')}
                         </Typography>
-                        <Typography 
-                            component="ul" 
-                            variant="caption" 
-                            sx={{ 
-                                fontWeight: 300, 
+                        <Typography
+                            component="ul"
+                            variant="caption"
+                            sx={{
+                                fontWeight: 300,
                                 mt: 1,
-                                color: 'text.primary', 
+                                color: 'text.primary',
                                 letterSpacing: '0.02em',
                                 textAlign: 'left',
                                 maxWidth: 1000
                             }}
                         >
                             <ul>
-                                <li>📦 <strong>Data Storage:</strong> Uploaded data (csv, xlsx, json, clipboard, messy data etc.) is stored in browser's local storage only</li>
-                                <li>⚙️ <strong>Data Processing:</strong> Local installation runs Python on your machine; online demo sends the data to server for data transformations (but not stored)</li>
-                                <li>🗄️ <strong>Database:</strong> Only available for locally installed Data Formulator (a DuckDB database file is created in temp directory to store data); not available in online demo</li>
-                                <li>🤖 <strong>LLM Endpoints:</strong> Small data samples are sent to LLM endpoints along with the prompt. Use your trusted model provider if working with private data.</li>
+                                <li>📦 <strong>{t('about.dataHandling.storage')}</strong> {t('about.dataHandling.storageDesc')}</li>
+                                <li>⚙️ <strong>{t('about.dataHandling.processing')}</strong> {t('about.dataHandling.processingDesc')}</li>
+                                <li>🗄️ <strong>{t('about.dataHandling.database')}</strong> {t('about.dataHandling.databaseDesc')}</li>
+                                <li>🤖 <strong>{t('about.dataHandling.llm')}</strong> {t('about.dataHandling.llmDesc')}</li>
                             </ul>
                         </Typography>
-                        <Typography variant="caption" sx={{ mt: 4,color: 'text.secondary', fontWeight: 300, letterSpacing: '0.02em' }}>
-                            Research Prototype from Microsoft Research
+                        <Typography variant="caption" sx={{ mt: 4, color: 'text.secondary', fontWeight: 300, letterSpacing: '0.02em' }}>
+                            {t('about.footer.researchPrototype')}
                         </Typography>
                     </Box>
                 </Box>
             </Box>
 
             {/* Footer */}
-            <Box sx={{ color: 'text.secondary', display: 'flex', 
-                        backgroundColor: 'rgba(255, 255, 255, 0.89)',
-                        alignItems: 'center', justifyContent: 'center' }}>
-                <Button size="small" color="inherit" 
-                        sx={{ textTransform: 'none'}} 
-                        target="_blank" rel="noopener noreferrer" 
-                        href="https://www.microsoft.com/en-us/privacy/privacystatement">Privacy & Cookies</Button>
+            <Box sx={{
+                color: 'text.secondary', display: 'flex',
+                backgroundColor: 'rgba(255, 255, 255, 0.89)',
+                alignItems: 'center', justifyContent: 'center'
+            }}>
+                <Button size="small" color="inherit"
+                    sx={{ textTransform: 'none' }}
+                    target="_blank" rel="noopener noreferrer"
+                    href="https://www.microsoft.com/en-us/privacy/privacystatement">{t('about.footer.privacyCookies')}</Button>
                 <Divider orientation="vertical" variant="middle" flexItem sx={{ mx: 1 }} />
-                <Button size="small" color="inherit" 
-                        sx={{ textTransform: 'none'}} 
-                        target="_blank" rel="noopener noreferrer" 
-                        href="https://www.microsoft.com/en-us/legal/intellectualproperty/copyright">Terms of Use</Button>
+                <Button size="small" color="inherit"
+                    sx={{ textTransform: 'none' }}
+                    target="_blank" rel="noopener noreferrer"
+                    href="https://www.microsoft.com/en-us/legal/intellectualproperty/copyright">{t('about.footer.termsOfUse')}</Button>
                 <Divider orientation="vertical" variant="middle" flexItem sx={{ mx: 1 }} />
-                <Button size="small" color="inherit" 
-                        sx={{ textTransform: 'none'}} 
-                        target="_blank" rel="noopener noreferrer" 
-                        href="https://github.com/microsoft/data-formulator/issues">Contact Us</Button>
+                <Button size="small" color="inherit"
+                    sx={{ textTransform: 'none' }}
+                    target="_blank" rel="noopener noreferrer"
+                    href="https://github.com/microsoft/data-formulator/issues">{t('about.footer.contactUs')}</Button>
                 <Typography sx={{ display: 'inline', fontSize: '12px', ml: 1 }}> @ {new Date().getFullYear()}</Typography>
             </Box>
         </Box>)

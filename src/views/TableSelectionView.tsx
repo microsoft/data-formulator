@@ -9,9 +9,11 @@ import Tabs from '@mui/material/Tabs';
 import Tab from '@mui/material/Tab';
 import Typography from '@mui/material/Typography';
 import Box from '@mui/material/Box';
-import { alpha, Button, Collapse, Dialog, DialogActions, DialogContent, DialogTitle, Divider, 
-         IconButton, Input, CircularProgress, LinearProgress, Paper, TextField, useTheme, 
-         Card, Tooltip, Link} from '@mui/material';
+import {
+    alpha, Button, Collapse, Dialog, DialogActions, DialogContent, DialogTitle, Divider,
+    IconButton, Input, CircularProgress, LinearProgress, Paper, TextField, useTheme,
+    Card, Tooltip, Link
+} from '@mui/material';
 import { CustomReactTable } from './ReactTable';
 import { DictTable } from "../components/ComponentType";
 
@@ -25,23 +27,24 @@ import { DataFormulatorState, dfActions, dfSelectors, fetchFieldSemanticType } f
 import { useDispatch, useSelector } from 'react-redux';
 import { useEffect, useState, useCallback } from 'react';
 import { AppDispatch } from '../app/store';
+import { useTranslation } from 'react-i18next';
 
 interface TabPanelProps {
-  children?: React.ReactNode;
-  index: number;
-  value: number;
+    children?: React.ReactNode;
+    index: number;
+    value: number;
 }
 
 function TabPanel(props: TabPanelProps) {
-  const { children, value, index, ...other } = props;
+    const { children, value, index, ...other } = props;
 
     return (
-	    <div
+        <div
             role="tabpanel"
             hidden={value !== index}
             id={`vertical-tabpanel-${index}`}
             aria-labelledby={`vertical-tab-${index}`}
-            style={{maxWidth: 'calc(100% - 120px)'}}
+            style={{ maxWidth: 'calc(100% - 120px)' }}
             {...other}
         >
             {value === index && (
@@ -54,10 +57,10 @@ function TabPanel(props: TabPanelProps) {
 }
 
 function a11yProps(index: number) {
-  return {
-	id: `vertical-tab-${index}`,
-	'aria-controls': `vertical-tabpanel-${index}`,
-  };
+    return {
+        id: `vertical-tab-${index}`,
+        'aria-controls': `vertical-tabpanel-${index}`,
+    };
 }
 
 // Update the interface to support multiple tables per dataset
@@ -80,7 +83,7 @@ export interface DatasetSelectionViewProps {
 }
 
 
-export const DatasetSelectionView: React.FC<DatasetSelectionViewProps> = function DatasetSelectionView({ datasets, handleSelectDataset, hideRowNum  }) {
+export const DatasetSelectionView: React.FC<DatasetSelectionViewProps> = function DatasetSelectionView({ datasets, handleSelectDataset, hideRowNum }) {
 
     const [selectedDatasetName, setSelectedDatasetName] = React.useState<string | undefined>(undefined);
 
@@ -94,8 +97,8 @@ export const DatasetSelectionView: React.FC<DatasetSelectionViewProps> = functio
         setSelectedDatasetName(datasets[index].name);
     };
 
-    let datasetTitles : string[] = [];
-    for (let i = 0; i < datasets.length; i ++) {
+    let datasetTitles: string[] = [];
+    for (let i = 0; i < datasets.length; i++) {
         let k = 0;
         let title = datasets[i].name;
         while (datasetTitles.includes(title)) {
@@ -108,8 +111,8 @@ export const DatasetSelectionView: React.FC<DatasetSelectionViewProps> = functio
     return (
         <Box sx={{ flexGrow: 1, bgcolor: 'background.paper', display: 'flex', height: 600, borderRadius: 2 }} >
             {/* Button navigation */}
-            <Box sx={{ 
-                minWidth: 180, 
+            <Box sx={{
+                minWidth: 180,
                 display: 'flex',
                 flexDirection: 'column',
                 borderRight: 1,
@@ -153,38 +156,40 @@ export const DatasetSelectionView: React.FC<DatasetSelectionViewProps> = functio
                             maxDisplayRows = t.rows.length - 1;
                         }
                         let sampleRows = [
-                            ...t.rows.slice(0,maxDisplayRows), 
+                            ...t.rows.slice(0, maxDisplayRows),
                             Object.fromEntries(t.names.map(n => [n, "..."]))
                         ];
-                        let colDefs = t.names.map(name => { return {
-                            id: name, label: name, minWidth: 60, align: undefined, format: (v: any) => v,
-                        }})
+                        let colDefs = t.names.map(name => {
+                            return {
+                                id: name, label: name, minWidth: 60, align: undefined, format: (v: any) => v,
+                            }
+                        })
 
-                        let content = <Paper variant="outlined" key={t.names.join("-")} sx={{width: 800, maxWidth: '100%', padding: "0px", marginBottom: "8px"}}>
+                        let content = <Paper variant="outlined" key={t.names.join("-")} sx={{ width: 800, maxWidth: '100%', padding: "0px", marginBottom: "8px" }}>
                             <CustomReactTable rows={sampleRows} columnDefs={colDefs} rowsPerPageNum={-1} compact={false} />
                         </Paper>
 
                         return (
                             <Box key={j}>
-                                <Typography variant="subtitle2" sx={{ mb: 1, fontSize: 12}} color="text.secondary">
+                                <Typography variant="subtitle2" sx={{ mb: 1, fontSize: 12 }} color="text.secondary">
                                     {table.url.split("/").pop()?.split(".")[0]}  ({Object.keys(t.rows[0]).length} columns{hideRowNum ? "" : ` ⨉ ${t.rows.length} rows`})
                                 </Typography>
                                 {content}
                             </Box>
                         )
                     });
-                    
+
                     return (
                         <Box key={i}>
-                            <Box sx={{mb: 1, gap: 1, maxWidth: 800, display: "flex", alignItems: "center"}}>
-                                <Typography sx={{fontSize: 12}}>
-                                    {dataset.description} <Typography variant="caption" sx={{color: "primary.light", fontSize: 10, mx: 0.5}}>[from {dataset.source}]</Typography> 
+                            <Box sx={{ mb: 1, gap: 1, maxWidth: 800, display: "flex", alignItems: "center" }}>
+                                <Typography sx={{ fontSize: 12 }}>
+                                    {dataset.description} <Typography variant="caption" sx={{ color: "primary.light", fontSize: 10, mx: 0.5 }}>[from {dataset.source}]</Typography>
                                 </Typography>
-                                <Box sx={{marginLeft: "auto", flexShrink: 0}} >
-                                    <Button size="small" variant="contained" 
-                                            onClick={(event: React.MouseEvent<HTMLElement>) => {
-                                                handleSelectDataset(dataset);
-                                            }}>
+                                <Box sx={{ marginLeft: "auto", flexShrink: 0 }} >
+                                    <Button size="small" variant="contained"
+                                        onClick={(event: React.MouseEvent<HTMLElement>) => {
+                                            handleSelectDataset(dataset);
+                                        }}>
                                         load dataset
                                     </Button>
                                 </Box>
@@ -208,7 +213,7 @@ export const DatasetSelectionDialog: React.FC<{ buttonElement: any }> = function
         fetch(`${getUrls().EXAMPLE_DATASETS}`)
             .then((response) => response.json())
             .then((result) => {
-                let datasets : DatasetMetadata[] = result.map((info: any) => {
+                let datasets: DatasetMetadata[] = result.map((info: any) => {
                     let tables = info["tables"].map((table: any) => {
 
                         if (table["format"] == "json") {
@@ -224,7 +229,7 @@ export const DatasetSelectionDialog: React.FC<{ buttonElement: any }> = function
                             const rows = table["sample"]
                                 .split("\n")
                                 .map((row: string) => row.split(delimiter));
-                            
+
                             // Treat first row as headers and convert to object array
                             if (rows.length > 0) {
                                 const headers = rows[0];
@@ -236,7 +241,7 @@ export const DatasetSelectionDialog: React.FC<{ buttonElement: any }> = function
                                     });
                                     return obj;
                                 });
-                                
+
                                 return {
                                     table_name: table["name"],
                                     url: table["url"],
@@ -244,7 +249,7 @@ export const DatasetSelectionDialog: React.FC<{ buttonElement: any }> = function
                                     sample: sampleData,
                                 };
                             }
-                            
+
                             return {
                                 table_name: table["name"],
                                 url: table["url"],
@@ -253,42 +258,42 @@ export const DatasetSelectionDialog: React.FC<{ buttonElement: any }> = function
                             };
                         }
                     })
-                    return {tables: tables, name: info["name"], description: info["description"], source: info["source"]}
-                }).filter((t : DatasetMetadata | undefined) => t != undefined);
+                    return { tables: tables, name: info["name"], description: info["description"], source: info["source"] }
+                }).filter((t: DatasetMetadata | undefined) => t != undefined);
                 setDatasetPreviews(datasets);
             });
-      }, []);
+    }, []);
 
     let dispatch = useDispatch<AppDispatch>();
 
     return <>
-        <Button sx={{fontSize: "inherit"}} onClick={() => {
+        <Button sx={{ fontSize: "inherit" }} onClick={() => {
             setTableDialogOpen(true);
         }}>
             {buttonElement}
         </Button>
-        <Dialog key="sample-dataset-selection-dialog" onClose={() => {setTableDialogOpen(false)}} 
-                open={tableDialogOpen}
-                sx={{ '& .MuiDialog-paper': { maxWidth: '100%', maxHeight: 840, minWidth: 800 } }}
-            >
-                <DialogTitle sx={{display: "flex"}}>Explore
-                    <IconButton
-                        sx={{marginLeft: "auto"}}
-                        edge="start"
-                        size="small"
-                        color="inherit"
-                        onClick={() => {setTableDialogOpen(false)}}
-                        aria-label="close"
-                    >
-                        <CloseIcon fontSize="inherit"/>
-                    </IconButton>
-                </DialogTitle>
-                <DialogContent sx={{overflowX: "hidden", padding: 1}}>
-                    <DatasetSelectionView datasets={datasetPreviews} hideRowNum
-                        handleSelectDataset={(dataset) => {
-                            setTableDialogOpen(false);
-                            for (let table of dataset.tables) { 
-                                fetch(table.url)
+        <Dialog key="sample-dataset-selection-dialog" onClose={() => { setTableDialogOpen(false) }}
+            open={tableDialogOpen}
+            sx={{ '& .MuiDialog-paper': { maxWidth: '100%', maxHeight: 840, minWidth: 800 } }}
+        >
+            <DialogTitle sx={{ display: "flex" }}>Explore
+                <IconButton
+                    sx={{ marginLeft: "auto" }}
+                    edge="start"
+                    size="small"
+                    color="inherit"
+                    onClick={() => { setTableDialogOpen(false) }}
+                    aria-label="close"
+                >
+                    <CloseIcon fontSize="inherit" />
+                </IconButton>
+            </DialogTitle>
+            <DialogContent sx={{ overflowX: "hidden", padding: 1 }}>
+                <DatasetSelectionView datasets={datasetPreviews} hideRowNum
+                    handleSelectDataset={(dataset) => {
+                        setTableDialogOpen(false);
+                        for (let table of dataset.tables) {
+                            fetch(table.url)
                                 .then(res => res.text())
                                 .then(textData => {
                                     let tableName = table.url.split("/").pop()?.split(".")[0] || 'table-' + Date.now().toString().substring(0, 8);
@@ -297,17 +302,17 @@ export const DatasetSelectionDialog: React.FC<{ buttonElement: any }> = function
                                         dictTable = createTableFromText(tableName, textData);
                                     } else if (table.format == "json") {
                                         dictTable = createTableFromFromObjectArray(tableName, JSON.parse(textData), true);
-                                    } 
+                                    }
                                     if (dictTable) {
                                         dispatch(dfActions.loadTable(dictTable));
                                         dispatch(fetchFieldSemanticType(dictTable));
                                     }
-                                    
+
                                 });
-                            } 
-                        }}/>
-                </DialogContent>
-            </Dialog>
+                        }
+                    }} />
+            </DialogContent>
+        </Dialog>
     </>
 }
 
@@ -327,6 +332,7 @@ const getUniqueTableName = (baseName: string, existingNames: Set<string>): strin
 };
 
 export const TableUploadDialog: React.FC<TableUploadDialogProps> = ({ buttonElement, disabled }) => {
+    const { t } = useTranslation();
     const dispatch = useDispatch<AppDispatch>();
     const inputRef = React.useRef<HTMLInputElement>(null);
     const existingTables = useSelector((state: DataFormulatorState) => state.tables);
@@ -339,13 +345,13 @@ export const TableUploadDialog: React.FC<TableUploadDialogProps> = ({ buttonElem
         if (files) {
             for (let file of files) {
                 const uniqueName = getUniqueTableName(file.name, existingNames);
-                
+
                 // Check if file is a text type (csv, tsv, json)
-                if (file.type === 'text/csv' || 
-                    file.type === 'text/tab-separated-values' || 
+                if (file.type === 'text/csv' ||
+                    file.type === 'text/tab-separated-values' ||
                     file.type === 'application/json' ||
-                    file.name.endsWith('.csv') || 
-                    file.name.endsWith('.tsv') || 
+                    file.name.endsWith('.csv') ||
+                    file.name.endsWith('.tsv') ||
                     file.name.endsWith('.json')) {
 
                     // Check if file is larger than 5MB
@@ -359,7 +365,7 @@ export const TableUploadDialog: React.FC<TableUploadDialogProps> = ({ buttonElem
                         }));
                         continue; // Skip this file and process the next one
                     }
-                    
+
                     // Handle text files
                     file.text().then((text) => {
                         let table = loadTextDataWrapper(uniqueName, text, file.type);
@@ -369,9 +375,9 @@ export const TableUploadDialog: React.FC<TableUploadDialogProps> = ({ buttonElem
                         }
                     });
                 } else if (file.type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
-                           file.type === 'application/vnd.ms-excel' ||
-                           file.name.endsWith('.xlsx') || 
-                           file.name.endsWith('.xls')) {
+                    file.type === 'application/vnd.ms-excel' ||
+                    file.name.endsWith('.xlsx') ||
+                    file.name.endsWith('.xls')) {
                     // Handle Excel files
                     const reader = new FileReader();
                     reader.onload = async (e) => {
@@ -422,7 +428,7 @@ export const TableUploadDialog: React.FC<TableUploadDialogProps> = ({ buttonElem
     return (
         <>
             <Input
-                inputProps={{ 
+                inputProps={{
                     accept: '.csv,.tsv,.json,.xlsx,.xls',
                     multiple: true,
                 }}
@@ -432,13 +438,13 @@ export const TableUploadDialog: React.FC<TableUploadDialogProps> = ({ buttonElem
                 inputRef={inputRef}
                 onChange={handleFileUpload}
             />
-            <Tooltip 
+            <Tooltip
                 title={serverConfig.DISABLE_FILE_UPLOAD ? (
                     <Typography sx={{ fontSize: '11px' }}>
-                        Install Data Formulator locally to enable file upload. <br />
-                        Link: <Link 
-                            href="https://github.com/microsoft/data-formulator" 
-                            target="_blank" 
+                        {t('messages.installLocallyForUpload')} <br />
+                        {t('common.link')}: <Link
+                            href="https://github.com/microsoft/data-formulator"
+                            target="_blank"
                             rel="noopener noreferrer"
                             sx={{ color: 'inherit', textDecoration: 'underline' }}
                             onClick={(e) => e.stopPropagation()}
@@ -449,11 +455,11 @@ export const TableUploadDialog: React.FC<TableUploadDialogProps> = ({ buttonElem
                 ) : ""}
                 placement="top"
             >
-                <span style={{cursor: serverConfig.DISABLE_FILE_UPLOAD ? 'help' : 'pointer'}}>
-                    <Button 
-                        sx={{fontSize: "inherit"}} 
-                        variant="text" 
-                        color="primary" 
+                <span style={{ cursor: serverConfig.DISABLE_FILE_UPLOAD ? 'help' : 'pointer' }}>
+                    <Button
+                        sx={{ fontSize: "inherit" }}
+                        variant="text"
+                        color="primary"
                         disabled={disabled || serverConfig.DISABLE_FILE_UPLOAD}
                         onClick={() => inputRef.current?.click()}
                     >
@@ -485,63 +491,63 @@ export const TableURLDialog: React.FC<TableURLDialogProps> = ({ buttonElement, d
 
     let handleSubmitContent = (): void => {
 
-        let  parts = tableURL.split('/');
+        let parts = tableURL.split('/');
 
         // Get the last part of the URL, which should be the file name with extension
         const tableName = parts[parts.length - 1];
 
         fetch(tableURL)
-        .then(res => res.text())
-        .then(content => {
-            let table : undefined | DictTable = undefined;
-            try {
-                let jsonContent = JSON.parse(content);
-                table = createTableFromFromObjectArray(tableName || 'dataset', jsonContent, true);
-            } catch (error) {
-                table = createTableFromText(tableName || 'dataset', content);
-            }
+            .then(res => res.text())
+            .then(content => {
+                let table: undefined | DictTable = undefined;
+                try {
+                    let jsonContent = JSON.parse(content);
+                    table = createTableFromFromObjectArray(tableName || 'dataset', jsonContent, true);
+                } catch (error) {
+                    table = createTableFromText(tableName || 'dataset', content);
+                }
 
-            if (table) {
-                dispatch(dfActions.loadTable(table));
-                dispatch(fetchFieldSemanticType(table));
-            }        
-        })
+                if (table) {
+                    dispatch(dfActions.loadTable(table));
+                    dispatch(fetchFieldSemanticType(table));
+                }
+            })
     };
 
     let hasValidSuffix = tableURL.endsWith('.csv') || tableURL.endsWith('.tsv') || tableURL.endsWith(".json");
 
-    let dialog = <Dialog key="table-url-dialog" onClose={()=>{setDialogOpen(false)}} open={dialogOpen}
-            sx={{ '& .MuiDialog-paper': { maxWidth: '80%', maxHeight: 800, minWidth: 800 } }} disableRestoreFocus
-        >
-            <DialogTitle  sx={{display: "flex"}}>Upload data URL
-                <IconButton
-                    sx={{marginLeft: "auto"}}
-                    edge="start"
-                    size="small"
-                    color="inherit"
-                    onClick={()=>{ setDialogOpen(false); }}
-                    aria-label="close"
-                >
-                    <CloseIcon fontSize="inherit"/>
-                </IconButton>
-            </DialogTitle>
-            <DialogContent sx={{overflowX: "hidden", padding: 2, display: "flex", flexDirection: "column"}} dividers>
-                <TextField error={tableURL != "" && !hasValidSuffix} autoFocus placeholder='Please enter URL of the dataset' 
-                            helperText={hasValidSuffix ? "" : "the url should links to a csv, tsv or json file"}
-                            sx={{marginBottom: 1}} size="small" value={tableURL} onChange={(event) => { setTableURL(event.target.value.trim()); }} 
-                            id="dataset-url" label="data url" variant="outlined" />
-            </ DialogContent>
-            <DialogActions>
-                <Button variant="contained" size="small" onClick={()=>{ setDialogOpen(false); }}>cancel</Button>
-                <Button variant="contained" size="small" onClick={()=>{ setDialogOpen(false); handleSubmitContent(); }} >
-                    upload
-                </Button>
-            </DialogActions>
-        </Dialog>;
+    let dialog = <Dialog key="table-url-dialog" onClose={() => { setDialogOpen(false) }} open={dialogOpen}
+        sx={{ '& .MuiDialog-paper': { maxWidth: '80%', maxHeight: 800, minWidth: 800 } }} disableRestoreFocus
+    >
+        <DialogTitle sx={{ display: "flex" }}>Upload data URL
+            <IconButton
+                sx={{ marginLeft: "auto" }}
+                edge="start"
+                size="small"
+                color="inherit"
+                onClick={() => { setDialogOpen(false); }}
+                aria-label="close"
+            >
+                <CloseIcon fontSize="inherit" />
+            </IconButton>
+        </DialogTitle>
+        <DialogContent sx={{ overflowX: "hidden", padding: 2, display: "flex", flexDirection: "column" }} dividers>
+            <TextField error={tableURL != "" && !hasValidSuffix} autoFocus placeholder='Please enter URL of the dataset'
+                helperText={hasValidSuffix ? "" : "the url should links to a csv, tsv or json file"}
+                sx={{ marginBottom: 1 }} size="small" value={tableURL} onChange={(event) => { setTableURL(event.target.value.trim()); }}
+                id="dataset-url" label="data url" variant="outlined" />
+        </ DialogContent>
+        <DialogActions>
+            <Button variant="contained" size="small" onClick={() => { setDialogOpen(false); }}>cancel</Button>
+            <Button variant="contained" size="small" onClick={() => { setDialogOpen(false); handleSubmitContent(); }} >
+                upload
+            </Button>
+        </DialogActions>
+    </Dialog>;
 
     return <>
-        <Button sx={{fontSize: "inherit"}} variant="text" color="primary" 
-                    disabled={disabled} onClick={()=>{setDialogOpen(true)}}>
+        <Button sx={{ fontSize: "inherit" }} variant="text" color="primary"
+            disabled={disabled} onClick={() => { setDialogOpen(true) }}>
             {buttonElement}
         </Button>
         {dialog}
@@ -552,7 +558,7 @@ export const TableURLDialog: React.FC<TableURLDialogProps> = ({ buttonElement, d
 export const TableCopyDialogV2: React.FC<TableCopyDialogProps> = ({ buttonElement, disabled }) => {
 
     const [dialogOpen, setDialogOpen] = useState<boolean>(false);
-    
+
     const [tableContent, setTableContent] = useState<string>("");
     const [tableContentType, setTableContentType] = useState<'text' | 'image'>('text');
 
@@ -563,7 +569,7 @@ export const TableCopyDialogV2: React.FC<TableCopyDialogProps> = ({ buttonElemen
     const [isLargeContent, setIsLargeContent] = useState<boolean>(false);
     const [showFullContent, setShowFullContent] = useState<boolean>(false);
     const [isOverSizeLimit, setIsOverSizeLimit] = useState<boolean>(false);
-    
+
     // Constants for content size limits
     const MAX_DISPLAY_LINES = 20; // Reduced from 30
     const LARGE_CONTENT_THRESHOLD = 50000; // ~50KB threshold
@@ -575,7 +581,7 @@ export const TableCopyDialogV2: React.FC<TableCopyDialogProps> = ({ buttonElemen
 
     let handleSubmitContent = (tableStr: string): void => {
         let table: undefined | DictTable = undefined;
-        
+
         // Generate a short unique name based on content and time if no name provided
         const defaultName = (() => {
             const hashStr = tableStr.substring(0, 100) + Date.now();
@@ -598,23 +604,23 @@ export const TableCopyDialogV2: React.FC<TableCopyDialogProps> = ({ buttonElemen
         if (table) {
             dispatch(dfActions.loadTable(table));
             dispatch(fetchFieldSemanticType(table));
-        }        
+        }
     };
 
     // Optimized content change handler
     const handleContentChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
         const newContent = event.target.value;
         setTableContent(newContent);
-        
+
         // Check if content exceeds size limit
         const contentSizeBytes = new Blob([newContent]).size;
         const isOverLimit = contentSizeBytes > MAX_CONTENT_SIZE;
         setIsOverSizeLimit(isOverLimit);
-        
+
         // Check if content is large
         const isLarge = newContent.length > LARGE_CONTENT_THRESHOLD;
         setIsLargeContent(isLarge);
-        
+
         if (isLarge && !showFullContent) {
             // For large content, only show a preview in the TextField
             const lines = newContent.split('\n');
@@ -651,125 +657,127 @@ export const TableCopyDialogV2: React.FC<TableCopyDialogProps> = ({ buttonElemen
     }, []);
 
     let dialog = <Dialog key="table-selection-dialog" onClose={handleCloseDialog} open={dialogOpen}
-            sx={{ '& .MuiDialog-paper': { maxWidth: '80%', maxHeight: 800, minWidth: 800 } }}
-        >
-            <DialogTitle  sx={{display: "flex"}}>Paste & Upload Data
-                <IconButton
-                    sx={{marginLeft: "auto"}}
-                    edge="start"
-                    size="small"
-                    color="inherit"
-                    onClick={handleCloseDialog}
-                    aria-label="close"
-                >
-                    <CloseIcon fontSize="inherit"/>
-                </IconButton>
-            </DialogTitle>
-            <DialogContent sx={{overflowX: "hidden", padding: 2, display: "flex", 
-                                flexDirection: "column", 
-                                "& .MuiOutlinedInput-root.Mui-disabled": {backgroundColor: 'rgba(0,0,0,0.05)'}}} dividers>
-                <Box sx={{width: '100%',  display:'flex', position: 'relative', overflow: 'auto'}}>
-                    {cleaningInProgress && tableContentType == "text" ? <LinearProgress sx={{ width: '100%', height: "calc(100% - 8px)", marginTop: 1, minHeight: 200, opacity: 0.1, position: 'absolute', zIndex: 1 }} /> : ""}
-                    <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-                        {/* Size limit warning */}
-                        {isOverSizeLimit && (
-                            <Box sx={{ display: 'flex', alignItems: 'center', marginBottom: 1, padding: 1, backgroundColor: 'rgba(244, 67, 54, 0.1)', borderRadius: 1, border: '1px solid rgba(244, 67, 54, 0.3)' }}>
-                                <Typography variant="caption" sx={{ flex: 1, color: 'error.main', fontWeight: 500 }}>
-                                    ⚠️ Content exceeds {(MAX_CONTENT_SIZE / (1024 * 1024)).toFixed(0)}MB size limit. 
-                                    Current size: {(new Blob([tableContent]).size / (1024 * 1024)).toFixed(2)}MB. 
-                                    Please use the DATABASE option for large datasets.
-                                </Typography>
-                            </Box>
-                        )}
-                        {/* Content size indicator */}
-                        {isLargeContent && !isOverSizeLimit && (
-                            <Box sx={{ display: 'flex', alignItems: 'center', marginBottom: 1, padding: 1, backgroundColor: 'rgba(255, 193, 7, 0.1)', borderRadius: 1 }}>
-                                <Typography variant="caption" sx={{ flex: 1 }}>
-                                    Large content detected ({Math.round(tableContent.length / 1000)}KB). 
-                                    {showFullContent ? 'Showing full content (may be slow)' : 'Showing preview for performance'}
-                                </Typography>
-                                <Button 
-                                    size="small" 
-                                    variant="outlined" 
-                                    onClick={toggleFullContent}
-                                    sx={{ textTransform: 'none', minWidth: 'auto' }}
-                                >
-                                    {showFullContent ? 'Show Preview' : 'Show Full'}
-                                </Button>
-                            </Box>
-                        )}
-                        
-                        <TextField 
-                            disabled={cleaningInProgress} 
-                            autoFocus 
-                            size="small" 
-                            sx={{ 
-                                marginTop: 1, 
-                                flex: 1, 
-                                "& .MuiInputBase-input": {
-                                    fontSize: 12, 
-                                    lineHeight: 1.2,
-                                    // Limit height for performance
-                                    maxHeight: isLargeContent && !showFullContent ? '300px' : '400px',
-                                    overflow: 'auto'
-                                }
-                            }} 
-                            id="upload content" 
-                            value={displayContent} 
-                            maxRows={isLargeContent && !showFullContent ? MAX_DISPLAY_LINES : 25} // Dynamic max rows
-                            minRows={10} // Reduced from 15
-                            onChange={handleContentChange}
-                            slotProps={{
-                                inputLabel: {
-                                    shrink: true
-                                }
-                            }}
-                            placeholder="paste data (csv, tsv, or json) and upload it!"
-                            onPasteCapture={(e) => {
-                                if (e.clipboardData.files.length > 0) {
-                                    let file = e.clipboardData.files[0];
-                                    let read = new FileReader();
+        sx={{ '& .MuiDialog-paper': { maxWidth: '80%', maxHeight: 800, minWidth: 800 } }}
+    >
+        <DialogTitle sx={{ display: "flex" }}>Paste & Upload Data
+            <IconButton
+                sx={{ marginLeft: "auto" }}
+                edge="start"
+                size="small"
+                color="inherit"
+                onClick={handleCloseDialog}
+                aria-label="close"
+            >
+                <CloseIcon fontSize="inherit" />
+            </IconButton>
+        </DialogTitle>
+        <DialogContent sx={{
+            overflowX: "hidden", padding: 2, display: "flex",
+            flexDirection: "column",
+            "& .MuiOutlinedInput-root.Mui-disabled": { backgroundColor: 'rgba(0,0,0,0.05)' }
+        }} dividers>
+            <Box sx={{ width: '100%', display: 'flex', position: 'relative', overflow: 'auto' }}>
+                {cleaningInProgress && tableContentType == "text" ? <LinearProgress sx={{ width: '100%', height: "calc(100% - 8px)", marginTop: 1, minHeight: 200, opacity: 0.1, position: 'absolute', zIndex: 1 }} /> : ""}
+                <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+                    {/* Size limit warning */}
+                    {isOverSizeLimit && (
+                        <Box sx={{ display: 'flex', alignItems: 'center', marginBottom: 1, padding: 1, backgroundColor: 'rgba(244, 67, 54, 0.1)', borderRadius: 1, border: '1px solid rgba(244, 67, 54, 0.3)' }}>
+                            <Typography variant="caption" sx={{ flex: 1, color: 'error.main', fontWeight: 500 }}>
+                                ⚠️ Content exceeds {(MAX_CONTENT_SIZE / (1024 * 1024)).toFixed(0)}MB size limit.
+                                Current size: {(new Blob([tableContent]).size / (1024 * 1024)).toFixed(2)}MB.
+                                Please use the DATABASE option for large datasets.
+                            </Typography>
+                        </Box>
+                    )}
+                    {/* Content size indicator */}
+                    {isLargeContent && !isOverSizeLimit && (
+                        <Box sx={{ display: 'flex', alignItems: 'center', marginBottom: 1, padding: 1, backgroundColor: 'rgba(255, 193, 7, 0.1)', borderRadius: 1 }}>
+                            <Typography variant="caption" sx={{ flex: 1 }}>
+                                Large content detected ({Math.round(tableContent.length / 1000)}KB).
+                                {showFullContent ? 'Showing full content (may be slow)' : 'Showing preview for performance'}
+                            </Typography>
+                            <Button
+                                size="small"
+                                variant="outlined"
+                                onClick={toggleFullContent}
+                                sx={{ textTransform: 'none', minWidth: 'auto' }}
+                            >
+                                {showFullContent ? 'Show Preview' : 'Show Full'}
+                            </Button>
+                        </Box>
+                    )}
 
-                                    read.readAsDataURL(file);
-                                    read.onloadend = function(){
-                                        let res = read.result;
-                                        console.log(res);
-                                        if (res) { 
-                                            setTableContent(res as string); 
-                                            setTableContentType("image");
-                                        }
+                    <TextField
+                        disabled={cleaningInProgress}
+                        autoFocus
+                        size="small"
+                        sx={{
+                            marginTop: 1,
+                            flex: 1,
+                            "& .MuiInputBase-input": {
+                                fontSize: 12,
+                                lineHeight: 1.2,
+                                // Limit height for performance
+                                maxHeight: isLargeContent && !showFullContent ? '300px' : '400px',
+                                overflow: 'auto'
+                            }
+                        }}
+                        id="upload content"
+                        value={displayContent}
+                        maxRows={isLargeContent && !showFullContent ? MAX_DISPLAY_LINES : 25} // Dynamic max rows
+                        minRows={10} // Reduced from 15
+                        onChange={handleContentChange}
+                        slotProps={{
+                            inputLabel: {
+                                shrink: true
+                            }
+                        }}
+                        placeholder="paste data (csv, tsv, or json) and upload it!"
+                        onPasteCapture={(e) => {
+                            if (e.clipboardData.files.length > 0) {
+                                let file = e.clipboardData.files[0];
+                                let read = new FileReader();
+
+                                read.readAsDataURL(file);
+                                read.onloadend = function () {
+                                    let res = read.result;
+                                    console.log(res);
+                                    if (res) {
+                                        setTableContent(res as string);
+                                        setTableContentType("image");
                                     }
                                 }
-                            }}
-                            autoComplete='off'
-                            label="data content" 
-                            variant="outlined" 
-                            multiline 
-                        />
-                    </Box>
+                            }
+                        }}
+                        autoComplete='off'
+                        label="data content"
+                        variant="outlined"
+                        multiline
+                    />
                 </Box>
-            </DialogContent>
-            <DialogActions>
-                <Button variant="text" sx={{textTransform: 'none'}} size="small" onClick={handleCloseDialog}>cancel</Button>
-                <Tooltip title={isOverSizeLimit ? `Content exceeds ${(MAX_CONTENT_SIZE / (1024 * 1024)).toFixed(0)}MB size limit` : ""} placement="top">
-                    <span>
-                        <Button disabled={tableContentType != "text" || tableContent.trim() == "" || isOverSizeLimit} variant="contained" sx={{textTransform: 'none'}} size="small" 
-                            onClick={()=>{ 
-                                handleCloseDialog(); 
-                                handleSubmitContent(tableContent); // Always use full content for processing
-                            }} >
-                            {"upload"}
-                        </Button>
-                    </span>
-                </Tooltip>
-            </DialogActions>
-            
-        </Dialog>;
+            </Box>
+        </DialogContent>
+        <DialogActions>
+            <Button variant="text" sx={{ textTransform: 'none' }} size="small" onClick={handleCloseDialog}>cancel</Button>
+            <Tooltip title={isOverSizeLimit ? `Content exceeds ${(MAX_CONTENT_SIZE / (1024 * 1024)).toFixed(0)}MB size limit` : ""} placement="top">
+                <span>
+                    <Button disabled={tableContentType != "text" || tableContent.trim() == "" || isOverSizeLimit} variant="contained" sx={{ textTransform: 'none' }} size="small"
+                        onClick={() => {
+                            handleCloseDialog();
+                            handleSubmitContent(tableContent); // Always use full content for processing
+                        }} >
+                        {"upload"}
+                    </Button>
+                </span>
+            </Tooltip>
+        </DialogActions>
+
+    </Dialog>;
 
     return <>
-        <Button sx={{fontSize: "inherit"}} variant="text" color="primary" 
-                    disabled={disabled} onClick={()=>{setDialogOpen(true)}}>
-                {buttonElement}
+        <Button sx={{ fontSize: "inherit" }} variant="text" color="primary"
+            disabled={disabled} onClick={() => { setDialogOpen(true) }}>
+            {buttonElement}
         </Button>
         {dialog}
     </>;

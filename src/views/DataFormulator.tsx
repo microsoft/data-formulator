@@ -5,7 +5,7 @@ import React, { useEffect, useState } from 'react';
 import '../scss/App.scss';
 
 import { useDispatch, useSelector } from "react-redux"; /* code change */
-import { 
+import {
     DataFormulatorState,
     dfActions,
     dfSelectors,
@@ -44,6 +44,7 @@ import { TableCopyDialogV2, DatasetSelectionDialog } from './TableSelectionView'
 import { TableUploadDialog } from './TableSelectionView';
 import { toolName } from '../app/App';
 import { DataThread } from './DataThread';
+import { useTranslation } from 'react-i18next';
 
 import dfLogo from '../assets/df-logo.png';
 import exampleImageTable from "../assets/example-image-table.png";
@@ -55,6 +56,7 @@ import { ReportView } from './ReportView';
 import { ExampleSession, exampleSessions, ExampleSessionCard } from './ExampleSessions';
 
 export const DataFormulatorFC = ({ }) => {
+    const { t } = useTranslation();
 
     const tables = useSelector((state: DataFormulatorState) => state.tables);
     const models = useSelector((state: DataFormulatorState) => state.models);
@@ -62,7 +64,7 @@ export const DataFormulatorFC = ({ }) => {
     const viewMode = useSelector((state: DataFormulatorState) => state.viewMode);
     const theme = useTheme();
 
-    const noBrokenModelSlots= useSelector((state: DataFormulatorState) => {
+    const noBrokenModelSlots = useSelector((state: DataFormulatorState) => {
         const slotTypes = dfSelectors.getAllSlotTypes();
         return slotTypes.every(
             slotType => state.modelSlots[slotType] !== undefined && state.testedModels.find(t => t.id == state.modelSlots[slotType])?.status != 'error');
@@ -75,21 +77,21 @@ export const DataFormulatorFC = ({ }) => {
             timestamp: Date.now(),
             type: 'info',
             component: 'data formulator',
-            value: `Loading example session: ${session.title}`,
+            value: t('messages.loadingExample', { title: session.title }),
         }));
-        
+
         // Load the complete state from the JSON file
         fetch(session.dataFile)
             .then(res => res.json())
             .then(savedState => {
                 // Use loadState to restore the complete session state
                 dispatch(dfActions.loadState(savedState));
-                
+
                 dispatch(dfActions.addMessages({
                     timestamp: Date.now(),
                     type: 'success',
                     component: 'data formulator',
-                    value: `Successfully loaded ${session.title}`,
+                    value: t('messages.loadedExample', { title: session.title }),
                 }));
             })
             .catch(error => {
@@ -98,20 +100,20 @@ export const DataFormulatorFC = ({ }) => {
                     timestamp: Date.now(),
                     type: 'error',
                     component: 'data formulator',
-                    value: `Failed to load ${session.title}: ${error.message}`,
+                    value: t('messages.failedToLoad', { title: session.title, error: error.message }),
                 }));
             });
     };
 
     useEffect(() => {
         document.title = toolName;
-        
+
         // Preload imported images (public images are preloaded in index.html)
         const imagesToPreload = [
             { src: dfLogo, type: 'image/png' },
             { src: exampleImageTable, type: 'image/png' },
         ];
-        
+
         const preloadLinks: HTMLLinkElement[] = [];
         imagesToPreload.forEach(({ src, type }) => {
             // Use link preload for better priority
@@ -123,7 +125,7 @@ export const DataFormulatorFC = ({ }) => {
             document.head.appendChild(link);
             preloadLinks.push(link);
         });
-        
+
         // Cleanup function to remove preload links when component unmounts
         return () => {
             preloadLinks.forEach(link => {
@@ -138,7 +140,7 @@ export const DataFormulatorFC = ({ }) => {
         const findWorkingModel = async () => {
             let assignedModels = models.filter(m => Object.values(modelSlots).includes(m.id));
             let unassignedModels = models.filter(m => !Object.values(modelSlots).includes(m.id));
-            
+
             // Test assigned models in parallel for faster loading
             const assignedPromises = assignedModels.map(async (model) => {
                 const message = {
@@ -147,19 +149,19 @@ export const DataFormulatorFC = ({ }) => {
                     body: JSON.stringify({ model }),
                 };
                 try {
-                    const response = await fetch(getUrls().TEST_MODEL, {...message });
+                    const response = await fetch(getUrls().TEST_MODEL, { ...message });
                     const data = await response.json();
                     const status = data["status"] || 'error';
-                    dispatch(dfActions.updateModelStatus({id: model.id, status, message: data["message"] || ""}));
+                    dispatch(dfActions.updateModelStatus({ id: model.id, status, message: data["message"] || "" }));
                     return { model, status };
                 } catch (error) {
-                    dispatch(dfActions.updateModelStatus({id: model.id, status: 'error', message: (error as Error).message || 'Failed to test model'}));
+                    dispatch(dfActions.updateModelStatus({ id: model.id, status: 'error', message: (error as Error).message || 'Failed to test model' }));
                     return { model, status: 'error' };
                 }
             });
-            
+
             await Promise.all(assignedPromises);
-            
+
             // Then test unassigned models sequentially until one works
             for (let model of unassignedModels) {
                 const message = {
@@ -168,13 +170,13 @@ export const DataFormulatorFC = ({ }) => {
                     body: JSON.stringify({ model }),
                 };
                 try {
-                    const response = await fetch(getUrls().TEST_MODEL, {...message });
+                    const response = await fetch(getUrls().TEST_MODEL, { ...message });
                     const data = await response.json();
                     const status = data["status"] || 'error';
-                    dispatch(dfActions.updateModelStatus({id: model.id, status, message: data["message"] || ""}));
+                    dispatch(dfActions.updateModelStatus({ id: model.id, status, message: data["message"] || "" }));
                     if (status == 'ok') break;
                 } catch (error) {
-                    dispatch(dfActions.updateModelStatus({id: model.id, status: 'error', message: (error as Error).message || 'Failed to test model'}));
+                    dispatch(dfActions.updateModelStatus({ id: model.id, status: 'error', message: (error as Error).message || 'Failed to test model' }));
                 }
             }
         };
@@ -190,14 +192,16 @@ export const DataFormulatorFC = ({ }) => {
         </Box>);
 
     const visPane = (
-        <Box sx={{width: '100%', height: '100%', 
+        <Box sx={{
+            width: '100%', height: '100%',
             "& .split-view-view:first-of-type": {
                 display: 'flex',
                 overflow: 'hidden',
-        }}}>
+            }
+        }}>
             <Allotment vertical>
                 <Allotment.Pane minSize={200} >
-                {visPaneMain}
+                    {visPaneMain}
                 </Allotment.Pane>
                 <Allotment.Pane minSize={120} preferredSize={200}>
                     <Box className="table-box">
@@ -208,25 +212,26 @@ export const DataFormulatorFC = ({ }) => {
         </Box>);
 
     let borderBoxStyle = {
-        border: '1px solid rgba(0,0,0,0.1)', 
-        borderRadius: '16px', 
+        border: '1px solid rgba(0,0,0,0.1)',
+        borderRadius: '16px',
         boxShadow: '0 0 5px rgba(0,0,0,0.1)',
     }
 
-    const fixedSplitPane = ( 
-        <Box sx={{display: 'flex', flexDirection: 'row', height: '100%'}}>
+    const fixedSplitPane = (
+        <Box sx={{ display: 'flex', flexDirection: 'row', height: '100%' }}>
             <Box sx={{
                 ...borderBoxStyle,
-                    margin: '4px 4px 4px 8px', backgroundColor: 'white',
-                    display: 'flex', height: '100%', width: 'fit-content', flexDirection: 'column'}}>
-                {tables.length > 0 ?  <DataThread sx={{
+                margin: '4px 4px 4px 8px', backgroundColor: 'white',
+                display: 'flex', height: '100%', width: 'fit-content', flexDirection: 'column'
+            }}>
+                {tables.length > 0 ? <DataThread sx={{
                     minWidth: 201,
-                    display: 'flex', 
+                    display: 'flex',
                     flexDirection: 'column',
                     overflow: 'hidden',
                     alignContent: 'flex-start',
                     height: '100%',
-                }}/>  : ""} 
+                }} /> : ""}
             </Box>
             <Box sx={{
                 ...borderBoxStyle,
@@ -242,11 +247,11 @@ export const DataFormulatorFC = ({ }) => {
                     <ReportView />
                 )}
             </Box>
-            
+
         </Box>
     );
 
-    let exampleMessyText=`Rank	NOC	Gold	Silver	Bronze	Total
+    let exampleMessyText = `Rank	NOC	Gold	Silver	Bronze	Total
 1	 South Korea	5	1	1	7
 2	 France*	0	1	1	2
  United States	0	1	1	2
@@ -257,92 +262,98 @@ export const DataFormulatorFC = ({ }) => {
 Totals (7 entries)	5	5	5	15
 `
 
-    let footer = <Box sx={{ color: 'text.secondary', display: 'flex', 
-            backgroundColor: 'rgba(255, 255, 255, 0.89)',
-            alignItems: 'center', justifyContent: 'center' }}>
-        <Button size="small" color="inherit" 
-            sx={{ textTransform: 'none'}} 
-            target="_blank" rel="noopener noreferrer" 
-            href="https://www.microsoft.com/en-us/privacy/privacystatement">Privacy & Cookies</Button>
+    let footer = <Box sx={{
+        color: 'text.secondary', display: 'flex',
+        backgroundColor: 'rgba(255, 255, 255, 0.89)',
+        alignItems: 'center', justifyContent: 'center'
+    }}>
+        <Button size="small" color="inherit"
+            sx={{ textTransform: 'none' }}
+            target="_blank" rel="noopener noreferrer"
+            href="https://www.microsoft.com/en-us/privacy/privacystatement">{t('dataFormulator.privacyCookies')}</Button>
         <Divider orientation="vertical" variant="middle" flexItem sx={{ mx: 1 }} />
-        <Button size="small" color="inherit" 
-            sx={{ textTransform: 'none'}} 
-            target="_blank" rel="noopener noreferrer" 
-            href="https://www.microsoft.com/en-us/legal/intellectualproperty/copyright">Terms of Use</Button>
+        <Button size="small" color="inherit"
+            sx={{ textTransform: 'none' }}
+            target="_blank" rel="noopener noreferrer"
+            href="https://www.microsoft.com/en-us/legal/intellectualproperty/copyright">{t('dataFormulator.termsOfUse')}</Button>
         <Divider orientation="vertical" variant="middle" flexItem sx={{ mx: 1 }} />
-        <Button size="small" color="inherit" 
-            sx={{ textTransform: 'none'}} 
-            target="_blank" rel="noopener noreferrer" 
-            href="https://github.com/microsoft/data-formulator/issues">Contact Us</Button>
+        <Button size="small" color="inherit"
+            sx={{ textTransform: 'none' }}
+            target="_blank" rel="noopener noreferrer"
+            href="https://github.com/microsoft/data-formulator/issues">{t('dataFormulator.contactUs')}</Button>
         <Typography sx={{ display: 'inline', fontSize: '12px', ml: 1 }}> @ {new Date().getFullYear()}</Typography>
     </Box>
 
     let dataUploadRequestBox = <Box sx={{
-            margin: '4px 4px 4px 8px', 
-            width: 'calc(100vw - 16px)', overflow: 'auto', display: 'flex', flexDirection: 'column', height: '100%',
-        }}
-        >
-        <Box sx={{margin:'auto', pb: '5%', display: "flex", flexDirection: "column", textAlign: "center" }}>
-            <Box sx={{display: 'flex', mx: 'auto', mb: 2, width: 'fit-content', flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+        margin: '4px 4px 4px 8px',
+        width: 'calc(100vw - 16px)', overflow: 'auto', display: 'flex', flexDirection: 'column', height: '100%',
+    }}
+    >
+        <Box sx={{ margin: 'auto', pb: '5%', display: "flex", flexDirection: "column", textAlign: "center" }}>
+            <Box sx={{
+                display: 'flex', mx: 'auto', mb: 2, width: 'fit-content', flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
                 background: `
                 linear-gradient(90deg, ${alpha(theme.palette.text.secondary, 0.02)} 1px, transparent 1px),
                 linear-gradient(0deg, ${alpha(theme.palette.text.secondary, 0.02)} 1px, transparent 1px)
             `,
-            backgroundSize: '16px 16px',
-            p: 2,
-            borderRadius: '8px',
+                backgroundSize: '16px 16px',
+                p: 2,
+                borderRadius: '8px',
             }}>
-                <Box component="img" sx={{  width: 84,  }} alt="" src={dfLogo} fetchPriority="high" /> 
-                <Typography fontSize={64} sx={{ml: 2, letterSpacing: '0.05em', fontWeight: 200, color: 'text.primary'}}>{toolName}</Typography> 
+                <Box component="img" sx={{ width: 84, }} alt="" src={dfLogo} fetchPriority="high" />
+                <Typography fontSize={64} sx={{ ml: 2, letterSpacing: '0.05em', fontWeight: 200, color: 'text.primary' }}>{toolName}</Typography>
             </Box>
-            <Typography fontSize={24} sx={{color: 'text.secondary'}}>Turn data into insights with AI agents, with the exploration paths you choose.</Typography>
-            <Box sx={{mt: 4, width: '100%', borderRadius: 8, 
+            <Typography fontSize={24} sx={{ color: 'text.secondary' }}>{t('dataFormulator.tagline')}</Typography>
+            <Box sx={{
+                mt: 4, width: '100%', borderRadius: 8,
                 background: `
                     linear-gradient(90deg, ${alpha(theme.palette.text.secondary, 0.02)} 1px, transparent 1px),
                     linear-gradient(0deg, ${alpha(theme.palette.text.secondary, 0.02)} 1px, transparent 1px)
                 `,
                 backgroundSize: '16px 16px',
-                p: 2}}>
-                <Divider sx={{width: '200px', mx: 'auto', mb: 2, fontSize: '1.2rem', color: 'text.disabled'}}>
+                p: 2
+            }}>
+                <Divider sx={{ width: '200px', mx: 'auto', mb: 2, fontSize: '1.2rem', color: 'text.disabled' }}>
                     <Typography sx={{ fontSize: 14, color: 'text.disabled' }}>
-                        load some data
+                        {t('dataFormulator.loadSomeData')}
                     </Typography>
                 </Divider>
-                <Typography  variant="h4" sx={{mx: 'auto', width: 1080,  fontSize: 24}}>
-                    <DataLoadingChatDialog buttonElement={<><AutoFixNormalIcon sx={{ mr: 1, verticalAlign: 'middle' }} />Messy data</>}/>  
+                <Typography variant="h4" sx={{ mx: 'auto', width: 1080, fontSize: 24 }}>
+                    <DataLoadingChatDialog buttonElement={<><AutoFixNormalIcon sx={{ mr: 1, verticalAlign: 'middle' }} />{t('dataFormulator.messyData')}</>} />
                     <Box component="span" sx={{ mx: 2, color: 'text.disabled', fontSize: '0.8em' }}>•</Box>
-                    <DatasetSelectionDialog  buttonElement={<><CategoryIcon sx={{ mr: 1, verticalAlign: 'middle' }} />Examples</>} /> 
+                    <DatasetSelectionDialog buttonElement={<><CategoryIcon sx={{ mr: 1, verticalAlign: 'middle' }} />{t('dataFormulator.examples')}</>} />
                     <Box component="span" sx={{ mx: 2, color: 'text.disabled', fontSize: '0.8em' }}>•</Box>
-                    <TableUploadDialog buttonElement={<><FolderOpenIcon sx={{ mr: 1, verticalAlign: 'middle' }} />files</>} disabled={false} /> 
+                    <TableUploadDialog buttonElement={<><FolderOpenIcon sx={{ mr: 1, verticalAlign: 'middle' }} />{t('dataFormulator.files')}</>} disabled={false} />
                     <Box component="span" sx={{ mx: 2, color: 'text.disabled', fontSize: '0.8em' }}>•</Box>
-                    <TableCopyDialogV2 buttonElement={<><ContentPasteIcon sx={{ mr: 1, verticalAlign: 'middle' }} />clipboard</>} disabled={false} /> 
+                    <TableCopyDialogV2 buttonElement={<><ContentPasteIcon sx={{ mr: 1, verticalAlign: 'middle' }} />{t('dataFormulator.clipboard')}</>} disabled={false} />
                     <Box component="span" sx={{ mx: 2, color: 'text.disabled', fontSize: '0.8em' }}>•</Box>
-                    <DBTableSelectionDialog buttonElement={<><CloudQueueIcon sx={{ mr: 1, verticalAlign: 'middle' }} />Database</>} />
+                    <DBTableSelectionDialog buttonElement={<><CloudQueueIcon sx={{ mr: 1, verticalAlign: 'middle' }} />{t('dataFormulator.database')}</>} />
                     {/* <br /> */}
                     {/* <Typography sx={{ml: 10, fontSize: 14, color: 'darkgray', transform: 'translateY(-12px)'}}>(csv, tsv, xlsx, json or database)</Typography> */}
                     <Typography variant="body1" color="text.secondary" sx={{ mt: 2, width: '100%' }}>
-                        Load structured data from CSV, Excel, JSON, database, or extract data from{' '}
-                        <Tooltip title={<Box>Example of a screenshot of data: <Box component="img" sx={{ width: '100%', marginTop: '6px' }} alt="" src={exampleImageTable} /></Box>}>
-                            <Box component="span" sx={{color: 'secondary.main', cursor: 'help', "&:hover": {textDecoration: 'underline'}}}>screenshots</Box>
+                        {t('dataFormulator.loadDataDescription')}{' '}
+                        <Tooltip title={<Box>{t('tooltips.exampleScreenshot')} <Box component="img" sx={{ width: '100%', marginTop: '6px' }} alt="" src={exampleImageTable} /></Box>}>
+                            <Box component="span" sx={{ color: 'secondary.main', cursor: 'help', "&:hover": { textDecoration: 'underline' } }}>{t('dataFormulator.screenshots')}</Box>
                         </Tooltip>{' '}
                         and{' '}
-                        <Tooltip title={<Box>Example of a messy text block: <Typography sx={{fontSize: 10, marginTop: '6px'}} component="pre">{exampleMessyText}</Typography></Box>}>
-                            <Box component="span" sx={{color: 'secondary.main', cursor: 'help', "&:hover": {textDecoration: 'underline'}}}>text blocks</Box>
+                        <Tooltip title={<Box>{t('tooltips.exampleMessyText')} <Typography sx={{ fontSize: 10, marginTop: '6px' }} component="pre">{exampleMessyText}</Typography></Box>}>
+                            <Box component="span" sx={{ color: 'secondary.main', cursor: 'help', "&:hover": { textDecoration: 'underline' } }}>{t('dataFormulator.textBlocks')}</Box>
                         </Tooltip>{' '}
-                        using AI.
-                    </Typography> 
+                        {t('dataFormulator.usingAI')}
+                    </Typography>
                 </Typography>
             </Box>
-            <Box sx={{mt: 4, borderRadius: 8, p: 2,
+            <Box sx={{
+                mt: 4, borderRadius: 8, p: 2,
                 background: `
                  linear-gradient(90deg, ${alpha(theme.palette.text.secondary, 0.02)} 1px, transparent 1px),
                  linear-gradient(0deg, ${alpha(theme.palette.text.secondary, 0.02)} 1px, transparent 1px)
                 `,
                 backgroundSize: '16px 16px',
             }}>
-                <Divider sx={{width: '200px', mx: 'auto', mb: 3, fontSize: '1.2rem', color: 'text.disabled'}}>
+                <Divider sx={{ width: '200px', mx: 'auto', mb: 3, fontSize: '1.2rem', color: 'text.disabled' }}>
                     <Typography sx={{ fontSize: 14, color: 'text.disabled' }}>
-                        or, explore examples
+                        {t('dataFormulator.orExploreExamples')}
                     </Typography>
                 </Divider>
                 <Box sx={{ alignItems: 'center' }}>
@@ -367,7 +378,7 @@ Totals (7 entries)	5	5	5	15
         </Box>
         {footer}
     </Box>;
-    
+
     return (
         <Box sx={{ display: 'block', width: "100%", height: 'calc(100% - 54px)', position: 'relative' }}>
             <DndProvider backend={HTML5Backend}>
@@ -385,15 +396,15 @@ Totals (7 entries)	5	5	5	15
                         flexDirection: 'column',
                         zIndex: 1000,
                     }}>
-                        <Box sx={{margin:'auto', pb: '5%', display: "flex", flexDirection: "column", textAlign: "center"}}>
-                            <Box component="img" sx={{  width: 196, margin: "auto" }} alt="" src={dfLogo} fetchPriority="high" />
-                            <Typography variant="h3" sx={{marginTop: "20px", fontWeight: 200, letterSpacing: '0.05em'}}>
+                        <Box sx={{ margin: 'auto', pb: '5%', display: "flex", flexDirection: "column", textAlign: "center" }}>
+                            <Box component="img" sx={{ width: 196, margin: "auto" }} alt="" src={dfLogo} fetchPriority="high" />
+                            <Typography variant="h3" sx={{ marginTop: "20px", fontWeight: 200, letterSpacing: '0.05em' }}>
                                 {toolName}
                             </Typography>
-                            <Typography  variant="h4" sx={{mt: 3, fontSize: 28, letterSpacing: '0.02em'}}>
-                                First, let's <ModelSelectionButton />
+                            <Typography variant="h4" sx={{ mt: 3, fontSize: 28, letterSpacing: '0.02em' }}>
+                                {t('dataFormulator.firstLetsSelectModel')} <ModelSelectionButton />
                             </Typography>
-                            <Typography  color="text.secondary" variant="body1" sx={{mt: 2, width: 600}}>💡 Models with strong code generation capabilities (e.g., gpt-5, claude-sonnet-4-5) provide best experience with Data Formulator.</Typography>
+                            <Typography color="text.secondary" variant="body1" sx={{ mt: 2, width: 600 }}>{t('messages.bestExperience')}</Typography>
                         </Box>
                         {footer}
                     </Box>

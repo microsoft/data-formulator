@@ -1,0 +1,2 @@
+[console_scripts]
+data_formulator = data_formulator:run_app

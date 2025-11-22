@@ -2,6 +2,7 @@
 // Licensed under the MIT License.
 
 import React from 'react';
+import './i18n'; // Initialize i18n
 import './index.css';
 
 import store from './app/store'
@@ -21,9 +22,9 @@ const root = createRoot(domNode);
 
 
 root.render(<React.StrictMode>
-        <Provider store={store}>
-            <PersistGate loading={null} persistor={persistor}>
-                <AppFC />
-            </PersistGate>
-        </Provider>
+    <Provider store={store}>
+        <PersistGate loading={null} persistor={persistor}>
+            <AppFC />
+        </PersistGate>
+    </Provider>
 </React.StrictMode>);

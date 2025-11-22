@@ -51,7 +51,7 @@ import AnimateHeight from 'react-animate-height';
 
 import { FieldItem, ConceptTransformation, duplicateField, FieldSource } from '../components/ComponentType';
 
-import {  testType, Type, TypeList } from "../data/types";
+import { testType, Type, TypeList } from "../data/types";
 import React from 'react';
 import { DataFormulatorState, dfActions, dfSelectors } from '../app/dfSlice';
 
@@ -61,6 +61,7 @@ import { getIconFromType } from './ViewUtils';
 
 import _ from 'lodash';
 import { DictTable } from '../components/ComponentType';
+import { useTranslation } from 'react-i18next';
 import { CodeBox } from './VisualizationView';
 import { CustomReactTable } from './ReactTable';
 import { alpha } from '@mui/material/styles';
@@ -80,13 +81,15 @@ export const genFreshDerivedConcept = (parentIDs: string[], tableRef: string) =>
     return {
         id: `concept-${Date.now()}`, name: "", type: "string" as Type,
         source: "derived", tableRef: tableRef,
-        transform: { parentIDs: parentIDs, code: "", description: ""}
+        transform: { parentIDs: parentIDs, code: "", description: "" }
     } as FieldItem
 }
 
-let ConceptReApplyButton: FC<{field: FieldItem, 
-    focusedTable: DictTable, handleLoading: (loading: boolean) => void}> = function ConceptReApplyButton({ field, focusedTable, handleLoading }) {
-    
+let ConceptReApplyButton: FC<{
+    field: FieldItem,
+    focusedTable: DictTable, handleLoading: (loading: boolean) => void
+}> = function ConceptReApplyButton({ field, focusedTable, handleLoading }) {
+
     let dispatch = useDispatch();
 
     let [codePreview, setCodePreview] = useState<string>(field.transform?.code || "");
@@ -111,11 +114,11 @@ let ConceptReApplyButton: FC<{field: FieldItem,
         let message = {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', },
-            body: JSON.stringify({  
+            body: JSON.stringify({
                 token: requestTimeStamp,
                 description: field.transform?.description || "",
                 input_fields: inputFields,
-                input_data: {name: focusedTable.id, rows: focusedTable.rows},
+                input_data: { name: focusedTable.id, rows: focusedTable.rows },
                 output_name: field.name,
                 model: activeModel
             }),
@@ -125,7 +128,7 @@ let ConceptReApplyButton: FC<{field: FieldItem,
         const controller = new AbortController()
         const timeoutId = setTimeout(() => controller.abort(), 20000)
 
-        fetch(getUrls().DERIVE_PY_CONCEPT, {...message, signal: controller.signal })
+        fetch(getUrls().DERIVE_PY_CONCEPT, { ...message, signal: controller.signal })
             .then((response) => response.json())
             .then((data) => {
                 let candidates = data["results"].filter((r: any) => r["status"] == "ok");
@@ -135,7 +138,7 @@ let ConceptReApplyButton: FC<{field: FieldItem,
                     setCodePreview(candidates[0]["code"]);
                     setApplicationDialogOpen(true);
                 }
-                handleLoading(false);    
+                handleLoading(false);
             }).catch((error) => {
                 handleLoading(false);
             });
@@ -156,7 +159,7 @@ let ConceptReApplyButton: FC<{field: FieldItem,
         id: n,
         label: n,
         dataType: "string" as Type,
-        source: field.name == n ? "derived" as FieldSource : "original" as FieldSource 
+        source: field.name == n ? "derived" as FieldSource : "original" as FieldSource
     }));
 
     return (
@@ -167,7 +170,7 @@ let ConceptReApplyButton: FC<{field: FieldItem,
                 </IconButton>
             </Tooltip>
             <Dialog open={applicationDialogOpen} onClose={() => { setApplicationDialogOpen(false) }}>
-                <DialogTitle>Preview: apply concept <Typography color="primary" component="span" sx={{ fontSize: "inherit" }}>{field.name}</Typography> to <Typography color="primary" component="span" sx={{ fontSize: "inherit"}}>{focusedTable.displayId}</Typography>
+                <DialogTitle>Preview: apply concept <Typography color="primary" component="span" sx={{ fontSize: "inherit" }}>{field.name}</Typography> to <Typography color="primary" component="span" sx={{ fontSize: "inherit" }}>{focusedTable.displayId}</Typography>
                 </DialogTitle>
                 <DialogContent>
                     <Typography sx={{ fontSize: 12, marginBottom: 1 }}>transformation code</Typography>
@@ -177,11 +180,11 @@ let ConceptReApplyButton: FC<{field: FieldItem,
                 </DialogContent>
                 <DialogActions>
                     <Button onClick={() => { setApplicationDialogOpen(false), setTableRowsPreview([]), setCodePreview("") }}>Cancel</Button>
-                    <Button onClick={() => { 
-                        setApplicationDialogOpen(false), 
-                        setTableRowsPreview([]),
-                        setCodePreview(""),
-                        handleApply()
+                    <Button onClick={() => {
+                        setApplicationDialogOpen(false),
+                            setTableRowsPreview([]),
+                            setCodePreview(""),
+                            handleApply()
                     }}>Apply</Button>
                 </DialogActions>
             </Dialog>
@@ -190,12 +193,13 @@ let ConceptReApplyButton: FC<{field: FieldItem,
 }
 export const ConceptCard: FC<ConceptCardProps> = function ConceptCard({ field, sx }) {
     // concept cards are draggable cards that can be dropped into encoding shelf
+    const { t } = useTranslation();
     let theme = useTheme();
 
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
     const tables = useSelector((state: DataFormulatorState) => state.tables);
     let focusedTableId = useSelector((state: DataFormulatorState) => state.focusedTableId);
-    
+
     let focusedTable = tables.find(t => t.id == focusedTableId);
 
     const [editMode, setEditMode] = useState(field.name == "" ? true : false);
@@ -217,7 +221,7 @@ export const ConceptCard: FC<ConceptCardProps> = function ConceptCard({ field, s
     let handleLoading = (loading: boolean) => {
         setIsLoading(loading);
     }
-    
+
     let opacity = isDragging ? 0.3 : 1;
     let fontStyle = "inherit";
     let border = "hidden";
@@ -226,9 +230,9 @@ export const ConceptCard: FC<ConceptCardProps> = function ConceptCard({ field, s
     let editOption = field.source == "derived" && (
         <Tooltip key="edit-icon-button" title="edit">
             <IconButton size="small" key="edit-icon-button"
-                color="primary" aria-label="Edit" component="span"
-                onClick={() => { 
-                    setEditMode(!editMode) 
+                color="primary" aria-label={t('concept.edit')} component="span"
+                onClick={() => {
+                    setEditMode(!editMode)
                     dispatch(dfActions.setFocusedTable(field.tableRef));
                 }}>
                 <EditIcon fontSize="inherit" />
@@ -253,40 +257,40 @@ export const ConceptCard: FC<ConceptCardProps> = function ConceptCard({ field, s
     );
 
     let deleteOption = !(field.source == "original") && <IconButton size="small"
-            key="delete-icon-button"
-            color="primary" aria-label="Delete" component="span"
-            disabled={
-                conceptShelfItems.filter(f => f.source == "derived" && f.transform?.parentIDs.includes(field.id)).length > 0
- 
-            }
-            onClick={() => { handleDeleteConcept(field.id); }}>
-            <DeleteIcon fontSize="inherit" />
-        </IconButton>;
+        key="delete-icon-button"
+        color="primary" aria-label={t('concept.delete')} component="span"
+        disabled={
+            conceptShelfItems.filter(f => f.source == "derived" && f.transform?.parentIDs.includes(field.id)).length > 0
 
-    let reApplyOption = focusedTable && field.source == "derived" 
-        && focusedTable.id != field.tableRef 
+        }
+        onClick={() => { handleDeleteConcept(field.id); }}>
+        <DeleteIcon fontSize="inherit" />
+    </IconButton>;
+
+    let reApplyOption = focusedTable && field.source == "derived"
+        && focusedTable.id != field.tableRef
         && !focusedTable.names.includes(field.name)
-        && field.transform?.parentIDs.every(pid => focusedTable.names.includes((conceptShelfItems.find(f => f.id == pid) as FieldItem).name)) 
+        && field.transform?.parentIDs.every(pid => focusedTable.names.includes((conceptShelfItems.find(f => f.id == pid) as FieldItem).name))
         && (
             <Tooltip key="reapply-icon-button" title={`apply to ${focusedTable.displayId}`}>
                 <ConceptReApplyButton field={field} focusedTable={focusedTable} handleLoading={handleLoading} />
             </Tooltip>
         );
 
-    let cleanupOption = focusedTable && field.source == "derived" && focusedTableId != field.tableRef 
+    let cleanupOption = focusedTable && field.source == "derived" && focusedTableId != field.tableRef
         && field.transform?.parentIDs.every(pid => focusedTable.names.includes((conceptShelfItems.find(f => f.id == pid) as FieldItem).name)) && focusedTable.names.includes(field.name) && (
-        <Tooltip key="cleanup-icon-button" title={
+            <Tooltip key="cleanup-icon-button" title={
                 <Typography component="span" sx={{ fontSize: "inherit" }}>remove <b>{field.name}</b> from <b>{focusedTable.displayId}</b></Typography>}>
-            <IconButton size="small" key="cleanup-icon-button" color="primary" aria-label="cleanup" component="span" onClick={() => {
-                dispatch(dfActions.removeDerivedField({
-                    tableId: focusedTableId as string,
-                    fieldId: field.id
-                }));
-            }}>
-                <HideSourceIcon fontSize="inherit" />
-            </IconButton>
-        </Tooltip>
-    );
+                <IconButton size="small" key="cleanup-icon-button" color="primary" aria-label="cleanup" component="span" onClick={() => {
+                    dispatch(dfActions.removeDerivedField({
+                        tableId: focusedTableId as string,
+                        fieldId: field.id
+                    }));
+                }}>
+                    <HideSourceIcon fontSize="inherit" />
+                </IconButton>
+            </Tooltip>
+        );
 
     let specialOptions = [
         reApplyOption,
@@ -361,18 +365,18 @@ export const ConceptCard: FC<ConceptCardProps> = function ConceptCard({ field, s
                 <LinearProgress sx={{ width: "100%", height: "100%", opacity: 0.2 }} />
             </Box> : ""}
             <Box ref={field.name ? drag : undefined} sx={{ cursor: cursorStyle, background: draggleCardHeaderBgOverlay }}
-                 className={`draggable-card-header draggable-card-inner ${field.source}`}>
+                className={`draggable-card-header draggable-card-inner ${field.source}`}>
                 <Typography className="draggable-card-title" color="text.primary"
-                    sx={{ fontSize: 12, height: 24, width: "100%"}} component={'span'} gutterBottom>
+                    sx={{ fontSize: 12, height: 24, width: "100%" }} component={'span'} gutterBottom>
                     {typeIcon}
                     {fieldNameEntry}
-                    {focusedTable?.metadata[field.name]?.semanticType ? 
-                        <Typography sx={{fontSize: "xx-small", color: "text.secondary", marginLeft: "6px", fontStyle: 'italic', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center' }}>
-                            <ArrowRightIcon sx={{fontSize: "12px"}} /> {focusedTable?.metadata[field.name].semanticType}</Typography> : ""}
+                    {focusedTable?.metadata[field.name]?.semanticType ?
+                        <Typography sx={{ fontSize: "xx-small", color: "text.secondary", marginLeft: "6px", fontStyle: 'italic', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center' }}>
+                            <ArrowRightIcon sx={{ fontSize: "12px" }} /> {focusedTable?.metadata[field.name].semanticType}</Typography> : ""}
                 </Typography>
-                
+
                 <Box sx={{ position: "absolute", right: 0, display: "flex", flexDirection: "row", alignItems: "center" }}>
-                    <Box className='draggable-card-action-button' sx={{ background: 'rgba(255, 255, 255, 0.95)'}}>{cardHeaderOptions}</Box>
+                    <Box className='draggable-card-action-button' sx={{ background: 'rgba(255, 255, 255, 0.95)' }}>{cardHeaderOptions}</Box>
                     {reApplyOption || cleanupOption ? <Divider flexItem orientation="vertical" sx={{ my: 1, padding: 0 }} /> : ""}
                     <Box>{specialOptions}</Box>
                 </Box>
@@ -399,6 +403,7 @@ export interface ConceptFormProps {
 
 export const DerivedConceptFormV2: FC<ConceptFormProps> = function DerivedConceptFormV2({ concept, handleUpdateConcept, handleDeleteConcept, turnOffEditMode }) {
 
+    const { t } = useTranslation();
     let theme = useTheme();
     // use tables for infer domains
     let tables = useSelector((state: DataFormulatorState) => state.tables);
@@ -418,7 +423,7 @@ export const DerivedConceptFormV2: FC<ConceptFormProps> = function DerivedConcep
     const [transformParentIDs, setTransformParentIDs] = useState<string[]>(conceptTransform.parentIDs || []);
 
     const [derivedFieldRef, setDerivedFieldRef] = useState<string | undefined>(undefined);
-    const [tempExtTable, setTempExtTable] = useState<{tableRef: string, rows: any[]} | undefined>(undefined);
+    const [tempExtTable, setTempExtTable] = useState<{ tableRef: string, rows: any[] } | undefined>(undefined);
 
     const [codeDialogOpen, setCodeDialogOpen] = useState<boolean>(false);
 
@@ -470,21 +475,24 @@ export const DerivedConceptFormV2: FC<ConceptFormProps> = function DerivedConcep
                 value={transformParentIDs}
                 label="derive from fields:"
                 inputProps={{}}
-                sx={{"& .MuiSelect-select": {paddingLeft: 1}}}
+                sx={{ "& .MuiSelect-select": { paddingLeft: 1 } }}
                 renderValue={(selected) =>
                     <Typography key={selected[0]} sx={{ whiteSpace: "normal", fontSize: "inherit" }}>
                         {selected.map(conceptID => {
                             let chipColor = conceptShelfItems.find(f => f.id == conceptID)?.source == "original" ? theme.palette.primary.light : theme.palette.custom.main;
-                            return <Chip 
+                            return <Chip
                                 key={conceptID}
-                                variant="outlined" size="small" 
+                                variant="outlined" size="small"
                                 // color={}
-                                sx={{ 
+                                sx={{
                                     color: chipColor,
-                                    borderColor: chipColor, 
-                                    padding: '0px',  margin: '1px 2px', borderRadius: '4px', height: '100%', 
-                                        '& .MuiChip-label': { overflowWrap: 'break-word', whiteSpace: 'normal', textOverflow: 'clip',
-                                        fontSize: 11}}} label={conceptShelfItems.find(f => f.id == conceptID)?.name} />
+                                    borderColor: chipColor,
+                                    padding: '0px', margin: '1px 2px', borderRadius: '4px', height: '100%',
+                                    '& .MuiChip-label': {
+                                        overflowWrap: 'break-word', whiteSpace: 'normal', textOverflow: 'clip',
+                                        fontSize: 11
+                                    }
+                                }} label={conceptShelfItems.find(f => f.id == conceptID)?.name} />
                         })}
                     </Typography>
                 }
@@ -496,7 +504,7 @@ export const DerivedConceptFormV2: FC<ConceptFormProps> = function DerivedConcep
             >
                 {conceptShelfItems.filter((t) => t.name != "" && t.tableRef == affiliatedTableId).map((t, i) => (
                     <MenuItem value={t.id} key={`${concept.id}-${t.id}`} sx={{ fontSize: 12, marginLeft: "0px" }} disabled={childrenConceptIDs.includes(t.id)}>
-                        {<Checkbox sx={{padding: 0.5}} size="small" checked={transformParentIDs.indexOf(t.id) > -1} />}
+                        {<Checkbox sx={{ padding: 0.5 }} size="small" checked={transformParentIDs.indexOf(t.id) > -1} />}
                         {t.name}
                     </MenuItem>
                 ))}
@@ -546,12 +554,12 @@ export const DerivedConceptFormV2: FC<ConceptFormProps> = function DerivedConcep
                 {viewExamples ? <Typography style={{ fontSize: "9px", color: "gray" }}>result on sample data </Typography> : ""}
                 {viewExamples}
                 {transformCode ? <Typography style={{ fontSize: "9px", color: "gray" }}>transformation code</Typography> : ""}
-                {transformCode ? <CodeBox code={transformCode.trim()} language="python" fontSize={9}/> : ""}
+                {transformCode ? <CodeBox code={transformCode.trim()} language="python" fontSize={9} /> : ""}
             </Box>
         </Box>
     )
 
-    let handleProcessResults = (status: string, results: {code: string, content: any}[]) : void => {
+    let handleProcessResults = (status: string, results: { code: string, content: any }[]): void => {
         setCodeGenInProgress(false);
         if (status == "ok") {
 
@@ -563,20 +571,20 @@ export const DerivedConceptFormV2: FC<ConceptFormProps> = function DerivedConcep
                 setTransformCode(candidate.code);
                 setTempExtTable({
                     tableRef: parentConcepts[0].tableRef,
-                    rows: candidate.content.rows, 
+                    rows: candidate.content.rows,
                 });
 
                 dispatch(dfActions.addMessages({
                     "timestamp": Date.now(),
                     "type": "success",
-                    "component": "Field Card",
+                    "component": t('concept.fieldCard'),
                     "value": `Find ${results.length} candidate transformations for concept "${name}".`
                 }));
             } else {
                 dispatch(dfActions.addMessages({
                     "timestamp": Date.now(),
                     "type": "info",
-                    "component": "Field Card",
+                    "component": t('concept.fieldCard'),
                     "value": `Find ${results.length} candidate transformations for concept "${name}", please try again.`
                 }));
             }
@@ -586,7 +594,7 @@ export const DerivedConceptFormV2: FC<ConceptFormProps> = function DerivedConcep
             dispatch(dfActions.addMessages({
                 "timestamp": Date.now(),
                 "type": "error",
-                "component": "Field Card",
+                "component": t('concept.fieldCard'),
                 "value": "unable to generate the desired transformation, please try again."
             }));
         }
@@ -606,7 +614,7 @@ export const DerivedConceptFormV2: FC<ConceptFormProps> = function DerivedConcep
         rows: inputTable.rows
     };
 
-    let codeDialogBox = <PyCodexDialogBox 
+    let codeDialogBox = <PyCodexDialogBox
         key="code-dialog-box"
         inputData={inputExtTable}
         inputFields={inputFields}
@@ -659,35 +667,37 @@ export const DerivedConceptFormV2: FC<ConceptFormProps> = function DerivedConcep
                         <ZoomInIcon fontSize="inherit" />
                     </IconButton>
                     <Dialog open={codeDialogOpen} onClose={() => { setCodeDialogOpen(false); }}>
-                        <DialogTitle sx={{maxWidth: 800}}>
+                        <DialogTitle sx={{ maxWidth: 800 }}>
                             Transformations from <Typography component="span" variant="h6" color="secondary">{parentConcepts.map(c => c.name).join(", ")}
                             </Typography> to <Typography component="span" variant="h6" color="primary">{name}</Typography></DialogTitle>
                         <DialogContent>
                             {codeDialogBox}
-                            <Card sx={{position: "relative", minWidth: "280px", maxWidth: "600px", display: "flex",  flexGrow: 1, margin: "10px",
-                                border: "2px solid rgb(2 136 209 / 0.7)"}}>
+                            <Card sx={{
+                                position: "relative", minWidth: "280px", maxWidth: "600px", display: "flex", flexGrow: 1, margin: "10px",
+                                border: "2px solid rgb(2 136 209 / 0.7)"
+                            }}>
                                 {codeGenInProgress ? <Box sx={{
                                     position: "absolute", height: "100%", width: "100%", zIndex: 20,
                                     backgroundColor: "rgba(243, 243, 243, 0.8)", display: "flex", alignItems: "center"
                                 }}>
                                     <LinearProgress sx={{ width: "100%", height: "100%", opacity: 0.05 }} />
                                 </Box> : ''}
-                                <CardContent sx={{display: "flex", flexDirection: "column", flexGrow: 1, overflow: "clip", maxHeight: 800}}>
+                                <CardContent sx={{ display: "flex", flexDirection: "column", flexGrow: 1, overflow: "clip", maxHeight: 800 }}>
                                     <Box width="100%" sx={{}}>
                                         <Box className="GroupHeader">
                                             <Typography style={{ fontSize: "12px" }}>transformation result on sample data </Typography>
                                         </Box>
-                                        <Box className="GroupItems" sx={{padding: "0px 10px", margin: 0}}>
-                                            <Box sx={{maxHeight: 300, minWidth: '200px', width: "100%", overflow: "auto", flexGrow: 1,fontSize: 10 }}>
+                                        <Box className="GroupItems" sx={{ padding: "0px 10px", margin: 0 }}>
+                                            <Box sx={{ maxHeight: 300, minWidth: '200px', width: "100%", overflow: "auto", flexGrow: 1, fontSize: 10 }}>
                                                 {viewExamples}
                                             </Box>
                                         </Box>
                                     </Box>
-                                    <Box className="GroupHeader" sx={{marginTop: 1}}>
+                                    <Box className="GroupHeader" sx={{ marginTop: 1 }}>
                                         <Typography style={{ fontSize: "12px" }}>transformation code</Typography>
                                     </Box>
-                                    <Box sx={{maxHeight: 280, width: "100%", overflow: "auto", flexGrow: 1 }}>
-                                        <CodeBox code={transformCode.trim()} language="python" fontSize={9}/>
+                                    <Box sx={{ maxHeight: 280, width: "100%", overflow: "auto", flexGrow: 1 }}>
+                                        <CodeBox code={transformCode.trim()} language="python" fontSize={9} />
                                     </Box>
                                 </CardContent>
                             </Card>
@@ -697,7 +707,7 @@ export const DerivedConceptFormV2: FC<ConceptFormProps> = function DerivedConcep
                         </DialogActions>
                     </Dialog>
                     <IconButton size="small"
-                        color="primary" aria-label="Delete" component="span"
+                        color="primary" aria-label={t('concept.delete')} component="span"
                         disabled={conceptShelfItems.filter(f => f.source == "derived" && f.transform?.parentIDs.includes(concept.id)).length > 0}
                         onClick={() => { handleDeleteConcept(concept.id); }}>
                         <Tooltip title="delete">
@@ -716,33 +726,35 @@ export const DerivedConceptFormV2: FC<ConceptFormProps> = function DerivedConcep
                     }}>
                         Cancel
                     </Button>
-                    <Button size="small" variant={checkDerivedConceptDiff() ? "contained" : "outlined"} 
-                            disabled={saveDisabledMsg.length > 0 || checkDerivedConceptDiff() == false} onClick={() => {
-                        
-                        let tmpConcept = duplicateField(concept);
-                        tmpConcept.name = name;
-                        tmpConcept.transform = concept.transform ? 
-                            { parentIDs: transformParentIDs, 
-                              code: transformCode, 
-                              description: transformDesc } as ConceptTransformation : undefined;
+                    <Button size="small" variant={checkDerivedConceptDiff() ? "contained" : "outlined"}
+                        disabled={saveDisabledMsg.length > 0 || checkDerivedConceptDiff() == false} onClick={() => {
 
-                        if (tempExtTable) {
-                            dispatch(dfActions.extendTableWithNewFields({
-                                tableId: tempExtTable.tableRef,
-                                values: tempExtTable.rows.map(r => r[derivedFieldRef || name]),
-                                columnName: name,
-                                previousName: concept.name,
-                                parentIDs: transformParentIDs
-                            }));
-                        }
+                            let tmpConcept = duplicateField(concept);
+                            tmpConcept.name = name;
+                            tmpConcept.transform = concept.transform ?
+                                {
+                                    parentIDs: transformParentIDs,
+                                    code: transformCode,
+                                    description: transformDesc
+                                } as ConceptTransformation : undefined;
 
-                        if (turnOffEditMode) {
-                            turnOffEditMode();
-                        }
-                        handleUpdateConcept(tmpConcept);
+                            if (tempExtTable) {
+                                dispatch(dfActions.extendTableWithNewFields({
+                                    tableId: tempExtTable.tableRef,
+                                    values: tempExtTable.rows.map(r => r[derivedFieldRef || name]),
+                                    columnName: name,
+                                    previousName: concept.name,
+                                    parentIDs: transformParentIDs
+                                }));
+                            }
 
-                        //setName(""); setDtype("string" as Type); setExamples([]);
-                    }}>
+                            if (turnOffEditMode) {
+                                turnOffEditMode();
+                            }
+                            handleUpdateConcept(tmpConcept);
+
+                            //setName(""); setDtype("string" as Type); setExamples([]);
+                        }}>
                         Save
                     </Button>
                 </ButtonGroup>
@@ -753,19 +765,20 @@ export const DerivedConceptFormV2: FC<ConceptFormProps> = function DerivedConcep
 
 
 export interface CodexDialogBoxProps {
-    inputData: {name: string, rows: any[]},
+    inputData: { name: string, rows: any[] },
     outputName: string,
-    inputFields: {name: string}[],
+    inputFields: { name: string }[],
     initialDescription: string,
     callWhenSubmit: (desc: string) => void,
-    handleProcessResults: (status: string, results: {code: string, content: any[]}[]) => void, // return processed cnadidates for the ease of logging
+    handleProcessResults: (status: string, results: { code: string, content: any[] }[]) => void, // return processed cnadidates for the ease of logging
     size: "large" | "small",
 }
 
 
-export const PyCodexDialogBox: FC<CodexDialogBoxProps> = function ({ 
-    initialDescription, inputFields, inputData, outputName, callWhenSubmit, handleProcessResults, size="small" }) {
+export const PyCodexDialogBox: FC<CodexDialogBoxProps> = function ({
+    initialDescription, inputFields, inputData, outputName, callWhenSubmit, handleProcessResults, size = "small" }) {
 
+    const { t } = useTranslation();
     let activeModel = useSelector(dfSelectors.getActiveModel);
 
     let [description, setDescription] = useState(initialDescription);
@@ -773,11 +786,11 @@ export const PyCodexDialogBox: FC<CodexDialogBoxProps> = function ({
 
     let defaultInstruction = `Derive ${outputName} from ${inputFields.map(f => f.name).join(", ")}`;
 
-    let formulateButton = <Tooltip title="Derived the new concept">
+    let formulateButton = <Tooltip title={t('concept.deriveNewConcept')}>
         <IconButton size={size}
             disabled={description == ""}
             sx={{ borderRadius: "10%", alignItems: "flex-end", position: 'relative' }}
-            color="primary" aria-label="Edit" component="span" onClick={() => {
+            color="primary" aria-label={t('concept.edit')} component="span" onClick={() => {
 
                 setRequestTimeStamp(Date.now());
                 //setTransformCode("");
@@ -803,7 +816,7 @@ export const PyCodexDialogBox: FC<CodexDialogBoxProps> = function ({
                 const controller = new AbortController()
                 const timeoutId = setTimeout(() => controller.abort(), 20000)
 
-                fetch(getUrls().DERIVE_PY_CONCEPT, {...message, signal: controller.signal })
+                fetch(getUrls().DERIVE_PY_CONCEPT, { ...message, signal: controller.signal })
                     .then((response) => response.json())
                     .then((data) => {
                         let candidates = data["results"].filter((r: any) => r["status"] == "ok");
@@ -818,9 +831,9 @@ export const PyCodexDialogBox: FC<CodexDialogBoxProps> = function ({
 
     let textBox = <Box key="interaction-comp" width='100%' sx={{ display: 'flex', flexDirection: "column" }}>
         <Typography style={{ fontSize: "9px", color: "gray" }}>transformation prompt</Typography>
-        <TextField 
+        <TextField
             size="small"
-            sx={{fontSize: 12}}
+            sx={{ fontSize: 12 }}
             color="primary"
             fullWidth
             disabled={outputName == ""}
@@ -842,7 +855,7 @@ export const PyCodexDialogBox: FC<CodexDialogBoxProps> = function ({
             }}
             value={description}
             placeholder={defaultInstruction} onChange={(event: any) => { setDescription(event.target.value) }}
-            variant="standard"  
+            variant="standard"
         />
     </Box>
 

@@ -1,0 +1,291 @@
+{
+    "common": {
+        "appName": "Data Formulator",
+        "cancel": "cancel",
+        "apply": "Apply",
+        "close": "Close",
+        "save": "Save",
+        "delete": "Delete",
+        "edit": "Edit",
+        "reset": "Reset",
+        "download": "Download",
+        "upload": "Upload",
+        "import": "Import",
+        "export": "Export",
+        "settings": "Settings",
+        "about": "About",
+        "app": "App",
+        "refresh": "Refresh",
+        "loading": "Loading...",
+        "uploading": "Uploading...",
+        "select": "Select",
+        "link": "Link"
+    },
+    "navigation": {
+        "data": "Data",
+        "session": "Session",
+        "reset": "Reset",
+        "explore": "Explore",
+        "reports": "Reports",
+        "reportsCount": "Reports ({{count}})"
+    },
+    "menu": {
+        "data": {
+            "database": "Database",
+            "cleanData": "clean data",
+            "cleanDataHint": "(image/messy text)",
+            "pasteData": "paste data",
+            "pasteDataHint": "(csv/tsv)",
+            "uploadDataFile": "upload data file",
+            "uploadDataFileHint": "(csv/tsv/json)"
+        },
+        "session": {
+            "exportSession": "export session",
+            "importSession": "import session",
+            "databaseFile": "database file",
+            "databaseWarning": "This session contains data stored in the database, export and reload the database to resume the session later.",
+            "downloadDatabase": "download database",
+            "importDatabase": "import database",
+            "saveSessionLocally": "save session locally"
+        }
+    },
+    "dialogs": {
+        "reset": {
+            "title": "Reset Session?",
+            "content": "All unexported content (charts, derived data, concepts) will be lost upon reset.",
+            "resetButton": "reset session"
+        },
+        "settings": {
+            "title": "Settings",
+            "frontend": "Frontend",
+            "backend": "Backend",
+            "defaultChartWidth": "default chart width",
+            "defaultChartHeight": "default chart height",
+            "formulateTimeout": "formulate timeout (seconds)",
+            "formulateTimeoutHelp": "Maximum time allowed for the formulation process before timing out.",
+            "maxRepairAttempts": "max repair attempts",
+            "maxRepairAttemptsHelp": "How many attempts LLM will make to repair code if code fails to execute (recommended = 1, higher values might increase the chance of success but it's slow).",
+            "resetToDefault": "Reset to default",
+            "errorChartSize": "Value must be between 100 and 1000 pixels",
+            "errorTimeout": "Value must be between 1 and 3600 seconds",
+            "errorRepairAttempts": "Value must be between 1 and 5"
+        },
+        "language": {
+            "title": "Language",
+            "selectLanguage": "Select Language"
+        }
+    },
+    "dataFormulator": {
+        "tagline": "Turn data into insights with AI agents, with the exploration paths you choose.",
+        "loadSomeData": "load some data",
+        "messyData": "Messy data",
+        "examples": "Examples",
+        "files": "files",
+        "clipboard": "clipboard",
+        "database": "Database",
+        "loadDataDescription": "Load structured data from CSV, Excel, JSON, database, or extract data from",
+        "screenshots": "screenshots",
+        "textBlocks": "text blocks",
+        "usingAI": "using AI.",
+        "orExploreExamples": "or, explore examples",
+        "firstLetsSelectModel": "First, let's",
+        "selectModel": "select a model",
+        "privacyCookies": "Privacy & Cookies",
+        "termsOfUse": "Terms of Use",
+        "contactUs": "Contact Us"
+    },
+    "database": {
+        "title": "Database",
+        "dataConnectors": "Data Connectors",
+        "dataTables": "Data Tables",
+        "derivedViews": "Derived Views",
+        "fileUpload": "file upload",
+        "noTablesAvailable": "no tables available",
+        "emptyDatabase": "The database is empty, refresh the table list or import some data to get started.",
+        "uploadCsvTsv": "upload a csv/tsv file to the local database",
+        "uploadingFile": "uploading...",
+        "importDuckDB": "import a duckdb .db file to the local database",
+        "saveDuckDB": "save the local database to a duckdb .db file",
+        "refreshTableList": "refresh the table list",
+        "cleanupDerivedViews": "clean up unreferenced derived views",
+        "addToDataFormulator": "Add to Data Formulator",
+        "dropTable": "Drop Table",
+        "analyzeData": "Analyze Data",
+        "viewData": "View Data",
+        "tablePreview": "Table Preview",
+        "statistics": "Statistics",
+        "column": "Column",
+        "type": "Type",
+        "count": "Count",
+        "unique": "Unique",
+        "null": "Null",
+        "min": "Min",
+        "max": "Max",
+        "avg": "Avg",
+        "rows": "rows",
+        "connectToDatabase": "Connect to Database",
+        "connectionParams": "Connection Parameters",
+        "testConnection": "Test Connection",
+        "connect": "Connect",
+        "connectionSuccess": "Connection successful!",
+        "connectionFailed": "Connection failed",
+        "testing": "Testing...",
+        "connecting": "Connecting...",
+        "authInstructions": "Authentication Instructions",
+        "vertica": "Vertica",
+        "postgres": "PostgreSQL",
+        "mysql": "MySQL",
+        "mssql": "MS SQL Server",
+        "oracle": "Oracle"
+    },
+    "modelSelection": {
+        "title": "Model Selection",
+        "configureModels": "Configure models for different tasks",
+        "selectModels": "Select Models",
+        "modelAssignments": "Model Assignments",
+        "modelFor": "Model for",
+        "generation": "generation",
+        "hint": "hint",
+        "generationExplanation": "exploration planning, code generation",
+        "hintExplanation": "background data type inference, code explanation",
+        "noModelAssigned": "No model assigned",
+        "noAssignment": "No assignment",
+        "tip": "💡 Tip:",
+        "tipText": "Use powerful models for generation tasks and faster models for hints.",
+        "availableModels": "available models",
+        "provider": "Provider",
+        "apiKey": "API Key",
+        "model": "Model",
+        "apiBase": "API Base",
+        "apiVersion": "API Version",
+        "status": "Status",
+        "examples": "examples",
+        "optionalForKeyless": "optional for keyless endpoint",
+        "modelName": "model name",
+        "addAndTestModel": "add and test model",
+        "providerModelExists": "provider + model already exists",
+        "removeModel": "remove model",
+        "clear": "clear",
+        "ready": "Ready",
+        "retest": "Retest",
+        "test": "Test",
+        "modelReady": "Model is ready to use",
+        "clickToTest": "Click to test if this model is working",
+        "error": "Error",
+        "clickToRetest": "Click to retest.",
+        "configuration": "Configuration:",
+        "basedOnLiteLLM": "Based on LiteLLM.",
+        "seeSupportedProviders": "See supported providers",
+        "useOpenAI": "Use 'openai' provider for OpenAI-compatible APIs.",
+        "showKeys": "show keys",
+        "hideKeys": "hide keys",
+        "applySlotAssignments": "Apply Slot Assignments",
+        "none": "None",
+        "default": "Default",
+        "unknownModel": "Unknown model"
+    },
+    "about": {
+        "version": "v0.5",
+        "tagline": "Turn (almost) any data into insights with AI agents, with the exploration paths you choose.",
+        "startExploration": "Start Exploration",
+        "whatsNew": "What's New in v0.5?",
+        "github": "GitHub",
+        "installLocally": "Install Locally",
+        "tryOnlineDemo": "Try Online Demo",
+        "onlineDemoNote": "Psst — install locally for the full experience ✨. The online demo has limited features (at the moment).",
+        "features": {
+            "loadData": {
+                "title": "Load (Almost) Any Data",
+                "description": "Load structured data, connect to databases. Ask AI agents to extract and clean (small) ad-hoc data from screenshots, text blocks."
+            },
+            "agentMode": {
+                "title": "Agent Mode",
+                "description": "Vibe with your data. Hands-off and let agents automatically explore and visualize data from high-level goals."
+            },
+            "interactiveControl": {
+                "title": "Interactive Control",
+                "description": "Use UI interactions and natural language to precisely describe chart designs. Ask AI agents for recommendations. Use Data Threads to backtrack, explore new branches, or follow up."
+            },
+            "verifyShare": {
+                "title": "Verify & Share Insights",
+                "description": "Interact with charts, inspect data, formulas, and code. Create reports to share insights grounded in your exploration."
+            }
+        },
+        "screenshots": {
+            "cpi": "Explore consumer price trends from 2005 to 2025",
+            "movies": "Report: Top directors by their revenue",
+            "renewable": "Renewable energy percentage by country",
+            "unemployment": "Report: Unemployment rate affected by 2008 financial crisis",
+            "claude": "Compare Claude models' performance on different tasks"
+        },
+        "dataHandling": {
+            "title": "How does Data Formulator handle your data?",
+            "storage": "Data Storage:",
+            "storageDesc": "Uploaded data (csv, xlsx, json, clipboard, messy data etc.) is stored in browser's local storage only",
+            "processing": "Data Processing:",
+            "processingDesc": "Local installation runs Python on your machine; online demo sends the data to server for data transformations (but not stored)",
+            "database": "Database:",
+            "databaseDesc": "Only available for locally installed Data Formulator (a DuckDB database file is created in temp directory to store data); not available in online demo",
+            "llm": "LLM Endpoints:",
+            "llmDesc": "Small data samples are sent to LLM endpoints along with the prompt. Use your trusted model provider if working with private data."
+        },
+        "footer": {
+            "researchPrototype": "Research Prototype from Microsoft Research",
+            "privacyCookies": "Privacy & Cookies",
+            "termsOfUse": "Terms of Use",
+            "contactUs": "Contact Us"
+        }
+    },
+    "tooltips": {
+        "watchVideo": "Watch Video",
+        "viewOnGitHub": "View on GitHub",
+        "pipInstall": "Pip Install",
+        "joinDiscord": "Join Discord",
+        "exampleScreenshot": "Example of a screenshot of data:",
+        "exampleMessyText": "Example of a messy text block:"
+    },
+    "messages": {
+        "dbImportSuccess": "Database imported successfully",
+        "dbImportFailed": "Import failed",
+        "errorOccurred": "An error has occurred, please",
+        "refreshSession": "refresh the session",
+        "problemPersists": ". If the problem still exists, click close session.",
+        "installLocallyForUpload": "Install Data Formulator locally to enable file upload.",
+        "installLocallyForDatabase": "Install Data Formulator locally to use database.",
+        "bestExperience": "💡 Models with strong code generation capabilities (e.g., gpt-5, claude-sonnet-4-5) provide best experience with Data Formulator.",
+        "loadingExample": "Loading example session: {{title}}",
+        "loadedExample": "Successfully loaded {{title}}",
+        "failedToLoad": "Failed to load {{title}}: {{error}}"
+    },
+    "chart": {
+        "generateFromDescription": "Generate chart from description",
+        "whereAgentGo": "Where should the agent go?",
+        "whatToExplore": "What do you want to explore?",
+        "getSomeIdeas": "Get some ideas!",
+        "failedToGetIdeas": "Failed to get ideas from the exploration agent. Please try again.",
+        "noTableSelected": "No table selected for data formulation.",
+        "noResultReturned": "No result is returned from the data formulation agent. Please try again.",
+        "requestTimeout": "Request exceeded timeout limit",
+        "agentLost": "The agent got lost in the data.",
+        "agentLostTryAgain": "The agent got lost in the data. Please try again.",
+        "errorDuringExploration": "Error during data exploration",
+        "explorationTimedOut": "Data exploration timed out",
+        "explorationTimedOutTryAgain": "Data exploration timed out. Please try again.",
+        "explorationFailed": "Data exploration failed: {{error}}"
+    },
+    "concept": {
+        "edit": "Edit",
+        "delete": "Delete",
+        "deriveNewConcept": "Derived the new concept",
+        "fieldCard": "Field Card"
+    },
+    "thread": {
+        "attachContext": "Attach additional contexts or guidance so that AI agents can better understand and process the data.",
+        "deleteMessage": "Delete message"
+    },
+    "report": {
+        "deleteReport": "Delete report",
+        "createChartifact": "Create Chartifact report",
+        "shareAsImage": "Share report as image"
+    }
+}
