@@ -405,3 +405,6 @@ FodyWeavers.xsd
 # JetBrains Rider
 *.sln.iml
 venv
+
+# Python egg-info
+*.egg-info/
