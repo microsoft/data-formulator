@@ -1,4 +1,6 @@
 import json
+import logging
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 
 import pandas as pd
 import duckdb
@@ -7,6 +9,12 @@ from data_formulator.data_loader.external_data_loader import ExternalDataLoader,
 
 from typing import Dict, Any, List, Optional
 from data_formulator.security import validate_sql_query
+
+log = logging.getLogger(__name__)
+
+# Default connection timeout in seconds
+DEFAULT_CONNECTION_TIMEOUT = 30
+
 
 class PostgreSQLDataLoader(ExternalDataLoader):
 
@@ -17,7 +25,8 @@ class PostgreSQLDataLoader(ExternalDataLoader):
             {"name": "password", "type": "string", "required": False, "default": "", "description": "leave blank for no password"}, 
             {"name": "host", "type": "string", "required": True, "default": "localhost", "description": "PostgreSQL host"}, 
             {"name": "port", "type": "string", "required": False, "default": "5432", "description": "PostgreSQL port"},
-            {"name": "database", "type": "string", "required": True, "default": "postgres", "description": "PostgreSQL database name"}
+            {"name": "database", "type": "string", "required": True, "default": "postgres", "description": "PostgreSQL database name"},
+            {"name": "connection_timeout", "type": "int", "required": False, "default": 30, "description": "Connection timeout in seconds (default 30)"}
         ]
         return params_list
 
@@ -29,12 +38,17 @@ class PostgreSQLDataLoader(ExternalDataLoader):
         self.params = params
         self.duck_db_conn = duck_db_conn
         
+        # Get connection timeout (default 30 seconds)
+        connection_timeout = int(params.get('connection_timeout', DEFAULT_CONNECTION_TIMEOUT))
+        if connection_timeout <= 0:
+            connection_timeout = DEFAULT_CONNECTION_TIMEOUT
+        
         try:
             # Install and load the Postgres extension
             self.duck_db_conn.install_extension("postgres")
             self.duck_db_conn.load_extension("postgres")
             
-            # Prepare the connection string for Postgres
+            # Prepare the connection string for Postgres (excluding connection_timeout)
             port = self.params.get('port', '5432')
             password_part = f" password={self.params.get('password', '')}" if self.params.get('password') else ""
             attach_string = f"host={self.params['host']} port={port} user={self.params['user']}{password_part} dbname={self.params['database']}"
@@ -42,16 +56,39 @@ class PostgreSQLDataLoader(ExternalDataLoader):
             # Detach existing postgres connection if it exists 
             try:
                 self.duck_db_conn.execute("DETACH mypostgresdb;")
-            except:
+            except Exception:
                 pass  # Ignore if connection doesn't exist
 
-            # Register Postgres connection
-            self.duck_db_conn.execute(f"ATTACH '{attach_string}' AS mypostgresdb (TYPE postgres);")
-            print(f"Successfully connected to PostgreSQL database: {self.params['database']}")
+            # Use ThreadPoolExecutor to implement connection timeout
+            # DuckDB PostgreSQL extension doesn't support native timeout parameters
+            def attach_postgres():
+                self.duck_db_conn.execute(f"ATTACH '{attach_string}' AS mypostgresdb (TYPE postgres);")
             
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(attach_postgres)
+                try:
+                    future.result(timeout=connection_timeout)
+                    log.info(f"Successfully connected to PostgreSQL database: {self.params.get('database', 'unknown')}")
+                except FuturesTimeoutError:
+                    # Cancel the future if possible
+                    future.cancel()
+                    error_msg = (
+                        f"Connection to PostgreSQL server timed out after {connection_timeout} seconds. "
+                        f"Please check:\n"
+                        f"  - The PostgreSQL server at '{self.params.get('host', 'localhost')}:{self.params.get('port', '5432')}' is running and accessible\n"
+                        f"  - Network connectivity and firewall settings allow the connection\n"
+                        f"  - The provided credentials are correct\n"
+                        f"  - Try increasing the connection_timeout parameter if the server is slow"
+                    )
+                    log.error(error_msg)
+                    raise ConnectionError(error_msg)
+            
+        except ConnectionError:
+            raise  # Re-raise connection errors as-is
         except Exception as e:
-            print(f"Failed to connect to PostgreSQL: {e}")
-            raise
+            error_msg = f"Failed to connect to PostgreSQL server: {str(e)}"
+            log.error(error_msg)
+            raise ConnectionError(error_msg)
 
     def list_tables(self):
         try:
@@ -67,7 +104,7 @@ class PostgreSQLDataLoader(ExternalDataLoader):
                 ORDER BY table_schema, table_name
             """).fetch_df()
             
-            print(f"Found tables: {tables_df}")
+            log.info(f"Found {len(tables_df)} tables")
 
             results = []
             
@@ -101,13 +138,13 @@ class PostgreSQLDataLoader(ExternalDataLoader):
                     })
                     
                 except Exception as e:
-                    print(f"Error processing table {full_table_name}: {e}")
+                    log.warning(f"Error processing table {full_table_name}: {e}")
                     continue
                     
             return results
             
         except Exception as e:
-            print(f"Error listing tables: {e}")
+            log.error(f"Error listing tables: {e}")
             return []
 
     def ingest_data(self, table_name: str, name_as: Optional[str] = None, size: int = 1000000):

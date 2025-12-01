@@ -1,4 +1,6 @@
 import json
+import logging
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 
 import pandas as pd
 import duckdb
@@ -7,6 +9,11 @@ from data_formulator.data_loader.external_data_loader import ExternalDataLoader,
 
 from data_formulator.security import validate_sql_query
 from typing import Dict, Any, Optional
+
+log = logging.getLogger(__name__)
+
+# Default connection timeout in seconds
+DEFAULT_CONNECTION_TIMEOUT = 30
 
 
 class MySQLDataLoader(ExternalDataLoader):
@@ -18,7 +25,8 @@ class MySQLDataLoader(ExternalDataLoader):
             {"name": "password", "type": "string", "required": False, "default": "", "description": "leave blank for no password"}, 
             {"name": "host", "type": "string", "required": True, "default": "localhost", "description": ""}, 
             {"name": "port", "type": "int", "required": False, "default": 3306, "description": "MySQL server port (default 3306)"},
-            {"name": "database", "type": "string", "required": True, "default": "mysql", "description": ""}
+            {"name": "database", "type": "string", "required": True, "default": "mysql", "description": ""},
+            {"name": "connection_timeout", "type": "int", "required": False, "default": 30, "description": "Connection timeout in seconds (default 30)"}
         ]
         return params_list
 
@@ -53,23 +61,60 @@ MySQL Connection Instructions:
         self.params = params
         self.duck_db_conn = duck_db_conn
         
-        # Install and load the MySQL extension
-        self.duck_db_conn.install_extension("mysql")
-        self.duck_db_conn.load_extension("mysql")
+        # Get connection timeout (default 30 seconds)
+        connection_timeout = int(params.get('connection_timeout', DEFAULT_CONNECTION_TIMEOUT))
+        if connection_timeout <= 0:
+            connection_timeout = DEFAULT_CONNECTION_TIMEOUT
         
-        attach_string = ""
-        for key, value in self.params.items():
-            if value is not None and value != "":
-                attach_string += f"{key}={value} "
-
-        # Detach existing mysqldb connection if it exists
         try:
-            self.duck_db_conn.execute("DETACH mysqldb;")
-        except:
-            pass  # Ignore if mysqldb doesn't exist
-        
-        # Register MySQL connection
-        self.duck_db_conn.execute(f"ATTACH '{attach_string}' AS mysqldb (TYPE mysql);")
+            # Install and load the MySQL extension
+            self.duck_db_conn.install_extension("mysql")
+            self.duck_db_conn.load_extension("mysql")
+            
+            # Build attach string excluding connection_timeout (not a MySQL parameter)
+            attach_string = ""
+            for key, value in self.params.items():
+                if key == 'connection_timeout':
+                    continue  # Skip timeout param, it's not a MySQL connection parameter
+                if value is not None and value != "":
+                    attach_string += f"{key}={value} "
+
+            # Detach existing mysqldb connection if it exists
+            try:
+                self.duck_db_conn.execute("DETACH mysqldb;")
+            except Exception:
+                pass  # Ignore if mysqldb doesn't exist
+            
+            # Use ThreadPoolExecutor to implement connection timeout
+            # DuckDB MySQL extension doesn't support native timeout parameters
+            def attach_mysql():
+                self.duck_db_conn.execute(f"ATTACH '{attach_string}' AS mysqldb (TYPE mysql);")
+            
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(attach_mysql)
+                try:
+                    future.result(timeout=connection_timeout)
+                    log.info(f"Successfully connected to MySQL database: {self.params.get('database', 'unknown')}")
+                except FuturesTimeoutError:
+                    # Cancel the future if possible (note: this won't stop the underlying thread immediately)
+                    future.cancel()
+                    error_msg = (
+                        f"Connection to MySQL server timed out after {connection_timeout} seconds. "
+                        f"Please check:\n"
+                        f"  - The MySQL server at '{self.params.get('host', 'localhost')}:{self.params.get('port', 3306)}' is running and accessible\n"
+                        f"  - Network connectivity and firewall settings allow the connection\n"
+                        f"  - The provided credentials are correct\n"
+                        f"  - Try increasing the connection_timeout parameter if the server is slow"
+                    )
+                    log.error(error_msg)
+                    raise ConnectionError(error_msg)
+                    
+        except ConnectionError:
+            raise  # Re-raise connection errors as-is
+        except Exception as e:
+            error_msg = f"Failed to connect to MySQL server: {str(e)}"
+            log.error(error_msg)
+            raise ConnectionError(error_msg)
 
     def list_tables(self, table_filter: str = None):
         tables_df = self.duck_db_conn.execute(f"""
