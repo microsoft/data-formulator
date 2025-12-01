@@ -1177,6 +1177,7 @@ export const DataLoaderForm: React.FC<{
                                     dataLoaderType, paramName: paramDef.name, 
                                     paramValue: event.target.value}));
                             }}
+                            onKeyDown={(e) => e.stopPropagation()}
                             slotProps={{
                                 inputLabel: {shrink: true}
                             }}
@@ -1204,6 +1205,7 @@ export const DataLoaderForm: React.FC<{
                     placeholder="load only tables containing keywords"
                     value={tableFilter}
                     onChange={(event) => setTableFilter(event.target.value)}
+                    onKeyDown={(e) => e.stopPropagation()}
                     slotProps={{
                         inputLabel: {shrink: true},
                     }}
@@ -1435,6 +1437,7 @@ export const DataQueryForm: React.FC<{
                 }}
                 value={queryResultName}
                 onChange={(event: any) => setQueryResultName(event.target.value)}
+                onKeyDown={(e) => e.stopPropagation()}
             />
             <Button variant="contained" color="primary" size="small" disabled={queryResultName === ""} sx={{textTransform: "none", width: 120}}
                 onClick={() => handleImportQueryResult()}>
