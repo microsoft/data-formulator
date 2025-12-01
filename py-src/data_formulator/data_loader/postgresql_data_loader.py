@@ -39,8 +39,14 @@ class PostgreSQLDataLoader(ExternalDataLoader):
         self.duck_db_conn = duck_db_conn
         
         # Get connection timeout (default 30 seconds)
-        connection_timeout = int(params.get('connection_timeout', DEFAULT_CONNECTION_TIMEOUT))
-        if connection_timeout <= 0:
+        try:
+            timeout_value = params.get('connection_timeout', DEFAULT_CONNECTION_TIMEOUT)
+            connection_timeout = int(timeout_value) if timeout_value else DEFAULT_CONNECTION_TIMEOUT
+            if connection_timeout <= 0:
+                log.warning(f"Invalid connection_timeout value ({timeout_value}), using default {DEFAULT_CONNECTION_TIMEOUT}s")
+                connection_timeout = DEFAULT_CONNECTION_TIMEOUT
+        except (ValueError, TypeError) as e:
+            log.warning(f"Invalid connection_timeout value, using default {DEFAULT_CONNECTION_TIMEOUT}s: {e}")
             connection_timeout = DEFAULT_CONNECTION_TIMEOUT
         
         try:
@@ -70,8 +76,8 @@ class PostgreSQLDataLoader(ExternalDataLoader):
                     future.result(timeout=connection_timeout)
                     log.info(f"Successfully connected to PostgreSQL database: {self.params.get('database', 'unknown')}")
                 except FuturesTimeoutError:
-                    # Cancel the future if possible
-                    future.cancel()
+                    # Note: future.cancel() only prevents execution if task hasn't started,
+                    # but the underlying thread may continue running in the background
                     error_msg = (
                         f"Connection to PostgreSQL server timed out after {connection_timeout} seconds. "
                         f"Please check:\n"
