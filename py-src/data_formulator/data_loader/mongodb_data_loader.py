@@ -73,6 +73,17 @@ MongoDB Connection Instructions:
             self.client = MongoClient(uri, serverSelectionTimeoutMS=5000)
             self.db = self.client[self.database]
             self.client.server_info()
+
+            db_list = self.client.list_database_names()
+            
+            if self.database not in db_list:
+                available_dbs = ', '.join(db_list) if db_list else 'none'
+                self.client.close()
+                raise ValueError(
+                    f"Database '{self.database}' not found. "
+                    f"Available databases: {available_dbs}"
+                )
+            
         except ImportError:
             raise ImportError("pymongo is required. Install with: pip install pymongo")
         except Exception as e:
@@ -278,12 +289,10 @@ MongoDB Connection Instructions:
         if not query:
             raise ValueError("Query cannot be empty")
         
-        # Shell 风格: db.collection.method(...)
         if query.startswith('db.'):
             parsed = self.parser.parse(query)
             return self._execute_query(parsed, preview=True)
         
-        # 直接使用集合名
         if query in self.db.list_collection_names():
             docs = list(self.db[query].find().limit(10))
             return [self._serialize(doc) for doc in docs]

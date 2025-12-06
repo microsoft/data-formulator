@@ -30,7 +30,6 @@ class MongoQueryParser:
             ZeroOrMore(dot + identifier)
         )
         
-        # 支持的方法列表
         self.supported_methods = [
             "find", "findOne", "limit", "sort", "aggregate", 
             "countDocuments", "skip", "distinct", "estimatedDocumentCount"
@@ -53,7 +52,6 @@ class MongoQueryParser:
         string_char = None
         
         for i, char in enumerate(text):
-            # 处理字符串内的括号
             if char in ('"', "'") and (i == 0 or text[i-1] != '\\'):
                 if not in_string:
                     in_string = True
@@ -262,15 +260,7 @@ class MongoQueryParser:
             raise ValueError(f"Parsing failed: {e}")
     
     def parse(self, query_string: str) -> Dict[str, Any]:
-        """
-        Parse MongoDB query string and return structured query information
-        
-        Args:
-            query_string: MongoDB Shell 格式的查询字符串
-            
-        Returns:
-            Dict: 包含 collection, method, filter, projection, pipeline, options 等信息
-        """
+        # Parse the MongoDB Shell query string
         query_string = query_string.strip().rstrip(';')
         
         if not self.is_db_query(query_string):
@@ -373,7 +363,7 @@ class MongoQueryParser:
 _parser_instance = None
 
 def get_parser() -> MongoQueryParser:
-    """Get the singleton parser instance"""
+    # Singleton access to MongoQueryParser instance
     global _parser_instance
     if _parser_instance is None:
         _parser_instance = MongoQueryParser()
