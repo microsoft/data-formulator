@@ -1,0 +1,9 @@
+[
+  { "text": "EP Chamfer angle out" , "value": "EP Chamfer angle out"},
+  { "text": "PP Thickness" , "value": "PP Thickness"},
+  { "text": "CSCL Microwaviness" , "value": "CSCL Microwaviness"},
+  { "text": "CSCL Ex OD Dub off", "value": "CSCL Ex OD Dub off"},
+  { "text": "CSCL Dub off" , "value": "CSCL Dub off"},
+  { "text": "DS Flatness Type", "value": "DS Flatness Type"},
+  { "text": "CSCL OSA DEFECT", "value": "CSCL OSA DEFECT"}
+]

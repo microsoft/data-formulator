@@ -1,0 +1,16 @@
+# Dockerfile for Python backend
+FROM python:3.11-slim
+
+WORKDIR /app
+# Copy all source code and config files first
+COPY pyproject.toml ./
+COPY MANIFEST.in ./
+COPY requirements.txt ./
+COPY py-src/ ./py-src/
+COPY api-keys.env ./
+
+# Install dependencies (including local package)
+RUN pip install --no-cache-dir -r requirements.txt
+
+EXPOSE 8000
+CMD ["python", "-m", "data_formulator"]

@@ -4,6 +4,7 @@
     "version": "0.1.0",
     "private": true,
     "dependencies": {
+        "@azure/msal-browser": "^4.26.2",
         "@emotion/react": "^11.14.0",
         "@emotion/styled": "^11.14.0",
         "@fontsource/roboto": "^4.5.5",
@@ -23,6 +24,7 @@
         "lodash": "^4.17.21",
         "markdown-to-jsx": "^7.4.0",
         "mui-markdown": "^2.0.3",
+        "pptxgenjs": "^4.0.1",
         "prettier": "^2.8.3",
         "prism-react-renderer": "^1.3.5",
         "prismjs": "^1.30.0",

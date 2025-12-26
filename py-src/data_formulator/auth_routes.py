@@ -1,0 +1,82 @@
+# auth_routes.py
+
+from flask import Blueprint, request, session, jsonify
+import bcrypt
+import requests  # ✅ Dùng để gọi Microsoft Graph API
+
+auth_bp = Blueprint('auth', __name__, url_prefix='/api/auth')
+
+# Fake DB mẫu
+fake_users_db = {
+    "admin": bcrypt.hashpw("123456".encode(), bcrypt.gensalt())
+}
+AUTH_SERVICE_URL = "http://172.19.16.22:8888/auth/user/local"
+# ===== LOGIN BẰNG USERNAME PASSWORD =====
+@auth_bp.route('/login', methods=['POST'])
+def login():
+    data = request.get_json()
+    username = data.get('username')
+    password = data.get('password')
+
+    # Gửi thông tin đăng nhập sang API nội bộ
+    resp = requests.post(AUTH_SERVICE_URL, json=data)
+
+    if resp.status_code != 200:
+        return jsonify({"status": "error", "message": "Login failed"}), 401
+
+    result = resp.json()
+
+    # ✅ Lưu thông tin session
+    session['username'] = username
+    session['name'] = result.get('fullname', username)
+    session['token'] = result.get('token')  # Nếu API của bạn trả token
+
+    return jsonify({"status": "success", "message": "Login ok"})
+
+# ===== LOGIN BẰNG MICROSOFT =====
+@auth_bp.route('/microsoft', methods=['POST'])
+def microsoft_login():
+    data = request.get_json()
+    if not data or "email" not in data or "username" not in data:
+        # ❌ Request sai, chắc chắn không cho login -> clear session luôn
+        session.clear()
+        return jsonify({"message": "Invalid request"}), 400
+
+    email = data["email"]
+    username = data["username"]
+
+    import requests
+    api_url = "http://172.19.16.22:8888/auth/user/microsoft"
+    response = requests.post(api_url, json={"email": email, "username": username})
+
+    # ❌ Nếu API xác thực của anh trả về khác 200 -> không cho login + clear session
+    if response.status_code != 200:
+        session.clear()
+        return jsonify({"message": "Your account is not registered to use this application."}), 403
+
+    # ✅ OK -> login thành công, lưu session
+    session['username'] = username
+    session['email'] = email
+
+    return jsonify({"message": "Microsoft login success"}), 200
+# ===== LẤY USER HIỆN TẠI =====
+@auth_bp.route('/me', methods=['GET'])
+def me():
+    username = session.get('username')
+    name = session.get('name')
+
+    if not username:
+        return jsonify([]), 401
+
+    return jsonify([{
+        "user_id": username,
+        "user_claims": [
+            {"typ": "name", "val": name or username}  # ✅ Ưu tiên displayName
+        ]
+    }])
+
+# ===== LOGOUT =====
+@auth_bp.route('/logout', methods=['POST'])
+def logout():
+    session.clear()
+    return jsonify({"status": "success", "message": "Logged out"})

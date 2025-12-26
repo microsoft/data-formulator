@@ -35,6 +35,8 @@ import os
 # blueprints
 from data_formulator.tables_routes import tables_bp
 from data_formulator.agent_routes import agent_bp
+from data_formulator.auth_routes import auth_bp
+from data_formulator.export_routes import export_bp
 from data_formulator.db_manager import db_manager
 from data_formulator.example_datasets_config import EXAMPLE_DATASETS
 
@@ -74,6 +76,8 @@ app.config['CLI_ARGS'] = {
 if not app.config['CLI_ARGS']['disable_database']:
     app.register_blueprint(tables_bp)
 app.register_blueprint(agent_bp)
+app.register_blueprint(auth_bp)
+app.register_blueprint(export_bp)
 
 # Get logger for this module (logging config moved to run_app function)
 logger = logging.getLogger(__name__)

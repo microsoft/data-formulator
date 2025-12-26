@@ -155,6 +155,8 @@ def sample_table():
         data = request.get_json()
         table_id = data.get('table')
         sample_size = data.get('size', 1000)
+        range_start = data.get('range_start')
+        range_size = data.get('range_size')
         aggregate_fields_and_functions = data.get('aggregate_fields_and_functions', []) # each element is a tuple (field, function)
         select_fields = data.get('select_fields', []) # if empty, we want to include all fields
         method = data.get('method', 'random') # one of 'random', 'head', 'bottom'
@@ -189,12 +191,24 @@ def sample_table():
             if method == 'random':
                 query += f" ORDER BY RANDOM() LIMIT {sample_size}"
             elif method == 'head':
+                offset = 0
+                limit = sample_size
+                if range_start is not None:
+                    try:
+                        offset = max(int(range_start), 0)
+                    except ValueError:
+                        offset = 0
+                if range_size is not None:
+                    try:
+                        limit = max(int(range_size), 1)
+                    except ValueError:
+                        limit = sample_size
                 if valid_order_by_fields:
                     # Build ORDER BY clause with validated fields
                     order_by_clause = ", ".join([f'"{field}"' for field in valid_order_by_fields])
-                    query += f" ORDER BY {order_by_clause} LIMIT {sample_size}"
+                    query += f" ORDER BY {order_by_clause} LIMIT {limit} OFFSET {offset}"
                 else:
-                    query += f" LIMIT {sample_size}"
+                    query += f" LIMIT {limit} OFFSET {offset}"
             elif method == 'bottom':
                 if valid_order_by_fields:
                     # Build ORDER BY clause with validated fields in descending order

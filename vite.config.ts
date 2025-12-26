@@ -2,8 +2,8 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react-swc';
 import path from 'path';
 
-// Get port from environment variable with fallback to 5000
-const apiPort = process.env.API_PORT || 5000;
+const apiHost = process.env.VITE_API_HOST || 'localhost';
+const apiPort = process.env.VITE_API_PORT || 8000;
 
 export default defineConfig({
   plugins: [react()],
@@ -44,7 +44,7 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': {
-        target: `http://localhost:${apiPort}`,
+        target: `http://${apiHost}:${apiPort}`,
         changeOrigin: true,
       }
     }

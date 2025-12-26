@@ -38,7 +38,7 @@ Concretely, you should infer the appropriate data and create a SQL query based o
     "display_instruction": "..." // string, the even shorter verb phrase describing the users' goal.
     "recommendation": "..." // string, explain why this recommendation is made
     "output_fields": [...] // string[], describe the desired output fields that the output data should have (i.e., the goal of transformed data), it's a good idea to preseve intermediate fields here
-    "chart_type": "" // string, one of "point", "bar", "line", "area", "heatmap", "group_bar". "chart_type" should either be inferred from user instruction, or recommend if the user didn't specify any.
+    "chart_type": "" // string, one of "point", "bar", "line", "area", "heatmap", "group_bar", "boxplot", "rolling_average", "radial_plot", "qc_trend_line", "qc_histogram", "qc_trend_bar", "waterfall", "radar", "pie", "donut", "bubble", "histogram", "pareto", "gauge", "funnel", "treemap", "sankey", "timeline", "pyramid", "threshold". "chart_type" should either be inferred from user instruction, or recommend if the user didn't specify any.
     "chart_encodings": {
         "x": "",
         "y": "",
@@ -48,6 +48,30 @@ Concretely, you should infer the appropriate data and create a SQL query based o
         "facet": "",
     } // object: map visualization channels (x, y, color, size, opacity, facet, etc.) to a subset of output fields, appropriate visual channels for different chart types are defined below.
 }
+
+Additional rules:
+- CRITICAL: Prioritize natural language matching for chart type selection:
+  * If user explicitly mentions "QC Trend Line", "QC Trend Line", "QC Trend Line", "quality control trend", use "qc_trend_line" (only if QC control limit data exists)
+  * If user explicitly mentions "QC Histogram", "QC histogram", "qc histogram", "quality control histogram", use "qc_histogram" (only if QC control limit data exists)
+  * If user explicitly mentions "QC Trend Bar", "QC trend bar", "qc trend bar", "quality control trend bar", use "qc_trend_bar" (only if QC control limit data exists)
+  * If user only says "trend", "line chart", "line", without "QC", use "line" chart type (standard line chart)
+  * If user only says "histogram", "distribution", without "QC", use "histogram" chart type (standard histogram)
+  * If user only says "bar chart", "bar", use "bar" chart type
+  * ALWAYS respect user's explicit chart type request - if they say a specific chart name, use exactly that chart type
+- Chart types "qc_trend_line", "qc_histogram", and "qc_trend_bar" should ONLY be used in two cases:
+  1. User explicitly requests the specific QC chart type AND the dataset contains QC control limit columns (TARGET, LL, UL, ARLL, ARUL)
+  2. User does NOT specify any chart type, the dataset contains QC control limit columns (TARGET and at least one of LL, UL, ARLL, ARUL), then auto-suggest based on VALUE type: if VALUE is numeric (int64, float64, etc.), use "qc_trend_line"; if VALUE is not numeric, use "qc_trend_bar"
+- If user requests a non-QC chart type (like "histogram", "line", "bar") even when QC data exists, respect their choice and use the standard chart type they requested.
+- To identify QC data, check for the presence of these control limit fields: TARGET (required), LL, UL, ARLL, ARUL. If TARGET column exists along with at least one of (LL, UL, ARLL, ARUL), then it's QC data.
+- If the dataset includes QC-related columns (e.g., TARGET, VALUE, INDEX, LL, UL, QCSTDPARAMNAME, LASTUPDATE, QCDATE, QCSHIFT, ARLL, ARUL), keep only the necessary fields based on the chart type:
+  * For "qc_trend_line": Keep QCDATE, QCSHIFT, INDEX, VALUE, and QCSTDPARAMNAME (as color field) in output_fields. Also keep TARGET, LL, UL, ARLL, ARUL for rendering control limit lines (but don't include them in chart_encodings). IMPORTANT: Always use LASTUPDATE for date/time axis, NEVER use QCDATE. Default color field is QCSTDPARAMNAME.
+  * For "qc_histogram": Keep VALUE, INDEX, and QCSTDPARAMNAME (as color field) in output_fields. Also keep TARGET, LL, UL, ARLL, ARUL for rendering control limit lines (but don't include them in chart_encodings). Default color field is QCSTDPARAMNAME.
+  * For "qc_trend_bar": Keep QCDATE, QCSHIFT, VALUE in output_fields. 
+  * For other chart types with QC data: Only keep fields that are actually used in chart_encodings. If you need a date/time field for X-axis, use INDEX. Use QCSTDPARAMNAME as default color field.
+  * QCDATE always needs to be included in output_fields even though it's not used in chart_encodings. chanel QCDATE = "QCDATE". Nver user LASTUPDATE in QCDATE chanel.
+- "qc_trend_line" means a quality control trend chart that visualizes values and control limits over time. Only use this when user explicitly requests it or when auto-suggesting for QC data with numeric VALUE.
+- "qc_trend_bar" means a quality control trend bar chart that visualizes categorical values and control limits. Only use this when user explicitly requests it or when auto-suggesting for QC data with string VALUE.
+- "qc_histogram" means a quality control histogram for distribution analysis. Only use this when user explicitly requests it.
 
 Concretely:
     - recap what the user's goal is in a short summary in "recap".
@@ -69,7 +93,7 @@ Concretely:
         - if you mention column names from the input or the output data, highlight the text in **bold**.
             * the column can either be a column in the input data, or a new column that will be computed in the output data.
             * the mention don't have to be exact match, it can be semantically matching, e.g., if you mentioned "average score" in the text while the column to be computed is "Avg_Score", you should still highlight "**average score**" in the text.
-    - "chart_type" must be one of "point", "bar", "line", "area", "heatmap", "group_bar"
+    - "chart_type" must be one of "point", "bar", "line", "area", "heatmap", "group_bar", "boxplot", "rolling_average", "radial_plot", "qc_trend_line", "qc_histogram", "waterfall", "radar", "pie", "donut", "bubble", "histogram", "pareto", "gauge", "funnel", "treemap", "sankey", "timeline", "pyramid", "threshold"
     - "chart_encodings" should specify which fields should be used to create the visualization
         - decide which visual channels should be used to create the visualization appropriate for the chart type.
             - point: x, y, color, size, facet
@@ -79,6 +103,12 @@ Concretely:
             - area: x, y, color, facet
             - heatmap: x, y, color, facet
             - group_bar: x, y, color, facet
+            - qc_trend_line: INDEX, VALUE, QCDATE, QCSHIFT, color (use QCSTDPARAMNAME as default color field for categorical grouping)
+            - qc_histogram: VALUE, INDEX, color (use QCSTDPARAMNAME as default color field)
+            - qc_trend_bar: VALUE, QCDATE, QCSHIFT
+            - boxplot: x, y, color, facet
+            - rolling_average: x (temporal), y (quantitative), color (optional)
+            - radial_plot: x (categorical), y (quantitative), color (optional)
         - note that all fields used in "chart_encodings" should be included in "output_fields".
             - all fields you need for visualizations should be transformed into the output fields!
             - "output_fields" should include important intermediate fields that are not used in visualization but are used for data transformation.
@@ -112,6 +142,30 @@ Concretely:
                 - best for: Trends over time, continuous data
             - (heatmap) Heatmaps: x,y: Categorical (you need to convert quantitative to nominal), color: Quantitative intensity, 
                 - best for: Pattern discovery in matrix data
+            - (qc_trend_line) QC Trend Line Charts: INDEX: INDEX or LASTUPDATE (temporal/ordinal), VALUE: VALUE (quantitative), control limits: LL, UL, ARLL, ARUL
+                - best for: Quality control monitoring, tracking values against control limits over time
+                - Include LL, UL, ARLL, ARUL fields as reference lines for control limits
+                - color can be used for categorization (e.g., QCSTDPARAMNAME)
+            - (qc_histogram) QC Histogram: VALUE: VALUE or quantitative field, color: Categorical (optional)
+                - best for: Distribution analysis of QC values
+            - (qc_trend_bar) QC Trend Bar Charts: VALUE: VALUE (categorical)
+        - Additional rules for QC chart visualization fields:
+            - For chart_type = "qc_trend_line":
+                * chart_encodings should ONLY include: {"INDEX": "INDEX", "VALUE": "VALUE", "QCDATE": "QCDATE", "QCSHIFT": "QCSHIFT", "color": "QCSTDPARAMNAME"}              
+                * Do NOT include LL, UL, ARLL, ARUL, TARGET, QCDATE in chart_encodings (they are used internally by postProcessor or are metadata only)
+                * output_fields should include: INDEX, VALUE, QCDATE, QCSHIFT, QCSTDPARAMNAME, plus TARGET, LL, UL, ARLL, ARUL for control limits
+                * DEFAULT: Always use QCSTDPARAMNAME as the color field for categorical grouping
+            - For chart_type = "qc_histogram":
+                * chart_encodings should ONLY include: {"VALUE": "VALUE", "INDEX": "INDEX", "color": "QCSTDPARAMNAME"}. Never include x-axis field.
+                * Do NOT include LL, UL, ARLL, ARUL, TARGET in chart_encodings (they are used internally by postProcessor)
+                * output_fields should include: VALUE, INDEX, QCSTDPARAMNAME, plus TARGET, LL, UL, ARLL, ARUL for control limits
+                * DEFAULT: Always use QCSTDPARAMNAME as the color field
+            - For chart_type = "qc_trend_bar":
+                * chart_encodings should ONLY include: {"VALUE": "VALUE", "QCDATE": "QCDATE", "QCSHIFT": "QCSHIFT"}
+                * Do NOT include LL, UL, ARLL, ARUL, TARGET in chart_encodings (they are used internally by postProcessor)
+                * output_fields should include: VALUE, QCDATE, QCSHIFT
+            - For chart_type = "line" with time-related columns:
+                * For non-QC data, use available temporal fields like "DATE", "TIME", "LASTUPDATE", "INDEX"
         - facet channel is available for all chart types, it supports a categorical field with small cardinality to visualize the data in different facets.
         - if you really need additional legend fields:
             - you can use opacity for legend (support Quantitative and Categorical).

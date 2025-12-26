@@ -5,6 +5,7 @@ from data_formulator.data_loader.kusto_data_loader import KustoDataLoader
 from data_formulator.data_loader.s3_data_loader import S3DataLoader
 from data_formulator.data_loader.azure_blob_data_loader import AzureBlobDataLoader
 from data_formulator.data_loader.postgresql_data_loader import PostgreSQLDataLoader
+from data_formulator.data_loader.qc_data_loader import QCDataLoader
 
 DATA_LOADERS = {
     "mysql": MySQLDataLoader,
@@ -12,8 +13,9 @@ DATA_LOADERS = {
     "kusto": KustoDataLoader,
     "s3": S3DataLoader,
     "azure_blob": AzureBlobDataLoader,
-    "postgresql": PostgreSQLDataLoader
+    "postgresql": PostgreSQLDataLoader,
+    "QC_Data": QCDataLoader
 }
 
-__all__ = ["ExternalDataLoader", "MySQLDataLoader", "MSSQLDataLoader", "KustoDataLoader", "S3DataLoader", "AzureBlobDataLoader","PostgreSQLDataLoader","DATA_LOADERS"]
+__all__ = ["ExternalDataLoader", "MySQLDataLoader", "MSSQLDataLoader", "KustoDataLoader", "S3DataLoader", "AzureBlobDataLoader","PostgreSQLDataLoader","DATA_LOADERS","QCDataLoader"]
 
