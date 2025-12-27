@@ -1,6 +1,12 @@
 # Dockerfile for React frontend (Vite)
+
 FROM node:20-alpine as build
 WORKDIR /app
+
+# Nhận biến môi trường VITE_REDIRECT_URI từ build args
+ARG VITE_REDIRECT_URI
+ENV VITE_REDIRECT_URI=$VITE_REDIRECT_URI
+
 COPY package.json package-lock.json* yarn.lock* ./
 RUN npm install
 COPY src ./src
@@ -12,7 +18,7 @@ RUN npm run build
 
 FROM nginx:alpine
 COPY --from=build /app/dist /usr/share/nginx/html
-# Đổi port nginx sang 8001
-RUN sed -i 's/listen       80;/listen       8001;/g' /etc/nginx/conf.d/default.conf
+# Copy custom nginx config for SPA routing
+COPY nginx.conf /etc/nginx/conf.d/default.conf
 EXPOSE 8001
 CMD ["nginx", "-g", "daemon off;"]

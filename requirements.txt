@@ -10,6 +10,8 @@ azure-keyvault-secrets
 azure-storage-blob
 python-dotenv
 vega_datasets
+Flask-Session
+redis
 litellm
 duckdb
 boto3

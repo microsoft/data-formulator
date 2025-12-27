@@ -1,0 +1,18 @@
+# Build Docker image for frontend
+# Chạy lệnh sau trong thư mục chứa Dockerfile.frontend:
+docker build -f Dockerfile.frontend -t data-formulator-frontend .
+
+# Run container, map port 8001:
+docker run -d -p 8001:8001 --name data-formulator-frontend data-formulator-frontend
+
+# Nếu cần truyền biến môi trường cho build (API endpoint):
+# docker build --build-arg VITE_API_HOST=backend_host --build-arg VITE_API_PORT=8000 ...
+# hoặc chỉnh file .env trước khi build
+
+# Xem logs nginx:
+docker logs -f data-formulator-frontend
+
+# Dừng container:
+docker stop data-formulator-frontend
+# Xóa container:
+docker rm data-formulator-frontend

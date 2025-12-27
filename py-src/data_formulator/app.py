@@ -31,6 +31,8 @@ import base64
 APP_ROOT = Path(Path(__file__).parent).absolute()
 
 import os
+from flask_session import Session
+from redis import Redis
 
 # blueprints
 from data_formulator.tables_routes import tables_bp
@@ -61,6 +63,28 @@ app.json_encoder = CustomJSONEncoder
 load_dotenv(os.path.join(APP_ROOT, "..", "..", 'api-keys.env'))
 load_dotenv(os.path.join(APP_ROOT, 'api-keys.env'))
 load_dotenv(os.path.join(APP_ROOT, '.env'))
+
+# Configure server-side sessions using Redis when available
+# To enable, set REDIS_HOST and optionally REDIS_PORT in the environment (defaults to 127.0.0.1:6379)
+redis_host = os.environ.get('REDIS_HOST')
+if redis_host:
+    try:
+        redis_port = int(os.environ.get('REDIS_PORT', '6379'))
+        redis_client = Redis(host=redis_host, port=redis_port, socket_connect_timeout=2)
+        # test connection
+        redis_client.ping()
+        app.config.update({
+            'SESSION_TYPE': 'redis',
+            'SESSION_REDIS': redis_client,
+            'SESSION_USE_SIGNER': True,
+            'PERMANENT_SESSION_LIFETIME': datetime.timedelta(hours=4)
+        })
+        Session(app)
+        logging.getLogger(__name__).info(f"Redis sessions enabled (host={redis_host}:{redis_port})")
+    except Exception as e:
+        logging.getLogger(__name__).warning(f"Could not enable Redis sessions: {e}. Falling back to cookie-based sessions.")
+else:
+    logging.getLogger(__name__).info("REDIS_HOST not set — using cookie-based sessions (default)")
 
 # Add this line to store args at app level
 app.config['CLI_ARGS'] = {
@@ -245,7 +269,9 @@ def database_disabled_fallback(path):
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Data Formulator")
-    parser.add_argument("-p", "--port", type=int, default=5000, help="The port number you want to use")
+    # Ưu tiên lấy port từ biến môi trường PORT, nếu không có thì dùng 5000
+    default_port = int(os.environ.get("PORT", 5000))
+    parser.add_argument("-p", "--port", type=int, default=default_port, help="The port number you want to use")
     parser.add_argument("--exec-python-in-subprocess", action='store_true', default=False,
         help="Whether to execute python in subprocess, it makes the app more secure (reducing the chance for the model to access the local machine), but increases the time of response")
     parser.add_argument("--disable-display-keys", action='store_true', default=False,
@@ -279,13 +305,20 @@ def run_app():
     # Update database manager state
     db_manager._disabled = args.disable_database
 
+    # Lấy host từ biến môi trường HOST, mặc định local là '127.0.0.1' khi dev, còn lại là '0.0.0.0'
+    env_host = os.environ.get("HOST")
+    if args.dev:
+        host = env_host if env_host else "127.0.0.1"
+    else:
+        host = env_host if env_host else "0.0.0.0"
+
     if not args.dev:
-        url = "http://localhost:{0}".format(args.port)
+        url = f"http://{host}:{args.port}"
         threading.Timer(2, lambda: webbrowser.open(url, new=2)).start()
 
     # Enable debug mode and auto-reload in development mode
     debug_mode = args.dev
-    app.run(host='0.0.0.0', port=args.port, debug=debug_mode, use_reloader=debug_mode)
+    app.run(host=host, port=args.port, debug=debug_mode, use_reloader=debug_mode)
 
 if __name__ == '__main__':
     #app.run(debug=True, host='127.0.0.1', port=5000)

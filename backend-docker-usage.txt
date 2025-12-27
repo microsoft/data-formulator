@@ -1,0 +1,21 @@
+# Build Docker image for backend
+# Chạy lệnh sau trong thư mục chứa Dockerfile.backend:
+docker build -f Dockerfile.backend -t data-formulator-backend .
+
+# Run container, map port 8000 và truyền biến môi trường nếu cần:
+docker run -d -p 8000:8000 \
+  -e PORT=8000 \
+  -e HOST=0.0.0.0 \
+  --name data-formulator-backend \
+  data-formulator-backend
+
+# Nếu cần mount file cấu hình hoặc volume:
+# docker run -d -p 8000:8000 -v /path/to/config:/app/config ...
+
+# Xem logs:
+docker logs -f data-formulator-backend
+
+# Dừng container:
+docker stop data-formulator-backend
+# Xóa container:
+docker rm data-formulator-backend

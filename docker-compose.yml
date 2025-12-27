@@ -1,0 +1,55 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis:7
+    container_name: df-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  backend:
+    image: df-backend
+    container_name: df-backend
+    env_file:
+      - api-keys.env
+      - .env
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - PORT=8000
+    ports:
+      - "8000:8000"
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8000/api/hello" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  frontend:
+    image: df-frontend
+    container_name: df-frontend
+    ports:
+      - "8001:443"
+    depends_on:
+      - backend
+    volumes:
+      - /etc/ssl/mycerts:/etc/ssl/mycerts:ro
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD-SHELL", "curl -k --fail https://localhost:443/api/hello || exit 1" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+# Optional: define network (default bridge is fine)
+networks: {}

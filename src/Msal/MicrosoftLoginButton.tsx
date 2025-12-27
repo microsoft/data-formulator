@@ -3,19 +3,45 @@ import React, { useEffect } from "react";
 import { PublicClientApplication } from "@azure/msal-browser";
 import { msalConfig, loginRequest } from "./msalConfig";
 
-const msalInstance = new PublicClientApplication(msalConfig);
+let msalInstance: PublicClientApplication | null = null;
+function getMsalInstance(): PublicClientApplication | null {
+  if (msalInstance) return msalInstance;
+  if (
+    typeof window !== "undefined" &&
+    (window.isSecureContext || window.location.hostname === "localhost")
+  ) {
+    try {
+      msalInstance = new PublicClientApplication(msalConfig);
+    } catch (err) {
+      console.error("MSAL init error:", err);
+      msalInstance = null;
+    }
+  } else {
+    console.warn(
+      "MSAL not initialized: insecure context or crypto unavailable"
+    );
+    msalInstance = null;
+  }
+  return msalInstance;
+}
 
 const MicrosoftLoginButton: React.FC = () => {
   useEffect(() => {
-    msalInstance
-      .initialize()
+    const instance = getMsalInstance();
+    instance
+      ?.initialize()
       .catch((err) => console.error("MSAL init error:", err));
   }, []);
 
   const login = async () => {
     try {
+      const instance = getMsalInstance();
+      if (!instance) {
+        alert("Microsoft auth is not available in this environment.");
+        return;
+      }
       // ✅ Đăng nhập Microsoft
-      const loginResponse = await msalInstance.loginPopup(loginRequest);
+      const loginResponse = await instance.loginPopup(loginRequest);
       const account = loginResponse.account;
 
       if (!account) {
