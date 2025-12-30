@@ -68,7 +68,7 @@ import { MessageSnackbar } from "../views/MessageSnackbar";
 import { DictTable } from "../components/ComponentType";
 import { AppDispatch } from "./store";
 // import dfLogo from "../assets/df-logo.png";
-import dfLogo from "../assets/logo_HOGV DataViz Assistant.png";
+import dfLogo from "../assets/gdis-logo.png";
 import { ModelSelectionButton } from "../views/ModelSelectionDialog";
 import { TableCopyDialogV2 } from "../views/TableSelectionView";
 import { TableUploadDialog } from "../views/TableSelectionView";
@@ -238,7 +238,7 @@ export const ExportStateButton: React.FC<{}> = ({}) => {
 
 //type AppProps = ConnectedProps<typeof connector>;
 
-export const toolName = "HOGV DataViz Assistant";
+export const toolName = "GDIS AI Agent";
 
 export interface AppFCProps {}
 
@@ -982,106 +982,116 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
               borderRadius: 4,
             }}
           >
-            {focusedTableId !== undefined && (
-              <React.Fragment>
-                <ToggleButtonGroup
-                  value={viewMode}
-                  exclusive
-                  onChange={(_, newMode) => {
-                    if (newMode !== null) {
-                      dispatch(dfActions.setViewMode(newMode));
-                    }
-                  }}
-                  sx={{
-                    mr: 2,
-                    height: "28px",
-                    my: "auto",
-                    borderRadius: 2,
-                    border: "1px solid rgba(0, 0, 0, 0.1)",
-                    boxShadow: "0 1px 3px rgba(0, 0, 0, 0.1)",
-                    "& .MuiToggleButton-root": {
-                      textTransform: "none",
-                      fontSize: "14px",
-                      fontWeight: 500,
-                      border: "none",
-                      borderRadius: 1,
-                      px: 1,
-                      py: 0.5,
-                      "&:hover": {
-                        backgroundColor: "rgba(0, 0, 0, 0.04)",
-                        color: "text.primary",
-                      },
-                      "&.Mui-selected": {
-                        backgroundColor: alpha(theme.palette.primary.main, 0.1),
-                        color: theme.palette.primary.main,
-                      },
-                      "&:first-of-type": {
-                        borderTopRightRadius: 0,
-                        borderBottomRightRadius: 0,
-                      },
-                      "&:last-of-type": {
-                        borderTopLeftRadius: 0,
-                        borderBottomLeftRadius: 0,
-                      },
-                    },
-                    ".mode-icon": {
-                      animation: "pulse 3s ease-out infinite",
-                      "@keyframes pulse": {
-                        "0%, 80%": { transform: "scale(1)" },
-                        "90%": { transform: "scale(1.3)" },
-                        "100%": { transform: "scale(1)" },
-                      },
-                    },
-                  }}
-                >
-                  <ToggleButton value="editor">
-                    <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                      <Box
-                        className={viewMode === "report" ? "mode-icon" : ""}
-                        component="span"
-                        sx={{ fontSize: "12px" }}
-                      >
-                        🔍
-                      </Box>
-                      <Box component="span">Explore</Box>
-                    </Box>
-                  </ToggleButton>
-                  <ToggleButton value="report">
-                    <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                      <Box
-                        className={viewMode === "editor" ? "mode-icon" : ""}
-                        component="span"
-                        sx={{ fontSize: "12px" }}
-                      >
-                        ✏️
-                      </Box>
-                      <Box component="span">
-                        {generatedReports.length > 0
-                          ? `Reports (${generatedReports.length})`
-                          : "Reports"}
-                      </Box>
-                    </Box>
-                  </ToggleButton>
-                </ToggleButtonGroup>
-                <ConfigDialog />
-                <AgentRulesDialog />
-                <Divider orientation="vertical" variant="middle" flexItem />
-              </React.Fragment>
-            )}
-            {userInfo?.userId === "ADMIN" && (
+            {isAuthenticated ? (
               <>
-                <ModelSelectionButton />
+                {focusedTableId !== undefined && (
+                  <React.Fragment>
+                    <ToggleButtonGroup
+                      value={viewMode}
+                      exclusive
+                      onChange={(_, newMode) => {
+                        if (newMode !== null) {
+                          dispatch(dfActions.setViewMode(newMode));
+                        }
+                      }}
+                      sx={{
+                        mr: 2,
+                        height: "28px",
+                        my: "auto",
+                        borderRadius: 2,
+                        border: "1px solid rgba(0, 0, 0, 0.1)",
+                        boxShadow: "0 1px 3px rgba(0, 0, 0, 0.1)",
+                        "& .MuiToggleButton-root": {
+                          textTransform: "none",
+                          fontSize: "14px",
+                          fontWeight: 500,
+                          border: "none",
+                          borderRadius: 1,
+                          px: 1,
+                          py: 0.5,
+                          "&:hover": {
+                            backgroundColor: "rgba(0, 0, 0, 0.04)",
+                            color: "text.primary",
+                          },
+                          "&.Mui-selected": {
+                            backgroundColor: alpha(
+                              theme.palette.primary.main,
+                              0.1
+                            ),
+                            color: theme.palette.primary.main,
+                          },
+                          "&:first-of-type": {
+                            borderTopRightRadius: 0,
+                            borderBottomRightRadius: 0,
+                          },
+                          "&:last-of-type": {
+                            borderTopLeftRadius: 0,
+                            borderBottomLeftRadius: 0,
+                          },
+                        },
+                        ".mode-icon": {
+                          animation: "pulse 3s ease-out infinite",
+                          "@keyframes pulse": {
+                            "0%, 80%": { transform: "scale(1)" },
+                            "90%": { transform: "scale(1.3)" },
+                            "100%": { transform: "scale(1)" },
+                          },
+                        },
+                      }}
+                    >
+                      <ToggleButton value="editor">
+                        <Box
+                          sx={{ display: "flex", alignItems: "center", gap: 1 }}
+                        >
+                          <Box
+                            className={viewMode === "report" ? "mode-icon" : ""}
+                            component="span"
+                            sx={{ fontSize: "12px" }}
+                          >
+                            🔍
+                          </Box>
+                          <Box component="span">Explore</Box>
+                        </Box>
+                      </ToggleButton>
+                      <ToggleButton value="report">
+                        <Box
+                          sx={{ display: "flex", alignItems: "center", gap: 1 }}
+                        >
+                          <Box
+                            className={viewMode === "editor" ? "mode-icon" : ""}
+                            component="span"
+                            sx={{ fontSize: "12px" }}
+                          >
+                            ✏️
+                          </Box>
+                          <Box component="span">
+                            {generatedReports.length > 0
+                              ? `Reports (${generatedReports.length})`
+                              : "Reports"}
+                          </Box>
+                        </Box>
+                      </ToggleButton>
+                    </ToggleButtonGroup>
+                    <ConfigDialog />
+                    <AgentRulesDialog />
+                    <Divider orientation="vertical" variant="middle" flexItem />
+                  </React.Fragment>
+                )}
+                {userInfo?.userId === "ADMIN" && (
+                  <>
+                    <ModelSelectionButton />
+                    <Divider orientation="vertical" variant="middle" flexItem />
+                  </>
+                )}
+                <Typography
+                  fontSize="inherit"
+                  sx={{ display: "flex", alignItems: "center", gap: 1 }}
+                >
+                  <TableMenu />
+                </Typography>
                 <Divider orientation="vertical" variant="middle" flexItem />
               </>
-            )}
-
-            <Typography
-              fontSize="inherit"
-              sx={{ display: "flex", alignItems: "center", gap: 1 }}
-            >
-              <TableMenu />
-            </Typography>
-            <Divider orientation="vertical" variant="middle" flexItem />
+            ) : null}
             <Typography
               fontSize="inherit"
               sx={{ display: "flex", alignItems: "center", gap: 1 }}
@@ -1090,7 +1100,7 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
             </Typography>
             <Divider orientation="vertical" variant="middle" flexItem />
             <ResetDialog />
-            {userInfo && (
+            {isAuthenticated && userInfo && (
               <>
                 <Divider orientation="vertical" variant="middle" flexItem />
                 <UserMenu

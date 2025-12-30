@@ -44,7 +44,7 @@ import { toolName } from "../app/App";
 import { DataThread } from "./DataThread";
 
 // import dfLogo from '../assets/df-logo.png';
-import dfLogo from "../assets/logo_HOGV DataViz Assistant.png";
+import dfLogo from "../assets/gdis-logo.png";
 import exampleImageTable from "../assets/example-image-table.png";
 import { ModelSelectionButton } from "./ModelSelectionDialog";
 import { DBTableSelectionDialog } from "./DBTableManager";

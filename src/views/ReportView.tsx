@@ -745,26 +745,19 @@ export const ReportView: FC = () => {
               const previousInline = style ? style.getPropertyValue(p) : "";
               prev.get(el)![p] = previousInline || null;
               let safeColor = val;
-              // Nếu là oklch/lch/lab hoặc bất kỳ hàm màu nào không phải rgb/rgba/hsl/hex thì ép bằng canvas
+              // Nếu là oklch/lch/lab hoặc bất kỳ hàm màu nào không phải rgb/rgba/hsl/hex thì ép về fallback trắng/đen luôn
               if (
                 /oklch|lch\(|lab\(/i.test(val) ||
                 /^(?!rgb|hsl|#)/i.test(val.trim())
               ) {
-                try {
-                  const canvas = document.createElement("canvas");
-                  const ctx = canvas.getContext("2d");
-                  if (ctx) {
-                    ctx.fillStyle = val;
-                    safeColor = ctx.fillStyle;
-                    if (!safeColor || safeColor === val) {
-                      safeColor = p.includes("background") ? "#fff" : "#111";
-                    }
-                  } else {
-                    safeColor = p.includes("background") ? "#fff" : "#111";
+                // Xóa mọi inline style cũ có chứa oklch/lch/lab
+                if (style && typeof style.removeProperty === "function") {
+                  const inlineVal = style.getPropertyValue(p);
+                  if (/oklch|lch\(|lab\(/i.test(inlineVal)) {
+                    style.removeProperty(p);
                   }
-                } catch {
-                  safeColor = p.includes("background") ? "#fff" : "#111";
                 }
+                safeColor = p.includes("background") ? "#fff" : "#111";
               }
               if (style && typeof style.setProperty === "function") {
                 style.setProperty(p, safeColor);

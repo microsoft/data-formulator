@@ -145,7 +145,7 @@ py-src/data_formulator/dist/assets/chart-icon-dotted-line-min-iiUsajLi.png
 py-src/data_formulator/dist/assets/example-image-table-Dt9uSzww.png
 py-src/data_formulator/dist/assets/histogram-percent-B58HSPmg.png
 py-src/data_formulator/dist/assets/index-Bxecun_h.css
-py-src/data_formulator/dist/assets/logo_HOGV DataViz Assistant-nYFiwCmf.png
+py-src/data_formulator/dist/assets/logo_GDIS AI Agent-nYFiwCmf.png
 py-src/data_formulator/dist/assets/qc-trend-chart-BkdoRHOL.png
 py-src/data_formulator/dist/assets/roboto-all-300-normal-lRRuIfal.woff
 py-src/data_formulator/dist/assets/roboto-all-400-normal-BZJ9QssU.woff

@@ -15,6 +15,7 @@ redis
 litellm
 duckdb
 boto3
+clickhouse-connect
 pyodbc
 vl-convert-python
 backoff

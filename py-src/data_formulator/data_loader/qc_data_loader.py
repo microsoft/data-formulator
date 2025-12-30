@@ -1,7 +1,8 @@
+import os
 import json
 import pandas as pd
-import duckdb
 from typing import Dict, Any, List
+from clickhouse_connect import get_client
 from data_formulator.data_loader.external_data_loader import ExternalDataLoader, sanitize_table_name
 
 class QCDataLoader(ExternalDataLoader):
@@ -48,45 +49,70 @@ class QCDataLoader(ExternalDataLoader):
 
     @staticmethod
     def auth_instructions() -> str:
-        return "Load QC data from local DuckDB file gdis_db.duckdb. Please select date range and click Connect."
+        return "Connect to ClickHouse (env: CH_HOST, CH_PORT, CH_USER, CH_PASSWORD). Database=QC_Data. Please select date range and click Connect."
 
-    def __init__(self, params: Dict[str, Any], duck_db_conn: duckdb.DuckDBPyConnection):
+    def __init__(self, params: Dict[str, Any], duck_db_conn):
         self.params = params
         self.duck_db_conn = duck_db_conn
 
-        # Attach local DuckDB file
-        try:
-            self.duck_db_conn.execute("DETACH gcdb;")
-        except:
-            pass
+        # Read ClickHouse connection from environment
+        self.ch_host = os.environ.get("CH_HOST", "172.19.16.23")
+        self.ch_port = int(os.environ.get("CH_PORT", "8123"))
+        self.ch_user = os.environ.get("CH_USER", "admin")
+        self.ch_password = os.environ.get("CH_PASSWORD", "1fEQlaBivOpYXzw#")
+        self.ch_db = os.environ.get("CH_DB", "QC_Data")
 
         try:
-            # ✅ FIX: attach đúng file từ Windows
-            self.duck_db_conn.execute(r"ATTACH 'D:/DuckDB/gdis_db.duckdb' AS gcdb;")
-            print("✅ Attached local DuckDB file: D:/DuckDB/gdis_db.duckdb")
+            # Create ClickHouse client
+            self.ch_client = get_client(host=self.ch_host, port=self.ch_port, username=self.ch_user, password=self.ch_password, database=self.ch_db)
+            print(f"Connected to ClickHouse {self.ch_host}:{self.ch_port} db={self.ch_db}")
         except Exception as e:
-            print(f"❌ Failed to attach DuckDB file: {e}")
+            print(f"Failed to connect to ClickHouse: {e}")
             raise
 
-    def list_tables(self):
+    def _normalize_table_identifier(self, table_name: str) -> str:
+        """Normalize legacy DuckDB identifiers (e.g. 'gcdb.main.foo' or 'gcdb.foo') or plain table
+        names into ClickHouse full identifier 'DB.table' using self.ch_db as the database.
+        """
+        if not table_name:
+            raise ValueError("table_name cannot be empty")
+
+        # If passed like 'gcdb.main.table' or 'gcdb.table', convert to 'CH_DB.table'
+        if table_name.startswith("gcdb."):
+            parts = table_name.split('.')
+            table = parts[-1]
+            return f"{self.ch_db}.{table}"
+
+        # If already qualified with another database, leave as-is
+        if '.' in table_name and not table_name.startswith('`'):
+            return table_name
+
+        # Plain table name -> prefix with ch_db
+        return f"{self.ch_db}.{table_name}"
+
+    def list_tables(self, table_filter: str = None):
         try:
-            tables_df = self.duck_db_conn.execute("""
-                SELECT table_name 
-                FROM gcdb.information_schema.tables
-                WHERE table_schema = 'main'
-            """).fetch_df()
-            print
+            q = f"SELECT name FROM system.tables WHERE database = '{self.ch_db}'"
+            if table_filter:
+                q += f" AND name LIKE '%{table_filter}%'"
+
+            tables_df = self.ch_client.query_df(q)
             results = []
-            for table_name in tables_df["table_name"].tolist():
-                full_table_name = f"gcdb.main.{table_name}"
 
-                columns_df = self.duck_db_conn.execute(f"DESCRIBE {full_table_name}").fetch_df()
-                columns = [{"name": c[0], "type": c[1]} for c in columns_df.values]
+            for table_name in tables_df["name"].tolist():
+                full_table_name = f"{self.ch_db}.{table_name}"
 
-                sample_df = self.duck_db_conn.execute(f"SELECT * FROM {full_table_name} LIMIT 10").fetch_df()
-                sample_rows = json.loads(sample_df.to_json(orient="records"))
+                # Get columns
+                columns_df = self.ch_client.query_df(f"DESCRIBE TABLE {full_table_name}")
+                columns = [{"name": r['name'], "type": r['type']} for _, r in columns_df.iterrows()]
 
-                row_count = self.duck_db_conn.execute(f"SELECT COUNT(*) FROM {full_table_name}").fetchone()[0]
+                # Sample rows
+                sample_df = self.ch_client.query_df(f"SELECT * FROM {full_table_name} LIMIT 10")
+                sample_rows = json.loads(sample_df.to_json(orient="records")) if not sample_df.empty else []
+
+                # Row count
+                row_count_df = self.ch_client.query_df(f"SELECT count() AS c FROM {full_table_name}")
+                row_count = int(row_count_df['c'].iloc[0]) if not row_count_df.empty else 0
 
                 results.append({
                     "name": full_table_name,
@@ -104,22 +130,42 @@ class QCDataLoader(ExternalDataLoader):
             return []
 
     def ingest_data(self, table_name: str, name_as: str | None = None, size: int = 1000000):
+        # Normalize legacy table identifiers (e.g., 'gcdb.main.foo') and support plain names
+        full_table_name = self._normalize_table_identifier(table_name)
+        short_name = full_table_name.split('.')[-1]
+
         if name_as is None:
-            name_as = table_name.split('.')[-1]
+            name_as = short_name
         name_as = sanitize_table_name(name_as)
 
-        query = f"""
-            CREATE OR REPLACE TABLE main.{name_as} AS 
-            SELECT * FROM {table_name}
-        """
-        self.duck_db_conn.execute(query)
-        return f"✅ Loaded table {table_name} as {name_as}"
+        # Fetch data from ClickHouse
+        query = f"SELECT * FROM {full_table_name} LIMIT {size}"
+        try:
+            df = self.ch_client.query_df(query)
+        except Exception as e:
+            raise Exception(f"ClickHouse query failed for '{query}': {e}")
+
+        # Ingest into the local DuckDB instance
+        self.ingest_df_to_duckdb(df, name_as)
+        return f"Loaded table {full_table_name} as {name_as}"
 
     def view_query_sample(self, query: str):
-        df = self.duck_db_conn.execute(query + " LIMIT 10").df()
+        # Replace legacy gcdb references if present
+        q = query.replace('gcdb.main.', f"{self.ch_db}.").replace('gcdb.', f"{self.ch_db}.")
+        q = q.strip()
+        if 'limit' not in q.lower():
+            q = q + " LIMIT 10"
+        try:
+            df = self.ch_client.query_df(q)
+        except Exception as e:
+            raise Exception(f"ClickHouse query failed for '{q}': {e}")
         return json.loads(df.to_json(orient="records"))
 
     def ingest_data_from_query(self, query: str, name_as: str):
-        df = self.duck_db_conn.execute(query).df()
+        q = query.replace('gcdb.main.', f"{self.ch_db}.").replace('gcdb.', f"{self.ch_db}.")
+        try:
+            df = self.ch_client.query_df(q)
+        except Exception as e:
+            raise Exception(f"ClickHouse query failed for '{q}': {e}")
         self.ingest_df_to_duckdb(df, sanitize_table_name(name_as))
         return df

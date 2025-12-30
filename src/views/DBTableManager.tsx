@@ -1348,7 +1348,7 @@ export const DBTableSelectionDialog: React.FC<{
         title={
           serverConfig.DISABLE_DATABASE ? (
             <Typography sx={{ fontSize: "11px" }}>
-              {/* Install HOGV DataViz Assistant locally to use database. <br />
+              {/* Install GDIS AI Agent locally to use database. <br />
               Link:{" "}
               <Link
                 href="https://github.com/microsoft/data-formulator"
@@ -2060,10 +2060,10 @@ export const DataLoaderForm: React.FC<{
                     const queryEnd = " ORDER BY LASTUPDATE";
                     let query = `SELECT
                                         ROW_NUMBER() OVER (ORDER BY LASTUPDATE) AS INDEX,
-                                        valueview AS VALUE,
+                                        VALUEVIEW  AS VALUE,
                                                         PARAMVALUE,
                                                         QCSTDPARAMNAME,
-                                                        stdparamnickname AS PARAMNICKNAME,
+                                                        STDPARAMNICKNAME AS PARAMNICKNAME,
                                                         SLIPNO, 
                                                         LL,ARLL,TARGET,ARUL,UL,
                                                         QCDATE,
@@ -2072,7 +2072,7 @@ export const DataLoaderForm: React.FC<{
                                                         QCSHIFT
                                                         FROM gcdb.dpd_qc_info 
                                                         WHERE PDDATE BETWEEN '${from}' AND '${to}'                                                     
-                                                        AND ISMAXQCROUND = 1
+                                                        AND ISMAXQCROUND = '1'
                                                         AND (MAINSLIPNO = '1' OR MAINSLIPNO is null) `;
 
                     if (safeParam.trim() !== "") {

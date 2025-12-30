@@ -66,7 +66,8 @@ def me():
     name = session.get('name')
 
     if not username:
-        return jsonify([]), 401
+        # Return empty array with 200 to avoid 401 showing in the browser console
+        return jsonify([]), 200
 
     return jsonify([{
         "user_id": username,

@@ -285,7 +285,7 @@ export const openChartifactViewer = async (chartifactMarkdown: string) => {
           interactiveDocument?: any;
         } = {
           type: "hostRenderRequest",
-          title: "HOGV DataViz Assistant Report",
+          title: "GDIS AI Agent Report",
           markdown: chartifactMarkdown,
         };
 

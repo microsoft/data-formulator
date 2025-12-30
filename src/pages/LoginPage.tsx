@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from "react";
 import {
   Alert,
   Box,
@@ -6,27 +6,37 @@ import {
   CircularProgress,
   Paper,
   TextField,
-  Typography
-} from '@mui/material';
-import { useNavigate } from 'react-router-dom';
-import MicrosoftLoginButton from '../Msal/MicrosoftLoginButton';
+  Typography,
+} from "@mui/material";
+import { useNavigate } from "react-router-dom";
+import MicrosoftLoginButton from "../Msal/MicrosoftLoginButton";
 
 const LoginPage: React.FC = () => {
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
   // ✅ Nếu đã đăng nhập, chuyển hướng khỏi trang login
   useEffect(() => {
-    fetch('/api/auth/me', { credentials: 'include' })
-      .then(res => res.json())
-      .then(data => {
-        if (Array.isArray(data) && data.length > 0) {
-          navigate('/');
+    (async () => {
+      try {
+        const res = await fetch("/api/auth/me", { credentials: "include" });
+        if (!res.ok) {
+          // Không log lỗi, không parse json nếu lỗi
+          return;
         }
-      });
+        const contentType = res.headers.get("content-type") || "";
+        if (!contentType.includes("application/json")) return;
+        const data = await res.json();
+        if (Array.isArray(data) && data.length > 0) {
+          navigate("/");
+        }
+      } catch (err) {
+        // Không log lỗi ra console
+      }
+    })().catch(() => {});
   }, [navigate]);
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -35,33 +45,40 @@ const LoginPage: React.FC = () => {
     setLoading(true);
 
     try {
-      const response = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const response = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username, password }),
-        credentials: 'include',
+        credentials: "include",
       });
 
       if (response.ok) {
         // Gọi lại /api/auth/me để xác thực lại
-        const userRes = await fetch('/api/auth/me', { credentials: 'include' });
+        const userRes = await fetch("/api/auth/me", { credentials: "include" });
         const userData = await userRes.json();
         if (Array.isArray(userData) && userData.length > 0) {
-          window.location.href = '/'; // hoặc navigate('/')
+          window.location.href = "/"; // hoặc navigate('/')
         }
       } else {
         const errorData = await response.json();
-        setError(errorData.message || 'Incorrect username or password.');
+        setError(errorData.message || "Incorrect username or password.");
       }
     } catch (err) {
-      setError('A network error occurred. Please check the server connection.');
+      setError("A network error occurred. Please check the server connection.");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <Box sx={{ height: '100vh', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+    <Box
+      sx={{
+        height: "100vh",
+        display: "flex",
+        justifyContent: "center",
+        alignItems: "center",
+      }}
+    >
       <Paper elevation={3} sx={{ padding: 4, width: 400 }}>
         <Typography variant="h5" textAlign="center" gutterBottom>
           Sign In
@@ -100,11 +117,15 @@ const LoginPage: React.FC = () => {
             sx={{ mt: 2 }}
             disabled={loading}
           >
-            {loading ? <CircularProgress size={24} color="inherit" /> : 'Sign In'}
+            {loading ? (
+              <CircularProgress size={24} color="inherit" />
+            ) : (
+              "Sign In"
+            )}
           </Button>
-        </form>     
-         <div>
-            <MicrosoftLoginButton />
+        </form>
+        <div>
+          <MicrosoftLoginButton />
         </div>
       </Paper>
     </Box>

@@ -402,7 +402,9 @@ export let SampleSizeEditor: FC<{
               disableSwap
               onChange={(_, value) => setSampleRange(value as [number, number])}
               valueLabelDisplay="auto"
-              aria-label="Sample size"
+              getAriaLabel={(index) =>
+                index === 0 ? "minimum sample size" : "maximum sample size"
+              }
             />
             <Typography variant="caption" color="text.secondary" sx={{ ml: 1 }}>
               {maxSliderSize}

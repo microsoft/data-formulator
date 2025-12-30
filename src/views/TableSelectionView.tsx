@@ -586,7 +586,7 @@ export const TableUploadDialog: React.FC<TableUploadDialogProps> = ({
         title={
           serverConfig.DISABLE_FILE_UPLOAD ? (
             <Typography sx={{ fontSize: "11px" }}>
-              {/* Install HOGV DataViz Assistant locally to enable file upload.{" "}
+              {/* Install GDIS AI Agent locally to enable file upload.{" "}
               <br />
               Link:{" "}
               <Link

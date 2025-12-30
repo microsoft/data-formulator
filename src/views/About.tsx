@@ -19,7 +19,7 @@ import YouTubeIcon from "@mui/icons-material/YouTube";
 import PrecisionManufacturingIcon from "@mui/icons-material/PrecisionManufacturing";
 
 // import dfLogo from "../assets/df-logo.png";
-import dfLogo from "../assets/logo_HOGV DataViz Assistant.png";
+import dfLogo from "../assets/gdis-logo.png";
 import { toolName } from "../app/App";
 import { useSelector } from "react-redux";
 import { DataFormulatorState } from "../app/dfSlice";
@@ -497,7 +497,7 @@ export const About: FC<{}> = function About({}) {
                 letterSpacing: "0.02em",
               }}
             >
-              How does HOGV DataViz Assistant handle your data?
+              How does GDIS AI Agent handle your data?
             </Typography>
             <Typography
               component="ul"
