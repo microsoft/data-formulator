@@ -49,7 +49,7 @@ class QCDataLoader(ExternalDataLoader):
 
     @staticmethod
     def auth_instructions() -> str:
-        return "Connect to ClickHouse (env: CH_HOST, CH_PORT, CH_USER, CH_PASSWORD). Database=QC_Data. Please select date range and click Connect."
+        return "Connect to ClickHouse (env: CH_HOST, CH_PORT, CH_USER, CH_PASSWORD). Database=QC_DATA. Please select date range and click Connect."
 
     def __init__(self, params: Dict[str, Any], duck_db_conn):
         self.params = params
@@ -60,7 +60,7 @@ class QCDataLoader(ExternalDataLoader):
         self.ch_port = int(os.environ.get("CH_PORT", "8123"))
         self.ch_user = os.environ.get("CH_USER", "admin")
         self.ch_password = os.environ.get("CH_PASSWORD", "1fEQlaBivOpYXzw#")
-        self.ch_db = os.environ.get("CH_DB", "QC_Data")
+        self.ch_db = os.environ.get("CH_DB", "QC_DATA")
 
         try:
             # Create ClickHouse client
@@ -167,5 +167,10 @@ class QCDataLoader(ExternalDataLoader):
             df = self.ch_client.query_df(q)
         except Exception as e:
             raise Exception(f"ClickHouse query failed for '{q}': {e}")
+        
+        # Convert VALUE column to numeric if possible (for QC data with mixed types)
+        if 'VALUE' in df.columns:
+            df['VALUE'] = pd.to_numeric(df['VALUE'], errors='ignore')
+        
         self.ingest_df_to_duckdb(df, sanitize_table_name(name_as))
         return df

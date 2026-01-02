@@ -707,9 +707,10 @@ def generate_report_stream():
             input_tables = content.get("input_tables", [])
             charts = content.get("charts", [])
             style = content.get("style", "blog post")
+            report_language = content.get("report_language", "en")
 
             try:
-                for chunk in agent.stream(input_tables, charts, style):
+                for chunk in agent.stream(input_tables, charts, style, report_language):
                     yield chunk
             except Exception as e:
                 logger.error(e)

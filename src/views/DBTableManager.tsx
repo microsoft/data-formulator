@@ -645,11 +645,27 @@ export const DBTableSelectionDialog: React.FC<{
       }
     };
 
+    // Sanitize rows & columns: try to convert VALUE to number, fallback to string
+    const sanitizedRows = dbTable.sample_rows.map((row: any) => {
+      const r = { ...row };
+      // Try to convert VALUE to number if possible
+      if (r.VALUE !== undefined && r.VALUE !== null) {
+        const numValue = Number(r.VALUE);
+        // If conversion succeeds and results in a valid number, use it
+        r.VALUE = isNaN(numValue) ? r.VALUE : numValue;
+      }
+      return r;
+    });
+
+    const sanitizedColumns = dbTable.columns.filter(
+      (c: any) => c.name !== "VALUE_NUM" && c.name !== "VALUE_IS_NUM"
+    );
+
     let table: DictTable = {
       id: dbTable.name,
       displayId: dbTable.name,
-      names: dbTable.columns.map((col: any) => col.name),
-      metadata: dbTable.columns.reduce(
+      names: sanitizedColumns.map((col: any) => col.name),
+      metadata: sanitizedColumns.reduce(
         (
           acc: Record<
             string,
@@ -666,7 +682,7 @@ export const DBTableSelectionDialog: React.FC<{
         }),
         {}
       ),
-      rows: dbTable.sample_rows,
+      rows: sanitizedRows,
       virtual: {
         tableId: dbTable.name,
         rowCount: dbTable.row_count,
@@ -1133,20 +1149,32 @@ export const DBTableSelectionDialog: React.FC<{
                 <CustomReactTable
                   rows={currentTable.sample_rows
                     .map((row: any) => {
+                      // Prefer numeric VALUE if available
+                      const r = { ...row };
+                      if (r.VALUE_NUM !== undefined && r.VALUE_NUM !== null) {
+                        r.VALUE = r.VALUE_NUM;
+                      }
+                      // Remove helper columns from display
+                      delete r.VALUE_NUM;
+                      delete r.VALUE_IS_NUM;
+
                       return Object.fromEntries(
-                        Object.entries(row).map(
-                          ([key, value]: [string, any]) => {
-                            return [key, String(value)];
-                          }
-                        )
+                        Object.entries(r).map(([key, value]: [string, any]) => {
+                          return [key, String(value)];
+                        })
                       );
                     })
                     .slice(0, 9)}
-                  columnDefs={currentTable.columns.map((col) => ({
-                    id: col.name,
-                    label: col.name,
-                    minWidth: 60,
-                  }))}
+                  columnDefs={currentTable.columns
+                    .filter(
+                      (col) =>
+                        col.name !== "VALUE_NUM" && col.name !== "VALUE_IS_NUM"
+                    )
+                    .map((col) => ({
+                      id: col.name,
+                      label: col.name,
+                      minWidth: 60,
+                    }))}
                   rowsPerPageNum={-1}
                   compact={false}
                   isIncompleteTable={currentTable.row_count > 10}
@@ -2060,7 +2088,7 @@ export const DataLoaderForm: React.FC<{
                     const queryEnd = " ORDER BY LASTUPDATE";
                     let query = `SELECT
                                         ROW_NUMBER() OVER (ORDER BY LASTUPDATE) AS INDEX,
-                                        VALUEVIEW  AS VALUE,
+                                        VALUEVIEW AS VALUE,
                                                         PARAMVALUE,
                                                         QCSTDPARAMNAME,
                                                         STDPARAMNICKNAME AS PARAMNICKNAME,

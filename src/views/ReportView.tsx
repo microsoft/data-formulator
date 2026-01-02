@@ -25,6 +25,8 @@ import {
   Tooltip,
   useTheme,
   alpha,
+  Select,
+  MenuItem,
 } from "@mui/material";
 import Masonry from "@mui/lab/Masonry";
 import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
@@ -38,6 +40,12 @@ import ShareIcon from "@mui/icons-material/Share";
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import FilePresentIcon from "@mui/icons-material/FilePresent";
 import SlideshowIcon from "@mui/icons-material/Slideshow";
+import pptxAsset from "../assets/pptx-icon.png";
+import vietnamFlagIcon from "../assets/vietnam-flag.png";
+import usaFlagIcon from "../assets/usa-flag.png";
+import thailandFlagIcon from "../assets/thailand-flag.png";
+import laosFlagIcon from "../assets/laos-flag.png";
+import japanFlagIcon from "../assets/japan-flag.png";
 import html2canvas from "html2canvas";
 import { useDispatch, useSelector } from "react-redux";
 import {
@@ -683,6 +691,46 @@ export const ReportView: FC = () => {
   const [shareButtonSuccess, setShareButtonSuccess] = useState(false);
   const [hideTableOfContents, setHideTableOfContents] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [reportLanguage, setReportLanguage] = useState<string>("en");
+  // Icon handling for PowerPoint export button: prefer bundler asset, then try public paths and BASE_URL variants
+  const possiblePptxIconPaths = [
+    pptxAsset, // resolved by bundler (src/assets)
+    "/pptx-icon.png",
+    "/assets/pptx-icon.png",
+    `${import.meta.env.BASE_URL || "/"}pptx-icon.png`,
+    `${import.meta.env.BASE_URL || "/"}assets/pptx-icon.png`,
+  ];
+  const [pptxIconIdx, setPptxIconIdx] = useState(0);
+  const [pptxIconError, setPptxIconError] = useState(false);
+
+  const PptxIcon: FC = () => {
+    if (pptxIconError) return <SlideshowIcon />;
+    const src = possiblePptxIconPaths[pptxIconIdx];
+    return (
+      <Box
+        component="img"
+        src={src}
+        alt="pptx"
+        sx={{ width: 18, height: 18, objectFit: "contain" }}
+        onError={() => {
+          // advance to next path, otherwise fallback to icon
+          if (pptxIconIdx < possiblePptxIconPaths.length - 1) {
+            console.warn(
+              `pptx icon not found at ${src}, trying next path: ${
+                possiblePptxIconPaths[pptxIconIdx + 1]
+              }`
+            );
+            setPptxIconIdx((i) => i + 1);
+          } else {
+            console.warn(
+              `pptx icon not found in any known path, falling back to SVG icon`
+            );
+            setPptxIconError(true);
+          }
+        }}
+      />
+    );
+  };
 
   const updateCachedReportImages = (
     chartId: string,
@@ -920,25 +968,214 @@ export const ReportView: FC = () => {
     }
   };
 
-  // Export current report to PowerPoint using server-side template merging
+  // Export current report to PowerPoint (client-side using pptxgenjs, with server fallback)
   const exportToPowerPoint = async () => {
     if (!currentReportId) return;
     setIsExporting(true);
 
+    const reportElement = document.querySelector(
+      "[data-report-content]"
+    ) as HTMLElement;
+    if (!reportElement) {
+      showMessage("Could not find report content to capture", "error");
+      setIsExporting(false);
+      return;
+    }
+
+    // Apply aggressive safe-color override and then sanitize computed values
+    const restoreSafe = applySafeColorOverride(reportElement);
+    const restoreColors = sanitizeElementColors(reportElement);
+
+    // Helper: convert a URL/blob to a data URL
+    const urlToDataUrl = async (src: string): Promise<string | null> => {
+      if (!src) return null;
+      if (src.startsWith("data:")) return src;
+      try {
+        const resp = await fetch(src);
+        if (!resp.ok) return null;
+        const blob = await resp.blob();
+        return await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(blob);
+        });
+      } catch (e) {
+        return null;
+      }
+    };
+
     try {
-      const reportElement = document.querySelector(
-        "[data-report-content]"
-      ) as HTMLElement;
-      if (!reportElement) {
-        showMessage("Could not find report content to capture", "error");
-        setIsExporting(false);
+      // First, try a client-side export using pptxgenjs (dynamic import so it's optional)
+      try {
+        // Dynamically import so the app can still build without the dependency installed
+        // (user can `npm install pptxgenjs` if they want client-side export)
+        const pptxModule: any = await import("pptxgenjs");
+        const PptxGenJS = pptxModule.default || pptxModule;
+        const pres = new PptxGenJS();
+
+        // Derive title from the report source: prefer the first non-empty non-code line from generatedReport
+        const deriveTitle = (source: string) => {
+          const lines = source.split(/\r?\n/);
+          let inCode = false;
+          for (const raw of lines) {
+            const line = raw.trim();
+            if (!line) continue;
+            if (line.startsWith("```")) {
+              inCode = !inCode;
+              continue;
+            }
+            if (inCode) continue;
+            // strip markdown heading markers and blockquote
+            const cleaned = line.replace(/^#+\s*/, "").replace(/^>\s*/, "");
+            if (cleaned) return cleaned;
+          }
+          return "Report";
+        };
+        const titleText = deriveTitle(
+          generatedReport || reportElement.textContent || ""
+        );
+
+        // Collect images embedded in the report (if any)
+        const imgEls = Array.from(
+          reportElement.querySelectorAll("img")
+        ) as HTMLImageElement[];
+
+        const images = await Promise.all(
+          imgEls.map(async (img) => {
+            const data = await urlToDataUrl(img.src);
+            if (!data) return null;
+            return {
+              data,
+              width: img.naturalWidth || 800,
+              height: img.naturalHeight || 400,
+              alt: img.alt || "",
+            };
+          })
+        );
+
+        // Extract paragraph blocks
+        const rawText = reportElement.innerText || "";
+        const paragraphs = rawText
+          .split(/\n\s*\n/)
+          .map((p) => p.trim())
+          .filter(Boolean);
+
+        // Title slide (page 1) — large title, Space Grotesk
+        const slideTitle = pres.addSlide();
+        slideTitle.addText(titleText, {
+          x: 0.5,
+          y: 0.8,
+          w: 9,
+          h: 1.8,
+          fontSize: 42,
+          bold: true,
+          fontFace: "Space Grotesk",
+          align: pres.AlignH ? pres.AlignH.center : "center",
+        });
+
+        // Add one slide per image (chart) — ensure captions use Space Grotesk
+        images.forEach((img, idx) => {
+          if (!img) return;
+          const slide = pres.addSlide();
+          slide.addText(img.alt || `Chart ${idx + 1}`, {
+            x: 0.5,
+            y: 0.25,
+            fontSize: 18,
+            bold: true,
+            fontFace: "Space Grotesk",
+          });
+
+          // Compute aspect-preserving size within max bounds
+          const maxW = 9; // inches
+          const maxH = 5; // inches
+          let w = maxW;
+          let h = (img.height / Math.max(1, img.width)) * w;
+          if (h > maxH) {
+            h = maxH;
+            w = (img.width / Math.max(1, img.height)) * h;
+          }
+
+          slide.addImage({ data: img.data, x: 0.5, y: 0.8, w, h });
+        });
+
+        // Add analysis text slides, chunked to fit nicely
+        if (paragraphs.length > 0) {
+          let slide = pres.addSlide();
+          slide.addText("Analysis Insights", {
+            x: 0.5,
+            y: 0.4,
+            fontSize: 20,
+            bold: true,
+            fontFace: "Space Grotesk",
+          });
+          let yPos = 1.1;
+
+          paragraphs.forEach((p) => {
+            const isHeading = /^\s*#{1,6}\s+/.test(p);
+            const cleaned = p
+              .replace(/^#+\s*/, "")
+              .replace(/^>\s*/, "")
+              .replace(/\*\*/g, "")
+              .replace(/\*/g, "")
+              .trim();
+
+            if (yPos > 5.5) {
+              slide = pres.addSlide();
+              slide.addText("Analysis Insights (Cont.)", {
+                x: 0.5,
+                y: 0.3,
+                fontSize: 20,
+                bold: true,
+                fontFace: "Space Grotesk",
+              });
+              yPos = 0.9;
+            }
+
+            if (isHeading) {
+              slide.addText(cleaned, {
+                x: 0.5,
+                y: yPos,
+                w: 9,
+                h: 1.2,
+                fontSize: 14,
+                bold: true,
+                color: "#222222",
+                fontFace: "Space Grotesk",
+              });
+              yPos += 1.2;
+            } else {
+              slide.addText(cleaned, {
+                x: 0.5,
+                y: yPos,
+                w: 9,
+                h: 1.2,
+                fontSize: 12,
+                color: "444444",
+                fontFace: "Space Grotesk",
+              });
+              yPos += 1.2;
+            }
+          });
+        }
+
+        // Write file
+        const safeFileName = `${titleText
+          .substring(0, 50)
+          .replace(/[^a-z0-9 _-]/gi, "_")}_${Date.now()}.pptx`;
+        await pres.writeFile({ fileName: safeFileName });
+
+        showMessage("PowerPoint exported (client-side)", "success");
         return;
+      } catch (clientErr) {
+        // If client-side export fails (e.g., dependency not installed), fall back to server approach
+        console.warn(
+          "Client-side PPTX export failed, falling back to server export:",
+          clientErr
+        );
       }
 
-      // Apply aggressive safe-color override and then sanitize computed values
-      const restoreSafe = applySafeColorOverride(reportElement);
-      const restoreColors = sanitizeElementColors(reportElement);
-
+      // Fallback: use server-side template merge (existing behavior)
       let canvas: HTMLCanvasElement | null = null;
       try {
         canvas = await html2canvas(reportElement, {
@@ -989,8 +1226,27 @@ export const ReportView: FC = () => {
         "template",
         "HOYA MD Presentation Template v4 20241126 Internal.pptx"
       );
-      const titleText =
-        reportElement.textContent?.trim()?.split("\n")[0] || "Report";
+      // Derive title from the report source: prefer the first non-empty non-code line from generatedReport
+      const deriveTitle = (source: string) => {
+        const lines = source.split(/\r?\n/);
+        let inCode = false;
+        for (const raw of lines) {
+          const line = raw.trim();
+          if (!line) continue;
+          if (line.startsWith("```")) {
+            inCode = !inCode;
+            continue;
+          }
+          if (inCode) continue;
+          // strip markdown heading markers and blockquote
+          const cleaned = line.replace(/^#+\s*/, "").replace(/^>\s*/, "");
+          if (cleaned) return cleaned;
+        }
+        return "Report";
+      };
+      const titleText = deriveTitle(
+        generatedReport || reportElement.textContent || ""
+      );
       form.append("title", titleText.substring(0, 250));
 
       const resp = await fetch("/api/export/pptx", {
@@ -1012,11 +1268,18 @@ export const ReportView: FC = () => {
       a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 1500);
 
-      showMessage("PowerPoint exported", "success");
+      showMessage("PowerPoint exported (server-side)", "success");
     } catch (err) {
       console.error(err);
       showMessage("Failed to export PowerPoint", "error");
     } finally {
+      try {
+        // Ensure restores run if client path returned early
+        restoreColors();
+      } catch (e) {}
+      try {
+        restoreSafe();
+      } catch (e) {}
       setIsExporting(false);
     }
   };
@@ -1407,6 +1670,7 @@ export const ReportView: FC = () => {
         charts: validCharts,
         style: style,
         language: tables.some((t) => t.virtual) ? "sql" : "python",
+        report_language: reportLanguage,
       };
 
       const response = await fetch(getUrls().GENERATE_REPORT_STREAM, {
@@ -1615,6 +1879,125 @@ export const ReportView: FC = () => {
                   </ToggleButton>
                 ))}
               </ToggleButtonGroup>
+
+              <Typography
+                variant="body2"
+                color="text.primary"
+                sx={{ fontWeight: 500 }}
+              >
+                in
+              </Typography>
+
+              <Select
+                value={reportLanguage}
+                onChange={(e) => setReportLanguage(e.target.value)}
+                size="small"
+                renderValue={(selected) => {
+                  const languageIcons: Record<
+                    string,
+                    { icon: string; label: string }
+                  > = {
+                    en: { icon: usaFlagIcon, label: "English" },
+                    vi: { icon: vietnamFlagIcon, label: "Tiếng Việt" },
+                    th: { icon: thailandFlagIcon, label: "ไทย" },
+                    lo: { icon: laosFlagIcon, label: "Lao" },
+                    ja: { icon: japanFlagIcon, label: "日本語" },
+                  };
+                  const lang =
+                    languageIcons[selected as string] || languageIcons.en;
+                  return (
+                    <Box
+                      sx={{ display: "flex", alignItems: "center", gap: 0.8 }}
+                    >
+                      <Box
+                        component="img"
+                        src={lang.icon}
+                        alt={lang.label}
+                        sx={{ width: 18, height: 18, borderRadius: "2px" }}
+                      />
+                      <span>{lang.label}</span>
+                    </Box>
+                  );
+                }}
+                sx={{
+                  minWidth: 140,
+                  height: 32,
+                  backgroundColor: "action.hover",
+                  borderRadius: 1,
+                  "& .MuiOutlinedInput-notchedOutline": {
+                    border: "none",
+                  },
+                  "&:hover": {
+                    backgroundColor: "action.selected",
+                  },
+                  "&.Mui-focused .MuiOutlinedInput-notchedOutline": {
+                    border: "1px solid",
+                    borderColor: "primary.main",
+                  },
+                  "& .MuiSelect-select": {
+                    textTransform: "none",
+                    fontSize: "1rem",
+                    display: "flex",
+                    alignItems: "center",
+                  },
+                }}
+              >
+                <MenuItem value="en">
+                  <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                    <Box
+                      component="img"
+                      src={usaFlagIcon}
+                      alt="English"
+                      sx={{ width: 20, height: 20, borderRadius: "2px" }}
+                    />
+                    English
+                  </Box>
+                </MenuItem>
+                <MenuItem value="vi">
+                  <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                    <Box
+                      component="img"
+                      src={vietnamFlagIcon}
+                      alt="Tiếng Việt"
+                      sx={{ width: 20, height: 20, borderRadius: "2px" }}
+                    />
+                    Tiếng Việt
+                  </Box>
+                </MenuItem>
+                <MenuItem value="th">
+                  <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                    <Box
+                      component="img"
+                      src={thailandFlagIcon}
+                      alt="ไทย"
+                      sx={{ width: 20, height: 20, borderRadius: "2px" }}
+                    />
+                    ไทย
+                  </Box>
+                </MenuItem>
+                <MenuItem value="lo">
+                  <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                    <Box
+                      component="img"
+                      src={laosFlagIcon}
+                      alt="Lao"
+                      sx={{ width: 20, height: 20, borderRadius: "2px" }}
+                    />
+                    Lao
+                  </Box>
+                </MenuItem>
+                <MenuItem value="ja">
+                  <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                    <Box
+                      component="img"
+                      src={japanFlagIcon}
+                      alt="日本語"
+                      sx={{ width: 20, height: 20, borderRadius: "2px" }}
+                    />
+                    日本語
+                  </Box>
+                </MenuItem>
+              </Select>
 
               <Typography
                 variant="body2"
@@ -2045,7 +2428,8 @@ export const ReportView: FC = () => {
                         isExporting ? (
                           <CircularProgress size={14} />
                         ) : (
-                          <SlideshowIcon />
+                          // Use user-supplied PNG if available, try '/pptx-icon.png' then '/assets/pptx-icon.png', fallback to SlideshowIcon
+                          <PptxIcon />
                         )
                       }
                     >

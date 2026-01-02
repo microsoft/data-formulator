@@ -69,7 +69,7 @@ class ReportGenAgent(object):
             data_summary = generate_data_summary(input_tables)
         return data_summary
 
-    def stream(self, input_tables, charts=[], style="blog post"):
+    def stream(self, input_tables, charts=[], style="blog post", report_language="en"):
         """derive a new concept based on the raw input data
         Args:
             - input_tables (list): the input tables to the agent
@@ -83,6 +83,7 @@ class ReportGenAgent(object):
                 }
             ]
             - style (str): the style of the report, can be "blog post" or "social post" or "executive summary" or "short note"
+            - report_language (str): the language of the report, can be "en" or "vi"
         Returns:
             generator: the result of the agent
         """
@@ -114,9 +115,22 @@ class ReportGenAgent(object):
                     }
                 ]
 
+        # Determine language instruction
+        language_instruction = ""
+        if report_language == "vi":
+            language_instruction = "Write the report in Vietnamese (Tiếng Việt). "
+        elif report_language == "th":
+            language_instruction = "Write the report in Thai (ไทย). "
+        elif report_language == "lo":
+            language_instruction = "Write the report in Lao (ພາສາ​ລາວ). "
+        elif report_language == "ja":
+            language_instruction = "Write the report in Japanese (日本語). "
+        else:
+            language_instruction = "Write the report in English. "
+
         user_prompt = {
             'role': 'user',
-            'content': content + [{'type': 'text', 'text': 'Now based off the data and visualizations provided by the user, generate a report in markdown. The style of the report should be ' + style + '.'}]
+            'content': content + [{'type': 'text', 'text': language_instruction + 'Now based off the data and visualizations provided by the user, generate a report in markdown. The style of the report should be ' + style + '.'}]
         }
 
         system_message = {

@@ -55,6 +55,7 @@ import PowerSettingsNewIcon from "@mui/icons-material/PowerSettingsNew";
 import ClearIcon from "@mui/icons-material/Clear";
 
 import { DataFormulatorFC } from "../views/DataFormulator";
+import { DashboardView } from "../views/Dashboard";
 
 import GridViewIcon from "@mui/icons-material/GridView";
 import ViewSidebarIcon from "@mui/icons-material/ViewSidebar";
@@ -876,10 +877,19 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
     },
   });
 
-  // Check if we're on the about page
+  // Check if we're on the about page or dashboard
+  const isDashboardPage = window.location.pathname === "/dashboard";
   const isAboutPage =
     window.location.pathname === "/about" ||
     (window.location.pathname === "/" && serverConfig.PROJECT_FRONT_PAGE);
+
+  // Determine current page value for ToggleButtonGroup
+  let currentPage = "app";
+  if (isDashboardPage) {
+    currentPage = "dashboard";
+  } else if (isAboutPage) {
+    currentPage = "about";
+  }
 
   let appBar = [
     <AppBar position="static" key="app-bar-main">
@@ -916,7 +926,7 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
           </Typography>
         </Button>
         <ToggleButtonGroup
-          value={isAboutPage ? "about" : "app"}
+          value={currentPage}
           exclusive
           sx={{
             ml: 2,
@@ -969,8 +979,18 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
               <Box component="span">App</Box>
             </Box>
           </ToggleButton>
+          <ToggleButton
+            value="dashboard"
+            component="a"
+            href="/dashboard"
+            sx={{ textDecoration: "none" }}
+          >
+            <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+              <Box component="span">Dashboard</Box>
+            </Box>
+          </ToggleButton>
         </ToggleButtonGroup>
-        {!isAboutPage && (
+        {!isAboutPage && !isDashboardPage && (
           <Box
             sx={{
               display: "flex",
@@ -1215,6 +1235,14 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
     {
       path: "/about",
       element: <About />,
+    },
+    {
+      path: "/dashboard",
+      element: (
+        <ProtectedRoute isAuthenticated={isAuthenticated}>
+          <DashboardView />
+        </ProtectedRoute>
+      ),
     },
     {
       path: "/",

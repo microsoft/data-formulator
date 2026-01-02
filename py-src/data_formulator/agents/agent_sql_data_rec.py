@@ -14,6 +14,7 @@ import duckdb
 import pandas as pd
 
 import logging
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -294,14 +295,31 @@ class SQLDataRecAgent(object):
             
             logger.info("\n=== Data recommendation result ===>\n")
             logger.info(choice.message.content + "\n")
-            
-            json_blocks = extract_json_objects(choice.message.content + "\n")
+
+            # Detect if the model returned HTML or other unexpected formats (e.g., an HTML error page)
+            content = choice.message.content if hasattr(choice.message, 'content') else str(choice)
+            lower_content = content.lower()
+            if '<!doctype' in lower_content or '<html' in lower_content:
+                logger.warning("Model returned HTML content instead of JSON/SQL.")
+                result = {
+                    'status': 'error',
+                    'code': "",
+                    'content': f"Model returned HTML/unknown format in response: {content[:1000]}"
+                }
+
+                result['dialog'] = [*messages, {"role": choice.message.role, "content": content}]
+                result['agent'] = 'SQLDataRecAgent'
+                result['refined_goal'] = { 'mode': "", 'recommendation': "", 'output_fields': [], 'chart_encodings': {}, 'chart_type': "" }
+                candidates.append(result)
+                continue
+
+            json_blocks = extract_json_objects(content + "\n")
             if len(json_blocks) > 0:
                 refined_goal = json_blocks[0]
             else:
                 refined_goal = { 'mode': "", 'recommendation': "", 'output_fields': [], 'chart_encodings': {}, 'chart_type': "" }
 
-            code_blocks = extract_code_from_gpt_response(choice.message.content + "\n", "sql")
+            code_blocks = extract_code_from_gpt_response(content + "\n", "sql")
 
             if len(code_blocks) > 0:
                 code_str = code_blocks[-1]
@@ -373,14 +391,107 @@ class SQLDataRecAgent(object):
 
     def run(self, input_tables, description, n=1, prev_messages: list[dict] = []):
         data_summary = ""
+        qc_notes = []
+        has_qc_numeric = False
+        has_qc_non_numeric = False
+
+        # Detect if user specified an explicit chart type in the description or in previous messages
+        search_text = description + " " + " ".join([msg.get('content','') for msg in prev_messages])
+        # Robust regex patterns to capture common chart requests (variants, spaces, hyphens, and phrases)
+        chart_patterns = [
+            r'\bqc[_\s-]*trend[_\s-]*line\b',
+            r'\bqc[_\s-]*trend[_\s-]*bar\b',
+            r'\bqc[_\s-]*histogram\b',
+            r'\btrend[_\s-]*line\b',
+            r'\btrend[_\s-]*bar\b',
+            r'\bbar[_\s-]*chart\b',
+            r'\bline[_\s-]*chart\b',
+            r'\bhistogram\b',
+            r'\bscatter\b',
+            r'\bpoint\b',
+            r'\barea\b',
+            r'\bheatmap\b',
+            r'\bgroup[_\s-]*bar\b',
+            r'\bpie\b',
+            r'\bdonut\b'
+        ]
+        specified_chart = False
+        for pat in chart_patterns:
+            if re.search(pat, search_text, re.I):
+                specified_chart = True
+                break
+
         for table in input_tables:
             table_name = sanitize_table_name(table['name'])
             table_summary_str = get_sql_table_statistics_str(self.conn, table_name)
             data_summary += f"[TABLE {table_name}]\n\n{table_summary_str}\n\n"
 
-        user_query = f"[CONTEXT]\n\n{data_summary}\n\n[GOAL]\n\n{description}"
+            # Detect QC data and VALUE type
+            try:
+                cols = self.conn.execute(f"DESCRIBE {table_name}").fetchall()
+                col_types = {col[0].upper(): col[1].upper() for col in cols}
+                qc_fields = {"LL", "UL", "ARLL", "ARUL"}
+                has_qc = "TARGET" in col_types and bool(qc_fields.intersection(col_types.keys()))
+                if has_qc and "VALUE" in col_types and not specified_chart:
+                    val_type = col_types["VALUE"]
+                    numeric_types = {"INTEGER", "INT", "DOUBLE", "DECIMAL", "FLOAT", "REAL", "NUMERIC", "BIGINT", "SMALLINT"}
+
+                    # First, try to infer from the declared column type
+                    is_numeric = any(nt in val_type for nt in numeric_types)
+
+                    # If DESCRIBE is not definitive, sample the first non-null VALUE row to infer type
+                    if not is_numeric:
+                        try:
+                            sample_row = self.conn.execute(f"SELECT VALUE FROM {table_name} WHERE VALUE IS NOT NULL LIMIT 1").fetchone()
+                            if sample_row and len(sample_row) > 0:
+                                sample_val = sample_row[0]
+                                if isinstance(sample_val, (int, float)):
+                                    is_numeric = True
+                                elif isinstance(sample_val, str):
+                                    v = sample_val.strip()
+                                    # If the string looks like a number, consider numeric
+                                    if re.match(r'^-?\d+(?:\.\d+)?$', v):
+                                        is_numeric = True
+                        except Exception:
+                            # if sampling fails, fall back to declared type
+                            pass
+
+                    if is_numeric:
+                        has_qc_numeric = True
+                        qc_notes.append(f"Table {table_name} contains QC control fields and VALUE is numeric (inferred type: {val_type}). Recommend selecting **qc_trend_line** when user did not request a specific chart type.")
+                    else:
+                        has_qc_non_numeric = True
+                        qc_notes.append(f"Table {table_name} contains QC control fields and VALUE is non-numeric (inferred type: {val_type}). Recommend selecting **qc_trend_bar** when user did not request a specific chart type.")
+            except Exception:
+                # ignore detection errors and proceed
+                pass
+
+        # Decide suggested chart type when the user did not specify one
+        suggested_chart_type = None
+        suggested_reason = None
+        if not specified_chart:
+            if has_qc_numeric and not has_qc_non_numeric:
+                suggested_chart_type = "qc_trend_line"
+                suggested_reason = "QC data present and VALUE is numeric"
+            elif has_qc_non_numeric and not has_qc_numeric:
+                suggested_chart_type = "qc_trend_bar"
+                suggested_reason = "QC data present and VALUE is non-numeric"
+            elif has_qc_numeric and has_qc_non_numeric:
+                # Mix of numeric and non-numeric VALUE across tables; prefer qc_trend_line and leave a note
+                suggested_chart_type = "qc_trend_line"
+                suggested_reason = "Mixed VALUE types across QC tables; prefer numeric trend line by default"
+
+        # Build structured GOAL to send to the model (more deterministic than appending free text)
+        if suggested_chart_type:
+            goal_obj = {"description": description, "chart_type": suggested_chart_type, "chart_type_reason": suggested_reason}
+        else:
+            goal_obj = {"description": description}
+
+        user_goal_str = json.dumps(goal_obj, indent=4)
+
+        user_query = f"[CONTEXT]\n\n{data_summary}\n\n[GOAL]\n\n{user_goal_str}"
         if len(prev_messages) > 0:
-            user_query = f"The user wants a new recommendation based off the following updated context and goal:\n\n[CONTEXT]\n\n{data_summary}\n\n[GOAL]\n\n{description}"
+            user_query = f"The user wants a new recommendation based off the following updated context and goal:\n\n[CONTEXT]\n\n{data_summary}\n\n[GOAL]\n\n{user_goal_str}"
 
         logger.info(user_query)
 

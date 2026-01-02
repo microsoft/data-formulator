@@ -54,9 +54,17 @@ const ChartIcon: React.FC<{ src: string; alt?: string }> = ({
 };
 
 export function getChartTemplate(chartType: string): ChartTemplate | undefined {
+  // Map legacy/alternative chart type names to current names
+  const chartTypeAliases: { [key: string]: string } = {
+    Heatmap: "Heat Map",
+    "Custom Area": "Area Chart",
+  };
+
+  const normalizedChartType = chartTypeAliases[chartType] || chartType;
+
   return Object.values(CHART_TEMPLATES)
     .flat()
-    .find((t) => t.chart === chartType);
+    .find((t) => t.chart === normalizedChartType);
 }
 
 export const getChartChannels = (chartType: string) => {
@@ -1578,7 +1586,7 @@ let customCharts: ChartTemplate[] = [
         ],
 
         // nếu qcLimitsMode=true thì điều chỉnh size
-        mark: qcLimitsMode ? { type: "bar" } : { type: "bar", size: 24 },
+        mark: qcLimitsMode ? { type: "bar" } : { type: "bar", size: 16 },
 
         encoding: {
           x: {

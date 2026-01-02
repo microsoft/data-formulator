@@ -29,6 +29,24 @@ PPT_TEMPLATE_DIRS = [
 ]
 
 
+@export_bp.route('/api/export/list-templates', methods=['GET'])
+def list_templates():
+    """List all available PowerPoint templates from template directories."""
+    templates = set()
+    
+    for d in PPT_TEMPLATE_DIRS:
+        if d.exists() and d.is_dir():
+            for file in d.glob('*.pptx'):
+                templates.add(file.name)
+        elif d.exists() and d.is_file() and d.suffix == '.pptx':
+            templates.add(d.name)
+    
+    return jsonify({
+        'status': 'success',
+        'templates': sorted(list(templates))
+    })
+
+
 @export_bp.route('/api/export/pptx', methods=['POST'])
 def export_pptx():
     # Expect multipart/form-data with 'image' and optional 'template' and 'title'
@@ -46,16 +64,23 @@ def export_pptx():
         prs = None
         if template_name:
             # Find the template in possible template dirs
+            current_app.logger.info(f"Looking for template: {template_name}")
             found = None
             for d in PPT_TEMPLATE_DIRS:
                 candidate = d / template_name
+                current_app.logger.info(f"Checking: {candidate}")
                 if candidate.exists():
+                    current_app.logger.info(f"Template found at: {candidate}")
+
                     found = candidate
                     break
 
             if found:
+                current_app.logger.info(f"Loading presentation from: {found}")
                 prs = Presentation(str(found))
+                current_app.logger.info(f"Template loaded successfully")
             else:
+                current_app.logger.error(f"Template '{template_name}' not found in any directory")
                 return jsonify({'error': f"Template '{template_name}' not found. Put it in 'ppt_templates' folder."}), 400
         else:
             # create a basic blank presentation

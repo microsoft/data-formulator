@@ -253,6 +253,14 @@ export const assembleVegaChart = (
   let chartTemplate = getChartTemplate(chartType) as ChartTemplate;
   //console.log(chartTemplate);
 
+  // Handle undefined chart template - return Table as fallback
+  if (!chartTemplate || !chartTemplate.template) {
+    console.warn(
+      `Chart template not found for chart type: ${chartType}. Falling back to Table.`
+    );
+    return ["Table", undefined];
+  }
+
   let vgObj = structuredClone(chartTemplate.template);
 
   for (const [channel, encoding] of Object.entries(encodingMap)) {

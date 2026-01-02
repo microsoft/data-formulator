@@ -190,14 +190,31 @@ class SQLDataTransformationAgent(object):
         for choice in response.choices:
             logger.info("=== SQL query result ===>")
             logger.info(choice.message.content + "\n")
-            
-            json_blocks = extract_json_objects(choice.message.content + "\n")
+
+            # Detect if the model returned HTML or other unexpected formats
+            content = choice.message.content if hasattr(choice.message, 'content') else str(choice)
+            lower_content = content.lower()
+            if '<!doctype' in lower_content or '<html' in lower_content:
+                logger.warning("Model returned HTML content instead of JSON/SQL.")
+                result = {
+                    'status': 'error',
+                    'code': "",
+                    'content': f"Model returned HTML/unknown format in response: {content[:1000]}"
+                }
+
+                result['dialog'] = [*messages, {"role": choice.message.role, "content": content}]
+                result['agent'] = 'SQLDataTransformationAgent'
+                result['refined_goal'] = {'chart_encodings': {}, 'instruction': '', 'reason': ''}
+                candidates.append(result)
+                continue
+
+            json_blocks = extract_json_objects(content + "\n")
             if len(json_blocks) > 0:
                 refined_goal = json_blocks[0]
             else:
                 refined_goal = {'chart_encodings': {}, 'instruction': '', 'reason': ''}
 
-            query_blocks = extract_code_from_gpt_response(choice.message.content + "\n", "sql")
+            query_blocks = extract_code_from_gpt_response(content + "\n", "sql")
 
             if len(query_blocks) > 0:
                 query_str = query_blocks[-1]

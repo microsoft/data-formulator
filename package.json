@@ -42,6 +42,7 @@
         "react-simple-code-editor": "^0.13.1",
         "react-vega": "^7.6.0",
         "react-virtuoso": "^4.3.10",
+        "recharts": "^3.6.0",
         "redux": "^4.2.0",
         "redux-persist": "^6.0.0",
         "typescript": "^4.9.5",

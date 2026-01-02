@@ -1560,10 +1560,25 @@ const MemoizedChartObject = memo<{
       20,
       true
     );
+
+    // Check if assembledChart is valid (not a fallback array)
+    if (
+      !assembledChart ||
+      typeof assembledChart !== "object" ||
+      Array.isArray(assembledChart)
+    ) {
+      console.warn("Unable to assemble chart, using Table view instead");
+      return null;
+    }
+
     assembledChart["background"] = "transparent";
 
     // Temporary fix, down sample the dataset
-    if (assembledChart["data"]["values"].length > 5000) {
+    if (
+      assembledChart["data"] &&
+      assembledChart["data"]["values"] &&
+      assembledChart["data"]["values"].length > 5000
+    ) {
       let values = assembledChart["data"]["values"];
       assembledChart = (({ data, ...o }) => o)(assembledChart);
 
@@ -1608,6 +1623,11 @@ const MemoizedChartObject = memo<{
   (prevProps, nextProps) => {
     // Custom comparison function for memoization
     // Only re-render if the chart or its dependencies have changed
+
+    // Safety check: if either chart is missing, they're not equal
+    if (!prevProps.chart || !nextProps.chart) {
+      return false;
+    }
 
     // when conceptShelfItems change, we only need to re-render the chart if the conceptShelfItems depended by the chart have changed
     let nextReferredConcepts = Object.values(nextProps.chart.encodingMap)

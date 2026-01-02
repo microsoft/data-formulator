@@ -66,6 +66,7 @@ import {
 } from "./ViewUtils";
 import { getUrls } from "../app/utils";
 import { Type } from "../data/types";
+import { getDataTable } from "./VisualizationView";
 
 let getChannelDisplay = (channel: Channel) => {
   if (channel == "x") {
@@ -891,9 +892,25 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({
 
   let conceptGroups = groupConceptItems(conceptShelfItems, tables);
 
-  let filteredConceptGroups = conceptGroups.filter(
-    (g) => g.group === activeTable?.displayId || g.group === "new fields"
-  );
+  // Determine chart/inferred tables (target selection logic below)
+
+  // Prefer to filter by table id (field.tableRef) so only fields from the selected table appear.
+  const chartTable = tables.find((t) => t.id === chart?.tableRef);
+  const inferredTable = getDataTable
+    ? getDataTable(chart, tables, allCharts, conceptShelfItems, true)
+    : undefined;
+  const targetTableId =
+    activeTable?.id || chartTable?.id || inferredTable?.id || null;
+
+  let filteredConceptGroups: { group: string; field: FieldItem }[];
+  if (targetTableId) {
+    filteredConceptGroups = conceptGroups.filter(
+      (g) => g.field.tableRef === targetTableId
+    );
+  } else {
+    // no specific table selected: show all groups
+    filteredConceptGroups = conceptGroups;
+  }
 
   let groupNames = [...new Set(conceptGroups.map((g) => g.group))];
   conceptGroups.sort((a, b) => {

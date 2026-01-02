@@ -781,8 +781,11 @@ export const dataFormulatorSlice = createSlice({
 
       let chart = dfSelectors.getAllCharts(state).find((c) => c.id == chartId);
       if (chart) {
-        chart = adaptChart(chart, getChartTemplate(chartType) as ChartTemplate);
-        dfSelectors.replaceChart(state, chart);
+        let chartTemplate = getChartTemplate(chartType);
+        if (chartTemplate) {
+          chart = adaptChart(chart, chartTemplate);
+          dfSelectors.replaceChart(state, chart);
+        }
       }
     },
     updateChartQcLimitsMode: (
