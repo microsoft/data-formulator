@@ -213,7 +213,7 @@ export const ExportStateButton: React.FC<{}> = ({ }) => {
 
 //type AppProps = ConnectedProps<typeof connector>;
 
-export const toolName = "Data Formulator"
+export const toolName = "JOOLIO"
 
 export interface AppFCProps {
 }
@@ -666,22 +666,26 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
         //         main: '#bf5600', // New accessible color, original (#ed6c02) has insufficient color contrast of 3.11
         //     },
         // },
-       // Microsoft Fluent UI palette (alternative option)
+       // JOOLIO Brand Palette
         palette: {
             primary: {
-                main: '#0078d4'      // Fluent UI themePrimary (Microsoft Blue)
+                main: '#1DB954'      // JOOLIO Primary (Green)
             },
             secondary: {
-                main: '#8764b8'      // Fluent UI purple
+                main: '#2d2d2d'      // JOOLIO Gray
             },
             derived: {
-                main: '#ffb900',     // Fluent UI yellow/gold
+                main: '#f59e0b',     // JOOLIO Accent (Amber/Orange)
             },
             custom: {
-                main: '#d83b01',     // Fluent UI orange (Office orange)
+                main: '#f59e0b',     // JOOLIO Accent (Amber/Orange)
             },
             warning: {
-                main: '#a4262c',     // Fluent UI red (accessible)
+                main: '#dc2626',     // Red for warnings
+            },
+            background: {
+                default: '#f8f9fa', // JOOLIO Light
+                paper: '#ffffff',
             },
         },
     });

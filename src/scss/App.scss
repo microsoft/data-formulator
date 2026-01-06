@@ -5,7 +5,7 @@ h2.view-title {
     margin: 0;
     line-height: 1.75;
     display: inline-block;
-    color: #717171;
+    color: #2d2d2d;
     //font-weight: 600;
     //text-transform: uppercase;
     font-size: 14px;
@@ -67,7 +67,7 @@ h2.view-title {
 .GroupHeader {
     position: sticky;
     padding: 4px 8px;
-    color: rgba(0, 0, 0, 0.6);
+    color: #2d2d2d;
     font-size: 12px;
 }
 
@@ -84,22 +84,23 @@ h2.view-title {
     }
 
     &::-webkit-scrollbar-track {
-        background: #f1f1f1;
+        background: #f8f9fa;
         border-radius: 4px;
     }
 
     &::-webkit-scrollbar-thumb {
-        background: #c1c1c1;
+        background: #2d2d2d;
         border-radius: 4px;
         transition: background-color 0.3s ease;
+        opacity: 0.5;
     }
 
     &::-webkit-scrollbar-thumb:hover {
-        background: #a8a8a8;
+        background: #1a1a1a;
     }
 
     &::-webkit-scrollbar-corner {
-        background: #f1f1f1;
+        background: #f8f9fa;
     }
 
     // Firefox

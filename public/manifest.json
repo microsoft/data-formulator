@@ -1,6 +1,6 @@
 {
-  "short_name": "Data Formulator",
-  "name": "Data Formulator",
+  "short_name": "JOOLIO",
+  "name": "JOOLIO",
   "icons": [
     {
       "src": "data-formulator-logo-128.png",
@@ -10,6 +10,6 @@
   ],
   "start_url": ".",
   "display": "standalone",
-  "theme_color": "#000000",
-  "background_color": "#ffffff"
+  "theme_color": "#1DB954",
+  "background_color": "#f8f9fa"
 }
