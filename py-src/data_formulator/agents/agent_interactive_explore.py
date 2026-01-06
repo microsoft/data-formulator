@@ -197,6 +197,10 @@ class InteractiveExploreAgent(object):
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": context}
                 ]
+            
+            # Log complete prompt being sent to LLM
+            logger.info("Messages sent to LLM:" + json.dumps(messages))
+            
             # Get completion from client
             stream = self.client.get_completion(messages=messages, stream=True)
         except Exception as e:

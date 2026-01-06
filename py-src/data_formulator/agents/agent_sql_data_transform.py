@@ -332,6 +332,19 @@ class SQLDataTransformationAgent(object):
                     *filtered_prev_messages,
                     {"role":"user","content": user_query}]
         
+        # Log complete prompt being sent to LLM
+        logger.info("\n" + "="*80)
+        logger.info("[COMPLETE PROMPT SENT TO LLM - SQLDataTransformationAgent]")
+        logger.info("="*80)
+        for i, msg in enumerate(messages):
+            role = msg.get("role", "unknown")
+            content = msg.get("content", "")
+            # Truncate long content for readability
+            display_content = content if len(content) <= 500 else content[:500] + f"\n... [TRUNCATED - {len(content)} total chars]"
+            logger.info(f"\n[Message {i+1}] Role: {role}")
+            logger.info(f"Content: {display_content}")
+        logger.info("\n" + "="*80 + "\n")
+        
         response = self.client.get_completion(messages = messages)
 
         return self.process_gpt_sql_response(response, messages)

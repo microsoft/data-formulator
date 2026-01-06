@@ -502,6 +502,8 @@ class SQLDataRecAgent(object):
                     *filtered_prev_messages,
                     {"role":"user","content": user_query}]
         
+        logger.info("Messages sent to LLM:" + json.dumps(messages))
+        
         response = self.client.get_completion(messages = messages)
         
         return self.process_gpt_response(input_tables, messages, response)

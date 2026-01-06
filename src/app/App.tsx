@@ -505,6 +505,7 @@ const ResetDialog: React.FC = () => {
           <Button
             onClick={() => {
               dispatch(dfActions.resetState());
+              dispatch(dfActions.clearChatHistory());
               setOpen(false);
 
               // Add a delay to ensure the state has been reset before reloading
@@ -722,8 +723,8 @@ const ConfigDialog: React.FC = () => {
             onClick={() => {
               setFormulateTimeoutSeconds(30);
               setMaxRepairAttempts(1);
-              setDefaultChartWidth(300);
-              setDefaultChartHeight(300);
+              setDefaultChartWidth(900);
+              setDefaultChartHeight(450);
             }}
           >
             Reset to default

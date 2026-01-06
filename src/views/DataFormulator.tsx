@@ -433,13 +433,7 @@ Totals (7 entries)	5	5	5	15
             borderRadius: "8px",
           }}
         >
-          <Box
-            component="img"
-            sx={{ width: 84 }}
-            alt=""
-            src={dfLogo}
-            fetchPriority="high"
-          />
+          <img style={{ width: 84 }} alt="" src={dfLogo} />
           <Typography
             fontSize={64}
             sx={{
@@ -712,13 +706,7 @@ Totals (7 entries)	5	5	5	15
                 textAlign: "center",
               }}
             >
-              <Box
-                component="img"
-                sx={{ width: 196, margin: "auto" }}
-                alt=""
-                src={dfLogo}
-                fetchPriority="high"
-              />
+              <img style={{ width: 196, margin: "auto" }} alt="" src={dfLogo} />
               <Typography
                 variant="h3"
                 sx={{

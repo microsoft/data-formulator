@@ -52,14 +52,12 @@ class Client(object):
             else:
                 self.model = f"anthropic/{model}"
         elif self.endpoint == "azure":
-            self.params["api_base"] = api_base
-            self.params["api_version"] = api_version if api_version else "2025-04-01-preview"
+            # Use LiteLLM Proxy for Azure models
+            self.params["api_base"] = api_base if api_base else "http://172.19.16.23:4000/v1"
             if api_key is None or api_key == "":
-                token_provider = get_bearer_token_provider(
-                    DefaultAzureCredential(), "https://cognitiveservices.azure.com/.default"
-                )
-                self.params["azure_ad_token_provider"] = token_provider
-            self.params["custom_llm_provider"] = "azure"
+                self.params["api_key"] = "sk-proxy"
+            else:
+                self.params["api_key"] = api_key
         elif self.endpoint == "ollama":
             self.params["api_base"] = api_base if api_base else "http://localhost:11434"
             self.params["max_tokens"] = self.params["max_completion_tokens"]

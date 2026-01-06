@@ -1342,6 +1342,20 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
       }
     };
 
+    // // Log the final prompt being sent to LLM
+    // console.log(
+    //   "================================================================================"
+    // );
+    // console.log("[FINAL PROMPT SENT TO LLM - exploreDataFromNL]");
+    // console.log(
+    //   "================================================================================"
+    // );
+    // console.log("Engine:", getUrls().EXPLORE_DATA_STREAMING);
+    // console.log("Message Body:", JSON.parse(messageBody));
+    // console.log(
+    //   "================================================================================\n"
+    // );
+
     fetch(getUrls().EXPLORE_DATA_STREAMING, {
       method: "POST",
       headers: { "Content-Type": "application/json" },

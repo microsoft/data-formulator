@@ -2,6 +2,7 @@
 // Licensed under the MIT License.
 
 import React, { useState, useEffect, useRef } from "react";
+import { useDispatch, useSelector } from "react-redux";
 import chatbotGif from "../assets/gdis-chat-bot.gif";
 import {
   Box,
@@ -14,13 +15,34 @@ import {
 } from "@mui/material";
 import SendIcon from "@mui/icons-material/Send";
 import CloseIcon from "@mui/icons-material/Close";
+import { AppDispatch } from "../app/store";
+import { DataFormulatorState } from "../app/dfSlice";
+import * as dfActions from "../app/dfSlice";
+import { ChatMessage } from "../app/dfSlice";
 
-interface ChatMessage {
-  id: string;
-  text: string;
-  sender: "user" | "bot";
-  timestamp: Date;
-}
+// CSS keyframes for loading message animation (ChatGPT style)
+const loadingAnimationStyles = `
+  @keyframes typingAnimation {
+    0%, 20%, 100% {
+      opacity: 0.4;
+    }
+    50% {
+      opacity: 1;
+    }
+  }
+  .loading-message {
+    opacity: 0.8;
+  }
+  .loading-message::after {
+    content: '';
+    animation: typingAnimation 1.4s infinite;
+  }
+`;
+
+// Inject styles
+const styleSheet = document.createElement("style");
+styleSheet.textContent = loadingAnimationStyles;
+document.head.appendChild(styleSheet);
 
 interface ChatbotPanelProps {
   isOpen: boolean;
@@ -33,10 +55,274 @@ export const ChatbotPanel: React.FC<ChatbotPanelProps> = ({
   onClose,
   onOpen,
 }) => {
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const dispatch = useDispatch<AppDispatch>();
+  const chatHistory = useSelector(
+    (state: DataFormulatorState) => state.chatHistory
+  );
   const [chatInput, setChatInput] = useState<string>("");
   const [chatLoading, setChatLoading] = useState<boolean>(false);
+  const [expandedVideo, setExpandedVideo] = useState<string | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
+
+  // Function to extract YouTube video ID from URL
+  const extractYouTubeId = (url: string): string | null => {
+    const youtubeRegex =
+      /(?:youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/;
+    const match = url.match(youtubeRegex);
+    return match ? match[1] : null;
+  };
+
+  // Function to check if it's a local network video (UNC path or IP-based video)
+  const isLocalNetworkVideo = (text: string): string | null => {
+    // UNC path: \\ip\share\path or //ip/share/path
+    // Match backslash paths: \\ or forward slash paths: //
+    const uncPathRegex =
+      /(\\\\?[^\s]+\.(mp4|avi|mov|mkv)|\/\/[^\s]+\.(mp4|avi|mov|mkv))/i;
+    const match = text.match(uncPathRegex);
+    if (match) {
+      return match[0];
+    }
+    return null;
+  };
+
+  // Function to convert URLs in text to clickable links or embedded videos
+  const renderMessageWithLinks = (text: string) => {
+    // Split by newlines to handle paragraphs
+    const paragraphs = text.split("\n").filter((p) => p.trim() !== "");
+
+    // Process each paragraph
+    const processedParagraphs = paragraphs.map((paragraph, paraIndex) => {
+      // Check for local network video first (UNC path)
+      const localVideoPath = isLocalNetworkVideo(paragraph);
+      if (localVideoPath) {
+        const isExpanded = expandedVideo === localVideoPath;
+
+        // Get text before and after video path
+        const textBefore = paragraph
+          .substring(0, paragraph.indexOf(localVideoPath))
+          .trim();
+        const textAfter = paragraph
+          .substring(paragraph.indexOf(localVideoPath) + localVideoPath.length)
+          .trim();
+
+        return (
+          <Box
+            key={`para-${paraIndex}`}
+            sx={{ display: "flex", flexDirection: "column", gap: 1, mb: 1.5 }}
+          >
+            {textBefore && (
+              <Typography variant="body2" sx={{ color: "inherit" }}>
+                {textBefore}
+              </Typography>
+            )}
+            <Box
+              sx={{
+                marginTop: 1,
+                marginBottom: 1,
+                display: "flex",
+                flexDirection: "column",
+                gap: 1,
+              }}
+            >
+              <video
+                width={isExpanded ? "100%" : "280"}
+                height={isExpanded ? "400" : "157"}
+                controls
+                style={{
+                  borderRadius: "8px",
+                  backgroundColor: "#000",
+                  transition: "all 0.3s ease",
+                }}
+              >
+                <source
+                  src={`/api/chatbot/video?path=${encodeURIComponent(
+                    localVideoPath
+                  )}`}
+                  type="video/mp4"
+                />
+                Your browser does not support the video tag.
+              </video>
+              <Box
+                sx={{
+                  display: "flex",
+                  gap: 1,
+                }}
+              ></Box>
+            </Box>
+            {textAfter && (
+              <Typography variant="body2" sx={{ color: "inherit" }}>
+                {textAfter}
+              </Typography>
+            )}
+            <Typography
+              variant="caption"
+              sx={{
+                color: "#999",
+                fontSize: "11px",
+                wordBreak: "break-all",
+              }}
+            >
+              {localVideoPath}
+            </Typography>
+          </Box>
+        );
+      }
+
+      // Regex to match: http/https URLs, www URLs, IP addresses (with or without port), and domain names
+      const urlRegex =
+        /(https?:\/\/[^\s]+|www\.[^\s]+|(?:\d{1,3}\.){3}\d{1,3}(?::\d+)?(?:\/[^\s]*)?|google\.com)/g;
+      const parts: (string | React.ReactElement)[] = [];
+      let lastIndex = 0;
+      let match;
+
+      while ((match = urlRegex.exec(paragraph)) !== null) {
+        // Add text before URL
+        if (match.index > lastIndex) {
+          parts.push(paragraph.substring(lastIndex, match.index));
+        }
+
+        // Add URL as clickable link or embedded video
+        let url = match[0];
+        if (!url.startsWith("http")) {
+          // Check if it's an IP address
+          if (/^\d{1,3}\./.test(url)) {
+            url = `http://${url}`;
+          } else {
+            url = `https://${url}`;
+          }
+        }
+
+        // Check if it's a YouTube link
+        const youtubeId = extractYouTubeId(url);
+        if (youtubeId) {
+          const isExpanded = expandedVideo === youtubeId;
+          parts.push(
+            <Box
+              key={`video-${youtubeId}`}
+              sx={{
+                marginTop: 1,
+                marginBottom: 1,
+                display: "flex",
+                flexDirection: "column",
+                gap: 1,
+              }}
+            >
+              <iframe
+                width={isExpanded ? "100%" : "280"}
+                height={isExpanded ? "400" : "157"}
+                src={`https://www.youtube.com/embed/${youtubeId}`}
+                title="YouTube video"
+                frameBorder="0"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                allowFullScreen
+                style={{
+                  borderRadius: "8px",
+                  transition: "all 0.3s ease",
+                }}
+              />
+              <Box
+                sx={{
+                  display: "flex",
+                  gap: 1,
+                }}
+              >
+                <a
+                  href={url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    padding: "4px 12px",
+                    fontSize: "12px",
+                    backgroundColor: "#1976d2",
+                    color: "white",
+                    border: "none",
+                    borderRadius: "4px",
+                    cursor: "pointer",
+                    textDecoration: "none",
+                    fontWeight: 500,
+                  }}
+                >
+                  Open in YouTube
+                </a>
+              </Box>
+            </Box>
+          );
+        } else {
+          parts.push(
+            <a
+              key={`url-${paraIndex}-${parts.length}`}
+              href={url}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                color: "#1976d2",
+                textDecoration: "underline",
+                cursor: "pointer",
+                fontWeight: 500,
+              }}
+            >
+              {match[0]}
+            </a>
+          );
+        }
+
+        lastIndex = urlRegex.lastIndex;
+      }
+
+      // Add remaining text after last URL
+      if (lastIndex < paragraph.length) {
+        parts.push(paragraph.substring(lastIndex));
+      }
+
+      // If no parts, return plain text
+      if (parts.length === 0) {
+        return (
+          <Typography
+            key={`para-${paraIndex}`}
+            variant="body2"
+            sx={{ color: "inherit", mb: 1 }}
+          >
+            {paragraph}
+          </Typography>
+        );
+      }
+
+      // If all parts are strings, return as Typography
+      if (parts.every((p) => typeof p === "string")) {
+        return (
+          <Typography
+            key={`para-${paraIndex}`}
+            variant="body2"
+            sx={{ color: "inherit", mb: 1 }}
+          >
+            {parts.join("")}
+          </Typography>
+        );
+      }
+
+      // If mixed content (text + links), wrap in Box with Typography styling
+      return (
+        <Box
+          key={`para-${paraIndex}`}
+          sx={{ fontSize: "0.875rem", color: "inherit", mb: 1 }}
+        >
+          {parts}
+        </Box>
+      );
+    });
+
+    // If only one paragraph, return it directly without wrapper
+    if (processedParagraphs.length === 1) {
+      return processedParagraphs[0];
+    }
+
+    // Return all paragraphs wrapped in a container
+    return (
+      <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5 }}>
+        {processedParagraphs}
+      </Box>
+    );
+  };
 
   // Auto-scroll to bottom of chat when new messages arrive
   useEffect(() => {
@@ -44,7 +330,36 @@ export const ChatbotPanel: React.FC<ChatbotPanelProps> = ({
       chatEndRef.current.parentElement.scrollTop =
         chatEndRef.current.parentElement.scrollHeight;
     }
-  }, [chatMessages]);
+  }, [chatHistory]);
+
+  // Scroll to bottom when chat opens
+  useEffect(() => {
+    if (isOpen) {
+      setTimeout(() => {
+        if (chatEndRef.current?.parentElement) {
+          chatEndRef.current.parentElement.scrollTop =
+            chatEndRef.current.parentElement.scrollHeight;
+        }
+      }, 100);
+    }
+  }, [isOpen]);
+
+  // Animated dots for loading message
+  useEffect(() => {
+    if (!chatLoading) return;
+
+    const interval = setInterval(() => {
+      // This interval is kept for timing but no longer updates state
+    }, 500);
+
+    return () => clearInterval(interval);
+  }, [chatLoading]);
+
+  // Update loading message with animated dots
+  useEffect(() => {
+    // This effect is no longer needed since we removed dotCount
+    return;
+  }, [chatLoading]);
 
   const handleSendMessage = async () => {
     if (!chatInput.trim()) return;
@@ -55,12 +370,22 @@ export const ChatbotPanel: React.FC<ChatbotPanelProps> = ({
       id: Date.now().toString(),
       text: messageText,
       sender: "user",
-      timestamp: new Date(),
+      timestamp: Date.now(),
     };
 
-    setChatMessages((prev) => [...prev, userMessage]);
+    dispatch(dfActions.dfActions.addChatMessage(userMessage));
     setChatInput("");
     setChatLoading(true);
+
+    // Add loading message immediately
+    const loadingMessageId = (Date.now() + 1).toString();
+    const loadingMessage: ChatMessage = {
+      id: loadingMessageId,
+      text: "Đang xử lý...",
+      sender: "bot",
+      timestamp: Date.now(),
+    };
+    dispatch(dfActions.dfActions.addChatMessage(loadingMessage));
 
     try {
       const response = await fetch("/api/chatbot/message", {
@@ -77,18 +402,30 @@ export const ChatbotPanel: React.FC<ChatbotPanelProps> = ({
       const data = await response.json();
 
       if (data.status === "success") {
+        // Replace loading message with actual response
         const botMessage: ChatMessage = {
-          id: (Date.now() + 1).toString(),
+          id: loadingMessageId, // Use same ID to replace the loading message
           text: data.reply,
           sender: "bot",
-          timestamp: new Date(),
+          timestamp: Date.now(),
         };
-        setChatMessages((prev) => [...prev, botMessage]);
+        // Remove loading message first, then add the real one
+        dispatch(dfActions.dfActions.removeChatMessage(loadingMessageId));
+        dispatch(dfActions.dfActions.addChatMessage(botMessage));
       } else {
         throw new Error(data.message || "Failed to get response");
       }
     } catch (err) {
       console.error("Chatbot error:", err);
+      // Replace loading message with error message
+      dispatch(dfActions.dfActions.removeChatMessage(loadingMessageId));
+      const errorMessage: ChatMessage = {
+        id: (Date.now() + 2).toString(),
+        text: "Xin lỗi, có lỗi xảy ra. Vui lòng thử lại.",
+        sender: "bot",
+        timestamp: Date.now(),
+      };
+      dispatch(dfActions.dfActions.addChatMessage(errorMessage));
     } finally {
       setChatLoading(false);
     }
@@ -182,7 +519,7 @@ export const ChatbotPanel: React.FC<ChatbotPanelProps> = ({
               },
             }}
           >
-            {chatMessages.length === 0 && (
+            {chatHistory.length === 0 && (
               <Box
                 sx={{
                   display: "flex",
@@ -219,7 +556,7 @@ export const ChatbotPanel: React.FC<ChatbotPanelProps> = ({
               </Box>
             )}
 
-            {chatMessages.map((msg) => (
+            {chatHistory.map((msg: ChatMessage) => (
               <Box
                 key={msg.id}
                 sx={{
@@ -272,17 +609,24 @@ export const ChatbotPanel: React.FC<ChatbotPanelProps> = ({
                         ? "0 2px 8px rgba(25, 118, 210, 0.2)"
                         : "0 2px 4px rgba(0,0,0,0.05)",
                   }}
+                  className={
+                    msg.sender === "bot" && msg.text === "Đang xử lý..."
+                      ? "loading-message"
+                      : ""
+                  }
                 >
-                  <Typography
-                    variant="body2"
+                  <Box
                     sx={{
-                      color: "inherit",
                       wordBreak: "break-word",
                       lineHeight: 1.4,
                     }}
                   >
-                    {msg.text}
-                  </Typography>
+                    {/^\\.+$/.test(msg.text) ? (
+                      <span className="animated-dots">{msg.text}</span>
+                    ) : (
+                      renderMessageWithLinks(msg.text)
+                    )}
+                  </Box>
                   <Typography
                     variant="caption"
                     sx={{
@@ -293,7 +637,7 @@ export const ChatbotPanel: React.FC<ChatbotPanelProps> = ({
                       fontSize: "11px",
                     }}
                   >
-                    {msg.timestamp.toLocaleTimeString("en-US", {
+                    {new Date(msg.timestamp).toLocaleTimeString("en-US", {
                       hour: "2-digit",
                       minute: "2-digit",
                     })}

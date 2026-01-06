@@ -114,6 +114,7 @@ def configure_logging():
     """Configure logging for the Flask application."""
     # Configure root logger for general application logging
     logging.basicConfig(
+        #level=logging.INFO,
         level=logging.ERROR,
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
         handlers=[logging.StreamHandler(sys.stdout)]
@@ -123,6 +124,7 @@ def configure_logging():
     logging.getLogger('httpx').setLevel(logging.WARNING)
     logging.getLogger('litellm').setLevel(logging.WARNING)
     logging.getLogger('openai').setLevel(logging.WARNING)
+   # logging.getLogger('werkzeug').setLevel(logging.WARNING)
     
     # Configure Flask app logger to use the same settings
     app.logger.handlers = []
@@ -273,8 +275,8 @@ def database_disabled_fallback(path):
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Data Formulator")
-    # Ưu tiên lấy port từ biến môi trường PORT, nếu không có thì dùng 5000
-    default_port = int(os.environ.get("PORT", 5000))
+    # Ưu tiên lấy port từ biến môi trường PORT, nếu không có thì dùng 8000
+    default_port = int(os.environ.get("PORT", 8000))
     parser.add_argument("-p", "--port", type=int, default=default_port, help="The port number you want to use")
     parser.add_argument("--exec-python-in-subprocess", action='store_true', default=False,
         help="Whether to execute python in subprocess, it makes the app more secure (reducing the chance for the model to access the local machine), but increases the time of response")
@@ -288,7 +290,23 @@ def parse_args() -> argparse.Namespace:
         help="Project the front page as the main page instead of the app.")
     parser.add_argument("--dev", action='store_true', default=False,
         help="Launch the app in development mode (prevents the app from opening the browser automatically)")
-    return parser.parse_args()
+    
+    try:
+        return parser.parse_args()
+    except SystemExit as e:
+        if e.code == 2:
+            # When argparse fails (e.g., running from IDE/Jupyter with unknown args), use defaults
+            logger.warning("Could not parse command line arguments, using defaults")
+            return argparse.Namespace(
+                port=default_port,
+                exec_python_in_subprocess=False,
+                disable_display_keys=False,
+                disable_database=False,
+                disable_file_upload=False,
+                project_front_page=False,
+                dev=False
+            )
+        raise
 
 
 def run_app():
@@ -296,6 +314,7 @@ def run_app():
     configure_logging()
     
     args = parse_args()
+    
     # Add this line to make args available to routes
     # override the args from the env file
     app.config['CLI_ARGS'] = {

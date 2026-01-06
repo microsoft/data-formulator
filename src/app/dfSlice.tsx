@@ -95,6 +95,13 @@ export interface ClientConfig {
   defaultChartHeight: number;
 }
 
+export interface ChatMessage {
+  id: string;
+  text: string;
+  sender: "user" | "bot";
+  timestamp: number; // Use number instead of Date for serialization
+}
+
 export interface GeneratedReport {
   id: string;
   content: string;
@@ -149,6 +156,9 @@ export interface DataFormulatorState {
   config: ClientConfig;
 
   dataLoaderConnectParams: Record<string, Record<string, string>>; // {table_name: {param_name: param_value}}
+
+  // Chat history with chatbot
+  chatHistory: ChatMessage[];
 
   // which table is the agent working on
   agentActions: {
@@ -213,6 +223,8 @@ const initialState: DataFormulatorState = {
   },
 
   dataLoaderConnectParams: {},
+
+  chatHistory: [],
 
   agentActions: [],
 
@@ -434,6 +446,8 @@ export const dataFormulatorSlice = createSlice({
       state.agentActions = [];
 
       state.generatedReports = [];
+
+      state.chatHistory = [];
       // Redux Persist will handle persistence automatically
     },
     loadState: (state, action: PayloadAction<any>) => {
@@ -1304,6 +1318,24 @@ export const dataFormulatorSlice = createSlice({
     },
     clearGeneratedReports: (state) => {
       state.generatedReports = [];
+      // Redux Persist will handle persistence automatically
+    },
+    addChatMessage: (state, action: PayloadAction<ChatMessage>) => {
+      state.chatHistory = [...state.chatHistory, action.payload];
+      // Redux Persist will handle persistence automatically
+    },
+    removeChatMessage: (state, action: PayloadAction<string>) => {
+      state.chatHistory = state.chatHistory.filter(
+        (msg) => msg.id !== action.payload
+      );
+      // Redux Persist will handle persistence automatically
+    },
+    clearChatHistory: (state) => {
+      state.chatHistory = [];
+      // Redux Persist will handle persistence automatically
+    },
+    setChatHistory: (state, action: PayloadAction<ChatMessage[]>) => {
+      state.chatHistory = action.payload;
       // Redux Persist will handle persistence automatically
     },
   },
