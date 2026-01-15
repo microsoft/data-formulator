@@ -842,3 +842,94 @@ def data_loader_ingest_data_from_query():
             "status": "error", 
             "message": safe_msg
         }), status_code
+
+
+@tables_bp.route('/refresh-derived-data', methods=['POST'])
+def refresh_derived_data():
+    """Refresh derived data by re-executing Python code on updated base table"""
+    try:
+        from data_formulator.py_sandbox import run_transform_in_sandbox2020
+        
+        data = request.get_json()
+        
+        # Get updated base table data and transformation info
+        updated_table = data.get('updated_table')  # {name, rows, columns}
+        derived_tables = data.get('derived_tables', [])  # [{id, code, source_tables: [names]}]
+        
+        if not updated_table:
+            return jsonify({"status": "error", "message": "No updated table provided"}), 400
+        
+        if not derived_tables:
+            return jsonify({"status": "error", "message": "No derived tables to refresh"}), 400
+        
+        # Validate updated table has same columns as before
+        updated_table_name = updated_table['name']
+        updated_columns = set(updated_table['columns'])
+        
+        results = []
+        
+        # Process each derived table
+        for derived_info in derived_tables:
+            try:
+                code = derived_info['code']
+                source_table_names = derived_info['source_tables']
+                derived_table_id = derived_info['id']
+                
+                # Prepare input dataframes
+                df_list = []
+                
+                for source_name in source_table_names:
+                    if source_name == updated_table_name:
+                        # Use the updated data
+                        df = pd.DataFrame(updated_table['rows'])
+                    else:
+                        # Fetch from database
+                        with db_manager.connection(session['session_id']) as db:
+                            result = db.execute(f"SELECT * FROM {source_name}").fetchdf()
+                            df = result
+                    
+                    df_list.append(df)
+                
+                # Execute the transformation code in subprocess for safety
+                exec_result = run_transform_in_sandbox2020(code, df_list, exec_python_in_subprocess=True)
+                
+                if exec_result['status'] == 'ok':
+                    output_df = exec_result['content']
+                    
+                    # Convert to records format for JSON serialization
+                    rows = json.loads(output_df.to_json(orient='records', date_format='iso'))
+                    columns = list(output_df.columns)
+                    
+                    results.append({
+                        'id': derived_table_id,
+                        'status': 'success',
+                        'rows': rows,
+                        'columns': columns
+                    })
+                else:
+                    results.append({
+                        'id': derived_table_id,
+                        'status': 'error',
+                        'message': exec_result['content']
+                    })
+                    
+            except Exception as e:
+                logger.error(f"Error refreshing derived table {derived_info.get('id')}: {str(e)}")
+                results.append({
+                    'id': derived_info.get('id'),
+                    'status': 'error',
+                    'message': str(e)
+                })
+        
+        return jsonify({
+            "status": "success",
+            "results": results
+        })
+        
+    except Exception as e:
+        logger.error(f"Error refreshing derived data: {str(e)}")
+        safe_msg, status_code = sanitize_db_error_message(e)
+        return jsonify({
+            "status": "error",
+            "message": safe_msg
+        }), status_code

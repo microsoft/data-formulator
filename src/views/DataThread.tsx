@@ -22,7 +22,10 @@ import {
     Popper,
     Paper,
     ClickAwayListener,
-    Badge
+    Badge,
+    Menu,
+    MenuItem,
+    ListItemText
 } from '@mui/material';
 
 import { VegaLite } from 'react-vega'
@@ -46,6 +49,8 @@ import CloseIcon from '@mui/icons-material/Close';
 import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import CancelOutlinedIcon from '@mui/icons-material/CancelOutlined';
+import RefreshIcon from '@mui/icons-material/Refresh';
+import MoreVertIcon from '@mui/icons-material/MoreVert';
 
 import _ from 'lodash';
 import { getChartTemplate } from '../components/ChartTemplates';
@@ -189,6 +194,190 @@ const MetadataPopup = memo<{
                     <Box sx={{ mt: 1, display: 'flex', gap: 1, alignItems: 'center' }}>
                         <Button size="small" sx={{ml: 'auto'}} onClick={handleCancel} color="primary">Cancel</Button>
                         <Button size="small" onClick={handleSave} color="primary" disabled={!hasChanges}>Save</Button>
+                    </Box>
+                </Paper>
+            </ClickAwayListener>
+        </Popper>
+    );
+});
+
+// Refresh Data Dialog Component
+const RefreshDataDialog = memo<{
+    open: boolean;
+    anchorEl: HTMLElement | null;
+    onClose: () => void;
+    onRefresh: (file: File | null, rawData: string) => void;
+    tableName: string;
+    tableColumns: string[];
+}>(({ open, anchorEl, onClose, onRefresh, tableName, tableColumns }) => {
+    const [uploadMode, setUploadMode] = useState<'file' | 'raw'>('file');
+    const [selectedFile, setSelectedFile] = useState<File | null>(null);
+    const [rawData, setRawData] = useState('');
+    const [error, setError] = useState('');
+
+    useEffect(() => {
+        if (!open) {
+            setSelectedFile(null);
+            setRawData('');
+            setError('');
+            setUploadMode('file');
+        }
+    }, [open]);
+
+    const validateData = (data: any[]) => {
+        if (!Array.isArray(data) || data.length === 0) {
+            return 'Data must be a non-empty array of objects';
+        }
+        
+        const newColumns = Object.keys(data[0]);
+        const expectedColumns = new Set(tableColumns);
+        const actualColumns = new Set(newColumns);
+        
+        // Check if all expected columns are present
+        for (const col of expectedColumns) {
+            if (!actualColumns.has(col)) {
+                return `Missing required column: ${col}`;
+            }
+        }
+        
+        return null;
+    };
+
+    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (file) {
+            setSelectedFile(file);
+            setError('');
+        }
+    };
+
+    const handleRefresh = async () => {
+        try {
+            if (uploadMode === 'file' && selectedFile) {
+                // Validate file extension
+                const ext = selectedFile.name.split('.').pop()?.toLowerCase();
+                if (!['csv', 'xlsx', 'xls', 'json'].includes(ext || '')) {
+                    setError('Unsupported file format. Please use CSV, XLSX, or JSON.');
+                    return;
+                }
+                
+                onRefresh(selectedFile, '');
+                onClose();
+            } else if (uploadMode === 'raw' && rawData) {
+                // Validate JSON format
+                try {
+                    const parsed = JSON.parse(rawData);
+                    const validationError = validateData(parsed);
+                    if (validationError) {
+                        setError(validationError);
+                        return;
+                    }
+                    onRefresh(null, rawData);
+                    onClose();
+                } catch (e) {
+                    setError('Invalid JSON format');
+                }
+            } else {
+                setError('Please provide data to refresh');
+            }
+        } catch (e) {
+            setError('Error processing data');
+        }
+    };
+
+    return (
+        <Popper
+            open={open}
+            anchorEl={anchorEl}
+            placement="bottom-start"
+            style={{ zIndex: 1300 }}
+        >
+            <ClickAwayListener onClickAway={onClose}>
+                <Paper
+                    elevation={8}
+                    sx={{
+                        width: 480,
+                        fontSize: 12,
+                        p: 2,
+                        mt: 1,
+                        border: '1px solid',
+                        borderColor: 'divider'
+                    }}
+                >
+                    <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                        Refresh data for <Typography component="span" sx={{ fontSize: 'inherit', color: 'primary.main'}}>{tableName}</Typography>
+                    </Typography>
+                    <Typography variant="caption" sx={{ display: 'block', mb: 2, color: 'text.secondary' }}>
+                        Upload new data with the same column names: {tableColumns.join(', ')}
+                    </Typography>
+                    
+                    <ButtonGroup size="small" sx={{ mb: 2 }}>
+                        <Button 
+                            variant={uploadMode === 'file' ? 'contained' : 'outlined'}
+                            onClick={() => setUploadMode('file')}
+                        >
+                            Upload File
+                        </Button>
+                        <Button 
+                            variant={uploadMode === 'raw' ? 'contained' : 'outlined'}
+                            onClick={() => setUploadMode('raw')}
+                        >
+                            Paste JSON
+                        </Button>
+                    </ButtonGroup>
+
+                    {uploadMode === 'file' ? (
+                        <Box>
+                            <input
+                                type="file"
+                                accept=".csv,.xlsx,.xls,.json"
+                                onChange={handleFileChange}
+                                style={{ width: '100%' }}
+                            />
+                            {selectedFile && (
+                                <Typography variant="caption" sx={{ display: 'block', mt: 1 }}>
+                                    Selected: {selectedFile.name}
+                                </Typography>
+                            )}
+                        </Box>
+                    ) : (
+                        <TextField
+                            label="JSON data"
+                            placeholder='[{"col1": "value1", "col2": "value2"}, ...]'
+                            fullWidth
+                            multiline
+                            slotProps={{
+                                inputLabel: {shrink: true},
+                            }}
+                            minRows={4}
+                            maxRows={10}
+                            variant="outlined"
+                            size="small"
+                            value={rawData}
+                            onChange={(e) => {
+                                setRawData(e.target.value);
+                                setError('');
+                            }}
+                            sx={{ my: 1, '& .MuiInputBase-input': { fontSize: 12 } }}
+                        />
+                    )}
+
+                    {error && (
+                        <Typography variant="caption" sx={{ display: 'block', mt: 1, color: 'error.main' }}>
+                            {error}
+                        </Typography>
+                    )}
+
+                    <Box sx={{ mt: 2, display: 'flex', gap: 1, alignItems: 'center' }}>
+                        <Button size="small" sx={{ml: 'auto'}} onClick={onClose} color="primary">Cancel</Button>
+                        <Button 
+                            size="small" 
+                            onClick={handleRefresh} 
+                            color="primary"
+                            disabled={uploadMode === 'file' ? !selectedFile : !rawData}
+                        >
+                            Refresh
+                        </Button>
                     </Box>
                 </Paper>
             </ClickAwayListener>
@@ -490,6 +679,16 @@ let SingleThreadGroupView: FC<{
     const [selectedTableForMetadata, setSelectedTableForMetadata] = useState<DictTable | null>(null);
     const [metadataAnchorEl, setMetadataAnchorEl] = useState<HTMLElement | null>(null);
 
+    // Refresh data popup state
+    const [refreshDataPopupOpen, setRefreshDataPopupOpen] = useState(false);
+    const [selectedTableForRefresh, setSelectedTableForRefresh] = useState<DictTable | null>(null);
+    const [refreshDataAnchorEl, setRefreshDataAnchorEl] = useState<HTMLElement | null>(null);
+
+    // Menu state for actions
+    const [menuAnchorEl, setMenuAnchorEl] = useState<HTMLElement | null>(null);
+    const [menuOpen, setMenuOpen] = useState(false);
+    const [menuTableId, setMenuTableId] = useState<string | null>(null);
+
 
     let handleUpdateTableDisplayId = (tableId: string, displayId: string) => {
         dispatch(dfActions.updateTableDisplayId({
@@ -517,6 +716,121 @@ let SingleThreadGroupView: FC<{
                 attachedMetadata: metadata
             }));
         }
+    };
+
+    const handleOpenRefreshDataPopup = (table: DictTable, anchorEl: HTMLElement) => {
+        setSelectedTableForRefresh(table);
+        setRefreshDataAnchorEl(anchorEl);
+        setRefreshDataPopupOpen(true);
+    };
+
+    const handleCloseRefreshDataPopup = () => {
+        setRefreshDataPopupOpen(false);
+        setSelectedTableForRefresh(null);
+        setRefreshDataAnchorEl(null);
+    };
+
+    const handleRefreshData = async (file: File | null, rawData: string) => {
+        if (!selectedTableForRefresh) return;
+
+        try {
+            const formData = new FormData();
+            formData.append('table_name', selectedTableForRefresh.id);
+
+            if (file) {
+                formData.append('file', file);
+            } else if (rawData) {
+                formData.append('raw_data', rawData);
+            }
+
+            // First, replace the table data in the database
+            const replaceResponse = await fetch('/api/tables/create-table', {
+                method: 'POST',
+                body: formData
+            });
+
+            const replaceResult = await replaceResponse.json();
+
+            if (replaceResult.status !== 'success') {
+                throw new Error(replaceResult.message || 'Failed to replace table data');
+            }
+
+            // Get the updated table data from server
+            const tableResponse = await fetch(`/api/tables/get-table?table_name=${selectedTableForRefresh.id}`);
+            const tableResult = await tableResponse.json();
+
+            if (tableResult.status !== 'success') {
+                throw new Error('Failed to fetch updated table data');
+            }
+
+            // Update the base table in Redux
+            dispatch(dfActions.updateTableRows({
+                tableId: selectedTableForRefresh.id,
+                rows: tableResult.rows
+            }));
+
+            // Find all derived tables that depend on this table
+            const derivedTables = tables.filter(t => 
+                t.derive?.source?.includes(selectedTableForRefresh.id)
+            );
+
+            if (derivedTables.length > 0) {
+                // Call the refresh-derived-data endpoint
+                const refreshPayload = {
+                    updated_table: {
+                        name: selectedTableForRefresh.id,
+                        rows: tableResult.rows,
+                        columns: tableResult.columns
+                    },
+                    derived_tables: derivedTables.map(dt => ({
+                        id: dt.id,
+                        code: dt.derive?.code || '',
+                        source_tables: dt.derive?.source || []
+                    }))
+                };
+
+                const refreshResponse = await fetch('/api/tables/refresh-derived-data', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(refreshPayload)
+                });
+
+                const refreshResult = await refreshResponse.json();
+
+                if (refreshResult.status === 'success') {
+                    // Update Redux state with refreshed derived tables
+                    refreshResult.results.forEach((result: any) => {
+                        if (result.status === 'success') {
+                            dispatch(dfActions.updateTableRows({
+                                tableId: result.id,
+                                rows: result.rows
+                            }));
+                        } else {
+                            console.error(`Failed to refresh table ${result.id}:`, result.message);
+                        }
+                    });
+                }
+            }
+            
+        } catch (error) {
+            console.error('Error refreshing data:', error);
+            alert(`Error refreshing data: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
+    };
+
+    const handleMenuOpen = (event: React.MouseEvent<HTMLElement>, tableId: string) => {
+        event.stopPropagation();
+        setMenuAnchorEl(event.currentTarget);
+        setMenuTableId(tableId);
+        setMenuOpen(true);
+    };
+
+    const handleMenuClose = () => {
+        setMenuOpen(false);
+        setMenuAnchorEl(null);
+        setMenuTableId(null);
     };
 
     let buildTriggerCard = (trigger: Trigger) => {
@@ -673,40 +987,46 @@ let SingleThreadGroupView: FC<{
                         </Box>
                     </Stack>
                     <ButtonGroup aria-label="Basic button group" variant="text" sx={{ textAlign: 'end', margin: "auto 2px auto auto" }}>
-                        {table?.derive == undefined && <Tooltip key="attach-metadata-btn-tooltip" title={table?.attachedMetadata ? "edit table metadata" : "attach table metadata"}>
-                            <IconButton aria-label="attach metadata" size="small" sx={{ 
-                                padding: 0.25, 
-                                '&:hover': {
-                                    transform: 'scale(1.2)',
-                                    transition: 'all 0.1s linear'
-                                } 
-                            }}
-                                onClick={(event) => {
-                                    event.stopPropagation();
-                                    handleOpenMetadataPopup(table!, event.currentTarget);
-                                }}
-                            >
-                                <AttachFileIcon fontSize="small" sx={{ 
-                                    fontSize: 18,
-                                    color: table?.attachedMetadata ? 'secondary.main' : 'text.secondary',
-                                    opacity: table?.attachedMetadata ? 1 : 0.7
-                                }}/>
-                            </IconButton>
-                        </Tooltip>}
+                        {table?.derive == undefined && (
+                            <Tooltip key="table-actions-menu-tooltip" title="table actions">
+                                <IconButton 
+                                    aria-label="table actions" 
+                                    size="small" 
+                                    sx={{ 
+                                        padding: 0.25, 
+                                        '&:hover': {
+                                            transform: 'scale(1.2)',
+                                            transition: 'all 0.1s linear'
+                                        } 
+                                    }}
+                                    onClick={(event) => handleMenuOpen(event, tableId)}
+                                >
+                                    <MoreVertIcon fontSize="small" sx={{ fontSize: 18 }} />
+                                </IconButton>
+                            </Tooltip>
+                        )}
                         
-                        {tableDeleteEnabled && <Tooltip key="delete-table-btn-tooltip" title="delete table">
-                            <IconButton aria-label="share" size="small" sx={{ padding: 0.25, '&:hover': {
-                                transform: 'scale(1.2)',
-                                transition: 'all 0.1s linear'
-                                } }}
-                                onClick={(event) => {
-                                    event.stopPropagation();
-                                    dispatch(dfActions.deleteTable(tableId));
-                                }}
-                            >
-                                <DeleteIcon fontSize="small" sx={{ fontSize: 18 }} color='warning'/>
-                            </IconButton>
-                        </Tooltip>}
+                        {table?.derive !== undefined && tableDeleteEnabled && (
+                            <Tooltip key="delete-table-btn-tooltip" title="delete table">
+                                <IconButton 
+                                    aria-label="delete table" 
+                                    size="small" 
+                                    sx={{ 
+                                        padding: 0.25, 
+                                        '&:hover': {
+                                            transform: 'scale(1.2)',
+                                            transition: 'all 0.1s linear'
+                                        } 
+                                    }}
+                                    onClick={(event) => {
+                                        event.stopPropagation();
+                                        dispatch(dfActions.deleteTable(tableId));
+                                    }}
+                                >
+                                    <DeleteIcon fontSize="small" sx={{ fontSize: 18 }} color='warning'/>
+                                </IconButton>
+                            </Tooltip>
+                        )}
                         
                         <Tooltip key="create-new-chart-btn-tooltip" title="create a new chart">
                             <IconButton aria-label="share" size="small" sx={{ padding: 0.25, '&:hover': {
@@ -723,6 +1043,55 @@ let SingleThreadGroupView: FC<{
                             </IconButton>
                         </Tooltip>
                     </ButtonGroup>
+                    
+                    {/* Menu for original table actions */}
+                    <Menu
+                        anchorEl={menuAnchorEl}
+                        open={menuOpen && menuTableId === tableId}
+                        onClose={handleMenuClose}
+                        onClick={handleMenuClose}
+                    >
+                        <MenuItem onClick={(event) => {
+                            event.stopPropagation();
+                            handleOpenMetadataPopup(table!, menuAnchorEl!);
+                        }}>
+                            <ListItemIcon>
+                                <AttachFileIcon fontSize="small" sx={{ 
+                                    color: table?.attachedMetadata ? 'secondary.main' : 'text.secondary',
+                                }} />
+                            </ListItemIcon>
+                            <ListItemText 
+                                primary={table?.attachedMetadata ? "Edit metadata" : "Attach metadata"} 
+                                primaryTypographyProps={{ fontSize: 12 }}
+                            />
+                        </MenuItem>
+                        <MenuItem onClick={(event) => {
+                            event.stopPropagation();
+                            handleOpenRefreshDataPopup(table!, menuAnchorEl!);
+                        }}>
+                            <ListItemIcon>
+                                <RefreshIcon fontSize="small" />
+                            </ListItemIcon>
+                            <ListItemText 
+                                primary="Refresh data" 
+                                primaryTypographyProps={{ fontSize: 12 }}
+                            />
+                        </MenuItem>
+                        {tableDeleteEnabled && (
+                            <MenuItem onClick={(event) => {
+                                event.stopPropagation();
+                                dispatch(dfActions.deleteTable(tableId));
+                            }}>
+                                <ListItemIcon>
+                                    <DeleteIcon fontSize="small" color="warning" />
+                                </ListItemIcon>
+                                <ListItemText 
+                                    primary="Delete table" 
+                                    primaryTypographyProps={{ fontSize: 12 }}
+                                />
+                            </MenuItem>
+                        )}
+                    </Menu>
                 </Box>
             </Card>
         </Box>
@@ -887,6 +1256,14 @@ let SingleThreadGroupView: FC<{
             onSave={handleSaveMetadata}
             initialValue={selectedTableForMetadata?.attachedMetadata || ''}
             tableName={selectedTableForMetadata?.displayId || selectedTableForMetadata?.id || ''}
+        />
+        <RefreshDataDialog
+            open={refreshDataPopupOpen}
+            anchorEl={refreshDataAnchorEl}
+            onClose={handleCloseRefreshDataPopup}
+            onRefresh={handleRefreshData}
+            tableName={selectedTableForRefresh?.displayId || selectedTableForRefresh?.id || ''}
+            tableColumns={selectedTableForRefresh?.names || []}
         />
     </Box>
 }
