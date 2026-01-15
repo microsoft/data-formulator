@@ -229,14 +229,21 @@ const RefreshDataDialog = memo<{
             return 'Data must be a non-empty array of objects';
         }
         
-        const newColumns = Object.keys(data[0]);
         const expectedColumns = new Set(tableColumns);
-        const actualColumns = new Set(newColumns);
         
-        // Check if all expected columns are present
-        for (const col of expectedColumns) {
-            if (!actualColumns.has(col)) {
-                return `Missing required column: ${col}`;
+        // Validate all objects have the same columns
+        for (const row of data) {
+            if (typeof row !== 'object' || row === null) {
+                return 'All data elements must be objects';
+            }
+            
+            const rowColumns = new Set(Object.keys(row));
+            
+            // Check if all expected columns are present
+            for (const col of expectedColumns) {
+                if (!rowColumns.has(col)) {
+                    return `Missing required column: ${col}`;
+                }
             }
         }
         
@@ -346,9 +353,7 @@ const RefreshDataDialog = memo<{
                             placeholder='[{"col1": "value1", "col2": "value2"}, ...]'
                             fullWidth
                             multiline
-                            slotProps={{
-                                inputLabel: {shrink: true},
-                            }}
+                            InputLabelProps={{ shrink: true }}
                             minRows={4}
                             maxRows={10}
                             variant="outlined"
@@ -770,9 +775,12 @@ let SingleThreadGroupView: FC<{
             }));
 
             // Find all derived tables that depend on this table
-            const derivedTables = tables.filter(t => 
-                t.derive?.source?.includes(selectedTableForRefresh.id)
-            );
+            const derivedTables = tables.filter(t => {
+                if (!t.derive?.source) return false;
+                // Check if source is an array or string and handle accordingly
+                const sources = Array.isArray(t.derive.source) ? t.derive.source : [t.derive.source];
+                return sources.includes(selectedTableForRefresh.id);
+            });
 
             if (derivedTables.length > 0) {
                 // Call the refresh-derived-data endpoint

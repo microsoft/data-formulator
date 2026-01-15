@@ -862,9 +862,25 @@ def refresh_derived_data():
         if not derived_tables:
             return jsonify({"status": "error", "message": "No derived tables to refresh"}), 400
         
-        # Validate updated table has same columns as before
+        # Validate updated table has expected structure
         updated_table_name = updated_table['name']
         updated_columns = set(updated_table['columns'])
+        
+        # Verify columns match by checking against database schema
+        with db_manager.connection(session['session_id']) as db:
+            try:
+                existing_columns = [col[0] for col in db.execute(f"DESCRIBE {updated_table_name}").fetchall()]
+                existing_columns_set = set(existing_columns)
+                
+                # Validate that all existing columns are present in updated data
+                if not existing_columns_set.issubset(updated_columns):
+                    missing = existing_columns_set - updated_columns
+                    return jsonify({
+                        "status": "error",
+                        "message": f"Updated data is missing required columns: {', '.join(missing)}"
+                    }), 400
+            except Exception as e:
+                logger.warning(f"Could not validate columns for {updated_table_name}: {str(e)}")
         
         results = []
         
@@ -896,8 +912,8 @@ def refresh_derived_data():
                 if exec_result['status'] == 'ok':
                     output_df = exec_result['content']
                     
-                    # Convert to records format for JSON serialization
-                    rows = json.loads(output_df.to_json(orient='records', date_format='iso'))
+                    # Convert to records format efficiently
+                    rows = output_df.to_dict(orient='records')
                     columns = list(output_df.columns)
                     
                     results.append({
