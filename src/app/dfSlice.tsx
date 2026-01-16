@@ -485,15 +485,6 @@ export const dataFormulatorSlice = createSlice({
                 }
                 return t;
             });
-            
-            // Update concept shelf items for this table if columns changed
-            let table = state.tables.find(t => t.id == tableId);
-            if (table) {
-                // Remove old field items for this table
-                state.conceptShelfItems = state.conceptShelfItems.filter(f => f.tableRef != tableId);
-                // Add new field items
-                state.conceptShelfItems = [...state.conceptShelfItems, ...getDataFieldItems(table)];
-            }
         },
         extendTableWithNewFields: (state, action: PayloadAction<{tableId: string, columnName: string, values: any[], previousName: string | undefined, parentIDs: string[]}>) => {
             // extend the existing extTable with new columns from the new table

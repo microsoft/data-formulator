@@ -774,7 +774,7 @@ let SingleThreadGroupView: FC<{
                 rows: tableResult.rows
             }));
 
-            // Find all derived tables that depend on this table
+            // Find all derived tables that depend on this table (only non-virtual Python tables)
             const derivedTables = tables.filter(t => {
                 if (!t.derive?.source) return false;
                 // Check if source is an array or string and handle accordingly
@@ -783,21 +783,19 @@ let SingleThreadGroupView: FC<{
             });
 
             if (derivedTables.length > 0) {
-                // Call the refresh-derived-data endpoint
+                // Call the recalculate-derived-data endpoint
                 const refreshPayload = {
-                    updated_table: {
-                        name: selectedTableForRefresh.id,
-                        rows: tableResult.rows,
-                        columns: tableResult.columns
-                    },
-                    derived_tables: derivedTables.map(dt => ({
+                    updated_table_id: selectedTableForRefresh.id,
+                    updated_table_rows: tableResult.rows,
+                    affected_derived_tables: derivedTables.map(dt => ({
                         id: dt.id,
                         code: dt.derive?.code || '',
-                        source_tables: dt.derive?.source || []
+                        source_tables: Array.isArray(dt.derive?.source) ? dt.derive.source : [dt.derive?.source || ''],
+                        is_virtual: dt.virtual ? true : false
                     }))
                 };
 
-                const refreshResponse = await fetch('/api/tables/refresh-derived-data', {
+                const refreshResponse = await fetch('/api/tables/recalculate-derived-data', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
@@ -815,6 +813,8 @@ let SingleThreadGroupView: FC<{
                                 tableId: result.id,
                                 rows: result.rows
                             }));
+                        } else if (result.status === 'skipped') {
+                            console.log(`Skipped table ${result.id}: ${result.message}`);
                         } else {
                             console.error(`Failed to refresh table ${result.id}:`, result.message);
                         }
@@ -1073,16 +1073,23 @@ let SingleThreadGroupView: FC<{
                                 primaryTypographyProps={{ fontSize: 12 }}
                             />
                         </MenuItem>
-                        <MenuItem onClick={(event) => {
-                            event.stopPropagation();
-                            handleOpenRefreshDataPopup(table!, menuAnchorEl!);
-                        }}>
+                        <MenuItem 
+                            disabled={table?.virtual ? true : false}
+                            onClick={(event) => {
+                                event.stopPropagation();
+                                if (!table?.virtual) {
+                                    handleOpenRefreshDataPopup(table!, menuAnchorEl!);
+                                }
+                            }}
+                        >
                             <ListItemIcon>
-                                <RefreshIcon fontSize="small" />
+                                <RefreshIcon fontSize="small" sx={{ color: table?.virtual ? 'text.disabled' : 'inherit' }} />
                             </ListItemIcon>
                             <ListItemText 
                                 primary="Refresh data" 
                                 primaryTypographyProps={{ fontSize: 12 }}
+                                secondary={table?.virtual ? "DuckDB tables not supported" : undefined}
+                                secondaryTypographyProps={{ fontSize: 10 }}
                             />
                         </MenuItem>
                         {tableDeleteEnabled && (

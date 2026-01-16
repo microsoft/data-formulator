@@ -844,93 +844,64 @@ def data_loader_ingest_data_from_query():
         }), status_code
 
 
-@tables_bp.route('/refresh-derived-data', methods=['POST'])
-def refresh_derived_data():
-    """Refresh derived data by re-executing Python code on updated base table"""
+@tables_bp.route('/recalculate-derived-data', methods=['POST'])
+def recalculate_derived_data():
+    """Recalculate derived data by re-executing Python code on updated base table"""
     try:
-        from data_formulator.py_sandbox import run_transform_in_sandbox2020
-        
         data = request.get_json()
         
-        # Get updated base table data and transformation info
-        updated_table = data.get('updated_table')  # {name, rows, columns}
-        derived_tables = data.get('derived_tables', [])  # [{id, code, source_tables: [names]}]
+        # Get updated base table data
+        updated_table_id = data.get('updated_table_id')
+        updated_table_rows = data.get('updated_table_rows')
         
-        if not updated_table:
-            return jsonify({"status": "error", "message": "No updated table provided"}), 400
+        if not updated_table_id:
+            return jsonify({"status": "error", "message": "No table ID provided"}), 400
         
-        if not derived_tables:
-            return jsonify({"status": "error", "message": "No derived tables to refresh"}), 400
+        if not updated_table_rows:
+            return jsonify({"status": "error", "message": "No updated data provided"}), 400
         
-        # Validate updated table has expected structure
-        updated_table_name = updated_table['name']
-        updated_columns = set(updated_table['columns'])
+        # Get list of affected derived tables
+        affected_derived_tables = data.get('affected_derived_tables', [])
         
-        # Verify columns match by checking against database schema
-        with db_manager.connection(session['session_id']) as db:
-            try:
-                existing_columns = [col[0] for col in db.execute(f"DESCRIBE {updated_table_name}").fetchall()]
-                existing_columns_set = set(existing_columns)
-                
-                # Validate that all existing columns are present in updated data
-                if not existing_columns_set.issubset(updated_columns):
-                    missing = existing_columns_set - updated_columns
-                    return jsonify({
-                        "status": "error",
-                        "message": f"Updated data is missing required columns: {', '.join(missing)}"
-                    }), 400
-            except Exception as e:
-                logger.warning(f"Could not validate columns for {updated_table_name}: {str(e)}")
+        if not affected_derived_tables:
+            # No derived tables to refresh, just success
+            return jsonify({
+                "status": "success",
+                "results": []
+            })
         
         results = []
         
-        # Process each derived table
-        for derived_info in derived_tables:
+        # Process each affected derived table independently
+        for derived_info in affected_derived_tables:
             try:
-                code = derived_info['code']
-                source_table_names = derived_info['source_tables']
                 derived_table_id = derived_info['id']
+                code = derived_info['code']
+                source_table_ids = derived_info['source_tables']
+                is_virtual = derived_info.get('is_virtual', False)
                 
-                # Prepare input dataframes
-                df_list = []
-                
-                for source_name in source_table_names:
-                    if source_name == updated_table_name:
-                        # Use the updated data
-                        df = pd.DataFrame(updated_table['rows'])
-                    else:
-                        # Fetch from database
-                        with db_manager.connection(session['session_id']) as db:
-                            result = db.execute(f"SELECT * FROM {source_name}").fetchdf()
-                            df = result
-                    
-                    df_list.append(df)
-                
-                # Execute the transformation code in subprocess for safety
-                exec_result = run_transform_in_sandbox2020(code, df_list, exec_python_in_subprocess=True)
-                
-                if exec_result['status'] == 'ok':
-                    output_df = exec_result['content']
-                    
-                    # Convert to records format efficiently
-                    rows = output_df.to_dict(orient='records')
-                    columns = list(output_df.columns)
-                    
+                # For now, only support Python (non-virtual) tables
+                if is_virtual:
                     results.append({
                         'id': derived_table_id,
-                        'status': 'success',
-                        'rows': rows,
-                        'columns': columns
+                        'status': 'skipped',
+                        'message': 'Virtual (DuckDB) table refresh not yet supported'
                     })
-                else:
-                    results.append({
-                        'id': derived_table_id,
-                        'status': 'error',
-                        'message': exec_result['content']
-                    })
+                    continue
+                
+                # Recalculate using Python
+                result = recalc_derived_data_py(
+                    updated_table_id=updated_table_id,
+                    updated_table_rows=updated_table_rows,
+                    derived_table_id=derived_table_id,
+                    code=code,
+                    source_table_ids=source_table_ids
+                )
+                
+                results.append(result)
                     
             except Exception as e:
-                logger.error(f"Error refreshing derived table {derived_info.get('id')}: {str(e)}")
+                logger.error(f"Error recalculating derived table {derived_info.get('id')}: {str(e)}")
                 results.append({
                     'id': derived_info.get('id'),
                     'status': 'error',
@@ -943,9 +914,82 @@ def refresh_derived_data():
         })
         
     except Exception as e:
-        logger.error(f"Error refreshing derived data: {str(e)}")
+        logger.error(f"Error recalculating derived data: {str(e)}")
         safe_msg, status_code = sanitize_db_error_message(e)
         return jsonify({
             "status": "error",
             "message": safe_msg
         }), status_code
+
+
+def recalc_derived_data_py(updated_table_id, updated_table_rows, derived_table_id, code, source_table_ids):
+    """
+    Recalculate a Python-based derived table using updated input data.
+    
+    Args:
+        updated_table_id: ID of the table that was updated
+        updated_table_rows: New rows for the updated table
+        derived_table_id: ID of the derived table to recalculate
+        code: Python transformation code
+        source_table_ids: List of source table IDs this derived table depends on
+    
+    Returns:
+        dict with status, rows, and columns
+    """
+    from data_formulator.py_sandbox import run_transform_in_sandbox2020
+    
+    try:
+        # Prepare input dataframes
+        df_list = []
+        
+        for source_id in source_table_ids:
+            if source_id == updated_table_id:
+                # Use the updated data
+                df = pd.DataFrame(updated_table_rows)
+            else:
+                # Fetch from database or state
+                with db_manager.connection(session['session_id']) as db:
+                    try:
+                        result = db.execute(f"SELECT * FROM {source_id}").fetchdf()
+                        df = result
+                    except Exception as e:
+                        logger.warning(f"Could not fetch table {source_id} from database: {str(e)}")
+                        # Table might not be in database yet (in-memory only)
+                        return {
+                            'id': derived_table_id,
+                            'status': 'error',
+                            'message': f'Could not fetch source table: {source_id}'
+                        }
+            
+            df_list.append(df)
+        
+        # Execute the transformation code in subprocess for safety
+        exec_result = run_transform_in_sandbox2020(code, df_list, exec_python_in_subprocess=True)
+        
+        if exec_result['status'] == 'ok':
+            output_df = exec_result['content']
+            
+            # Convert to records format efficiently
+            rows = output_df.to_dict(orient='records')
+            columns = list(output_df.columns)
+            
+            return {
+                'id': derived_table_id,
+                'status': 'success',
+                'rows': rows,
+                'columns': columns
+            }
+        else:
+            return {
+                'id': derived_table_id,
+                'status': 'error',
+                'message': exec_result['content']
+            }
+            
+    except Exception as e:
+        logger.error(f"Error in recalc_derived_data_py for {derived_table_id}: {str(e)}")
+        return {
+            'id': derived_table_id,
+            'status': 'error',
+            'message': str(e)
+        }
