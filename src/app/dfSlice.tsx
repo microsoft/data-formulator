@@ -475,6 +475,17 @@ export const dataFormulatorSlice = createSlice({
             let attachedMetadata = action.payload.attachedMetadata;
             state.tables = state.tables.map(t => t.id == tableId ? {...t, attachedMetadata} : t);
         },
+        updateTableRows: (state, action: PayloadAction<{tableId: string, rows: any[]}>) => {
+            let tableId = action.payload.tableId;
+            let rows = action.payload.rows;
+            state.tables = state.tables.map(t => {
+                if (t.id == tableId) {
+                    // Update rows while preserving other table properties
+                    return {...t, rows};
+                }
+                return t;
+            });
+        },
         extendTableWithNewFields: (state, action: PayloadAction<{tableId: string, columnName: string, values: any[], previousName: string | undefined, parentIDs: string[]}>) => {
             // extend the existing extTable with new columns from the new table
             let newValues = action.payload.values;
