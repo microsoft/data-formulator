@@ -244,7 +244,9 @@ export const assembleVegaChart = (
   defaultChartWidth: number = 100,
   defaultChartHeight: number = 80,
   addTooltips: boolean = false,
-  qcLimitsMode?: boolean
+  qcLimitsMode?: boolean,
+  chartWidth?: number,
+  chartHeight?: number
 ) => {
   if (chartType == "Table") {
     return ["Table", undefined];
@@ -594,7 +596,13 @@ export const assembleVegaChart = (
 
   // use post processor to handle smart chart instantiation
   if (chartTemplate.postProcessor) {
-    vgObj = chartTemplate.postProcessor(vgObj, workingTable, qcLimitsMode);
+    vgObj = chartTemplate.postProcessor(
+      vgObj,
+      workingTable,
+      qcLimitsMode,
+      chartWidth || defaultChartWidth,
+      chartHeight || defaultChartHeight
+    );
   }
 
   // this is the data that will be assembled into the vega chart

@@ -218,8 +218,8 @@ const initialState: DataFormulatorState = {
   config: {
     formulateTimeoutSeconds: 60,
     maxRepairAttempts: 1,
-    defaultChartWidth: 300,
-    defaultChartHeight: 300,
+    defaultChartWidth: 800,
+    defaultChartHeight: 350,
   },
 
   dataLoaderConnectParams: {},
@@ -812,6 +812,18 @@ export const dataFormulatorSlice = createSlice({
       let chart = dfSelectors.getAllCharts(state).find((c) => c.id == chartId);
       if (chart) {
         chart.qcLimitsMode = qcLimitsMode;
+      }
+    },
+
+    updateChartDimensions: (
+      state,
+      action: PayloadAction<{ chartId: string; width: number; height: number }>
+    ) => {
+      let { chartId, width, height } = action.payload;
+      let chart = dfSelectors.getAllCharts(state).find((c) => c.id == chartId);
+      if (chart) {
+        chart.chartWidth = width;
+        chart.chartHeight = height;
       }
     },
 

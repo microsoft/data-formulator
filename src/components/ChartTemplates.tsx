@@ -53,6 +53,49 @@ const ChartIcon: React.FC<{ src: string; alt?: string }> = ({
   );
 };
 
+/**
+ * Calculate optimal Y-axis domain for bar/column charts to show small differences clearly.
+ * Automatically detects min/max values and adds smart padding.
+ *
+ * Example:
+ *   Data values: [45.1, 45.2, 45.3]
+ *   Without domain: Y-axis might scale 0-100 (too large)
+ *   With smart domain: Y-axis scales 45.0-45.4 (shows differences clearly)
+ *
+ * @param data - Array of data points
+ * @param yField - Field name containing Y values
+ * @param paddingPercent - Padding percentage (default 10%) to add above/below range
+ * @returns [minDomain, maxDomain] for VegaLite scale
+ */
+function calculateOptimalYDomain(
+  data: any[],
+  yField: string,
+  paddingPercent: number = 10
+): [number, number] | null {
+  if (!data || data.length === 0 || !yField) return null;
+
+  // Extract all numeric Y values
+  const yValues = data
+    .map((row) => row[yField])
+    .filter((val) => typeof val === "number" && isFinite(val));
+
+  if (yValues.length === 0) return null;
+
+  const minValue = Math.min(...yValues);
+  const maxValue = Math.max(...yValues);
+  const range = maxValue - minValue;
+
+  // If all values are the same, just add small padding
+  if (range === 0) {
+    const padding = Math.abs(minValue) * 0.1 || 0.1;
+    return [minValue - padding, minValue + padding];
+  }
+
+  // Add percentage-based padding to each side
+  const padding = range * (paddingPercent / 100);
+  return [minValue - padding, maxValue + padding];
+}
+
 export function getChartTemplate(chartType: string): ChartTemplate | undefined {
   // Map legacy/alternative chart type names to current names
   const chartTypeAliases: { [key: string]: string } = {
@@ -221,7 +264,13 @@ const scatterPlots: ChartTemplate[] = [
     },
 
     // ✅ Thêm phần postProcessor
-    postProcessor: (vgSpec: any) => {
+    postProcessor: (
+      vgSpec: any,
+      _table?: any[],
+      _qcLimitsMode?: boolean,
+      chartWidth?: number,
+      chartHeight?: number
+    ) => {
       try {
         const layers = vgSpec.layer || [];
         for (const layer of layers) {
@@ -232,6 +281,8 @@ const scatterPlots: ChartTemplate[] = [
       } catch (e) {
         console.warn("Linear Regression postProcessor error", e);
       }
+      vgSpec.width = chartWidth || 800;
+      vgSpec.height = chartHeight || 400;
       return vgSpec;
     },
   },
@@ -277,7 +328,13 @@ const scatterPlots: ChartTemplate[] = [
       size: ["layer", 0, "encoding", "size"],
     },
     // ✅ Thêm postProcessor
-    postProcessor: (vgSpec: any) => {
+    postProcessor: (
+      vgSpec: any,
+      _table?: any[],
+      _qcLimitsMode?: boolean,
+      chartWidth?: number,
+      chartHeight?: number
+    ) => {
       try {
         const layers = vgSpec.layer || [];
         for (const layer of layers) {
@@ -289,6 +346,8 @@ const scatterPlots: ChartTemplate[] = [
       } catch (e) {
         console.warn("Loess Regression postProcessor error", e);
       }
+      vgSpec.width = chartWidth || 800;
+      vgSpec.height = chartHeight || 400;
       return vgSpec;
     },
   },
@@ -321,7 +380,13 @@ const scatterPlots: ChartTemplate[] = [
       y: ["encoding", "y"],
       color: ["layer", 1, "encoding", "color"],
     },
-    postProcessor: (vgSpec: any, table: any[]) => {
+    postProcessor: (
+      vgSpec: any,
+      table?: any[],
+      _qcLimitsMode?: boolean,
+      chartWidth?: number,
+      chartHeight?: number
+    ) => {
       if (vgSpec.encoding.y?.type == "nominal") {
         vgSpec["layer"][0]["encoding"]["detail"] = JSON.parse(
           JSON.stringify(vgSpec["encoding"]["y"])
@@ -332,6 +397,8 @@ const scatterPlots: ChartTemplate[] = [
         );
       } else {
       }
+      vgSpec.width = chartWidth || 800;
+      vgSpec.height = chartHeight || 400;
       return vgSpec;
     },
   },
@@ -349,10 +416,18 @@ const scatterPlots: ChartTemplate[] = [
         ["encoding", channel],
       ])
     ),
-    postProcessor: (vgSpec: any, table: any[]) => {
+    postProcessor: (
+      vgSpec: any,
+      table?: any[],
+      _qcLimitsMode?: boolean,
+      chartWidth?: number,
+      chartHeight?: number
+    ) => {
       if (vgSpec.encoding.x && vgSpec.encoding.x.type != "nominal") {
         vgSpec.encoding.x.type = "nominal";
       }
+      vgSpec.width = chartWidth || 800;
+      vgSpec.height = chartHeight || 400;
       return vgSpec;
     },
   },
@@ -374,6 +449,89 @@ const barCharts: ChartTemplate[] = [
       opacity: ["encoding", "opacity"],
       column: ["encoding", "column"],
       row: ["encoding", "row"],
+    },
+    postProcessor: (
+      vgSpec: any,
+      table: any[],
+      _qcLimitsMode?: boolean,
+      chartWidth?: number,
+      chartHeight?: number
+    ) => {
+      // Smart domain calculation for Y-axis and responsive width
+      try {
+        const yDef = vgSpec.encoding?.y;
+        if (!yDef || !yDef.field) return vgSpec;
+
+        const yField = yDef.field;
+        const domain = calculateOptimalYDomain(table, yField, 10);
+
+        // Configure Y-axis scale
+        if (domain) {
+          if (!yDef.scale) yDef.scale = {};
+          yDef.scale.domain = [
+            Math.floor(domain[0] * 100) / 100,
+            Math.ceil(domain[1] * 100) / 100,
+          ];
+          yDef.scale.zero = false;
+          yDef.scale.nice = false;
+          yDef.scale.clamp = true; // 🔧 Clamp values to domain
+          console.log(
+            `📊 Bar Chart: Y-axis domain [${yDef.scale.domain[0]}, ${yDef.scale.domain[1]}]`
+          );
+        }
+
+        // Calculate responsive width based on number of bars
+        const xDef = vgSpec.encoding?.x;
+        const xField = xDef?.field;
+        const numBars = xField
+          ? new Set(table.map((row: any) => row[xField])).size
+          : table.length;
+
+        // Simple calculation: 150px per bar, minimum 950px
+        const width = chartWidth || Math.max(950, numBars * 50);
+
+        // Configure X-axis scale (minimal, let Vega-Lite handle band automatically)
+        if (xDef) {
+          if (!xDef.scale) xDef.scale = {};
+          xDef.scale.padding = 0.05;
+          xDef.scale.paddingOuter = 0.05;
+
+          // Remove any complex scale properties
+          delete xDef.scale.type;
+          delete xDef.scale.range;
+
+          // 🔧 FORCE ordinal type for bar charts - prevents Vega-Lite from interpolating missing values
+          xDef.type = "ordinal";
+        }
+
+        // Set top-level width (this is the correct Vega-Lite way)
+        vgSpec.width = width;
+        vgSpec.height = chartHeight || 450;
+
+        // Clean up config - only keep essentials
+        if (!vgSpec.config) vgSpec.config = {};
+        if (!vgSpec.config.view) vgSpec.config.view = {};
+        vgSpec.config.view.continuousHeight = chartHeight || 450;
+
+        // Remove problematic properties
+        delete vgSpec.config.view.continuousWidth;
+        delete vgSpec.config.view.clip;
+        delete vgSpec.config.view.step;
+
+        // Simplify mark
+        if (typeof vgSpec.mark === "string") {
+          vgSpec.mark = { type: vgSpec.mark, tooltip: true };
+        } else if (vgSpec.mark) {
+          vgSpec.mark.tooltip = true;
+          delete vgSpec.mark.clip;
+          delete vgSpec.mark.width;
+        }
+
+        console.log(`📐 Bar Chart: width=${width}px for ${numBars} bars`);
+      } catch (error) {
+        console.warn("⚠️ Bar Chart postProcessor failed:", error);
+      }
+      return vgSpec;
     },
   },
   {
@@ -423,7 +581,13 @@ const barCharts: ChartTemplate[] = [
         ["hconcat", 1, "encoding", "color"],
       ],
     },
-    postProcessor: (vgSpec: any, table: any[]) => {
+    postProcessor: (
+      vgSpec: any,
+      table?: any[],
+      _qcLimitsMode?: boolean,
+      chartWidth?: number,
+      chartHeight?: number
+    ) => {
       try {
         if (table) {
           let colorField = vgSpec["hconcat"][0]["encoding"]["color"]["field"];
@@ -453,6 +617,8 @@ const barCharts: ChartTemplate[] = [
           vgSpec.hconcat[1]["encoding"]["x"]["scale"] = { domain: domain };
         }
       } catch {}
+      vgSpec.width = chartWidth || 800;
+      vgSpec.height = chartHeight || 400;
       return vgSpec;
     },
   },
@@ -474,6 +640,84 @@ const barCharts: ChartTemplate[] = [
       column: ["encoding", "column"],
       row: ["encoding", "row"],
     },
+    postProcessor: (
+      vgSpec: any,
+      table: any[],
+      _qcLimitsMode?: boolean,
+      chartWidth?: number,
+      chartHeight?: number
+    ) => {
+      // Smart domain calculation for Y-axis and responsive width
+      try {
+        const yDef = vgSpec.encoding?.y;
+        if (!yDef || !yDef.field) return vgSpec;
+
+        const yField = yDef.field;
+        const domain = calculateOptimalYDomain(table, yField, 10);
+
+        // Configure Y-axis scale
+        if (domain) {
+          if (!yDef.scale) yDef.scale = {};
+          yDef.scale.domain = [
+            Math.floor(domain[0] * 100) / 100,
+            Math.ceil(domain[1] * 100) / 100,
+          ];
+          yDef.scale.zero = false;
+          yDef.scale.nice = false;
+          yDef.scale.clamp = true;
+          console.log(
+            `📊 Grouped Bar Chart: Y-axis domain [${yDef.scale.domain[0]}, ${yDef.scale.domain[1]}]`
+          );
+        }
+
+        // Calculate responsive width based on number of groups
+        const xDef = vgSpec.encoding?.x;
+        const xField = xDef?.field;
+        const numGroups = xField
+          ? new Set(table.map((row: any) => row[xField])).size
+          : table.length;
+
+        // Simple calculation: 170px per group, minimum 950px
+        const width = chartWidth || Math.max(950, numGroups * 170);
+
+        // Configure X-axis scale (minimal)
+        if (xDef) {
+          if (!xDef.scale) xDef.scale = {};
+          xDef.scale.padding = 0.05;
+          xDef.scale.paddingOuter = 0.05;
+
+          // 🔧 FORCE ordinal type for grouped bars
+          xDef.type = "ordinal";
+        }
+
+        // Set top-level width
+        vgSpec.width = width;
+        vgSpec.height = chartHeight || 450;
+
+        // Clean up config
+        if (!vgSpec.config) vgSpec.config = {};
+        if (!vgSpec.config.view) vgSpec.config.view = {};
+        vgSpec.config.view.continuousHeight = chartHeight || 450;
+
+        delete vgSpec.config.view.continuousWidth;
+        delete vgSpec.config.view.clip;
+
+        // Simplify mark
+        if (typeof vgSpec.mark === "string") {
+          vgSpec.mark = { type: vgSpec.mark, tooltip: true };
+        } else if (vgSpec.mark) {
+          vgSpec.mark.tooltip = true;
+          delete vgSpec.mark.clip;
+        }
+
+        console.log(
+          `📐 Grouped Bar Chart: width=${width}px for ${numGroups} groups`
+        );
+      } catch (error) {
+        console.warn("⚠️ Grouped Bar Chart postProcessor failed:", error);
+      }
+      return vgSpec;
+    },
   },
   {
     chart: "Stacked Bar Chart",
@@ -490,6 +734,84 @@ const barCharts: ChartTemplate[] = [
       column: ["encoding", "column"],
       row: ["encoding", "row"],
     },
+    postProcessor: (
+      vgSpec: any,
+      table: any[],
+      _qcLimitsMode?: boolean,
+      chartWidth?: number,
+      chartHeight?: number
+    ) => {
+      // Smart domain calculation for Y-axis and responsive width
+      try {
+        const yDef = vgSpec.encoding?.y;
+        if (!yDef || !yDef.field) return vgSpec;
+
+        const yField = yDef.field;
+        const domain = calculateOptimalYDomain(table, yField, 10);
+
+        // Configure Y-axis scale
+        if (domain) {
+          if (!yDef.scale) yDef.scale = {};
+          yDef.scale.domain = [
+            Math.floor(domain[0] * 100) / 100,
+            Math.ceil(domain[1] * 100) / 100,
+          ];
+          yDef.scale.zero = false;
+          yDef.scale.nice = false;
+          yDef.scale.clamp = true;
+          console.log(
+            `📊 Stacked Bar Chart: Y-axis domain [${yDef.scale.domain[0]}, ${yDef.scale.domain[1]}]`
+          );
+        }
+
+        // Calculate responsive width based on number of bars
+        const xDef = vgSpec.encoding?.x;
+        const xField = xDef?.field;
+        const numBars = xField
+          ? new Set(table.map((row: any) => row[xField])).size
+          : table.length;
+
+        // Simple calculation: 150px per bar, minimum 950px
+        const width = chartWidth || Math.max(950, numBars * 150);
+
+        // Configure X-axis scale
+        if (xDef) {
+          if (!xDef.scale) xDef.scale = {};
+          xDef.scale.padding = 0.05;
+          xDef.scale.paddingOuter = 0.05;
+
+          // 🔧 FORCE ordinal type for stacked bars
+          xDef.type = "ordinal";
+        }
+
+        // Set top-level width
+        vgSpec.width = width;
+        vgSpec.height = chartHeight || 450;
+
+        // Clean up config
+        if (!vgSpec.config) vgSpec.config = {};
+        if (!vgSpec.config.view) vgSpec.config.view = {};
+        vgSpec.config.view.continuousHeight = chartHeight || 450;
+
+        delete vgSpec.config.view.continuousWidth;
+        delete vgSpec.config.view.clip;
+
+        // Simplify mark
+        if (typeof vgSpec.mark === "string") {
+          vgSpec.mark = { type: vgSpec.mark, tooltip: true };
+        } else if (vgSpec.mark) {
+          vgSpec.mark.tooltip = true;
+          delete vgSpec.mark.clip;
+        }
+
+        console.log(
+          `📐 Stacked Bar Chart: width=${width}px for ${numBars} bars`
+        );
+      } catch (error) {
+        console.warn("⚠️ Stacked Bar Chart postProcessor failed:", error);
+      }
+      return vgSpec;
+    },
   },
   {
     chart: "Histogram",
@@ -505,6 +827,82 @@ const barCharts: ChartTemplate[] = [
       color: ["encoding", "color"],
       column: ["encoding", "column"],
       row: ["encoding", "row"],
+    },
+    postProcessor: (
+      vgSpec: any,
+      table: any[],
+      _qcLimitsMode?: boolean,
+      chartWidth?: number,
+      chartHeight?: number
+    ) => {
+      // Smart domain calculation for Y-axis and responsive width
+      try {
+        const yDef = vgSpec.encoding?.y;
+        if (!yDef || !yDef.field) return vgSpec;
+
+        const yField = yDef.field;
+        const domain = calculateOptimalYDomain(table, yField, 10);
+
+        // Configure Y-axis scale
+        if (domain) {
+          if (!yDef.scale) yDef.scale = {};
+          yDef.scale.domain = [
+            Math.floor(domain[0] * 100) / 100,
+            Math.ceil(domain[1] * 100) / 100,
+          ];
+          yDef.scale.zero = false;
+          yDef.scale.nice = false;
+          yDef.scale.clamp = true;
+          console.log(
+            `📊 Histogram: Y-axis domain [${yDef.scale.domain[0]}, ${yDef.scale.domain[1]}]`
+          );
+        }
+
+        // Calculate responsive width based on number of bins
+        const xDef = vgSpec.encoding?.x;
+        const xField = xDef?.field;
+        const numBins = xField
+          ? new Set(table.map((row: any) => row[xField])).size
+          : table.length;
+
+        // Simple calculation: 65px per bin, minimum 950px
+        const width = chartWidth || Math.max(950, numBins * 65);
+
+        // Configure X-axis scale
+        if (xDef) {
+          if (!xDef.scale) xDef.scale = {};
+          xDef.scale.padding = 0.05;
+          xDef.scale.paddingOuter = 0.05;
+
+          // 🔧 FORCE ordinal type for histogram
+          xDef.type = "ordinal";
+        }
+
+        // Set top-level width
+        vgSpec.width = width;
+        vgSpec.height = chartHeight || 450;
+
+        // Clean up config
+        if (!vgSpec.config) vgSpec.config = {};
+        if (!vgSpec.config.view) vgSpec.config.view = {};
+        vgSpec.config.view.continuousHeight = chartHeight || 450;
+
+        delete vgSpec.config.view.continuousWidth;
+        delete vgSpec.config.view.clip;
+
+        // Simplify mark
+        if (typeof vgSpec.mark === "string") {
+          vgSpec.mark = { type: vgSpec.mark, tooltip: true };
+        } else if (vgSpec.mark) {
+          vgSpec.mark.tooltip = true;
+          delete vgSpec.mark.clip;
+        }
+
+        console.log(`📐 Histogram: width=${width}px for ${numBins} bins`);
+      } catch (error) {
+        console.warn("⚠️ Histogram postProcessor failed:", error);
+      }
+      return vgSpec;
     },
   },
   {
@@ -524,7 +922,13 @@ const barCharts: ChartTemplate[] = [
       y: [["encoding", "y"]],
       threshold: [["encoding", "threshold"]],
     },
-    postProcessor: (vgSpec: any, table: any[]) => {
+    postProcessor: (
+      vgSpec: any,
+      table?: any[],
+      _qcLimitsMode?: boolean,
+      chartWidth?: number,
+      chartHeight?: number
+    ) => {
       const xDef = vgSpec.encoding?.x;
       const yDef = vgSpec.encoding?.y;
       const thresholdDef = vgSpec.encoding?.threshold;
@@ -535,7 +939,7 @@ const barCharts: ChartTemplate[] = [
 
       // Lấy giá trị threshold (nếu có)
       let thresholdValue: number | null = null;
-      if (thresholdDef?.field) {
+      if (thresholdDef?.field && table) {
         const vals = table
           .map((r: any) => r[thresholdDef.field])
           .filter((v: any) => typeof v === "number" && isFinite(v));
@@ -617,6 +1021,11 @@ const barCharts: ChartTemplate[] = [
       delete vgSpec.encoding;
       delete vgSpec.mark;
       delete vgSpec.data;
+
+      // Set width and height
+      vgSpec.width = chartWidth || 1000;
+      vgSpec.height = chartHeight || 400;
+
       return vgSpec;
     },
   },
@@ -696,7 +1105,13 @@ let lineCharts = [
       row: ["encoding", "row"],
     },
 
-    postProcessor: (vgSpec: any, table: any[]) => {
+    postProcessor: (
+      vgSpec: any,
+      table?: any[],
+      _qcLimitsMode?: boolean,
+      chartWidth?: number,
+      chartHeight?: number
+    ) => {
       try {
         const yFieldDef = vgSpec.layer?.[0]?.encoding?.y;
         const xFieldDef = vgSpec.encoding?.x;
@@ -737,6 +1152,10 @@ let lineCharts = [
         delete vgSpec.encoding?.y;
         delete vgSpec.encoding?.color;
 
+        // Set width and height
+        vgSpec.width = chartWidth || 1000;
+        vgSpec.height = chartHeight || 400;
+
         return vgSpec;
       } catch (err) {
         console.warn("Rolling Average postProcessor error:", err);
@@ -761,13 +1180,21 @@ let specialCharts: ChartTemplate[] = [
         ["encoding", channel],
       ])
     ),
-    postProcessor: (vgSpec: any, table: any[]) => {
+    postProcessor: (
+      vgSpec: any,
+      table: any[],
+      _qcLimitsMode?: boolean,
+      chartWidth?: number,
+      chartHeight?: number
+    ) => {
       if (vgSpec.encoding.y && vgSpec.encoding.y.type != "nominal") {
         vgSpec.encoding.y.type = "nominal";
       }
       if (vgSpec.encoding.x && vgSpec.encoding.x.type != "nominal") {
         vgSpec.encoding.x.type = "nominal";
       }
+      vgSpec.width = chartWidth || 800;
+      vgSpec.height = chartHeight || 400;
       return vgSpec;
     },
   },
@@ -794,9 +1221,15 @@ let specialCharts: ChartTemplate[] = [
       column: ["encoding", "column"],
       row: ["encoding", "row"],
     },
-    postProcessor: (vgSpec: any, table: any[]) => {
+    postProcessor: (
+      vgSpec: any,
+      table?: any[],
+      _qcLimitsMode?: boolean,
+      chartWidth?: number,
+      chartHeight?: number
+    ) => {
       // Tính tổng giá trị để hiển thị phần trăm
-      const total = table.reduce((sum, row) => sum + row.value, 0);
+      const total = table ? table.reduce((sum, row) => sum + row.value, 0) : 1;
       vgSpec.encoding.text = {
         field: "value",
         type: "quantitative",
@@ -806,6 +1239,8 @@ let specialCharts: ChartTemplate[] = [
           value: "datum.value / " + total,
         },
       };
+      vgSpec.width = chartWidth || 600;
+      vgSpec.height = chartHeight || 600;
       return vgSpec;
     },
   },
@@ -827,7 +1262,13 @@ let specialCharts: ChartTemplate[] = [
     },
     // Trong ChartTemplates.tsx, bên trong định nghĩa Radial Plot
 
-    postProcessor: (vgSpec: any, table: any[]) => {
+    postProcessor: (
+      vgSpec: any,
+      table?: any[],
+      _qcLimitsMode?: boolean,
+      chartWidth?: number,
+      chartHeight?: number
+    ) => {
       // Đặt lại tên biến cho rõ ràng
       const valueDef = vgSpec.encoding.theta; // field1: Thường là giá trị (PARAMVALUE)
       const categoryDef = vgSpec.encoding.color; // field2: Thường là danh mục (QCSTDPARAMNAME)
@@ -904,6 +1345,10 @@ let specialCharts: ChartTemplate[] = [
       delete vgSpec.encoding;
       delete vgSpec.mark;
 
+      // Set width and height
+      vgSpec.width = chartWidth || 600;
+      vgSpec.height = chartHeight || 600;
+
       return vgSpec;
     },
   },
@@ -931,7 +1376,13 @@ let specialCharts: ChartTemplate[] = [
       size: [["encoding", "size"]],
       color: [["encoding", "color"]],
     },
-    postProcessor: (vgSpec: any, table: any[]) => {
+    postProcessor: (
+      vgSpec: any,
+      table?: any[],
+      _qcLimitsMode?: boolean,
+      chartWidth?: number,
+      chartHeight?: number
+    ) => {
       // ------------------------------
       // 🧩 1. Chuẩn hóa lại các channel
       // ------------------------------
@@ -1008,12 +1459,41 @@ let specialCharts: ChartTemplate[] = [
       }
 
       // ------------------------------
-      // 🪄 6. Layout hiển thị
+      // 🪄 6. Layout hiển thị - Responsive sizing
       // ------------------------------
       vgSpec.autosize = { type: "fit", contains: "padding" };
-      vgSpec.config = {
-        view: { continuousWidth: 800, continuousHeight: 400 },
-      };
+
+      // 🔧 IMPORTANT: If postProcessor set width, don't override it
+      // Bar charts set width at top level
+      const chartTypeLocal = vgSpec.mark?.type || vgSpec.mark;
+      const hasPostProcessorWidth = vgSpec.width && vgSpec.width > 800;
+
+      if (!hasPostProcessorWidth) {
+        // No postProcessor width - only set for non-bar charts
+        if (chartTypeLocal !== "bar" && chartTypeLocal !== "column") {
+          let responsiveWidth = chartWidth || 800;
+          let responsiveHeight = chartHeight || 400;
+
+          vgSpec.config = {
+            view: {
+              continuousWidth: responsiveWidth,
+              continuousHeight: responsiveHeight,
+            },
+          };
+        } else {
+          // Bar chart without postProcessor - set defaults
+          const xField = vgSpec.encoding?.x?.field;
+          if (xField && table && table.length > 0) {
+            const numBars = new Set(table.map((row: any) => row[xField])).size;
+            vgSpec.width = chartWidth || Math.max(950, numBars * 180);
+            vgSpec.height = chartHeight || 400;
+          }
+        }
+      } else if (chartWidth || chartHeight) {
+        // If we have postProcessor width and user provided custom dimensions
+        vgSpec.width = chartWidth || vgSpec.width;
+        vgSpec.height = chartHeight || vgSpec.height;
+      }
 
       return vgSpec;
     },
@@ -1117,7 +1597,13 @@ let specialCharts: ChartTemplate[] = [
         ["layer", 1, "encoding", "text"],
       ],
     },
-    postProcessor: (vgSpec: any) => {
+    postProcessor: (
+      vgSpec: any,
+      _table?: any[],
+      _qcLimitsMode?: boolean,
+      chartWidth?: number,
+      chartHeight?: number
+    ) => {
       // 🔧 Tự động gán fieldX/fieldY theo người dùng
       const xField = vgSpec.layer[0].encoding.x.field;
       const yField = vgSpec.layer[1].encoding.text.field;
@@ -1140,6 +1626,10 @@ let specialCharts: ChartTemplate[] = [
           });
         }
       });
+
+      // Set width and height
+      vgSpec.width = chartWidth || 1000;
+      vgSpec.height = chartHeight || 400;
 
       return vgSpec;
     },
@@ -1170,9 +1660,15 @@ let customCharts: ChartTemplate[] = [
       qcdate: [["encoding", "QCDATE"]],
       QCSHIFT: [["encoding", "QCSHIFT"]],
     },
-    postProcessor: (vgSpec: any, table: any[], qcLimitsMode?: boolean) => {
+    postProcessor: (
+      vgSpec: any,
+      table: any[],
+      qcLimitsMode?: boolean,
+      chartWidth?: number,
+      chartHeight?: number
+    ) => {
       if (!table || table.length === 0) return vgSpec;
-      console.log("Cột trong table:", Object.keys(table[0] || {}));
+      console.log("width:", chartWidth, "height:", chartHeight);
 
       // =========================================================================
       // 1. LẤY KÊNH CHÍNH
@@ -1489,8 +1985,8 @@ let customCharts: ChartTemplate[] = [
       };
 
       // Set width and height
-      vgSpec.width = 1000;
-      vgSpec.height = 400;
+      vgSpec.width = chartWidth || 1000;
+      vgSpec.height = chartHeight || 400;
 
       return vgSpec;
     },
@@ -1516,7 +2012,13 @@ let customCharts: ChartTemplate[] = [
       color: [["encoding", "color"]],
     },
 
-    postProcessor: (vgSpec: any, table: any[], qcLimitsMode?: boolean) => {
+    postProcessor: (
+      vgSpec: any,
+      table: any[],
+      qcLimitsMode?: boolean,
+      chartWidth?: number,
+      chartHeight?: number
+    ) => {
       if (!table || table.length === 0) return vgSpec;
 
       console.log("Mode:", qcLimitsMode);
@@ -1766,8 +2268,8 @@ let customCharts: ChartTemplate[] = [
       };
 
       // Set width and height
-      vgSpec.width = 1000;
-      vgSpec.height = 400;
+      vgSpec.width = chartWidth || 1000;
+      vgSpec.height = chartHeight || 400;
 
       delete vgSpec.encoding;
       delete vgSpec.mark;
@@ -1796,7 +2298,13 @@ let customCharts: ChartTemplate[] = [
       qcshift: ["encoding", "QCSHIFT"],
       value: ["encoding", "VALUE"],
     },
-    postProcessor: (vgSpec: any, table: any[], qcLimitsMode?: boolean) => {
+    postProcessor: (
+      vgSpec: any,
+      table: any[],
+      qcLimitsMode?: boolean,
+      chartWidth?: number,
+      chartHeight?: number
+    ) => {
       try {
         if (!table || table.length === 0) return vgSpec;
 
@@ -1984,8 +2492,8 @@ let customCharts: ChartTemplate[] = [
         };
 
         // Set width and height
-        vgSpec.width = 1000;
-        vgSpec.height = 400;
+        vgSpec.width = chartWidth || 1000;
+        vgSpec.height = chartHeight || 400;
 
         // Set description
         vgSpec.description = "Stacked Bar Chart with Tooltip showing %";

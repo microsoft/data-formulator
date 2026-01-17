@@ -170,6 +170,8 @@ export type Chart = {
   source: "user" | "trigger";
   unread: boolean;
   qcLimitsMode?: boolean;
+  chartWidth?: number;
+  chartHeight?: number;
 };
 
 export let duplicateChart = (chart: Chart): Chart => {
@@ -182,6 +184,8 @@ export let duplicateChart = (chart: Chart): Chart => {
     source: chart.source,
     unread: false,
     qcLimitsMode: chart.qcLimitsMode,
+    chartWidth: chart.chartWidth,
+    chartHeight: chart.chartHeight,
   };
 };
 
@@ -206,7 +210,13 @@ export type ChartTemplate = {
   template: any;
   channels: string[];
   paths: { [key: string]: (string | number)[] | (string | number)[][] };
-  postProcessor?: (vgSpec: any, table: any[], qcLimitsMode?: boolean) => any;
+  postProcessor?: (
+    vgSpec: any,
+    table: any[],
+    qcLimitsMode?: boolean,
+    chartWidth?: number,
+    chartHeight?: number
+  ) => any;
 };
 
 export const AGGR_OP_LIST = ["count", "sum", "average"] as const;

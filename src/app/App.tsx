@@ -1093,8 +1093,8 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
                         </Box>
                       </ToggleButton>
                     </ToggleButtonGroup>
-                    <ConfigDialog />
-                    <AgentRulesDialog />
+                    {/* <ConfigDialog />
+                    <AgentRulesDialog /> */}
                     <Divider orientation="vertical" variant="middle" flexItem />
                   </React.Fragment>
                 )}

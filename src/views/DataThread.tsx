@@ -1692,6 +1692,19 @@ export const DataThread: FC<{ sx?: SxProps }> = function ({ sx }) {
 
   const dispatch = useDispatch();
 
+  const handleDeleteAll = () => {
+    if (tables.length > 0) {
+      const confirmed = window.confirm(
+        `Delete all ${tables.length} table(s)? This action cannot be undone.`
+      );
+      if (confirmed) {
+        tables.forEach((table) => {
+          dispatch(dfActions.deleteTable(table.id));
+        });
+      }
+    }
+  };
+
   useEffect(() => {
     // make it smooth when drawer from open -> close, otherwise just jump
     executeScroll(!threadDrawerOpen);
@@ -1993,7 +2006,14 @@ export const DataThread: FC<{ sx?: SxProps }> = function ({ sx }) {
           {jumpButtons}
         </Box>
 
-        <Box sx={{ display: "flex", alignItems: "center" }}>
+        <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+          {tables.length > 0 && (
+            <Tooltip title="Delete all tables">
+              <IconButton size="small" color="error" onClick={handleDeleteAll}>
+                <DeleteIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          )}
           <Tooltip title={"collapse"}>
             <span>
               <IconButton

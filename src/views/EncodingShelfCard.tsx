@@ -44,6 +44,7 @@ import {
   DialogContent,
   DialogActions,
   FormControlLabel,
+  Slider,
 } from "@mui/material";
 
 import React from "react";
@@ -510,10 +511,18 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({
   let [ideateMode, setIdeateMode] = useState<boolean>(false);
   let [prompt, setPrompt] = useState<string>(trigger?.instruction || "");
   const [qcLimitsMode, setQcLimitsMode] = useState(chart.qcLimitsMode || false);
+  const [chartWidth, setChartWidth] = useState(
+    chart.chartWidth || config.defaultChartWidth
+  );
+  const [chartHeight, setChartHeight] = useState(
+    chart.chartHeight || config.defaultChartHeight
+  );
 
   useEffect(() => {
     setPrompt(trigger?.instruction || "");
     setQcLimitsMode(chart.qcLimitsMode || false);
+    setChartWidth(chart.chartWidth || config.defaultChartWidth);
+    setChartHeight(chart.chartHeight || config.defaultChartHeight);
     if (!(chartState[chartId] && chartState[chartId].ideas.length > 0)) {
       setIdeateMode(false);
     }
@@ -1697,7 +1706,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({
       <Box
         sx={{
           display: "flex",
-          justifyContent: "flex-end",
+          justifyContent: "center",
           alignItems: "center",
           mt: 2,
           p: 1,
@@ -1705,7 +1714,8 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({
           backgroundColor: "rgba(0,0,0,0.02)",
         }}
       >
-        <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
+        <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
+          {/* QC Limits Mode */}
           <label htmlFor="qc-limits-checkbox">
             <Box
               sx={{
@@ -1715,11 +1725,6 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({
                 cursor: "pointer",
               }}
             >
-              <img
-                src={linesmodeIcon}
-                alt="QC Limits"
-                style={{ width: 35, height: 35 }}
-              />
               <Checkbox
                 id="qc-limits-checkbox"
                 checked={qcLimitsMode}
@@ -1728,6 +1733,57 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({
               QC limits mode
             </Box>
           </label>
+
+          {/* Chart Dimensions Controls */}
+          <Box
+            sx={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 1,
+              px: 1,
+              py: 1,
+              backgroundColor: "rgba(0,0,0,0.03)",
+              borderRadius: 1,
+            }}
+          >
+            <Typography variant="caption" sx={{ fontWeight: 500 }}>
+              Chart Size
+            </Typography>
+
+            {/* Width Slider */}
+            <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+              <Typography variant="caption" sx={{ minWidth: "45px" }}>
+                Width:
+              </Typography>
+              <Slider
+                value={chartWidth}
+                onChange={(e, newValue) => setChartWidth(newValue as number)}
+                min={300}
+                max={2000}
+                step={50}
+                valueLabelDisplay="auto"
+                sx={{ flex: 1 }}
+              />
+            </Box>
+
+            {/* Height Slider */}
+            <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+              <Typography variant="caption" sx={{ minWidth: "45px" }}>
+                Height:
+              </Typography>
+              <Slider
+                value={chartHeight}
+                onChange={(e, newValue) => setChartHeight(newValue as number)}
+                min={200}
+                max={1500}
+                step={50}
+                valueLabelDisplay="auto"
+                sx={{ flex: 1 }}
+              />
+            </Box>
+          </Box>
+
+          {/* Apply All Changes Button */}
           <Button
             variant="contained"
             color="primary"
@@ -1735,6 +1791,13 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({
             onClick={() => {
               dispatch(
                 dfActions.updateChartQcLimitsMode({ chartId, qcLimitsMode })
+              );
+              dispatch(
+                dfActions.updateChartDimensions({
+                  chartId,
+                  width: chartWidth,
+                  height: chartHeight,
+                })
               );
               dispatch(dfActions.applyAllPendingEncodings());
             }}

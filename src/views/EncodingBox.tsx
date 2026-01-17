@@ -882,7 +882,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({
           type: "auto" as Type,
           description: "",
           source: "custom",
-          tableRef: "custom",
+          tableRef: activeTable?.id || targetTableId || "custom",
         } as FieldItem;
         dispatch(dfActions.updateConceptItems(newConept));
         updateEncProp("fieldID", newConept.id);
@@ -904,8 +904,24 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({
 
   let filteredConceptGroups: { group: string; field: FieldItem }[];
   if (targetTableId) {
+    // Get the target table to check which fields exist in it
+    const targetTable = tables.find((t) => t.id === targetTableId);
+
+    // Build a set of valid table IDs (target table + its source tables)
+    const validTableIds = new Set<string>([targetTableId]);
+    if (targetTable?.derive?.source) {
+      targetTable.derive.source.forEach((sourceId) => {
+        validTableIds.add(sourceId);
+      });
+    }
+
+    // Show fields that exist in the selected table (by name) AND have valid tableRef
     filteredConceptGroups = conceptGroups.filter(
-      (g) => g.field.tableRef === targetTableId
+      (g) =>
+        g.field.source === "custom" ||
+        (targetTable &&
+          targetTable.names.includes(g.field.name) &&
+          validTableIds.has(g.field.tableRef))
     );
   } else {
     // no specific table selected: show all groups

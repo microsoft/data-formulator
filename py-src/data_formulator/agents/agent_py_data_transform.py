@@ -4,6 +4,7 @@
 import json
 
 from data_formulator.agents.agent_utils import extract_json_objects, generate_data_summary, extract_code_from_gpt_response
+from data_formulator.agents.qc_chart_config import get_compact_qc_chart_info, get_full_qc_chart_rules
 import data_formulator.py_sandbox as py_sandbox
 import pandas as pd
 
@@ -35,12 +36,18 @@ Concretely, you should first refine users' goal and then create a python functio
                 * the column can either be a column in the input data, or a new column that will be computed in the output data.
                 * the mention don't have to be exact match, it can be semantically matching, e.g., if you mentioned "average score" in the text while the column to be computed is "Avg_Score", you should still highlight "**average score**" in the text.
         - determine "output_fields", the desired fields that the output data should have to achieve the user's goal, it's a good idea to include intermediate fields here.
+        - **CRITICAL: "output_fields" MUST ALWAYS start with "INDEX"**
+            - INDEX is a 1-based row sequence number that MUST be included in ALL transformations
+            - "output_fields" should be: ["INDEX", "other_field1", "other_field2", ...]
+            - This applies to ALL data types: normal data, QC data, any transformation
+            - INDEX is NOT an optional field - it is REQUIRED
         - then decide "chart_encodings", which maps visualization channels (x, y, color, size, opacity, facet, etc.) to a subset of "output_fields" that will be visualized, 
             - the "chart_encodings" should be created to support the user's "chart_type".
             - first, determine whether the user has provided sufficient fields in "chart_encodings" that are needed to achieve their goal:
                 - if the user's "chart_encodings" are sufficient, simply copy it.
                 - if the user didn't provide sufficient fields in "chart_encodings", add missing fields in "chart_encodings" (ordered them based on whether the field will be used in x,y axes or legends);
                     - "chart_encodings" should only include fields that will be visualized (do not include other intermediate fields from "output_fields")  
+                    - Note: INDEX should be in output_fields but do NOT include it in chart_encodings (it's a row identifier, not a visualization field)
                     - when adding new fields to "chart_encodings", be efficient and add only a minimal number of fields that are needed to achive the user's goal. 
                     - generally, the total number of fields in "chart_encodings" should be no more than 3 for x,y,legend.
                 - if the user's "chart_encodings" is sufficient but can be optimized, you can reorder encodings to visualize the data more effectively.
@@ -65,7 +72,8 @@ Concretely, you should first refine users' goal and then create a python functio
 {
     "detailed_instruction": "..." // string, elaborate user instruction with details if the user
     "display_instruction": "..." // string, the short verb phrase describing the users' goal.
-    "output_fields": [...] // string[], describe the desired output fields that the output data should have based on the user's goal, it's a good idea to preserve intermediate fields here (i.e., the goal of transformed data)
+    "output_fields": ["INDEX", ...] // string[], MUST start with "INDEX" which is the 1-based row number. Then describe the desired output fields that the output data should have based on the user's goal, it's a good idea to preserve intermediate fields here (i.e., the goal of transformed data)
+
     "chart_encodings": {
         "x": "",
         "y": "",
@@ -104,6 +112,11 @@ note:
     - if the output field is year, convert it to number, if it is year-month / year-month-day, convert it to string object (e.g., "2020-01" / "2020-01-01").
     - if the output is time only: convert hour to number if it's just the hour (e.g., 10), but convert hour:min or h:m:s to string object (e.g., "10:30", "10:30:45")
     - never return datetime object directly, convert it to either number (if it only contains year) or string so it's readable.
+- **CRITICAL: INDEX field requirement**:
+    - The transformed_df MUST always include an "INDEX" column containing row sequence numbers (starting from 1).
+    - Add INDEX column in the transformation function using: `transformed_df.insert(0, 'INDEX', range(1, len(transformed_df) + 1))`
+    - This applies to ALL transformations, regardless of data type (normal data, QC data, etc.).
+    - Do NOT create INDEX in the output_fields JSON only - MUST be added in the actual python code.
 
     3. The output must only contain a json object representing the refined goal and a python code block representing the transformation code, do not add any extra text explanation.
 '''
@@ -144,9 +157,9 @@ df1 (us_covid_cases) sample:
 {  
     "detailed_instruction": "Calculate the 7-day moving average of COVID-19 cases over time.",  
     "display_instruction": "Calculate 7-day moving average of COVID-19 cases",
-    "output_fields": ["Date", "Cases", "7-day average cases"],  
+    "output_fields": ["INDEX", "Date", "Cases", "7-day average cases"],  
     "chart_encodings": {"x": "Date", "y": "7-day average cases"},  
-    "reason": "To calculate the 7-day moving average, the 'Cases' field is required, but it is not needed for visualization. The provided fields are sufficient to achieve the goal."  
+    "reason": "To calculate the 7-day moving average, the 'Cases' field is required, but it is not needed for visualization. The provided fields are sufficient to achieve the goal. INDEX is added as the first field to track row sequence."  
 }  
 
 ```python
@@ -166,6 +179,9 @@ def transform_data(df):
       
     # Select the output fields  
     transformed_df = df[['Date', 'Cases', '7-day average cases']]  
+    
+    # Add INDEX column (1-based row number) - REQUIRED for all transformations
+    transformed_df.insert(0, 'INDEX', range(1, len(transformed_df) + 1))
       
     return transformed_df  
 ```
@@ -202,9 +218,9 @@ df1 (weather_seattle_atlanta) sample:
 
 {  
     "detailed_instruction": "Create a scatter plot to compare Seattle and Atlanta temperatures with Seattle temperatures on the x-axis and Atlanta temperatures on the y-axis. Color the points by which city is warmer.",  
-    "output_fields": ["Date", "Seattle Temperature", "Atlanta Temperature", "Warmer City"],  
+    "output_fields": ["INDEX", "Date", "Seattle Temperature", "Atlanta Temperature", "Warmer City"],  
     "chart_encodings": {"x": "Seattle Temperature", "y": "Atlanta Temperature", "color": "Warmer City"},  
-    "reason": "To compare Seattle and Atlanta temperatures with Seattle temperatures on the x-axis and Atlanta temperatures on the y-axis, and color points by which city is warmer, separate temperature fields for Seattle and Atlanta are required. Additionally, a new field 'Warmer City' is needed to indicate which city is warmer."  
+    "reason": "To compare Seattle and Atlanta temperatures with Seattle temperatures on the x-axis and Atlanta temperatures on the y-axis, and color points by which city is warmer, separate temperature fields for Seattle and Atlanta are required. Additionally, a new field 'Warmer City' is needed to indicate which city is warmer. INDEX is added as the first field to track row sequence."  
 }  
 
 ```python
@@ -222,6 +238,9 @@ def transform_data(df):
       
     # Select the output fields  
     transformed_df = df_pivot[['Date', 'Seattle Temperature', 'Atlanta Temperature', 'Warmer City']]  
+    
+    # Add INDEX column (1-based row number) - REQUIRED for all transformations
+    transformed_df.insert(0, 'INDEX', range(1, len(transformed_df) + 1))
       
     return transformed_df 
 ```
@@ -262,10 +281,26 @@ class PythonDataTransformationAgent(object):
             else:
                 refined_goal = {'chart_encodings': {}, 'instruction': '', 'reason': ''}
 
+            # ✅ ENFORCE INDEX REQUIREMENT: Always ensure INDEX is in output_fields
+            if 'output_fields' in refined_goal and refined_goal['output_fields']:
+                if 'INDEX' not in refined_goal['output_fields']:
+                    logger.info("⚠️ INDEX not in output_fields, adding it automatically")
+                    refined_goal['output_fields'].insert(0, 'INDEX')
+
             code_blocks = extract_code_from_gpt_response(choice.message.content + "\n", "python")
 
             if len(code_blocks) > 0:
                 code_str = code_blocks[-1]
+
+                # ✅ ENFORCE INDEX REQUIREMENT: Check if code adds INDEX column
+                has_index_add = 'insert(0, \'INDEX\'' in code_str or 'insert(0, "INDEX"' in code_str
+                if not has_index_add and 'return transformed_df' in code_str:
+                    logger.info("⚠️ INDEX not added in code, auto-injecting INDEX addition")
+                    # Auto-inject INDEX addition before return statement
+                    code_str = code_str.replace(
+                        'return transformed_df',
+                        'transformed_df.insert(0, \'INDEX\', range(1, len(transformed_df) + 1))\n    return transformed_df'
+                    )
 
                 try:
                     result = py_sandbox.run_transform_in_sandbox2020(code_str, [pd.DataFrame.from_records(t['rows']) for t in input_tables], self.exec_python_in_subprocess)

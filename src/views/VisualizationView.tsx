@@ -74,6 +74,8 @@ import CheckIcon from "@mui/icons-material/Check";
 import CloudQueueIcon from "@mui/icons-material/CloudQueue";
 import InfoIcon from "@mui/icons-material/Info";
 import CasinoIcon from "@mui/icons-material/Casino";
+import FullscreenIcon from "@mui/icons-material/Fullscreen";
+import FullscreenExitIcon from "@mui/icons-material/FullscreenExit";
 
 import {
   CHART_TEMPLATES,
@@ -632,16 +634,37 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
 
   const [chatDialogOpen, setChatDialogOpen] = useState<boolean>(false);
   const [localScaleFactor, setLocalScaleFactor] = useState<number>(1);
+  const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
+  const [chartWidth, setChartWidth] = useState<number>(
+    focusedChart?.chartWidth || config.defaultChartWidth || 800
+  );
+  const [chartHeight, setChartHeight] = useState<number>(
+    focusedChart?.chartHeight || config.defaultChartHeight || 450
+  );
 
   // Reset local UI state when focused chart changes
   useEffect(() => {
     setLocalScaleFactor(1);
+    setIsFullscreen(false);
     setCodeViewOpen(false);
     setCodeExplViewOpen(false);
     setConceptExplanationsOpen(false);
     setExplanationMode("none");
     setChatDialogOpen(false);
+    // Update chart dimensions from the newly focused chart
+    setChartWidth(focusedChart?.chartWidth || config.defaultChartWidth || 800);
+    setChartHeight(
+      focusedChart?.chartHeight || config.defaultChartHeight || 450
+    );
   }, [focusedChartId]);
+
+  // Update chart dimensions when chart object changes (e.g., when Apply All Changes is clicked)
+  useEffect(() => {
+    setChartWidth(focusedChart?.chartWidth || config.defaultChartWidth || 800);
+    setChartHeight(
+      focusedChart?.chartHeight || config.defaultChartHeight || 450
+    );
+  }, [focusedChart?.chartWidth, focusedChart?.chartHeight]);
 
   // Combined useEffect to scroll to exploration components when any of them open
   useEffect(() => {
@@ -910,6 +933,75 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
     // Check if fields exist in table and table has rows
     return !(dataFieldsAllAvailable && table.rows.length > 0);
   }, [focusedChart.chartType, dataFieldsAllAvailable, table.rows.length]);
+
+  // Render fullscreen chart when dialog opens
+  useEffect(() => {
+    if (
+      isFullscreen &&
+      focusedChart.chartType !== "Auto" &&
+      focusedChart.chartType !== "Table" &&
+      !chartUnavailable &&
+      activeVisTableRows.length > 0
+    ) {
+      const elementId = `fullscreen-chart-${focusedChart.id}`;
+
+      // Use requestAnimationFrame twice to ensure DOM is fully painted
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          const element = document.getElementById(elementId);
+
+          if (!element) {
+            console.warn(`Element with id ${elementId} not found`);
+            return;
+          }
+
+          const assembledChart = assembleVegaChart(
+            focusedChart.chartType,
+            focusedChart.encodingMap,
+            conceptShelfItems,
+            activeVisTableRows,
+            table.metadata,
+            24,
+            true,
+            Math.min(window.innerWidth - 80, 1600),
+            Math.min(window.innerHeight - 180, 1000),
+            true,
+            focusedChart.qcLimitsMode || false
+          );
+
+          // Clear container before rendering
+          element.innerHTML = "";
+
+          // Render using vega-embed
+          embed(
+            "#" + elementId,
+            { ...assembledChart },
+            {
+              actions: {
+                export: true,
+                source: true,
+                editor: true,
+              },
+              renderer: "svg",
+              downloadFileName: `chart-${focusedChart.id}`,
+            }
+          ).catch((error) => {
+            console.warn("Fullscreen chart rendering error:", error);
+          });
+        });
+      });
+    }
+  }, [
+    isFullscreen,
+    focusedChart.id,
+    focusedChart.chartType,
+    focusedChart.encodingMap,
+    focusedChart.qcLimitsMode,
+    conceptShelfItems,
+    activeVisTableRows,
+    table.metadata,
+    chartUnavailable,
+  ]);
 
   let resultTable = tables.find((t) => t.id == trigger?.resultTableId);
 
@@ -1365,8 +1457,8 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
             conceptShelfItems={conceptShelfItems}
             visTableRows={activeVisTableRows}
             tableMetadata={table.metadata}
-            chartWidth={config.defaultChartWidth}
-            chartHeight={config.defaultChartHeight}
+            chartWidth={chartWidth}
+            chartHeight={chartHeight}
             scaleFactor={localScaleFactor}
             chartUnavailable={chartUnavailable}
           />
@@ -1535,7 +1627,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
         direction="row"
         sx={{
           margin: 1,
-          width: 160,
+          width: 220,
           position: "absolute",
           zIndex: 10,
           backgroundColor: "rgba(255, 255, 255, 0.9)",
@@ -1583,15 +1675,41 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
             </IconButton>
           </span>
         </Tooltip>
+        <Divider
+          orientation="vertical"
+          variant="middle"
+          flexItem
+          sx={{ mx: 0.5 }}
+        />
+        <Tooltip key="fullscreen-tooltip" title="fullscreen">
+          <span>
+            <IconButton
+              color="primary"
+              size="small"
+              onClick={() => setIsFullscreen(!isFullscreen)}
+            >
+              {isFullscreen ? (
+                <FullscreenExitIcon fontSize="small" />
+              ) : (
+                <FullscreenIcon fontSize="small" />
+              )}
+            </IconButton>
+          </span>
+        </Tooltip>
       </Stack>
     ),
-    [localScaleFactor]
+    [localScaleFactor, isFullscreen]
   );
 
   return (
     <Box
       ref={componentRef}
       sx={{ overflow: "hidden", display: "flex", flex: 1 }}
+      onKeyDown={(e) => {
+        if (e.key === "Escape" && isFullscreen) {
+          setIsFullscreen(false);
+        }
+      }}
     >
       {synthesisRunning ? (
         <Box
@@ -1614,6 +1732,108 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
       )}
       {chartUnavailable ? "" : chartResizer}
       {content}
+
+      {/* Fullscreen Dialog for Chart */}
+      <Dialog
+        fullScreen
+        open={isFullscreen}
+        onClose={() => setIsFullscreen(false)}
+        PaperProps={{
+          sx: {
+            backgroundColor: "#fafafa",
+          },
+        }}
+      >
+        <Box
+          sx={{
+            display: "flex",
+            flexDirection: "column",
+            height: "100%",
+            width: "100%",
+            overflow: "auto",
+            p: 2,
+          }}
+        >
+          <Box
+            sx={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              mb: 2,
+            }}
+          >
+            <Typography variant="h6">
+              {focusedChart.chartType || "Chart"} - Fullscreen View
+            </Typography>
+            <Tooltip title="Close fullscreen (or press ESC)">
+              <IconButton
+                onClick={() => setIsFullscreen(false)}
+                color="primary"
+              >
+                <FullscreenExitIcon />
+              </IconButton>
+            </Tooltip>
+          </Box>
+          <Divider sx={{ mb: 2 }} />
+
+          {/* Chart rendering in fullscreen */}
+          <Box
+            sx={{
+              flex: 1,
+              display: "flex",
+              flexDirection: "column",
+              justifyContent: "center",
+              alignItems: "center",
+              overflow: "auto",
+            }}
+          >
+            {focusedChart.chartType === "Auto" ||
+            focusedChart.chartType === "Table" ||
+            chartUnavailable ? (
+              <Box
+                sx={{
+                  display: "flex",
+                  flexDirection: "column",
+                  justifyContent: "center",
+                  alignItems: "center",
+                  color: "text.secondary",
+                }}
+              >
+                <InsightsIcon sx={{ fontSize: 60, mb: 1, opacity: 0.5 }} />
+                <Typography>Chart not available</Typography>
+              </Box>
+            ) : (
+              <Box
+                sx={{
+                  width: "100%",
+                  height: "100%",
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  position: "relative",
+                  overflow: "auto",
+                }}
+              >
+                <Box
+                  id={`fullscreen-chart-${focusedChart.id}`}
+                  sx={{
+                    minWidth: "800px",
+                    minHeight: "400px",
+                    maxWidth: "90%",
+                    maxHeight: "90%",
+                  }}
+                ></Box>
+              </Box>
+            )}
+          </Box>
+
+          <Divider sx={{ mt: 2, mb: 1 }} />
+          <Typography variant="caption" color="text.secondary">
+            Press ESC or click the close button to exit fullscreen
+          </Typography>
+        </Box>
+      </Dialog>
     </Box>
   );
 };
