@@ -3,7 +3,6 @@
 
 import duckdb
 import pandas as pd
-from typing import Dict
 import tempfile
 import os
 from contextlib import contextmanager
@@ -15,7 +14,7 @@ logger = logging.getLogger(__name__)
 class DuckDBManager:
     def __init__(self, local_db_dir: str, disabled: bool = False):
         # Store session db file paths
-        self._db_files: Dict[str, str] = {}
+        self._db_files: dict[str, str] = {}
         self._local_db_dir: str = local_db_dir
         self._disabled: bool = disabled
 

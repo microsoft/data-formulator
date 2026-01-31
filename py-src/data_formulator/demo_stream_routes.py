@@ -30,7 +30,7 @@ import csv
 import math
 from datetime import datetime, timedelta
 from flask import Blueprint, Response, request, jsonify
-from typing import List, Dict, Any, Optional
+from typing import Any
 from collections import deque
 import threading
 
@@ -107,9 +107,9 @@ def make_csv_response(rows: list, filename: str = "data.csv") -> Response:
 # Thread-safe storage for ISS position history
 _iss_track_lock = threading.Lock()
 _iss_track_history: deque = deque(maxlen=10000)  # Keep last 10000 positions (~20000 min at 5s intervals)
-_iss_last_fetch: Optional[datetime] = None
+_iss_last_fetch: datetime | None = None
 
-def _fetch_iss_position() -> Optional[Dict[str, Any]]:
+def _fetch_iss_position() -> dict[str, Any] | None:
     """Fetch current ISS position from API"""
     try:
         response = requests.get("http://api.open-notify.org/iss-now.json", timeout=10)
@@ -1074,7 +1074,7 @@ def get_yfinance_financials():
 # Thread-safe storage for sales transaction history
 _sales_lock = threading.Lock()
 _sales_history: deque = deque(maxlen=1000)  # Keep last 1000 transactions
-_sales_last_update: Optional[datetime] = None
+_sales_last_update: datetime | None = None
 
 # Products with realistic pricing and popularity
 _SALES_PRODUCTS = [
@@ -1097,7 +1097,7 @@ _SALES_CHANNELS = ["Web", "Mobile App", "In-Store", "Partner"]
 _SALES_CHANNEL_WEIGHTS = [0.40, 0.35, 0.15, 0.10]
 
 
-def _generate_sale_transaction(timestamp: datetime) -> Dict[str, Any]:
+def _generate_sale_transaction(timestamp: datetime) -> dict[str, Any]:
     """Generate a single sale transaction"""
     product = random.choices(_SALES_PRODUCTS, weights=[p["popularity"] for p in _SALES_PRODUCTS])[0]
     region = random.choices(_SALES_REGIONS, weights=_SALES_REGION_WEIGHTS)[0]

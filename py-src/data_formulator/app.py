@@ -40,7 +40,7 @@ from data_formulator.db_manager import db_manager
 from data_formulator.example_datasets_config import EXAMPLE_DATASETS
 
 import queue
-from typing import Dict, Any
+from typing import Any
 
 app = Flask(__name__, static_url_path='', static_folder=os.path.join(APP_ROOT, "dist"))
 app.secret_key = secrets.token_hex(16)  # Generate a random secret key for sessions

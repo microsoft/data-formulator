@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "data_formulator"
 version = "0.6"
 
-requires-python = ">=3.9"
+requires-python = ">=3.11"
 authors = [
   {name = "Chenglong Wang", email = "chenglong.wang@microsoft.com"},
   {name = "Dan Marshall", email = "danmar@microsoft.com"},
@@ -62,3 +62,8 @@ include-package-data = true
 
 [project.scripts]
 data_formulator = "data_formulator:run_app"
+
+[tool.uv]
+dev-dependencies = [
+    "build",
+]

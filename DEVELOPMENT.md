@@ -2,16 +2,34 @@
 How to set up your local machine.
 
 ## Prerequisites
-* Python > 3.11
+* Python >= 3.11
 * Node.js
 * Yarn
+* [uv](https://docs.astral.sh/uv/) (recommended) or pip
 
 ## Backend (Python)
+
+### Option 1: With uv (recommended)
+
+uv is faster and provides reproducible builds via lockfile.
+
+```bash
+uv sync                        # Creates .venv and installs all dependencies
+uv run data_formulator         # Run app (opens browser automatically)
+uv run data_formulator --dev   # Run backend only (for frontend development)
+```
+
+**Which command to use:**
+- **End users / testing the full app**: `uv run data_formulator` - starts server and opens browser to http://localhost:5000
+- **Frontend development**: `uv run data_formulator --dev` - starts backend server only, then run `yarn start` separately for the Vite dev server on http://localhost:5173
+
+### Option 2: With pip (fallback)
 
 - **Create a Virtual Environment**  
     ```bash
     python -m venv venv
-    .\venv\Scripts\activate
+    source venv/bin/activate  # Unix
+    # or .\venv\Scripts\activate  # Windows
     ```
 
 - **Install Dependencies**  
@@ -41,14 +59,16 @@ How to set up your local machine.
 
 
 - **Run the app**
-    - **Windows**
     ```bash
-    .\local_server.bat
-    ```
-
-    - **Unix-based**
-    ```bash
+    # Unix
     ./local_server.sh
+    
+    # Windows
+    .\local_server.bat
+    
+    # Or directly
+    data_formulator         # Opens browser automatically
+    data_formulator --dev   # Backend only (for frontend development)
     ```
 
 ## Frontend (TypeScript)
@@ -61,7 +81,12 @@ How to set up your local machine.
 
 - **Development mode**
 
-    Run the front-end in development mode using, allowing real-time edits and previews:
+    First, start the backend server (in a separate terminal):
+    ```bash
+    uv run data_formulator --dev   # or ./local_server.sh
+    ```
+
+    Then, run the frontend in development mode with hot reloading:
     ```bash
     yarn start
     ```
@@ -81,6 +106,10 @@ How to set up your local machine.
     Then, build python package:
 
     ```bash
+    # With uv
+    uv build
+    
+    # Or with pip
     pip install build
     python -m build
     ```

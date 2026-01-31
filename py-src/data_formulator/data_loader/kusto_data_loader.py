@@ -1,6 +1,6 @@
 import logging
 import sys
-from typing import Dict, Any, List
+from typing import Any
 import pandas as pd
 import json
 import duckdb
@@ -60,7 +60,7 @@ Required Parameters:
     - kusto_database: Name of the database you want to access
 """
 
-    def __init__(self, params: Dict[str, Any], duck_db_conn: duckdb.DuckDBPyConnection):
+    def __init__(self, params: dict[str, Any], duck_db_conn: duckdb.DuckDBPyConnection):
         if not KUSTO_AVAILABLE:
             raise ImportError(
                 "azure-kusto-data is required for Kusto/Azure Data Explorer connections. "
@@ -156,7 +156,7 @@ Required Parameters:
         
         return df
 
-    def list_tables(self, table_filter: str = None) -> List[Dict[str, Any]]:
+    def list_tables(self, table_filter: str | None = None) -> list[dict[str, Any]]:
         query = ".show tables"
         tables_df = self.query(query)
 
@@ -197,7 +197,7 @@ Required Parameters:
 
         return tables
     
-    def ingest_data(self, table_name: str, name_as: str = None, size: int = 5000000, sort_columns: List[str] = None, sort_order: str = 'asc') -> pd.DataFrame:
+    def ingest_data(self, table_name: str, name_as: str | None = None, size: int = 5000000, sort_columns: list[str] | None = None, sort_order: str = 'asc') -> pd.DataFrame:
         if name_as is None:
             name_as = table_name
         
@@ -254,7 +254,7 @@ Required Parameters:
             
             total_rows_ingested += len(chunk_df)
 
-    def view_query_sample(self, query: str) -> List[Dict[str, Any]]:
+    def view_query_sample(self, query: str) -> list[dict[str, Any]]:
         df = self.query(query).head(10)
         return json.loads(df.to_json(orient="records", date_format='iso'))
 

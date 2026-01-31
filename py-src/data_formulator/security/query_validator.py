@@ -3,7 +3,7 @@
 
 import re
 import logging
-from typing import Tuple, Dict, Any
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +21,7 @@ def normalize_query(query: str) -> str:
     query_normalized = re.sub(r'/\*.*?\*/', '', query_normalized, flags=re.DOTALL)  # Multi-line comments
     return query_normalized.strip().lower()
 
-def validate_sql_query(query: str) -> Tuple[bool, str]:
+def validate_sql_query(query: str) -> tuple[bool, str]:
     """
     Simple regex-based SQL query validation for dangerous operations.
     
@@ -140,7 +140,7 @@ def validate_sql_query(query: str) -> Tuple[bool, str]:
         return False, f"Query validation error: {str(e)}"
 
 
-def validate_sql_query_strict(query: str) -> Tuple[bool, str]:
+def validate_sql_query_strict(query: str) -> tuple[bool, str]:
     """
     Strict validation that only allows SELECT queries and basic operations.
     

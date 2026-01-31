@@ -4,7 +4,7 @@ import duckdb
 import os
 
 from data_formulator.data_loader.external_data_loader import ExternalDataLoader, sanitize_table_name
-from typing import Dict, Any, List
+from typing import Any
 from data_formulator.security import validate_sql_query
 
 try:
@@ -16,7 +16,7 @@ except ImportError:
 class S3DataLoader(ExternalDataLoader):
 
     @staticmethod
-    def list_params() -> List[Dict[str, Any]]:
+    def list_params() -> list[dict[str, Any]]:
         params_list = [
             {"name": "aws_access_key_id", "type": "string", "required": True, "default": "", "description": "AWS access key ID"},
             {"name": "aws_secret_access_key", "type": "string", "required": True, "default": "", "description": "AWS secret access key"},
@@ -63,7 +63,7 @@ class S3DataLoader(ExternalDataLoader):
 **Security:** Never share secret keys, rotate regularly, use least privilege permissions.
         """
 
-    def __init__(self, params: Dict[str, Any], duck_db_conn: duckdb.DuckDBPyConnection):
+    def __init__(self, params: dict[str, Any], duck_db_conn: duckdb.DuckDBPyConnection):
         if not BOTO3_AVAILABLE:
             raise ImportError(
                 "boto3 is required for S3 connections. "
@@ -91,7 +91,7 @@ class S3DataLoader(ExternalDataLoader):
         if self.aws_session_token:  # Add this block
             self.duck_db_conn.execute(f"SET s3_session_token='{self.aws_session_token}'")
 
-    def list_tables(self, table_filter: str = None) -> List[Dict[str, Any]]:
+    def list_tables(self, table_filter: str | None = None) -> list[dict[str, Any]]:
         # Use boto3 to list objects in the bucket
         import boto3
         
@@ -181,7 +181,7 @@ class S3DataLoader(ExternalDataLoader):
             print(f"Error estimating row count for {s3_url}: {e}")
             return 0
 
-    def ingest_data(self, table_name: str, name_as: str = None, size: int = 1000000, sort_columns: List[str] = None, sort_order: str = 'asc'):
+    def ingest_data(self, table_name: str, name_as: str | None = None, size: int = 1000000, sort_columns: list[str] | None = None, sort_order: str = 'asc'):
         if name_as is None:
             name_as = table_name.split('/')[-1].split('.')[0]
         
@@ -219,7 +219,7 @@ class S3DataLoader(ExternalDataLoader):
         else:
             raise ValueError(f"Unsupported file type: {table_name}")
 
-    def view_query_sample(self, query: str) -> List[Dict[str, Any]]:
+    def view_query_sample(self, query: str) -> list[dict[str, Any]]:
         result, error_message = validate_sql_query(query)
         if not result:
             raise ValueError(error_message)

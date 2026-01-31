@@ -5,7 +5,7 @@ import time
 import duckdb
 
 from data_formulator.data_loader.external_data_loader import ExternalDataLoader, sanitize_table_name
-from typing import Dict, Any, List, Optional
+from typing import Any
 from data_formulator.security import validate_sql_query
 
 try:
@@ -54,7 +54,7 @@ def _validate_s3_url(url: str) -> None:
         raise ValueError(f"Invalid S3 URL format: '{url}'. Expected format: 's3://bucket/path'")
 
 
-def _escape_sql_string(value: Optional[str]) -> str:
+def _escape_sql_string(value: str | None) -> str:
     """Escape single quotes in SQL string values."""
     if value is None:
         return ""
@@ -69,7 +69,7 @@ class AthenaDataLoader(ExternalDataLoader):
     """
 
     @staticmethod
-    def list_params() -> List[Dict[str, Any]]:
+    def list_params() -> list[dict[str, Any]]:
         params_list = [
             {"name": "aws_profile", "type": "string", "required": False, "default": "", "description": "AWS profile name from ~/.aws/credentials (if set, access key and secret are not required)"},
             {"name": "aws_access_key_id", "type": "string", "required": False, "default": "", "description": "AWS access key ID (not required if using aws_profile)"},
@@ -160,7 +160,7 @@ aws configure --profile myprofile
 **Security:** Never share secret keys, rotate regularly, use least privilege permissions.
         """
 
-    def __init__(self, params: Dict[str, Any], duck_db_conn: duckdb.DuckDBPyConnection):
+    def __init__(self, params: dict[str, Any], duck_db_conn: duckdb.DuckDBPyConnection):
         if not BOTO3_AVAILABLE:
             raise ImportError(
                 "boto3 is required for Athena connections. "
@@ -398,7 +398,7 @@ aws configure --profile myprofile
             wait_time = min(2 ** (elapsed // 10), 10)
             time.sleep(wait_time)
 
-    def list_tables(self, table_filter: str = None) -> List[Dict[str, Any]]:
+    def list_tables(self, table_filter: str | None = None) -> list[dict[str, Any]]:
         """List tables from Athena catalog (Glue Data Catalog)."""
         results = []
 
@@ -469,7 +469,7 @@ aws configure --profile myprofile
         log.info(f"Returning {len(results)} tables")
         return results
 
-    def ingest_data(self, table_name: str, name_as: str = None, size: int = 1000000, sort_columns: List[str] = None, sort_order: str = 'asc'):
+    def ingest_data(self, table_name: str, name_as: str | None = None, size: int = 1000000, sort_columns: list[str] | None = None, sort_order: str = 'asc'):
         """Ingest data from an Athena table by executing a SELECT query."""
         # Validate table name to prevent SQL injection
         _validate_athena_table_name(table_name)
@@ -512,7 +512,7 @@ aws configure --profile myprofile
 
         log.info(f"Successfully ingested data into table '{name_as}'")
 
-    def view_query_sample(self, query: str) -> List[Dict[str, Any]]:
+    def view_query_sample(self, query: str) -> list[dict[str, Any]]:
         """Execute query and return sample results."""
         result, error_message = validate_sql_query(query)
         if not result:

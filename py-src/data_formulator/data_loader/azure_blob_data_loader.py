@@ -4,7 +4,7 @@ import duckdb
 import os
 
 from data_formulator.data_loader.external_data_loader import ExternalDataLoader, sanitize_table_name
-from typing import Dict, Any, List
+from typing import Any
 from data_formulator.security import validate_sql_query
 
 try:
@@ -17,7 +17,7 @@ except ImportError:
 class AzureBlobDataLoader(ExternalDataLoader):
 
     @staticmethod
-    def list_params() -> List[Dict[str, Any]]:
+    def list_params() -> list[dict[str, Any]]:
         params_list = [
             {"name": "account_name", "type": "string", "required": True, "default": "", "description": "Azure storage account name"},
             {"name": "container_name", "type": "string", "required": True, "default": "", "description": "Azure blob container name"},
@@ -65,7 +65,7 @@ Supported File Formats:
     - JSON files (.json, .jsonl)
 """
 
-    def __init__(self, params: Dict[str, Any], duck_db_conn: duckdb.DuckDBPyConnection):
+    def __init__(self, params: dict[str, Any], duck_db_conn: duckdb.DuckDBPyConnection):
         if not AZURE_BLOB_AVAILABLE:
             raise ImportError(
                 "Azure storage libraries are required for Azure Blob connections. "
@@ -130,7 +130,7 @@ Supported File Formats:
                 )
             """)
 
-    def list_tables(self, table_filter: str = None) -> List[Dict[str, Any]]:
+    def list_tables(self, table_filter: str | None = None) -> list[dict[str, Any]]:
         # Use Azure SDK to list blobs in the container
         from azure.storage.blob import BlobServiceClient
         
@@ -348,7 +348,7 @@ Supported File Formats:
             print(f"Error in row sampling for {azure_url}: {e}")
             return 0
 
-    def ingest_data(self, table_name: str, name_as: str = None, size: int = 1000000, sort_columns: List[str] = None, sort_order: str = 'asc'):
+    def ingest_data(self, table_name: str, name_as: str | None = None, size: int = 1000000, sort_columns: list[str] | None = None, sort_order: str = 'asc'):
         if name_as is None:
             name_as = table_name.split('/')[-1].split('.')[0]
         
@@ -386,7 +386,7 @@ Supported File Formats:
         else:
             raise ValueError(f"Unsupported file type: {table_name}")
 
-    def view_query_sample(self, query: str) -> List[Dict[str, Any]]:
+    def view_query_sample(self, query: str) -> list[dict[str, Any]]:
         result, error_message = validate_sql_query(query)
         if not result:
             raise ValueError(error_message)

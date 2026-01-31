@@ -20,7 +20,6 @@ from data_formulator.db_manager import db_manager
 from data_formulator.data_loader import DATA_LOADERS
 
 import re
-from typing import Tuple
 
 # Get logger for this module (logging config done in app.py)
 logger = logging.getLogger(__name__)
@@ -662,7 +661,7 @@ def sanitize_table_name(table_name: str) -> str:
         return f'table_{uuid.uuid4()}'
     return sanitized_table_name
 
-def sanitize_db_error_message(error: Exception) -> Tuple[str, int]:
+def sanitize_db_error_message(error: Exception) -> tuple[str, int]:
     """
     Sanitize error messages before sending to client.
     Returns a tuple of (sanitized_message, status_code)

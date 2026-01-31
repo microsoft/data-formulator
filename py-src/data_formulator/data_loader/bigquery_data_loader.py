@@ -1,7 +1,7 @@
 import json
 import logging
 import re
-from typing import Dict, Any, List, Optional
+from typing import Any
 import pandas as pd
 import duckdb
 
@@ -21,7 +21,7 @@ class BigQueryDataLoader(ExternalDataLoader):
     """BigQuery data loader implementation"""
     
     @staticmethod
-    def list_params() -> List[Dict[str, Any]]:
+    def list_params() -> list[dict[str, Any]]:
         return [
             {"name": "project_id", "type": "text", "required": True, "description": "Google Cloud Project ID", "default": ""},
             {"name": "dataset_id", "type": "text", "required": False, "description": "Dataset ID(s) - leave empty for all, or specify one (e.g., 'billing') or multiple separated by commas (e.g., 'billing,enterprise_collected,ga_api')", "default": ""},
@@ -68,7 +68,7 @@ Supported Operations:
     - Execute custom SQL queries
 """
 
-    def __init__(self, params: Dict[str, Any], duck_db_conn: duckdb.DuckDBPyConnection):
+    def __init__(self, params: dict[str, Any], duck_db_conn: duckdb.DuckDBPyConnection):
         if not BIGQUERY_AVAILABLE:
             raise ImportError(
                 "google-cloud-bigquery is required for BigQuery connections. "
@@ -96,7 +96,7 @@ Supported Operations:
                 location=self.location
             )
 
-    def list_tables(self, table_filter: str = None) -> List[Dict[str, Any]]:
+    def list_tables(self, table_filter: str | None = None) -> list[dict[str, Any]]:
         """List tables from BigQuery datasets"""
         results = []
         
@@ -204,7 +204,7 @@ Supported Operations:
 
         return df
 
-    def ingest_data(self, table_name: str, name_as: Optional[str] = None, size: int = 1000000, sort_columns: List[str] = None, sort_order: str = 'asc'):
+    def ingest_data(self, table_name: str, name_as: str | None = None, size: int = 1000000, sort_columns: list[str] | None = None, sort_order: str = 'asc'):
             """Ingest data from BigQuery table into DuckDB with stable, de-duplicated column aliases."""
             if name_as is None:
                 name_as = table_name.split('.')[-1]
@@ -296,7 +296,7 @@ Supported Operations:
 
             self.ingest_df_to_duckdb(df, name_as)
 
-    def view_query_sample(self, query: str) -> List[Dict[str, Any]]:
+    def view_query_sample(self, query: str) -> list[dict[str, Any]]:
         """Execute query and return sample results as a list of dictionaries"""
         result, error_message = validate_sql_query(query)
         if not result:

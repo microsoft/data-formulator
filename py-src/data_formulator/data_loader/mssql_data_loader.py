@@ -1,6 +1,6 @@
 import json
 import logging
-from typing import Dict, Any, Optional, List
+from typing import Any
 
 import duckdb
 import pandas as pd
@@ -144,7 +144,7 @@ SQL Server Connection Instructions:
    - Windows: Install SQL Server or download ODBC driver separately
 """
 
-    def __init__(self, params: Dict[str, Any], duck_db_conn: duckdb.DuckDBPyConnection):
+    def __init__(self, params: dict[str, Any], duck_db_conn: duckdb.DuckDBPyConnection):
         log.info("Initializing MSSQL DataLoader with parameters: %s", params)
 
         if not PYODBC_AVAILABLE:
@@ -387,7 +387,7 @@ SQL Server Connection Instructions:
 
         return results
 
-    def ingest_data(self, table_name: str, name_as: Optional[str] = None, size: int = 1000000, sort_columns: List[str] = None, sort_order: str = 'asc'):
+    def ingest_data(self, table_name: str, name_as: str | None = None, size: int = 1000000, sort_columns: list[str] | None = None, sort_order: str = 'asc'):
         """Ingest data from SQL Server table into DuckDB"""
         # Parse table name (assuming format: schema.table)
         if "." in table_name:
@@ -421,7 +421,7 @@ SQL Server Connection Instructions:
             log.error(f"Failed to ingest data from {table_name}: {e}")
             raise
 
-    def view_query_sample(self, query: str) -> List[Dict[str, Any]]:
+    def view_query_sample(self, query: str) -> list[dict[str, Any]]:
         """Execute a custom query and return sample results"""
         try:
             # Add TOP 10 if not already present for SELECT queries

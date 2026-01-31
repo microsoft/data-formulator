@@ -5,13 +5,13 @@ import duckdb
 
 from data_formulator.data_loader.external_data_loader import ExternalDataLoader, sanitize_table_name
 
-from typing import Dict, Any, List, Optional
+from typing import Any
 from data_formulator.security import validate_sql_query
 
 class PostgreSQLDataLoader(ExternalDataLoader):
 
     @staticmethod
-    def list_params()  -> List[Dict[str, Any]]:
+    def list_params() -> list[dict[str, Any]]:
         params_list = [
             {"name": "user", "type": "string", "required": True, "default": "postgres", "description": "PostgreSQL username"}, 
             {"name": "password", "type": "string", "required": False, "default": "", "description": "leave blank for no password"}, 
@@ -25,7 +25,7 @@ class PostgreSQLDataLoader(ExternalDataLoader):
     def auth_instructions() -> str:
         return "Provide your PostgreSQL connection details. The user must have SELECT permissions on the tables you want to access."
 
-    def __init__(self, params: Dict[str, Any], duck_db_conn: duckdb.DuckDBPyConnection):
+    def __init__(self, params: dict[str, Any], duck_db_conn: duckdb.DuckDBPyConnection):
         self.params = params
         self.duck_db_conn = duck_db_conn
         
@@ -130,7 +130,7 @@ class PostgreSQLDataLoader(ExternalDataLoader):
             print(f"Error listing tables: {e}")
             return []
 
-    def ingest_data(self, table_name: str, name_as: Optional[str] = None, size: int = 1000000, sort_columns: List[str] = None, sort_order: str = 'asc'):
+    def ingest_data(self, table_name: str, name_as: str | None = None, size: int = 1000000, sort_columns: list[str] | None = None, sort_order: str = 'asc'):
         # Create table in the main DuckDB database from Postgres data
         if name_as is None:
             name_as = table_name.split('.')[-1]
@@ -152,7 +152,7 @@ class PostgreSQLDataLoader(ExternalDataLoader):
             LIMIT {size}
         """)
 
-    def view_query_sample(self, query: str) -> List[Dict[str, Any]]:
+    def view_query_sample(self, query: str) -> list[dict[str, Any]]:
         result, error_message = validate_sql_query(query)
         if not result:
             raise ValueError(error_message)

@@ -7,7 +7,7 @@ import duckdb
 from data_formulator.data_loader.external_data_loader import ExternalDataLoader, sanitize_table_name
 
 from data_formulator.security import validate_sql_query
-from typing import Dict, Any, Optional, List
+from typing import Any
 
 try:
     import pymysql
@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 class MySQLDataLoader(ExternalDataLoader):
 
     @staticmethod
-    def list_params() -> List[Dict[str, Any]]:
+    def list_params() -> list[dict[str, Any]]:
         params_list = [
             {"name": "user", "type": "string", "required": True, "default": "root", "description": ""}, 
             {"name": "password", "type": "string", "required": False, "default": "", "description": "leave blank for no password"}, 
@@ -58,7 +58,7 @@ MySQL Connection Instructions:
    - Test connection: `mysql -u [username] -p -h [host] -P [port] [database]`
 """
 
-    def __init__(self, params: Dict[str, Any], duck_db_conn: duckdb.DuckDBPyConnection):
+    def __init__(self, params: dict[str, Any], duck_db_conn: duckdb.DuckDBPyConnection):
         if not PYMYSQL_AVAILABLE:
             raise ImportError(
                 "pymysql is required for MySQL connections. "
@@ -154,7 +154,7 @@ MySQL Connection Instructions:
                 charset='utf8mb4'
             )
 
-    def list_tables(self, table_filter: str = None) -> List[Dict[str, Any]]:
+    def list_tables(self, table_filter: str | None = None) -> list[dict[str, Any]]:
         # Get list of tables from the connected database
         # Filter by the specific database we're connected to for better performance
         tables_query = """
@@ -220,7 +220,7 @@ MySQL Connection Instructions:
             
         return results
 
-    def ingest_data(self, table_name: str, name_as: Optional[str] = None, size: int = 1000000, sort_columns: List[str] = None, sort_order: str = 'asc'):
+    def ingest_data(self, table_name: str, name_as: str | None = None, size: int = 1000000, sort_columns: list[str] | None = None, sort_order: str = 'asc'):
         """Fetch data from MySQL and ingest into DuckDB."""
         if name_as is None:
             name_as = table_name.split('.')[-1]
@@ -264,7 +264,7 @@ MySQL Connection Instructions:
         self.ingest_df_to_duckdb(df, name_as)
         logger.info(f"Successfully ingested {len(df)} rows from {table_name} into DuckDB table {name_as}")
 
-    def view_query_sample(self, query: str) -> List[Dict[str, Any]]:
+    def view_query_sample(self, query: str) -> list[dict[str, Any]]:
         result, error_message = validate_sql_query(query)
         if not result:
             raise ValueError(error_message)

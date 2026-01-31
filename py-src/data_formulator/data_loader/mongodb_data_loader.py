@@ -11,7 +11,7 @@ from datetime import datetime
 from data_formulator.data_loader.external_data_loader import ExternalDataLoader, sanitize_table_name
 
 from data_formulator.security import validate_sql_query
-from typing import Dict, Any, Optional, List
+from typing import Any
 
 
 class MongoDBDataLoader(ExternalDataLoader):
@@ -56,7 +56,7 @@ MongoDB Connection Instructions:
    - Test connection: `mongosh --host [host] --port [port]`
 """
 
-    def __init__(self, params: Dict[str, Any], duck_db_conn: duckdb.DuckDBPyConnection):
+    def __init__(self, params: dict[str, Any], duck_db_conn: duckdb.DuckDBPyConnection):
         self.params = params
         self.duck_db_conn = duck_db_conn
         
@@ -113,7 +113,7 @@ MongoDB Connection Instructions:
         self.close()
     
     @staticmethod
-    def _flatten_document(doc: Dict[str, Any], parent_key: str = '', sep: str = '_') -> Dict[str, Any]:
+    def _flatten_document(doc: dict[str, Any], parent_key: str = '', sep: str = '_') -> dict[str, Any]:
         """
         Use recursion to flatten nested MongoDB documents
         """
@@ -139,7 +139,7 @@ MongoDB Connection Instructions:
         return dict(items)
     
     @staticmethod
-    def _convert_special_types(doc: Dict[str, Any]) -> Dict[str, Any]:
+    def _convert_special_types(doc: dict[str, Any]) -> dict[str, Any]:
         """
         Convert MongoDB special types (ObjectId, datetime, etc.) to serializable types
         """
@@ -165,7 +165,7 @@ MongoDB Connection Instructions:
                 result[key] = value
         return result
     
-    def _process_documents(self, documents: List[Dict[str, Any]]) -> pd.DataFrame:
+    def _process_documents(self, documents: list[dict[str, Any]]) -> pd.DataFrame:
         """
         Process MongoDB documents list, flatten and convert to DataFrame
         """
@@ -240,7 +240,7 @@ MongoDB Connection Instructions:
         
         return results
     
-    def ingest_data(self, table_name: str, name_as: Optional[str] = None, size: int = 100000, sort_columns: List[str] = None, sort_order: str = 'asc'):
+    def ingest_data(self, table_name: str, name_as: str | None = None, size: int = 100000, sort_columns: list[str] | None = None, sort_order: str = 'asc'):
         """
         Import MongoDB collection data into DuckDB
         """
@@ -277,7 +277,7 @@ MongoDB Connection Instructions:
         return
 
     
-    def view_query_sample(self, query: str) -> List[Dict[str, Any]]:
+    def view_query_sample(self, query: str) -> list[dict[str, Any]]:
 
         self._existed_collections_in_duckdb()
         self._difference_collections()

@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-from typing import Dict, List, Any, Optional
+from typing import Any
 import vl_convert as vlc
 import base64
 
@@ -68,7 +68,7 @@ CHART_TEMPLATES = [
 ]
 
 
-def get_chart_template(chart_type: str) -> Optional[Dict]:
+def get_chart_template(chart_type: str) -> dict | None:
     """
     Find a chart template by chart type name.
     """
@@ -77,7 +77,7 @@ def get_chart_template(chart_type: str) -> Optional[Dict]:
             return template
     return None
 
-def create_chart_spec(df: pd.DataFrame, fields: List[str], chart_type: str) -> Dict[str, Dict[str, str]]:
+def create_chart_spec(df: pd.DataFrame, fields: list[str], chart_type: str) -> dict[str, dict[str, str]]:
     """
     Assign fields to appropriate visualization channels based on their data types and chart type.
     """
@@ -85,7 +85,7 @@ def create_chart_spec(df: pd.DataFrame, fields: List[str], chart_type: str) -> D
     return assemble_vegailte_chart(df, chart_type, encodings)
 
 
-def fields_to_encodings(df, chart_type: str, fields: List[str]) -> Dict[str, Dict[str, str]]:
+def fields_to_encodings(df, chart_type: str, fields: list[str]) -> dict[str, dict[str, str]]:
     """
     Assign fields to appropriate visualization channels based on their data types and chart type.
     
@@ -389,9 +389,9 @@ def fields_to_encodings(df, chart_type: str, fields: List[str]) -> Dict[str, Dic
 def assemble_vegailte_chart(
     df: pd.DataFrame, 
     chart_type: str, 
-    encodings: Dict[str, Dict[str, str]],
+    encodings: dict[str, dict[str, str]],
     max_nominal_values: int = 68
-) -> Dict:
+) -> dict:
     """
     Assemble a Vega-Lite chart specification from a dataframe, chart type, and encodings.
     
@@ -574,7 +574,7 @@ def _get_top_values(df: pd.DataFrame, field_name: str, unique_values: list,
     return unique_values[:max_values]
 
 
-def vl_spec_to_png(spec: Dict, output_path: str = None, scale: float = 1.0) -> bytes:
+def vl_spec_to_png(spec: dict, output_path: str | None = None, scale: float = 1.0) -> bytes:
     """
     Convert a Vega-Lite specification to a PNG image.
     
@@ -600,7 +600,7 @@ def vl_spec_to_png(spec: Dict, output_path: str = None, scale: float = 1.0) -> b
     
     return png_data
 
-def spec_to_base64(spec: Dict, scale: float = 1.0) -> str:
+def spec_to_base64(spec: dict, scale: float = 1.0) -> str:
     """
     Convert a Vega-Lite specification to a base64 encoded PNG string.
     

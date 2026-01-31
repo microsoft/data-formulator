@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Dict, Any, List
+from typing import Any
 import pandas as pd
 import json
 import duckdb
@@ -76,7 +76,7 @@ class ExternalDataLoader(ABC):
     
     @staticmethod
     @abstractmethod
-    def list_params() -> List[Dict[str, Any]]:
+    def list_params() -> list[dict[str, Any]]:
         pass
 
     @staticmethod
@@ -84,16 +84,16 @@ class ExternalDataLoader(ABC):
     def auth_instructions() -> str:        pass
 
     @abstractmethod
-    def __init__(self, params: Dict[str, Any], duck_db_conn: duckdb.DuckDBPyConnection):
+    def __init__(self, params: dict[str, Any], duck_db_conn: duckdb.DuckDBPyConnection):
         pass
 
     @abstractmethod
-    def list_tables(self, table_filter: str = None) -> List[Dict[str, Any]]:
+    def list_tables(self, table_filter: str = None) -> list[dict[str, Any]]:
         # should include: table_name, column_names, column_types, sample_data
         pass
 
     @abstractmethod
-    def ingest_data(self, table_name: str, name_as: str = None, size: int = 1000000, sort_columns: List[str] = None, sort_order: str = 'asc'):
+    def ingest_data(self, table_name: str, name_as: str = None, size: int = 1000000, sort_columns: list[str] = None, sort_order: str = 'asc'):
         """Ingest data from a table into DuckDB.
         
         Args:
@@ -106,7 +106,7 @@ class ExternalDataLoader(ABC):
         pass
 
     @abstractmethod
-    def view_query_sample(self, query: str) -> List[Dict[str, Any]]:
+    def view_query_sample(self, query: str) -> list[dict[str, Any]]:
         pass
 
     @abstractmethod

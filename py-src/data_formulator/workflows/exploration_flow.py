@@ -1,11 +1,9 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
 
-import json
 import logging
-from this import d
 import pandas as pd
-from typing import Dict, List, Any, Optional, Tuple, Generator
+from typing import Any, Generator
 
 from data_formulator.agents.agent_exploration import ExplorationAgent
 from data_formulator.agents.agent_py_data_rec import PythonDataRecAgent
@@ -13,14 +11,13 @@ from data_formulator.agents.agent_sql_data_rec import SQLDataRecAgent
 from data_formulator.agents.client_utils import Client
 from data_formulator.db_manager import db_manager
 from data_formulator.workflows.create_vl_plots import assemble_vegailte_chart, spec_to_base64, detect_field_type
-from data_formulator.agents.agent_utils import extract_json_objects
 
 logger = logging.getLogger(__name__)
 
 def create_chart_spec_from_data(
-    transformed_data: Dict[str, Any], 
+    transformed_data: dict[str, Any], 
     chart_type: str, 
-    chart_encodings: Dict[str, str]
+    chart_encodings: dict[str, str]
 ) -> str:
     """
     Create a chart from transformed data using Vega-Lite.
@@ -59,17 +56,17 @@ def create_chart_spec_from_data(
         return None
 
 def run_exploration_flow_streaming(
-    model_config: Dict[str, str],
-    input_tables: List[Dict[str, Any]],
-    initial_plan: List[str],
+    model_config: dict[str, str],
+    input_tables: list[dict[str, Any]],
+    initial_plan: list[str],
     language: str = "python",
-    session_id: Optional[str] = None,
+    session_id: str | None = None,
     exec_python_in_subprocess: bool = False,
     max_iterations: int = 5,
     max_repair_attempts: int = 1,
     agent_exploration_rules: str = "",
     agent_coding_rules: str = ""
-) -> Generator[Dict[str, Any], None, None]:
+) -> Generator[dict[str, Any], None, None]:
     """
     Run the complete exploration flow from high-level question to final insights as a streaming generator.
     
