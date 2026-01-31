@@ -11,7 +11,7 @@
 <p align="center">
   <a href="https://data-formulator.ai"><img src="https://img.shields.io/badge/🚀_Try_Online_Demo-data--formulator.ai-F59E0B?style=for-the-badge" alt="Try Online Demo"></a>
   &nbsp;
-  <a href="#get-started"><img src="https://img.shields.io/badge/💻_Install_Locally-pip_install-3776AB?style=for-the-badge" alt="Install Locally"></a>
+  <a href="#get-started"><img src="https://img.shields.io/badge/💻_Install_Locally-uvx_|_pip-3776AB?style=for-the-badge" alt="Install Locally"></a>
 </p>
 
 <p align="center">
@@ -32,6 +32,9 @@ https://github.com/user-attachments/assets/8ca57b68-4d7a-42cb-bcce-43f8b1681ce2 
 
 
 ## News 🔥🔥🔥
+[01-31-2025] **uv support** — Faster installation with uv
+-  🚀 **Install with uv**: Data Formulator now supports installation via [uv](https://docs.astral.sh/uv/), the ultra-fast Python package manager. Get started in seconds with `uvx data_formulator` or `uv pip install data_formulator`.
+
 [01-25-2025] **Data Formulator 0.6** — Real-time insights from live data
 -  ⚡ **Connect to live data**: Connect to URLs and databases with automatic refresh intervals. Visualizations update automatically as your data changes to provide you live insights. [Demo: track international space station position speed live](https://github.com/microsoft/data-formulator/releases/tag/0.6)
 -  🎨 **UI Updates**: Unified UI for data loading; direct drag-and-drop fields from the data table to update visualization designs.
@@ -127,9 +130,30 @@ Data Formulator enables analysts to iteratively explore and visualize data. Star
 
 Play with Data Formulator with one of the following options:
 
-- **Option 1: Install via Python PIP**
+- **Option 1: Install via uv (recommended)**
   
-  Use Python PIP for an easy setup experience, running locally (recommend: install it in a virtual environment).
+  [uv](https://docs.astral.sh/uv/) is an extremely fast Python package manager. If you have uv installed, you can run Data Formulator directly without any setup:
+  
+  ```bash
+  # Run data formulator directly (no install needed)
+  uvx data_formulator
+  ```
+
+  Or install it in a project/virtual environment:
+  
+  ```bash
+  # Install data_formulator
+  uv pip install data_formulator
+
+  # Run data formulator
+  python -m data_formulator
+  ```
+
+  Data Formulator will be automatically opened in the browser at [http://localhost:5000](http://localhost:5000).
+
+- **Option 2: Install via pip**
+  
+  Use pip for installation (recommend: install it in a virtual environment).
   
   ```bash
   # install data_formulator
@@ -143,13 +167,13 @@ Play with Data Formulator with one of the following options:
 
   *you can specify the port number (e.g., 8080) by `python -m data_formulator --port 8080` if the default port is occupied.*
 
-- **Option 2: Codespaces (5 minutes)**
+- **Option 3: Codespaces (5 minutes)**
   
   You can also run Data Formulator in Codespaces; we have everything pre-configured. For more details, see [CODESPACES.md](CODESPACES.md).
   
   [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/microsoft/data-formulator?quickstart=1)
 
-- **Option 3: Working in the developer mode**
+- **Option 4: Working in the developer mode**
   
   You can build Data Formulator locally if you prefer full control over your development environment and develop your own version on top. For detailed instructions, refer to [DEVELOPMENT.md](DEVELOPMENT.md).
 
