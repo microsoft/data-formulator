@@ -145,9 +145,10 @@ When deploying Data Formulator to production, please be aware of the following s
 
 1. **Local DuckDB Files**: When database functionality is enabled (default), Data Formulator stores DuckDB database files locally on the server. These files contain user data and are stored in the system's temporary directory or a configured `LOCAL_DB_DIR`.
 
-2. **Session Management**: 
-   - When database is **enabled**: Session IDs are stored in Flask sessions (cookies) and linked to local DuckDB files
-   - When database is **disabled**: No persistent storage is used, and no cookies are set. Session IDs are generated per request for API consistency
+2. **Identity Management**: 
+   - Each user's data is isolated by a namespaced identity key (e.g., `user:alice@example.com` or `browser:550e8400-...`)
+   - Anonymous users get a browser-based UUID stored in localStorage
+   - Authenticated users get their verified user ID from the auth provider
 
 3. **Data Persistence**: User data processed through Data Formulator may be temporarily stored in these local DuckDB files, which could be a security risk in multi-tenant environments.
 
@@ -170,6 +171,91 @@ For production deployment, consider:
 # For stateless deployment (recommended for public hosting)
 python -m data_formulator.app --disable-database
 ```
+
+## Authentication Architecture
+
+Data Formulator supports a **hybrid identity system** that supports both anonymous and authenticated users.
+
+### Identity Flow Overview
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                         Frontend Request                             │
+├─────────────────────────────────────────────────────────────────────┤
+│  Headers:                                                            │
+│    X-Identity-Id: "browser:550e8400-..." (namespace sent by client) │
+│    Authorization: Bearer <jwt>  (if custom auth implemented)         │
+│    (Azure also adds X-MS-CLIENT-PRINCIPAL-ID automatically)          │
+└─────────────────────────────────────────────────────────────────────┘
+                                │
+                                ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                    Backend Identity Resolution                       │
+│                       (auth.py: get_identity_id)                    │
+├─────────────────────────────────────────────────────────────────────┤
+│  Priority 1: Azure X-MS-CLIENT-PRINCIPAL-ID → "user:<azure_id>"     │
+│  Priority 2: JWT Bearer token (if implemented) → "user:<jwt_sub>"    │
+│  Priority 3: X-Identity-Id header → ALWAYS "browser:<id>"           │
+│              (client-provided namespace is IGNORED for security)     │
+└─────────────────────────────────────────────────────────────────────┘
+                                │
+                                ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                      Storage Isolation                               │
+├─────────────────────────────────────────────────────────────────────┤
+│  "user:alice@example.com"  → alice's DuckDB file (ONLY via auth)     │
+│  "browser:550e8400-..."    → anonymous user's DuckDB file            │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### Security Model
+
+**Critical Security Rule:** The backend NEVER trusts the namespace prefix from the client-provided `X-Identity-Id` header. Even if a client sends `X-Identity-Id: "user:alice@..."`, the backend strips the prefix and forces `browser:alice@...`. Only verified authentication (Azure headers or JWT) can result in a `user:` prefixed identity.
+
+The key security principle is **namespaced isolation with forced prefixing**:
+
+| Scenario | X-Identity-Id Sent | Backend Resolution | Storage Key |
+|----------|-------------------|-------------------|-------------|
+| Anonymous user | `browser:550e8400-...` | Strips prefix, forces `browser:` | `browser:550e8400-...` |
+| Azure logged-in user | `browser:550e8400-...` | Uses Azure header (priority 1) | `user:alice@...` |
+| Attacker spoofing | `user:alice@...` (forged) | No valid auth, strips & forces `browser:` | `browser:alice@...` |
+
+**Why this is secure:** An attacker sending `X-Identity-Id: user:alice@...` gets `browser:alice@...` as their storage key, which is completely separate from the real `user:alice@...` that only authenticated Alice can access.
+
+### Implementing Custom Authentication
+
+To add JWT-based authentication:
+
+1. **Backend** (`tables_routes.py`): Uncomment and configure the JWT verification code in `get_identity_id()`
+2. **Frontend** (`utils.tsx`): Implement `getAuthToken()` to retrieve the JWT from your auth context
+3. **Add JWT secret** to Flask config: `current_app.config['JWT_SECRET']`
+
+### Azure App Service Authentication
+
+When deployed to Azure with EasyAuth enabled:
+- Azure automatically adds `X-MS-CLIENT-PRINCIPAL-ID` header to authenticated requests
+- The backend reads this header first (highest priority)
+- No frontend changes needed - Azure handles the auth flow
+
+### Frontend Identity Management
+
+The frontend (`src/app/identity.ts`) manages identity as follows:
+
+```typescript
+// Identity is always initialized with browser ID
+identity: { type: 'browser', id: getBrowserId() }
+
+// If user logs in (e.g., via Azure), it's updated to:
+identity: { type: 'user', id: userInfo.userId }
+
+// All API requests send namespaced identity:
+// X-Identity-Id: "browser:550e8400-..." or "user:alice@..."
+```
+
+This ensures:
+1. **Anonymous users**: Work immediately with localStorage-based browser ID
+2. **Logged-in users**: Get their verified user ID from the auth provider
+3. **Cross-tab consistency**: Browser ID is shared via localStorage across all tabs
 
 ## Usage
 See the [Usage section on the README.md page](README.md#usage).

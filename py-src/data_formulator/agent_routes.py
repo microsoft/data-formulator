@@ -12,7 +12,7 @@ mimetypes.add_type('application/javascript', '.js')
 mimetypes.add_type('application/javascript', '.mjs')
 
 import flask
-from flask import request, session, jsonify, Blueprint, current_app, Response, stream_with_context
+from flask import request, jsonify, Blueprint, current_app, Response, stream_with_context
 import logging
 
 import json
@@ -28,6 +28,7 @@ from data_formulator.agents.agent_py_data_rec import PythonDataRecAgent
 from data_formulator.agents.agent_sql_data_rec import SQLDataRecAgent
 
 from data_formulator.agents.agent_sort_data import SortDataAgent
+from data_formulator.auth import get_identity_id
 from data_formulator.agents.agent_data_load import DataLoadAgent
 from data_formulator.agents.agent_data_clean import DataCleanAgent
 from data_formulator.agents.agent_data_clean_stream import DataCleanAgentStream
@@ -180,10 +181,8 @@ def process_data_on_load_request():
 
         logger.info(f" model: {content['model']}")
 
-        try:
-            conn = db_manager.get_connection(session['session_id'])
-        except Exception as e:
-            conn = None
+        identity_id = get_identity_id()
+        conn = db_manager.get_connection(identity_id)
 
         agent = DataLoadAgent(client=client, conn=conn)
         
@@ -395,7 +394,8 @@ def derive_data():
         if chart_encodings == {}:
             mode = "recommendation"
 
-        conn = db_manager.get_connection(session['session_id']) if language == "sql" else None
+        identity_id = get_identity_id()
+        conn = db_manager.get_connection(identity_id) if language == "sql" else None
 
         if mode == "recommendation":
             # now it's in recommendation mode
@@ -465,7 +465,8 @@ def explore_data_streaming():
                 "api_version": content['model'].get('api_version', '')
             }
 
-            session_id = session.get('session_id') if language == "sql" else None
+            # Get identity for SQL mode database connections
+            identity_id = get_identity_id() if language == "sql" else None
             exec_python_in_subprocess = current_app.config['CLI_ARGS']['exec_python_in_subprocess']
 
             try:
@@ -474,7 +475,7 @@ def explore_data_streaming():
                     input_tables=input_tables,
                     initial_plan=initial_plan,
                     language=language,
-                    session_id=session_id,
+                    session_id=identity_id,
                     exec_python_in_subprocess=exec_python_in_subprocess,
                     max_iterations=max_iterations,
                     max_repair_attempts=max_repair_attempts,
@@ -563,7 +564,8 @@ def refine_data():
         logger.info(chart_encodings)
         logger.info(new_instruction)
 
-        conn = db_manager.get_connection(session['session_id']) if language == "sql" else None
+        identity_id = get_identity_id()
+        conn = db_manager.get_connection(identity_id) if language == "sql" else None
 
         # always resort to the data transform agent       
         agent = SQLDataTransformationAgent(client=client, conn=conn, agent_coding_rules=agent_coding_rules) if language == "sql" else PythonDataTransformationAgent(client=client, exec_python_in_subprocess=current_app.config['CLI_ARGS']['exec_python_in_subprocess'], agent_coding_rules=agent_coding_rules)
@@ -626,7 +628,8 @@ def get_recommendation_questions():
 
             language = content.get("language", "python")
             if language == "sql":
-                db_conn = db_manager.get_connection(session['session_id'])
+                identity_id = get_identity_id()
+                db_conn = db_manager.get_connection(identity_id)
             else:
                 db_conn = None
 
@@ -677,7 +680,8 @@ def generate_report_stream():
 
             language = content.get("language", "python")
             if language == "sql":
-                db_conn = db_manager.get_connection(session['session_id'])
+                identity_id = get_identity_id()
+                db_conn = db_manager.get_connection(identity_id)
             else:
                 db_conn = None
 

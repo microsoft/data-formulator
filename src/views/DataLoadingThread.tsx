@@ -29,7 +29,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { AppDispatch } from '../app/store';
 import { DataFormulatorState, dfActions, dfSelectors, fetchFieldSemanticType } from '../app/dfSlice';
 import { DataCleanBlock, DataCleanTableOutput } from '../components/ComponentType';
-import { getUrls } from '../app/utils';
+import { getUrls, fetchWithIdentity } from '../app/utils';
 import { CustomReactTable } from './ReactTable';
 import { createTableFromText } from '../data/utils';
 
@@ -410,7 +410,7 @@ Revenue in More Personal Computing was $13.5 billion and increased 9%, with the 
             abortControllerRef.current = controller;
         }
 
-        fetch(getUrls().CLEAN_DATA_URL, {
+        fetchWithIdentity(getUrls().CLEAN_DATA_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload),

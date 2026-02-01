@@ -45,7 +45,7 @@ import _ from 'lodash';
 import '../scss/EncodingShelf.scss';
 import { createDictTable, DictTable } from "../components/ComponentType";
 
-import { getUrls, resolveChartFields, getTriggers, assembleVegaChart, resolveRecommendedChart } from '../app/utils';
+import { getUrls, resolveChartFields, getTriggers, assembleVegaChart, resolveRecommendedChart, fetchWithIdentity } from '../app/utils';
 import { EncodingBox } from './EncodingBox';
 
 import { ChannelGroups, CHART_TEMPLATES, getChartChannels, getChartTemplate } from '../components/ChartTemplates';
@@ -641,7 +641,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), config.formulateTimeoutSeconds * 1000);
     
-        fetch(engine, {...message, signal: controller.signal })
+        fetchWithIdentity(engine, {...message, signal: controller.signal })
             .then((response: Response) => response.json())
             .then((data) => {
                 

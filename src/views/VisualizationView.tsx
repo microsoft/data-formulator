@@ -41,8 +41,8 @@ import embed from 'vega-embed';
 
 import '../scss/VisualizationView.scss';
 import { useDispatch, useSelector } from 'react-redux';
-import { DataFormulatorState, dfActions, getSessionId } from '../app/dfSlice';
-import { assembleVegaChart, extractFieldsFromEncodingMap, getUrls, prepVisTable  } from '../app/utils';
+import { DataFormulatorState, dfActions } from '../app/dfSlice';
+import { assembleVegaChart, extractFieldsFromEncodingMap, getUrls, prepVisTable, fetchWithIdentity } from '../app/utils';
 import { Chart, EncodingItem, EncodingMap, FieldItem } from '../components/ComponentType';
 import { DictTable } from "../components/ComponentType";
 
@@ -482,7 +482,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
             currentRequestRef.current = requestId;
             
             let { aggregateFields, groupByFields } = extractFieldsFromEncodingMap(focusedChart.encodingMap, conceptShelfItems);
-            fetch(getUrls().SAMPLE_TABLE, {
+            fetchWithIdentity(getUrls().SAMPLE_TABLE, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',

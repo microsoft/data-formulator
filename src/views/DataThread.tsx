@@ -73,7 +73,7 @@ import { alpha } from '@mui/material/styles';
 
 import { dfSelectors } from '../app/dfSlice';
 import { RefreshDataDialog } from './RefreshDataDialog';
-import { getUrls } from '../app/utils';
+import { getUrls, fetchWithIdentity } from '../app/utils';
 import { AppDispatch } from '../app/store';
 import StopIcon from '@mui/icons-material/Stop';
 import { useDataRefresh } from '../app/useDataRefresh';
@@ -829,7 +829,7 @@ let SingleThreadGroupView: FC<{
 
                 if (parentTableData.length > 0) {
                     try {
-                        const response = await fetch(getUrls().REFRESH_DERIVED_DATA, {
+                        const response = await fetchWithIdentity(getUrls().REFRESH_DERIVED_DATA, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({

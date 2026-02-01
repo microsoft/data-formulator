@@ -8,9 +8,10 @@ import { DictTable } from "../components/ComponentType";
 import { Message } from '../views/MessageSnackbar';
 import { getChartTemplate, getChartChannels } from "../components/ChartTemplates"
 import { getDataTable } from '../views/VisualizationView';
-import { adaptChart, getTriggers, getUrls, computeContentHash } from './utils';
+import { adaptChart, getTriggers, getUrls, computeContentHash, fetchWithIdentity } from './utils';
 import { Type } from '../data/types';
 import { createTableFromFromObjectArray, inferTypeFromValueArray } from '../data/utils';
+import { Identity, IdentityType, getBrowserId } from './identity';
 
 enableMapSet();
 
@@ -75,7 +76,10 @@ export interface DataFormulatorState {
         exploration: string;
     };
 
-    sessionId: string | undefined;
+    // Identity management: user identity (if logged in) or browser identity (localStorage-based)
+    // Replaces the old sessionId approach - identity.id serves the same purpose
+    // Always initialized with browser identity, updated to user identity if logged in
+    identity: Identity;
     models: ModelConfig[];
     selectedModelId: string | undefined;
     testedModels: {id: string, status: 'ok' | 'error' | 'testing' | 'unknown', message: string}[];
@@ -130,7 +134,7 @@ const initialState: DataFormulatorState = {
         exploration: "",
     },
 
-    sessionId: undefined,
+    identity: { type: 'browser', id: getBrowserId() },
     models: [],
     selectedModelId: undefined,
     testedModels: [],
@@ -284,7 +288,7 @@ export const fetchFieldSemanticType = createAsyncThunk(
         const controller = new AbortController()
         const timeoutId = setTimeout(() => controller.abort(), 20000)
 
-        let response = await fetch(getUrls().SERVER_PROCESS_DATA_ON_LOAD, {...message, signal: controller.signal })
+        let response = await fetchWithIdentity(getUrls().SERVER_PROCESS_DATA_ON_LOAD, {...message, signal: controller.signal })
 
         return response.json();
     }
@@ -318,7 +322,7 @@ export const fetchCodeExpl = createAsyncThunk(
         const controller = new AbortController()
         const timeoutId = setTimeout(() => controller.abort(), 20000)
 
-        let response = await fetch(getUrls().CODE_EXPL_URL, {...message, signal: controller.signal })
+        let response = await fetchWithIdentity(getUrls().CODE_EXPL_URL, {...message, signal: controller.signal })
 
         return response.json();
     }
@@ -340,30 +344,15 @@ export const fetchAvailableModels = createAsyncThunk(
         const controller = new AbortController()
         const timeoutId = setTimeout(() => controller.abort(), 20000)
 
-        let response = await fetch(getUrls().CHECK_AVAILABLE_MODELS, {...message, signal: controller.signal })
+        let response = await fetchWithIdentity(getUrls().CHECK_AVAILABLE_MODELS, {...message, signal: controller.signal })
 
         return response.json();
     }
 );
 
-export const getSessionId = createAsyncThunk(
-    "dataFormulatorSlice/getSessionId",
-    async (_, { getState }) => {
-        let state = getState() as DataFormulatorState;
-        let sessionId = state.sessionId;
-
-        const response = await fetch(`${getUrls().GET_SESSION_ID}`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                session_id: sessionId,
-            }),
-        });
-        return response.json();
-    }
-);
+// No server round-trip needed - identity is determined client-side:
+// - User ID from auth provider (if logged in)
+// - Browser ID from localStorage (shared across all tabs)
 
 export const dataFormulatorSlice = createSlice({
     name: 'dataFormulatorSlice',
@@ -908,8 +897,8 @@ export const dataFormulatorSlice = createSlice({
                 state.chartSynthesisInProgress = state.chartSynthesisInProgress.filter(s => s != action.payload.chartId);
             }
         },
-        setSessionId: (state, action: PayloadAction<string>) => {
-            state.sessionId = action.payload;
+        setIdentity: (state, action: PayloadAction<Identity>) => {
+            state.identity = action.payload;
         },
         updateDataLoaderConnectParams: (state, action: PayloadAction<{dataLoaderType: string, params: Record<string, string>}>) => {
             let dataLoaderType = action.payload.dataLoaderType;
@@ -1042,10 +1031,6 @@ export const dataFormulatorSlice = createSlice({
             }
             console.log("fetched codeExpl");
             console.log(action.payload);
-        })
-        .addCase(getSessionId.fulfilled, (state, action) => {
-            console.log("got sessionId ", action.payload.session_id);
-            state.sessionId = action.payload.session_id;
         })
     },
 })

@@ -28,7 +28,7 @@ import CasinoIcon from '@mui/icons-material/Casino';
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
 import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
 import UnfoldMoreIcon from '@mui/icons-material/UnfoldMore';
-import { getUrls } from '../app/utils';
+import { getUrls, fetchWithIdentity } from '../app/utils';
 import { useDrag } from 'react-dnd';
 import { useSelector } from 'react-redux';
 import { DataFormulatorState } from '../app/dfSlice';
@@ -298,7 +298,7 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({
         }
         
         // Use the SAMPLE_TABLE endpoint with appropriate ordering
-        fetch(getUrls().SAMPLE_TABLE, {
+        fetchWithIdentity(getUrls().SAMPLE_TABLE, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',

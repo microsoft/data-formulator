@@ -12,7 +12,6 @@ import * as d3 from 'd3';
 
 export function getUrls() {
     return {
-        GET_SESSION_ID: `/api/get-session-id`,
         APP_CONFIG: `/api/app-config`,
         AUTH_INFO_PREFIX: `/api/.auth/`,
 
@@ -65,118 +64,77 @@ export function getUrls() {
 }
 
 /**
- * List of API endpoints that require a session ID
- * These endpoints will automatically fetch session ID if missing
- */
-const SESSION_REQUIRED_ENDPOINTS = [
-    '/api/tables/upload-db-file',
-    '/api/tables/download-db-file',
-    '/api/tables/reset-db-file',
-    '/api/tables/list-tables',
-    '/api/tables/get-table',
-    '/api/tables/create-table',
-    '/api/tables/delete-table',
-    '/api/tables/analyze',
-    '/api/tables/sample-table',
-    '/api/tables/data-loader/list-tables',
-    '/api/tables/data-loader/ingest-data',
-    '/api/tables/data-loader/view-query-sample',
-    '/api/tables/data-loader/ingest-data-from-query',
-    '/api/tables/data-loader/refresh-table',
-    '/api/tables/data-loader/get-table-metadata',
-    '/api/tables/data-loader/list-table-metadata',
-];
-
-/**
- * Enhanced fetch wrapper that automatically handles session ID at the app level
- * If a request fails with "No session ID found" or similar errors,
- * it will automatically fetch the session ID and retry the request
+ * Get the current namespaced identity from the Redux store, or fall back to browser ID.
+ * Returns identity in "type:id" format (e.g., "user:alice@example.com" or "browser:550e8400-...")
  * 
- * This function can be used as a drop-in replacement for fetch() in components
- * that have access to Redux dispatch
- * 
- * @param url - The URL to fetch
- * @param options - Fetch options (same as native fetch)
- * @param dispatch - Redux dispatch function (optional, will try to get from store if not provided)
- * @returns Promise<Response>
+ * This namespaced format ensures the backend can distinguish between authenticated users
+ * and anonymous browser sessions, preventing identity spoofing attacks.
  */
-export async function fetchWithSession(
-    url: string | URL,
-    options: RequestInit = {},
-    dispatch?: any
-): Promise<Response> {
-    const urlString = typeof url === 'string' ? url : url.toString();
-    
-    // Check if this endpoint requires session ID
-    const requiresSession = SESSION_REQUIRED_ENDPOINTS.some(endpoint => 
-        urlString.includes(endpoint)
-    );
-    
-    // Make the initial request
-    let response = await fetch(url, options);
-    
-    // If the response indicates a session ID issue, try to fetch it and retry
-    if (requiresSession && !response.ok) {
-        try {
-            const errorData = await response.clone().json().catch(() => null);
-            const errorMessage = errorData?.message || errorData?.error || '';
-            
-            // Check if error is related to missing session ID
-            if (errorMessage.toLowerCase().includes('session') && 
-                (errorMessage.toLowerCase().includes('not found') || 
-                 errorMessage.toLowerCase().includes('no session'))) {
-                
-                // Try to get dispatch from store if not provided
-                let dispatchFn = dispatch;
-                if (!dispatchFn) {
-                    try {
-                        const { store } = await import('./store');
-                        dispatchFn = store.dispatch;
-                    } catch (storeError) {
-                        console.error('Failed to access store:', storeError);
-                        // Return the original error response
-                        return response;
-                    }
-                }
-                
-                // Fetch session ID and retry
-                if (dispatchFn) {
-                    try {
-                        const { getSessionId } = await import('./dfSlice');
-                        // Dispatch the thunk and unwrap the result
-                        await dispatchFn(getSessionId()).unwrap();
-                        
-                        // Retry the original request
-                        response = await fetch(url, options);
-                    } catch (sessionError) {
-                        console.error('Failed to fetch session ID:', sessionError);
-                        // Return the original error response
-                    }
-                }
-            }
-        } catch (parseError) {
-            // If we can't parse the error, just return the original response
+async function getCurrentNamespacedIdentity(): Promise<string> {
+    try {
+        const { store } = await import('./store');
+        const state = store.getState();
+        if (state.identity?.id && state.identity?.type) {
+            return `${state.identity.type}:${state.identity.id}`;
         }
+    } catch (e) {
+        // Store not available
     }
-    
-    return response;
+    // Fall back to browser ID from localStorage
+    const { getBrowserId } = await import('./identity');
+    return `browser:${getBrowserId()}`;
 }
 
 /**
- * React hook that provides a fetch function with automatic session ID handling
- * Use this in components instead of native fetch for API calls that require session ID
- * 
- * @example
- * const fetchWithSession = useFetchWithSession();
- * const response = await fetchWithSession('/api/tables/list-tables');
+ * Get auth token if available (for future JWT auth support).
+ * Currently returns null - implement when adding custom auth.
  */
-export function useFetchWithSession() {
-    // Dynamic import to avoid circular dependency
-    const { useDispatch } = require('react-redux');
-    const dispatch = useDispatch();
+function getAuthToken(): string | null {
+    // Future: retrieve JWT from localStorage or auth context
+    // Example: return localStorage.getItem('auth_token');
+    return null;
+}
+
+/**
+ * Enhanced fetch wrapper that automatically adds identity and auth headers for API requests.
+ * 
+ * Security model:
+ * - X-Identity-Id: Namespaced identity ("type:id" format) for all requests
+ * - Authorization: Bearer token (when implementing custom JWT auth)
+ * 
+ * The backend prioritizes verified auth (Azure headers, JWT) over X-Identity-Id.
+ * For anonymous users, X-Identity-Id is used with "browser:" namespace prefix.
+ * 
+ * Use this instead of native fetch() for all /api/ calls.
+ * 
+ * @param url - The URL to fetch
+ * @param options - Fetch options (same as native fetch)
+ * @returns Promise<Response>
+ */
+export async function fetchWithIdentity(
+    url: string | URL,
+    options: RequestInit = {}
+): Promise<Response> {
+    const urlString = typeof url === 'string' ? url : url.toString();
     
-    return (url: string | URL, options: RequestInit = {}) => 
-        fetchWithSession(url, options, dispatch);
+    // Add identity and auth headers for all API requests
+    if (urlString.startsWith('/api/')) {
+        const headers = new Headers(options.headers);
+        
+        // Always send namespaced identity (fallback for backend)
+        const namespacedIdentity = await getCurrentNamespacedIdentity();
+        headers.set('X-Identity-Id', namespacedIdentity);
+        
+        // Send auth token if available (for custom JWT auth)
+        const authToken = getAuthToken();
+        if (authToken) {
+            headers.set('Authorization', `Bearer ${authToken}`);
+        }
+        
+        options = { ...options, headers };
+    }
+    
+    return fetch(url, options);
 }
 
 import * as vm from 'vm-browserify';

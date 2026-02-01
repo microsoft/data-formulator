@@ -39,7 +39,7 @@ import { DataThread } from './DataThread';
 import dfLogo from '../assets/df-logo.png';
 import exampleImageTable from "../assets/example-image-table.png";
 import { ModelSelectionButton } from './ModelSelectionDialog';
-import { getUrls } from '../app/utils';
+import { getUrls, fetchWithIdentity } from '../app/utils';
 import { UnifiedDataUploadDialog, UploadTabType, DataLoadMenu } from './UnifiedDataUploadDialog';
 import { ReportView } from './ReportView';
 import { ExampleSession, exampleSessions, ExampleSessionCard } from './ExampleSessions';
@@ -146,7 +146,7 @@ export const DataFormulatorFC = ({ }) => {
                     body: JSON.stringify({ model }),
                 };
                 try {
-                    const response = await fetch(getUrls().TEST_MODEL, {...message });
+                    const response = await fetchWithIdentity(getUrls().TEST_MODEL, {...message });
                     const data = await response.json();
                     const status = data["status"] || 'error';
                     return {model, status, message: data["message"] || ""};

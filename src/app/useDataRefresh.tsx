@@ -7,7 +7,7 @@ import { DataFormulatorState, dfActions } from './dfSlice';
 import { AppDispatch } from './store';
 import { DictTable } from '../components/ComponentType';
 import { createTableFromText } from '../data/utils';
-import { fetchWithSession, getUrls, computeContentHash } from './utils';
+import { fetchWithIdentity, getUrls, computeContentHash } from './utils';
 
 interface RefreshResult {
     tableId: string;
@@ -96,11 +96,11 @@ export function useDataRefresh() {
             // Tell backend to refresh the table - it has the connection info stored
             console.log(`[DataRefresh] Requesting backend to refresh "${tableName}" from external source...`);
             
-            const refreshResponse = await fetchWithSession(getUrls().DATA_LOADER_REFRESH_TABLE, {
+            const refreshResponse = await fetchWithIdentity(getUrls().DATA_LOADER_REFRESH_TABLE, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ table_name: tableName })
-            }, dispatch);
+            });
 
             const refreshData = await refreshResponse.json();
             
@@ -128,14 +128,14 @@ export function useDataRefresh() {
             }
 
             // Data changed - get a fresh sample for the frontend
-            const sampleResponse = await fetchWithSession(getUrls().SAMPLE_TABLE, {
+            const sampleResponse = await fetchWithIdentity(getUrls().SAMPLE_TABLE, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ 
                     table: tableName,
                     size: Math.min(table.rows.length, 10000)
                 })
-            }, dispatch);
+            });
 
             const sampleData = await sampleResponse.json();
             if (sampleData.status === 'success') {
@@ -425,14 +425,14 @@ export function useDerivedTableRefresh() {
         console.log(`[DerivedRefresh] Re-sampling SQL view "${tableName}" (DuckDB auto-updated)...`);
 
         try {
-            const response = await fetchWithSession(getUrls().SAMPLE_TABLE, {
+            const response = await fetchWithIdentity(getUrls().SAMPLE_TABLE, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ 
                     table: tableName,
                     size: Math.max(derivedTable.rows.length, 1000)
                 })
-            }, dispatch);
+            });
 
             const data = await response.json();
             if (data.status === 'success' && data.rows) {
@@ -512,14 +512,14 @@ export function useDerivedTableRefresh() {
             console.log(`[DerivedRefresh] Calling server to refresh "${derivedTable.id}" with ${inputTables.length} input tables, code length: ${code.length}`);
 
             // Call the server to re-run the derivation
-            const response = await fetchWithSession(getUrls().REFRESH_DERIVED_DATA, {
+            const response = await fetchWithIdentity(getUrls().REFRESH_DERIVED_DATA, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     input_tables: inputTables,
                     code: code
                 })
-            }, dispatch);
+            });
 
             const data = await response.json();
             

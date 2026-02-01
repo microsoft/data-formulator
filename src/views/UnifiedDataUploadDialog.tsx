@@ -39,7 +39,7 @@ import { DataSourceConfig, DictTable } from '../components/ComponentType';
 import { createTableFromFromObjectArray, createTableFromText, loadTextDataWrapper, loadBinaryDataWrapper } from '../data/utils';
 import { DataLoadingChat } from './DataLoadingChat';
 import { DatasetSelectionView, DatasetMetadata } from './TableSelectionView';
-import { getUrls } from '../app/utils';
+import { getUrls, fetchWithIdentity } from '../app/utils';
 import { DBManagerPane } from './DBTableManager';
 import { MultiTablePreview } from './MultiTablePreview';
 import { 
@@ -515,7 +515,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
     // Load sample datasets
     useEffect(() => {
         if (open && activeTab === 'explore') {
-            fetch(`${getUrls().EXAMPLE_DATASETS}`)
+            fetchWithIdentity(`${getUrls().EXAMPLE_DATASETS}`)
             .then((response) => response.json())
             .then((result) => {
                 let datasets: DatasetMetadata[] = result.map((info: any) => {
@@ -572,7 +572,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                 setDatasetPreviews(datasets);
             });
         } else if (open && activeTab === 'url') {
-            fetch(`${window.location.origin}/api/demo-stream/info`)
+            fetchWithIdentity(`${window.location.origin}/api/demo-stream/info`)
             .then(res => res.json())
             .then(data => {
                 const demoExamples = data.demo_examples

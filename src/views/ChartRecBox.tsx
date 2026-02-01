@@ -43,7 +43,7 @@ import _ from 'lodash';
 import '../scss/EncodingShelf.scss';
 import { createDictTable, DictTable } from "../components/ComponentType";
 
-import { getUrls, getTriggers, resolveRecommendedChart } from '../app/utils';
+import { getUrls, getTriggers, resolveRecommendedChart, fetchWithIdentity } from '../app/utils';
 
 import AddIcon from '@mui/icons-material/Add';
 import PrecisionManufacturing from '@mui/icons-material/PrecisionManufacturing';
@@ -568,7 +568,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), config.formulateTimeoutSeconds * 1000);
 
-        fetch(engine, {
+        fetchWithIdentity(engine, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -956,7 +956,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
             }
         };
 
-        fetch(getUrls().EXPLORE_DATA_STREAMING, {
+        fetchWithIdentity(getUrls().EXPLORE_DATA_STREAMING, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', },
             body: messageBody,

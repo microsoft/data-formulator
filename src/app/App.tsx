@@ -10,8 +10,8 @@ import {
     dfActions,
     dfSelectors,
     fetchAvailableModels,
-    getSessionId,
 } from './dfSlice'
+import { getBrowserId } from './identity';
 
 import { red, purple, blue, brown, yellow, orange, } from '@mui/material/colors';
 
@@ -68,7 +68,7 @@ import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 import DownloadIcon from '@mui/icons-material/Download';
 import { handleDBDownload } from '../views/DBTableManager';
-import { getUrls } from './utils';
+import { getUrls, fetchWithIdentity } from './utils';
 import { UnifiedDataUploadDialog } from '../views/UnifiedDataUploadDialog';
 import ChatIcon from '@mui/icons-material/Chat';
 import { AgentRulesDialog } from '../views/AgentRulesDialog';
@@ -159,7 +159,7 @@ export const ImportStateButton: React.FC<{}> = ({ }) => {
 }
 
 export const ExportStateButton: React.FC<{}> = ({ }) => {
-    const sessionId = useSelector((state: DataFormulatorState) => state.sessionId);
+    const identity = useSelector((state: DataFormulatorState) => state.identity);
     const tables = useSelector((state: DataFormulatorState) => state.tables);
     const fullStateJson = useSelector((state: DataFormulatorState) => {
         // Fields to exclude from serialization
@@ -168,7 +168,7 @@ export const ExportStateButton: React.FC<{}> = ({ }) => {
             'selectedModelId',
             'testedModels',
             'dataLoaderConnectParams',
-            'sessionId',
+            'identity',
             'agentRules',
             'serverConfig',
         ]);
@@ -197,7 +197,7 @@ export const ExportStateButton: React.FC<{}> = ({ }) => {
                     a.click();
                 }
                 let firstTableName = tables.length > 0 ? tables[0].id: '';
-                download(fullStateJson, `df_state_${firstTableName}_${sessionId?.slice(0, 4)}.json`, 'text/plain');
+                download(fullStateJson, `df_state_${firstTableName}_${identity.id.slice(0, 4)}.json`, 'text/plain');
             }}
             startIcon={<DownloadIcon />}
         >
@@ -241,7 +241,7 @@ const TableMenu: React.FC = () => {
 const SessionMenu: React.FC = () => {
     const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
     const open = Boolean(anchorEl);
-    const sessionId = useSelector((state: DataFormulatorState) => state.sessionId);
+    const identity = useSelector((state: DataFormulatorState) => state.identity);
     const tables = useSelector((state: DataFormulatorState) => state.tables);
     const theme = useTheme();
     
@@ -274,12 +274,12 @@ const SessionMenu: React.FC = () => {
                     <ImportStateButton />
                 </MenuItem>
                 <Divider><Typography variant="caption" sx={{ fontSize: 12, color: 'text.secondary' }}>database file</Typography></Divider>
-                {sessionId && tables.some(t => t.virtual) && 
+                {tables.some(t => t.virtual) && 
                     <Typography fontSize="inherit" sx={{ color: theme.palette.warning.main, width: '160px', display: 'flex', alignItems: 'center', gap: 1, fontSize: 9 }}>
                         This session contains data stored in the database, export and reload the database to resume the session later.
                     </Typography>}
-                <MenuItem disabled={!sessionId || !tables.some(t => t.virtual)}  onClick={() => {
-                    handleDBDownload(sessionId ?? '');
+                <MenuItem disabled={!tables.some(t => t.virtual)}  onClick={() => {
+                    handleDBDownload(identity.id);
                 }}>
                     <Button startIcon={<DownloadIcon />}
                         sx={{ fontSize: 14, textTransform: 'none', display: 'flex', alignItems: 'center'}}>
@@ -287,7 +287,7 @@ const SessionMenu: React.FC = () => {
                     </Button>
                 </MenuItem>
                 <MenuItem onClick={() => {}}>
-                    <Button disabled={!sessionId} startIcon={<UploadIcon />} 
+                    <Button startIcon={<UploadIcon />} 
                         sx={{ fontSize: 14, textTransform: 'none', display: 'flex', alignItems: 'center'}}
                         component="label">
                         import database
@@ -297,7 +297,7 @@ const SessionMenu: React.FC = () => {
                             const formData = new FormData();
                             formData.append('file', file);
                             try {
-                                const response = await fetch(getUrls().UPLOAD_DB_FILE, { method: 'POST', body: formData });
+                                const response = await fetchWithIdentity(getUrls().UPLOAD_DB_FILE, { method: 'POST', body: formData });
                                 const data = await response.json();
                                 if (data.status === 'success') {
                                     dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "DB Manager", type: "success", value: "Database imported successfully" }));
@@ -539,16 +539,18 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
     const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
 
     useEffect(() => {
-        fetch(getUrls().APP_CONFIG)
+        fetchWithIdentity(getUrls().APP_CONFIG)
             .then(response => response.json())
             .then(data => {
                 dispatch(dfActions.setServerConfig(data));
             });
     }, []);
 
-    // if the user has logged in
+    // User authentication state
     const [userInfo, setUserInfo] = useState<{ name: string, userId: string } | undefined>(undefined);
+    const [authChecked, setAuthChecked] = useState(false);
 
+    // Check for authenticated user first
     useEffect(() => {
         fetch('/.auth/me')
             .then(function (response) { return response.json(); })
@@ -562,15 +564,30 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
                     setUserInfo(userInfo);
                 }
             }).catch(err => {
-                //user is not logged in, do not show logout button
-                //console.error(err)
+                // User is not logged in, will use browser identity
+            }).finally(() => {
+                setAuthChecked(true);
             });
     }, []);
+
+    // Initialize identity after auth check completes
+    // No server round-trip needed - identity is determined client-side:
+    // Priority: user identity (if logged in) > browser identity (localStorage-based, shared across tabs)
+    useEffect(() => {
+        if (authChecked) {
+            if (userInfo?.userId) {
+                // User is logged in - use their user ID
+                dispatch(dfActions.setIdentity({ type: 'user', id: userInfo.userId }));
+            } else {
+                // Not logged in - use browser ID (from localStorage, shared across tabs)
+                dispatch(dfActions.setIdentity({ type: 'browser', id: getBrowserId() }));
+            }
+        }
+    }, [authChecked, userInfo?.userId]);
 
     useEffect(() => {
         document.title = toolName;
         dispatch(fetchAvailableModels());
-        dispatch(getSessionId());
     }, []);
 
     let theme = createTheme({

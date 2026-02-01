@@ -52,12 +52,12 @@ type TableImportConfig =
     | { mode: 'full' }
     | { mode: 'subset'; rowLimit: number; sortColumns: string[]; sortOrder: 'asc' | 'desc' };
 
-import { getUrls, fetchWithSession } from '../app/utils';
+import { getUrls, fetchWithIdentity } from '../app/utils';
 import { CustomReactTable } from './ReactTable';
 import { DataSourceConfig, DictTable } from '../components/ComponentType';
 import { Type } from '../data/types';
 import { useDispatch, useSelector } from 'react-redux';
-import { dfActions, dfSelectors, getSessionId } from '../app/dfSlice';
+import { dfActions, dfSelectors } from '../app/dfSlice';
 import { alpha } from '@mui/material';
 import { DataFormulatorState } from '../app/dfSlice';
 import { fetchFieldSemanticType } from '../app/dfSlice';
@@ -111,13 +111,11 @@ const ViewIcon: React.FC<{ sx?: SxProps }> = ({ sx }) => (
     </Box>
 );
 
-export const handleDBDownload = async (sessionId: string, dispatch?: any) => {
+export const handleDBDownload = async (identityId: string) => {
     try {
-        // Use fetchWithSession which automatically handles session ID if missing
-        const response = await fetchWithSession(
+        const response = await fetchWithIdentity(
             getUrls().DOWNLOAD_DB_FILE,
-            { method: 'GET' },
-            dispatch
+            { method: 'GET' }
         );
         
         // Check if the response is ok
@@ -133,7 +131,7 @@ export const handleDBDownload = async (sessionId: string, dispatch?: any) => {
         // Create a temporary link element
         const link = document.createElement('a');
         link.href = url;
-        link.download = `df_${sessionId?.slice(0, 4) || 'db'}.db`;
+        link.download = `df_${identityId?.slice(0, 4) || 'db'}.db`;
         document.body.appendChild(link);    
         
         // Trigger download
@@ -188,7 +186,7 @@ export const DBManagerPane: React.FC<{
     const theme = useTheme();
 
     const dispatch = useDispatch<AppDispatch>();
-    const sessionId = useSelector((state: DataFormulatorState) => state.sessionId);
+    const identity = useSelector((state: DataFormulatorState) => state.identity);
     const tables = useSelector((state: DataFormulatorState) => state.tables);
     const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
     const dataLoaderConnectParams = useSelector((state: DataFormulatorState) => state.dataLoaderConnectParams);
@@ -255,7 +253,7 @@ export const DBManagerPane: React.FC<{
     const fetchTables = async (): Promise<DBTable[] | undefined> => {
         if (serverConfig.DISABLE_DATABASE) return undefined;
         try {
-            const response = await fetchWithSession(getUrls().LIST_TABLES, { method: 'GET' }, dispatch);
+            const response = await fetchWithIdentity(getUrls().LIST_TABLES, { method: 'GET' });
             const data = await response.json();
             if (data.status === 'success') {
                 setDbTables(data.tables);
@@ -268,7 +266,7 @@ export const DBManagerPane: React.FC<{
     };
 
     const fetchDataLoaders = async () => {
-        fetch(getUrls().DATA_LOADER_LIST_DATA_LOADERS, {
+        fetchWithIdentity(getUrls().DATA_LOADER_LIST_DATA_LOADERS, {
             method: 'GET',
             headers: {
                 'Content-Type': 'application/json',
@@ -297,10 +295,10 @@ export const DBManagerPane: React.FC<{
     
         try {
             setIsUploading(true);
-            const response = await fetchWithSession(getUrls().UPLOAD_DB_FILE, {
+            const response = await fetchWithIdentity(getUrls().UPLOAD_DB_FILE, {
                 method: 'POST',
                 body: formData
-            }, dispatch);
+            });
             const data = await response.json();
             if (data.status === 'success') {
                 fetchTables();  // Refresh table list
@@ -325,10 +323,10 @@ export const DBManagerPane: React.FC<{
     
         try {
             setIsUploading(true);
-            const response = await fetchWithSession(getUrls().CREATE_TABLE, {
+            const response = await fetchWithIdentity(getUrls().CREATE_TABLE, {
                 method: 'POST',
                 body: formData
-            }, dispatch);
+            });
             const data = await response.json();
             if (data.status === 'success') {
                 if (data.is_renamed) {
@@ -351,9 +349,9 @@ export const DBManagerPane: React.FC<{
 
     const handleDBReset = async () => {
         try {
-            const response = await fetchWithSession(getUrls().RESET_DB_FILE, {
+            const response = await fetchWithIdentity(getUrls().RESET_DB_FILE, {
                 method: 'POST',
-            }, dispatch);
+            });
             const data = await response.json();
             if (data.status === 'success') {
                 fetchTables();
@@ -373,13 +371,13 @@ export const DBManagerPane: React.FC<{
                 let deletedViews = [];
                 for (let view of unreferencedViews) {
                     try {
-                        const response = await fetchWithSession(getUrls().DELETE_TABLE, {
+                        const response = await fetchWithIdentity(getUrls().DELETE_TABLE, {
                             method: 'POST',
                             headers: {
                                 'Content-Type': 'application/json',
                             },
                             body: JSON.stringify({ table_name: view.name })
-                        }, dispatch);
+                        });
                         const data = await response.json();
                         if (data.status === 'success') {
                             deletedViews.push(view.name);
@@ -406,13 +404,13 @@ export const DBManagerPane: React.FC<{
         }
 
         try {
-            const response = await fetchWithSession(getUrls().DELETE_TABLE, {
+            const response = await fetchWithIdentity(getUrls().DELETE_TABLE, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({ table_name: tableName })
-            }, dispatch);
+            });
             const data = await response.json();
             if (data.status === 'success') {
                 fetchTables();
@@ -643,8 +641,7 @@ export const DBManagerPane: React.FC<{
                 <MenuItem 
                     onClick={() => {
                         if (!isUploading && dbTables.length > 0) {
-                            // fetchWithSession will automatically handle session ID if missing
-                            handleDBDownload(sessionId ?? '', dispatch)
+                            handleDBDownload(identity.id)
                                 .catch(error => {
                                     console.error('Failed to download database:', error);
                                     setSystemMessage('Failed to download database file', "error");
@@ -1516,7 +1513,7 @@ export const DataLoaderForm: React.FC<{
                             }
                         }
                         
-                        return fetchWithSession(getUrls().DATA_LOADER_INGEST_DATA, {
+                        return fetchWithIdentity(getUrls().DATA_LOADER_INGEST_DATA, {
                             method: 'POST',
                             headers: {
                                 'Content-Type': 'application/json',
@@ -1527,7 +1524,7 @@ export const DataLoaderForm: React.FC<{
                                 table_name: tableName,
                                 import_options: Object.keys(importOptions).length > 0 ? importOptions : undefined
                             })
-                        }, dispatch).then((response: Response) => response.json());
+                        }).then((response: Response) => response.json());
                     });
                     
                     Promise.all(importPromises)
@@ -1637,7 +1634,7 @@ export const DataLoaderForm: React.FC<{
                                     sx={{textTransform: "none"}}
                                     onClick={() => {
                                         setIsConnecting(true);
-                                        fetchWithSession(getUrls().DATA_LOADER_LIST_TABLES, {
+                                        fetchWithIdentity(getUrls().DATA_LOADER_LIST_TABLES, {
                                             method: 'POST',
                                             headers: {
                                                 'Content-Type': 'application/json',
@@ -1647,7 +1644,7 @@ export const DataLoaderForm: React.FC<{
                                                 data_loader_params: params,
                                                 table_filter: tableFilter.trim() || null
                                             })
-                                        }, dispatch).then((response: Response) => response.json())
+                                        }).then((response: Response) => response.json())
                                     .then((data: any) => {
                                         if (data.status === "success") {
                                             console.log(data.tables);
@@ -1763,7 +1760,7 @@ export const DataLoaderForm: React.FC<{
                                 sx={{textTransform: "none", minWidth: 120}}
                                 onClick={() => {
                                     setIsConnecting(true);
-                                    fetchWithSession(getUrls().DATA_LOADER_LIST_TABLES, {
+                                    fetchWithIdentity(getUrls().DATA_LOADER_LIST_TABLES, {
                                         method: 'POST',
                                         headers: {
                                             'Content-Type': 'application/json',
@@ -1773,7 +1770,7 @@ export const DataLoaderForm: React.FC<{
                                             data_loader_params: params,
                                             table_filter: tableFilter.trim() || null
                                         })
-                                    }, dispatch).then((response: Response) => response.json())
+                                    }).then((response: Response) => response.json())
                                 .then((data: any) => {
                                     if (data.status === "success") {
                                         console.log(data.tables);

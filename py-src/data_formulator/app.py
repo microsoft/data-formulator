@@ -9,7 +9,7 @@ mimetypes.add_type('application/javascript', '.js')
 mimetypes.add_type('application/javascript', '.mjs')
 
 import flask
-from flask import Flask, request, send_from_directory, session
+from flask import Flask, request, send_from_directory
 from flask import stream_with_context, Response
 
 import webbrowser
@@ -119,50 +119,10 @@ def page_not_found(e):
     return send_from_directory(app.static_folder, "index.html")
 
 
-@app.route('/api/get-session-id', methods=['GET', 'POST'])
-def get_session_id():
-    """Endpoint to get or confirm a session ID from the client"""
-    current_session_id = None
-    if request.is_json:
-        content = request.get_json()
-        current_session_id = content.get("session_id", None)
-    
-    database_disabled = app.config['CLI_ARGS']['disable_database']
-    
-    if database_disabled:
-        if current_session_id is None:
-            current_session_id = secrets.token_hex(16)
-            logger.info(f"Generated session ID for disabled database: {current_session_id}")
-        else:
-            logger.info(f"Using provided session ID for disabled database: {current_session_id}")
-        
-        return flask.jsonify({
-            "status": "ok",
-            "session_id": current_session_id
-        })
-    else:
-        if current_session_id is None:    
-            if 'session_id' not in session:
-                session['session_id'] = secrets.token_hex(16)
-                session.permanent = True
-                logger.info(f"Created new session: {session['session_id']}")
-        else:
-            session['session_id'] = current_session_id
-            session.permanent = True 
-        
-        return flask.jsonify({
-            "status": "ok",
-            "session_id": session['session_id']
-        })
-
 @app.route('/api/app-config', methods=['GET'])
 def get_app_config():
     """Provide frontend configuration settings from CLI arguments"""
     args = app.config['CLI_ARGS']
-    
-    session_id = None
-    if not args['disable_database']:
-        session_id = session.get('session_id', None)
     
     config = {
         "EXEC_PYTHON_IN_SUBPROCESS": args['exec_python_in_subprocess'],
@@ -170,7 +130,6 @@ def get_app_config():
         "DISABLE_DATABASE": args['disable_database'],
         "DISABLE_FILE_UPLOAD": args['disable_file_upload'],
         "PROJECT_FRONT_PAGE": args['project_front_page'],
-        "SESSION_ID": session_id
     }
     return flask.jsonify(config)
 

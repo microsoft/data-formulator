@@ -9,7 +9,7 @@ mimetypes.add_type('application/javascript', '.js')
 mimetypes.add_type('application/javascript', '.mjs')
 import json
 import traceback
-from flask import request, send_from_directory, session, jsonify, Blueprint
+from flask import request, send_from_directory, jsonify, Blueprint
 import pandas as pd
 import random
 import string
@@ -18,6 +18,7 @@ import uuid
 
 from data_formulator.db_manager import db_manager
 from data_formulator.data_loader import DATA_LOADERS
+from data_formulator.auth import get_identity_id
 
 import re
 
@@ -34,7 +35,7 @@ def list_tables():
     """List all tables in the current session"""
     try:
         result = []
-        with db_manager.connection(session['session_id']) as db:
+        with db_manager.connection(get_identity_id()) as db:
             table_metadata_list = db.execute("""
                 SELECT database_name, schema_name, table_name, schema_name==current_schema() as is_current_schema, 'table' as object_type 
                 FROM duckdb_tables() 
@@ -174,7 +175,7 @@ def sample_table():
         
         total_row_count = 0
         # Validate field names against table columns to prevent SQL injection
-        with db_manager.connection(session['session_id']) as db:
+        with db_manager.connection(get_identity_id()) as db:
             # Get valid column names
             columns = [col[0] for col in db.execute(f"DESCRIBE {table_id}").fetchall()]
 
@@ -235,7 +236,7 @@ def sample_table():
 def get_table_data():
     """Get data from a specific table"""
     try:
-        with db_manager.connection(session['session_id']) as db:
+        with db_manager.connection(get_identity_id()) as db:
 
             table_name = request.args.get('table_name')
             # Get pagination parameters
@@ -316,7 +317,7 @@ def create_table():
 
         sanitized_table_name = sanitize_table_name(table_name)
             
-        with db_manager.connection(session['session_id']) as db:
+        with db_manager.connection(get_identity_id()) as db:
             # Check if table exists and generate unique name if needed
             base_name = sanitized_table_name
             counter = 1
@@ -363,7 +364,7 @@ def drop_table():
         if not table_name:
             return jsonify({"status": "error", "message": "No table name provided"}), 400
             
-        with db_manager.connection(session['session_id']) as db:
+        with db_manager.connection(get_identity_id()) as db:
             # First check if it exists as a view
             view_exists = db.execute(f"SELECT view_name FROM duckdb_views() WHERE view_name = '{table_name}'").fetchone() is not None
             if view_exists:
@@ -405,18 +406,14 @@ def upload_db_file():
         if not file.filename.endswith('.db'):
             return jsonify({"status": "error", "message": "Invalid file format. Only .db files are supported"}), 400
 
-        # Get the session ID
-        if 'session_id' not in session:
-            return jsonify({"status": "error", "message": "No session ID found"}), 400
-        
-        session_id = session['session_id']
+        identity_id = get_identity_id()
         
         # Create temp directory if it doesn't exist
         temp_dir = os.path.join(tempfile.gettempdir())
         os.makedirs(temp_dir, exist_ok=True)
         
         # Save the file temporarily to verify it
-        temp_db_path = os.path.join(temp_dir, f"temp_{session_id}.db")
+        temp_db_path = os.path.join(temp_dir, f"temp_{identity_id}.db")
         file.save(temp_db_path)
         
         # Verify if it's a valid DuckDB file
@@ -429,11 +426,11 @@ def upload_db_file():
             conn.close()
             
             # If we get here, the file is valid - move it to final location
-            db_file_path = os.path.join(temp_dir, f"df_{session_id}.db")
+            db_file_path = os.path.join(temp_dir, f"df_{identity_id}.db")
             os.replace(temp_db_path, db_file_path)
             
             # Update the db_manager's file mapping
-            db_manager._db_files[session_id] = db_file_path
+            db_manager._db_files[identity_id] = db_file_path
             
         except Exception as db_error:
             # Clean up temp file
@@ -448,7 +445,7 @@ def upload_db_file():
         return jsonify({
             "status": "success",
             "message": "Database file uploaded successfully",
-            "session_id": session_id
+            "identity_id": identity_id
         })
         
     except Exception as e:
@@ -464,23 +461,16 @@ def upload_db_file():
 def download_db_file():
     """Download the db file for a session"""
     try:
-        # Check if session exists
-        if 'session_id' not in session:
-            return jsonify({
-                "status": "error",
-                "message": "No session ID found"
-            }), 400
-        
-        session_id = session['session_id']
+        identity_id = get_identity_id()
         
         # Get the database file path from db_manager
-        if session_id not in db_manager._db_files:
+        if identity_id not in db_manager._db_files:
             return jsonify({
                 "status": "error",
-                "message": "No database file found for this session"
+                "message": "No database file found for this identity"
             }), 404
             
-        db_file_path = db_manager._db_files[session_id]
+        db_file_path = db_manager._db_files[identity_id]
         
         # Check if file exists
         if not os.path.exists(db_file_path):
@@ -490,7 +480,7 @@ def download_db_file():
             }), 404
             
         # Generate a filename for download
-        download_name = f"data_formulator_{session_id}.db"
+        download_name = f"data_formulator_{identity_id}.db"
         
         # Return the file as an attachment
         return send_from_directory(
@@ -514,34 +504,28 @@ def download_db_file():
 def reset_db_file():
     """Reset the db file for a session"""
     try:
-        if 'session_id' not in session:
-            return jsonify({
-                "status": "error",
-                "message": "No session ID found"
-            }), 400
-            
-        session_id = session['session_id']
+        identity_id = get_identity_id()
 
-        logger.info(f"session_id: {session_id}")
+        logger.info(f"identity_id: {identity_id}")
         
         # First check if there's a reference in db_manager
-        if session_id in db_manager._db_files:
-            db_file_path = db_manager._db_files[session_id]
+        if identity_id in db_manager._db_files:
+            db_file_path = db_manager._db_files[identity_id]
             
             # Remove the file if it exists
             if db_file_path and os.path.exists(db_file_path):
                 os.remove(db_file_path)
             
             # Clear the reference
-            db_manager._db_files[session_id] = None
+            db_manager._db_files[identity_id] = None
             
         # Also check for any temporary files
-        temp_db_path = os.path.join(tempfile.gettempdir(), f"temp_{session_id}.db")
+        temp_db_path = os.path.join(tempfile.gettempdir(), f"temp_{identity_id}.db")
         if os.path.exists(temp_db_path):
             os.remove(temp_db_path)
             
         # Check for the main db file
-        main_db_path = os.path.join(tempfile.gettempdir(), f"df_{session_id}.db")
+        main_db_path = os.path.join(tempfile.gettempdir(), f"df_{identity_id}.db")
         if os.path.exists(main_db_path):
             os.remove(main_db_path)
 
@@ -569,7 +553,7 @@ def analyze_table():
         if not table_name:
             return jsonify({"status": "error", "message": "No table name provided"}), 400
         
-        with db_manager.connection(session['session_id']) as db:
+        with db_manager.connection(get_identity_id()) as db:
         
             # Get column information
             columns = db.execute(f"DESCRIBE {table_name}").fetchall()
@@ -686,7 +670,7 @@ def sanitize_db_error_message(error: Exception) -> tuple[str, int]:
 
         # Data loader errors
         r"Entity ID": (error_msg, 500),
-        r"session_id": ("session_id not found, please refresh the page", 500),
+        r"identity": ("Identity not found, please refresh the page", 500),
     }
     
     # Check if error matches any safe pattern
@@ -737,7 +721,7 @@ def data_loader_list_tables():
         if data_loader_type not in DATA_LOADERS:
             return jsonify({"status": "error", "message": f"Invalid data loader type. Must be one of: {', '.join(DATA_LOADERS.keys())}"}), 400
 
-        with db_manager.connection(session['session_id']) as duck_db_conn:
+        with db_manager.connection(get_identity_id()) as duck_db_conn:
             data_loader = DATA_LOADERS[data_loader_type](data_loader_params, duck_db_conn)
             
             # Pass table_filter to list_tables if the data loader supports it
@@ -931,7 +915,7 @@ def data_loader_ingest_data():
         if data_loader_type not in DATA_LOADERS:
             return jsonify({"status": "error", "message": f"Invalid data loader type. Must be one of: {', '.join(DATA_LOADERS.keys())}"}), 400
 
-        with db_manager.connection(session['session_id']) as duck_db_conn:
+        with db_manager.connection(get_identity_id()) as duck_db_conn:
             data_loader = DATA_LOADERS[data_loader_type](data_loader_params, duck_db_conn)
             data_loader.ingest_data(table_name, size=row_limit, sort_columns=sort_columns, sort_order=sort_order)
             
@@ -975,7 +959,7 @@ def data_loader_view_query_sample():
         if data_loader_type not in DATA_LOADERS:
             return jsonify({"status": "error", "message": f"Invalid data loader type. Must be one of: {', '.join(DATA_LOADERS.keys())}"}), 400
         
-        with db_manager.connection(session['session_id']) as duck_db_conn:
+        with db_manager.connection(get_identity_id()) as duck_db_conn:
             data_loader = DATA_LOADERS[data_loader_type](data_loader_params, duck_db_conn)
             sample = data_loader.view_query_sample(query)
 
@@ -1008,7 +992,7 @@ def data_loader_ingest_data_from_query():
         if data_loader_type not in DATA_LOADERS:
             return jsonify({"status": "error", "message": f"Invalid data loader type. Must be one of: {', '.join(DATA_LOADERS.keys())}"}), 400
 
-        with db_manager.connection(session['session_id']) as duck_db_conn:
+        with db_manager.connection(get_identity_id()) as duck_db_conn:
             data_loader = DATA_LOADERS[data_loader_type](data_loader_params, duck_db_conn)
             data_loader.ingest_data_from_query(query, name_as)
             
@@ -1052,7 +1036,7 @@ def data_loader_refresh_table():
         if not table_name:
             return jsonify({"status": "error", "message": "table_name is required"}), 400
 
-        with db_manager.connection(session['session_id']) as duck_db_conn:
+        with db_manager.connection(get_identity_id()) as duck_db_conn:
             # Get stored metadata
             metadata = get_table_metadata(duck_db_conn, table_name)
             
@@ -1131,7 +1115,7 @@ def data_loader_get_table_metadata():
         if not table_name:
             return jsonify({"status": "error", "message": "table_name is required"}), 400
 
-        with db_manager.connection(session['session_id']) as duck_db_conn:
+        with db_manager.connection(get_identity_id()) as duck_db_conn:
             metadata = get_table_metadata(duck_db_conn, table_name)
             
             if metadata:
@@ -1159,7 +1143,7 @@ def data_loader_get_table_metadata():
 def data_loader_list_table_metadata():
     """Get source metadata for all tables"""
     try:
-        with db_manager.connection(session['session_id']) as duck_db_conn:
+        with db_manager.connection(get_identity_id()) as duck_db_conn:
             metadata_list = get_all_table_metadata(duck_db_conn)
             
             return jsonify({
