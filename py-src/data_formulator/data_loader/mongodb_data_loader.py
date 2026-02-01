@@ -9,8 +9,6 @@ from bson import ObjectId
 from datetime import datetime
 
 from data_formulator.data_loader.external_data_loader import ExternalDataLoader, sanitize_table_name
-
-from data_formulator.security import validate_sql_query
 from typing import Any
 
 
@@ -275,52 +273,6 @@ MongoDB Connection Instructions:
 
         self._load_dataframe_to_duckdb(df, name_as, size)
         return
-
-    
-    def view_query_sample(self, query: str) -> list[dict[str, Any]]:
-
-        self._existed_collections_in_duckdb()
-        self._difference_collections()
-        self._preload_all_collections(self.collection.name if self.collection else "")
-
-        result, error_message = validate_sql_query(query)
-        if not result:
-            print(error_message)
-            raise ValueError(error_message)
-        
-        result_query = json.loads(self.duck_db_conn.execute(query).df().head(10).to_json(orient="records"))
-
-        self._drop_all_loaded_tables()
-
-        for collection_name, df in self.existed_collections.items():
-            self._load_dataframe_to_duckdb(df, collection_name)
-
-        return result_query
-    
-    def ingest_data_from_query(self, query: str, name_as: str) -> pd.DataFrame:
-        """
-        Create a new table from query results
-        """
-        result, error_message = validate_sql_query(query)
-        if not result:
-            raise ValueError(error_message)
-        
-        name_as = sanitize_table_name(name_as)
-
-        self._existed_collections_in_duckdb()
-        self._difference_collections()
-        self._preload_all_collections(self.collection.name if self.collection else "")
-        
-        query_result_df = self.duck_db_conn.execute(query).df()
-
-        self._drop_all_loaded_tables()
-
-        for collection_name, existing_df in self.existed_collections.items():
-            self._load_dataframe_to_duckdb(existing_df, collection_name)
-        
-        self._load_dataframe_to_duckdb(query_result_df, name_as)
-
-        return query_result_df
     
     @staticmethod
     def _quote_identifier(name: str) -> str:

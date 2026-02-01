@@ -6,7 +6,6 @@ import duckdb
 
 from data_formulator.data_loader.external_data_loader import ExternalDataLoader, sanitize_table_name
 from typing import Any
-from data_formulator.security import validate_sql_query
 
 try:
     import boto3
@@ -498,52 +497,6 @@ aws configure --profile myprofile
         query = f"SELECT * FROM {table_name} {order_by_clause} LIMIT {size}"
         log.info(f"Executing Athena query for table '{name_as}': {query}")
 
-        result_location = self._execute_query(query)
-
-        # Validate the result location is a proper S3 URL
-        _validate_s3_url(result_location)
-
-        # Load results from S3 into DuckDB
-        log.info(f"Loading query results from {result_location}")
-        self.duck_db_conn.execute(f"""
-            CREATE OR REPLACE TABLE main.{name_as} AS
-            SELECT * FROM read_csv_auto('{_escape_sql_string(result_location)}')
-        """)
-
-        log.info(f"Successfully ingested data into table '{name_as}'")
-
-    def view_query_sample(self, query: str) -> list[dict[str, Any]]:
-        """Execute query and return sample results."""
-        result, error_message = validate_sql_query(query)
-        if not result:
-            raise ValueError(error_message)
-
-        # Add LIMIT if not present to avoid large result sets
-        query_upper = query.upper()
-        if "LIMIT" not in query_upper:
-            query = f"{query.rstrip().rstrip(';')} LIMIT 10"
-
-        # Execute query on Athena
-        result_location = self._execute_query(query)
-
-        # Validate the result location is a proper S3 URL
-        _validate_s3_url(result_location)
-
-        # Load results from S3
-        df = self.duck_db_conn.execute(f"SELECT * FROM read_csv_auto('{_escape_sql_string(result_location)}')").df()
-
-        return json.loads(df.head(10).to_json(orient="records"))
-
-    def ingest_data_from_query(self, query: str, name_as: str):
-        """Execute Athena query and ingest results into DuckDB."""
-        result, error_message = validate_sql_query(query)
-        if not result:
-            raise ValueError(error_message)
-
-        name_as = sanitize_table_name(name_as)
-
-        # Execute query on Athena
-        log.info(f"Executing Athena query for table '{name_as}'")
         result_location = self._execute_query(query)
 
         # Validate the result location is a proper S3 URL

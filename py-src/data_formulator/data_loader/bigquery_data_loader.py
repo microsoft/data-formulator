@@ -6,7 +6,6 @@ import pandas as pd
 import duckdb
 
 from data_formulator.data_loader.external_data_loader import ExternalDataLoader, sanitize_table_name
-from data_formulator.security import validate_sql_query
 
 try:
     from google.cloud import bigquery
@@ -295,38 +294,3 @@ Supported Operations:
             df = self._convert_bigquery_dtypes(df)
 
             self.ingest_df_to_duckdb(df, name_as)
-
-    def view_query_sample(self, query: str) -> list[dict[str, Any]]:
-        """Execute query and return sample results as a list of dictionaries"""
-        result, error_message = validate_sql_query(query)
-        if not result:
-            raise ValueError(error_message)
-        
-        # Add LIMIT if not present
-        if "LIMIT" not in query.upper():
-            query += " LIMIT 10"
-        
-        df = self.client.query(query).to_dataframe()
-        return json.loads(df.to_json(orient="records"))
-
-    def ingest_data_from_query(self, query: str, name_as: str) -> pd.DataFrame:
-        """Execute custom query and ingest results into DuckDB"""
-        name_as = sanitize_table_name(name_as)
-        
-        result, error_message = validate_sql_query(query)
-        if not result:
-            raise ValueError(error_message)
-        
-        # Execute query and get DataFrame
-        df = self.client.query(query).to_dataframe()
-
-        # Drop duplicate columns
-        df = df.loc[:, ~df.columns.duplicated()]
-
-        # Convert BigQuery-specific dtypes
-        df = self._convert_bigquery_dtypes(df)
-
-        # Use base class method to ingest DataFrame
-        self.ingest_df_to_duckdb(df, name_as)
-        
-        return df

@@ -253,13 +253,3 @@ Required Parameters:
                 self.duck_db_conn.execute(f"DROP VIEW df_temp_{random_suffix}")
             
             total_rows_ingested += len(chunk_df)
-
-    def view_query_sample(self, query: str) -> list[dict[str, Any]]:
-        df = self.query(query).head(10)
-        return json.loads(df.to_json(orient="records", date_format='iso'))
-
-    def ingest_data_from_query(self, query: str, name_as: str) -> pd.DataFrame:
-        # Sanitize the table name for SQL compatibility
-        name_as = sanitize_table_name(name_as)
-        df = self.query(query)
-        self.ingest_df_to_duckdb(df, name_as)

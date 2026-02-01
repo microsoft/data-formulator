@@ -5,8 +5,6 @@ import pandas as pd
 import duckdb
 
 from data_formulator.data_loader.external_data_loader import ExternalDataLoader, sanitize_table_name
-
-from data_formulator.security import validate_sql_query
 from typing import Any
 
 try:
@@ -263,28 +261,6 @@ MySQL Connection Instructions:
         # Ingest into DuckDB using the base class method
         self.ingest_df_to_duckdb(df, name_as)
         logger.info(f"Successfully ingested {len(df)} rows from {table_name} into DuckDB table {name_as}")
-
-    def view_query_sample(self, query: str) -> list[dict[str, Any]]:
-        result, error_message = validate_sql_query(query)
-        if not result:
-            raise ValueError(error_message)
-        
-        # Execute query via native MySQL connection
-        df = self._execute_query(query)
-        return json.loads(df.head(10).to_json(orient="records", date_format='iso'))
-
-    def ingest_data_from_query(self, query: str, name_as: str) -> pd.DataFrame:
-        """Execute custom query and ingest results into DuckDB."""
-        result, error_message = validate_sql_query(query)
-        if not result:
-            raise ValueError(error_message)
-        
-        # Execute query via native MySQL connection
-        df = self._execute_query(query)
-        
-        # Ingest into DuckDB using the base class method
-        self.ingest_df_to_duckdb(df, sanitize_table_name(name_as))
-        return df
 
     def close(self):
         """Explicitly close the MySQL connection."""

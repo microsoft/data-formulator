@@ -4,9 +4,7 @@ import pandas as pd
 import duckdb
 
 from data_formulator.data_loader.external_data_loader import ExternalDataLoader, sanitize_table_name
-
 from typing import Any
-from data_formulator.security import validate_sql_query
 
 class PostgreSQLDataLoader(ExternalDataLoader):
 
@@ -151,21 +149,3 @@ class PostgreSQLDataLoader(ExternalDataLoader):
             {order_by_clause}
             LIMIT {size}
         """)
-
-    def view_query_sample(self, query: str) -> list[dict[str, Any]]:
-        result, error_message = validate_sql_query(query)
-        if not result:
-            raise ValueError(error_message)
-        
-        return json.loads(self.duck_db_conn.execute(query).df().head(10).to_json(orient="records"))
-
-    def ingest_data_from_query(self, query: str, name_as: str) -> pd.DataFrame:
-        # Execute the query and get results as a DataFrame
-        result, error_message = validate_sql_query(query)
-        if not result:
-            raise ValueError(error_message)
-        
-        df = self.duck_db_conn.execute(query).df()
-        # Use the base class's method to ingest the DataFrame
-        self.ingest_df_to_duckdb(df, sanitize_table_name(name_as))
-        return df

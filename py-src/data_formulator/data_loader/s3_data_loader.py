@@ -5,7 +5,6 @@ import os
 
 from data_formulator.data_loader.external_data_loader import ExternalDataLoader, sanitize_table_name
 from typing import Any
-from data_formulator.security import validate_sql_query
 
 try:
     import boto3
@@ -218,20 +217,3 @@ class S3DataLoader(ExternalDataLoader):
             """)
         else:
             raise ValueError(f"Unsupported file type: {table_name}")
-
-    def view_query_sample(self, query: str) -> list[dict[str, Any]]:
-        result, error_message = validate_sql_query(query)
-        if not result:
-            raise ValueError(error_message)
-        
-        return json.loads(self.duck_db_conn.execute(query).df().head(10).to_json(orient="records"))
-
-    def ingest_data_from_query(self, query: str, name_as: str):
-        # Execute the query and get results as a DataFrame
-        result, error_message = validate_sql_query(query)
-        if not result:
-            raise ValueError(error_message)
-        
-        df = self.duck_db_conn.execute(query).df()
-        # Use the base class's method to ingest the DataFrame
-        self.ingest_df_to_duckdb(df, sanitize_table_name(name_as))

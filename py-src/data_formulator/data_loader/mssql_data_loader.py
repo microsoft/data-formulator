@@ -12,7 +12,6 @@ except ImportError:
     PYODBC_AVAILABLE = False
 
 from data_formulator.data_loader.external_data_loader import ExternalDataLoader, sanitize_table_name
-from data_formulator.security import validate_sql_query
 
 log = logging.getLogger(__name__)
 
@@ -419,47 +418,4 @@ SQL Server Connection Instructions:
             log.info(f"Successfully ingested {len(df)} rows from {schema}.{table} to {name_as}")
         except Exception as e:
             log.error(f"Failed to ingest data from {table_name}: {e}")
-            raise
-
-    def view_query_sample(self, query: str) -> list[dict[str, Any]]:
-        """Execute a custom query and return sample results"""
-        try:
-            # Add TOP 10 if not already present for SELECT queries
-            modified_query = query.strip()
-            if (
-                modified_query.upper().startswith("SELECT")
-                and not modified_query.upper().startswith("SELECT TOP")
-                and "TOP " not in modified_query.upper()[:50]
-            ):  # Check first 50 chars
-                modified_query = modified_query.replace("SELECT", "SELECT TOP 10", 1)
-
-            result, error_message = validate_sql_query(modified_query)
-            if not result:
-                raise ValueError(error_message)
-            
-            df = self._execute_query(modified_query)
-
-            # Handle NaN values for JSON serialization
-            df_clean = df.fillna(value=None)
-            return json.loads(
-                df_clean.head(10).to_json(orient="records", date_format="iso", default_handler=str)
-            )
-        except Exception as e:
-            log.error(f"Failed to execute query sample: {e}")
-            raise
-
-    def ingest_data_from_query(self, query: str, name_as: str) -> pd.DataFrame:
-        """Execute a custom query and ingest results into DuckDB"""
-        try:
-            result, error_message = validate_sql_query(query)
-            if not result:
-                raise ValueError(error_message)
-            
-            df = self._execute_query(query)
-            # Use the base class's method to ingest the DataFrame
-            self.ingest_df_to_duckdb(df, sanitize_table_name(name_as))
-            log.info(f"Successfully ingested {len(df)} rows from custom query to {name_as}")
-            return df
-        except Exception as e:
-            log.error(f"Failed to execute and ingest custom query: {e}")
             raise

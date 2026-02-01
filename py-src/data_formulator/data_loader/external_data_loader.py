@@ -104,12 +104,3 @@ class ExternalDataLoader(ABC):
             sort_order: Sort direction, 'asc' for ascending or 'desc' for descending
         """
         pass
-
-    @abstractmethod
-    def view_query_sample(self, query: str) -> list[dict[str, Any]]:
-        pass
-
-    @abstractmethod
-    def ingest_data_from_query(self, query: str, name_as: str):
-        pass
-
