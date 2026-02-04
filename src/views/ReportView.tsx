@@ -718,8 +718,7 @@ export const ReportView: FC = () => {
                 model: model,
                 input_tables: inputTables,
                 charts: validCharts,
-                style: style,
-                language: tables.some(t => t.virtual) ? "sql" : "python"
+                style: style
             };
 
             const response = await fetchWithIdentity(getUrls().GENERATE_REPORT_STREAM, {

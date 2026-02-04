@@ -305,7 +305,6 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                     rows: t.rows,
                     attached_metadata: t.attachedMetadata
                 })),
-                language: currentTable.virtual ? "sql" : "python",
                 exploration_thread: explorationThread,
                 agent_exploration_rules: agentRules.exploration
             });
@@ -501,8 +500,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
 
             extra_prompt: instruction,
             model: activeModel,
-            agent_coding_rules: agentRules.coding,
-            language: actionTables.some(t => t.virtual) ? "sql" : "python"
+            agent_coding_rules: agentRules.coding
         });
         let engine = getUrls().DERIVE_DATA;
         
@@ -533,8 +531,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                     extra_prompt: instruction,
                     model: activeModel,
                     additional_messages: additionalMessages,
-                    agent_coding_rules: agentRules.coding,
-                    language: actionTables.some(t => t.virtual) ? "sql" : "python"
+                    agent_coding_rules: agentRules.coding
                 });
                 engine = getUrls().DERIVE_DATA;
             } else {
@@ -555,8 +552,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                     latest_data_sample: currentTable.rows.slice(0, 10),
                     new_instruction: instruction,
                     model: activeModel,
-                    agent_coding_rules: agentRules.coding,
-                    language: actionTables.some(t => t.virtual) ? "sql" : "python"
+                    agent_coding_rules: agentRules.coding
                 })
                 engine = getUrls().REFINE_DATA;
             } 
@@ -755,8 +751,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
             model: activeModel,
             max_iterations: 3,
             agent_exploration_rules: agentRules.exploration,
-            agent_coding_rules: agentRules.coding,
-            language: actionTables.some(t => t.virtual) ? "sql" : "python",
+            agent_coding_rules: agentRules.coding
         });
         
         const controller = new AbortController();

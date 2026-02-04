@@ -36,6 +36,7 @@ Example usage:
 # Workspace management
 from data_formulator.datalake.workspace import (
     Workspace,
+    WorkspaceWithTempData,
     get_workspace,
     get_default_workspace_root,
     DATALAKE_ROOT_ENV,
@@ -75,6 +76,7 @@ from data_formulator.datalake.parquet_manager import (
 __all__ = [
     # Workspace
     "Workspace",
+    "WorkspaceWithTempData",
     "get_workspace",
     "get_default_workspace_root",
     "DATALAKE_ROOT_ENV",

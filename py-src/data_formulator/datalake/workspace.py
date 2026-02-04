@@ -14,7 +14,7 @@ import shutil
 import tempfile
 import logging
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from data_formulator.datalake.metadata import (
     WorkspaceMetadata,
@@ -199,14 +199,51 @@ class Workspace:
 def get_workspace(identity_id: str, root_dir: Optional[str | Path] = None) -> Workspace:
     """
     Get or create a workspace for a user.
-    
+
     This is a convenience function that creates a Workspace instance.
-    
+
     Args:
         identity_id: Unique identifier for the user
         root_dir: Optional root directory for workspaces
-        
+
     Returns:
         Workspace instance
     """
     return Workspace(identity_id, root_dir)
+
+
+class WorkspaceWithTempData:
+    """
+    Context manager that temporarily adds temp data (list of {name, rows}) to a workspace
+    as parquet tables, yields the same workspace, and removes those tables on exit.
+
+    Use when the client sends in-memory data (e.g. language == "python"): wrap the
+    workspace so temp tables are visible for the block and then cleaned up.
+    """
+
+    def __init__(self, workspace: Workspace, temp_data: Optional[list[dict[str, Any]]] = None):
+        self._workspace = workspace
+        self._temp_data = temp_data if temp_data else None
+        self._added_table_names: list[str] = []
+
+    def __enter__(self) -> Workspace:
+        if not self._temp_data:
+            return self._workspace
+        import pandas as pd
+        from data_formulator.datalake.parquet_manager import write_parquet, get_unique_table_name
+
+        for item in self._temp_data:
+            base_name = item.get("name", "table")
+            name = get_unique_table_name(self._workspace, base_name)
+            rows = item.get("rows", [])
+            df = pd.DataFrame(rows) if rows else pd.DataFrame()
+            meta = write_parquet(self._workspace, df, name)
+            self._added_table_names.append(meta.name)
+            logger.debug(f"Added temp table {meta.name} to workspace for duration of context")
+        return self._workspace
+
+    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+        for name in self._added_table_names:
+            self._workspace.delete_table(name)
+            logger.debug(f"Removed temp table {name} from workspace")
+        self._added_table_names.clear()

@@ -115,25 +115,18 @@ data: {"questions": [...], "goal": ..., "difficulty": ...}
 
 class InteractiveExploreAgent(object):
 
-    def __init__(self, client, agent_exploration_rules="", db_conn=None, workspace=None):
+    def __init__(self, client, workspace, agent_exploration_rules=""):
         self.client = client
         self.agent_exploration_rules = agent_exploration_rules
-        self.db_conn = db_conn
         self.workspace = workspace  # when set (SQL/datalake mode), use parquet tables for summary
 
     def get_data_summary(self, input_tables, table_name_prefix="Table"):
-        if self.workspace:
-            # Datalake mode: create temporary DuckDB conn with parquet views, then get summary
-            conn = create_duckdb_conn_with_parquet_views(self.workspace, input_tables)
-            try:
-                return generate_sql_data_summary(conn, input_tables, table_name_prefix=table_name_prefix)
-            finally:
-                conn.close()
-        if self.db_conn:
-            data_summary = generate_sql_data_summary(self.db_conn, input_tables, table_name_prefix=table_name_prefix)
-        else:
-            data_summary = generate_data_summary(input_tables, include_data_samples=False, table_name_prefix=table_name_prefix)
-        return data_summary
+
+        # Datalake mode: create temporary DuckDB conn with parquet views, then get summary
+        with create_duckdb_conn_with_parquet_views(self.workspace, input_tables) as conn:
+            data_summary = generate_sql_data_summary(conn, input_tables, table_name_prefix=table_name_prefix)
+            return data_summary
+    
 
     def run(self, input_tables, start_question=None, exploration_thread=None, 
                   current_data_sample=None, current_chart=None, mode='interactive'):

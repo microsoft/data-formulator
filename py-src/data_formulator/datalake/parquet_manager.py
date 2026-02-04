@@ -218,6 +218,30 @@ def sanitize_table_name(name: str) -> str:
     return result.lower()
 
 
+def get_unique_table_name(workspace: Workspace, base_name: str) -> str:
+    """
+    Return a table name that does not clash with existing tables in the workspace.
+
+    If the sanitized base_name is free, it is returned. Otherwise tries
+    base_1, base_2, ... until an unused name is found.
+
+    Args:
+        workspace: The workspace to check for existing table names
+        base_name: Desired base name (will be sanitized)
+
+    Returns:
+        A table name that is not yet in the workspace
+    """
+    safe_base = sanitize_table_name(base_name)
+    existing = set(workspace.list_tables())
+    candidate = safe_base
+    suffix = 0
+    while candidate in existing:
+        suffix += 1
+        candidate = f"{safe_base}_{suffix}"
+    return candidate
+
+
 def compute_dataframe_hash(df: pd.DataFrame, sample_rows: int = 100) -> str:
     """
     Compute a hash representing the DataFrame content.
@@ -489,6 +513,8 @@ def get_parquet_path(workspace: Workspace, table_name: str) -> Path:
         ValueError: If the table is not a parquet file
     """
     table_meta = workspace.get_table_metadata(table_name)
+    if table_meta is None:
+        table_meta = workspace.get_table_metadata(sanitize_table_name(table_name))
     if table_meta is None:
         raise FileNotFoundError(f"Table not found: {table_name}")
     if table_meta.file_type != "parquet":

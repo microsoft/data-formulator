@@ -33,7 +33,7 @@ from data_formulator.agents.agent_sql_data_rec import SQLDataRecAgent
 
 from data_formulator.agents.agent_sort_data import SortDataAgent
 from data_formulator.auth import get_identity_id
-from data_formulator.datalake.workspace import get_workspace
+from data_formulator.datalake.workspace import get_workspace, WorkspaceWithTempData
 from data_formulator.agents.agent_data_load import DataLoadAgent
 from data_formulator.agents.agent_data_clean import DataCleanAgent
 from data_formulator.agents.agent_data_clean_stream import DataCleanAgentStream
@@ -46,6 +46,21 @@ from data_formulator.workflows.exploration_flow import run_exploration_flow_stre
 
 # Get logger for this module (logging config done in app.py)
 logger = logging.getLogger(__name__)
+
+
+def get_temp_tables(workspace, input_tables: list[dict]) -> list[dict]:
+    """
+    Determine which input tables are temp tables (not persisted in the workspace datalake).
+    
+    Args:
+        workspace: The user's workspace instance
+        input_tables: List of table dicts with 'name' and 'rows' keys
+        
+    Returns:
+        List of table dicts that don't exist in the workspace (temp tables)
+    """
+    existing_tables = set(workspace.list_tables())
+    return [table for table in input_tables if table.get('name') not in existing_tables]
 
 agent_bp = Blueprint('agent', __name__, url_prefix='/api/agent')
 
@@ -386,7 +401,6 @@ def derive_data():
         chart_encodings = content.get("chart_encodings", {})
 
         instruction = content["extra_prompt"]
-        language = content.get("language", "python") # whether to use sql or python, default to python
         
         max_repair_attempts = content["max_repair_attempts"] if "max_repair_attempts" in content else 1
         agent_coding_rules = content.get("agent_coding_rules", "")
@@ -411,30 +425,31 @@ def derive_data():
             mode = "recommendation"
 
         identity_id = get_identity_id()
-        workspace = get_workspace(identity_id) if language == "sql" else None
+        workspace = get_workspace(identity_id)
+        temp_data = get_temp_tables(workspace, input_tables)
 
-        if mode == "recommendation":
-            # now it's in recommendation mode
-            agent = SQLDataRecAgent(client=client, workspace=workspace, agent_coding_rules=agent_coding_rules) if language == "sql" else PythonDataRecAgent(client=client, exec_python_in_subprocess=current_app.config['CLI_ARGS']['exec_python_in_subprocess'], agent_coding_rules=agent_coding_rules)
-            results = agent.run(input_tables, instruction, n=1, prev_messages=prev_messages)
-        else:
-            agent = SQLDataTransformationAgent(client=client, workspace=workspace, agent_coding_rules=agent_coding_rules) if language == "sql" else PythonDataTransformationAgent(client=client, exec_python_in_subprocess=current_app.config['CLI_ARGS']['exec_python_in_subprocess'], agent_coding_rules=agent_coding_rules)
-            results = agent.run(input_tables, instruction, chart_type, chart_encodings, prev_messages)
-
-        repair_attempts = 0
-        while results[0]['status'] == 'error' and repair_attempts < max_repair_attempts: # try up to n times
-            error_message = results[0]['content']
-            new_instruction = f"We run into the following problem executing the code, please fix it:\n\n{error_message}\n\nPlease think step by step, reflect why the error happens and fix the code so that no more errors would occur."
-
-            prev_dialog = results[0]['dialog']
-
-            if mode == "transform":
-                results = agent.followup(input_tables, prev_dialog, [], chart_type, chart_encodings, new_instruction, n=1)
+        with WorkspaceWithTempData(workspace, temp_data) as workspace:
             if mode == "recommendation":
-                results = agent.followup(input_tables, prev_dialog, [], new_instruction, n=1)
+                agent = SQLDataRecAgent(client=client, workspace=workspace, agent_coding_rules=agent_coding_rules)
+                results = agent.run(input_tables, instruction, n=1, prev_messages=prev_messages)
+            else:
+                agent = SQLDataTransformationAgent(client=client, workspace=workspace, agent_coding_rules=agent_coding_rules)
+                results = agent.run(input_tables, instruction, chart_type, chart_encodings, prev_messages)
 
-            repair_attempts += 1
-        
+            repair_attempts = 0
+            while results[0]['status'] == 'error' and repair_attempts < max_repair_attempts:
+                error_message = results[0]['content']
+                new_instruction = f"We run into the following problem executing the code, please fix it:\n\n{error_message}\n\nPlease think step by step, reflect why the error happens and fix the code so that no more errors would occur."
+
+                prev_dialog = results[0]['dialog']
+
+                if mode == "transform":
+                    results = agent.followup(input_tables, prev_dialog, [], chart_type, chart_encodings, new_instruction, n=1)
+                if mode == "recommendation":
+                    results = agent.followup(input_tables, prev_dialog, [], new_instruction, n=1)
+
+                repair_attempts += 1
+
         response = flask.jsonify({ "token": token, "status": "ok", "results": results })
     else:
         response = flask.jsonify({ "token": "", "status": "error", "results": [] })
@@ -455,7 +470,6 @@ def explore_data_streaming():
             # each table is a dict with {"name": xxx, "rows": [...]}
             input_tables = content["input_tables"]
             initial_plan = content["initial_plan"]  # The exploration question
-            language = content.get("language", "python")  # whether to use sql or python, default to python
             max_iterations = content.get("max_iterations", 3)  # Number of exploration iterations
             max_repair_attempts = content.get("max_repair_attempts", 1)
             agent_exploration_rules = content.get("agent_exploration_rules", "")
@@ -478,8 +492,8 @@ def explore_data_streaming():
                 "api_version": content['model'].get('api_version', '')
             }
 
-            # Get identity for SQL mode database connections
-            identity_id = get_identity_id() if language == "sql" else None
+            # Get identity for workspace (used for both SQL and Python with WorkspaceWithTempData)
+            identity_id = get_identity_id()
             exec_python_in_subprocess = current_app.config['CLI_ARGS']['exec_python_in_subprocess']
 
             try:
@@ -487,7 +501,6 @@ def explore_data_streaming():
                     model_config=model_config,
                     input_tables=input_tables,
                     initial_plan=initial_plan,
-                    language=language,
                     session_id=identity_id,
                     exec_python_in_subprocess=exec_python_in_subprocess,
                     max_iterations=max_iterations,
@@ -564,8 +577,6 @@ def refine_data():
         latest_data_sample = content["latest_data_sample"]
         max_repair_attempts = content.get("max_repair_attempts", 1)
         agent_coding_rules = content.get("agent_coding_rules", "")
-        
-        language = content.get("language", "python") # whether to use sql or python, default to python
 
         logger.info("== input tables ===>")
         for table in input_tables:
@@ -578,20 +589,21 @@ def refine_data():
         logger.info(new_instruction)
 
         identity_id = get_identity_id()
-        workspace = get_workspace(identity_id) if language == "sql" else None
+        workspace = get_workspace(identity_id)
+        temp_data = get_temp_tables(workspace, input_tables)
 
-        # always resort to the data transform agent       
-        agent = SQLDataTransformationAgent(client=client, workspace=workspace, agent_coding_rules=agent_coding_rules) if language == "sql" else PythonDataTransformationAgent(client=client, exec_python_in_subprocess=current_app.config['CLI_ARGS']['exec_python_in_subprocess'], agent_coding_rules=agent_coding_rules)
-        results = agent.followup(input_tables, dialog, latest_data_sample, chart_type, chart_encodings, new_instruction, n=1)
+        with WorkspaceWithTempData(workspace, temp_data) as workspace:
+            agent = SQLDataTransformationAgent(client=client, workspace=workspace, agent_coding_rules=agent_coding_rules)
+            results = agent.followup(input_tables, dialog, latest_data_sample, chart_type, chart_encodings, new_instruction, n=1)
 
-        repair_attempts = 0
-        while results[0]['status'] == 'error' and repair_attempts < max_repair_attempts: # only try once
-            error_message = results[0]['content']
-            new_instruction = f"We run into the following problem executing the code, please fix it:\n\n{error_message}\n\nPlease think step by step, reflect why the error happens and fix the code so that no more errors would occur."
-            prev_dialog = results[0]['dialog']
+            repair_attempts = 0
+            while results[0]['status'] == 'error' and repair_attempts < max_repair_attempts:
+                error_message = results[0]['content']
+                new_instruction = f"We run into the following problem executing the code, please fix it:\n\n{error_message}\n\nPlease think step by step, reflect why the error happens and fix the code so that no more errors would occur."
+                prev_dialog = results[0]['dialog']
 
-            results = agent.followup(input_tables, prev_dialog, [], chart_type, chart_encodings, new_instruction, n=1)
-            repair_attempts += 1
+                results = agent.followup(input_tables, prev_dialog, [], chart_type, chart_encodings, new_instruction, n=1)
+                repair_attempts += 1
 
         response = flask.jsonify({ "token": token, "status": "ok", "results": results})
     else:
@@ -636,35 +648,29 @@ def get_recommendation_questions():
 
             client = get_client(content['model'])
 
-            language = content.get("language", "python")
-            if language == "sql":
-                identity_id = get_identity_id()
-                workspace = get_workspace(identity_id)
-            else:
-                workspace = None
+            input_tables = content.get("input_tables", [])
+            identity_id = get_identity_id()
+            workspace = get_workspace(identity_id)
+            temp_data = get_temp_tables(workspace, input_tables) if input_tables else None
 
             agent_exploration_rules = content.get("agent_exploration_rules", "")
-            agent = InteractiveExploreAgent(client=client, agent_exploration_rules=agent_exploration_rules, workspace=workspace)
-
-            # Get input tables from the request
-            input_tables = content.get("input_tables", [])
-            
-            # Get exploration thread if provided (for context from previous explorations)
             mode = content.get("mode", "interactive")
             start_question = content.get("start_question", None)
             exploration_thread = content.get("exploration_thread", None)
             current_chart = content.get("current_chart", None)
             current_data_sample = content.get("current_data_sample", None)
 
-            try:
-                for chunk in agent.run(input_tables, start_question, exploration_thread, current_data_sample, current_chart, mode):
-                    yield chunk
-            except Exception as e:
-                logger.error(e)
-                error_data = { 
-                    "content": "unable to process recommendation questions request" 
-                }
-                yield 'error: ' + json.dumps(error_data) + '\n'
+            with WorkspaceWithTempData(workspace, temp_data) as workspace:
+                agent = InteractiveExploreAgent(client=client, workspace=workspace, agent_exploration_rules=agent_exploration_rules)
+                try:
+                    for chunk in agent.run(input_tables, start_question, exploration_thread, current_data_sample, current_chart, mode):
+                        yield chunk
+                except Exception as e:
+                    logger.error(e)
+                    error_data = { 
+                        "content": "unable to process recommendation questions request" 
+                    }
+                    yield 'error: ' + json.dumps(error_data) + '\n'
         else:
             error_data = { 
                 "content": "Invalid request format" 
@@ -688,32 +694,24 @@ def generate_report_stream():
 
             client = get_client(content['model'])
 
-            language = content.get("language", "python")
             input_tables = content.get("input_tables", [])
             charts = content.get("charts", [])
             style = content.get("style", "blog post")
+            identity_id = get_identity_id()
+            workspace = get_workspace(identity_id)
+            temp_data = get_temp_tables(workspace, input_tables) if input_tables else None
 
-            if language == "sql":
-                identity_id = get_identity_id()
-                workspace = get_workspace(identity_id)
-                db_conn = create_duckdb_conn_with_parquet_views(workspace, input_tables)
-            else:
-                db_conn = None
-
-            agent = ReportGenAgent(client=client, conn=db_conn)
-
-            try:
-                for chunk in agent.stream(input_tables, charts, style):
-                    yield chunk
-            except Exception as e:
-                logger.error(e)
-                error_data = { 
-                    "content": "unable to process report generation request" 
-                }
-                yield 'error: ' + json.dumps(error_data) + '\n'
-            finally:
-                if db_conn is not None:
-                    db_conn.close()
+            with WorkspaceWithTempData(workspace, temp_data) as workspace:
+                agent = ReportGenAgent(client=client, workspace=workspace)
+                try:
+                    for chunk in agent.stream(input_tables, charts, style):
+                        yield chunk
+                except Exception as e:
+                    logger.error(e)
+                    error_data = { 
+                        "content": "unable to process report generation request" 
+                    }
+                    yield 'error: ' + json.dumps(error_data) + '\n'
         else:
             error_data = { 
                 "content": "Invalid request format" 

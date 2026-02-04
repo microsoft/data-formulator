@@ -4,7 +4,7 @@
 import json
 
 from data_formulator.agents.agent_utils import extract_json_objects, generate_data_summary
-from data_formulator.agents.agent_sql_data_transform import generate_sql_data_summary
+from data_formulator.agents.agent_sql_data_transform import generate_sql_data_summary, create_duckdb_conn_with_parquet_views
 
 import logging
 
@@ -53,16 +53,14 @@ Output markdown directly, do not need to include any other text.
 
 class ReportGenAgent(object):
 
-    def __init__(self, client, conn):
+    def __init__(self, client, workspace):
         self.client = client
-        self.conn = conn
+        self.workspace = workspace
 
     def get_data_summary(self, input_tables):
-        if self.conn:
-            data_summary = generate_sql_data_summary(self.conn, input_tables)
-        else:
-            data_summary = generate_data_summary(input_tables)
-        return data_summary
+        with create_duckdb_conn_with_parquet_views(self.workspace, input_tables) as conn:
+            data_summary = generate_sql_data_summary(conn, input_tables)
+            return data_summary
 
     def stream(self, input_tables, charts=[], style="blog post"):
         """derive a new concept based on the raw input data

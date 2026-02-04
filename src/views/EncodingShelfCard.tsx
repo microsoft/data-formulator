@@ -405,7 +405,6 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                     rows: t.rows,
                     attached_metadata: t.attachedMetadata
                 })),
-                language: currentTable.virtual ? "sql" : "python",
                 exploration_thread: explorationThread,
                 current_data_sample: currentTable.rows.slice(0, 10),
                 current_chart: currentChartPng,
@@ -563,8 +562,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
             chart_encodings: mode == 'formulate' ? activeSimpleEncodings : {},
             extra_prompt: instruction,
             model: activeModel,
-            agent_coding_rules: agentRules.coding,
-            language: actionTables.some(t => t.virtual) ? "sql" : "python"
+            agent_coding_rules: agentRules.coding
         })
 
         let engine = getUrls().DERIVE_DATA;
@@ -597,8 +595,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                     extra_prompt: instruction,
                     model: activeModel,
                     additional_messages: additionalMessages,
-                    agent_coding_rules: agentRules.coding,
-                    language: actionTables.some(t => t.virtual) ? "sql" : "python"
+                    agent_coding_rules: agentRules.coding
                 });
                 engine = getUrls().DERIVE_DATA;
             } else {
@@ -617,8 +614,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                     latest_data_sample: currentTable.rows.slice(0, 10),
                     new_instruction: instruction,
                     model: activeModel,
-                    agent_coding_rules: agentRules.coding,
-                    language: actionTables.some(t => t.virtual) ? "sql" : "python"
+                    agent_coding_rules: agentRules.coding
                 })
                 engine = getUrls().REFINE_DATA;
             } 
