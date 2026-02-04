@@ -5,7 +5,7 @@ import time
 import json
 
 from data_formulator.agents.agent_utils import generate_data_summary, extract_code_from_gpt_response
-import data_formulator.py_sandbox as py_sandbox
+import data_formulator.sandbox.py_sandbox as py_sandbox
 
 import traceback
 

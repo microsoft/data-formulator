@@ -2,14 +2,9 @@ import json
 import logging
 from typing import Any
 
-import duckdb
 import pandas as pd
-
-try:
-    import pyodbc
-    PYODBC_AVAILABLE = True
-except ImportError:
-    PYODBC_AVAILABLE = False
+import pyarrow as pa
+import connectorx as cx
 
 from data_formulator.data_loader.external_data_loader import ExternalDataLoader, sanitize_table_name
 
@@ -18,7 +13,7 @@ log = logging.getLogger(__name__)
 
 class MSSQLDataLoader(ExternalDataLoader):
     @staticmethod
-    def list_params() -> bool:
+    def list_params() -> list[dict[str, Any]]:
         params_list = [
             {
                 "name": "server",
@@ -92,14 +87,14 @@ class MSSQLDataLoader(ExternalDataLoader):
 SQL Server Connection Instructions:
 
 1. Prerequisites:
-   - Install pyodbc dependencies:
+   - Install connectorx: pip install connectorx (used for fast Arrow-native data access)
+   - Install ODBC stack for connectorx:
      * macOS: brew install unixodbc
      * Linux: sudo apt-get install unixodbc-dev (Ubuntu/Debian) or sudo yum install unixODBC-devel (CentOS/RHEL)
-     * Windows: Usually included with pyodbc installation
-   - Install pyodbc: pip install pyodbc
+     * Windows: Usually included with ODBC driver installation
    - Install Microsoft ODBC Driver for SQL Server:
      * Windows: Usually pre-installed with SQL Server
-     * macOS: Download from Microsoft's official site or use: brew tap microsoft/mssql-release && brew install msodbcsql17
+     * macOS: brew tap microsoft/mssql-release && brew install msodbcsql17
      * Linux: Install via package manager (msodbcsql17 or msodbcsql18)
 
 2. Local SQL Server Setup:
@@ -127,120 +122,99 @@ SQL Server Connection Instructions:
    - Custom port: server='localhost,1434' (note the comma, not colon)
 
 6. Common Issues & Troubleshooting:
-   - If pyodbc import fails: Install unixodbc first (macOS/Linux)
+   - If connectorx fails: Install unixodbc first (macOS/Linux)
    - Ensure SQL Server service is running
    - Check SQL Server Browser service for named instances
    - Verify TCP/IP protocol is enabled in SQL Server Configuration Manager
    - Check Windows Firewall settings for SQL Server port
-   - Test connection: `sqlcmd -S server -d database -U username -P password`
+   - Test connection: sqlcmd -S server -d database -U username -P password
    - For named instances, ensure SQL Server Browser service is running
-   - Check ODBC drivers: `odbcinst -q -d` (on Unix/Linux)
+   - Check ODBC drivers: odbcinst -q -d (on Unix/Linux)
 
 7. Driver Installation:
-   - macOS: `brew install msodbcsql17` or download from Microsoft
-   - Ubuntu/Debian: `sudo apt-get install msodbcsql17`
-   - CentOS/RHEL: `sudo yum install msodbcsql17`
+   - macOS: brew install msodbcsql17 or download from Microsoft
+   - Ubuntu/Debian: sudo apt-get install msodbcsql17
+   - CentOS/RHEL: sudo yum install msodbcsql17
    - Windows: Install SQL Server or download ODBC driver separately
 """
 
-    def __init__(self, params: dict[str, Any], duck_db_conn: duckdb.DuckDBPyConnection):
-        log.info("Initializing MSSQL DataLoader with parameters: %s", params)
-
-        if not PYODBC_AVAILABLE:
-            raise ImportError(
-                "pyodbc is required for MSSQL connections. "
-                "Install with: pip install pyodbc\n"
-                "Note for macOS: You may also need to run 'brew install unixodbc' first.\n"
-                "For other platforms, see: https://github.com/mkleehammer/pyodbc/wiki"
-            )
+    def __init__(self, params: dict[str, Any]):
+        log.info(f"Initializing MSSQL DataLoader with parameters: {params}")
 
         self.params = params
-        self.duck_db_conn = duck_db_conn
 
-        # Build connection string for pyodbc
-        self.connection_string = self._build_connection_string()
-        log.info("SQL Server connection string built")
+        self.server = params.get("server", "localhost")
+        self.database = params.get("database", "master")
+        self.user = params.get("user", "").strip()
+        self.password = params.get("password", "").strip()
+        self.port = params.get("port", "1433")
 
-        # Test the connection
-        self._test_connection()
-
-    def _build_connection_string(self) -> str:
-        """Build ODBC connection string from parameters"""
-        conn_parts = []
-
-        # Driver
-        driver = self.params.get("driver", "ODBC Driver 17 for SQL Server")
-        conn_parts.append(f"DRIVER={{{driver}}}")
-
-        # Server (handle different server formats)
-        server = self.params.get("server", "localhost")
-        port = self.params.get("port", "1433")
-
-        # Handle different server formats
-        if "\\" in server:
-            # Named instance format: server\instance
-            conn_parts.append(f"SERVER={server}")
-        elif "," in server:
-            # Port already specified in server: server,port
-            conn_parts.append(f"SERVER={server}")
+        # Build connection URL for connectorx: mssql://user:password@host:port/database
+        # - Use explicit empty password (user:@host) when user is set but password is blank.
+        # - Use 127.0.0.1 when server is localhost to force IPv4 TCP and avoid IPv6 ::1 connection issues.
+        server_for_url = "127.0.0.1" if (self.server or "").strip().lower() == "localhost" else self.server
+        if self.user:
+            self.connection_url = f"mssql://{self.user}:{self.password}@{server_for_url}:{self.port}/{self.database}?TrustServerCertificate=true"
         else:
-            # Standard format: add port if not default
-            if port and port != "1433":
-                conn_parts.append(f"SERVER={server},{port}")
-            else:
-                conn_parts.append(f"SERVER={server}")
+            self.connection_url = f"mssql://{server_for_url}:{self.port}/{self.database}?TrustServerCertificate=true&IntegratedSecurity=true"
 
-        # Database
-        database = self.params.get("database", "master")
-        conn_parts.append(f"DATABASE={database}")
-
-        # Authentication
-        user = self.params.get("user", "").strip()
-        password = self.params.get("password", "").strip()
-
-        if user:
-            conn_parts.append(f"UID={user}")
-            conn_parts.append(f"PWD={password}")
-        else:
-            # Use Windows Authentication
-            conn_parts.append("Trusted_Connection=yes")
-
-        # Connection settings
-        encrypt = self.params.get("encrypt", "yes")
-        trust_cert = self.params.get("trust_server_certificate", "no")
-        timeout = self.params.get("connection_timeout", "30")
-
-        conn_parts.append(f"Encrypt={encrypt}")
-        conn_parts.append(f"TrustServerCertificate={trust_cert}")
-        conn_parts.append(f"Connection Timeout={timeout}")
-
-        return ";".join(conn_parts)
-
-    def _test_connection(self):
-        """Test the SQL Server connection"""
         try:
-            with pyodbc.connect(self.connection_string, timeout=10) as conn:
-                cursor = conn.cursor()
-                cursor.execute("SELECT @@VERSION")
-                version = cursor.fetchone()[0]
-                log.info(f"SQL Server connection successful. Version: {version[:50]}...")
+            cx.read_sql(self.connection_url, "SELECT 1", return_type="arrow")
+            log.info(f"Successfully connected to SQL Server: {self.server}/{self.database}")
         except Exception as e:
-            log.error(f"SQL Server connection test failed: {e}")
-            raise ConnectionError(f"Failed to connect to SQL Server: {e}")
+            log.error(f"Failed to connect to SQL Server: {e}")
+            raise ValueError(f"Failed to connect to SQL Server '{self.server}': {e}") from e
 
-    def _execute_query(self, query: str) -> pd.DataFrame:
-        """Execute a query and return results as DataFrame"""
+    def _execute_query(self, query: str) -> pa.Table:
+        """Execute a query and return results as a PyArrow Table (via connectorx)."""
         try:
-            with pyodbc.connect(self.connection_string) as conn:
-                return pd.read_sql(query, conn)
+            return cx.read_sql(self.connection_url, query, return_type="arrow")
         except Exception as e:
             log.error(f"Failed to execute query: {e}")
             raise
 
-    def list_tables(self):
-        """List all tables from SQL Server database"""
+    def fetch_data_as_arrow(
+        self,
+        source_table: str,
+        size: int = 1000000,
+        sort_columns: list[str] | None = None,
+        sort_order: str = 'asc'
+    ) -> pa.Table:
+        """
+        Fetch data from SQL Server as a PyArrow Table using connectorx.
+        """
+        if not source_table:
+            raise ValueError("source_table must be provided")
+        
+        # Parse table name
+        if "." in source_table:
+            schema, table = source_table.split(".", 1)
+        else:
+            schema = "dbo"
+            table = source_table
+        
+        base_query = f"SELECT * FROM [{schema}].[{table}]"
+        
+        # Add ORDER BY if sort columns specified
+        order_by_clause = ""
+        if sort_columns and len(sort_columns) > 0:
+            order_direction = "DESC" if sort_order == 'desc' else "ASC"
+            sanitized_cols = [f'[{col}] {order_direction}' for col in sort_columns]
+            order_by_clause = f" ORDER BY {', '.join(sanitized_cols)}"
+        
+        # SQL Server uses TOP instead of LIMIT
+        query = f"SELECT TOP {size} * FROM ({base_query}{order_by_clause}) AS limited"
+        
+        log.info(f"Executing SQL Server query: {query[:200]}...")
+        
+        arrow_table = cx.read_sql(self.connection_url, query, return_type="arrow")
+        log.info(f"Fetched {arrow_table.num_rows} rows from SQL Server [Arrow-native]")
+        
+        return arrow_table
+
+    def list_tables(self, table_filter: str | None = None) -> list[dict[str, Any]]:
+        """List all tables from SQL Server database."""
         try:
-            # Query SQL Server system tables to get table information
             tables_query = """
                 SELECT 
                     TABLE_SCHEMA, 
@@ -252,7 +226,7 @@ SQL Server Connection Instructions:
                 ORDER BY TABLE_SCHEMA, TABLE_NAME
             """
 
-            tables_df = self._execute_query(tables_query)
+            tables_df = self._execute_query(tables_query).to_pandas()
             results = []
 
             for _, row in tables_df.iterrows():
@@ -260,6 +234,9 @@ SQL Server Connection Instructions:
                 table_name = row["TABLE_NAME"]
                 table_type = row.get("TABLE_TYPE", "BASE TABLE")
                 full_table_name = f"{schema}.{table_name}"
+
+                if table_filter and table_filter.lower() not in full_table_name.lower():
+                    continue
 
                 try:
                     # Get column information
@@ -276,7 +253,7 @@ SQL Server Connection Instructions:
                         WHERE TABLE_SCHEMA = '{schema}' AND TABLE_NAME = '{table_name}'
                         ORDER BY ORDINAL_POSITION
                     """
-                    columns_df = self._execute_query(columns_query)
+                    columns_df = self._execute_query(columns_query).to_pandas()
 
                     columns = []
                     for _, col_row in columns_df.iterrows():
@@ -319,7 +296,7 @@ SQL Server Connection Instructions:
 
                     # Get sample data (first 10 rows)
                     sample_query = f"SELECT TOP 10 * FROM [{schema}].[{table_name}]"
-                    sample_df = self._execute_query(sample_query)
+                    sample_df = self._execute_query(sample_query).to_pandas()
 
                     # Handle NaN values in sample data for JSON serialization
                     try:
@@ -338,7 +315,7 @@ SQL Server Connection Instructions:
 
                     # Get row count
                     count_query = f"SELECT COUNT(*) as row_count FROM [{schema}].[{table_name}]"
-                    count_df = self._execute_query(count_query)
+                    count_df = self._execute_query(count_query).to_pandas()
 
                     # Handle NaN values in row count
                     raw_count = count_df.iloc[0]["row_count"]
@@ -385,37 +362,3 @@ SQL Server Connection Instructions:
             results = []
 
         return results
-
-    def ingest_data(self, table_name: str, name_as: str | None = None, size: int = 1000000, sort_columns: list[str] | None = None, sort_order: str = 'asc'):
-        """Ingest data from SQL Server table into DuckDB"""
-        # Parse table name (assuming format: schema.table)
-        if "." in table_name:
-            schema, table = table_name.split(".", 1)
-        else:
-            schema = "dbo"  # Default schema
-            table = table_name
-
-        if name_as is None:
-            name_as = table
-
-        name_as = sanitize_table_name(name_as)
-
-        try:
-            # Build ORDER BY clause if sort_columns are specified
-            order_by_clause = ""
-            if sort_columns and len(sort_columns) > 0:
-                # Use square brackets for SQL Server column quoting
-                order_direction = "DESC" if sort_order == 'desc' else "ASC"
-                sanitized_cols = [f'[{col}] {order_direction}' for col in sort_columns]
-                order_by_clause = f"ORDER BY {', '.join(sanitized_cols)}"
-
-            # Query data from SQL Server with limit
-            query = f"SELECT TOP {size} * FROM [{schema}].[{table}] {order_by_clause}"
-            df = self._execute_query(query)
-
-            # Use the base class method to ingest DataFrame into DuckDB
-            self.ingest_df_to_duckdb(df, name_as)
-            log.info(f"Successfully ingested {len(df)} rows from {schema}.{table} to {name_as}")
-        except Exception as e:
-            log.error(f"Failed to ingest data from {table_name}: {e}")
-            raise

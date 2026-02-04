@@ -84,7 +84,7 @@ def _register_blueprints(disable_database: bool):
     Called from run_app() with progress feedback.
     """
     # Import tables routes (imports database connectors)
-    print("  Loading database connectors...", flush=True)
+    print("  Loading data connectors...", flush=True)
     from data_formulator.tables_routes import tables_bp
     
     # Import agent routes (imports AI/ML libraries: litellm, sklearn, etc.)
@@ -183,10 +183,6 @@ def run_app():
     
     # Register blueprints (this is where heavy imports happen)
     _register_blueprints(args.disable_database)
-    
-    # Update database manager state
-    from data_formulator.db_manager import db_manager
-    db_manager._disabled = args.disable_database
 
     url = "http://localhost:{0}".format(args.port)
     print(f"Ready! Open {url} in your browser.", flush=True)

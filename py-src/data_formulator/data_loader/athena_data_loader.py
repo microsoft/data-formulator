@@ -1,18 +1,14 @@
-import json
 import logging
 import re
 import time
-import duckdb
+import pyarrow as pa
+import pyarrow.csv as pa_csv
+import boto3
+import botocore.exceptions
+from pyarrow import fs as pa_fs
 
 from data_formulator.data_loader.external_data_loader import ExternalDataLoader, sanitize_table_name
 from typing import Any
-
-try:
-    import boto3
-    import botocore.exceptions
-    BOTO3_AVAILABLE = True
-except ImportError:
-    BOTO3_AVAILABLE = False
 
 log = logging.getLogger(__name__)
 
@@ -53,18 +49,12 @@ def _validate_s3_url(url: str) -> None:
         raise ValueError(f"Invalid S3 URL format: '{url}'. Expected format: 's3://bucket/path'")
 
 
-def _escape_sql_string(value: str | None) -> str:
-    """Escape single quotes in SQL string values."""
-    if value is None:
-        return ""
-    return value.replace("'", "''")
-
-
 class AthenaDataLoader(ExternalDataLoader):
     """AWS Athena data loader implementation.
 
-    Executes SQL queries on Athena and loads results from S3 into DuckDB.
-    The output bucket is automatically fetched from the workgroup configuration.
+    Executes SQL queries on Athena and reads results from S3 via PyArrow.
+    Output location is taken from the workgroup configuration or the output_location param.
+    Use ingest_to_workspace() to store results as parquet in the workspace.
     """
 
     @staticmethod
@@ -159,15 +149,8 @@ aws configure --profile myprofile
 **Security:** Never share secret keys, rotate regularly, use least privilege permissions.
         """
 
-    def __init__(self, params: dict[str, Any], duck_db_conn: duckdb.DuckDBPyConnection):
-        if not BOTO3_AVAILABLE:
-            raise ImportError(
-                "boto3 is required for Athena connections. "
-                "Install with: pip install boto3"
-            )
-
+    def __init__(self, params: dict[str, Any]):
         self.params = params
-        self.duck_db_conn = duck_db_conn
 
         # Extract parameters
         self.aws_profile = params.get("aws_profile", "")
@@ -218,7 +201,7 @@ aws configure --profile myprofile
                 session = boto3.Session(profile_name=self.aws_profile, region_name=self.region_name)
                 self.athena_client = session.client('athena')
 
-                # Get credentials from profile for DuckDB S3 access
+                # Get credentials from profile for PyArrow S3 access
                 credentials = session.get_credentials()
                 if credentials is None:
                     raise ValueError(
@@ -289,16 +272,14 @@ aws configure --profile myprofile
         # Get output location: prefer user-provided, then try workgroup
         self.output_location = self._get_output_location()
 
-        # Install and load the httpfs extension for S3 access
-        self.duck_db_conn.install_extension("httpfs")
-        self.duck_db_conn.load_extension("httpfs")
-
-        # Set AWS credentials for DuckDB
-        self.duck_db_conn.execute(f"SET s3_region='{self.region_name}'")
-        self.duck_db_conn.execute(f"SET s3_access_key_id='{self.aws_access_key_id}'")
-        self.duck_db_conn.execute(f"SET s3_secret_access_key='{self.aws_secret_access_key}'")
-        if self.aws_session_token:
-            self.duck_db_conn.execute(f"SET s3_session_token='{self.aws_session_token}'")
+        # Setup PyArrow S3 filesystem for reading results
+        self.s3_fs = pa_fs.S3FileSystem(
+            access_key=self.aws_access_key_id,
+            secret_key=self.aws_secret_access_key,
+            session_token=self.aws_session_token if self.aws_session_token else None,
+            region=self.region_name
+        )
+        log.info("Initialized PyArrow S3 filesystem for Athena results")
 
     def _get_output_location(self) -> str:
         """Get the output location for query results.
@@ -397,6 +378,55 @@ aws configure --profile myprofile
             wait_time = min(2 ** (elapsed // 10), 10)
             time.sleep(wait_time)
 
+    def fetch_data_as_arrow(
+        self,
+        source_table: str,
+        size: int = 1000000,
+        sort_columns: list[str] | None = None,
+        sort_order: str = 'asc'
+    ) -> pa.Table:
+        """
+        Fetch data from Athena as a PyArrow Table.
+        
+        Executes the query on Athena and reads the CSV results from S3
+        using PyArrow's S3 filesystem.
+        """
+        if not source_table:
+            raise ValueError("source_table must be provided")
+        
+        _validate_athena_table_name(source_table)
+        base_query = f"SELECT * FROM {source_table}"
+        
+        # Add ORDER BY if sort columns specified
+        order_by_clause = ""
+        if sort_columns and len(sort_columns) > 0:
+            for col in sort_columns:
+                _validate_column_name(col)
+            order_direction = "DESC" if sort_order == 'desc' else "ASC"
+            sanitized_cols = [f'"{col}" {order_direction}' for col in sort_columns]
+            order_by_clause = f" ORDER BY {', '.join(sanitized_cols)}"
+        
+        query = f"{base_query}{order_by_clause} LIMIT {size}"
+        
+        log.info(f"Executing Athena query: {query[:200]}...")
+        
+        # Execute query and get result location
+        result_location = self._execute_query(query)
+        _validate_s3_url(result_location)
+        
+        log.info(f"Reading Athena results from: {result_location}")
+        
+        # Parse S3 URL: s3://bucket/key -> bucket/key
+        s3_path = result_location[5:] if result_location.startswith("s3://") else result_location
+        
+        # Athena outputs CSV files
+        with self.s3_fs.open_input_file(s3_path) as f:
+            arrow_table = pa_csv.read_csv(f)
+        
+        log.info(f"Fetched {arrow_table.num_rows} rows from Athena [Arrow-native]")
+        
+        return arrow_table
+
     def list_tables(self, table_filter: str | None = None) -> list[dict[str, Any]]:
         """List tables from Athena catalog (Glue Data Catalog)."""
         results = []
@@ -467,46 +497,3 @@ aws configure --profile myprofile
 
         log.info(f"Returning {len(results)} tables")
         return results
-
-    def ingest_data(self, table_name: str, name_as: str | None = None, size: int = 1000000, sort_columns: list[str] | None = None, sort_order: str = 'asc'):
-        """Ingest data from an Athena table by executing a SELECT query."""
-        # Validate table name to prevent SQL injection
-        _validate_athena_table_name(table_name)
-
-        if name_as is None:
-            # Extract table name from "database.table" format
-            name_as = table_name.split('.')[-1]
-
-        name_as = sanitize_table_name(name_as)
-
-        # Validate and build ORDER BY clause if sort_columns are specified
-        order_by_clause = ""
-        if sort_columns and len(sort_columns) > 0:
-            # Validate each column name
-            for col in sort_columns:
-                _validate_column_name(col)
-            order_direction = "DESC" if sort_order == 'desc' else "ASC"
-            sanitized_cols = [f'"{col}" {order_direction}' for col in sort_columns]
-            order_by_clause = f"ORDER BY {', '.join(sanitized_cols)}"
-
-        # Validate size is a positive integer
-        if not isinstance(size, int) or size <= 0:
-            raise ValueError(f"Size must be a positive integer, got: {size}")
-
-        # Build and execute the query
-        query = f"SELECT * FROM {table_name} {order_by_clause} LIMIT {size}"
-        log.info(f"Executing Athena query for table '{name_as}': {query}")
-
-        result_location = self._execute_query(query)
-
-        # Validate the result location is a proper S3 URL
-        _validate_s3_url(result_location)
-
-        # Load results from S3 into DuckDB
-        log.info(f"Loading query results from {result_location}")
-        self.duck_db_conn.execute(f"""
-            CREATE OR REPLACE TABLE main.{name_as} AS
-            SELECT * FROM read_csv_auto('{_escape_sql_string(result_location)}')
-        """)
-
-        log.info(f"Successfully ingested data into table '{name_as}'")

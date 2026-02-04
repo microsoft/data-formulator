@@ -367,14 +367,12 @@ const ConfigDialog: React.FC = () => {
 
 
     const [formulateTimeoutSeconds, setFormulateTimeoutSeconds] = useState(config.formulateTimeoutSeconds);
-    const [maxRepairAttempts, setMaxRepairAttempts] = useState(config.maxRepairAttempts);
 
     const [defaultChartWidth, setDefaultChartWidth] = useState(config.defaultChartWidth);
     const [defaultChartHeight, setDefaultChartHeight] = useState(config.defaultChartHeight);
 
     // Add check for changes
     const hasChanges = formulateTimeoutSeconds !== config.formulateTimeoutSeconds || 
-                      maxRepairAttempts !== config.maxRepairAttempts ||
                       defaultChartWidth !== config.defaultChartWidth ||
                       defaultChartHeight !== config.defaultChartHeight;
 
@@ -472,53 +470,22 @@ const ConfigDialog: React.FC = () => {
                                 </Typography>
                             </Box>
                         </Box>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                            <Box sx={{ flex: 1 }}>
-                                <TextField
-                                    label="max repair attempts"
-                                    type="number"
-                                    variant="outlined"
-                                    value={maxRepairAttempts}
-                                    onChange={(e) => {
-                                        const value = parseInt(e.target.value);
-                                        setMaxRepairAttempts(value);
-                                    }}
-                                    fullWidth
-                                    slotProps={{
-                                        input: {
-                                            inputProps: {
-                                                min: 1,
-                                                max: 5,
-                                            }
-                                        }
-                                    }}
-                                    error={maxRepairAttempts <= 0 || maxRepairAttempts > 5}
-                                    helperText={maxRepairAttempts <= 0 || maxRepairAttempts > 5 ? 
-                                        "Value must be between 1 and 5" : ""}
-                                />
-                                <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
-                                    How many attempts LLM will make to repair code if code fails to execute (recommended = 1, higher values might increase the chance of success but it's slow).
-                                </Typography>
-                            </Box>
-                        </Box>
                     </Box>
                 </DialogContent>
                 <DialogActions sx={{'.MuiButton-root': {textTransform: 'none'}}}>
                     <Button sx={{marginRight: 'auto'}} onClick={() => {
                         setFormulateTimeoutSeconds(30);
-                        setMaxRepairAttempts(1);
                         setDefaultChartWidth(300);
                         setDefaultChartHeight(300);
                     }}>Reset to default</Button>
                     <Button onClick={() => setOpen(false)}>Cancel</Button>
                     <Button 
                         variant={hasChanges ? "contained" : "text"}
-                        disabled={!hasChanges || isNaN(maxRepairAttempts) || maxRepairAttempts <= 0 || maxRepairAttempts > 5 
-                            || isNaN(formulateTimeoutSeconds) || formulateTimeoutSeconds <= 0 || formulateTimeoutSeconds > 3600
+                        disabled={!hasChanges || isNaN(formulateTimeoutSeconds) || formulateTimeoutSeconds <= 0 || formulateTimeoutSeconds > 3600
                             || isNaN(defaultChartWidth) || defaultChartWidth <= 0 || defaultChartWidth > 1000
                             || isNaN(defaultChartHeight) || defaultChartHeight <= 0 || defaultChartHeight > 1000}
                         onClick={() => {
-                            dispatch(dfActions.setConfig({formulateTimeoutSeconds, maxRepairAttempts, defaultChartWidth, defaultChartHeight}));
+                            dispatch(dfActions.setConfig({formulateTimeoutSeconds, defaultChartWidth, defaultChartHeight}));
                             setOpen(false);
                         }}
                     >

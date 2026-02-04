@@ -1,18 +1,12 @@
-import json
 import logging
 import re
 from typing import Any
-import pandas as pd
-import duckdb
+import pyarrow as pa
 
 from data_formulator.data_loader.external_data_loader import ExternalDataLoader, sanitize_table_name
 
-try:
-    from google.cloud import bigquery
-    from google.oauth2 import service_account
-    BIGQUERY_AVAILABLE = True
-except ImportError:
-    BIGQUERY_AVAILABLE = False
+from google.cloud import bigquery
+from google.oauth2 import service_account
 
 log = logging.getLogger(__name__)
 
@@ -67,17 +61,10 @@ Supported Operations:
     - Execute custom SQL queries
 """
 
-    def __init__(self, params: dict[str, Any], duck_db_conn: duckdb.DuckDBPyConnection):
-        if not BIGQUERY_AVAILABLE:
-            raise ImportError(
-                "google-cloud-bigquery is required for BigQuery connections. "
-                "Install with: pip install google-cloud-bigquery google-auth"
-            )
-        
+    def __init__(self, params: dict[str, Any]):
         self.params = params
-        self.duck_db_conn = duck_db_conn
         self.project_id = params.get("project_id")
-        self.dataset_ids = [d.strip() for d in params.get("dataset_id", "").split(",") if d.strip()]  # Support multiple datasets
+        self.dataset_ids = [d.strip() for d in params.get("dataset_id", "").split(",") if d.strip()]
         self.location = params.get("location", "US")
         
         # Initialize BigQuery client
@@ -94,6 +81,8 @@ Supported Operations:
                 project=self.project_id, 
                 location=self.location
             )
+        
+        log.info(f"Successfully connected to BigQuery project: {self.project_id}")
 
     def list_tables(self, table_filter: str | None = None) -> list[dict[str, Any]]:
         """List tables from BigQuery datasets"""
@@ -169,128 +158,78 @@ Supported Operations:
         log.info(f"Returning {len(results)} tables")
         return results
 
-    def _convert_bigquery_dtypes(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Convert BigQuery-specific dtypes to standard pandas dtypes"""
+    def fetch_data_as_arrow(
+        self,
+        source_table: str,
+        size: int = 1000000,
+        sort_columns: list[str] | None = None,
+        sort_order: str = 'asc'
+    ) -> pa.Table:
+        """
+        Fetch data from BigQuery as a PyArrow Table using native Arrow support.
+        
+        BigQuery's Python client provides .to_arrow() for efficient Arrow-native
+        data transfer, avoiding pandas conversion overhead.
+        """
+        if not source_table:
+            raise ValueError("source_table must be provided")
+        
+        # Get table schema to handle nested fields
+        table_ref = self.client.get_table(source_table)
+        select_parts = self._build_select_parts(table_ref, source_table)
+        base_query = f"SELECT {', '.join(select_parts)} FROM `{source_table}`"
+        
+        # Add ORDER BY if sort columns specified
+        order_by_clause = ""
+        if sort_columns and len(sort_columns) > 0:
+            order_direction = "DESC" if sort_order == 'desc' else "ASC"
+            sanitized_cols = [f'`{col}` {order_direction}' for col in sort_columns]
+            order_by_clause = f" ORDER BY {', '.join(sanitized_cols)}"
+        
+        query = f"{base_query}{order_by_clause} LIMIT {size}"
+        
+        log.info(f"Executing BigQuery query: {query[:200]}...")
+        
+        # Execute query and get Arrow table directly (no pandas conversion)
+        query_job = self.client.query(query)
+        arrow_table = query_job.to_arrow()
+        
+        log.info(f"Fetched {arrow_table.num_rows} rows from BigQuery [Arrow-native]")
+        
+        return arrow_table
+    
+    def _build_select_parts(self, table_ref, table_name: str) -> list[str]:
+        """Build SELECT parts handling nested BigQuery fields."""
+        select_parts: list[str] = []
+        used_aliases: dict[str, str] = {}
 
-        def safe_convert(x):
-            try:
-                if x is None or pd.isna(x):
-                    return None
-                if isinstance(x, (dict, list)):
-                    return json.dumps(x, default=str)
-                if hasattr(x, "__dict__"):
-                    return json.dumps(x.__dict__, default=str)
-                s = str(x)
-                if "[object Object]" in s:
-                    return json.dumps(x, default=str)
-                return s
-            except Exception:
-                return str(x) if x is not None else None
+        def build_alias(field_path: str) -> str:
+            alias = field_path.replace('.', '_')
+            alias = re.sub(r'[^0-9a-zA-Z_]', '_', alias)
+            alias = re.sub(r'_+', '_', alias).strip('_') or "col"
+            if not alias[0].isalpha() and alias[0] != '_':
+                alias = f"_{alias}"
+            base_alias = alias
+            counter = 1
+            while alias in used_aliases:
+                alias = f"{base_alias}_{counter}"
+                counter += 1
+            used_aliases[alias] = field_path
+            return alias
 
-        for col in df.columns:
-            # Convert db_dtypes.DateDtype to standard datetime
-            if hasattr(df[col].dtype, "name") and "dbdate" in str(df[col].dtype).lower():
-                df[col] = pd.to_datetime(df[col])
-            # Convert other db_dtypes if needed
-            elif str(df[col].dtype).startswith("db_dtypes"):
-                try:
-                    df[col] = df[col].astype(str)
-                except Exception as e:
-                   logging.error(f"Failed to convert column '{col}' to string: {e}")
-            # Handle nested objects/JSON columns
-            elif df[col].dtype == "object":
-                df[col] = df[col].apply(safe_convert)
+        def add_field(field_path: str):
+            alias = build_alias(field_path)
+            select_parts.append(f"`{table_name}`.{field_path} AS `{alias}`")
 
-        return df
+        def process_field(field, parent_path: str = ""):
+            current_path = f"{parent_path}.{field.name}" if parent_path else field.name
+            if field.field_type == "RECORD" and field.mode != "REPEATED":
+                for subfield in field.fields:
+                    process_field(subfield, current_path)
+            else:
+                add_field(current_path)
 
-    def ingest_data(self, table_name: str, name_as: str | None = None, size: int = 1000000, sort_columns: list[str] | None = None, sort_order: str = 'asc'):
-            """Ingest data from BigQuery table into DuckDB with stable, de-duplicated column aliases."""
-            if name_as is None:
-                name_as = table_name.split('.')[-1]
+        for field in table_ref.schema:
+            process_field(field)
 
-            name_as = sanitize_table_name(name_as)
-
-
-            table_ref = self.client.get_table(table_name)
-
-            select_parts: list[str] = []
-            used_aliases: dict[str, str] = {}  # alias -> field_path
-
-            def build_alias(field_path: str) -> str:
-                """
-                Build a human-readable, globally unique alias from a BigQuery field path.
-
-                Examples:
-                    'geo.country'        -> 'geo_country'
-                    'device.category'    -> 'device_category'
-                    'event_params.value' -> 'event_params_value'
-                """
-                # path "a.b.c" -> "a_b_c"
-                alias = field_path.replace('.', '_')
-
-                # remove weird characters
-                alias = re.sub(r'[^0-9a-zA-Z_]', '_', alias)
-                alias = re.sub(r'_+', '_', alias).strip('_') or "col"
-
-                # must start with letter or underscore
-                if not alias[0].isalpha() and alias[0] != '_':
-                    alias = f"_{alias}"
-
-                base_alias = alias
-                counter = 1
-                while alias in used_aliases:
-                    # same alias from another path – suffix and log once
-                    alias = f"{base_alias}_{counter}"
-                    counter += 1
-
-                used_aliases[alias] = field_path
-                return alias
-
-            def add_field(field_path: str):
-                alias = build_alias(field_path)
-                select_parts.append(f"`{table_name}`.{field_path} AS `{alias}`")
-
-            def process_field(field, parent_path: str = ""):
-                """
-                Recursively process fields, flattening non-repeated RECORDs.
-                """
-                current_path = f"{parent_path}.{field.name}" if parent_path else field.name
-
-                # Flatten STRUCT / RECORD that is not REPEATED
-                if field.field_type == "RECORD" and field.mode != "REPEATED":
-                    for subfield in field.fields:
-                        process_field(subfield, current_path)
-                else:
-                    # Regular field or REPEATED RECORD/array – select as a single column
-                    add_field(current_path)
-
-            # Process all top-level fields
-            for field in table_ref.schema:
-                process_field(field)
-
-            if not select_parts:
-                raise ValueError(f"No fields found for table {table_name}")
-
-            # Build ORDER BY clause if sort_columns are specified
-            order_by_clause = ""
-            if sort_columns and len(sort_columns) > 0:
-                # Use backticks for BigQuery column quoting
-                order_direction = "DESC" if sort_order == 'desc' else "ASC"
-                sanitized_cols = [f'`{col}` {order_direction}' for col in sort_columns]
-                order_by_clause = f"ORDER BY {', '.join(sanitized_cols)}"
-
-            query = f"SELECT {', '.join(select_parts)} FROM `{table_name}` {order_by_clause} LIMIT {size}"
-
-            df = self.client.query(query).to_dataframe()
-
-            # Safety net: drop exact duplicate names if something slipped through
-            if df.columns.duplicated().any():
-                dupes = df.columns[df.columns.duplicated()].tolist()
-                log.warning(f"Duplicate column names detected in DataFrame, dropping later ones: {dupes}")
-                df = df.loc[:, ~df.columns.duplicated()]
-
-
-            # Convert BigQuery-specific dtypes
-            df = self._convert_bigquery_dtypes(df)
-
-            self.ingest_df_to_duckdb(df, name_as)
+        return select_parts if select_parts else ["*"]

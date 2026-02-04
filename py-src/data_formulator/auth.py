@@ -86,18 +86,3 @@ def get_identity_id() -> str:
         return f"browser:{identity_value}"
     
     raise ValueError("X-Identity-Id header is required. Please refresh the page.")
-
-
-def get_identity_id_optional() -> str | None:
-    """
-    Get identity ID if available, returning None instead of raising an error.
-    
-    Useful for endpoints where identity is optional (e.g., when language != "sql").
-    
-    Returns:
-        str | None: The namespaced identity ID string, or None if not available
-    """
-    try:
-        return get_identity_id()
-    except ValueError:
-        return None

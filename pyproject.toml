@@ -20,23 +20,22 @@ classifiers = [
   "Programming Language :: Python"
 ]
 
-dependencies = [  
-    "jupyter",  
-    "pandas",  
-    "flask",  
-    "flask-cors",  
+dependencies = [
+    "jupyter",
+    "pandas",
+    "flask",
+    "flask-cors",
     "flask-limiter",
-    "openai",  
-    "python-dotenv",  
+    "openai",
+    "python-dotenv",
     "vega_datasets",
     "litellm",
     "duckdb",
-    "numpy",                    
-    "vl-convert-python", 
+    "numpy",
+    "vl-convert-python",
     "backoff",
     "beautifulsoup4",
     "scikit-learn",
-
     "azure-identity",
     "azure-kusto-data",
     "azure-keyvault-secrets",
@@ -48,7 +47,9 @@ dependencies = [
     "pymysql",
     "pyodbc",
     "pymongo",
-    "yfinance"
+    "yfinance",
+    "connectorx>=0.4.5",
+    "pyarrow>=23.0.0",
 ]
 
 [project.urls]

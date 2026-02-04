@@ -5,7 +5,7 @@ import json
 import pandas as pd
 
 from data_formulator.agents.agent_utils import extract_json_objects, generate_data_summary, extract_code_from_gpt_response
-import data_formulator.py_sandbox as py_sandbox
+import data_formulator.sandbox.py_sandbox as py_sandbox
 
 import traceback
 import logging

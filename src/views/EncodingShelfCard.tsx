@@ -417,7 +417,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
 
-            const response = await fetch(engine, {
+            const response = await fetchWithIdentity(engine, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -563,7 +563,6 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
             chart_encodings: mode == 'formulate' ? activeSimpleEncodings : {},
             extra_prompt: instruction,
             model: activeModel,
-            max_repair_attempts: config.maxRepairAttempts,
             agent_coding_rules: agentRules.coding,
             language: actionTables.some(t => t.virtual) ? "sql" : "python"
         })
@@ -598,7 +597,6 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                     extra_prompt: instruction,
                     model: activeModel,
                     additional_messages: additionalMessages,
-                    max_repair_attempts: config.maxRepairAttempts,
                     agent_coding_rules: agentRules.coding,
                     language: actionTables.some(t => t.virtual) ? "sql" : "python"
                 });
@@ -619,7 +617,6 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                     latest_data_sample: currentTable.rows.slice(0, 10),
                     new_instruction: instruction,
                     model: activeModel,
-                    max_repair_attempts: config.maxRepairAttempts,
                     agent_coding_rules: agentRules.coding,
                     language: actionTables.some(t => t.virtual) ? "sql" : "python"
                 })

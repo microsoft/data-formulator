@@ -4,7 +4,7 @@
 import json
 
 from data_formulator.agents.agent_utils import extract_json_objects, extract_code_from_gpt_response
-from data_formulator.agents.agent_sql_data_transform import generate_sql_data_summary
+from data_formulator.agents.agent_sql_data_transform import generate_sql_data_summary, create_duckdb_conn_with_parquet_views
 
 import random
 import string
@@ -12,6 +12,8 @@ import string
 import traceback
 import duckdb
 import pandas as pd
+
+from data_formulator.datalake.parquet_manager import write_parquet, sanitize_table_name as parquet_sanitize_table_name
 
 import logging
 
@@ -217,9 +219,10 @@ ORDER BY average_score DESC;
 
 class SQLDataRecAgent(object):
 
-    def __init__(self, client, conn, system_prompt=None, agent_coding_rules=""):
+    def __init__(self, client, workspace, system_prompt=None, agent_coding_rules=""):
         self.client = client
-        self.conn = conn
+        self.workspace = workspace
+        self.conn = None  # set per request, closed after use
         
         # Incorporate agent coding rules into system prompt if provided
         if system_prompt is not None:
@@ -259,17 +262,26 @@ class SQLDataRecAgent(object):
 
                 try:
                     random_suffix = ''.join(random.choices(string.ascii_lowercase, k=4))
-                    table_name = f"view_{random_suffix}"
+                    view_name = f"view_{random_suffix}"
                     
-                    create_query = f"CREATE VIEW IF NOT EXISTS {table_name} AS {code_str}"
+                    create_query = f"CREATE VIEW IF NOT EXISTS {view_name} AS {code_str}"
                     self.conn.execute(create_query)
                     self.conn.commit()
 
-                    # Check how many rows are in the table
-                    row_count = self.conn.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()[0]
+                    # Check how many rows are in the result
+                    row_count = self.conn.execute(f"SELECT COUNT(*) FROM {view_name}").fetchone()[0]
                     
-                    # Only limit to 5000 if there are more rows
-                    query_output = self.conn.execute(f"SELECT * FROM {table_name} LIMIT 5000").fetch_df()
+                    # Fetch result: full for datalake write, limited for response payload
+                    if row_count > 5000:
+                        query_output = self.conn.execute(f"SELECT * FROM {view_name} LIMIT 5000").fetch_df()
+                        full_df = self.conn.execute(f"SELECT * FROM {view_name}").fetch_df()
+                    else:
+                        full_df = self.conn.execute(f"SELECT * FROM {view_name}").fetch_df()
+                        query_output = full_df
+                    
+                    # Write full result to datalake as parquet (parquet-to-parquet)
+                    output_table_name = parquet_sanitize_table_name(f"derived_{random_suffix}")
+                    write_parquet(self.workspace, full_df, output_table_name)
                 
                     result = {
                         "status": "ok",
@@ -277,7 +289,7 @@ class SQLDataRecAgent(object):
                         "content": {
                             'rows': json.loads(query_output.to_json(orient='records')),
                             'virtual': {
-                                'table_name': table_name,
+                                'table_name': output_table_name,
                                 'row_count': row_count
                             }
                         },
@@ -323,24 +335,30 @@ class SQLDataRecAgent(object):
     
 
     def run(self, input_tables, description, n=1, prev_messages: list[dict] = []):
-        data_summary = generate_sql_data_summary(self.conn, input_tables)
+        self.conn = create_duckdb_conn_with_parquet_views(self.workspace, input_tables)
+        try:
+            data_summary = generate_sql_data_summary(self.conn, input_tables)
 
-        user_query = f"[CONTEXT]\n\n{data_summary}\n\n[GOAL]\n\n{description}"
-        if len(prev_messages) > 0:
-            user_query = f"The user wants a new recommendation based off the following updated context and goal:\n\n[CONTEXT]\n\n{data_summary}\n\n[GOAL]\n\n{description}"
+            user_query = f"[CONTEXT]\n\n{data_summary}\n\n[GOAL]\n\n{description}"
+            if len(prev_messages) > 0:
+                user_query = f"The user wants a new recommendation based off the following updated context and goal:\n\n[CONTEXT]\n\n{data_summary}\n\n[GOAL]\n\n{description}"
 
-        logger.info(user_query)
+            logger.info(user_query)
 
-        # Filter out system messages from prev_messages
-        filtered_prev_messages = [msg for msg in prev_messages if msg.get("role") != "system"]
+            # Filter out system messages from prev_messages
+            filtered_prev_messages = [msg for msg in prev_messages if msg.get("role") != "system"]
 
-        messages = [{"role":"system", "content": self.system_prompt},
-                    *filtered_prev_messages,
-                    {"role":"user","content": user_query}]
-        
-        response = self.client.get_completion(messages = messages)
-        
-        return self.process_gpt_response(input_tables, messages, response)
+            messages = [{"role":"system", "content": self.system_prompt},
+                        *filtered_prev_messages,
+                        {"role":"user","content": user_query}]
+            
+            response = self.client.get_completion(messages = messages)
+            
+            return self.process_gpt_response(input_tables, messages, response)
+        finally:
+            if self.conn:
+                self.conn.close()
+                self.conn = None
         
 
     def followup(self, input_tables, dialog, latest_data_sample, new_instruction: str, n=1):
@@ -348,16 +366,21 @@ class SQLDataRecAgent(object):
         latest_data_sample: the latest data sample that the user is working on, it's a json object that contains the data sample of the current table
         new_instruction: the new instruction that the user wants to add to the latest data sample
         """
+        self.conn = create_duckdb_conn_with_parquet_views(self.workspace, input_tables)
+        try:
+            logger.info(f"GOAL: \n\n{new_instruction}")
 
-        logger.info(f"GOAL: \n\n{new_instruction}")
+            # get the current table name
+            sample_data_str = pd.DataFrame(latest_data_sample).head(10).to_string() + '\n......'
 
-        # get the current table name
-        sample_data_str = pd.DataFrame(latest_data_sample).head(10).to_string() + '\n......'
+            messages = [*dialog, 
+                        {"role":"user", 
+                        "content": f"This is the result from the latest sql query:\n\n{sample_data_str}\n\nUpdate the sql query above based on the following instruction:\n\n{new_instruction}"}]
 
-        messages = [*dialog, 
-                    {"role":"user", 
-                    "content": f"This is the result from the latest sql query:\n\n{sample_data_str}\n\nUpdate the sql query above based on the following instruction:\n\n{new_instruction}"}]
+            response = self.client.get_completion(messages = messages)
 
-        response = self.client.get_completion(messages = messages)
-
-        return self.process_gpt_response(input_tables, messages, response)
+            return self.process_gpt_response(input_tables, messages, response)
+        finally:
+            if self.conn:
+                self.conn.close()
+                self.conn = None

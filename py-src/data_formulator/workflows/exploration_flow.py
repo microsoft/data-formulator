@@ -8,8 +8,9 @@ from typing import Any, Generator
 from data_formulator.agents.agent_exploration import ExplorationAgent
 from data_formulator.agents.agent_py_data_rec import PythonDataRecAgent
 from data_formulator.agents.agent_sql_data_rec import SQLDataRecAgent
+from data_formulator.agents.agent_sql_data_transform import create_duckdb_conn_with_parquet_views
 from data_formulator.agents.client_utils import Client
-from data_formulator.db_manager import db_manager
+from data_formulator.datalake.workspace import get_workspace
 from data_formulator.workflows.create_vl_plots import assemble_vegailte_chart, spec_to_base64, detect_field_type
 
 logger = logging.getLogger(__name__)
@@ -101,7 +102,9 @@ def run_exploration_flow_streaming(
 
     if language == "sql":
         if session_id:
-            db_conn = db_manager.get_connection(session_id)
+            workspace = get_workspace(session_id)
+            # Conn with parquet views for exploration agent's data summary (planning)
+            db_conn = create_duckdb_conn_with_parquet_views(workspace, input_tables)
         else:
             yield {
                 "iteration": iteration,
@@ -112,14 +115,15 @@ def run_exploration_flow_streaming(
             }
             return
     else:
+        workspace = None
         db_conn = None
     
     # This is the exploration agent that revises the exploration plan
     exploration_agent = ExplorationAgent(client, db_conn=db_conn, agent_exploration_rules=agent_exploration_rules)
 
-    # rec agent for data transformation
+    # rec agent for data transformation (SQL mode: parquet-to-parquet via workspace)
     if language == "sql":
-        rec_agent = SQLDataRecAgent(client=client, conn=db_conn, agent_coding_rules=agent_coding_rules)
+        rec_agent = SQLDataRecAgent(client=client, workspace=workspace, agent_coding_rules=agent_coding_rules)
     else:
         rec_agent = PythonDataRecAgent(
             client=client, 

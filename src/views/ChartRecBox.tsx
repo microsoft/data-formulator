@@ -501,7 +501,6 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
 
             extra_prompt: instruction,
             model: activeModel,
-            max_repair_attempts: config.maxRepairAttempts,
             agent_coding_rules: agentRules.coding,
             language: actionTables.some(t => t.virtual) ? "sql" : "python"
         });
@@ -534,7 +533,6 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                     extra_prompt: instruction,
                     model: activeModel,
                     additional_messages: additionalMessages,
-                    max_repair_attempts: config.maxRepairAttempts,
                     agent_coding_rules: agentRules.coding,
                     language: actionTables.some(t => t.virtual) ? "sql" : "python"
                 });
@@ -557,7 +555,6 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                     latest_data_sample: currentTable.rows.slice(0, 10),
                     new_instruction: instruction,
                     model: activeModel,
-                    max_repair_attempts: config.maxRepairAttempts,
                     agent_coding_rules: agentRules.coding,
                     language: actionTables.some(t => t.virtual) ? "sql" : "python"
                 })
@@ -757,7 +754,6 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
             initial_plan: initialPlan,
             model: activeModel,
             max_iterations: 3,
-            max_repair_attempts: config.maxRepairAttempts,
             agent_exploration_rules: agentRules.exploration,
             agent_coding_rules: agentRules.coding,
             language: actionTables.some(t => t.virtual) ? "sql" : "python",

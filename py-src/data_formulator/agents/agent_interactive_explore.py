@@ -6,7 +6,7 @@ import logging
 import pandas as pd
 
 from data_formulator.agents.agent_utils import extract_json_objects, generate_data_summary
-from data_formulator.agents.agent_sql_data_transform import generate_sql_data_summary
+from data_formulator.agents.agent_sql_data_transform import generate_sql_data_summary, create_duckdb_conn_with_parquet_views
 
 logger = logging.getLogger(__name__)
 
@@ -115,12 +115,20 @@ data: {"questions": [...], "goal": ..., "difficulty": ...}
 
 class InteractiveExploreAgent(object):
 
-    def __init__(self, client, agent_exploration_rules="", db_conn=None):
+    def __init__(self, client, agent_exploration_rules="", db_conn=None, workspace=None):
         self.client = client
         self.agent_exploration_rules = agent_exploration_rules
         self.db_conn = db_conn
+        self.workspace = workspace  # when set (SQL/datalake mode), use parquet tables for summary
 
     def get_data_summary(self, input_tables, table_name_prefix="Table"):
+        if self.workspace:
+            # Datalake mode: create temporary DuckDB conn with parquet views, then get summary
+            conn = create_duckdb_conn_with_parquet_views(self.workspace, input_tables)
+            try:
+                return generate_sql_data_summary(conn, input_tables, table_name_prefix=table_name_prefix)
+            finally:
+                conn.close()
         if self.db_conn:
             data_summary = generate_sql_data_summary(self.db_conn, input_tables, table_name_prefix=table_name_prefix)
         else:

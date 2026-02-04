@@ -8,6 +8,8 @@ import string
 from data_formulator.agents.agent_utils import extract_json_objects, extract_code_from_gpt_response
 import pandas as pd
 
+from data_formulator.datalake.parquet_manager import write_parquet, sanitize_table_name as parquet_sanitize_table_name
+
 import logging 
 import re
 # Replace/update the logger configuration
@@ -169,11 +171,31 @@ def sanitize_table_name(table_name: str) -> str:
     sanitized_name = re.sub(r'[^a-zA-Z0-9_\.$]', '', sanitized_name)
     return sanitized_name
 
+
+def create_duckdb_conn_with_parquet_views(workspace, input_tables: list[dict]):
+    """
+    Create an in-memory DuckDB connection with a view for each parquet table in the workspace.
+    Input tables are expected to be parquet-backed tables in the datalake (parquet-to-parquet).
+    """
+    import duckdb
+    from data_formulator.datalake.parquet_manager import get_parquet_path
+
+    conn = duckdb.connect(":memory:")
+    for table in input_tables:
+        name = table["name"]
+        view_name = sanitize_table_name(name)
+        path = get_parquet_path(workspace, name)
+        path_escaped = str(path).replace("\\", "\\\\").replace("'", "''")
+        conn.execute(f'CREATE VIEW "{view_name}" AS SELECT * FROM read_parquet(\'{path_escaped}\')')
+    return conn
+
+
 class SQLDataTransformationAgent(object):
 
-    def __init__(self, client, conn, system_prompt=None, agent_coding_rules=""):
+    def __init__(self, client, workspace, system_prompt=None, agent_coding_rules=""):
         self.client = client
-        self.conn = conn # duckdb connection
+        self.workspace = workspace
+        self.conn = None  # set per request, closed after use
         
         # Incorporate agent coding rules into system prompt if provided
         if system_prompt is not None:
@@ -214,22 +236,28 @@ class SQLDataTransformationAgent(object):
                 query_str = query_blocks[-1]
 
                 try:
-                    # Generate unique table name directly with timestamp and random suffix
+                    # Generate unique view name for this execution, then write result to datalake as parquet
                     random_suffix = ''.join(random.choices(string.ascii_lowercase, k=4))
-                    table_name = f"view_{random_suffix}"
+                    view_name = f"view_{random_suffix}"
                     
-                    create_query = f"CREATE VIEW IF NOT EXISTS {table_name} AS {query_str}"
+                    create_query = f"CREATE VIEW IF NOT EXISTS {view_name} AS {query_str}"
                     self.conn.execute(create_query)
                     self.conn.commit()
 
-                    # Check how many rows are in the table
-                    row_count = self.conn.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()[0]
+                    # Check how many rows are in the result
+                    row_count = self.conn.execute(f"SELECT COUNT(*) FROM {view_name}").fetchone()[0]
                     
-                    # Only limit to 5000 if there are more rows
+                    # Fetch result: full for datalake write, limited for response payload
                     if row_count > 5000:
-                        query_output = self.conn.execute(f"SELECT * FROM {table_name} LIMIT 5000").fetch_df()
+                        query_output = self.conn.execute(f"SELECT * FROM {view_name} LIMIT 5000").fetch_df()
+                        full_df = self.conn.execute(f"SELECT * FROM {view_name}").fetch_df()
                     else:
-                        query_output = self.conn.execute(f"SELECT * FROM {table_name}").fetch_df()
+                        full_df = self.conn.execute(f"SELECT * FROM {view_name}").fetch_df()
+                        query_output = full_df
+                    
+                    # Write full result to datalake as parquet (parquet-to-parquet)
+                    output_table_name = parquet_sanitize_table_name(f"derived_{random_suffix}")
+                    write_parquet(self.workspace, full_df, output_table_name)
                 
                     result = {
                         "status": "ok",
@@ -237,7 +265,7 @@ class SQLDataTransformationAgent(object):
                         "content": {
                             'rows': json.loads(query_output.to_json(orient='records')),
                             'virtual': {
-                                'table_name': table_name,
+                                'table_name': output_table_name,
                                 'row_count': row_count
                             }
                         },
@@ -270,61 +298,43 @@ class SQLDataTransformationAgent(object):
 
     def run(self, input_tables, description, chart_type: str, chart_encodings: dict, prev_messages: list[dict] = [], n=1):
         """Args:
-            input_tables: list[dict], each dict contains 'name' and 'rows'
+            input_tables: list[dict], each dict contains 'name' (table name in datalake); tables are parquet.
             description: str, the description of the data transformation
             chart_type: str, the chart type for visualization
             chart_encodings: dict, the chart encodings mapping visualization channels to fields
             prev_messages: list[dict], the previous messages
             n: int, the number of candidates
         """
+        self.conn = create_duckdb_conn_with_parquet_views(self.workspace, input_tables)
+        try:
+            data_summary = generate_sql_data_summary(self.conn, input_tables)
 
-        for table in input_tables:
-            table_name = sanitize_table_name(table['name'])
+            goal = {
+                "instruction": description,
+                "chart_type": chart_type,
+                "chart_encodings": chart_encodings,
+            }
 
-            # Check if table exists in the connection
-            try:
-                self.conn.execute(f"DESCRIBE {table_name}")
-            except Exception:
-                # Table doesn't exist, create it from the dataframe
-                df = pd.DataFrame(table['rows'])
+            user_query = f"[CONTEXT]\n\n{data_summary}\n\n[GOAL]\n\n{json.dumps(goal, indent=4)}"
+            if len(prev_messages) > 0:
+                user_query = f"The user wants a new transformation based off the following updated context and goal:\n\n[CONTEXT]\n\n{data_summary}\n\n[GOAL]\n\n{description}"
 
-                # Register the dataframe as a temporary view
-                self.conn.register(f'df_temp', df)
-                # Create a permanent table from the temporary view
-                self.conn.execute(f"CREATE TABLE {table_name} AS SELECT * FROM df_temp")
-                # Drop the temporary view
-                self.conn.execute(f"DROP VIEW df_temp")
+            logger.info(user_query)
 
-                r = self.conn.execute(f"SELECT * FROM {table_name} LIMIT 10").fetch_df()
-                print(r)
-                # Log the creation of the table
-                logger.info(f"Created table {table_name} from dataframe")
+            # Filter out system messages from prev_messages
+            filtered_prev_messages = [msg for msg in prev_messages if msg.get("role") != "system"]
 
+            messages = [{"role":"system", "content": self.system_prompt},
+                        *filtered_prev_messages,
+                        {"role":"user","content": user_query}]
+            
+            response = self.client.get_completion(messages = messages)
 
-        data_summary = generate_sql_data_summary(self.conn, input_tables)
-
-        goal = {
-            "instruction": description,
-            "chart_type": chart_type,
-            "chart_encodings": chart_encodings,
-        }
-
-        user_query = f"[CONTEXT]\n\n{data_summary}\n\n[GOAL]\n\n{json.dumps(goal, indent=4)}"
-        if len(prev_messages) > 0:
-            user_query = f"The user wants a new transformation based off the following updated context and goal:\n\n[CONTEXT]\n\n{data_summary}\n\n[GOAL]\n\n{description}"
-
-        logger.info(user_query)
-
-        # Filter out system messages from prev_messages
-        filtered_prev_messages = [msg for msg in prev_messages if msg.get("role") != "system"]
-
-        messages = [{"role":"system", "content": self.system_prompt},
-                    *filtered_prev_messages,
-                    {"role":"user","content": user_query}]
-        
-        response = self.client.get_completion(messages = messages)
-
-        return self.process_gpt_sql_response(response, messages)
+            return self.process_gpt_sql_response(response, messages)
+        finally:
+            if self.conn:
+                self.conn.close()
+                self.conn = None
         
 
     def followup(self, input_tables, dialog, latest_data_sample, chart_type: str, chart_encodings: dict, new_instruction: str, n=1):
@@ -335,28 +345,31 @@ class SQLDataTransformationAgent(object):
         chart_encodings: the chart encodings that the user wants to use
         new_instruction: the new instruction that the user wants to add to the latest data sample
         """
+        self.conn = create_duckdb_conn_with_parquet_views(self.workspace, input_tables)
+        try:
+            goal = {
+                "followup_instruction": new_instruction,
+                "chart_type": chart_type,
+                "chart_encodings": chart_encodings
+            }
 
-        goal = {
-            "followup_instruction": new_instruction,
-            "chart_type": chart_type,
-            "chart_encodings": chart_encodings
-        }
+            logger.info(f"GOAL: \n\n{goal}")
 
-        logger.info(f"GOAL: \n\n{goal}")
+            updated_dialog = [{"role":"system", "content": self.system_prompt}, *dialog[1:]]
 
-        #logger.info(dialog)
+            # get the current table name
+            sample_data_str = pd.DataFrame(latest_data_sample).head(10).to_string() + '\n......'
 
-        updated_dialog = [{"role":"system", "content": self.system_prompt}, *dialog[1:]]
+            messages = [*updated_dialog, {"role":"user", 
+                                  "content": f"This is the result from the latest sql query:\n\n{sample_data_str}\n\nUpdate the sql query above based on the following instruction:\n\n{json.dumps(goal, indent=4)}"}]
 
-        # get the current table name
-        sample_data_str = pd.DataFrame(latest_data_sample).head(10).to_string() + '\n......'
+            response = self.client.get_completion(messages = messages)
 
-        messages = [*updated_dialog, {"role":"user", 
-                              "content": f"This is the result from the latest sql query:\n\n{sample_data_str}\n\nUpdate the sql query above based on the following instruction:\n\n{json.dumps(goal, indent=4)}"}]
-
-        response = self.client.get_completion(messages = messages)
-
-        return self.process_gpt_sql_response(response, messages)
+            return self.process_gpt_sql_response(response, messages)
+        finally:
+            if self.conn:
+                self.conn.close()
+                self.conn = None
         
 
 def generate_sql_data_summary(conn, input_tables: list[dict], 

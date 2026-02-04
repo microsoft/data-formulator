@@ -49,16 +49,8 @@ const features: Feature[] = [
 
 export const About: FC<{}> = function About({ }) {
     const theme = useTheme();
-    const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
 
-    let actionButtons = !serverConfig.PROJECT_FRONT_PAGE ? (
-        <Box component="nav" aria-label="Primary actions" sx={{ display: 'flex', justifyContent: 'center', gap: 1.5, mb: 4, flexWrap: 'wrap' }}>
-            <Button size="large" variant="contained" color="primary" 
-                startIcon={<PrecisionManufacturingIcon aria-hidden="true" />}
-                href="/app"
-            >Start Exploration</Button>
-        </Box>
-    ) : (
+    let actionButtons = (
         <Box component="nav" aria-label="Primary actions" sx={{ display: 'flex', justifyContent: 'center', gap: 1.5, mb: 4, flexWrap: 'wrap' }}>
             <Button size="large" variant="outlined" color="primary" 
                 sx={{ textTransform: 'none' }}

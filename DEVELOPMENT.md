@@ -47,7 +47,6 @@ uv run data_formulator --dev   # Run backend only (for frontend development)
         - configure settings as needed:
             - DISABLE_DISPLAY_KEYS: if true, API keys will not be shown in the frontend
             - EXEC_PYTHON_IN_SUBPROCESS: if true, Python code runs in a subprocess (safer but slower), you may consider setting it true when you are hosting Data Formulator for others
-            - LOCAL_DB_DIR: directory to store the local database (uses temp directory if not set)
             - External database settings (when USE_EXTERNAL_DB=true):
                 - DB_NAME: name to refer to this database connection
                 - DB_TYPE: mysql or postgresql (currently only these two are supported)
@@ -141,24 +140,23 @@ uv run data_formulator --dev   # Run backend only (for frontend development)
 
 When deploying Data Formulator to production, please be aware of the following security considerations:
 
-### Database Storage Security
+### Database and Data Storage Security
 
-1. **Local DuckDB Files**: When database functionality is enabled (default), Data Formulator stores DuckDB database files locally on the server. These files contain user data and are stored in the system's temporary directory or a configured `LOCAL_DB_DIR`.
+1. **Workspace and table data**: Table data is stored in per-identity workspaces (e.g. parquet files). DuckDB is used only in-memory per request when needed (e.g. for SQL mode); no persistent DuckDB database files are created by the app.
 
 2. **Identity Management**: 
    - Each user's data is isolated by a namespaced identity key (e.g., `user:alice@example.com` or `browser:550e8400-...`)
    - Anonymous users get a browser-based UUID stored in localStorage
    - Authenticated users get their verified user ID from the auth provider
 
-3. **Data Persistence**: User data processed through Data Formulator may be temporarily stored in these local DuckDB files, which could be a security risk in multi-tenant environments.
+3. **Data persistence**: User data may be written to workspace storage (e.g. parquet) on the server. In multi-tenant deployments, ensure workspace directories are isolated and access-controlled.
 
 ### Recommended Security Measures
 
 For production deployment, consider:
 
-1. **Use `--disable-database` flag** for stateless deployments where no data persistence is needed
+1. **Use `--disable-database` flag** to disable table-connector routes when you do not need external or uploaded table support
 2. **Implement proper authentication, authorization, and other security measures** as needed for your specific use case, for example:
-   - Store DuckDB file in a database
    - User authentication (OAuth, JWT tokens, etc.)
    - Role-based access control
    - API rate limiting

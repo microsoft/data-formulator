@@ -56,7 +56,6 @@ export interface ModelConfig {
 
 export interface ClientConfig {
     formulateTimeoutSeconds: number;
-    maxRepairAttempts: number;
     defaultChartWidth: number;
     defaultChartHeight: number;
 }
@@ -77,7 +76,6 @@ export interface DataFormulatorState {
     };
 
     // Identity management: user identity (if logged in) or browser identity (localStorage-based)
-    // Replaces the old sessionId approach - identity.id serves the same purpose
     // Always initialized with browser identity, updated to user identity if logged in
     identity: Identity;
     models: ModelConfig[];
@@ -164,7 +162,6 @@ const initialState: DataFormulatorState = {
 
     config: {
         formulateTimeoutSeconds: 60,
-        maxRepairAttempts: 1,
         defaultChartWidth: 300,
         defaultChartHeight: 300,
     },

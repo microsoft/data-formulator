@@ -18,17 +18,22 @@ import logging
 import json
 import html
 import pandas as pd
+import duckdb
 
 from data_formulator.agents.agent_concept_derive import ConceptDeriveAgent
 from data_formulator.agents.agent_py_concept_derive import PyConceptDeriveAgent
 
 from data_formulator.agents.agent_py_data_transform import PythonDataTransformationAgent
-from data_formulator.agents.agent_sql_data_transform import SQLDataTransformationAgent
+from data_formulator.agents.agent_sql_data_transform import (
+    SQLDataTransformationAgent,
+    create_duckdb_conn_with_parquet_views,
+)
 from data_formulator.agents.agent_py_data_rec import PythonDataRecAgent
 from data_formulator.agents.agent_sql_data_rec import SQLDataRecAgent
 
 from data_formulator.agents.agent_sort_data import SortDataAgent
 from data_formulator.auth import get_identity_id
+from data_formulator.datalake.workspace import get_workspace
 from data_formulator.agents.agent_data_load import DataLoadAgent
 from data_formulator.agents.agent_data_clean import DataCleanAgent
 from data_formulator.agents.agent_data_clean_stream import DataCleanAgentStream
@@ -37,7 +42,6 @@ from data_formulator.agents.agent_interactive_explore import InteractiveExploreA
 from data_formulator.agents.agent_report_gen import ReportGenAgent
 from data_formulator.agents.client_utils import Client
 
-from data_formulator.db_manager import db_manager
 from data_formulator.workflows.exploration_flow import run_exploration_flow_streaming
 
 # Get logger for this module (logging config done in app.py)
@@ -176,21 +180,33 @@ def process_data_on_load_request():
         logger.info("# process data query: ")
         content = request.get_json()
         token = content["token"]
+        input_data = content["input_data"]
 
         client = get_client(content['model'])
 
         logger.info(f" model: {content['model']}")
 
-        identity_id = get_identity_id()
-        conn = db_manager.get_connection(identity_id)
+        conn = None
+        try:
+            if input_data.get("virtual"):
+                identity_id = get_identity_id()
+                workspace = get_workspace(identity_id)
+                input_tables = [{"name": input_data["name"]}]
+                conn = create_duckdb_conn_with_parquet_views(workspace, input_tables)
+            else:
+                conn = duckdb.connect(":memory:")
 
-        agent = DataLoadAgent(client=client, conn=conn)
-        
-        candidates = agent.run(content["input_data"])
-        
-        candidates = [c['content'] for c in candidates if c['status'] == 'ok']
+            agent = DataLoadAgent(client=client, conn=conn)
+            candidates = agent.run(content["input_data"])
+            candidates = [c['content'] for c in candidates if c['status'] == 'ok']
 
-        response = flask.jsonify({ "status": "ok", "token": token, "result": candidates })
+            response = flask.jsonify({ "status": "ok", "token": token, "result": candidates })
+        except Exception as e:
+            logger.exception(e)
+            response = flask.jsonify({ "token": token, "status": "error", "result": [] })
+        finally:
+            if conn is not None:
+                conn.close()
     else:
         response = flask.jsonify({ "token": -1, "status": "error", "result": [] })
 
@@ -395,14 +411,14 @@ def derive_data():
             mode = "recommendation"
 
         identity_id = get_identity_id()
-        conn = db_manager.get_connection(identity_id) if language == "sql" else None
+        workspace = get_workspace(identity_id) if language == "sql" else None
 
         if mode == "recommendation":
             # now it's in recommendation mode
-            agent = SQLDataRecAgent(client=client, conn=conn, agent_coding_rules=agent_coding_rules) if language == "sql" else PythonDataRecAgent(client=client, exec_python_in_subprocess=current_app.config['CLI_ARGS']['exec_python_in_subprocess'], agent_coding_rules=agent_coding_rules)
+            agent = SQLDataRecAgent(client=client, workspace=workspace, agent_coding_rules=agent_coding_rules) if language == "sql" else PythonDataRecAgent(client=client, exec_python_in_subprocess=current_app.config['CLI_ARGS']['exec_python_in_subprocess'], agent_coding_rules=agent_coding_rules)
             results = agent.run(input_tables, instruction, n=1, prev_messages=prev_messages)
         else:
-            agent = SQLDataTransformationAgent(client=client, conn=conn, agent_coding_rules=agent_coding_rules) if language == "sql" else PythonDataTransformationAgent(client=client, exec_python_in_subprocess=current_app.config['CLI_ARGS']['exec_python_in_subprocess'], agent_coding_rules=agent_coding_rules)
+            agent = SQLDataTransformationAgent(client=client, workspace=workspace, agent_coding_rules=agent_coding_rules) if language == "sql" else PythonDataTransformationAgent(client=client, exec_python_in_subprocess=current_app.config['CLI_ARGS']['exec_python_in_subprocess'], agent_coding_rules=agent_coding_rules)
             results = agent.run(input_tables, instruction, chart_type, chart_encodings, prev_messages)
 
         repair_attempts = 0
@@ -418,9 +434,6 @@ def derive_data():
                 results = agent.followup(input_tables, prev_dialog, [], new_instruction, n=1)
 
             repair_attempts += 1
-        
-        if conn:
-            conn.close()
         
         response = flask.jsonify({ "token": token, "status": "ok", "results": results })
     else:
@@ -565,10 +578,10 @@ def refine_data():
         logger.info(new_instruction)
 
         identity_id = get_identity_id()
-        conn = db_manager.get_connection(identity_id) if language == "sql" else None
+        workspace = get_workspace(identity_id) if language == "sql" else None
 
         # always resort to the data transform agent       
-        agent = SQLDataTransformationAgent(client=client, conn=conn, agent_coding_rules=agent_coding_rules) if language == "sql" else PythonDataTransformationAgent(client=client, exec_python_in_subprocess=current_app.config['CLI_ARGS']['exec_python_in_subprocess'], agent_coding_rules=agent_coding_rules)
+        agent = SQLDataTransformationAgent(client=client, workspace=workspace, agent_coding_rules=agent_coding_rules) if language == "sql" else PythonDataTransformationAgent(client=client, exec_python_in_subprocess=current_app.config['CLI_ARGS']['exec_python_in_subprocess'], agent_coding_rules=agent_coding_rules)
         results = agent.followup(input_tables, dialog, latest_data_sample, chart_type, chart_encodings, new_instruction, n=1)
 
         repair_attempts = 0
@@ -579,9 +592,6 @@ def refine_data():
 
             results = agent.followup(input_tables, prev_dialog, [], chart_type, chart_encodings, new_instruction, n=1)
             repair_attempts += 1
-
-        if conn:
-            conn.close()
 
         response = flask.jsonify({ "token": token, "status": "ok", "results": results})
     else:
@@ -629,12 +639,12 @@ def get_recommendation_questions():
             language = content.get("language", "python")
             if language == "sql":
                 identity_id = get_identity_id()
-                db_conn = db_manager.get_connection(identity_id)
+                workspace = get_workspace(identity_id)
             else:
-                db_conn = None
+                workspace = None
 
             agent_exploration_rules = content.get("agent_exploration_rules", "")
-            agent = InteractiveExploreAgent(client=client, agent_exploration_rules=agent_exploration_rules, db_conn=db_conn)
+            agent = InteractiveExploreAgent(client=client, agent_exploration_rules=agent_exploration_rules, workspace=workspace)
 
             # Get input tables from the request
             input_tables = content.get("input_tables", [])
@@ -679,18 +689,18 @@ def generate_report_stream():
             client = get_client(content['model'])
 
             language = content.get("language", "python")
+            input_tables = content.get("input_tables", [])
+            charts = content.get("charts", [])
+            style = content.get("style", "blog post")
+
             if language == "sql":
                 identity_id = get_identity_id()
-                db_conn = db_manager.get_connection(identity_id)
+                workspace = get_workspace(identity_id)
+                db_conn = create_duckdb_conn_with_parquet_views(workspace, input_tables)
             else:
                 db_conn = None
 
             agent = ReportGenAgent(client=client, conn=db_conn)
-
-            # Get input tables and charts from the request
-            input_tables = content.get("input_tables", [])
-            charts = content.get("charts", [])
-            style = content.get("style", "blog post")
 
             try:
                 for chunk in agent.stream(input_tables, charts, style):
@@ -701,6 +711,9 @@ def generate_report_stream():
                     "content": "unable to process report generation request" 
                 }
                 yield 'error: ' + json.dumps(error_data) + '\n'
+            finally:
+                if db_conn is not None:
+                    db_conn.close()
         else:
             error_data = { 
                 "content": "Invalid request format" 
@@ -730,7 +743,7 @@ def refresh_derived_data():
     - message: error message if failed
     """
     try:
-        from data_formulator.py_sandbox import run_transform_in_sandbox2020
+        from data_formulator.sandbox.py_sandbox import run_transform_in_sandbox2020
         from flask import current_app
         
         data = request.get_json()
