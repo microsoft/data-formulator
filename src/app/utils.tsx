@@ -21,9 +21,6 @@ export function getUrls() {
         CHECK_AVAILABLE_MODELS: `/api/agent/check-available-models`,
         TEST_MODEL: `/api/agent/test-model`,
 
-        DERIVE_CONCEPT_URL: `/api/agent/derive-concept-request`,
-        DERIVE_PY_CONCEPT: `/api/agent/derive-py-concept`,
-
         SORT_DATA_URL: `/api/agent/sort-data`,
         CLEAN_DATA_URL: `/api/agent/clean-data-stream`,
         

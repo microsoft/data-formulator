@@ -19,9 +19,6 @@ import json
 import html
 import pandas as pd
 
-from data_formulator.agents.agent_concept_derive import ConceptDeriveAgent
-from data_formulator.agents.agent_py_concept_derive import PyConceptDeriveAgent
-
 from data_formulator.agents.agent_data_transform import DataTransformationAgent
 from data_formulator.agents.agent_data_rec import DataRecAgent
 
@@ -214,71 +211,6 @@ def process_data_on_load_request():
     response.headers.add('Access-Control-Allow-Origin', '*')
     return response
 
-
-@agent_bp.route('/derive-concept-request', methods=['GET', 'POST'])
-def derive_concept_request():
-
-    if request.is_json:
-        logger.info("# code query: ")
-        content = request.get_json()
-        token = content["token"]
-
-        client = get_client(content['model'])
-
-        logger.info(f" model: {content['model']}")
-
-        # Get workspace and mount temp data
-        identity_id = get_identity_id()
-        workspace = get_workspace(identity_id)
-        input_data = content["input_data"]
-        temp_data = get_temp_tables(workspace, [input_data])
-
-        with WorkspaceWithTempData(workspace, temp_data) as workspace:
-            agent = ConceptDeriveAgent(client=client, workspace=workspace)
-
-            candidates = agent.run(input_data, [f['name'] for f in content["input_fields"]],
-                                          content["output_name"], content["description"])
-
-            candidates = [c['code'] for c in candidates if c['status'] == 'ok']
-
-        response = flask.jsonify({ "status": "ok", "token": token, "result": candidates })
-    else:
-        response = flask.jsonify({ "token": -1, "status": "error", "result": [] })
-
-    response.headers.add('Access-Control-Allow-Origin', '*')
-    return response
-
-
-@agent_bp.route('/derive-py-concept', methods=['GET', 'POST'])
-def derive_py_concept():
-
-    if request.is_json:
-        logger.info("# code query: ")
-        content = request.get_json()
-        token = content["token"]
-
-        client = get_client(content['model'])
-
-        logger.info(f" model: {content['model']}")
-
-        # Get workspace and mount temp data
-        identity_id = get_identity_id()
-        workspace = get_workspace(identity_id)
-        input_data = content["input_data"]
-        temp_data = get_temp_tables(workspace, [input_data])
-
-        with WorkspaceWithTempData(workspace, temp_data) as workspace:
-            agent = PyConceptDeriveAgent(client=client, workspace=workspace)
-
-            results = agent.run(input_data, [f['name'] for f in content["input_fields"]],
-                                          content["output_name"], content["description"])
-
-        response = flask.jsonify({ "status": "ok", "token": token, "results": results })
-    else:
-        response = flask.jsonify({ "token": -1, "status": "error", "results": [] })
-
-    response.headers.add('Access-Control-Allow-Origin', '*')
-    return response
 
 @agent_bp.route('/clean-data', methods=['GET', 'POST'])
 def clean_data_request():

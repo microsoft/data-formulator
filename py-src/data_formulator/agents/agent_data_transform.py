@@ -71,6 +71,19 @@ Concretely, you should first refine users' goal and then create a Python script 
                 - if the user's "chart_encodings" is sufficient but can be optimized, you can reorder encodings to visualize the data more effectively.
             - sometimes, user may provide instruction to update visualizations fields they provided. You should leverage the user's goal to resolve the conflict and decide the final "chart_encodings"
                 - e.g., they may mention "use B metric instead" while A metric is in provided fields, in this case, you should update "chart_encodings" to update A metric with B metric.
+            - if the user provides latitude and longitude as visual channels, use "latitude" and "longitude" as visual channels in "chart_encodings" as opposed to "x" and "y".
+        - guide on statistical analysis:
+            - when the user asks for forecasting or regression analysis, you should consider the following:
+                - the output should be a long format table where actual x, y pairs and predicted x, y pairs are included in the X, Y columns, they are differentiated with a third column "is_predicted".
+                - i.e., if the user ask for forecasting based on two columns T and Y, the output should be three columns: T, Y, is_predicted, where
+                    - T, Y columns contain BOTH original values from the data and predicted values from the data.
+                    - is_predicted is a boolean field to indicate whether the x, y pairs are original values from the data or predicted / regression values from the data.
+                - the recommended chart should be line chart (time series) or scatter plot (quantitative x, y)
+                - if the user asks for forecasting, it's good to include predicted x, y pairs for both x in the original data and future x values (i.e., combine regression and forecasting results)
+                    - in this case, is_predicted should be of three values 'original', 'regression', 'forecasting'
+            - when the user asks for clustering:
+                - the output should be a long format table where actual x, y pairs with a third column "cluster_id" that indicates the cluster id of the data point.
+                - the recommended chart should be scatter plot (quantitative x, y)
         - specify "output_variable", the name of the Python variable that will contain the final DataFrame result (e.g., "result_df", "transformed_data", etc.)
 
     Prepare the result in the following json format:
@@ -101,6 +114,11 @@ The script should be as simple as possible and easily readable. If there is no d
     3. The output must only contain two items:
         - a json object (wrapped in ```json```) representing the refined goal (including "detailed_instruction", "output_fields", "chart_encodings", "output_variable" and "reason")
         - a python code block (wrapped in ```python```) representing the transformation script, do not add any extra text explanation.
+
+**Datetime handling notes:**
+- If the output field is year, convert it to number. If it is year-month / year-month-day, convert it to string (e.g., "2020-01" / "2020-01-01").
+- If the output is time only: convert hour to number if it's just the hour (e.g., 10), but convert hour:min or h:m:s to string (e.g., "10:30", "10:30:45").
+- Never return datetime objects directly; convert to either number (if it only contains year) or string so it's readable.
 
 **Example data loading patterns:**
 

@@ -51,13 +51,13 @@ Concretely, you should infer the appropriate data and create a Python script bas
 
 ```json
 {
-    "mode": "", // string, one of "infer", "overview", "distribution", "summary"
+    "mode": "", // string, one of "infer", "overview", "distribution", "summary", "forecast"
     "recap": "...", // string, a short summary of the user's goal
     "display_instruction": "...", // string, the even shorter verb phrase describing the users' goal
     "recommendation": "...", // string, explain why this recommendation is made
     "input_tables": [...], // string[], describe names of the input tables that will be used in the transformation
     "output_fields": [...], // string[], describe the desired output fields that the output data should have
-    "chart_type": "", // string, one of "point", "bar", "line", "area", "heatmap", "group_bar"
+    "chart_type": "", // string, one of "point", "bar", "line", "area", "heatmap", "group_bar", "boxplot"
     "chart_encodings": {
         "x": "",
         "y": "",
@@ -74,10 +74,11 @@ Concretely:
     - recap what the user's goal is in a short summary in "recap".
     - If the user's [GOAL] is clear already, simply infer what the user mean. Set "mode" as "infer" and create "output_fields" and "chart_encodings" based off user description.
     - If the user's [GOAL] is not clear, make recommendations to the user:
-        - choose one of "distribution", "overview", "summary" in "mode":
+        - choose one of "distribution", "overview", "summary", "forecast" in "mode":
             * if it is "overview" and the data is in wide format, reshape it into long format.
             * if it is "distribution", select a few fields that would be interesting to visualize together.
             * if it is "summary", calculate some aggregated statistics to show interesting facts of the data.
+            * if it is "forecast", concretize the x,y fields that will be used for forecasting and decide if it is about regression or forecasting.
         - describe the recommendation reason in "recommendation"
         - based on the recommendation, determine what is an ideal output data. Note, the output data must be in tidy format.
         - then suggest recommendations of chart encoding that should be used to create the visualization.
@@ -93,7 +94,7 @@ Concretely:
     - determine "input_tables", the names of a subset of input tables from [CONTEXT] section that will be used to achieve the user's goal.
         - **IMPORTANT** Note that the Table 1 in [CONTEXT] section is the table the user is currently viewing, it should take precedence if the user refers to insights about the "current table".
         - At the same time, leverage table information to determine which tables are relevant to the user's goal and should be used.
-    - "chart_type" must be one of "point", "bar", "line", "area", "heatmap", "group_bar"
+    - "chart_type" must be one of "point", "bar", "line", "area", "heatmap", "group_bar", "boxplot"
     - "chart_encodings" should specify which fields should be used to create the visualization
         - decide which visual channels should be used to create the visualization appropriate for the chart type.
             - point: x, y, color, size, facet
@@ -103,33 +104,68 @@ Concretely:
             - area: x, y, color, facet
             - heatmap: x, y, color, facet
             - group_bar: x, y, color, facet
+            - boxplot: x, y, color, facet
         - note that all fields used in "chart_encodings" should be included in "output_fields".
             - all fields you need for visualizations should be transformed into the output fields!
             - "output_fields" should include important intermediate fields that are not used in visualization but are used for data transformation.
         - typically only 2-3 fields should be used to create the visualization (x, y, color/size), facet can be added if it's a faceted visualization.
     - Guidelines for choosing chart type and visualization fields:
         - Consider chart types as follows:
-             - (point) Scatter Plots: x,y: Quantitative/Categorical, color: Categorical (optional), size: Quantitative (optional for creating bubble chart)
-                - best for: Relationships, correlations, distributions
+            - (point) Scatter Plots: x,y: Quantitative/Categorical, color: Categorical (optional), size: Quantitative (optional for creating bubble chart),
+                - best for: Relationships, correlations, distributions, forecasting, regression analysis
                 - scatter plots are good default way to visualize data when other chart types are not applicable.
-             - (histogram) Histograms: x: Quantitative/Categorical, color: Categorical (optional for creating grouped histogram)
+                - use color to visualize points from different categories.
+                - use size to visualize data points with an additional quantitative dimension of the data points.
+            - (histogram) Histograms: x: Quantitative/Categorical, color: Categorical (optional for creating grouped histogram),
                 - best for: Distribution of a quantitative field
-             - (bar) Bar Charts: x: Categorical, y: Quantitative, color: Categorical/Quantitative (for stacked bar chart)
+                - use x values directly if x values are categorical, and transform the data into bins if the field values are quantitative.
+                - when color is specified, the histogram will be grouped automatically (items with the same x values will be grouped).
+            - (bar) Bar Charts: x: Categorical (nominal/ordinal), y: Quantitative, color: Categorical/Quantitative (for stacked bar chart / showing additional quantitative dimension),
                 - best for: Comparisons across categories
-            - (group_bar) for grouped bar chart, x: Categorical, y: Quantitative, color: Categorical
+                - use (bar) for simple bar chart or stacked bar chart (when it makes sense to add up Y values for each category with the same X value),
+                    - when color is specified, the bar will be stacked automatically (items with the same x values will be stacked).
+                    - note that when there are multiple rows in the data with same x values, the bar will be stacked automatically.
+                        - 1. consider to use an aggregated field for y values if the value is not suitable for stacking.
+                        - 2. consider to introduce facets so that each group is visualized in a separate bar.
+            - (group_bar) for grouped bar chart, x: Categorical (nominal/ordinal), y: Quantitative, color: Categorical
                 - when color is specified, bars from different groups will be grouped automatically.
-            - (line) Line Charts: x: Temporal (preferred) or ordinal, y: Quantitative, color: Categorical (optional)
+                - only use facet if the cardinality of color field is small (less than 5).
+            - (line) Line Charts: x: Temporal (preferred) or ordinal, y: Quantitative, color: Categorical (optional for creating multiple lines),
+                - best for: Trends over time, continuous data, forecasting, regression analysis
+                - note that when there are multiple rows in the data belong to the same group (same x and color values) but different y values, the line will not look correct.
+                - consider to use an aggregated field for y values, or introduce facets so that each group is visualized in a separate line.
+            - (area) Area Charts: x: Temporal (preferred) or ordinal, y: Quantitative, color: Categorical (optional for creating stacked areas),
                 - best for: Trends over time, continuous data
-            - (area) Area Charts: x: Temporal (preferred) or ordinal, y: Quantitative, color: Categorical (optional)
-                - best for: Trends over time, continuous data
-            - (heatmap) Heatmaps: x,y: Categorical, color: Quantitative intensity
+            - (heatmap) Heatmaps: x,y: Categorical (you need to convert quantitative to nominal), color: Quantitative intensity,
                 - best for: Pattern discovery in matrix data
+            - (boxplot) Box plots: x: Categorical (nominal/ordinal), y: Quantitative, color: Categorical (optional for creating grouped boxplots),
+                - best for: Distribution of a quantitative field
+                - use x values directly if x values are categorical, and transform the data into bins if the field values are quantitative.
+                - when color is specified, the boxplot will be grouped automatically (items with the same x values will be grouped).
         - facet channel is available for all chart types, it supports a categorical field with small cardinality to visualize the data in different facets.
+        - if you really need additional legend fields:
+            - you can use opacity for legend (support Quantitative and Categorical).
     - visualization fields require tidy data.
         - similar to VegaLite and ggplot2 so that each field is mapped to a visualization axis or legend.
         - consider data transformations if you want to visualize multiple fields together:
-            - example 1: reshape the data into long format so we can visualize multiple fields as categories or in different facets.
-            - example 2: calculate some derived fields from these fields (e.g., correlation, difference, profit etc.) to visualize them in one visualization.
+            - exapmle 1: suggest reshaping the data into long format in data transformation description (if these fields are all of the same type, e.g., they are all about sales, price, two columns about min/max-values, etc. don't mix different types of fields in reshaping) so we can visualize multiple fields as categories or in different facets.
+            - exapmle 2: calculate some derived fields from these fields(e.g., correlation, difference, profit etc.) in data transformation description to visualize them in one visualization.
+            - example 3: create a visualization only with a subset of the fields, you don't have to visualize all of them in one chart, you can later create a visualization with the rest of the fields. With the subset of charts, you can also consider reshaping or calculate some derived value.
+            - again, it does not make sense to have five fields like [item, A, B, C, D, E] in visualization fields, you should consider data transformation to reduce the number of fields.
+            - when reshaping data to long format, only fields of the same semantic type should be rehaped into the same column.
+    - guide on statistical analysis:
+        - when the user asks for forecasting or regression analysis, you should consider the following:
+            - the output should be a long format table where actual x, y pairs and predicted x, y pairs are included in the X, Y columns, they are differentiated with a third column "is_predicted" that is a boolean field.
+            - i.e., if the user ask for forecasting based on two columns T and Y, the output should be three columns: T, Y, is_predicted, where
+                - T, Y columns contain BOTH original values from the data and predicted values from the data.
+                - is_predicted is a boolean field to indicate whether the x, y pairs are original values from the data or predicted / regression values from the data.
+            - the recommended chart should be line chart (time series) or scatter plot (quantitative x, y)
+            - if the user asks for forecasting, it's good to include predicted x, y pairs for both x in the original data and future x values (i.e., combine regression and forecasting results)
+                - in this case, is_predicted should be of three values 'original', 'regression', 'forecasting'
+                - put is_predicted field in 'opacity' channel to distinguish them.
+        - when the user asks for clustering:
+            - the output should be a long format table where actual x, y pairs with a third column "cluster_id" that indicates the cluster id of the data point.
+            - the recommended chart should be scatter plot (quantitative x, y)
     - specify "output_variable", the name of the Python variable that will contain the final DataFrame result (e.g., "result_df")
 
 2. Then, write a Python script based on the inferred goal. The script should transform input data into the desired output table containing all "output_fields" from the refined goal.
