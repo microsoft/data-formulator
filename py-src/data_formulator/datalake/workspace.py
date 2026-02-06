@@ -34,6 +34,7 @@ from data_formulator.datalake.parquet_utils import (
     compute_arrow_table_hash,
     get_column_info,
     compute_dataframe_hash,
+    sanitize_dataframe_for_arrow,
     DEFAULT_COMPRESSION,
 )
 
@@ -366,7 +367,9 @@ class Workspace:
                 old_file.unlink()
 
         file_path = self.get_file_path(filename)
-        arrow_table = pa.Table.from_pandas(df)
+        # Sanitize DataFrame to handle mixed types in object columns
+        sanitized_df = sanitize_dataframe_for_arrow(df)
+        arrow_table = pa.Table.from_pandas(sanitized_df)
         pq.write_table(arrow_table, file_path, compression=compression)
 
         now = datetime.now(timezone.utc)

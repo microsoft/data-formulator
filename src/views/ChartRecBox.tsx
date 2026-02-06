@@ -616,6 +616,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                         // Add derive info manually since ChartRecBox doesn't use triggers
                         candidateTable.derive = {
                             code: code,
+                            outputVariable: refinedGoal['output_variable'] || 'result_df',
                             source: selectedTableIds,
                             dialog: dialog,
                             trigger: {
@@ -818,6 +819,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                 // Add derive info manually for exploration results
                 candidateTable.derive = {
                     code: code || `# Exploration step ${createdTables.length + 1}`,
+                    outputVariable: refinedGoal?.output_variable || 'result_df',
                     source: selectedTableIds,
                     dialog: dialog || [],
                     trigger: {

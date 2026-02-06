@@ -9,6 +9,14 @@ import { Channel, Chart, ChartTemplate, ConceptTransformation, EncodingItem, Enc
 import { DictTable } from "../components/ComponentType";
 import { getDType, Type } from "../data/types";
 import * as d3 from 'd3';
+import {
+    getVizCategory,
+    isTimeSeriesType,
+    isMeasureType,
+    isOrdinalType,
+    getRecommendedColorSchemeWithMidpoint,
+    TIMESERIES_X_TYPES,
+} from "../components/semanticTypes";
 
 export function getUrls() {
     return {
@@ -438,35 +446,69 @@ export const assembleVegaChart = (
             let fieldMetadata = tableMetadata[field.name];
 
             if (fieldMetadata != undefined) {
-                let fieldValues = workingTable.map(r => r[field.name]);
-                encodingObj["type"] = getDType(fieldMetadata.type, fieldValues);
-
-                if (fieldMetadata.semanticType == "Date" || fieldMetadata.semanticType == "DateTime" || fieldMetadata.semanticType == "YearMonth" || fieldMetadata.semanticType == "Year" || fieldMetadata.semanticType == "Decade") {
-                    if (['color', 'size', 'column', 'row'].includes(channel)) {
-                        encodingObj["type"] = "nominal";
-                    } else if (fieldMetadata.type == "string" && (fieldMetadata.semanticType == "Decade" || fieldMetadata.semanticType == "Year")) {
-                        encodingObj["type"] = "nominal";
-                    } else if (fieldMetadata.semanticType == 'YearMonth') {
-                        let sampleValues = workingTable.map(r => r[field.name]).slice(0, 10);
-                        // Check if values can be parsed as valid temporal dates (Vega-Lite compatible)
-                        // Temporal: yyyy-mm, yyyy-mm-dd, ISO date formats
-                        // Nominal: 2021-Aug, Q1-2024, etc.
-                        let isValidTemporal = sampleValues.some(val => {
-                            if (val && typeof val === 'string') {
-                                const trimmed = val.trim();
-                                // Try to parse as date
-                                const date = new Date(trimmed);
-                                // Check if it's a valid date and follows ISO-like format
-                                // (no letters except 'T' for datetime separator, 'Z' for timezone)
-                                const isISOLike = /^[\d\-:.TZ+]+$/.test(trimmed);
-                                return !isNaN(date.getTime()) && isISOLike;
+                const semanticType = fieldMetadata.semanticType || '';
+                const fieldValues = workingTable.map(r => r[field.name]);
+                
+                // Use semantic type system to determine Vega-Lite encoding type
+                if (semanticType) {
+                    const vizCategory = getVizCategory(semanticType);
+                    
+                    // Map semantic viz category to Vega-Lite type
+                    switch (vizCategory) {
+                        case 'temporal':
+                            // For temporal types in color/size/facet channels, use nominal
+                            if (['color', 'size', 'column', 'row'].includes(channel)) {
+                                encodingObj["type"] = "nominal";
+                            } else {
+                                // Check if values are actually parseable as temporal (date strings or Date objects)
+                                // We want to ensure the data is in a format Vega-Lite can parse as temporal
+                                const sampleValues = workingTable.map(r => r[field.name]).slice(0, 15).filter(v => v != null);
+                                const isValidTemporal = sampleValues.length > 0 && sampleValues.some(val => {
+                                    // Accept Date objects directly
+                                    if (val instanceof Date) return true;
+                                    // Accept strings that look like dates (not just plain numbers)
+                                    if (typeof val === 'string') {
+                                        const trimmed = val.trim();
+                                        // Must contain date separators (-, /, :, T) to be a date string
+                                        const hasDateSeparators = /[-/:T]/.test(trimmed);
+                                        if (!hasDateSeparators) return false;
+                                        const date = new Date(trimmed);
+                                        return !isNaN(date.getTime());
+                                    }
+                                    // Numbers could be Unix timestamps (milliseconds) - check if reasonable range
+                                    // Unix timestamps from 1970 to 2100: 0 to ~4102444800000
+                                    if (typeof val === 'number' && val > 86400000 && val < 4200000000000) {
+                                        return true;  // Likely a Unix timestamp in milliseconds
+                                    }
+                                    return false;
+                                });
+                                encodingObj["type"] = isValidTemporal ? "temporal" : "ordinal";
                             }
-                            return false;
-                        });
-                        encodingObj["type"] = isValidTemporal ? "temporal" : "nominal";
-                    } else {
-                        encodingObj["type"] = "temporal";
+                            break;
+                        case 'ordinal':
+                            // For ordinal types (Year, Month, Rank, Score, etc.)
+                            // Use ordinal for x/y axes, nominal for color/facet
+                            if (['color', 'size', 'column', 'row'].includes(channel)) {
+                                encodingObj["type"] = "nominal";
+                            } else {
+                                encodingObj["type"] = "ordinal";
+                            }
+                            break;
+                        case 'quantitative':
+                            encodingObj["type"] = "quantitative";
+                            break;
+                        case 'geographic':
+                            // Geographic coordinates stay quantitative for position encoding
+                            encodingObj["type"] = "quantitative";
+                            break;
+                        case 'nominal':
+                        default:
+                            encodingObj["type"] = "nominal";
+                            break;
                     }
+                } else {
+                    // No semantic type - fall back to data type inference
+                    encodingObj["type"] = getDType(fieldMetadata.type, fieldValues);
                 }
             } else {
                 encodingObj["type"] = 'nominal';
@@ -483,7 +525,7 @@ export const assembleVegaChart = (
             }
 
             if (field && encodingObj["type"] == "quantitative") {
-                // TODO: special hack: if the field values are all valid temporal values, set the type to temporal
+                // Special hack: if the field values are all valid temporal values, set the type to temporal
                 let sampleValues = workingTable.slice(0, 15).filter(r => r[field.name] != undefined).map(r => r[field.name]);
                 // ISO 8601 format: YYYY-MM-DDTHH:mm:ss.sss with optional timezone (Z or +/-HH:mm)
                 const isoDateRegex = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})?$/;
@@ -623,21 +665,35 @@ export const assembleVegaChart = (
 
         if (channel == "color") {
             if (encoding.scheme && encoding.scheme != "default") {
+                // User explicitly specified a color scheme
                 if ('scale' in encodingObj) {
                     encodingObj["scale"]["scheme"] = encoding.scheme;
                 } else {
-                    encodingObj["scale"] =  {"scheme": encoding.scheme };
+                    encodingObj["scale"] = { "scheme": encoding.scheme };
                 }
-            } else {
-                if (field) {
-                    let fieldMetadata = tableMetadata[field.name];
-                    if (fieldMetadata && ["Duration", "Range", "Percentage"].includes(fieldMetadata.semanticType) && encodingObj.type == "nominal") {
-                        let candidateSchemes = ['oranges', 'reds', 'blueorange', 'bluepurple'];
-                        if (!('scale' in encodingObj)) {
-                            encodingObj["scale"] = {};
-                        }
-                        encodingObj["scale"]["scheme"] = candidateSchemes[Math.abs(hashCode(field.name) % candidateSchemes.length)];
-                    } 
+            } else if (field) {
+                // Auto-select color scheme based on semantic type
+                const fieldMetadata = tableMetadata[field.name];
+                const semanticType = fieldMetadata?.semanticType;
+                const fieldValues = workingTable.map(r => r[field.name]);
+                const encodingVLType = encodingObj.type as 'nominal' | 'ordinal' | 'quantitative' | 'temporal';
+                
+                // Get recommended color scheme based on semantic type (includes midpoint for diverging)
+                const recommendation = getRecommendedColorSchemeWithMidpoint(
+                    semanticType,
+                    encodingVLType,
+                    fieldValues,
+                    field.name
+                );
+                
+                if (!('scale' in encodingObj)) {
+                    encodingObj["scale"] = {};
+                }
+                encodingObj["scale"]["scheme"] = recommendation.scheme;
+                
+                // For diverging schemes, set the domain midpoint
+                if (recommendation.type === 'diverging' && recommendation.domainMid !== undefined) {
+                    encodingObj["scale"]["domainMid"] = recommendation.domainMid;
                 }
             }
         }
@@ -1015,16 +1071,11 @@ export const assembleVegaChart = (
     }
 
     if (addTooltips) {
-        // Add tooltip configuration to the mark
-        if (!vgObj.mark) {
-            vgObj.mark = {};
+        // Add tooltip via config - works for all spec types including compound specs
+        if (!vgObj.config) {
+            vgObj.config = {};
         }
-        if (typeof vgObj.mark === 'string') {
-            vgObj.mark = { type: vgObj.mark };
-        }
-        
-        // Add tooltip to the mark
-        vgObj.mark.tooltip = true;
+        vgObj.config.mark = { ...vgObj.config.mark, tooltip: true };
     }
 
     return {...vgObj, data: {values: values}}

@@ -122,6 +122,34 @@ def compute_arrow_table_hash(table: pa.Table, sample_rows: int = 100) -> str:
     return hashlib.md5(content.encode()).hexdigest()
 
 
+def sanitize_dataframe_for_arrow(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Sanitize a DataFrame for conversion to PyArrow Table.
+    
+    Handles common issues that cause ArrowTypeError:
+    - Mixed types in object columns (e.g., strings and integers)
+    - Columns with all nulls that have ambiguous type
+    
+    For object dtype columns, converts all non-null values to strings
+    to ensure consistent typing.
+    
+    Returns:
+        A copy of the DataFrame with sanitized columns.
+    """
+    df = df.copy()
+    
+    for col in df.columns:
+        # Handle object dtype columns (potential mixed types)
+        if df[col].dtype == 'object':
+            # Convert all non-null values to string
+            # This handles mixed int/string columns safely
+            df[col] = df[col].apply(
+                lambda x: str(x) if pd.notna(x) and x is not None else None
+            )
+    
+    return df
+
+
 def compute_dataframe_hash(df: pd.DataFrame, sample_rows: int = 100) -> str:
     """
     Compute an MD5 hash representing the DataFrame content.

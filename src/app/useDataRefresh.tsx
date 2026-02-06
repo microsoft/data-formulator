@@ -474,9 +474,9 @@ export function useDerivedTableRefresh() {
         refreshInProgressRef.current.add(derivedTable.id);
 
         try {
-            // For SQL views (virtual tables), DuckDB auto-updates the view
+            // For SQL views (virtual tables without Python derive code), DuckDB auto-updates the view
             // We just need to re-sample to get the updated data
-            if (derivedTable.virtual?.tableId) {
+            if (derivedTable.virtual?.tableId && !derivedTable.derive?.code) {
                 console.log(`[DerivedRefresh] Table "${derivedTable.id}" is an SQL view - DuckDB auto-updates it`);
                 await refreshSqlView(derivedTable);
                 return;
@@ -512,13 +512,18 @@ export function useDerivedTableRefresh() {
             console.log(`[DerivedRefresh] Calling server to refresh "${derivedTable.id}" with ${inputTables.length} input tables, code length: ${code.length}`);
 
             // Call the server to re-run the derivation
+            const requestBody: any = {
+                input_tables: inputTables,
+                code: code,
+                output_variable: derivedTable.derive?.outputVariable || 'result_df',
+                virtual: !!derivedTable.virtual?.tableId,
+                output_table_name: derivedTable.virtual?.tableId
+            };
+            
             const response = await fetchWithIdentity(getUrls().REFRESH_DERIVED_DATA, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    input_tables: inputTables,
-                    code: code
-                })
+                body: JSON.stringify(requestBody)
             });
 
             const data = await response.json();

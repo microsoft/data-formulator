@@ -708,7 +708,8 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                                 candidateTableId, 
                                 rows, 
                                 { 
-                                    code: code, 
+                                    code: code,
+                                    outputVariable: refinedGoal['output_variable'] || 'result_df',
                                     source: actionTableIds, 
                                     dialog: dialog, 
                                     trigger: currentTrigger 

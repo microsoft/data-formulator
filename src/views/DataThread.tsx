@@ -829,13 +829,19 @@ let SingleThreadGroupView: FC<{
 
                 if (parentTableData.length > 0) {
                     try {
+                        // Build request body with required output_variable and virtual flag
+                        const requestBody: any = {
+                            input_tables: parentTableData,
+                            code: derivedTable.derive.code,
+                            output_variable: derivedTable.derive.outputVariable || 'result_df',
+                            virtual: !!derivedTable.virtual?.tableId,
+                            output_table_name: derivedTable.virtual?.tableId
+                        };
+                        
                         const response = await fetchWithIdentity(getUrls().REFRESH_DERIVED_DATA, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                input_tables: parentTableData,
-                                code: derivedTable.derive.code
-                            })
+                            body: JSON.stringify(requestBody)
                         });
 
                         const result = await response.json();

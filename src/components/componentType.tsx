@@ -115,6 +115,7 @@ export interface DictTable {
     derive?: { // how is this table derived
         source: string[], // which tables are this table computed from
         code: string,
+        outputVariable: string, // the Python variable name containing the result DataFrame (required)
         explanation?: {
             code: string, // explanation of the code
             concepts: {
@@ -147,8 +148,15 @@ export interface DictTable {
 
 export function createDictTable(
     id: string, rows: any[], 
-    derive: {code: string, explanation?: {code: string, concepts: {field: string, explanation: string}[]}, source: string[], dialog: any[], 
-             trigger: Trigger} | undefined = undefined,
+    derive: {
+        code: string, outputVariable: string, 
+        explanation?: {
+            code: string, 
+            concepts: {field: string, explanation: string}[]}, 
+            source: string[], 
+            dialog: any[], 
+            trigger: Trigger
+        } | undefined = undefined,
     virtual: {tableId: string, rowCount: number} | undefined = undefined,
     anchored: boolean = false,
     createdBy: 'user' | 'agent' = 'user', // by default, all tables are created by the user

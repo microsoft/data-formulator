@@ -197,9 +197,14 @@ def process_data_on_load_request():
             identity_id = get_identity_id()
             workspace = get_workspace(identity_id)
 
-            agent = DataLoadAgent(client=client, workspace=workspace)
-            candidates = agent.run(content["input_data"])
-            candidates = [c['content'] for c in candidates if c['status'] == 'ok']
+            # Check if input table is in workspace, if not add as temp data
+            input_tables = [{"name": input_data.get("name"), "rows": input_data.get("rows", [])}]
+            temp_data = get_temp_tables(workspace, input_tables)
+            
+            with WorkspaceWithTempData(workspace, temp_data) as workspace:
+                agent = DataLoadAgent(client=client, workspace=workspace)
+                candidates = agent.run(content["input_data"])
+                candidates = [c['content'] for c in candidates if c['status'] == 'ok']
 
             response = flask.jsonify({ "status": "ok", "token": token, "result": candidates })
         except Exception as e:
@@ -680,24 +685,36 @@ def generate_report_stream():
 @agent_bp.route('/refresh-derived-data', methods=['POST'])
 def refresh_derived_data():
     """
-    Re-run Python transformation code with new input data to refresh a derived table.
+    Re-run Python transformation code with updated input data to refresh a derived table.
     
-    This endpoint takes:
+    This endpoint:
+    1. Gets input tables from workspace (extending with temp data if needed)
+    2. Re-runs the transformation code in workspace context
+    3. Updates the derived table in workspace if virtual flag is true
+    
+    Request body:
     - input_tables: list of {name: string, rows: list} objects representing the parent tables
     - code: the Python transformation code to execute
+    - output_variable: the variable name containing the result DataFrame (required)
+    - output_table_name: the workspace table name to update with results (required if virtual=true)
+    - virtual: boolean flag indicating whether to save result to workspace
     
     Returns:
     - status: 'ok' or 'error'
-    - rows: the resulting rows if successful
+    - rows: the resulting rows if successful (limited to max_display_rows)
+    - virtual: {table_name: string, row_count: number} if output was saved to workspace
     - message: error message if failed
     """
     try:
-        from data_formulator.sandbox.py_sandbox import run_transform_in_sandbox2020
+        from data_formulator.sandbox.py_sandbox import run_unified_transform_in_sandbox
         from flask import current_app
         
         data = request.get_json()
         input_tables = data.get('input_tables', [])
         code = data.get('code', '')
+        output_variable = data.get('output_variable')
+        output_table_name = data.get('output_table_name')
+        virtual = data.get('virtual', False)
         
         if not input_tables:
             return jsonify({
@@ -710,44 +727,70 @@ def refresh_derived_data():
                 "status": "error", 
                 "message": "No transformation code provided"
             }), 400
-        
-        # Convert input tables to pandas DataFrames
-        df_list = []
-        for table in input_tables:
-            table_name = table.get('name', '')
-            table_rows = table.get('rows', [])
             
-            if not table_rows:
-                return jsonify({
-                    "status": "error",
-                    "message": f"Table '{table_name}' has no rows"
-                }), 400
-                
-            df = pd.DataFrame.from_records(table_rows)
-            df_list.append(df)
-        
-        # Get exec_python_in_subprocess setting from app config
-        exec_python_in_subprocess = current_app.config.get('CLI_ARGS', {}).get('exec_python_in_subprocess', False)
-        
-        # Run the transformation code
-        result = run_transform_in_sandbox2020(code, df_list, exec_python_in_subprocess)
-        
-        if result['status'] == 'ok':
-            result_df = result['content']
-            
-            # Convert result DataFrame to list of records
-            rows = json.loads(result_df.to_json(orient='records', date_format='iso'))
-            
-            return jsonify({
-                "status": "ok",
-                "rows": rows,
-                "message": "Successfully refreshed derived data"
-            })
-        else:
+        if not output_variable:
             return jsonify({
                 "status": "error",
-                "message": result.get('content', 'Unknown error during transformation')
+                "message": "No output_variable provided"
             }), 400
+            
+        if virtual and not output_table_name:
+            return jsonify({
+                "status": "error",
+                "message": "output_table_name is required when virtual=true"
+            }), 400
+        
+        # Get workspace and mount temp data for tables not in workspace
+        identity_id = get_identity_id()
+        workspace = get_workspace(identity_id)
+        temp_data = get_temp_tables(workspace, input_tables)
+        
+        # Get settings from app config
+        exec_python_in_subprocess = current_app.config.get('CLI_ARGS', {}).get('exec_python_in_subprocess', False)
+        max_display_rows = current_app.config.get('CLI_ARGS', {}).get('max_display_rows', 5000)
+        
+        with WorkspaceWithTempData(workspace, temp_data) as workspace:
+            # Run the transformation code in workspace context
+            result = run_unified_transform_in_sandbox(
+                code=code,
+                workspace_path=workspace._path,
+                output_variable=output_variable,
+                exec_python_in_subprocess=exec_python_in_subprocess
+            )
+            
+            if result['status'] == 'ok':
+                result_df = result['content']
+                row_count = len(result_df)
+                
+                response_data = {
+                    "status": "ok",
+                    "message": "Successfully refreshed derived data",
+                    "row_count": row_count
+                }
+                
+                if virtual:
+                    # Virtual table: update workspace and return limited rows for display
+                    workspace.write_parquet(result_df, output_table_name)
+                    response_data["virtual"] = {
+                        "table_name": output_table_name,
+                        "row_count": row_count
+                    }
+                    # Limit rows for response payload since full data is in workspace
+                    if row_count > max_display_rows:
+                        display_df = result_df.head(max_display_rows)
+                    else:
+                        display_df = result_df
+                    response_data["rows"] = json.loads(display_df.to_json(orient='records', date_format='iso'))
+                else:
+                    # Temp table: return full data since there's no workspace storage
+                    response_data["rows"] = json.loads(result_df.to_json(orient='records', date_format='iso'))
+                
+                return jsonify(response_data)
+            else:
+                return jsonify({
+                    "status": "error",
+                    "message": result.get('content', 'Unknown error during transformation')
+                }), 400
             
     except Exception as e:
         logger.error(f"Error refreshing derived data: {str(e)}")

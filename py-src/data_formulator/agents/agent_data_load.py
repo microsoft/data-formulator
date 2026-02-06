@@ -4,6 +4,10 @@
 import json
 
 from data_formulator.agents.agent_utils import extract_json_objects, generate_data_summary
+from data_formulator.agents.semantic_types import (
+    SEMANTIC_TYPE_CATEGORIES,
+    generate_semantic_types_prompt,
+)
 
 import logging
 
@@ -21,8 +25,8 @@ Given a dataset provided by the user,
 3. provide a very short summary of the dataset.
 
 Types to consider include: string, number, date
-Semantic types to consider include: Location, Decade, Year, Month, YearMonth, Day, Date, Time, DateTime, TimeRange, Range, Duration, Name, Percentage, String, Number
 
+''' + generate_semantic_types_prompt() + '''
 
 Sort order:
 
@@ -30,9 +34,6 @@ Sort order:
     - examples: English month name, week name, range, etc.
 - when the natural sort order is alphabetical or there is not natural sort order, there is no need to generate sort_order, examples:
     - Name, State, City, etc.
-
-Special cases: 
-* sometimes, column name is year like "2020", "2021" but its content is not actually year (e.g., sales), in these cases, the semantic type of the column would not be Year!
 
 Create a json object function based off the [DATA] provided.
 
@@ -80,16 +81,16 @@ table_0 (table_0) sample:
 
 ```json
 {
+    "suggested_table_name": "income",
     "fields": {
-        "suggested_table_name": "income_json",
-        "name": {"type": "string", "semantic_type": "Location", "sort_order": null},
-        "region": {"type": "string", "semantic_type": "String", "sort_order": ["northeast", "midwest", "south", "west", "other"]},
-        "state_id": {"type": "number", "semantic_type": "Number", "sort_order": null},
+        "name": {"type": "string", "semantic_type": "State", "sort_order": null},
+        "region": {"type": "string", "semantic_type": "Region", "sort_order": ["northeast", "midwest", "south", "west", "other"]},
+        "state_id": {"type": "number", "semantic_type": "ID", "sort_order": null},
         "pct": {"type": "number", "semantic_type": "Percentage", "sort_order": null},
-        "total": {"type": "number", "semantic_type": "Number", "sort_order": null},
+        "total": {"type": "number", "semantic_type": "Count", "sort_order": null},
         "group": {"type": "string", "semantic_type": "Range", "sort_order": ["<10000", "10000 to 14999", "15000 to 24999", "25000 to 34999", "35000 to 49999", "50000 to 74999", "75000 to 99999", "100000 to 149999", "150000 to 199999", "200000+"]}
     },
-    "data summary": "The dataset contains information about income distribution across different states in the USA. It includes fields for state names, regions, state IDs, percentage of total income, total income, and income groups.",
+    "data summary": "Income distribution across US states, with percentage and count by income bracket."
 }
 ```
 
@@ -115,9 +116,9 @@ table_0 (weather_seattle_atlanta) sample:
 
 [OUTPUT]
 
-```
+```json
 {  
-    "suggested_table_name": "weather_seattle_atlanta",
+    "suggested_table_name": "weather",
     "fields": {  
         "Date": {  
             "type": "string",  
@@ -126,17 +127,18 @@ table_0 (weather_seattle_atlanta) sample:
         },  
         "City": {  
             "type": "string",  
-            "semantic_type": "Location",  
+            "semantic_type": "City",  
             "sort_order": null  
         },  
         "Temperature": {  
             "type": "number",  
-            "semantic_type": "Number",  
+            "semantic_type": "Temperature",  
             "sort_order": null  
         }  
     },  
-    "data_summary": "This dataset contains weather information for the cities of Seattle and Atlanta. The fields include the date, city name, and temperature readings. The 'Date' field represents dates in a string format, the 'City' field represents city names, and the 'Temperature' field represents temperature values in integer format.",
-}```'''
+    "data_summary": "Daily temperature readings for Seattle and Atlanta in 2020."
+}
+```'''
 
 class DataLoadAgent(object):
 

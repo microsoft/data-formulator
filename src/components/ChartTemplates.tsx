@@ -380,12 +380,13 @@ const barCharts: ChartTemplate[] = [
         "template": {
             "mark": "bar",
             "encoding": {
+                "x": {"bin": {"size": 10}},
+                "y": {"aggregate": "count"}
             }
         },
-        "channels": ["x", "y", "color", "column", "row"],
+        "channels": ["x", "color", "column", "row"],
         "paths": {
             "x": ["encoding", "x"],
-            "y": ["encoding", "y"],
             "color": ["encoding", "color"],
             "column": ["encoding", "column"],
             "row": ["encoding", "row"]

@@ -379,9 +379,6 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
     const [codeExplViewOpen, setCodeExplViewOpen] = useState<boolean>(false);
     const [conceptExplanationsOpen, setConceptExplanationsOpen] = useState<boolean>(false);
     
-    // Add new state for the explanation mode
-    const [explanationMode, setExplanationMode] = useState<'none' | 'code' | 'explanation' | 'concepts'>('none');
-
     const [chatDialogOpen, setChatDialogOpen] = useState<boolean>(false);
     const [localScaleFactor, setLocalScaleFactor] = useState<number>(1);
 
@@ -391,7 +388,6 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
         setCodeViewOpen(false);
         setCodeExplViewOpen(false);
         setConceptExplanationsOpen(false);
-        setExplanationMode('none');
         setChatDialogOpen(false);
     }, [focusedChartId]);
 
@@ -665,16 +661,14 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                     }}
                 >
                     <QuestionAnswerIcon sx={{ fontSize: '14px', mr: 0.5 }} />
-                    chat
+                    log
                 </Button>
                 <Button 
                     key="code-btn"
                     onClick={() => {
                         if (codeViewOpen) {
-                            setExplanationMode('none');
                             setCodeViewOpen(false);
                         } else {
-                            setExplanationMode('code');
                             setCodeViewOpen(true);
                             setCodeExplViewOpen(false);
                             setConceptExplanationsOpen(false);
@@ -696,10 +690,8 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                     key="explanation-btn"
                     onClick={() => {
                         if (codeExplViewOpen) {
-                            setExplanationMode('none');
                             setCodeExplViewOpen(false);
                         } else {
-                            setExplanationMode('explanation');
                             setCodeExplViewOpen(true);
                             setCodeViewOpen(false);
                             setConceptExplanationsOpen(false);
@@ -722,10 +714,8 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                         key="concepts-btn"
                         onClick={() => {
                             if (conceptExplanationsOpen) {
-                                setExplanationMode('none');
                                 setConceptExplanationsOpen(false);
                             } else {
-                                setExplanationMode('concepts');
                                 setConceptExplanationsOpen(true);
                                 setCodeViewOpen(false);
                                 setCodeExplViewOpen(false);
@@ -892,7 +882,6 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                         <ButtonGroup sx={{position: 'absolute', right: 8, top: 1}}>
                             <IconButton onClick={() => {
                                 setCodeViewOpen(false);
-                                setExplanationMode('none');
                             }}  color='primary' aria-label="delete">
                                 <CloseIcon />
                             </IconButton>
@@ -920,7 +909,6 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                         <ButtonGroup sx={{position: 'absolute', right: 8, top: 0}}>
                             <IconButton onClick={() => {
                                 setCodeExplViewOpen(false);
-                                setExplanationMode('none');
                             }}  color='primary' aria-label="delete">
                                 <CloseIcon />
                             </IconButton>
