@@ -119,10 +119,6 @@ class InteractiveExploreAgent(object):
         self.agent_exploration_rules = agent_exploration_rules
         self.workspace = workspace  # when set (SQL/datalake mode), use parquet tables for summary
 
-    def get_data_summary(self, input_tables, table_name_prefix="Table"):
-        return generate_data_summary(input_tables, self.workspace, table_name_prefix=table_name_prefix)
-    
-
     def run(self, input_tables, start_question=None, exploration_thread=None, 
                   current_data_sample=None, current_chart=None, mode='interactive'):
         """
@@ -140,18 +136,19 @@ class InteractiveExploreAgent(object):
         """
         
         # Generate data summary
-        data_summary = self.get_data_summary(input_tables)
+        data_summary = generate_data_summary(input_tables, self.workspace)
         
         # Build context including exploration thread if available
         context = f"[DATASETS] These are the datasets the user is working with:\n\n{data_summary}"
         
         if exploration_thread:
-            thread_summary = self.get_data_summary(
+            thread_summary = generate_data_summary(
                 [{
                     'name': table.get('name', f'Table {i}'), 
                     'rows': table.get('rows', []), 
                     'attached_metadata': table.get('description', ''),
                 } for i, table in enumerate(exploration_thread, 1)],
+                self.workspace,
                 table_name_prefix="Thread Table"
             )
             context += f"\n\n[EXPLORATION THREAD] These are the sequence of tables the user created in this exploration thread, in the order they were created, and what questions are asked to create them:\n\n{thread_summary}"

@@ -7,6 +7,7 @@ import { enableMapSet } from 'immer';
 import { DictTable } from "../components/ComponentType";
 import { Message } from '../views/MessageSnackbar';
 import { getChartTemplate, getChartChannels } from "../components/ChartTemplates"
+import { recommendEncodings } from '../components/chartUtils';
 import { getDataTable } from '../views/VisualizationView';
 import { adaptChart, getTriggers, getUrls, computeContentHash, fetchWithIdentity } from './utils';
 import { Type } from '../data/types';
@@ -188,54 +189,6 @@ let getUnrefedDerivedTableIds = (state: DataFormulatorState) => {
 }
 
 // Helper function to auto-populate latitude/longitude encodings for map charts
-let autoPopulateMapEncodings = (chart: Chart, table: DictTable | undefined, conceptShelfItems: FieldItem[]) => {
-    if (!table) return;
-    
-    // Patterns to match latitude/longitude column names
-    const latPatterns = ['latitude', 'lat'];
-    const lonPatterns = ['longitude', 'lon', 'lng', 'long'];
-    
-    // Find latitude column (exact match first, then partial match)
-    let latColumn = table.names.find(name => 
-        latPatterns.some(p => name.toLowerCase() === p)
-    );
-    if (!latColumn) {
-        latColumn = table.names.find(name => 
-            latPatterns.some(p => name.toLowerCase().includes(p))
-        );
-    }
-    
-    // Find longitude column (exact match first, then partial match)
-    let lonColumn = table.names.find(name => 
-        lonPatterns.some(p => name.toLowerCase() === p)
-    );
-    if (!lonColumn) {
-        lonColumn = table.names.find(name => 
-            lonPatterns.some(p => name.toLowerCase().includes(p))
-        );
-    }
-    
-    // Auto-populate latitude encoding if found and not already set
-    if (latColumn && chart.encodingMap.latitude?.fieldID == undefined) {
-        const latField = conceptShelfItems.find(f => 
-            f.name === latColumn && table.names.includes(f.name)
-        );
-        if (latField) {
-            chart.encodingMap.latitude = { fieldID: latField.id };
-        }
-    }
-    
-    // Auto-populate longitude encoding if found and not already set
-    if (lonColumn && chart.encodingMap.longitude?.fieldID == undefined) {
-        const lonField = conceptShelfItems.find(f => 
-            f.name === lonColumn && table.names.includes(f.name)
-        );
-        if (lonField) {
-            chart.encodingMap.longitude = { fieldID: lonField.id };
-        }
-    }
-} 
-
 let deleteChartsRoutine = (state: DataFormulatorState, chartIds: string[]) => {
     let charts = state.charts.filter(c => !chartIds.includes(c.id));
     let focusedChartId = state.focusedChartId;
@@ -641,10 +594,15 @@ export const dataFormulatorSlice = createSlice({
             let tableId = action.payload.tableId || state.tables[0].id;
             let freshChart = generateFreshChart(tableId, chartType, "user") as Chart;
             
-            // Auto-populate latitude/longitude for map charts
-            if (chartType.toLowerCase().includes('map')) {
-                let table = state.tables.find(t => t.id === tableId);
-                autoPopulateMapEncodings(freshChart, table, state.conceptShelfItems);
+            // Auto-populate encodings based on table metadata
+            let table = state.tables.find(t => t.id === tableId);
+            if (table) {
+                const suggested = recommendEncodings(chartType, table, state.conceptShelfItems);
+                for (const [channel, encoding] of Object.entries(suggested)) {
+                    if (encoding && freshChart.encodingMap[channel as Channel]?.fieldID == undefined) {
+                        freshChart.encodingMap[channel as Channel] = encoding;
+                    }
+                }
             }
             
             state.charts = [ freshChart , ...state.charts];
@@ -697,11 +655,16 @@ export const dataFormulatorSlice = createSlice({
             if (chart) {
                 chart = adaptChart(chart, getChartTemplate(chartType) as ChartTemplate);
                 
-                // Auto-populate latitude/longitude for map charts
-                if (chartType.toLowerCase().includes('map')) {
-                    let allCharts = dfSelectors.getAllCharts(state);
-                    let table = getDataTable(chart, state.tables, allCharts, state.conceptShelfItems);
-                    autoPopulateMapEncodings(chart, table, state.conceptShelfItems);
+                // Auto-populate encodings based on table metadata
+                let allCharts = dfSelectors.getAllCharts(state);
+                let table = getDataTable(chart, state.tables, allCharts, state.conceptShelfItems);
+                if (table) {
+                    const suggested = recommendEncodings(chartType, table, state.conceptShelfItems);
+                    for (const [channel, encoding] of Object.entries(suggested)) {
+                        if (encoding && chart.encodingMap[channel as Channel]?.fieldID == undefined) {
+                            chart.encodingMap[channel as Channel] = encoding;
+                        }
+                    }
                 }
                 
                 dfSelectors.replaceChart(state, chart);

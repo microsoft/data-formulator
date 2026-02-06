@@ -134,7 +134,7 @@ def sanitize_model_error(error_message: str) -> str:
     # Keep only the essential error info
     if len(message) > 500:  # Truncate very long messages
         message = message[:500] + "..."
-        
+
     return message
 
 @agent_bp.route('/test-model', methods=['GET', 'POST'])
@@ -596,7 +596,6 @@ def get_recommendation_questions():
             input_tables = content.get("input_tables", [])
             identity_id = get_identity_id()
             workspace = get_workspace(identity_id)
-            temp_data = get_temp_tables(workspace, input_tables) if input_tables else None
 
             agent_exploration_rules = content.get("agent_exploration_rules", "")
             mode = content.get("mode", "interactive")
@@ -604,6 +603,13 @@ def get_recommendation_questions():
             exploration_thread = content.get("exploration_thread", None)
             current_chart = content.get("current_chart", None)
             current_data_sample = content.get("current_data_sample", None)
+
+            # Collect all tables that need to be in workspace:
+            # both the input tables and any tables from the exploration thread
+            all_tables = list(input_tables)
+            if exploration_thread:
+                all_tables.extend(exploration_thread)
+            temp_data = get_temp_tables(workspace, all_tables) if all_tables else None
 
             with WorkspaceWithTempData(workspace, temp_data) as workspace:
                 agent = InteractiveExploreAgent(client=client, workspace=workspace, agent_exploration_rules=agent_exploration_rules)

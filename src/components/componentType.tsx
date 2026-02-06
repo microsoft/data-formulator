@@ -2,7 +2,7 @@
 // Licensed under the MIT License.
 
 import { Type } from '../data/types';
-import { CHANNEL_LIST } from "../components/ChartTemplates"
+import { CHANNEL_LIST } from "./ChartTemplates"
 import { inferTypeFromValueArray } from '../data/utils';
 
 

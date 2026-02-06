@@ -34,9 +34,10 @@ The [CONTEXT] shows what the current dataset is, and the [GOAL] describes what t
 - Available libraries: pandas, numpy, duckdb, math, datetime, json, statistics, collections, re, sklearn
 
 **When to use DuckDB vs pandas:**
-- Use DuckDB SQL for: filtering, joins, aggregations, window functions, groupby operations
-- Use pandas for: complex transformations, time series operations, ML features, reshaping
-- You can combine both: use DuckDB for initial data loading/filtering, then pandas for complex operations
+- For large datasets (parquet files with many rows): prefer DuckDB SQL for aggregations, filtering, joins, window functions, and groupby — DuckDB can process parquet files efficiently without loading all data into memory.
+- For small datasets (even if stored as parquet): prefer pandas for readability and simplicity.
+- Use pandas for: complex transformations, time series operations, ML features, reshaping.
+- You can combine both: use DuckDB for initial data loading/filtering on large files, then pandas for complex operations.
 
 **Code structure:**
 - The script should be standalone (no function wrapper)
