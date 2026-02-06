@@ -203,6 +203,32 @@ class Workspace:
         metadata = self.get_metadata()
         return metadata.list_tables()
     
+    def get_fresh_name(self, name: str) -> str:
+        """
+        Generate a unique table name that doesn't conflict with existing tables.
+        
+        Sanitizes the input name, then checks if it already exists in the workspace.
+        If it does, appends an incrementing numeric suffix (_2, _3, ...) until
+        a unique name is found.
+        
+        Args:
+            name: Desired table name (will be sanitized)
+            
+        Returns:
+            A sanitized, unique table name safe for use in write_parquet etc.
+        """
+        base = sanitize_table_name(name)
+        existing = set(self.list_tables())
+        
+        if base not in existing:
+            return base
+        
+        # Try incrementing suffixes
+        counter = 2
+        while f"{base}_{counter}" in existing:
+            counter += 1
+        return f"{base}_{counter}"
+    
     def cleanup(self) -> None:
         """ Remove the entire workspace directory. """
         if self._path.exists():
@@ -280,22 +306,6 @@ class Workspace:
     # ------------------------------------------------------------------
     # Parquet management
     # ------------------------------------------------------------------
-
-    def get_unique_table_name(self, base_name: str) -> str:
-        """
-        Return a table name that does not clash with existing tables.
-
-        If the sanitized *base_name* is free it is returned as-is.
-        Otherwise tries ``base_1``, ``base_2``, … until an unused name is found.
-        """
-        safe_base = sanitize_table_name(base_name)
-        existing = set(self.list_tables())
-        candidate = safe_base
-        suffix = 0
-        while candidate in existing:
-            suffix += 1
-            candidate = f"{safe_base}_{suffix}"
-        return candidate
 
     def write_parquet_from_arrow(
         self,
@@ -513,22 +523,6 @@ class Workspace:
         return f"Workspace(identity_id={self._identity_id!r}, path={self._path!r})"
 
 
-def get_workspace(identity_id: str, root_dir: Optional[str | Path] = None) -> Workspace:
-    """
-    Get or create a workspace for a user.
-
-    This is a convenience function that creates a Workspace instance.
-
-    Args:
-        identity_id: Unique identifier for the user
-        root_dir: Optional root directory for workspaces
-
-    Returns:
-        Workspace instance
-    """
-    return Workspace(identity_id, root_dir)
-
-
 class WorkspaceWithTempData:
     """
     Context manager that temporarily adds temp data (list of {name, rows}) to a workspace
@@ -549,7 +543,7 @@ class WorkspaceWithTempData:
 
         for item in self._temp_data:
             base_name = item.get("name", "table")
-            name = self._workspace.get_unique_table_name(base_name)
+            name = self._workspace.get_fresh_name(base_name)
             rows = item.get("rows", [])
             df = pd.DataFrame(rows) if rows else pd.DataFrame()
             meta = self._workspace.write_parquet(df, name)

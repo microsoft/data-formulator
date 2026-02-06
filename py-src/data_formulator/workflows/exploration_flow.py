@@ -8,7 +8,7 @@ from typing import Any, Generator
 from data_formulator.agents.agent_exploration import ExplorationAgent
 from data_formulator.agents.agent_data_rec import DataRecAgent
 from data_formulator.agents.client_utils import Client
-from data_formulator.datalake.workspace import get_workspace, WorkspaceWithTempData
+from data_formulator.datalake.workspace import WorkspaceWithTempData, Workspace
 from data_formulator.workflows.create_vl_plots import assemble_vegailte_chart, spec_to_base64, detect_field_type
 
 logger = logging.getLogger(__name__)
@@ -106,7 +106,7 @@ def run_exploration_flow_streaming(
         }
         return
 
-    workspace = get_workspace(session_id)
+    workspace = Workspace(session_id)
     
     # Determine temp tables by checking which input tables don't exist in the workspace
     existing_tables = set(workspace.list_tables())

@@ -82,7 +82,7 @@ def run_in_main_process(code, allowed_objects):
     ALLOWED_MODULES = {
         'pandas', 'numpy', 'math', 'datetime', 'json',
         'statistics', 'random', 'collections', 're',
-        'itertools', 'functools', 'operator', 'sklearn', 'time',
+        'itertools', 'functools', 'operator', 'sklearn', 'scipy', 'time',
         'duckdb'  # Added for unified Python+SQL execution
     }
 
@@ -111,65 +111,6 @@ def run_in_main_process(code, allowed_objects):
         return {'status': 'error', 'error_message': error_message}
 
     return {'status': 'ok', 'allowed_objects': {key: restricted_globals[key] for key in allowed_objects}}
-
-
-def run_transform_in_sandbox2020(code, df_list, exec_python_in_subprocess=False):
-    
-    allowed_objects = {
-        'df_list': df_list,
-        'output_df': None
-    }
-
-    assemble_code = f'''
-import pandas as pd
-import json
-{code}
-output_df = transform_data(*df_list)
-'''
-
-    if exec_python_in_subprocess:
-        result = run_in_subprocess(assemble_code, allowed_objects)
-    else:
-        result = run_in_main_process(assemble_code, allowed_objects)
-
-    if result['status'] == 'ok':
-        result_df = result['allowed_objects']['output_df']
-        return {
-            'status': 'ok',
-            'content': result_df
-        }
-    else:
-        return {
-            'status': 'error',
-            'content': result['error_message']
-        }
-
-
-def run_derive_concept(code, output_field_name, table_rows, exec_python_in_subprocess=False):
-    """given a concept derivation function, execute the function on inputs to generate a new dataframe"""
-
-    assemble_code = f'''
-import pandas as pd
-{code}
-new_column = derive_new_column(df)
-'''
-
-    allowed_objects = {
-        'df': pd.DataFrame.from_records(table_rows),
-        'new_column': None # the return value of the derive_new_column function
-    }
-
-    if exec_python_in_subprocess:
-        result = run_in_subprocess(assemble_code, allowed_objects)
-    else:
-        result = run_in_main_process(assemble_code, allowed_objects)
-
-    if result['status'] == 'ok':
-        result_df = result['allowed_objects']['df']
-        result_df[output_field_name] = result['allowed_objects']['new_column']
-        return { 'status': 'ok', 'content': result_df }
-    else:
-        return { 'status': 'error', 'content': result['error_message'] }
 
 
 def run_unified_transform_in_sandbox(

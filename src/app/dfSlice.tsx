@@ -188,6 +188,24 @@ let getUnrefedDerivedTableIds = (state: DataFormulatorState) => {
     return state.tables.filter(table => table.derive && !tableWithDescendants.includes(table.id) && !chartRefedTables.includes(table.id)).map(t => t.id);
 }
 
+/**
+ * Fire-and-forget cleanup of virtual tables from the workspace backend.
+ * Called when derived tables are removed from the frontend state.
+ */
+export function cleanupVirtualTablesFromWorkspace(tables: DictTable[]) {
+    for (const table of tables) {
+        if (table.virtual?.tableId) {
+            fetchWithIdentity(getUrls().DELETE_TABLE, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ table_name: table.virtual.tableId }),
+            }).catch(err => {
+                console.warn(`Failed to clean up virtual table ${table.virtual?.tableId}:`, err);
+            });
+        }
+    }
+}
+
 // Helper function to auto-populate latitude/longitude encodings for map charts
 let deleteChartsRoutine = (state: DataFormulatorState, chartIds: string[]) => {
     let charts = state.charts.filter(c => !chartIds.includes(c.id));
@@ -215,7 +233,11 @@ let deleteChartsRoutine = (state: DataFormulatorState, chartIds: string[]) => {
 
     let unrefedDerivedTableIds = getUnrefedDerivedTableIds(state);
     let tableIdsToDelete = state.tables.filter(t => !t.anchored && unrefedDerivedTableIds.includes(t.id)).map(t => t.id);
-   
+    
+    // Clean up virtual tables from workspace before removing from state
+    let tablesToDelete = state.tables.filter(t => tableIdsToDelete.includes(t.id));
+    cleanupVirtualTablesFromWorkspace(tablesToDelete);
+
     state.tables = state.tables.filter(t => !tableIdsToDelete.includes(t.id));
 }
 
@@ -445,6 +467,13 @@ export const dataFormulatorSlice = createSlice({
         },
         deleteTable: (state, action: PayloadAction<string>) => {
             let tableId = action.payload;
+            
+            // Clean up virtual table from workspace before removing from state
+            let tableToDelete = state.tables.find(t => t.id == tableId);
+            if (tableToDelete) {
+                cleanupVirtualTablesFromWorkspace([tableToDelete]);
+            }
+            
             state.tables = state.tables.filter(t => t.id != tableId);
 
             // feels problematic???
@@ -797,18 +826,37 @@ export const dataFormulatorSlice = createSlice({
         },
         overrideDerivedTables: (state, action: PayloadAction<DictTable>) => {
             let table = action.payload;
+            
+            // Clean up old virtual table from workspace since it's being replaced
+            let oldTable = state.tables.find(t => t.id == table.id);
+            if (oldTable) {
+                cleanupVirtualTablesFromWorkspace([oldTable]);
+            }
+            
             state.tables = [...state.tables.filter(t => t.id != table.id), table];
         },
         deleteDerivedTableById: (state, action: PayloadAction<string>) => {
             // delete a synthesis output based on index
             let tableId = action.payload;
+            
+            // Clean up virtual table from workspace before removing from state
+            let tableToDelete = state.tables.find(t => t.derive && t.id == tableId);
+            if (tableToDelete) {
+                cleanupVirtualTablesFromWorkspace([tableToDelete]);
+            }
+            
             state.tables = state.tables.filter(t => !(t.derive && t.id == tableId));
         },
         clearUnReferencedTables: (state) => {
             // remove all tables that are not referred
             let allCharts = dfSelectors.getAllCharts(state);
             let referredTableId = allCharts.map(chart => getDataTable(chart, state.tables, allCharts, state.conceptShelfItems).id);
-            state.tables = state.tables.filter(t => !(t.derive && !referredTableId.some(tableId => tableId == t.id)));
+            let tablesToRemove = state.tables.filter(t => t.derive && !referredTableId.some(tableId => tableId == t.id));
+            
+            // Clean up virtual tables from workspace
+            cleanupVirtualTablesFromWorkspace(tablesToRemove);
+            
+            state.tables = state.tables.filter(t => !tablesToRemove.some(tr => tr.id == t.id));
         },
         clearUnReferencedCustomConcepts: (state) => {
             let fieldNamesFromTables = state.tables.map(t => t.names).flat();

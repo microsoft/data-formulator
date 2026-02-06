@@ -2,14 +2,10 @@
 # Licensed under the MIT License.
 
 import json
-import random
-import string
 import os
 
 from data_formulator.agents.agent_utils import extract_json_objects, extract_code_from_gpt_response
 import pandas as pd
-
-from data_formulator.datalake.parquet_utils import sanitize_table_name as parquet_sanitize_table_name
 
 import logging
 import re
@@ -29,7 +25,9 @@ The users' instruction includes "chart_type" and "chart_encodings" that describe
 - You can use BOTH DuckDB SQL and pandas operations in the same script
 - The script will run in the workspace data directory where all files are located
 - You can reference files directly by their filename (e.g., 'sales_data.parquet')
-- Available libraries: pandas, numpy, duckdb, math, datetime, json, statistics, collections, re, sklearn
+- **Allowed libraries:** pandas, numpy, duckdb, math, datetime, json, statistics, collections, re, sklearn, scipy, random, itertools, functools, operator, time
+- **Not allowed:** matplotlib, plotly, seaborn, requests, subprocess, os, sys, io, or any other library not listed above. Do NOT import them — the sandbox will reject the import.
+- File system access (open, write) and network access are also forbidden.
 
 **When to use DuckDB vs pandas:**
 - For large datasets (parquet files with many rows): prefer DuckDB SQL for aggregations, filtering, joins, window functions, and groupby — DuckDB can process parquet files efficiently without loading all data into memory.
@@ -85,7 +83,9 @@ Concretely, you should first refine users' goal and then create a Python script 
             - when the user asks for clustering:
                 - the output should be a long format table where actual x, y pairs with a third column "cluster_id" that indicates the cluster id of the data point.
                 - the recommended chart should be scatter plot (quantitative x, y)
-        - specify "output_variable", the name of the Python variable that will contain the final DataFrame result (e.g., "result_df", "transformed_data", etc.)
+        - specify "output_variable", the name of the Python variable that will contain the final DataFrame result.
+          The name should be descriptive and reflect the data content (e.g., "sales_by_region", "monthly_trends", "customer_segments").
+          Avoid generic names like "result_df", "output", or "data". Use snake_case naming convention.
 
     Prepare the result in the following json format:
 
@@ -104,7 +104,9 @@ Concretely, you should first refine users' goal and then create a Python script 
         "facet": "",
         ... // other visualization channels user used
     }, // object: map visualization channels (x, y, color, size, opacity, facet, etc.) to a subset of "output_fields" that will be visualized
-    "output_variable": "result_df", // string, the name of the Python variable containing the final result
+    "output_variable": "...", // string, the name of the Python variable containing the final result.
+                        // Should be descriptive and informative (e.g., "sales_by_region", "monthly_revenue", "top_10_products"),
+                        // not generic names like "result_df" or "output". Use snake_case.
     "reason": "..." // string, explain why this refinement is made
 }
 ```
@@ -204,7 +206,7 @@ Here are 1 dataset with their summaries:
     "display_instruction": "Compare **Seattle** and **Atlanta** temperatures",
     "output_fields": ["Date", "Seattle Temperature", "Atlanta Temperature", "Warmer City"],
     "chart_encodings": {"x": "Seattle Temperature", "y": "Atlanta Temperature", "color": "Warmer City"},
-    "output_variable": "result_df",
+    "output_variable": "city_temp_comparison",
     "reason": "To compare Seattle and Atlanta temperatures, we need to pivot the data to have separate temperature columns for each city, then compute which city is warmer."
 }
 ```
@@ -214,7 +216,7 @@ import pandas as pd
 import duckdb
 
 # Use DuckDB for pivot operation
-result_df = duckdb.sql("""
+city_temp_comparison = duckdb.sql("""
     WITH pivoted AS (
         SELECT
             Date,
@@ -298,8 +300,7 @@ class DataTransformationAgent(object):
                         row_count = len(full_df)
 
                         # Generate unique table name for workspace storage
-                        random_suffix = ''.join(random.choices(string.ascii_lowercase, k=4))
-                        output_table_name = parquet_sanitize_table_name(f"derived_{random_suffix}")
+                        output_table_name = self.workspace.get_fresh_name(f"d-{output_variable}")
 
                         # Write full result to workspace as parquet
                         self.workspace.write_parquet(full_df, output_table_name)

@@ -37,7 +37,6 @@ Example usage:
 from data_formulator.datalake.workspace import (
     Workspace,
     WorkspaceWithTempData,
-    get_workspace,
     get_default_workspace_root,
     DATALAKE_ROOT_ENV,
 )
@@ -74,7 +73,6 @@ __all__ = [
     # Workspace
     "Workspace",
     "WorkspaceWithTempData",
-    "get_workspace",
     "get_default_workspace_root",
     "DATALAKE_ROOT_ENV",
     # Metadata

@@ -24,7 +24,7 @@ from data_formulator.agents.agent_data_rec import DataRecAgent
 
 from data_formulator.agents.agent_sort_data import SortDataAgent
 from data_formulator.auth import get_identity_id
-from data_formulator.datalake.workspace import get_workspace, WorkspaceWithTempData
+from data_formulator.datalake.workspace import Workspace, WorkspaceWithTempData
 from data_formulator.agents.agent_data_load import DataLoadAgent
 from data_formulator.agents.agent_data_clean import DataCleanAgent
 from data_formulator.agents.agent_data_clean_stream import DataCleanAgentStream
@@ -195,7 +195,7 @@ def process_data_on_load_request():
         try:
             # Get workspace (needed for both virtual and in-memory tables)
             identity_id = get_identity_id()
-            workspace = get_workspace(identity_id)
+            workspace = Workspace(identity_id)
 
             # Check if input table is in workspace, if not add as temp data
             input_tables = [{"name": input_data.get("name"), "rows": input_data.get("rows", [])}]
@@ -364,7 +364,7 @@ def derive_data():
             mode = "recommendation"
 
         identity_id = get_identity_id()
-        workspace = get_workspace(identity_id)
+        workspace = Workspace(identity_id)
         temp_data = get_temp_tables(workspace, input_tables)
         max_display_rows = current_app.config['CLI_ARGS']['max_display_rows']
 
@@ -531,7 +531,7 @@ def refine_data():
         logger.info(new_instruction)
 
         identity_id = get_identity_id()
-        workspace = get_workspace(identity_id)
+        workspace = Workspace(identity_id)
         temp_data = get_temp_tables(workspace, input_tables)
         max_display_rows = current_app.config['CLI_ARGS']['max_display_rows']
 
@@ -569,7 +569,7 @@ def request_code_expl():
 
         # Get workspace and mount temp data
         identity_id = get_identity_id()
-        workspace = get_workspace(identity_id)
+        workspace = Workspace(identity_id)
         temp_data = get_temp_tables(workspace, input_tables)
 
         with WorkspaceWithTempData(workspace, temp_data) as workspace:
@@ -600,7 +600,7 @@ def get_recommendation_questions():
 
             input_tables = content.get("input_tables", [])
             identity_id = get_identity_id()
-            workspace = get_workspace(identity_id)
+            workspace = Workspace(identity_id)
 
             agent_exploration_rules = content.get("agent_exploration_rules", "")
             mode = content.get("mode", "interactive")
@@ -654,7 +654,7 @@ def generate_report_stream():
             charts = content.get("charts", [])
             style = content.get("style", "blog post")
             identity_id = get_identity_id()
-            workspace = get_workspace(identity_id)
+            workspace = Workspace(identity_id)
             temp_data = get_temp_tables(workspace, input_tables) if input_tables else None
 
             with WorkspaceWithTempData(workspace, temp_data) as workspace:
@@ -742,7 +742,7 @@ def refresh_derived_data():
         
         # Get workspace and mount temp data for tables not in workspace
         identity_id = get_identity_id()
-        workspace = get_workspace(identity_id)
+        workspace = Workspace(identity_id)
         temp_data = get_temp_tables(workspace, input_tables)
         
         # Get settings from app config
