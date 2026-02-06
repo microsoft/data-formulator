@@ -5,13 +5,13 @@ import json
 import random
 import string
 
-from data_formulator.agents.agent_utils import extract_json_objects, extract_code_from_gpt_response
+from data_formulator.agents.agent_utils import extract_json_objects, extract_code_from_gpt_response, generate_data_summary
+from data_formulator.agents.agent_utils_sql import create_duckdb_conn_with_parquet_views
 import pandas as pd
 
-from data_formulator.datalake.parquet_manager import write_parquet, sanitize_table_name as parquet_sanitize_table_name
+from data_formulator.datalake.parquet_utils import sanitize_table_name as parquet_sanitize_table_name
 
 import logging 
-import re
 # Replace/update the logger configuration
 logger = logging.getLogger(__name__)
 
@@ -162,39 +162,13 @@ FROM pivoted;
 ```
 '''
 
-def sanitize_table_name(table_name: str) -> str:
-    """Sanitize table name to be used in SQL queries"""
-    # Replace spaces with underscores
-    sanitized_name = table_name.replace(" ", "_")
-    sanitized_name = sanitized_name.replace("-", "_")
-    # Allow alphanumeric, underscore, dot, dash, and dollar sign
-    sanitized_name = re.sub(r'[^a-zA-Z0-9_\.$]', '', sanitized_name)
-    return sanitized_name
-
-
-def create_duckdb_conn_with_parquet_views(workspace, input_tables: list[dict]):
-    """
-    Create an in-memory DuckDB connection with a view for each parquet table in the workspace.
-    Input tables are expected to be parquet-backed tables in the datalake (parquet-to-parquet).
-    """
-    import duckdb
-    from data_formulator.datalake.parquet_manager import get_parquet_path
-
-    conn = duckdb.connect(":memory:")
-    for table in input_tables:
-        name = table["name"]
-        view_name = sanitize_table_name(name)
-        path = get_parquet_path(workspace, name)
-        path_escaped = str(path).replace("\\", "\\\\").replace("'", "''")
-        conn.execute(f'CREATE VIEW "{view_name}" AS SELECT * FROM read_parquet(\'{path_escaped}\')')
-    return conn
-
 
 class SQLDataTransformationAgent(object):
 
-    def __init__(self, client, workspace, system_prompt=None, agent_coding_rules=""):
+    def __init__(self, client, workspace, system_prompt=None, agent_coding_rules="", max_display_rows=5000):
         self.client = client
         self.workspace = workspace
+        self.max_display_rows = max_display_rows
         self.conn = None  # set per request, closed after use
         
         # Incorporate agent coding rules into system prompt if provided
@@ -248,8 +222,8 @@ class SQLDataTransformationAgent(object):
                     row_count = self.conn.execute(f"SELECT COUNT(*) FROM {view_name}").fetchone()[0]
                     
                     # Fetch result: full for datalake write, limited for response payload
-                    if row_count > 5000:
-                        query_output = self.conn.execute(f"SELECT * FROM {view_name} LIMIT 5000").fetch_df()
+                    if row_count > self.max_display_rows:
+                        query_output = self.conn.execute(f"SELECT * FROM {view_name} LIMIT {self.max_display_rows}").fetch_df()
                         full_df = self.conn.execute(f"SELECT * FROM {view_name}").fetch_df()
                     else:
                         full_df = self.conn.execute(f"SELECT * FROM {view_name}").fetch_df()
@@ -257,7 +231,7 @@ class SQLDataTransformationAgent(object):
                     
                     # Write full result to datalake as parquet (parquet-to-parquet)
                     output_table_name = parquet_sanitize_table_name(f"derived_{random_suffix}")
-                    write_parquet(self.workspace, full_df, output_table_name)
+                    self.workspace.write_parquet(full_df, output_table_name)
                 
                     result = {
                         "status": "ok",
@@ -307,7 +281,7 @@ class SQLDataTransformationAgent(object):
         """
         self.conn = create_duckdb_conn_with_parquet_views(self.workspace, input_tables)
         try:
-            data_summary = generate_sql_data_summary(self.conn, input_tables)
+            data_summary = generate_data_summary(input_tables, self.workspace)
 
             goal = {
                 "instruction": description,
@@ -370,160 +344,3 @@ class SQLDataTransformationAgent(object):
             if self.conn:
                 self.conn.close()
                 self.conn = None
-        
-
-def generate_sql_data_summary(conn, input_tables: list[dict], 
-        row_sample_size: int = 5,
-        field_sample_size: int = 7,
-        max_val_chars: int = 140,
-        table_name_prefix: str = "Table"
-    ) -> str:
-    """
-    Generate a natural, well-organized summary of SQL input tables.
-    This is the SQL equivalent of generate_data_summary for pandas DataFrames.
-    
-    Organization approach:
-    - Each table is clearly separated with a header
-    - Information flows logically: Overview → Schema → Examples
-    - Consistent section ordering for better readability
-    
-    Args:
-        conn: DuckDB connection
-        input_tables: list of dicts, each containing 'name' key for the table name
-        row_sample_size: number of rows to sample in the data preview
-        field_sample_size: number of example values for each field
-        max_val_chars: max characters to show for each value
-        table_name_prefix: prefix for table headers (default "Table")
-    
-    Returns:
-        A formatted string summary of all tables
-    """
-    table_summaries = []
-    
-    for idx, table in enumerate(input_tables):
-        table_name = sanitize_table_name(table['name'])
-        description = table.get("attached_metadata", "")
-        table_summary_str = get_sql_table_statistics_str(
-            conn, table_name, 
-            row_sample_size=row_sample_size,
-            field_sample_size=field_sample_size,
-            max_val_chars=max_val_chars,
-            table_name_prefix=table_name_prefix,
-            table_idx=idx,
-            description=description
-        )
-        table_summaries.append(table_summary_str)
-    
-    # Add visual separator between tables (except for the last one)
-    separator = "\n" + "─" * 60 + "\n\n"
-    joined_summaries = separator.join(table_summaries)
-    
-    return joined_summaries
-
-
-def get_sql_table_statistics_str(conn, table_name: str, 
-        row_sample_size: int = 5, # number of rows to be sampled in the sample data part
-        field_sample_size: int = 7, # number of example values for each field to be sampled
-        max_val_chars: int = 140, # max number of characters to be shown for each example value
-        table_name_prefix: str = "Table",
-        table_idx: int = 0,
-        description: str = ""
-    ) -> str:
-    """
-    Get a string representation of the table statistics in markdown format.
-    
-    Organization:
-    - Header with table name and dimensions
-    - Description (if available)
-    - Schema section with field summaries
-    - Sample data section with code block
-    """
-
-    table_name = sanitize_table_name(table_name)
-
-    # Get column information and row count
-    columns = conn.execute(f"DESCRIBE {table_name}").fetchall()
-    row_count = conn.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()[0]
-    num_cols = len(columns)
-    
-    # Build sections in logical order: Overview → Description → Schema → Examples
-    sections = []
-    
-    # 1. Table Header with basic stats
-    header = f"## {table_name_prefix} {table_idx + 1}: {table_name}"
-    if row_count > 0:
-        header += f" ({row_count:,} rows × {num_cols} columns)"
-    sections.append(header)
-    sections.append("")  # Empty line for spacing
-    
-    # 2. Description (if available) - provides context first
-    if description:
-        sections.append(f"### Description\n{description}\n")
-    
-    # 3. Schema/Fields - core structure information
-    field_summaries = []
-    for col in columns:
-        col_name = col[0]
-        col_type = col[1]
-        
-        # Properly quote column names to avoid SQL keywords issues
-        quoted_col_name = f'"{col_name}"'
-        
-        # Get sample values for the field
-        if col_type in ['INTEGER', 'BIGINT', 'DOUBLE', 'DECIMAL', 'FLOAT', 'REAL']:
-            # For numeric types, get min/max as value range indicator
-            range_query = f"""
-            SELECT MIN({quoted_col_name}), MAX({quoted_col_name})
-            FROM {table_name}
-            WHERE {quoted_col_name} IS NOT NULL
-            """
-            range_result = conn.execute(range_query).fetchone()
-            if range_result[0] is not None:
-                min_val, max_val = range_result
-                val_str = f"range: [{min_val}, {max_val}]"
-            else:
-                val_str = "all null"
-        else:
-            # For non-numeric types, get sample values similar to Python version
-            query_for_sample_values = f"""
-            SELECT DISTINCT {quoted_col_name}
-            FROM {table_name} 
-            WHERE {quoted_col_name} IS NOT NULL 
-            ORDER BY {quoted_col_name}
-            LIMIT {field_sample_size * 2}
-            """
-            
-            try:
-                sample_values_result = conn.execute(query_for_sample_values).fetchall()
-                sample_values = [row[0] for row in sample_values_result]
-                
-                # Format values similar to Python version
-                def sample_val_cap(val):
-                    s = str(val)
-                    if len(s) > max_val_chars:
-                        s = s[:max_val_chars] + "..."
-                    if ',' in s:
-                        s = f'"{s}"'
-                    return s
-                
-                if len(sample_values) <= field_sample_size:
-                    val_sample = sample_values
-                else:
-                    half = field_sample_size // 2
-                    val_sample = sample_values[:half] + ["..."] + sample_values[-(field_sample_size - half):]
-                
-                val_str = "values: " + ', '.join([sample_val_cap(v) for v in val_sample])
-            except Exception:
-                val_str = "values: N/A"
-        
-        field_summaries.append(f"  - {col_name} -- type: {col_type}, {val_str}")
-    
-    fields_summary = '\n'.join(field_summaries)
-    sections.append(f"### Schema ({num_cols} fields)\n{fields_summary}\n")
-    
-    # 4. Sample data - concrete examples last
-    if row_count > 0:
-        sample_data = conn.execute(f"SELECT * FROM {table_name} LIMIT {row_sample_size}").fetch_df()
-        sections.append(f"### Sample Data (first {min(row_sample_size, row_count)} rows)\n```\n{sample_data.to_string()}\n```\n")
-    
-    return '\n'.join(sections)

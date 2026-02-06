@@ -54,7 +54,8 @@ app.config['CLI_ARGS'] = {
     'disable_display_keys': os.environ.get('DISABLE_DISPLAY_KEYS', 'false').lower() == 'true',
     'disable_database': os.environ.get('DISABLE_DATABASE', 'false').lower() == 'true',
     'disable_file_upload': os.environ.get('DISABLE_FILE_UPLOAD', 'false').lower() == 'true',
-    'project_front_page': os.environ.get('PROJECT_FRONT_PAGE', 'false').lower() == 'true'
+    'project_front_page': os.environ.get('PROJECT_FRONT_PAGE', 'false').lower() == 'true',
+    'max_display_rows': int(os.environ.get('MAX_DISPLAY_ROWS', '5000')),
 }
 
 # Get logger for this module (logging config moved to run_app function)
@@ -130,6 +131,7 @@ def get_app_config():
         "DISABLE_DATABASE": args['disable_database'],
         "DISABLE_FILE_UPLOAD": args['disable_file_upload'],
         "PROJECT_FRONT_PAGE": args['project_front_page'],
+        "MAX_DISPLAY_ROWS": args['max_display_rows'],
     }
     return flask.jsonify(config)
 
@@ -161,6 +163,9 @@ def parse_args() -> argparse.Namespace:
         help="Disable file upload functionality. This prevents the app from uploading files to the server.")
     parser.add_argument("--project-front-page", action='store_true', default=False,
         help="Project the front page as the main page instead of the app.")
+    parser.add_argument("--max-display-rows", type=int,
+        default=int(os.environ.get('MAX_DISPLAY_ROWS', '10000')),
+        help="Maximum number of rows to send to the frontend for display (default: 10000)")
     parser.add_argument("--dev", action='store_true', default=False,
         help="Launch the app in development mode (prevents the app from opening the browser automatically)")
     return parser.parse_args()
@@ -178,7 +183,8 @@ def run_app():
         'disable_display_keys': args.disable_display_keys,
         'disable_database': args.disable_database,
         'disable_file_upload': args.disable_file_upload,
-        'project_front_page': args.project_front_page
+        'project_front_page': args.project_front_page,
+        'max_display_rows': args.max_display_rows,
     }
     
     # Register blueprints (this is where heavy imports happen)

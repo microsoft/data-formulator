@@ -167,14 +167,15 @@ Derive average grade from writing, reading, math, grade should be A, B, C, D, F
 
 class ConceptDeriveAgent(object):
 
-    def __init__(self, client):
+    def __init__(self, client, workspace):
         self.client = client
+        self.workspace = workspace
 
     def run(self, input_table, input_fields, output_field, description, n=1):
         """derive a new concept based on input table, input fields, and output field name, (and description)
         """
-        
-        data_summary = generate_data_summary([input_table], include_data_samples=True)
+
+        data_summary = generate_data_summary([input_table], workspace=self.workspace, include_data_samples=True)
 
         input_fields_info = [{"name": name, "type": infer_ts_datatype(pd.DataFrame(input_table['rows']), name)} for name in input_fields]
         

@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import BinaryIO, Union
 
-from data_formulator.datalake.metadata import TableMetadata, make_json_safe
+from data_formulator.datalake.metadata import TableMetadata
 from data_formulator.datalake.workspace import Workspace
 
 logger = logging.getLogger(__name__)
@@ -172,32 +172,6 @@ def save_uploaded_file(
     else:
         content = file_content
 
-    # Best-effort preview sample rows for supported structured formats.
-    # (Never fail the upload if parsing fails.)
-    sample_rows = None
-    try:
-        import pandas as pd
-        from io import BytesIO
-
-        sample_limit = 50
-        bio = BytesIO(content)
-        if file_type == "csv":
-            df_sample = pd.read_csv(bio, nrows=sample_limit)
-        elif file_type == "excel":
-            df_sample = pd.read_excel(bio, nrows=sample_limit)
-        elif file_type == "json":
-            # pd.read_json reads entire input; cap after load.
-            df_sample = pd.read_json(bio).head(sample_limit)
-        else:
-            df_sample = None
-
-        if df_sample is not None:
-            # Replace NaN/NaT with None for JSON/YAML friendliness
-            df_sample = df_sample.astype(object).where(pd.notnull(df_sample), None)
-            sample_rows = make_json_safe(df_sample.to_dict(orient="records"))
-    except Exception:
-        sample_rows = None
-    
     # Determine the actual filename to use
     if overwrite:
         actual_filename = filename
@@ -236,7 +210,6 @@ def save_uploaded_file(
         created_at=datetime.now(timezone.utc),
         content_hash=content_hash,
         file_size=file_size,
-        sample_rows=sample_rows,
     )
     
     # Save metadata

@@ -6,7 +6,6 @@ import logging
 import pandas as pd
 
 from data_formulator.agents.agent_utils import extract_json_objects, generate_data_summary
-from data_formulator.agents.agent_sql_data_transform import generate_sql_data_summary, create_duckdb_conn_with_parquet_views
 
 logger = logging.getLogger(__name__)
 
@@ -121,11 +120,7 @@ class InteractiveExploreAgent(object):
         self.workspace = workspace  # when set (SQL/datalake mode), use parquet tables for summary
 
     def get_data_summary(self, input_tables, table_name_prefix="Table"):
-
-        # Datalake mode: create temporary DuckDB conn with parquet views, then get summary
-        with create_duckdb_conn_with_parquet_views(self.workspace, input_tables) as conn:
-            data_summary = generate_sql_data_summary(conn, input_tables, table_name_prefix=table_name_prefix)
-            return data_summary
+        return generate_data_summary(input_tables, self.workspace, table_name_prefix=table_name_prefix)
     
 
     def run(self, input_tables, start_question=None, exploration_thread=None, 

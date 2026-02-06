@@ -64,12 +64,9 @@ from data_formulator.datalake.file_manager import (
     SUPPORTED_EXTENSIONS,
 )
 
-# Parquet operations (for data loaders)
-from data_formulator.datalake.parquet_manager import (
-    write_parquet,
-    read_parquet,
-    get_parquet_schema,
-    refresh_parquet,
+# Parquet utilities (pure helpers, no Workspace dependency)
+from data_formulator.datalake.parquet_utils import (
+    sanitize_table_name,
     DEFAULT_COMPRESSION,
 )
 
@@ -97,10 +94,7 @@ __all__ = [
     "get_file_type",
     "get_file_info",
     "SUPPORTED_EXTENSIONS",
-    # Parquet manager
-    "write_parquet",
-    "read_parquet",
-    "get_parquet_schema",
-    "refresh_parquet",
+    # Parquet utilities
+    "sanitize_table_name",
     "DEFAULT_COMPRESSION",
 ]

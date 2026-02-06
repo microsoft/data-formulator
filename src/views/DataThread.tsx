@@ -1588,6 +1588,8 @@ const MemoizedChartObject = memo<{
     onDelete: (chartId: string) => void;
 }>(({ chart, table, conceptShelfItems, status, onChartClick, onDelete }) => {
     
+    const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
+
     let visTableRows: any[] = [];
     if (table.rows.length > 1000) {
         visTableRows = structuredClone(_.sampleSize(table.rows, 1000));
@@ -1656,7 +1658,7 @@ const MemoizedChartObject = memo<{
     assembledChart["background"] = "transparent";
 
     // Temporary fix, down sample the dataset
-    if (assembledChart["data"]["values"].length > 5000) {
+    if (assembledChart["data"]["values"].length > serverConfig.MAX_DISPLAY_ROWS) {
         let values = assembledChart["data"]["values"];
         assembledChart = (({ data, ...o }) => o)(assembledChart);
 
@@ -1674,7 +1676,7 @@ const MemoizedChartObject = memo<{
             }
             return shuffled.slice(0, size);
         }
-        assembledChart["data"] = { "values": getRandomSubarray(values, 5000) };
+        assembledChart["data"] = { "values": getRandomSubarray(values, serverConfig.MAX_DISPLAY_ROWS) };
     }
 
     assembledChart['config'] = {

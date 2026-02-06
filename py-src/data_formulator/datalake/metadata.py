@@ -88,8 +88,6 @@ class TableMetadata:
     last_synced: datetime | None = None
     row_count: int | None = None
     columns: list[ColumnInfo] | None = None
-    # Small set of representative rows for previewing (list of records).
-    sample_rows: list[dict[str, Any]] | None = None
 
     def to_dict(self) -> dict:
         """Convert to dictionary for YAML serialization."""
@@ -118,8 +116,6 @@ class TableMetadata:
             result["row_count"] = self.row_count
         if self.columns is not None:
             result["columns"] = [col.to_dict() for col in self.columns]
-        if self.sample_rows is not None:
-            result["sample_rows"] = make_json_safe(self.sample_rows)
         
         return result
 
@@ -153,7 +149,6 @@ class TableMetadata:
             last_synced=last_synced,
             row_count=data.get("row_count"),
             columns=columns,
-            sample_rows=data.get("sample_rows"),
         )
 
 

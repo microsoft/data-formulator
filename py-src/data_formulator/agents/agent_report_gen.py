@@ -4,7 +4,6 @@
 import json
 
 from data_formulator.agents.agent_utils import extract_json_objects, generate_data_summary
-from data_formulator.agents.agent_sql_data_transform import generate_sql_data_summary, create_duckdb_conn_with_parquet_views
 
 import logging
 
@@ -58,9 +57,7 @@ class ReportGenAgent(object):
         self.workspace = workspace
 
     def get_data_summary(self, input_tables):
-        with create_duckdb_conn_with_parquet_views(self.workspace, input_tables) as conn:
-            data_summary = generate_sql_data_summary(conn, input_tables)
-            return data_summary
+        return generate_data_summary(input_tables, self.workspace)
 
     def stream(self, input_tables, charts=[], style="blog post"):
         """derive a new concept based on the raw input data

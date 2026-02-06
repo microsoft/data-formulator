@@ -16,13 +16,7 @@ from pathlib import Path
 from data_formulator.data_loader import DATA_LOADERS
 from data_formulator.auth import get_identity_id
 from data_formulator.datalake.workspace import get_workspace
-from data_formulator.datalake.parquet_manager import (
-    read_parquet,
-    write_parquet,
-    get_parquet_schema,
-    get_parquet_path,
-    sanitize_table_name as parquet_sanitize_table_name,
-)
+from data_formulator.datalake.parquet_utils import sanitize_table_name as parquet_sanitize_table_name
 from data_formulator.datalake.file_manager import save_uploaded_file, is_supported_file
 from data_formulator.datalake.metadata import TableMetadata as DatalakeTableMetadata
 
@@ -33,8 +27,6 @@ logger = logging.getLogger(__name__)
 
 import os
 
-import duckdb
-
 tables_bp = Blueprint('tables', __name__, url_prefix='/api/tables')
 
 
@@ -43,52 +35,22 @@ def _get_workspace():
     return get_workspace(get_identity_id())
 
 
-def _is_parquet_table(workspace, table_name: str) -> bool:
-    """Return True if the table is stored as parquet (so we can use DuckDB for computation)."""
-    meta = workspace.get_table_metadata(table_name)
-    return meta is not None and meta.file_type == "parquet"
+# Row-count threshold above which we use DuckDB for parquet tables
+# (avoids loading the entire file into memory via pandas).
+_LARGE_TABLE_THRESHOLD = 100_000
 
 
-def _run_parquet_sql(workspace, table_name: str, sql: str) -> pd.DataFrame:
-    """
-    Run a DuckDB SQL query that references the parquet file as a table.
-    The SQL must use the alias 't' for the parquet table, e.g.:
-      SELECT * FROM read_parquet(...) AS t LIMIT 10
-    We inject the read_parquet(path) part so the path is never user-controlled in raw form.
-    """
-    path = get_parquet_path(workspace, table_name)
-    path_escaped = str(path).replace("\\", "\\\\").replace("'", "''")
-    # SQL is expected to contain exactly one placeholder: {parquet}
-    if "{parquet}" not in sql:
-        raise ValueError("SQL must contain {parquet} placeholder")
-    full_sql = sql.format(parquet=f"read_parquet('{path_escaped}')")
-    conn = duckdb.connect(":memory:")
-    try:
-        return conn.execute(full_sql).fetchdf()
-    finally:
-        conn.close()
+def _should_use_duckdb(workspace, table_name: str) -> bool:
+    """Return True if the table is a large parquet file that benefits from DuckDB.
 
-
-def _load_table_df(workspace, table_name: str) -> pd.DataFrame:
-    """
-    Load a table from the workspace as a pandas DataFrame.
-    Supports parquet (via parquet_manager) and uploaded CSV/Excel/JSON (via file path).
+    Small parquet tables are faster to handle with pandas (avoids DuckDB
+    connection overhead and repeated YAML reads).
     """
     meta = workspace.get_table_metadata(table_name)
-    if meta is None:
-        raise FileNotFoundError(f"Table not found: {table_name}")
-    if meta.file_type == "parquet":
-        return read_parquet(workspace, table_name)
-    file_path = workspace.get_file_path(meta.filename)
-    if not file_path.exists():
-        raise FileNotFoundError(f"File not found: {file_path}")
-    if meta.file_type == "csv":
-        return pd.read_csv(file_path)
-    if meta.file_type == "excel":
-        return pd.read_excel(file_path)
-    if meta.file_type == "json":
-        return pd.read_json(file_path)
-    raise ValueError(f"Unsupported file type for table {table_name}: {meta.file_type}")
+    if meta is None or meta.file_type != "parquet":
+        return False
+    row_count = meta.row_count or 0
+    return row_count > _LARGE_TABLE_THRESHOLD
 
 
 def _quote_duckdb(col: str) -> str:
@@ -193,30 +155,28 @@ def list_tables():
                 columns = [{"name": c.name, "type": c.dtype} for c in (meta.columns or [])]
                 if not columns and meta.file_type == "parquet":
                     try:
-                        schema_info = get_parquet_schema(workspace, table_name)
+                        schema_info = workspace.get_parquet_schema(table_name)
                         columns = [{"name": c["name"], "type": c["type"]} for c in schema_info.get("columns", [])]
                     except Exception:
                         pass
                 row_count = meta.row_count
                 if row_count is None and meta.file_type == "parquet":
                     try:
-                        schema_info = get_parquet_schema(workspace, table_name)
+                        schema_info = workspace.get_parquet_schema(table_name)
                         row_count = schema_info.get("num_rows", 0) or 0
                     except Exception:
                         row_count = 0
                 if row_count is None:
                     row_count = 0
-                sample_rows = meta.sample_rows or []
-                if not sample_rows and row_count > 0 and meta.file_type == "parquet":
+                sample_rows = []
+                if row_count > 0:
                     try:
-                        df = _run_parquet_sql(workspace, table_name, "SELECT * FROM {parquet} AS t LIMIT 1000")
+                        if _should_use_duckdb(workspace, table_name):
+                            df = workspace.run_parquet_sql(table_name, "SELECT * FROM {parquet} AS t LIMIT 1000")
+                        else:
+                            df = workspace.read_data_as_df(table_name)
+                            df = df.head(1000)
                         sample_rows = json.loads(df.to_json(orient='records', date_format='iso'))
-                    except Exception:
-                        pass
-                elif not sample_rows and row_count > 0:
-                    try:
-                        df = _load_table_df(workspace, table_name)
-                        sample_rows = json.loads(df.head(1000).to_json(orient='records', date_format='iso'))
                     except Exception:
                         pass
                 source_metadata = _table_metadata_to_source_metadata(meta)
@@ -312,8 +272,8 @@ def sample_table():
         order_by_fields = data.get('order_by_fields', [])
 
         workspace = _get_workspace()
-        if _is_parquet_table(workspace, table_id):
-            schema_info = get_parquet_schema(workspace, table_id)
+        if _should_use_duckdb(workspace, table_id):
+            schema_info = workspace.get_parquet_schema(table_id)
             columns = [c["name"] for c in schema_info.get("columns", [])]
             main_sql, count_sql = _build_parquet_sample_sql(
                 columns,
@@ -323,10 +283,10 @@ def sample_table():
                 order_by_fields,
                 sample_size,
             )
-            total_row_count = int(_run_parquet_sql(workspace, table_id, count_sql).iloc[0, 0])
-            result_df = _run_parquet_sql(workspace, table_id, main_sql)
+            total_row_count = int(workspace.run_parquet_sql(table_id, count_sql).iloc[0, 0])
+            result_df = workspace.run_parquet_sql(table_id, main_sql)
         else:
-            df = _load_table_df(workspace, table_id)
+            df = workspace.read_data_as_df(table_id)
             result_df, total_row_count = _apply_aggregation_and_sample(
                 df,
                 aggregate_fields_and_functions,
@@ -359,18 +319,17 @@ def get_table_data():
             return jsonify({"status": "error", "message": "Table name is required"}), 400
 
         workspace = _get_workspace()
-        if _is_parquet_table(workspace, table_name):
-            count_df = _run_parquet_sql(workspace, table_name, "SELECT COUNT(*) FROM {parquet} AS t")
+        if _should_use_duckdb(workspace, table_name):
+            count_df = workspace.run_parquet_sql(table_name, "SELECT COUNT(*) FROM {parquet} AS t")
             total_rows = int(count_df.iloc[0, 0])
-            page_df = _run_parquet_sql(
-                workspace,
+            page_df = workspace.run_parquet_sql(
                 table_name,
                 f"SELECT * FROM {{parquet}} AS t LIMIT {page_size} OFFSET {offset}",
             )
             columns = list(page_df.columns)
             rows = json.loads(page_df.to_json(orient='records', date_format='iso'))
         else:
-            df = _load_table_df(workspace, table_name)
+            df = workspace.read_data_as_df(table_name)
             total_rows = len(df)
             columns = list(df.columns)
             page_df = df.iloc[offset : offset + page_size]
@@ -424,7 +383,7 @@ def create_table():
             row_count = meta.row_count
             columns = [c.name for c in (meta.columns or [])]
             if row_count is None or not columns:
-                df = _load_table_df(workspace, sanitized_table_name)
+                df = workspace.read_data_as_df(sanitized_table_name)
                 row_count = len(df)
                 columns = list(df.columns)
         else:
@@ -433,7 +392,7 @@ def create_table():
                 df = pd.DataFrame(json.loads(raw_data))
             except Exception as e:
                 return jsonify({"status": "error", "message": f"Invalid JSON data: {str(e)}, it must be a list of dictionaries"}), 400
-            write_parquet(workspace, df, sanitized_table_name)
+            workspace.write_parquet(df, sanitized_table_name)
             row_count = len(df)
             columns = list(df.columns)
 
@@ -519,8 +478,8 @@ def analyze_table():
             return jsonify({"status": "error", "message": "No table name provided"}), 400
 
         workspace = _get_workspace()
-        if _is_parquet_table(workspace, table_name):
-            schema_info = get_parquet_schema(workspace, table_name)
+        if _should_use_duckdb(workspace, table_name):
+            schema_info = workspace.get_parquet_schema(table_name)
             col_infos = schema_info.get("columns", [])
             stats = []
             for col_info in col_infos:
@@ -534,7 +493,7 @@ def analyze_table():
                         f"MIN(t.{q}) AS min_val, MAX(t.{q}) AS max_val, AVG(t.{q}) AS avg_val "
                         f"FROM {{parquet}} AS t"
                     )
-                    df = _run_parquet_sql(workspace, table_name, sql)
+                    df = workspace.run_parquet_sql(table_name, sql)
                     row = df.iloc[0]
                     stats_dict = {
                         "count": int(row["count"]),
@@ -549,7 +508,7 @@ def analyze_table():
                         f"SELECT COUNT(*) AS count, COUNT(DISTINCT t.{q}) AS unique_count, "
                         f"COUNT(*) - COUNT(t.{q}) AS null_count FROM {{parquet}} AS t"
                     )
-                    df = _run_parquet_sql(workspace, table_name, sql)
+                    df = workspace.run_parquet_sql(table_name, sql)
                     row = df.iloc[0]
                     stats_dict = {
                         "count": int(row["count"]),
@@ -558,7 +517,7 @@ def analyze_table():
                     }
                 stats.append({"column": col_name, "type": col_type, "statistics": stats_dict})
         else:
-            df = _load_table_df(workspace, table_name)
+            df = workspace.read_data_as_df(table_name)
             stats = []
             for col_name in df.columns:
                 s = df[col_name]
@@ -582,7 +541,7 @@ def analyze_table():
 
 
 def sanitize_table_name(table_name: str) -> str:
-    """Sanitize a table name for use in the workspace (delegate to parquet_manager)."""
+    """Sanitize a table name for use in the workspace."""
     return parquet_sanitize_table_name(table_name)
 
 def sanitize_db_error_message(error: Exception) -> tuple[str, int]:
@@ -781,8 +740,7 @@ def data_loader_refresh_table():
                 "message": "Refresh is not supported for tables ingested from a query. Only table-based sources can be refreshed.",
             }), 400
 
-        from data_formulator.datalake.parquet_manager import refresh_parquet_from_arrow
-        new_meta, data_changed = refresh_parquet_from_arrow(workspace, table_name, arrow_table)
+        new_meta, data_changed = workspace.refresh_parquet_from_arrow(table_name, arrow_table)
         return jsonify({
             "status": "success",
             "message": f"Successfully refreshed table '{table_name}'",

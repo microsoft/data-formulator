@@ -313,7 +313,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), config.formulateTimeoutSeconds * 1000); 
 
-            const response = await fetch(engine, {
+            const response = await fetchWithIdentity(engine, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',

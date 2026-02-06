@@ -60,6 +60,7 @@ export let ChartElementFC: FC<{
     boxWidth?: number, boxHeight?: number}> = function({chart, tableRows, tableMetadata, boxWidth, boxHeight}) {
 
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
+    const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
 
     let WIDTH = boxWidth || 120;
     let HEIGHT = boxHeight || 80;
@@ -96,7 +97,7 @@ export let ChartElementFC: FC<{
     const element = <Box id={id} sx={{ margin: "auto", backgroundColor: chart.saved ? "rgba(255,215,0,0.05)" : "white" }}></Box>;
 
     // Temporary fix, down sample the dataset
-    if (assembledChart["data"]["values"].length > 5000) {
+    if (assembledChart["data"]["values"].length > serverConfig.MAX_DISPLAY_ROWS) {
         let values = assembledChart["data"]["values"];
         assembledChart = (({ data, ...o }) => o)(assembledChart);
 
@@ -114,7 +115,7 @@ export let ChartElementFC: FC<{
             }
             return shuffled.slice(0, size);
         }
-        assembledChart["data"] = { "values": getRandomSubarray(values, 5000) };
+        assembledChart["data"] = { "values": getRandomSubarray(values, serverConfig.MAX_DISPLAY_ROWS) };
     }
 
     assembledChart['config'] = {

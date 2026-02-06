@@ -353,6 +353,7 @@ const VegaChartRenderer: FC<{
 export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
 
     const config = useSelector((state: DataFormulatorState) => state.config);
+    const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
     const componentRef = useRef<HTMLHeadingElement>(null);
 
     // Add ref for the container box that holds all exploration components
@@ -441,8 +442,8 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
         let filteredRows = rows.map(row => Object.fromEntries(visFields.filter(f => table.names.includes(f.name)).map(f => [f.name, row[f.name]])));
         let visTable = prepVisTable(filteredRows, conceptShelfItems, focusedChart.encodingMap);
 
-        if (visTable.length > 5000) {
-            let rowSample = _.sampleSize(visTable, 5000);
+        if (visTable.length > serverConfig.MAX_DISPLAY_ROWS) {
+            let rowSample = _.sampleSize(visTable, serverConfig.MAX_DISPLAY_ROWS);
             visTable = rowSample;
         }
 
@@ -476,7 +477,10 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
         if (sampleSize == undefined) {
             sampleSize = 1000;
         }
-        if (table.virtual) {
+        // If all rows are already in browser memory, sample locally (no server call needed).
+        // This covers non-virtual tables and virtual tables whose rows have been fully loaded.
+        const allRowsInMemory = !table.virtual || table.rows.length >= (table.virtual.rowCount || 0);
+        if (!allRowsInMemory) {
             // Generate unique request ID to track this specific request
             const requestId = `${focusedChart.id}-${table.id}-${Date.now()}`;
             currentRequestRef.current = requestId;
@@ -520,15 +524,17 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                 }
             });
         } else {
-            // Randomly sample sampleSize rows from table.rows
+            // All rows available locally — sample in-memory
             let rowSample = _.sampleSize(table.rows, sampleSize);
             setVisTableRows(structuredClone(rowSample));
+            setVisTableTotalRowCount(table.rows.length);
             setDataVersion(`${focusedChart.id}-${table.id}-${sortedVisDataFields.join("_")}`);
         }
     }
 
     useEffect(() => {
-        if (table.virtual && visFields.length > 0 && dataFieldsAllAvailable) {
+        const allRowsInMemory = !table.virtual || table.rows.length >= (table.virtual.rowCount || 0);
+        if (!allRowsInMemory && visFields.length > 0 && dataFieldsAllAvailable) {
             fetchDisplayRows();
         }
     }, [])
@@ -537,17 +543,9 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
         const versionId = `${focusedChart.id}-${table.id}-${sortedVisDataFields.join("_")}`;
 
         if (visFields.length > 0 && dataFieldsAllAvailable) {
-            // table changed, we need to update the rows to display
-            if (table.virtual) {
-                // virtual table, we need to sample the table
-                fetchDisplayRows();
-            } else {
-                // non-virtual table, update with processed data
-                const newProcessedData = createVisTableRowsLocal(table.rows);
-                setVisTableRows(newProcessedData);
-                setVisTableTotalRowCount(table.rows.length);
-                setDataVersion(versionId);
-            }
+            // table or fields changed — fetchDisplayRows handles both
+            // local (all rows in memory) and remote (virtual, large) cases
+            fetchDisplayRows();
         } else {
             // If no fields, just use the table rows directly
             setVisTableRows(table.rows);
@@ -779,7 +777,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
 
     let chartActionItems = isDataStale ? [] : (
         <Box sx={{display: "flex", flexDirection: "column", flex: 1, my: 1}}>
-            {(table.virtual || table.rows.length > 5000) && !(chartUnavailable || encodingShelfEmpty) ? (
+            {(table.virtual ? activeVisTableTotalRowCount > serverConfig.MAX_DISPLAY_ROWS : table.rows.length > serverConfig.MAX_DISPLAY_ROWS) && !(chartUnavailable || encodingShelfEmpty) ? (
                 <Box sx={{ display: 'flex', flexDirection: "row", margin: "auto", justifyContent: 'center', alignItems: 'center'}}>
                     <Typography component="span" fontSize="small" color="text.secondary" sx={{textAlign:'center'}}>
                         visualizing

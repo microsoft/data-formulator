@@ -18,18 +18,12 @@ import logging
 import json
 import html
 import pandas as pd
-import duckdb
 
 from data_formulator.agents.agent_concept_derive import ConceptDeriveAgent
 from data_formulator.agents.agent_py_concept_derive import PyConceptDeriveAgent
 
-from data_formulator.agents.agent_py_data_transform import PythonDataTransformationAgent
-from data_formulator.agents.agent_sql_data_transform import (
-    SQLDataTransformationAgent,
-    create_duckdb_conn_with_parquet_views,
-)
-from data_formulator.agents.agent_py_data_rec import PythonDataRecAgent
-from data_formulator.agents.agent_sql_data_rec import SQLDataRecAgent
+from data_formulator.agents.agent_data_transform import DataTransformationAgent
+from data_formulator.agents.agent_data_rec import DataRecAgent
 
 from data_formulator.agents.agent_sort_data import SortDataAgent
 from data_formulator.auth import get_identity_id
@@ -201,17 +195,12 @@ def process_data_on_load_request():
 
         logger.info(f" model: {content['model']}")
 
-        conn = None
         try:
-            if input_data.get("virtual"):
-                identity_id = get_identity_id()
-                workspace = get_workspace(identity_id)
-                input_tables = [{"name": input_data["name"]}]
-                conn = create_duckdb_conn_with_parquet_views(workspace, input_tables)
-            else:
-                conn = duckdb.connect(":memory:")
+            # Get workspace (needed for both virtual and in-memory tables)
+            identity_id = get_identity_id()
+            workspace = get_workspace(identity_id)
 
-            agent = DataLoadAgent(client=client, conn=conn)
+            agent = DataLoadAgent(client=client, workspace=workspace)
             candidates = agent.run(content["input_data"])
             candidates = [c['content'] for c in candidates if c['status'] == 'ok']
 
@@ -219,9 +208,6 @@ def process_data_on_load_request():
         except Exception as e:
             logger.exception(e)
             response = flask.jsonify({ "token": token, "status": "error", "result": [] })
-        finally:
-            if conn is not None:
-                conn.close()
     else:
         response = flask.jsonify({ "token": -1, "status": "error", "result": [] })
 
@@ -240,12 +226,20 @@ def derive_concept_request():
         client = get_client(content['model'])
 
         logger.info(f" model: {content['model']}")
-        agent = ConceptDeriveAgent(client=client)
 
-        candidates = agent.run(content["input_data"], [f['name'] for f in content["input_fields"]], 
-                                       content["output_name"], content["description"])
-        
-        candidates = [c['code'] for c in candidates if c['status'] == 'ok']
+        # Get workspace and mount temp data
+        identity_id = get_identity_id()
+        workspace = get_workspace(identity_id)
+        input_data = content["input_data"]
+        temp_data = get_temp_tables(workspace, [input_data])
+
+        with WorkspaceWithTempData(workspace, temp_data) as workspace:
+            agent = ConceptDeriveAgent(client=client, workspace=workspace)
+
+            candidates = agent.run(input_data, [f['name'] for f in content["input_fields"]],
+                                          content["output_name"], content["description"])
+
+            candidates = [c['code'] for c in candidates if c['status'] == 'ok']
 
         response = flask.jsonify({ "status": "ok", "token": token, "result": candidates })
     else:
@@ -266,11 +260,19 @@ def derive_py_concept():
         client = get_client(content['model'])
 
         logger.info(f" model: {content['model']}")
-        agent = PyConceptDeriveAgent(client=client)
 
-        results = agent.run(content["input_data"], [f['name'] for f in content["input_fields"]], 
-                                       content["output_name"], content["description"])
-        
+        # Get workspace and mount temp data
+        identity_id = get_identity_id()
+        workspace = get_workspace(identity_id)
+        input_data = content["input_data"]
+        temp_data = get_temp_tables(workspace, [input_data])
+
+        with WorkspaceWithTempData(workspace, temp_data) as workspace:
+            agent = PyConceptDeriveAgent(client=client, workspace=workspace)
+
+            results = agent.run(input_data, [f['name'] for f in content["input_fields"]],
+                                          content["output_name"], content["description"])
+
         response = flask.jsonify({ "status": "ok", "token": token, "results": results })
     else:
         response = flask.jsonify({ "token": -1, "status": "error", "results": [] })
@@ -427,13 +429,16 @@ def derive_data():
         identity_id = get_identity_id()
         workspace = get_workspace(identity_id)
         temp_data = get_temp_tables(workspace, input_tables)
+        max_display_rows = current_app.config['CLI_ARGS']['max_display_rows']
 
         with WorkspaceWithTempData(workspace, temp_data) as workspace:
             if mode == "recommendation":
-                agent = SQLDataRecAgent(client=client, workspace=workspace, agent_coding_rules=agent_coding_rules)
+                # Use unified Python agent for recommendations
+                agent = DataRecAgent(client=client, workspace=workspace, agent_coding_rules=agent_coding_rules, max_display_rows=max_display_rows)
                 results = agent.run(input_tables, instruction, n=1, prev_messages=prev_messages)
             else:
-                agent = SQLDataTransformationAgent(client=client, workspace=workspace, agent_coding_rules=agent_coding_rules)
+                # Use unified Python agent that generates Python scripts with DuckDB + pandas
+                agent = DataTransformationAgent(client=client, workspace=workspace, agent_coding_rules=agent_coding_rules, max_display_rows=max_display_rows)
                 results = agent.run(input_tables, instruction, chart_type, chart_encodings, prev_messages)
 
             repair_attempts = 0
@@ -591,9 +596,11 @@ def refine_data():
         identity_id = get_identity_id()
         workspace = get_workspace(identity_id)
         temp_data = get_temp_tables(workspace, input_tables)
+        max_display_rows = current_app.config['CLI_ARGS']['max_display_rows']
 
         with WorkspaceWithTempData(workspace, temp_data) as workspace:
-            agent = SQLDataTransformationAgent(client=client, workspace=workspace, agent_coding_rules=agent_coding_rules)
+            # Use unified Python agent for followup transformations
+            agent = DataTransformationAgent(client=client, workspace=workspace, agent_coding_rules=agent_coding_rules, max_display_rows=max_display_rows)
             results = agent.followup(input_tables, dialog, latest_data_sample, chart_type, chart_encodings, new_instruction, n=1)
 
             repair_attempts = 0
@@ -616,25 +623,31 @@ def refine_data():
 def request_code_expl():
     if request.is_json:
         logger.info("# request data: ")
-        content = request.get_json()        
+        content = request.get_json()
         client = get_client(content['model'])
 
         # each table is a dict with {"name": xxx, "rows": [...]}
         input_tables = content["input_tables"]
         code = content["code"]
-        
-        code_expl_agent = CodeExplanationAgent(client=client)
-        candidates = code_expl_agent.run(input_tables, code)
-        
-        # Return the first candidate's content as JSON
-        if candidates and len(candidates) > 0:
-            result = candidates[0]
-            if result['status'] == 'ok':
-                return jsonify(result)
+
+        # Get workspace and mount temp data
+        identity_id = get_identity_id()
+        workspace = get_workspace(identity_id)
+        temp_data = get_temp_tables(workspace, input_tables)
+
+        with WorkspaceWithTempData(workspace, temp_data) as workspace:
+            code_expl_agent = CodeExplanationAgent(client=client, workspace=workspace)
+            candidates = code_expl_agent.run(input_tables, code)
+
+            # Return the first candidate's content as JSON
+            if candidates and len(candidates) > 0:
+                result = candidates[0]
+                if result['status'] == 'ok':
+                    return jsonify(result)
+                else:
+                    return jsonify(result), 400
             else:
-                return jsonify(result), 400
-        else:
-            return jsonify({'error': 'No explanation generated'}), 400
+                return jsonify({'error': 'No explanation generated'}), 400
     else:
         return jsonify({'error': 'Invalid request format'}), 400
 

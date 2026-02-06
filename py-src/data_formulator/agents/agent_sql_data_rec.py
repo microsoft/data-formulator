@@ -3,8 +3,8 @@
 
 import json
 
-from data_formulator.agents.agent_utils import extract_json_objects, extract_code_from_gpt_response
-from data_formulator.agents.agent_sql_data_transform import generate_sql_data_summary, create_duckdb_conn_with_parquet_views
+from data_formulator.agents.agent_utils import extract_json_objects, extract_code_from_gpt_response, generate_data_summary
+from data_formulator.agents.agent_utils_sql import create_duckdb_conn_with_parquet_views
 
 import random
 import string
@@ -13,7 +13,7 @@ import traceback
 import duckdb
 import pandas as pd
 
-from data_formulator.datalake.parquet_manager import write_parquet, sanitize_table_name as parquet_sanitize_table_name
+from data_formulator.datalake.parquet_utils import sanitize_table_name as parquet_sanitize_table_name
 
 import logging
 
@@ -219,9 +219,10 @@ ORDER BY average_score DESC;
 
 class SQLDataRecAgent(object):
 
-    def __init__(self, client, workspace, system_prompt=None, agent_coding_rules=""):
+    def __init__(self, client, workspace, system_prompt=None, agent_coding_rules="", max_display_rows=5000):
         self.client = client
         self.workspace = workspace
+        self.max_display_rows = max_display_rows
         self.conn = None  # set per request, closed after use
         
         # Incorporate agent coding rules into system prompt if provided
@@ -272,8 +273,8 @@ class SQLDataRecAgent(object):
                     row_count = self.conn.execute(f"SELECT COUNT(*) FROM {view_name}").fetchone()[0]
                     
                     # Fetch result: full for datalake write, limited for response payload
-                    if row_count > 5000:
-                        query_output = self.conn.execute(f"SELECT * FROM {view_name} LIMIT 5000").fetch_df()
+                    if row_count > self.max_display_rows:
+                        query_output = self.conn.execute(f"SELECT * FROM {view_name} LIMIT {self.max_display_rows}").fetch_df()
                         full_df = self.conn.execute(f"SELECT * FROM {view_name}").fetch_df()
                     else:
                         full_df = self.conn.execute(f"SELECT * FROM {view_name}").fetch_df()
@@ -281,7 +282,7 @@ class SQLDataRecAgent(object):
                     
                     # Write full result to datalake as parquet (parquet-to-parquet)
                     output_table_name = parquet_sanitize_table_name(f"derived_{random_suffix}")
-                    write_parquet(self.workspace, full_df, output_table_name)
+                    self.workspace.write_parquet(full_df, output_table_name)
                 
                     result = {
                         "status": "ok",
@@ -337,7 +338,7 @@ class SQLDataRecAgent(object):
     def run(self, input_tables, description, n=1, prev_messages: list[dict] = []):
         self.conn = create_duckdb_conn_with_parquet_views(self.workspace, input_tables)
         try:
-            data_summary = generate_sql_data_summary(self.conn, input_tables)
+            data_summary = generate_data_summary(input_tables, self.workspace)
 
             user_query = f"[CONTEXT]\n\n{data_summary}\n\n[GOAL]\n\n{description}"
             if len(prev_messages) > 0:

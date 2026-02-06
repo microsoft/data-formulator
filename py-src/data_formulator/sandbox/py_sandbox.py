@@ -80,9 +80,10 @@ def run_in_main_process(code, allowed_objects):
 
     # List of allowed modules for import
     ALLOWED_MODULES = {
-        'pandas', 'numpy', 'math', 'datetime', 'json', 
-        'statistics', 'random', 'collections', 're', 
-        'itertools', 'functools', 'operator', 'sklearn', 'time'
+        'pandas', 'numpy', 'math', 'datetime', 'json',
+        'statistics', 'random', 'collections', 're',
+        'itertools', 'functools', 'operator', 'sklearn', 'time',
+        'duckdb'  # Added for unified Python+SQL execution
     }
 
     # Custom import function that only allows safe modules and their submodules
@@ -146,7 +147,7 @@ output_df = transform_data(*df_list)
 
 def run_derive_concept(code, output_field_name, table_rows, exec_python_in_subprocess=False):
     """given a concept derivation function, execute the function on inputs to generate a new dataframe"""
-    
+
     assemble_code = f'''
 import pandas as pd
 {code}
@@ -169,3 +170,68 @@ new_column = derive_new_column(df)
         return { 'status': 'ok', 'content': result_df }
     else:
         return { 'status': 'error', 'content': result['error_message'] }
+
+
+def run_unified_transform_in_sandbox(
+    code: str,
+    workspace_path: str,
+    output_variable: str,
+    exec_python_in_subprocess: bool = False
+) -> dict:
+    """
+    Execute Python script with DuckDB and pandas in workspace directory.
+    This is used by the unified agent that generates Python scripts combining SQL and pandas.
+
+    Args:
+        code: Python script to execute (not a function, just a script)
+        workspace_path: Path to workspace directory (script will run with this as cwd)
+        output_variable: Name of variable containing result DataFrame
+        exec_python_in_subprocess: Whether to use subprocess execution
+
+    Returns:
+        dict with status='ok'/'error' and content=DataFrame or error message
+    """
+    import os
+
+    # Save current directory
+    original_cwd = os.getcwd()
+
+    try:
+        # Change to workspace directory so script can access files directly
+        os.chdir(workspace_path)
+
+        allowed_objects = {
+            output_variable: None  # Will be populated by script
+        }
+
+        # Execute the script directly (no function wrapper)
+        if exec_python_in_subprocess:
+            result = run_in_subprocess(code, allowed_objects)
+        else:
+            result = run_in_main_process(code, allowed_objects)
+
+        if result['status'] == 'ok':
+            output_df = result['allowed_objects'][output_variable]
+
+            # Validate output is a DataFrame
+            if not isinstance(output_df, pd.DataFrame):
+                return {
+                    'status': 'error',
+                    'content': f'Output variable "{output_variable}" is not a DataFrame (type: {type(output_df).__name__})'
+                }
+
+            return {
+                'status': 'ok',
+                'content': output_df
+            }
+        else:
+            return result
+
+    except Exception as e:
+        return {
+            'status': 'error',
+            'content': f"Error during execution setup: {type(e).__name__} - {str(e)}"
+        }
+    finally:
+        # Always restore original directory
+        os.chdir(original_cwd)

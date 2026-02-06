@@ -89,15 +89,16 @@ def derive_new_column(df):
 
 class PyConceptDeriveAgent(object):
 
-    def __init__(self, client, exec_python_in_subprocess=False):
+    def __init__(self, client, workspace, exec_python_in_subprocess=False):
         self.client = client
+        self.workspace = workspace
         self.exec_python_in_subprocess = exec_python_in_subprocess
 
     def run(self, input_table, input_fields, output_field, description):
         """derive a new concept based on input table, input fields, and output field name, (and description)
         """
-        
-        data_summary = generate_data_summary([input_table], include_data_samples=True)
+
+        data_summary = generate_data_summary([input_table], workspace=self.workspace, include_data_samples=True)
 
         objective = {
             "input_fields": input_fields,

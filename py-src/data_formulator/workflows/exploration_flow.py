@@ -6,8 +6,7 @@ import pandas as pd
 from typing import Any, Generator
 
 from data_formulator.agents.agent_exploration import ExplorationAgent
-from data_formulator.agents.agent_sql_data_rec import SQLDataRecAgent
-from data_formulator.agents.agent_sql_data_transform import create_duckdb_conn_with_parquet_views
+from data_formulator.agents.agent_data_rec import DataRecAgent
 from data_formulator.agents.client_utils import Client
 from data_formulator.datalake.workspace import get_workspace, WorkspaceWithTempData
 from data_formulator.workflows.create_vl_plots import assemble_vegailte_chart, spec_to_base64, detect_field_type
@@ -114,9 +113,8 @@ def run_exploration_flow_streaming(
     temp_data = [table for table in input_tables if table.get('name') not in existing_tables]
 
     with WorkspaceWithTempData(workspace, temp_data) as workspace:
-        db_conn = create_duckdb_conn_with_parquet_views(workspace, input_tables)
-        exploration_agent = ExplorationAgent(client, db_conn=db_conn, agent_exploration_rules=agent_exploration_rules)
-        rec_agent = SQLDataRecAgent(client=client, workspace=workspace, agent_coding_rules=agent_coding_rules)
+        exploration_agent = ExplorationAgent(client, workspace=workspace, agent_exploration_rules=agent_exploration_rules)
+        rec_agent = DataRecAgent(client=client, workspace=workspace, agent_coding_rules=agent_coding_rules)
 
         completed_steps = []
         current_question = initial_plan[0] if len(initial_plan) > 0 else "Let's explore something interesting."
@@ -301,10 +299,7 @@ def run_exploration_flow_streaming(
                 "status": "success",
                 "error_message": ""
             }
-        
-        # Clean up connection
-        db_conn.close()
-        
+
         # If we hit max iterations without presenting
         if iteration >= max_iterations:
             yield {

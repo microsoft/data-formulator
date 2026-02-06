@@ -165,9 +165,6 @@ class ExternalDataLoader(ABC):
         Returns:
             TableMetadata for the created parquet file
         """
-        # Import here to avoid circular imports
-        from data_formulator.datalake.parquet_manager import write_parquet_from_arrow
-        
         # Fetch data as Arrow table (efficient, no pandas conversion)
         arrow_table = self.fetch_data_as_arrow(
             source_table=source_table,
@@ -175,17 +172,16 @@ class ExternalDataLoader(ABC):
             sort_columns=sort_columns,
             sort_order=sort_order,
         )
-        
+
         # Prepare loader metadata
         loader_metadata = {
             "loader_type": self.__class__.__name__,
             "loader_params": self.get_safe_params(),
             "source_table": source_table,
         }
-        
+
         # Write Arrow table directly to parquet (no pandas conversion)
-        table_metadata = write_parquet_from_arrow(
-            workspace=workspace,
+        table_metadata = workspace.write_parquet_from_arrow(
             table=arrow_table,
             table_name=table_name,
             loader_metadata=loader_metadata,

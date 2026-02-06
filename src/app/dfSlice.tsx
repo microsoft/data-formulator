@@ -42,6 +42,7 @@ export interface ServerConfig {
     DISABLE_DATABASE: boolean;
     DISABLE_FILE_UPLOAD: boolean;
     PROJECT_FRONT_PAGE: boolean;
+    MAX_DISPLAY_ROWS: number;
 }
 
 export interface ModelConfig {
@@ -158,6 +159,7 @@ const initialState: DataFormulatorState = {
         DISABLE_DATABASE: true, // disable database by default
         DISABLE_FILE_UPLOAD: false,
         PROJECT_FRONT_PAGE: false,
+        MAX_DISPLAY_ROWS: 5000,
     },
 
     config: {
