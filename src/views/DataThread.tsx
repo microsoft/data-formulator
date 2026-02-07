@@ -8,12 +8,10 @@ import {
     Divider,
     Typography,
     LinearProgress,
-    Stack,
     ListItemIcon,
-    Card,
     IconButton,
     Tooltip,
-    ButtonGroup,
+
     useTheme,
     SxProps,
     Button,
@@ -38,18 +36,13 @@ import { assembleVegaChart, getTriggers, prepVisTable } from '../app/utils';
 import { Chart, DictTable, EncodingItem, FieldItem, Trigger } from "../components/ComponentType";
 
 import DeleteIcon from '@mui/icons-material/Delete';
-import AddchartIcon from '@mui/icons-material/Addchart';
 import StarIcon from '@mui/icons-material/Star';
 import SouthIcon from '@mui/icons-material/South';
 import TableRowsIcon from '@mui/icons-material/TableRowsOutlined';
 import AnchorIcon from '@mui/icons-material/Anchor';
 import PanoramaFishEyeIcon from '@mui/icons-material/PanoramaFishEye';
 import InsightsIcon from '@mui/icons-material/Insights';
-import CheckIcon from '@mui/icons-material/Check';
-import CloseIcon from '@mui/icons-material/Close';
-import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
-import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
-import CancelOutlinedIcon from '@mui/icons-material/CancelOutlined';
+
 
 import _ from 'lodash';
 import { getChartTemplate } from '../components/ChartTemplates';
@@ -59,14 +52,13 @@ import 'prismjs/components/prism-typescript' // Language
 import 'prismjs/themes/prism.css'; //Example style, you can use another
 
 import { checkChartAvailability, generateChartSkeleton, getDataTable } from './VisualizationView';
-import { TriggerCard } from './EncodingShelfCard';
 
 import CloudQueueIcon from '@mui/icons-material/CloudQueue';
 import AttachFileIcon from '@mui/icons-material/AttachFile';
-import SettingsIcon from '@mui/icons-material/Settings';
 import EditIcon from '@mui/icons-material/Edit';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import StreamIcon from '@mui/icons-material/Stream';
+import ChatBubbleOutlineIcon from '@mui/icons-material/ChatBubbleOutline';
 
 import { alpha } from '@mui/material/styles';
 
@@ -76,6 +68,7 @@ import { getUrls, fetchWithIdentity } from '../app/utils';
 import { AppDispatch } from '../app/store';
 import StopIcon from '@mui/icons-material/Stop';
 import { useDataRefresh } from '../app/useDataRefresh';
+import { AgentStatusBox, buildChartCard, buildTriggerCard, buildTableCard, BuildTableCardProps } from './DataThreadCards';
 
 export const ThinkingBanner = (message: string, sx?: SxProps) => (
     <Box sx={{ 
@@ -371,148 +364,7 @@ const MetadataPopup = memo<{
     );
 });
 
-// Agent Status Box Component
-const AgentStatusBox = memo<{
-    tableId: string;
-    relevantAgentActions: any[];
-    dispatch: any;
-}>(({ tableId, relevantAgentActions, dispatch }) => {
 
-    let theme = useTheme();
-
-    let agentStatus = undefined;
-
-    let getAgentStatusColor = (status: string) => {
-        switch (status) {
-            case 'running':
-                return `${theme.palette.text.secondary} !important`;
-            case 'completed':
-                return `${theme.palette.success.main} !important`;
-            case 'failed':
-                return `${theme.palette.error.main} !important`;
-            case 'warning':
-                return `${theme.palette.warning.main} !important`;
-            default:
-                return `${theme.palette.text.secondary} !important`;
-        }
-    }
-
-    let currentActions = relevantAgentActions;
-
-    if (currentActions.some(a => a.status == 'running')) {
-        agentStatus = 'running';
-    } else if (currentActions.every(a => a.status == 'completed')) {
-        agentStatus = 'completed';
-    } else if (currentActions.every(a => a.status == 'failed')) {
-        agentStatus = 'failed';
-    } else {
-        agentStatus = 'warning';
-    }
-    
-    if (currentActions.length === 0) {
-        return null;
-    }
-
-    return (
-        <Box sx={{ padding: '0px 8px' }}>
-            {(
-                <Box sx={{ 
-                    py: 1, 
-                    display: 'flex', 
-                    alignItems: 'center', 
-                    justifyContent: 'left',
-                    '& .MuiSvgIcon-root, .MuiTypography-root': {
-                        fontSize: 10,
-                        color: getAgentStatusColor(agentStatus)
-                    },
-                }}>
-                    {agentStatus === 'running' && ThinkingBanner('thinking...', { py: 0.5 })}
-                    {agentStatus === 'completed' && <CheckCircleOutlineIcon />}
-                    {agentStatus === 'failed' && <CancelOutlinedIcon />}
-                    {agentStatus === 'warning' && <HelpOutlineIcon />}
-                    <Typography variant="body2" sx={{ 
-                        ml: 0.5, 
-                        fontSize: 10,
-                    }}>
-                        {agentStatus === 'warning' && 'hmm...'}
-                        {agentStatus === 'failed' && 'oops...'}
-                        {agentStatus === 'completed' && 'completed'}
-                        {agentStatus === 'running' && ''}
-                    </Typography>
-                    <Tooltip title="Delete message">
-                        <IconButton
-                            className="delete-button"
-                            size="small"
-                            sx={{
-                                padding: '2px',
-                                ml: 'auto',
-                                transition: 'opacity 0.2s ease-in-out',
-                                '& .MuiSvgIcon-root': { fontSize: 12, color: 'darkgray !important' }
-                            }}
-                            onClick={(event) => {
-                                event.stopPropagation();
-                                dispatch(dfActions.deleteAgentWorkInProgress(relevantAgentActions[0].actionId));
-                            }}
-                        >
-                            <CloseIcon fontSize="small" />
-                        </IconButton>
-                    </Tooltip>
-                </Box>
-            )}
-            {currentActions.map((a, index, array) => {
-                let descriptions = String(a.description).split('\n');
-                return (
-                    <React.Fragment key={a.actionId + "-" + index}>
-                        <Box sx={{ 
-                            position: 'relative',
-                        }}>
-                            {descriptions.map((line: string, lineIndex: number) => (
-                                <React.Fragment key={lineIndex}>
-                                    <Typography variant="body2" sx={{ 
-                                        fontSize: 10, 
-                                        color: getAgentStatusColor(a.status),
-                                        whiteSpace: 'pre-wrap',
-                                        wordBreak: 'break-word'
-                                    }}>
-                                        {line}
-                                    </Typography>
-                                    {lineIndex < descriptions.length - 1 && <Divider sx={{ my: 0.5, }} />}
-                                </React.Fragment>
-                            ))}
-                        </Box>
-                        {index < array.length - 1 && array.length > 1 && (
-                            <Box sx={{ 
-                                ml: 1, 
-                                height: '1px', 
-                                backgroundColor: 'rgba(0, 0, 0, 0.2)', 
-                                my: 0.5 
-                            }} />
-                        )}
-                    </React.Fragment>
-                )
-            })}
-        </Box>
-    );
-});
-
-let buildChartCard = (
-    chartElement: { tableId: string, chartId: string, element: any },
-    focusedChartId?: string,
-    unread?: boolean
-) => {
-    let selectedClassName = focusedChartId == chartElement.chartId ? 'selected-card' : '';
-    return <Card className={`data-thread-card ${selectedClassName}`} variant="outlined"
-        sx={{
-            width: '100%',
-            display: 'flex',
-            position: 'relative',
-            ...(unread && {
-                boxShadow: '0 0 6px rgba(255, 152, 0, 0.15), 0 0 12px rgba(255, 152, 0, 0.15)',
-            })
-        }}>
-        {chartElement.element}
-    </Card>
-}
 
 // Rename table popup - opens as a small popper with a text field
 const RenameTablePopup = memo<{
@@ -580,139 +432,28 @@ const RenameTablePopup = memo<{
     );
 });
 
-const EditableTableName: FC<{
-    initialValue: string,
-    tableId: string,
-    handleUpdateTableDisplayId: (tableId: string, displayId: string) => void,
-    nonEditingSx?: SxProps
-}> = ({ initialValue, tableId, handleUpdateTableDisplayId, nonEditingSx }) => {
-    const [isEditing, setIsEditing] = useState(false);
-    const [inputValue, setInputValue] = useState(initialValue);
-    
-    const handleSubmit = (e?: React.MouseEvent | React.KeyboardEvent) => {
-        if (e) {
-            e.preventDefault();
-            e.stopPropagation();
-        }
-        
-        if (inputValue.trim() !== '') {  // Only update if input is not empty
-            handleUpdateTableDisplayId(tableId, inputValue);
-            setIsEditing(false);
-        }
-    };
-
-    const handleKeyDown = (e: React.KeyboardEvent) => {
-        if (e.key === 'Enter') {
-            handleSubmit(e);
-        } else if (e.key === 'Escape') {
-            setInputValue(initialValue);
-            setIsEditing(false);
-        }
-    };
-
-    if (!isEditing) {
-        return (
-            <Tooltip title="edit table name">
-                <Typography
-                    onClick={(event) => {
-                        event.stopPropagation();
-                        setIsEditing(true);
-                    }}
-                    sx={{
-                        ...nonEditingSx,
-                        fontSize: 'inherit',
-                        minWidth: '60px',
-                        maxWidth: '90px',
-                        wordWrap: 'break-word',
-                        whiteSpace: 'normal',
-                        ml: 0.25,
-                        padding: '2px',
-                        '&:hover': {
-                            backgroundColor: 'rgba(0,0,0,0.04)',
-                            borderRadius: '2px',
-                            cursor: 'pointer'
-                        }
-                    }}
-                >
-                    {initialValue}
-                </Typography>
-            </Tooltip>
-        );
-    }
-
-    return (
-        <Box
-            component="span"
-            onClick={(event) => event.stopPropagation()}
-            sx={{
-                display: 'flex',
-                alignItems: 'center',
-                position: 'relative',
-                ml: 0.25,
-            }}
-        >
-            <TextField
-                value={inputValue}
-                onChange={(e) => setInputValue(e.target.value)}
-                onKeyDown={handleKeyDown}
-                autoFocus
-                variant="filled"
-                size="small"
-                onBlur={(e) => {
-                    // Only reset if click is not on the submit button
-                    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-                        setInputValue(initialValue);
-                        setIsEditing(false);
-                    }
-                }}
-                sx={{
-                    '& .MuiFilledInput-root': {
-                        fontSize: 'inherit',
-                        padding: 0,
-                        '& input': {
-                            padding: '2px 24px 2px 8px',
-                            width: '64px',
-                        }
-                    }
-                }}
-            />
-            <IconButton
-                size="small"
-                onMouseDown={(e) => {
-                    e.preventDefault(); // Prevent blur from firing before click
-                }}
-                onClick={(e) => handleSubmit(e)}
-                sx={{
-                    position: 'absolute',
-                    right: 2,
-                    padding: '2px',
-                    minWidth: 'unset',
-                    zIndex: 1,
-                    '& .MuiSvgIcon-root': {
-                        fontSize: '0.8rem'
-                    }
-                }}
-            >
-                <CheckIcon />
-            </IconButton>
-        </Box>
-    );
-};
-
 let SingleThreadGroupView: FC<{
     scrollRef: any,
     threadIdx: number,
+    threadLabel?: string, // Custom label like "thread 1.1" for split sub-threads
+    isSplitThread?: boolean, // When true, truncate used tables to immediate parent + "..."
     leafTables: DictTable[];
     chartElements: { tableId: string, chartId: string, element: any }[];
     usedIntermediateTableIds: string[],
+    globalHighlightedTableIds: string[],
+    focusedThreadLeafId?: string, // The leaf table ID of the thread containing the focused table
     compact?: boolean, // When true, only show table cards in a simple column (for thread0)
     sx?: SxProps
 }> = function ({
     scrollRef,
     threadIdx,
+    threadLabel,
+    isSplitThread = false,
     leafTables,
     chartElements,
     usedIntermediateTableIds, // tables that have been used
+    globalHighlightedTableIds,
+    focusedThreadLeafId,
     compact = false,
     sx
 }) {
@@ -721,6 +462,20 @@ let SingleThreadGroupView: FC<{
     const { manualRefresh } = useDataRefresh();
 
     let leafTableIds = leafTables.map(lt => lt.id);
+    // Thread is highlighted only if this thread's leaf tables include the focused thread's leaf
+    const threadHighlighted = focusedThreadLeafId 
+        ? leafTableIds.includes(focusedThreadLeafId) 
+        : false;
+    // Ancestor thread: not the focused thread, but *owns* some highlighted tables
+    // (tables that only appear as used/shared references don't count)
+    const isAncestorThread = !threadHighlighted && globalHighlightedTableIds.length > 0
+        && leafTables.some(lt => {
+            const trigs = getTriggers(lt, tables);
+            const chainIds = [...trigs.map(t => t.tableId), lt.id];
+            const ownedIds = chainIds.filter(id => !usedIntermediateTableIds.includes(id));
+            return ownedIds.some(id => globalHighlightedTableIds.includes(id));
+        });
+    const shouldHighlightThread = threadHighlighted || isAncestorThread;
     let parentTableId = leafTables[0].derive?.trigger.tableId || undefined;
     let parentTable = tables.find(t => t.id == parentTableId) as DictTable;
 
@@ -949,297 +704,6 @@ let SingleThreadGroupView: FC<{
         }
     };
 
-    let buildTriggerCard = (trigger: Trigger) => {
-        let selectedClassName = trigger.chart?.id == focusedChartId ? 'selected-card' : '';
-        
-        let triggerCard = <div key={'thread-card-trigger-box'}>
-            <Box sx={{ flex: 1 }} >
-                <TriggerCard className={selectedClassName} trigger={trigger} 
-                    hideFields={trigger.instruction != ""} 
-                    sx={{
-                        fontSize: '11px',
-                        '& .MuiBox-root': { mx: 0.5, my: 0.25 },
-                        '& .MuiSvgIcon-root': { width: '12px', height: '12px' },
-                        ...(highlightedTableIds.includes(trigger.resultTableId) ? {borderLeft: '3px solid', borderLeftColor: alpha(theme.palette.custom.main, 0.5)} : {}),
-                    }}
-                />
-            </Box>
-        </div>;
-
-        return <Box sx={{ display: 'flex', flexDirection: 'column' }} key={`trigger-card-${trigger.chart?.id}`}>
-            {triggerCard}
-            <SouthIcon sx={{
-                fontSize: 10, 
-                ml: '3px',
-                color: highlightedTableIds.includes(trigger.resultTableId) 
-                    ? alpha(theme.palette.custom.main, 0.5) 
-                    : 'darkgray',
-            }} />
-        </Box>;
-    }
-
-    let buildTableCard = (tableId: string, compact = false) => {
-
-        if (parentTable && tableId == parentTable.id && parentTable.anchored && tableIdList.length > 1) {
-            let table = tables.find(t => t.id == tableId);
-            return <Typography sx={{ background: 'transparent', }} >
-                <Box 
-                    sx={{ 
-                        margin: '0px', 
-                        width: 'fit-content',
-                        display: 'flex', 
-                        cursor: 'pointer',
-                        padding: '2px 4px',
-                        borderRadius: '4px',
-                        transition: 'all 0.2s ease',
-                        '&:hover': {
-                            backgroundColor: 'rgba(0, 0, 0, 0.04)',
-                            boxShadow: '0 2px 4px rgba(0,0,0,0.05)'
-                        }
-                    }}
-                    onClick={(event) => {
-                        event.stopPropagation();
-                        dispatch(dfActions.setFocusedTable(tableId));
-                        
-                        // Find and set the first chart associated with this table
-                        let firstRelatedChart = charts.find((c: Chart) => c.tableRef == tableId && c.source != "trigger");
-                        
-                        if (firstRelatedChart) {
-                            dispatch(dfActions.setFocusedChart(firstRelatedChart.id));
-                        }
-                    }}
-                >
-                    <Stack direction="row" sx={{ marginLeft: 0.25, marginRight: 'auto', fontSize: 12 }} alignItems="center" gap={"2px"}>
-                        <AnchorIcon sx={{ fontSize: 14, color: 'rgba(0,0,0,0.5)' }} />
-                        <Typography fontSize="inherit" sx={{
-                            textAlign: 'center',
-                            color: 'rgba(0,0,0,0.7)', 
-                            maxWidth: '100px',
-                            wordWrap: 'break-word',
-                            whiteSpace: 'normal'
-                        }}>
-                            {table?.displayId || tableId}
-                        </Typography>
-                    </Stack>
-                </Box>
-            </Typography>
-        }
-
-        // filter charts relavent to this
-        let relevantCharts = chartElements.filter(ce => ce.tableId == tableId && !usedIntermediateTableIds.includes(tableId));
-
-        let table = tables.find(t => t.id == tableId);
-
-        let selectedClassName = tableId == focusedTableId ? 'selected-card' : '';
-
-        let collapsedProps = collapsed ? { width: '50%', "& canvas": { width: 60, maxHeight: 50 } } : { width: '100%' }
-
-        let releventChartElements = relevantCharts.map((ce, j) =>
-            <Box key={`relevant-chart-${ce.chartId}`}
-                sx={{ 
-                    display: 'flex', padding: 0, pb: j == relevantCharts.length - 1 ? 1 : 0.5, ...collapsedProps }}>
-                {buildChartCard(ce, focusedChartId, charts.find(c => c.id == ce.chartId)?.unread)}
-            </Box>)
-
-        // only charts without dependency can be deleted
-        let tableDeleteEnabled = !tables.some(t => t.derive?.trigger.tableId == tableId);
-
-        const iconColor = tableId === focusedTableId ? theme.palette.primary.main : 'rgba(0,0,0,0.6)';
-        const iconOpacity = table?.anchored ? 1 : 0.5;
-        
-        let tableCardIcon = table?.virtual ? (
-            <CloudQueueIcon sx={{ 
-                fontSize: 16,
-                color: iconColor,
-                opacity: iconOpacity,
-            }} />
-        ) : (
-            <TableRowsIcon sx={{ 
-                fontSize: 16,
-                color: iconColor,
-                opacity: iconOpacity,
-            }} />
-        )
-
-        let regularTableBox = <Box key={`regular-table-box-${tableId}`} ref={relevantCharts.some(c => c.chartId == focusedChartId) ? scrollRef : null} 
-            sx={{ padding: '0px' }}>
-            <Card className={`data-thread-card ${selectedClassName}`} variant="outlined"
-                sx={{ width: '100%', backgroundColor: alpha(theme.palette.primary.light, 0.1),
-                    borderLeft: highlightedTableIds.includes(tableId) ? 
-                        `3px solid ${theme.palette.primary.light}` : '1px solid lightgray',
-                    }}
-                onClick={() => {
-                    dispatch(dfActions.setFocusedTable(tableId));
-                    if (focusedChart?.tableRef != tableId) {
-                        let firstRelatedChart = charts.find((c: Chart) => c.tableRef == tableId && c.source != 'trigger');
-                        if (firstRelatedChart) {
-                            dispatch(dfActions.setFocusedChart(firstRelatedChart.id));
-                        } else {
-                            //dispatch(dfActions.createNewChart({ tableId: tableId, chartType: '?' }));
-                        }
-                    }
-                }}>
-                <Box sx={{ margin: '0px', display: 'flex' }}>
-                    <Stack direction="row" sx={{ marginLeft: 0.5, marginRight: 'auto', fontSize: 12 }} alignItems="center" gap={"2px"}>
-                        {/* For derived tables: icon toggles anchored */}
-                        {/* {table?.derive != undefined && (
-                            <IconButton color="primary" sx={{
-                                minWidth: 0, 
-                                padding: 0.25,
-                                '&:hover': {
-                                    transform: 'scale(1.3)',
-                                    transition: 'all 0.1s linear'
-                                },
-                                '&.Mui-disabled': {
-                                    color: 'rgba(0, 0, 0, 0.5)'
-                                }
-                            }} 
-                            size="small" 
-                            disabled={tables.some(t => t.derive?.trigger.tableId == tableId)}
-                            onClick={(event) => {
-                                event.stopPropagation();
-                                dispatch(dfActions.updateTableAnchored({tableId: tableId, anchored: !table?.anchored}));
-                            }}>
-                                {tableCardIcon}
-                            </IconButton>
-                        )} */}
-                        {tableCardIcon}
-                        <Box sx={{ margin: '4px 8px 4px 2px', display: 'flex', alignItems: 'center' }}>
-                            {/* Only show streaming icon when actively watching for updates */}
-                            {(table?.source?.type === 'stream' || table?.source?.type === 'database') && table?.source?.autoRefresh ? (
-                                <Tooltip title={`Auto-refresh every ${
-                                    (table.source?.refreshIntervalSeconds || 60) < 60 
-                                        ? `${table.source?.refreshIntervalSeconds}s` 
-                                        : (table.source?.refreshIntervalSeconds || 60) < 3600 
-                                            ? `${Math.floor((table.source?.refreshIntervalSeconds || 60) / 60)}m`
-                                            : `${Math.floor((table.source?.refreshIntervalSeconds || 60) / 3600)}h`
-                                } - Click to change interval or stop watching`}>
-                                    <IconButton
-                                        size="small"
-                                        onClick={(event) => {
-                                            event.stopPropagation();
-                                            handleOpenStreamingSettingsPopup(table!, event.currentTarget);
-                                        }}
-                                        sx={{
-                                            padding: 0.25,
-                                            '&:hover': {
-                                                transform: 'scale(1.2)',
-                                                transition: 'all 0.1s linear'
-                                            }
-                                        }}
-                                    >
-                                        <StreamIcon sx={{ 
-                                            fontSize: 12, 
-                                            color: theme.palette.success.main,
-                                            animation: 'pulse 2s infinite',
-                                            '@keyframes pulse': {
-                                                '0%': { opacity: 1 },
-                                                '50%': { opacity: 0.5 },
-                                                '100%': { opacity: 1 },
-                                            },
-                                        }} />
-                                    </IconButton>
-                                </Tooltip>
-                            ) : ""}
-                            <Typography fontSize="inherit" sx={{
-                                textAlign: 'center',
-                                color: 'rgba(0,0,0,0.7)', 
-                                maxWidth: 160,
-                                ml: ((table?.source?.type === 'stream' || table?.source?.type === 'database') && table?.source?.autoRefresh) ? 0.5 : 0,
-                                wordWrap: 'break-word',
-                                whiteSpace: 'normal'
-                            }}>{table?.displayId || tableId}</Typography>
-                        </Box>
-                    </Stack>
-                    <ButtonGroup aria-label="Basic button group" variant="text" sx={{ textAlign: 'end', margin: "auto 2px auto auto" }}>
-                        {table?.derive == undefined && (
-                            <Tooltip key="more-options-btn-tooltip" title="more options">
-                                <IconButton className="more-options-btn" color="primary" aria-label="more options" size="small" sx={{ padding: 0.25, '&:hover': {
-                                    transform: 'scale(1.2)',
-                                    transition: 'all 0.1s linear'
-                                    } }}
-                                    onClick={(event) => {
-                                        event.stopPropagation();
-                                        handleOpenTableMenu(table!, event.currentTarget);
-                                    }}
-                                >
-                                    <SettingsIcon fontSize="small" sx={{ fontSize: 16 }} />
-                                </IconButton>
-                            </Tooltip>
-                        )}
-                        <Tooltip key="create-new-chart-btn-tooltip" title="create a new chart">
-                            <IconButton aria-label="create chart" size="small" sx={{ padding: 0.25, '&:hover': {
-                                transform: 'scale(1.2)',
-                                transition: 'all 0.1s linear'
-                                } }}
-                                onClick={(event) => {
-                                    event.stopPropagation();
-                                    dispatch(dfActions.setFocusedTable(tableId));
-                                    dispatch(dfActions.setFocusedChart(undefined));
-                                }}
-                            >   
-                                <AddchartIcon fontSize="small" sx={{ fontSize: 18 }} color='primary'/>
-                            </IconButton>
-                        </Tooltip>
-                        
-                        {/* Delete button - shown for all deletable tables */}
-                        {tableDeleteEnabled && (
-                            <Tooltip key="delete-table-btn-tooltip" title="delete table">
-                                <IconButton aria-label="delete" size="small" sx={{ padding: 0.25, '&:hover': {
-                                    transform: 'scale(1.2)',
-                                    transition: 'all 0.1s linear'
-                                    } }}
-                                    onClick={(event) => {
-                                        event.stopPropagation();
-                                        dispatch(dfActions.deleteTable(tableId));
-                                    }}
-                                >
-                                    <DeleteIcon fontSize="small" sx={{ fontSize: 18 }} color='warning'/>
-                                </IconButton>
-                            </Tooltip>
-                        )}
-                    </ButtonGroup>
-                </Box>
-            </Card>
-        </Box>
-
-        let chartElementProps = collapsed ? { display: 'flex', flexWrap: 'wrap' } : {}
-
-        let relevantAgentActions = agentActions.filter(a => a.tableId == tableId).filter(a => a.hidden == false);
-
-        let agentActionBox = (
-            <AgentStatusBox 
-                tableId={tableId}
-                relevantAgentActions={relevantAgentActions}
-                dispatch={dispatch}
-            />
-        )
-
-        return [
-            regularTableBox,
-            <Box
-                key={`table-associated-elements-box-${tableId}`}
-                sx={{ display: 'flex', flexDirection: 'row' }}>
-                {!leafTableIds.includes(tableId) && <Box sx={{
-                    minWidth: '1px', padding: '0px', width: '16px', flex: 'none', display: 'flex',
-                    marginLeft: highlightedTableIds.includes(tableId) ? '7px' : '8px',
-                    borderLeft:  highlightedTableIds.includes(tableId) ? 
-                        `3px solid ${theme.palette.primary.light}` : '1px dashed darkgray',
-                }}>
-                    <Box sx={{
-                        padding: 0, width: '1px', margin: 'auto',
-                        backgroundImage: 'linear-gradient(180deg, darkgray, darkgray 75%, transparent 75%, transparent 100%)',
-                        backgroundSize: '1px 6px, 3px 100%'
-                    }}></Box>
-                </Box>}
-                <Box sx={{ flex: 1, padding: '4px 0px', minHeight: '0px', ...chartElementProps }}>
-                    {releventChartElements}
-                    {agentActionBox}
-                </Box>
-            </Box>
-        ]
-    }
-
     const theme = useTheme();
 
     let focusedChart = useSelector((state: DataFormulatorState) => charts.find(c => c.id == focusedChartId));
@@ -1257,65 +721,278 @@ let SingleThreadGroupView: FC<{
     let newTableIds = tableIdList.filter(id => !usedTableIdsInThread.includes(id));
     let newTriggers = triggers.filter(tg => newTableIds.includes(tg.resultTableId));
 
-    let highlightedTableIds: string[] = [];
-    if (focusedTableId && leafTableIds.includes(focusedTableId)) {
-        highlightedTableIds = [...tableIdList, focusedTableId];
-    } else if (focusedTableId && newTableIds.includes(focusedTableId)) {
-        highlightedTableIds = tableIdList.slice(0, tableIdList.indexOf(focusedTableId) + 1);
+    // Use the global highlighted table IDs (computed at DataThread level from the focused table's full ancestor chain)
+    let highlightedTableIds = globalHighlightedTableIds;
+
+    let _buildTriggerCard = (trigger: Trigger) => {
+        return buildTriggerCard(trigger, focusedChartId);
     }
 
-    let tableElementList = newTableIds.map((tableId, i) => buildTableCard(tableId));
-    let triggerCards = newTriggers.map((trigger) => buildTriggerCard(trigger));
+    // Shared props for buildTableCard calls
+    let tableCardProps: Omit<BuildTableCardProps, 'tableId'> = {
+        tables, charts, chartElements, usedIntermediateTableIds,
+        highlightedTableIds, agentActions, focusedTableId, focusedChartId, focusedChart,
+        parentTable, tableIdList, collapsed, scrollRef, dispatch,
+        handleOpenTableMenu, primaryBgColor: theme.palette.primary.bgcolor,
+    };
 
-    let leafTableComp = leafTables.length > 1 ? leafTables.map((lt, i) => {
+    let _buildTableCard = (tableId: string) => {
+        return buildTableCard({ tableId, ...tableCardProps });
+    }
 
-        let leafTrigger = lt.derive?.trigger;
+    let tableElementList = newTableIds.map((tableId, i) => _buildTableCard(tableId));
+    let triggerCards = newTriggers.map((trigger) => _buildTriggerCard(trigger));
 
-        let leftBorder = i == leafTables.length - 1 ? `none` : `1px dashed rgba(0, 0, 0, 0.3)`;
-        let stackML = '8px';
-        let spaceBox = <Box sx={{ height: '16px', width: '16px', flexShrink: 0,
-            borderLeft: i == leafTables.length - 1 ? `1px dashed rgba(0, 0, 0, 0.3)` : 'none',
-            borderBottom: `1px dashed rgba(0, 0, 0, 0.3)` }}></Box>
+    // Build a flat sequence of timeline items: [trigger, table, charts, trigger, table, charts, ...]
+    let timelineItems: { key: string; element: React.ReactNode; type: 'used-table' | 'trigger' | 'table' | 'chart' | 'leaf-trigger' | 'leaf-table'; highlighted: boolean; tableId?: string }[] = [];
 
-        if (focusedTableId && leafTableIds.indexOf(focusedTableId) > i) {
-            leftBorder = `3px solid ${theme.palette.primary.light}`;
-            stackML = '7px';
-        }
-
-        if (focusedTableId && lt.id == focusedTableId) {
-            spaceBox = <Box sx={{ height: '16px', width: '16px', flexShrink: 0, ml: i == leafTables.length - 1 ? '-1px' : '-2px',
-                borderLeft:`3px solid ${theme.palette.primary.light}`,
-                borderBottom: `3px solid ${theme.palette.primary.light}` }}></Box>
-        }
-
-        return <Stack key={`leaf-table-stack-${lt.id}`} sx={{ ml: stackML , width: '208px', display: 'flex', flexDirection: 'row', 
-                borderLeft: leftBorder, }}>
-            {spaceBox}
-            <Box sx={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
-                {leafTrigger && buildTriggerCard(leafTrigger)}
-                {buildTableCard(lt.id)}
-            </Box>
-        </Stack>;
-    }) : leafTables.map((lt, i) => {
-        return <Stack key={`leaf-table-stack-${lt.id}`} sx={{ ml: 0 , width: '192px', display: 'flex', flexDirection: 'row' }}>
-            <Box sx={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
-                {lt.derive?.trigger && buildTriggerCard(lt.derive.trigger)}
-                {buildTableCard(lt.id)}
-            </Box>
-        </Stack>;
+    // Add used (shared) tables at the top
+    // Only show the immediate parent + "..." for further ancestors
+    let displayedUsedTableIds = usedTableIdsInThread;
+    if (usedTableIdsInThread.length > 1) {
+        // Keep only the last (immediate parent), prepend "..." placeholder
+        displayedUsedTableIds = usedTableIdsInThread.slice(-1);
+        timelineItems.push({
+            key: 'used-table-ellipsis',
+            type: 'used-table',
+            highlighted: false,
+            element: (
+                <Typography sx={{ fontSize: '10px', color: 'text.disabled' }}>
+                    …
+                </Typography>
+            ),
+        });
+    }
+    displayedUsedTableIds.forEach((tableId, i) => {
+        let table = tables.find(t => t.id === tableId) as DictTable;
+        timelineItems.push({
+            key: `used-table-${tableId}-${i}`,
+            type: 'used-table',
+            tableId: tableId,
+            highlighted: highlightedTableIds.includes(tableId),
+            element: (
+                <Typography 
+                    sx={{
+                        fontSize: '10px',
+                        cursor: 'pointer',
+                        width: 'fit-content',
+                        '&:hover': {
+                            backgroundColor: alpha(theme.palette.primary.light, 0.1),
+                        },
+                    }} 
+                    onClick={() => { dispatch(dfActions.setFocusedTable(tableId)) }}>
+                    {table.displayId || tableId}
+                </Typography>
+            ),
+        });
     });
+
+    // Interleave triggers and tables for the main thread body
+    newTableIds.forEach((tableId, i) => {
+        const trigger = newTriggers.find(t => t.resultTableId === tableId);
+        const isHighlighted = highlightedTableIds.includes(tableId);
+
+        // Add trigger card if exists
+        if (trigger) {
+            const triggerCard = triggerCards[newTriggers.indexOf(trigger)];
+            if (triggerCard) {
+                timelineItems.push({
+                    key: triggerCard?.key || `woven-trigger-${tableId}`,
+                    type: 'trigger',
+                    highlighted: isHighlighted,
+                    element: triggerCard,
+                });
+            }
+        }
+
+        // Add table card and its charts
+        const tableCard = tableElementList[i];
+        if (Array.isArray(tableCard)) {
+            tableCard.forEach((subItem: any, j: number) => {
+                if (!subItem) return;
+                const subKey = subItem?.key || `woven-${tableId}-${j}`;
+                const isChart = subKey.includes('chart') || subKey.includes('agent');
+                timelineItems.push({
+                    key: subKey,
+                    type: isChart ? 'chart' : 'table',
+                    tableId: isChart ? undefined : tableId,
+                    highlighted: isHighlighted,
+                    element: subItem,
+                });
+            });
+        }
+    });
+
+    // Add leaf table components
+    leafTables.forEach((lt, i) => {
+        let leafTrigger = lt.derive?.trigger;
+        if (leafTrigger) {
+            timelineItems.push({
+                key: `leaf-trigger-${lt.id}`,
+                type: 'leaf-trigger',
+                highlighted: highlightedTableIds.includes(lt.id),
+                element: _buildTriggerCard(leafTrigger),
+            });
+        }
+        let leafCards = _buildTableCard(lt.id);
+        if (Array.isArray(leafCards)) {
+            leafCards.forEach((subItem: any, j: number) => {
+                if (!subItem) return;
+                const subKey = subItem?.key || `leaf-card-${lt.id}-${j}`;
+                const isChart = subKey.includes('chart') || subKey.includes('agent');
+                timelineItems.push({
+                    key: subKey,
+                    type: isChart ? 'chart' : 'leaf-table',
+                    tableId: isChart ? undefined : lt.id,
+                    highlighted: highlightedTableIds.includes(lt.id),
+                    element: subItem,
+                });
+            });
+        }
+    });
+
+    // Timeline rendering helper
+    const TIMELINE_WIDTH = 16;
+    const DOT_SIZE = 6;
+    const CARD_PY = '4px'; // vertical padding for each timeline row
+
+    const getTimelineDot = (item: typeof timelineItems[0]) => {
+        const isTable = item.type === 'table' || item.type === 'leaf-table' || item.type === 'used-table';
+        const color = item.highlighted 
+            ? theme.palette.primary.main
+            : 'rgba(0,0,0,0.25)';
+
+        // For table items, show a type-specific icon instead of a dot
+        if (isTable && item.tableId) {
+            const tableForDot = tables.find(t => t.id === item.tableId);
+            const iconSx = { fontSize: 14, color };
+            const isStreaming = tableForDot && (tableForDot.source?.type === 'stream' || tableForDot.source?.type === 'database') && tableForDot.source?.autoRefresh;
+
+            if (isStreaming) {
+                return <StreamIcon sx={{ 
+                    ...iconSx, 
+                    color: item.highlighted ? theme.palette.success.main : 'rgba(0,0,0,0.25)',
+                    animation: 'pulse 2s infinite',
+                    '@keyframes pulse': {
+                        '0%': { opacity: 1 },
+                        '50%': { opacity: 0.4 },
+                        '100%': { opacity: 1 },
+                    },
+                }} />;
+            }
+            if (tableForDot?.virtual) {
+                return <CloudQueueIcon sx={iconSx} />;
+            }
+            return <TableRowsIcon sx={iconSx} />;
+        }
+
+        return <Box sx={{ 
+            width: DOT_SIZE, height: DOT_SIZE, borderRadius: '50%', 
+            backgroundColor: color,
+        }} />;
+    };
+
+    const renderTimelineItem = (item: typeof timelineItems[0], index: number, isLast: boolean) => {
+        const isTrigger = item.type === 'trigger' || item.type === 'leaf-trigger';
+        const isTable = item.type === 'table' || item.type === 'leaf-table' || item.type === 'used-table';
+        const isChart = item.type === 'chart';
+        const dashedColor = item.highlighted ? theme.palette.primary.main : 'rgba(0,0,0,0.1)';
+        const dashedWidth = item.highlighted ? '1.5px' : '1px';
+        const dashedStyle = item.highlighted ? 'solid' : 'dashed';
+        const triggerColor = item.highlighted 
+            ? alpha(theme.palette.custom.main, 0.5)
+            : 'rgba(0,0,0,0.15)';
+        // In ancestor threads, non-highlighted items get white bg to dim them out
+        const rowHighlightSx = (isAncestorThread && !item.highlighted && item.type !== 'used-table')
+            ? { backgroundColor: 'rgba(255,255,255,0.75)', borderRadius: 0, mx: -1, px: 1 }
+            : {};
+
+        // Triggers: solid colored line on the left (no dash), indicating an action area
+        if (isTrigger) {
+            return (
+                <Box key={`timeline-row-${item.key}`} sx={{ display: 'flex', flexDirection: 'row', position: 'relative', ...rowHighlightSx }}>
+                    <Box sx={{ 
+                        width: TIMELINE_WIDTH, flexShrink: 0, 
+                        display: 'flex', flexDirection: 'column', alignItems: 'center',
+                        position: 'relative',
+                    }}>
+                        {/* Dashed connector from previous element */}
+                        <Box sx={{ width: 0, flex: '0 0 auto', height: 10, borderLeft: `${dashedWidth} ${dashedStyle} ${dashedColor}` }} />
+                        {/* Solid bar alongside trigger content */}
+                        <Box sx={{ 
+                            width: item.highlighted ? 3 : 2, flex: '1 1 0', minHeight: 4, 
+                            borderRadius: '2px',
+                            backgroundColor: triggerColor,
+                        }} />
+                        {/* Dashed connector to next element */}
+                        <Box sx={{ width: 0, flex: '0 0 auto', height: 10, borderLeft: `${dashedWidth} ${dashedStyle} ${dashedColor}` }} />
+                    </Box>
+                    <Box sx={{ flex: 1, minWidth: 0, py: CARD_PY, pl: 0.5 }}>
+                        {item.element}
+                    </Box>
+                </Box>
+            );
+        }
+
+        // Charts/agents: dot on the timeline with a horizontal tick line to the chart
+        if (isChart) {
+            return (
+                <Box key={`timeline-row-${item.key}`} sx={{ display: 'flex', flexDirection: 'row', position: 'relative', ...rowHighlightSx }}>
+                    <Box sx={{ 
+                        width: TIMELINE_WIDTH, flexShrink: 0, 
+                        display: 'flex', flexDirection: 'column', alignItems: 'center',
+                    }}>
+                        <Box sx={{ width: 0, flex: '1 1 0', minHeight: 2, borderLeft: `${dashedWidth} ${dashedStyle} ${dashedColor}` }} />
+                        <Box sx={{ flexShrink: 0, zIndex: 1, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            {getTimelineDot(item)}
+                            <Box sx={{ position: 'absolute', left: '100%', width: 6, height: 0, borderTop: `${dashedWidth} ${dashedStyle} ${item.highlighted ? theme.palette.primary.main : 'rgba(0,0,0,0.25)'}` }} />
+                        </Box>
+                        {!isLast && <Box sx={{ width: 0, flex: '1 1 0', minHeight: 2, borderLeft: `${dashedWidth} ${dashedStyle} ${dashedColor}` }} />}
+                        {isLast && <Box sx={{ flex: '1 1 0', minHeight: 2 }} />}
+                    </Box>
+                    <Box sx={{ flex: 1, minWidth: 0, py: CARD_PY, pl: 0.5 }}>
+                        {item.element}
+                    </Box>
+                </Box>
+            );
+        }
+
+        // Tables (primary nodes): settings icon on the timeline, more vertical spacing
+        const tableForItem = item.tableId ? tables.find(t => t.id === item.tableId) : undefined;
+        return (
+            <Box key={`timeline-row-${item.key}`} sx={{ display: 'flex', flexDirection: 'row', position: 'relative', ...rowHighlightSx }}>
+                <Box sx={{ 
+                    width: TIMELINE_WIDTH, flexShrink: 0, 
+                    display: 'flex', flexDirection: 'column', alignItems: 'center',
+                    position: 'relative',
+                }}>
+                    {index > 0 && (
+                        <Box sx={{ width: 0, flex: '1 1 0', minHeight: 6, borderLeft: `${dashedWidth} ${dashedStyle} ${dashedColor}` }} />
+                    )}
+                    {index === 0 && <Box sx={{ flex: '1 1 0', minHeight: 6 }} />}
+                    <Box sx={{ flexShrink: 0, zIndex: 1, backgroundColor: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        {getTimelineDot(item)}
+                    </Box>
+                    {!isLast && (
+                        <Box sx={{ width: 0, flex: '1 1 0', minHeight: 6, borderLeft: `${dashedWidth} ${dashedStyle} ${dashedColor}` }} />
+                    )}
+                    {isLast && <Box sx={{ flex: '1 1 0', minHeight: 6 }} />}
+                </Box>
+                <Box sx={{ flex: 1, minWidth: 0, py: item.type === 'used-table' ? '1px' : CARD_PY, pl: 0.5,
+                    ...(item.type === 'used-table' && { display: 'flex', alignItems: 'center' }),
+                }}>
+                    {item.element}
+                </Box>
+            </Box>
+        );
+    };
 
     // Compact mode: just show leaf table cards in a simple column
     if (compact) {
-        // For compact mode, ensure highlightedTableIds includes focused table if it's a leaf
-        if (focusedTableId && leafTableIds.includes(focusedTableId)) {
-            highlightedTableIds = [focusedTableId];
-        }
-        
         return (
             <Box sx={{ ...sx, display: 'flex', flexDirection: 'column', gap: 0.25 }}>
                 {leafTables.map((table) => {
-                    const tableCardResult = buildTableCard(table.id, compact);
+                    const tableCardResult = _buildTableCard(table.id);
                     // buildTableCard returns an array [regularTableBox, chartBox]
                     // In compact mode, we want to show them stacked
                     return (
@@ -1359,24 +1036,44 @@ let SingleThreadGroupView: FC<{
                         <EditIcon sx={{ fontSize: 16, color: 'text.secondary' }}/>
                         Rename
                     </MenuItem>
-                    <MenuItem 
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            if (selectedTableForMenu) {
-                                handleOpenMetadataPopup(selectedTableForMenu, tableMenuAnchorEl!);
-                            }
-                            handleCloseTableMenu();
-                        }}
-                        sx={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 1 }}
-                    >
-                        <AttachFileIcon sx={{ 
-                            fontSize: 16,
-                            color: selectedTableForMenu?.attachedMetadata ? 'secondary.main' : 'text.secondary',
-                        }}/>
-                        {selectedTableForMenu?.attachedMetadata ? "Edit metadata" : "Attach metadata"}
-                    </MenuItem>
+                    {/* Pin option - only for derived tables */}
+                    {selectedTableForMenu?.derive != undefined && (
+                        <MenuItem 
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                if (selectedTableForMenu) {
+                                    dispatch(dfActions.updateTableAnchored({tableId: selectedTableForMenu.id, anchored: !selectedTableForMenu.anchored}));
+                                }
+                                handleCloseTableMenu();
+                            }}
+                            sx={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 1 }}
+                        >
+                            <AnchorIcon sx={{ fontSize: 16, color: selectedTableForMenu?.anchored ? 'primary.main' : 'text.secondary' }}/>
+                            {selectedTableForMenu?.anchored ? "Unpin table" : "Pin table"}
+                        </MenuItem>
+                    )}
+                    {/* Non-derived table options */}
+                    {selectedTableForMenu?.derive == undefined && (
+                        <MenuItem 
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                if (selectedTableForMenu) {
+                                    handleOpenMetadataPopup(selectedTableForMenu, tableMenuAnchorEl!);
+                                }
+                                handleCloseTableMenu();
+                            }}
+                            sx={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 1 }}
+                        >
+                            <AttachFileIcon sx={{ 
+                                fontSize: 16,
+                                color: selectedTableForMenu?.attachedMetadata ? 'secondary.main' : 'text.secondary',
+                            }}/>
+                            {selectedTableForMenu?.attachedMetadata ? "Edit metadata" : "Attach metadata"}
+                        </MenuItem>
+                    )}
                     {/* Watch for updates option - only shown when table has stream/database source but not actively watching */}
                     {selectedTableForMenu && 
+                     selectedTableForMenu.derive == undefined &&
                      (selectedTableForMenu.source?.type === 'stream' || selectedTableForMenu.source?.type === 'database') && 
                      (
                         <MenuItem 
@@ -1393,8 +1090,8 @@ let SingleThreadGroupView: FC<{
                             Watch for updates
                         </MenuItem>
                     )}
-                    {/* Refresh data - hidden for database tables */}
-                    {selectedTableForMenu?.source?.type !== 'database' && (
+                    {/* Refresh data - hidden for database tables and derived tables */}
+                    {selectedTableForMenu?.derive == undefined && selectedTableForMenu?.source?.type !== 'database' && (
                         <MenuItem 
                             onClick={(e) => {
                                 e.stopPropagation();
@@ -1406,6 +1103,22 @@ let SingleThreadGroupView: FC<{
                         >
                             <RefreshIcon sx={{ fontSize: 16, color: 'primary.main' }}/>
                             Refresh data
+                        </MenuItem>
+                    )}
+                    {/* Delete table */}
+                    {selectedTableForMenu && !tables.some(t => t.derive?.trigger.tableId === selectedTableForMenu.id) && (
+                        <MenuItem 
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                if (selectedTableForMenu) {
+                                    dispatch(dfActions.deleteTable(selectedTableForMenu.id));
+                                }
+                                handleCloseTableMenu();
+                            }}
+                            sx={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 1, color: 'warning.main' }}
+                        >
+                            <DeleteIcon sx={{ fontSize: 16 }} color='warning'/>
+                            Delete table
                         </MenuItem>
                     )}
                 </Menu>
@@ -1433,54 +1146,28 @@ let SingleThreadGroupView: FC<{
 
     return <Box sx={{ ...sx, 
             '& .selected-card': { 
-                border: `2px solid ${theme.palette.primary.light}`,
+                boxShadow: `0 0 0 1.5px ${theme.palette.primary.light}`,
             },
-            transition: "box-shadow 0.1s linear",
+            transition: "all 0.15s ease",
+            padding: '4px',
+            ...(shouldHighlightThread
+                ? { backgroundColor: theme.palette.derived.bgcolor, borderRadius: '8px' }
+                : {}),
         }}
-        data-thread-index={threadIdx}>
+        >
         <Box sx={{ display: 'flex', direction: 'ltr', margin: '2px 2px 8px 2px' }}>
             <Divider flexItem sx={{
                 margin: 'auto',
                 "& .MuiDivider-wrapper": { display: 'flex', flexDirection: 'row' },
-                "&::before, &::after": { borderColor: alpha(theme.palette.custom.main, 0.2), borderWidth: '2px', width: 60 },
+                "&::before, &::after": { borderColor: alpha(theme.palette.custom.main, 0.5), borderWidth: '2px', width: 60 },
             }}>
                 <Typography sx={{ fontSize: "10px",  color: 'text.secondary', textTransform: 'none' }}>
-                    {threadIdx === -1 ? 'thread0' : `thread - ${threadIdx + 1}`}
+                    {threadLabel || (threadIdx === -1 ? 'thread0' : `thread - ${threadIdx + 1}`)}
                 </Typography>
             </Divider>
         </Box>
         <div style={{ padding: '2px 4px 2px 4px', marginTop: 0, direction: 'ltr' }}>
-            {usedTableIdsInThread.map((tableId, i) => {
-                let table = tables.find(t => t.id === tableId) as DictTable;
-                return [
-                    <Typography key={`thread-used-table-${tableId}-${i}-text`} 
-                        sx={{
-                            fontSize: '10px',
-                            cursor: 'pointer',
-                            width: 'fit-content',
-                            '&:hover': {
-                                backgroundColor: alpha(theme.palette.primary.light, 0.1),
-                            },
-                        }} 
-                        onClick={() => { dispatch(dfActions.setFocusedTable(tableId)) }}>
-                        {table.displayId || tableId}
-                    </Typography>,
-                    <Box 
-                        key={`thread-used-table-${tableId}-${i}-gap-box`}
-                        sx={{
-                        minWidth: '1px', padding: '0px', width: '16px', flex: 'none', display: 'flex',
-                        height: '10px',
-                        marginLeft: highlightedTableIds.includes(tableId) ? '7px' : '8px',
-                        borderLeft:  highlightedTableIds.includes(tableId) ? `3px solid ${theme.palette.primary.light}` : '1px dashed darkgray',
-                    }}>
-                    </Box>
-                ]
-            })}
-            <Box sx={{ display: 'flex',  width: '192px', flexDirection: 'column', flex: 1 }}>
-                {tableElementList.length > triggerCards.length ? 
-                    w(tableElementList, triggerCards, "") : w(triggerCards, tableElementList, "")}
-            </Box>
-            {leafTableComp}
+            {timelineItems.map((item, index) => renderTimelineItem(item, index, index === timelineItems.length - 1))}
         </div>
         <MetadataPopup
             open={metadataPopupOpen}
@@ -1499,7 +1186,7 @@ let SingleThreadGroupView: FC<{
             tableName={selectedTableForRename?.displayId || selectedTableForRename?.id || ''}
         />
 
-        {/* Table actions menu for non-derived, non-virtual tables */}
+        {/* Table actions menu */}
         <Menu
             anchorEl={tableMenuAnchorEl}
             open={Boolean(tableMenuAnchorEl)}
@@ -1519,24 +1206,44 @@ let SingleThreadGroupView: FC<{
                 <EditIcon sx={{ fontSize: 16, color: 'text.secondary' }}/>
                 Rename
             </MenuItem>
-            <MenuItem 
-                onClick={(e) => {
-                    e.stopPropagation();
-                    if (selectedTableForMenu) {
-                        handleOpenMetadataPopup(selectedTableForMenu, tableMenuAnchorEl!);
-                    }
-                    handleCloseTableMenu();
-                }}
-                sx={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 1 }}
-            >
-                <AttachFileIcon sx={{ 
-                    fontSize: 16,
-                    color: selectedTableForMenu?.attachedMetadata ? 'secondary.main' : 'text.secondary',
-                }}/>
-                {selectedTableForMenu?.attachedMetadata ? "Edit metadata" : "Attach metadata"}
-            </MenuItem>
+            {/* Pin option - only for derived tables */}
+            {selectedTableForMenu?.derive != undefined && (
+                <MenuItem 
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        if (selectedTableForMenu) {
+                            dispatch(dfActions.updateTableAnchored({tableId: selectedTableForMenu.id, anchored: !selectedTableForMenu.anchored}));
+                        }
+                        handleCloseTableMenu();
+                    }}
+                    sx={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 1 }}
+                >
+                    <AnchorIcon sx={{ fontSize: 16, color: selectedTableForMenu?.anchored ? 'primary.main' : 'text.secondary' }}/>
+                    {selectedTableForMenu?.anchored ? "Unpin table" : "Pin table"}
+                </MenuItem>
+            )}
+            {/* Non-derived table options */}
+            {selectedTableForMenu?.derive == undefined && (
+                <MenuItem 
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        if (selectedTableForMenu) {
+                            handleOpenMetadataPopup(selectedTableForMenu, tableMenuAnchorEl!);
+                        }
+                        handleCloseTableMenu();
+                    }}
+                    sx={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 1 }}
+                >
+                    <AttachFileIcon sx={{ 
+                        fontSize: 16,
+                        color: selectedTableForMenu?.attachedMetadata ? 'secondary.main' : 'text.secondary',
+                    }}/>
+                    {selectedTableForMenu?.attachedMetadata ? "Edit metadata" : "Attach metadata"}
+                </MenuItem>
+            )}
             {/* Watch for updates option - only shown when table has stream/database source but not actively watching */}
             {selectedTableForMenu && 
+             selectedTableForMenu.derive == undefined &&
              (selectedTableForMenu.source?.type === 'stream' || selectedTableForMenu.source?.type === 'database') && 
              !selectedTableForMenu.source?.autoRefresh && (
                 <MenuItem 
@@ -1553,8 +1260,8 @@ let SingleThreadGroupView: FC<{
                     Watch for updates
                 </MenuItem>
             )}
-            {/* Refresh data - hidden for database tables */}
-            {selectedTableForMenu?.source?.type !== 'database' && (
+            {/* Refresh data - hidden for database tables and derived tables */}
+            {selectedTableForMenu?.derive == undefined && selectedTableForMenu?.source?.type !== 'database' && (
                 <MenuItem 
                     onClick={(e) => {
                         e.stopPropagation();
@@ -1803,37 +1510,22 @@ const MemoizedChartObject = memo<{
     );
 });
 
-// Thread dimension info for height estimation
-interface ThreadDimension {
-    tableCount: number;   // number of table cards
-    triggerCount: number;  // number of trigger/instruction cards
-    chartCount: number;    // number of chart cards
-    messageCount: number;  // number of visible agent status messages
-    isCompact: boolean;    // thread0 compact mode
-}
+// Height estimation constants (px) – per-type heights + py:4px (8px) gap per row
+const LAYOUT_TABLE_HEIGHT = 28 + 8;     // table card + row padding
+const LAYOUT_TRIGGER_HEIGHT = 43 + 8;   // trigger card (2 lines) + row padding
+const LAYOUT_CHART_HEIGHT = 90 + 8;     // chart card (~70-110) + row padding
+const LAYOUT_MESSAGE_HEIGHT = 80 + 8;   // agent message (~60-120) + row padding
+const LAYOUT_THREAD_OVERHEAD = 52;      // header divider + thread padding
+const LAYOUT_THREAD_GAP = 8;            // my: 0.5 = 4px top + 4px bottom between threads
 
-// Height estimation constants (px) – derived from actual rendered sizes:
-//   table card ≈ 36px, trigger card ≈ 90px (multi-line text + arrow),
-//   chart card ≈ 140px (canvas maxHeight:100 + card chrome),
-//   agent message ≈ 60px, thread header/separator ≈ 28px, thread padding ≈ 24px
-const LAYOUT_TABLE_CARD_HEIGHT = 36;
-const LAYOUT_TRIGGER_CARD_HEIGHT = 65;
-const LAYOUT_CHART_HEIGHT = 110;
-const LAYOUT_MESSAGE_HEIGHT = 60;
-const LAYOUT_THREAD_HEADER_HEIGHT = 28;
-const LAYOUT_THREAD_PADDING = 24;
-const LAYOUT_COMPACT_TABLE_HEIGHT = 32;
-const LAYOUT_THREAD_GAP = 8;  // my: 0.5 = 4px top + 4px bottom between threads
-
-function estimateThreadHeight(dim: ThreadDimension): number {
-    if (dim.isCompact) {
-        return LAYOUT_THREAD_PADDING + dim.tableCount * LAYOUT_COMPACT_TABLE_HEIGHT;
-    }
-    return LAYOUT_THREAD_HEADER_HEIGHT + LAYOUT_THREAD_PADDING 
-        + dim.tableCount * LAYOUT_TABLE_CARD_HEIGHT 
-        + dim.triggerCount * LAYOUT_TRIGGER_CARD_HEIGHT 
-        + dim.chartCount * LAYOUT_CHART_HEIGHT
-        + dim.messageCount * LAYOUT_MESSAGE_HEIGHT;
+function estimateThreadHeight(
+    tableCount: number, triggerCount: number, chartCount: number, messageCount: number
+): number {
+    return LAYOUT_THREAD_OVERHEAD
+        + tableCount * LAYOUT_TABLE_HEIGHT
+        + triggerCount * LAYOUT_TRIGGER_HEIGHT
+        + chartCount * LAYOUT_CHART_HEIGHT
+        + messageCount * LAYOUT_MESSAGE_HEIGHT;
 }
 
 /**
@@ -1953,10 +1645,12 @@ function chooseBestColumnLayout(
     maxColumns: number,
     viewportHeight: number,
     flexOrder: boolean = false,
+    minColumns: number = 1,
 ): number[][] {
     if (heights.length === 0) return [];
 
     const cap = Math.min(maxColumns, heights.length);
+    const start = Math.min(Math.max(minColumns, 1), cap);
     const tolerantHeight = viewportHeight * SCROLL_TOLERANCE;
 
     // Compute effective column height including gaps between threads
@@ -1966,13 +1660,13 @@ function chooseBestColumnLayout(
         return contentH + gapH;
     };
 
-    // Evaluate every candidate column count (1 … cap).
+    // Evaluate every candidate column count (start … cap).
     // Pick the smallest n whose tallest column fits within tolerance.
     // If none fits, pick the one with the shortest tallest column.
     let bestLayout: number[][] = [];
     let bestMaxH = Infinity;
 
-    for (let n = 1; n <= cap; n++) {
+    for (let n = start; n <= cap; n++) {
         const layout = computeThreadColumnLayout(heights, n, flexOrder);
         const maxH = Math.max(...layout.map(columnEffectiveHeight));
 
@@ -2054,7 +1748,31 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
         return false;
     }
     let leafTables = [ ...tables.filter(t => isLeafTable(t)) ];
-    
+
+    // Split long derivation chains by promoting intermediate tables as additional "leaves".
+    // If a chain has more than MAX_CHAIN_TABLES tables, we add a split point every
+    // MAX_CHAIN_TABLES steps. The sort (shorter chains first) ensures the intermediate
+    // leaf is processed before the real leaf, so its tables get claimed — making the
+    // real leaf's thread show only the remaining (new) tables.
+    const MAX_CHAIN_TABLES = 5;
+    const extraLeaves: DictTable[] = [];
+    for (const lt of leafTables) {
+        const triggers = getTriggers(lt, tables);
+        const chainLen = triggers.length + 1; // total tables in this derivation chain
+        if (chainLen > MAX_CHAIN_TABLES) {
+            for (let pos = MAX_CHAIN_TABLES - 1; pos < triggers.length; pos += MAX_CHAIN_TABLES) {
+                const midId = triggers[pos].tableId;
+                const midTable = tables.find(t => t.id === midId);
+                if (midTable && !leafTables.includes(midTable) && !extraLeaves.includes(midTable)) {
+                    extraLeaves.push(midTable);
+                }
+            }
+        }
+    }
+    if (extraLeaves.length > 0) {
+        leafTables.push(...extraLeaves);
+    }
+
     // we want to sort the leaf tables by the order of their ancestors
     // for example if ancestor of list a is [0, 3] and the ancestor of list b is [0, 2] then b should come before a
     // when tables are anchored, we want to give them a higher order (so that they are displayed after their peers)
@@ -2079,175 +1797,212 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
         return aOrders.length - bOrders.length;
     });
 
-    // Identify hanging tables (tables with no descendants or parents)
-    let isHangingTable = (table: DictTable) => {
-        // A table is hanging if:
-        // 1. It has no derive.source (no parent)
-        // 2. No other table derives from it (no descendants)
-        const hasNoParent = table.derive == undefined;
-        const hasNoDescendants = !tables.some(t => t.derive?.trigger.tableId == table.id);
-        return hasNoParent && hasNoDescendants;
-    };
-
-    // Separate hanging tables from regular leaf tables
-    let hangingTables = leafTables.filter(t => isHangingTable(t));
-    let regularLeafTables = leafTables.filter(t => !isHangingTable(t));
-
-    // Build groups for regular leaf tables (excluding hanging tables)
-    let leafTableGroups = regularLeafTables.reduce((groups: { [groupId: string]: DictTable[] }, leafTable) => {
-        // Get the immediate parent table ID (first trigger in the chain)
-        const triggers = getTriggers(leafTable, tables);
-        const immediateParentTableId = triggers.length > 0 ? triggers[triggers.length - 1].tableId : 'root';
-        
-        let groupId = immediateParentTableId + (leafTable.anchored ? ('-' + leafTable.id) : '');
-
-        let subgroupIdCount = 0;
-        while (groups[groupId] && groups[groupId].length >= 4) {
-            groupId = groupId + '-' + subgroupIdCount;
-            subgroupIdCount++;
+    // Compute global highlighted table IDs from the focused table's full ancestor chain
+    let globalHighlightedTableIds: string[] = useMemo(() => {
+        if (!focusedTableId) return [];
+        let focusedTable = tables.find(t => t.id === focusedTableId);
+        if (!focusedTable) return [];
+        // Walk up the trigger chain from the focused table to collect all ancestor IDs
+        let ids: string[] = [focusedTableId];
+        let current = focusedTable;
+        while (current.derive && !current.anchored) {
+            let parentId = current.derive.trigger.tableId;
+            ids.unshift(parentId);
+            let parent = tables.find(t => t.id === parentId);
+            if (!parent) break;
+            current = parent;
         }
+        return ids;
+    }, [focusedTableId, tables]);
 
-        // Initialize group if it doesn't exist
-        if (!groups[groupId]) {
-            groups[groupId] = [];
+    // Determine which leaf table's thread the focused table belongs to
+    let focusedThreadLeafId: string | undefined = useMemo(() => {
+        if (!focusedTableId) return undefined;
+        // Check if focused table IS a leaf table
+        let directLeaf = leafTables.find(lt => lt.id === focusedTableId);
+        if (directLeaf) return directLeaf.id;
+        // Otherwise, find the leaf table whose ancestor chain includes the focused table
+        for (const lt of leafTables) {
+            const triggers = getTriggers(lt, tables);
+            const chainIds = [...triggers.map(t => t.tableId), lt.id];
+            if (chainIds.includes(focusedTableId)) {
+                return lt.id;
+            }
         }
-        
-        // Add leaf table to its group
-        groups[groupId].push(leafTable);
-        
-        return groups;
-    }, {});
+        return undefined;
+    }, [focusedTableId, leafTables, tables]);
 
-    // Filter threads to only include those with length > 1
-    let filteredLeafTableGroups: { [groupId: string]: DictTable[] } = {};
-    Object.entries(leafTableGroups).forEach(([groupId, groupTables]) => {
-        // Calculate thread length: count all tables in the thread chain
-        const threadLength = groupTables.reduce((maxLength, leafTable) => {
-            const triggers = getTriggers(leafTable, tables);
-            // Thread length = number of triggers + 1 (the leaf table itself)
-            return Math.max(maxLength, triggers.length + 1);
-        }, 0);
-        
-        // Only include threads with length > 1
-        if (threadLength > 1) {
-            filteredLeafTableGroups[groupId] = groupTables;
-        } else {
-            // Add single-table threads to hanging tables (they go to thread0)
-            groupTables.forEach(table => {
-                if (!hangingTables.includes(table)) {
-                    hangingTables.push(table);
-                }
-            });
-        }
+    let hasContent = leafTables.length > 0;
+
+    // Separate standalone tables (no derivation chain) from threaded tables
+    let standaloneTables = leafTables.filter(lt => {
+        const triggers = getTriggers(lt, tables);
+        return triggers.length + 1 <= 1;
+    });
+    let threadedTables = leafTables.filter(lt => {
+        const triggers = getTriggers(lt, tables);
+        return triggers.length + 1 > 1;
     });
 
-    // Create thread0 group for hanging tables
-    let thread0Group: { [groupId: string]: DictTable[] } = {};
-    if (hangingTables.length > 0) {
-        thread0Group['thread0'] = hangingTables;
-    }
-
-    let hasContent = Object.keys(filteredLeafTableGroups).length > 0 || hangingTables.length > 0;
-
     // Build thread entries and their estimated heights for layout
-    type ThreadEntry = { key: string; groupId: string; leafTables: DictTable[]; isCompact: boolean; threadIdx: number };
+    type ThreadEntry = { key: string; groupId: string; leafTables: DictTable[]; isCompact: boolean; threadIdx: number; threadLabel?: string; isSplitThread?: boolean };
     let allThreadEntries: ThreadEntry[] = [];
     let allThreadHeights: number[] = [];
 
+    // Track which leaf tables are promoted (split) vs real leaves
+    const extraLeafIds = new Set(extraLeaves.map(t => t.id));
+
     // Track which table IDs have been claimed by earlier threads
-    // (mirrors usedIntermediateTableIds logic in rendering)
     let claimedTableIds = new Set<string>();
 
-    // thread0 first — claim all its table IDs
-    Object.entries(thread0Group).forEach(([groupId, lts]) => {
-        lts.forEach(lt => {
-            claimedTableIds.add(lt.id);
-            getTriggers(lt, tables).forEach(t => claimedTableIds.add(t.tableId));
-        });
-
+    // thread0: group all standalone tables into one compact thread
+    if (standaloneTables.length > 0) {
+        standaloneTables.forEach(lt => claimedTableIds.add(lt.id));
         allThreadEntries.push({
-            key: `thread0-${groupId}`,
-            groupId,
-            leafTables: lts,
+            key: 'thread0',
+            groupId: 'thread0',
+            leafTables: standaloneTables,
             isCompact: true,
             threadIdx: -1,
         });
-        allThreadHeights.push(estimateThreadHeight({
-            tableCount: lts.length,
-            triggerCount: 0,
-            chartCount: 0,
-            messageCount: 0,
-            isCompact: true,
-        }));
-    });
+        let standaloneChartCount = standaloneTables.reduce((sum, lt) => {
+            return sum + chartElements.filter(ce => ce.tableId === lt.id).length;
+        }, 0);
+        allThreadHeights.push(estimateThreadHeight(standaloneTables.length, 0, standaloneChartCount, 0));
+    }
 
-    // then regular threads — only count NEW (unclaimed) tables in each thread
-    Object.entries(filteredLeafTableGroups).forEach(([groupId, lts], i) => {
-        // Collect all table IDs in this thread's chains
-        let threadTableIds = new Set<string>();
-        lts.forEach(lt => {
+    // Regular threads: one per threaded leaf table
+    // Assign sub-thread numbering: split (promoted) threads get the main index (1, 2, ...),
+    // real leaf tables whose chain was split get a sub-index (1.1, 1.2, ...)
+    let realThreadIdx = 0; // counter for main threads
+    // Pre-scan: find which real leaf each extra leaf belongs to
+    let extraLeafToRealLeaf = new Map<string, string>();
+    // Also build reverse: real leaf -> list of extra leaves in its chain
+    let realLeafToExtraLeaves = new Map<string, string[]>();
+    for (const lt of threadedTables) {
+        if (!extraLeafIds.has(lt.id)) {
+            // This is a real leaf — find all extra leaves that are ancestors of it
             const triggers = getTriggers(lt, tables);
-            triggers.forEach(t => threadTableIds.add(t.tableId));
-            threadTableIds.add(lt.id);
-        });
+            const chainIds = triggers.map(t => t.tableId);
+            const myExtras: string[] = [];
+            for (const extraId of extraLeafIds) {
+                if (chainIds.includes(extraId)) {
+                    if (!extraLeafToRealLeaf.has(extraId)) {
+                        extraLeafToRealLeaf.set(extraId, lt.id);
+                    }
+                    myExtras.push(extraId);
+                }
+            }
+            if (myExtras.length > 0) {
+                realLeafToExtraLeaves.set(lt.id, myExtras);
+            }
+        }
+    }
+    // Map from extra leaf id -> its assigned main thread index
+    let extraLeafToThreadIdx = new Map<string, number>();
+    // Track sub-index counters per chain (keyed by first extra leaf's thread idx)
+    let subThreadCounters = new Map<number, number>();
+
+    threadedTables.forEach((lt, i) => {
+        const triggers = getTriggers(lt, tables);
+
+        // Collect all table IDs in this thread's chain
+        let threadTableIds = new Set<string>();
+        triggers.forEach(t => threadTableIds.add(t.tableId));
+        threadTableIds.add(lt.id);
 
         // Only new (unclaimed) tables contribute to this thread's height
         let newTableIds = [...threadTableIds].filter(id => !claimedTableIds.has(id));
 
-        // Triggers are only for new intermediate tables (not the leaf)
-        let newTriggerCount = lts.reduce((max, lt) => {
-            const triggers = getTriggers(lt, tables);
-            const newTriggers = triggers.filter(t => newTableIds.includes(t.resultTableId));
-            return Math.max(max, newTriggers.length);
-        }, 0);
+        let newTriggerCount = triggers.filter(t => newTableIds.includes(t.resultTableId)).length;
+        let chartCount = newTableIds.reduce((sum, tid) => sum + chartElements.filter(ce => ce.tableId === tid).length, 0);
+        let messageCount = newTableIds.reduce((sum, tid) => sum + agentActions.filter(a => a.tableId === tid && !a.hidden).length, 0);
 
-        // Charts only on new tables
-        let chartCount = newTableIds.reduce((sum, tid) => {
-            return sum + chartElements.filter(ce => ce.tableId === tid).length;
-        }, 0);
-
-        // Agent messages only on new tables
-        let messageCount = newTableIds.reduce((sum, tid) => {
-            return sum + agentActions.filter(a => a.tableId === tid && !a.hidden).length;
-        }, 0);
+        // +1 table and +1 trigger for the leaf table itself
+        let totalTables = newTableIds.length + 1;
+        let totalTriggers = newTriggerCount + 1;
 
         // Claim this thread's tables for subsequent threads
         threadTableIds.forEach(id => claimedTableIds.add(id));
 
+        // Determine thread label and whether this is a split sub-thread
+        const isSplit = extraLeafIds.has(lt.id);
+        // A real leaf is a "continuation" if it has extra leaves in its chain
+        const isContinuation = !isSplit && realLeafToExtraLeaves.has(lt.id);
+        let threadLabel: string;
+        let threadIdxForEntry: number;
+
+        if (isSplit) {
+            // Promoted intermediate — gets a main thread index
+            realThreadIdx++;
+            extraLeafToThreadIdx.set(lt.id, realThreadIdx);
+            threadLabel = `thread - ${realThreadIdx}`;
+            threadIdxForEntry = realThreadIdx - 1;
+        } else if (isContinuation) {
+            // Real leaf whose chain was split — gets sub-index under the last extra leaf's index
+            const myExtras = realLeafToExtraLeaves.get(lt.id) || [];
+            // Use the last extra leaf's thread index (the one closest to this leaf in the chain)
+            const lastExtra = myExtras[myExtras.length - 1];
+            const parentIdx = extraLeafToThreadIdx.get(lastExtra) ?? realThreadIdx;
+            const subIdx = (subThreadCounters.get(parentIdx) || 0) + 1;
+            subThreadCounters.set(parentIdx, subIdx);
+            threadLabel = `thread - ${parentIdx}.${subIdx}`;
+            threadIdxForEntry = i;
+        } else {
+            // Normal thread (no splitting involved)
+            realThreadIdx++;
+            threadLabel = `thread - ${realThreadIdx}`;
+            threadIdxForEntry = realThreadIdx - 1;
+        }
+
         allThreadEntries.push({
-            key: `thread-${groupId}-${i}`,
-            groupId,
-            leafTables: lts,
+            key: `thread-${lt.id}-${i}`,
+            groupId: lt.id,
+            leafTables: [lt],
             isCompact: false,
-            threadIdx: i,
+            threadIdx: threadIdxForEntry,
+            threadLabel,
+            isSplitThread: isContinuation,
         });
-        allThreadHeights.push(estimateThreadHeight({
-            tableCount: newTableIds.length,
-            triggerCount: newTriggerCount,
-            chartCount,
-            messageCount,
-            isCompact: false,
-        }));
+        allThreadHeights.push(estimateThreadHeight(totalTables, totalTriggers, chartCount, messageCount));
     });
 
     // Pick the best column layout: balances scroll burden vs whitespace.
     // Measure actual panel height from the DOM (accounts for browser zoom, panel resizing, etc.)
     const availableHeight = containerRef.current?.clientHeight ?? 600;
     const MAX_COLUMNS = 3;
+    const hasMultipleThreads = allThreadEntries.length > 1;
     const columnLayout: number[][] = chooseBestColumnLayout(
-        allThreadHeights, MAX_COLUMNS, availableHeight, /* flexOrder */ false
+        allThreadHeights, MAX_COLUMNS, availableHeight, /* flexOrder */ false,
+        /* minColumns */ hasMultipleThreads ? 2 : 1
     );
     const actualColumns = columnLayout.length || 1;
 
+    const CARD_WIDTH = hasMultipleThreads ? 220 : 240;
+    const CARD_GAP = 12; // padding + spacing between cards in a column
+
     let renderThreadEntry = (entry: ThreadEntry) => {
+        // Calculate used tables from all previous threads
+        const previousEntries = allThreadEntries.slice(0, allThreadEntries.indexOf(entry));
+        let usedTableIds = previousEntries.flatMap(e => {
+            return e.leafTables.flatMap(lt => {
+                const triggers = getTriggers(lt, tables);
+                return [...triggers.map(t => t.tableId), lt.id];
+            });
+        });
+
         if (entry.isCompact) {
             return <SingleThreadGroupView
                 key={entry.key}
                 scrollRef={scrollRef}
                 threadIdx={entry.threadIdx}
+                threadLabel={entry.threadLabel}
+                isSplitThread={entry.isSplitThread}
                 leafTables={entry.leafTables}
                 chartElements={chartElements}
-                usedIntermediateTableIds={[]}
+                usedIntermediateTableIds={usedTableIds}
+                globalHighlightedTableIds={globalHighlightedTableIds}
+                focusedThreadLeafId={focusedThreadLeafId}
                 compact={true}
                 sx={{
                     backgroundColor: 'white',
@@ -2258,27 +2013,21 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
                     display: 'flex',
                     flexDirection: 'column',
                     height: 'fit-content',
-                    width: entry.leafTables.length > 1 ? '216px' : '200px',
+                    width: CARD_WIDTH,
                     transition: 'all 0.3s ease',
                 }} />;
         } else {
-            // Calculate used tables from thread0 and previous regular threads
-            let usedIntermediateTableIds = Object.values(thread0Group).flat()
-                .map(x => [...getTriggers(x, tables).map(y => y.tableId) || []]).flat();
-            let usedLeafTableIds = Object.values(thread0Group).flat().map(x => x.id);
-
-            const previousThreadGroups = Object.values(filteredLeafTableGroups).slice(0, entry.threadIdx);
-            usedIntermediateTableIds = [...usedIntermediateTableIds, ...previousThreadGroups.flat()
-                .map(x => [...getTriggers(x, tables).map(y => y.tableId) || []]).flat()];
-            usedLeafTableIds = [...usedLeafTableIds, ...previousThreadGroups.flat().map(x => x.id)];
-
             return <SingleThreadGroupView
                 key={entry.key}
                 scrollRef={scrollRef}
                 threadIdx={entry.threadIdx}
+                threadLabel={entry.threadLabel}
+                isSplitThread={entry.isSplitThread}
                 leafTables={entry.leafTables}
                 chartElements={chartElements}
-                usedIntermediateTableIds={[...usedIntermediateTableIds, ...usedLeafTableIds]}
+                usedIntermediateTableIds={usedTableIds}
+                globalHighlightedTableIds={globalHighlightedTableIds}
+                focusedThreadLeafId={focusedThreadLeafId}
                 sx={{
                     backgroundColor: 'white',
                     borderRadius: 2,
@@ -2288,43 +2037,16 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
                     display: 'flex',
                     flexDirection: 'column',
                     height: 'fit-content',
-                    width: entry.leafTables.length > 1 ? '216px' : '200px',
+                    width: CARD_WIDTH,
                     transition: 'all 0.3s ease',
                 }} />;
         }
     };
 
-    // Thread navigation buttons
-    let threadIndices: number[] = [];
-    if (Object.keys(thread0Group).length > 0) {
-        threadIndices.push(-1); // thread0
-    }
-    threadIndices.push(...Array.from({length: Object.keys(filteredLeafTableGroups).length}, (_, i) => i));
-
-    let jumpButtons = <ButtonGroup size="small" color="primary" sx={{ gap: 0 }}>
-        {threadIndices.map((threadIdx) => {
-            const label = threadIdx === -1 ? '0' : String(threadIdx + 1);
-            return (
-                <Tooltip key={`thread-nav-${threadIdx}`} title={`Jump to thread ${label}`}>
-                    <IconButton 
-                        size="small" 
-                        color="primary"
-                        sx={{ fontSize: '12px', padding: '4px' }} 
-                        onClick={() => {
-                            const threadElement = document.querySelector(`[data-thread-index="${threadIdx}"]`);
-                            threadElement?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-                        }}
-                    > 
-                        {label}
-                    </IconButton>
-                </Tooltip>
-            );
-        })}
-    </ButtonGroup>
-
-    // Column-based panel width: each column ≈ 224px + gaps + padding
-    const COLUMN_WIDTH = 224;
-    const panelWidth = actualColumns * COLUMN_WIDTH + (actualColumns - 1) * 8 + 16;
+    // Column-based panel width: each column = CARD_WIDTH + CARD_GAP
+    const COLUMN_WIDTH = CARD_WIDTH + CARD_GAP;
+    const MIN_PANEL_WIDTH = 0; // ensure enough room for floating chat chip
+    const panelWidth = Math.max(actualColumns * COLUMN_WIDTH + 16, MIN_PANEL_WIDTH);
 
     let view = hasContent ? (
         <Box sx={{ 
@@ -2335,7 +2057,7 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
             flexDirection: 'row',
             direction: 'ltr',
             height: 'calc(100% - 16px)',
-            gap: 1,
+            gap: 0.25,
             p: 1,
             width: panelWidth,
         }}>
@@ -2343,6 +2065,7 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
                 <Box key={`thread-column-${colIdx}`} sx={{
                     display: 'flex',
                     flexDirection: 'column',
+                    alignItems: 'center',
                     gap: 0,
                     flex: 1,
                     minWidth: 0,
@@ -2358,18 +2081,6 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
 
     return (
         <Box className="data-thread" sx={{ ...sx, position: 'relative' }}>
-            <Box sx={{
-                direction: 'ltr', display: 'flex',
-                paddingLeft: '12px', alignItems: 'center', justifyContent: 'space-between',
-            }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <Typography className="view-title" component="h2" sx={{ marginTop: "6px" }}>
-                        Data Threads
-                    </Typography>
-                    {threadIndices.length > 0 && jumpButtons}
-                </Box>
-            </Box>
-
             <Box ref={containerRef} sx={{
                     overflow: 'hidden', 
                     direction: 'rtl', 

@@ -365,8 +365,8 @@ const VIZ_CATEGORY_MAP: Record<string, VizCategory> = {
     Distance: 'quantitative', Area: 'quantitative', Volume: 'quantitative',
     Weight: 'quantitative', Temperature: 'quantitative', Speed: 'quantitative',
     
-    // Discrete numerics → ordinal (except ID)
-    Rank: 'ordinal', Index: 'ordinal', Score: 'ordinal', Rating: 'ordinal', Level: 'ordinal',
+    // Discrete numerics → ordinal (except ID, Score, Rating which are quantitative)
+    Rank: 'ordinal', Index: 'ordinal', Score: 'quantitative', Rating: 'quantitative', Level: 'ordinal',
     ID: 'nominal',
     
     // Geographic coordinates → geographic

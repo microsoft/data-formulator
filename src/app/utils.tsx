@@ -487,11 +487,16 @@ export const assembleVegaChart = (
                             break;
                         case 'ordinal':
                             // For ordinal types (Year, Month, Rank, Score, etc.)
-                            // Use ordinal for x/y axes, nominal for color/facet
+                            // Use nominal for color/facet channels
                             if (['color', 'size', 'column', 'row'].includes(channel)) {
                                 encodingObj["type"] = "nominal";
                             } else {
-                                encodingObj["type"] = "ordinal";
+                                // For positional channels (x, y, etc.), check underlying data type:
+                                // If the data is numeric, use quantitative so grouped bar charts etc. work correctly.
+                                // Ordinal on a numeric axis makes Vega-Lite treat values as discrete categories,
+                                // which breaks grouped/stacked bar charts and continuous axis layouts.
+                                const underlyingType = getDType(fieldMetadata.type, fieldValues);
+                                encodingObj["type"] = underlyingType === 'quantitative' ? "quantitative" : "ordinal";
                             }
                             break;
                         case 'quantitative':

@@ -100,6 +100,12 @@ const AppBar = styled(MuiAppBar)(({ theme }) => ({
 }));
 
 declare module '@mui/material/styles' {
+    interface PaletteColor {
+        bgcolor?: string;
+    }
+    interface SimplePaletteColorOptions {
+        bgcolor?: string;
+    }
     interface Palette {
         derived: Palette['primary'];
         custom: Palette['primary'];
@@ -587,16 +593,20 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
        // Microsoft Fluent UI palette (alternative option)
         palette: {
             primary: {
-                main: '#0078d4'      // Fluent UI themePrimary (Microsoft Blue)
+                main: '#0078d4',      // Fluent UI themePrimary (Microsoft Blue)
+                bgcolor: '#f2f8fd',   // solid equiv of 5% #0078d4 on white
             },
             secondary: {
-                main: '#8764b8'      // Fluent UI purple
+                main: '#8764b8',      // Fluent UI purple
+                bgcolor: '#f7f5fb',   // solid equiv of 5% #8764b8 on white
             },
             derived: {
                 main: '#ffb900',     // Fluent UI yellow/gold
+                bgcolor: '#fffbf2',  // solid equiv of 5% #ffb900 on white
             },
             custom: {
                 main: '#d83b01',     // Fluent UI orange (Office orange)
+                bgcolor: '#fdf5f2',  // solid equiv of 5% #d83b01 on white
             },
             warning: {
                 main: '#a4262c',     // Fluent UI red (accessible)

@@ -191,7 +191,7 @@ export const TriggerCard: FC<{
 
     // Process the prompt to highlight content in ** **
     const processedPrompt = renderTextWithEmphasis(prompt, {
-        fontSize: mini ? 10 : 12, padding: '1px 4px',
+        fontSize: mini ? 10 : 11, padding: '1px 4px',
         borderRadius: '4px',
         background: alpha(theme.palette.custom.main, 0.08), 
     });
@@ -216,37 +216,25 @@ export const TriggerCard: FC<{
         </Typography> 
     }
 
-    return  <Card className={`${className}`} variant="outlined" 
+    return  <Typography component="div" className={`${className}`}
         sx={{
-            cursor: 'pointer', backgroundColor: alpha(theme.palette.custom.main, 0.05), 
-            fontSize: '12px', display: 'flex', flexDirection: 'row', alignItems: 'center', gap: '2px',
-            '&:hover': { 
-                transform: "translate(0px, -1px)",  
-                boxShadow: '0 2px 6px rgba(0,0,0,0.1)',
-            },
+            cursor: 'pointer', 
+            fontSize: '11px',
+            color: 'rgba(0,0,0,0.75)',
+            textAlign: 'left',
+            py: 0.5,
+            px: 1,
+            borderRadius: '4px',
+            backgroundColor: theme.palette.custom.bgcolor,
+            border: `1px solid ${alpha(theme.palette.secondary.main, 0.12)}`,
             '& .MuiChip-label': { px: 0.5, fontSize: "10px"},
             ...sx,
         }} 
         onClick={handleClick}>
-        <Box sx={{mx: 1, my: 0.5}}>
-            {hideFields ? "" : <Typography component="div" fontSize="inherit" sx={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center',
-                            color: 'rgba(0,0,0,0.7)'}}>{encodingComp}</Typography>}
-            <Typography fontSize="inherit" sx={{
-                textAlign: 'center', width: 'fit-content',
-                minWidth: '40px',
-                color: 'rgba(0,0,0,0.7)'}}>
-                    {prompt.length > 0 && <PrecisionManufacturing sx={{
-                        color: 'darkgray', 
-                        width: '14px', 
-                        height: '14px',
-                        mr: 0.5,
-                        verticalAlign: 'text-bottom',
-                        display: 'inline-block'
-                    }} />}
-                    {processedPrompt}
-            </Typography>
-        </Box>
-    </Card>
+            <PrecisionManufacturing sx={{ fontSize: 12, mr: 0.5, verticalAlign: 'middle', opacity: 0.45 }} />
+            {processedPrompt}
+            {hideFields ? "" : <>{" "}{encodingComp}</>}
+    </Typography>
 }
 
 

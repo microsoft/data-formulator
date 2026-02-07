@@ -35,6 +35,7 @@ import { DndProvider } from 'react-dnd'
 import { HTML5Backend } from 'react-dnd-html5-backend'
 import { toolName } from '../app/App';
 import { DataThread } from './DataThread';
+import { ChartRecBox } from './ChartRecBox';
 
 import dfLogo from '../assets/df-logo.png';
 import exampleImageTable from "../assets/example-image-table.png";
@@ -48,6 +49,7 @@ import { useDataRefresh, useDerivedTableRefresh } from '../app/useDataRefresh';
 export const DataFormulatorFC = ({ }) => {
 
     const tables = useSelector((state: DataFormulatorState) => state.tables);
+    const focusedTableId = useSelector((state: DataFormulatorState) => state.focusedTableId);
     const models = useSelector((state: DataFormulatorState) => state.models);
     const selectedModelId = useSelector((state: DataFormulatorState) => state.selectedModelId);
     const viewMode = useSelector((state: DataFormulatorState) => state.viewMode);
@@ -209,7 +211,8 @@ export const DataFormulatorFC = ({ }) => {
             <Box sx={{
                 ...borderBoxStyle,
                     margin: '4px 4px 4px 8px', backgroundColor: 'white',
-                    display: 'flex', height: '100%', width: 'fit-content', flexDirection: 'column'}}>
+                    display: 'flex', height: '100%', width: 'fit-content', flexDirection: 'column',
+                    position: 'relative'}}>
                 {tables.length > 0 ?  <DataThread sx={{
                     minWidth: 201,
                     display: 'flex', 
@@ -217,7 +220,39 @@ export const DataFormulatorFC = ({ }) => {
                     overflow: 'hidden',
                     alignContent: 'flex-start',
                     height: '100%',
-                }}/>  : ""} 
+                }}/>  : ""}
+                {/* Floating chat chip for exploration — overlays bottom of DataThread
+                {tables.length > 0 && (
+                    <Box sx={{
+                        position: 'absolute',
+                        bottom: 12,
+                        left: '50%',
+                        transform: 'translateX(-50%)',
+                        width: 'calc(100% - 36px)',
+                        maxWidth: 480,
+                        direction: 'ltr',
+                        zIndex: 10,
+                        pointerEvents: 'none',
+                    }}>
+                        <ChartRecBox
+                            tableId={focusedTableId || tables[0]?.id || ''}
+                            sx={{
+                                pointerEvents: 'auto',
+                                maxWidth: '100%',
+                                minWidth: 240,
+                                backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                                backdropFilter: 'blur(8px)',
+                                borderRadius: '14px',
+                                boxShadow: '0 2px 12px rgba(0,0,0,0.08)',
+                                px: 1.5, py: 0.25,
+                                '& .MuiCard-root': {
+                                    border: 'none',
+                                    px: 0,
+                                },
+                            }}
+                        />
+                    </Box>
+                )} */}
             </Box>
             <Box sx={{
                 ...borderBoxStyle,
