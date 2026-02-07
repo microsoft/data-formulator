@@ -61,11 +61,10 @@ import 'prismjs/themes/prism.css'; //Example style, you can use another
 import { checkChartAvailability, generateChartSkeleton, getDataTable } from './VisualizationView';
 import { TriggerCard } from './EncodingShelfCard';
 
-import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
-import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import CloudQueueIcon from '@mui/icons-material/CloudQueue';
 import AttachFileIcon from '@mui/icons-material/AttachFile';
-import MoreVertIcon from '@mui/icons-material/MoreVert';
+import SettingsIcon from '@mui/icons-material/Settings';
+import EditIcon from '@mui/icons-material/Edit';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import StreamIcon from '@mui/icons-material/Stream';
 
@@ -515,6 +514,72 @@ let buildChartCard = (
     </Card>
 }
 
+// Rename table popup - opens as a small popper with a text field
+const RenameTablePopup = memo<{
+    open: boolean;
+    anchorEl: HTMLElement | null;
+    onClose: () => void;
+    onSave: (newName: string) => void;
+    initialValue: string;
+    tableName: string;
+}>(({ open, anchorEl, onClose, onSave, initialValue, tableName }) => {
+    const [name, setName] = useState(initialValue);
+
+    useEffect(() => {
+        setName(initialValue);
+    }, [initialValue, open]);
+
+    const handleSave = () => {
+        if (name.trim() !== '') {
+            onSave(name.trim());
+            onClose();
+        }
+    };
+
+    const handleKeyDown = (e: React.KeyboardEvent) => {
+        e.stopPropagation();
+        if (e.key === 'Enter') {
+            handleSave();
+        } else if (e.key === 'Escape') {
+            onClose();
+        }
+    };
+
+    return (
+        <Popper
+            open={open}
+            anchorEl={anchorEl}
+            placement="bottom-start"
+            style={{ zIndex: 1300 }}
+        >
+            <ClickAwayListener onClickAway={onClose}>
+                <Paper
+                    elevation={8}
+                    sx={{ width: 240, fontSize: 12, p: 1.5, mt: 1, border: '1px solid', borderColor: 'divider' }}
+                >
+                    <Typography variant="subtitle2" sx={{ mb: 0.5, fontSize: 12 }}>
+                        Rename table
+                    </Typography>
+                    <TextField
+                        autoFocus
+                        fullWidth
+                        variant="outlined"
+                        size="small"
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
+                        onKeyDown={handleKeyDown}
+                        sx={{ my: 0.5, '& .MuiInputBase-input': { fontSize: 12 } }}
+                    />
+                    <Box sx={{ mt: 0.5, display: 'flex', gap: 1, justifyContent: 'flex-end' }}>
+                        <Button size="small" onClick={onClose}>Cancel</Button>
+                        <Button size="small" onClick={handleSave} color="primary" disabled={name.trim() === '' || name.trim() === initialValue}>Save</Button>
+                    </Box>
+                </Paper>
+            </ClickAwayListener>
+        </Popper>
+    );
+});
+
 const EditableTableName: FC<{
     initialValue: string,
     tableId: string,
@@ -634,55 +699,6 @@ const EditableTableName: FC<{
     );
 };
 
-// Compact view for thread0 - displays table cards with charts in a simple grid
-// Reuses SingleThreadGroupView with compact mode
-let CompactThread0View: FC<{
-    scrollRef: any,
-    leafTables: DictTable[];
-    chartElements: { tableId: string, chartId: string, element: any }[];
-    sx?: SxProps
-}> = function ({
-    scrollRef,
-    leafTables,
-    chartElements,
-    sx
-}) {
-    const theme = useTheme();
-    
-    return (
-        <Box sx={{ ...sx, 
-            '& .selected-card': { 
-                border: `2px solid ${theme.palette.primary.light}`,
-            },
-            transition: "box-shadow 0.1s linear",
-        }}
-        data-thread-index={-1}>
-            <Box sx={{ display: 'flex', direction: 'ltr', margin: '2px 2px 8px 2px' }}>
-                <Divider flexItem sx={{
-                    margin: 'auto',
-                    "& .MuiDivider-wrapper": { display: 'flex', flexDirection: 'row' },
-                    "&::before, &::after": { borderColor: alpha(theme.palette.custom.main, 0.2), borderWidth: '2px', width: 60 },
-                }}>
-                    <Typography sx={{ fontSize: "10px",  color: 'text.secondary', textTransform: 'none' }}>
-                        workspace
-                    </Typography>
-                </Divider>
-            </Box>
-            <Box sx={{ padding: '2px 4px 2px 4px', marginTop: 0, direction: 'ltr' }}>
-                <SingleThreadGroupView
-                    scrollRef={scrollRef}
-                    threadIdx={-1}
-                    leafTables={leafTables}
-                    chartElements={chartElements}
-                    usedIntermediateTableIds={[]}
-                    compact={true}
-                    sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}
-                />
-            </Box>
-        </Box>
-    );
-}
-
 let SingleThreadGroupView: FC<{
     scrollRef: any,
     threadIdx: number,
@@ -738,6 +754,29 @@ let SingleThreadGroupView: FC<{
             displayId: displayId
         }));
     }
+
+    // Rename popup state
+    const [renamePopupOpen, setRenamePopupOpen] = useState(false);
+    const [selectedTableForRename, setSelectedTableForRename] = useState<DictTable | null>(null);
+    const [renameAnchorEl, setRenameAnchorEl] = useState<HTMLElement | null>(null);
+
+    const handleOpenRenamePopup = (table: DictTable, anchorEl: HTMLElement) => {
+        setSelectedTableForRename(table);
+        setRenameAnchorEl(anchorEl);
+        setRenamePopupOpen(true);
+    };
+
+    const handleCloseRenamePopup = () => {
+        setRenamePopupOpen(false);
+        setSelectedTableForRename(null);
+        setRenameAnchorEl(null);
+    };
+
+    const handleSaveRename = (newName: string) => {
+        if (selectedTableForRename) {
+            handleUpdateTableDisplayId(selectedTableForRename.id, newName);
+        }
+    };
 
     const handleOpenMetadataPopup = (table: DictTable, anchorEl: HTMLElement) => {
         setSelectedTableForMetadata(table);
@@ -917,20 +956,25 @@ let SingleThreadGroupView: FC<{
             <Box sx={{ flex: 1 }} >
                 <TriggerCard className={selectedClassName} trigger={trigger} 
                     hideFields={trigger.instruction != ""} 
-                    sx={highlightedTableIds.includes(trigger.resultTableId) ? {borderLeft: '3px solid', borderLeftColor: alpha(theme.palette.custom.main, 0.5)} : {}}
+                    sx={{
+                        fontSize: '11px',
+                        '& .MuiBox-root': { mx: 0.5, my: 0.25 },
+                        '& .MuiSvgIcon-root': { width: '12px', height: '12px' },
+                        ...(highlightedTableIds.includes(trigger.resultTableId) ? {borderLeft: '3px solid', borderLeftColor: alpha(theme.palette.custom.main, 0.5)} : {}),
+                    }}
                 />
             </Box>
         </div>;
 
         return <Box sx={{ display: 'flex', flexDirection: 'column' }} key={`trigger-card-${trigger.chart?.id}`}>
             {triggerCard}
-            <ListItemIcon key={'down-arrow'} sx={{ minWidth: 0 }}>
-                <SouthIcon sx={{
-                    fontSize: "inherit", 
-                    color: highlightedTableIds.includes(trigger.resultTableId) ? theme.palette.primary.light : 'darkgray',
-                    ...(highlightedTableIds.includes(trigger.resultTableId) ? { strokeWidth: 1, stroke: theme.palette.primary.light } : { })
-                }} />
-            </ListItemIcon>
+            <SouthIcon sx={{
+                fontSize: 10, 
+                ml: '3px',
+                color: highlightedTableIds.includes(trigger.resultTableId) 
+                    ? alpha(theme.palette.custom.main, 0.5) 
+                    : 'darkgray',
+            }} />
         </Box>;
     }
 
@@ -1037,26 +1081,8 @@ let SingleThreadGroupView: FC<{
                 }}>
                 <Box sx={{ margin: '0px', display: 'flex' }}>
                     <Stack direction="row" sx={{ marginLeft: 0.5, marginRight: 'auto', fontSize: 12 }} alignItems="center" gap={"2px"}>
-                        {/* For non-derived tables: icon opens menu; for derived tables: icon toggles anchored */}
-                        {table?.derive == undefined ? (
-                            <Tooltip title="more options">
-                                <IconButton color="primary" sx={{
-                                    minWidth: 0, 
-                                    padding: 0.25,
-                                    '&:hover': {
-                                        transform: 'scale(1.3)',
-                                        transition: 'all 0.1s linear'
-                                    },
-                                }} 
-                                size="small" 
-                                onClick={(event) => {
-                                    event.stopPropagation();
-                                    handleOpenTableMenu(table!, event.currentTarget);
-                                }}>
-                                    {tableCardIcon}
-                                </IconButton>
-                            </Tooltip>
-                        ) : (
+                        {/* For derived tables: icon toggles anchored */}
+                        {/* {table?.derive != undefined && (
                             <IconButton color="primary" sx={{
                                 minWidth: 0, 
                                 padding: 0.25,
@@ -1076,7 +1102,8 @@ let SingleThreadGroupView: FC<{
                             }}>
                                 {tableCardIcon}
                             </IconButton>
-                        )}
+                        )} */}
+                        {tableCardIcon}
                         <Box sx={{ margin: '4px 8px 4px 2px', display: 'flex', alignItems: 'center' }}>
                             {/* Only show streaming icon when actively watching for updates */}
                             {(table?.source?.type === 'stream' || table?.source?.type === 'database') && table?.source?.autoRefresh ? (
@@ -1114,21 +1141,32 @@ let SingleThreadGroupView: FC<{
                                     </IconButton>
                                 </Tooltip>
                             ) : ""}
-                            {focusedTableId == tableId ? <EditableTableName
-                                initialValue={table?.displayId || tableId}
-                                tableId={tableId}
-                                handleUpdateTableDisplayId={handleUpdateTableDisplayId}
-                            /> : <Typography fontSize="inherit" sx={{
+                            <Typography fontSize="inherit" sx={{
                                 textAlign: 'center',
-                                color:  'rgba(0,0,0,0.7)', 
-                                maxWidth: '90px',
-                                ml: table?.virtual || ((table?.source?.type === 'stream' || table?.source?.type === 'database') && table?.source?.autoRefresh) ? 0.5 : 0,
+                                color: 'rgba(0,0,0,0.7)', 
+                                maxWidth: 160,
+                                ml: ((table?.source?.type === 'stream' || table?.source?.type === 'database') && table?.source?.autoRefresh) ? 0.5 : 0,
                                 wordWrap: 'break-word',
                                 whiteSpace: 'normal'
-                            }}>{table?.displayId || tableId}</Typography>}
+                            }}>{table?.displayId || tableId}</Typography>
                         </Box>
                     </Stack>
                     <ButtonGroup aria-label="Basic button group" variant="text" sx={{ textAlign: 'end', margin: "auto 2px auto auto" }}>
+                        {table?.derive == undefined && (
+                            <Tooltip key="more-options-btn-tooltip" title="more options">
+                                <IconButton className="more-options-btn" color="primary" aria-label="more options" size="small" sx={{ padding: 0.25, '&:hover': {
+                                    transform: 'scale(1.2)',
+                                    transition: 'all 0.1s linear'
+                                    } }}
+                                    onClick={(event) => {
+                                        event.stopPropagation();
+                                        handleOpenTableMenu(table!, event.currentTarget);
+                                    }}
+                                >
+                                    <SettingsIcon fontSize="small" sx={{ fontSize: 16 }} />
+                                </IconButton>
+                            </Tooltip>
+                        )}
                         <Tooltip key="create-new-chart-btn-tooltip" title="create a new chart">
                             <IconButton aria-label="create chart" size="small" sx={{ padding: 0.25, '&:hover': {
                                 transform: 'scale(1.2)',
@@ -1294,12 +1332,33 @@ let SingleThreadGroupView: FC<{
                     initialValue={selectedTableForMetadata?.attachedMetadata || ''}
                     tableName={selectedTableForMetadata?.displayId || selectedTableForMetadata?.id || ''}
                 />
+                <RenameTablePopup
+                    open={renamePopupOpen}
+                    anchorEl={renameAnchorEl}
+                    onClose={handleCloseRenamePopup}
+                    onSave={handleSaveRename}
+                    initialValue={selectedTableForRename?.displayId || selectedTableForRename?.id || ''}
+                    tableName={selectedTableForRename?.displayId || selectedTableForRename?.id || ''}
+                />
                 <Menu
                     anchorEl={tableMenuAnchorEl}
                     open={Boolean(tableMenuAnchorEl)}
                     onClose={handleCloseTableMenu}
                     onClick={(e) => e.stopPropagation()}
                 >
+                    <MenuItem 
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            if (selectedTableForMenu) {
+                                handleOpenRenamePopup(selectedTableForMenu, tableMenuAnchorEl!);
+                            }
+                            handleCloseTableMenu();
+                        }}
+                        sx={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 1 }}
+                    >
+                        <EditIcon sx={{ fontSize: 16, color: 'text.secondary' }}/>
+                        Rename
+                    </MenuItem>
                     <MenuItem 
                         onClick={(e) => {
                             e.stopPropagation();
@@ -1431,6 +1490,14 @@ let SingleThreadGroupView: FC<{
             initialValue={selectedTableForMetadata?.attachedMetadata || ''}
             tableName={selectedTableForMetadata?.displayId || selectedTableForMetadata?.id || ''}
         />
+        <RenameTablePopup
+            open={renamePopupOpen}
+            anchorEl={renameAnchorEl}
+            onClose={handleCloseRenamePopup}
+            onSave={handleSaveRename}
+            initialValue={selectedTableForRename?.displayId || selectedTableForRename?.id || ''}
+            tableName={selectedTableForRename?.displayId || selectedTableForRename?.id || ''}
+        />
 
         {/* Table actions menu for non-derived, non-virtual tables */}
         <Menu
@@ -1439,6 +1506,19 @@ let SingleThreadGroupView: FC<{
             onClose={handleCloseTableMenu}
             onClick={(e) => e.stopPropagation()}
         >
+            <MenuItem 
+                onClick={(e) => {
+                    e.stopPropagation();
+                    if (selectedTableForMenu) {
+                        handleOpenRenamePopup(selectedTableForMenu, tableMenuAnchorEl!);
+                    }
+                    handleCloseTableMenu();
+                }}
+                sx={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 1 }}
+            >
+                <EditIcon sx={{ fontSize: 16, color: 'text.secondary' }}/>
+                Rename
+            </MenuItem>
             <MenuItem 
                 onClick={(e) => {
                     e.stopPropagation();
@@ -1723,6 +1803,194 @@ const MemoizedChartObject = memo<{
     );
 });
 
+// Thread dimension info for height estimation
+interface ThreadDimension {
+    tableCount: number;   // number of table cards
+    triggerCount: number;  // number of trigger/instruction cards
+    chartCount: number;    // number of chart cards
+    messageCount: number;  // number of visible agent status messages
+    isCompact: boolean;    // thread0 compact mode
+}
+
+// Height estimation constants (px) – derived from actual rendered sizes:
+//   table card ≈ 36px, trigger card ≈ 90px (multi-line text + arrow),
+//   chart card ≈ 140px (canvas maxHeight:100 + card chrome),
+//   agent message ≈ 60px, thread header/separator ≈ 28px, thread padding ≈ 24px
+const LAYOUT_TABLE_CARD_HEIGHT = 36;
+const LAYOUT_TRIGGER_CARD_HEIGHT = 65;
+const LAYOUT_CHART_HEIGHT = 110;
+const LAYOUT_MESSAGE_HEIGHT = 60;
+const LAYOUT_THREAD_HEADER_HEIGHT = 28;
+const LAYOUT_THREAD_PADDING = 24;
+const LAYOUT_COMPACT_TABLE_HEIGHT = 32;
+const LAYOUT_THREAD_GAP = 8;  // my: 0.5 = 4px top + 4px bottom between threads
+
+function estimateThreadHeight(dim: ThreadDimension): number {
+    if (dim.isCompact) {
+        return LAYOUT_THREAD_PADDING + dim.tableCount * LAYOUT_COMPACT_TABLE_HEIGHT;
+    }
+    return LAYOUT_THREAD_HEADER_HEIGHT + LAYOUT_THREAD_PADDING 
+        + dim.tableCount * LAYOUT_TABLE_CARD_HEIGHT 
+        + dim.triggerCount * LAYOUT_TRIGGER_CARD_HEIGHT 
+        + dim.chartCount * LAYOUT_CHART_HEIGHT
+        + dim.messageCount * LAYOUT_MESSAGE_HEIGHT;
+}
+
+/**
+ * Compute a balanced column layout for threads.
+ *
+ * @param heights  – Estimated pixel height for each thread (in display order).
+ * @param numColumns – Maximum number of columns to distribute into.
+ * @param flexOrder – When true, threads may be reordered across columns for
+ *                    better balance (LPT heuristic). When false, the original
+ *                    order is preserved (optimal contiguous partitioning via
+ *                    binary-search on the maximum column height).
+ * @returns An array of columns, where each column is an array of original
+ *          thread indices.  Empty columns are omitted.
+ */
+function computeThreadColumnLayout(
+    heights: number[],
+    numColumns: number,
+    flexOrder: boolean = false,
+): number[][] {
+    if (heights.length === 0) return [];
+    if (heights.length === 1) return [[0]];
+
+    const cols = Math.min(numColumns, heights.length);
+    if (cols <= 1) return [heights.map((_, i) => i)];
+
+    return flexOrder
+        ? layoutFlexOrder(heights, cols)
+        : layoutPreserveOrder(heights, cols);
+}
+
+/**
+ * Balanced layout *with* reordering (LPT – Longest Processing Time first).
+ * Assigns the tallest unplaced thread to whichever column is currently shortest.
+ */
+function layoutFlexOrder(heights: number[], numColumns: number): number[][] {
+    const indexed = heights.map((h, i) => ({ idx: i, h }));
+    indexed.sort((a, b) => b.h - a.h);                // tallest first
+
+    const columns: number[][] = Array.from({ length: numColumns }, () => []);
+    const colH: number[] = new Array(numColumns).fill(0);
+
+    for (const item of indexed) {
+        let minCol = 0;
+        for (let c = 1; c < numColumns; c++) {
+            if (colH[c] < colH[minCol]) minCol = c;
+        }
+        columns[minCol].push(item.idx);
+        colH[minCol] += item.h;
+    }
+
+    return columns.filter(c => c.length > 0);
+}
+
+/**
+ * Balanced layout *preserving* thread order.
+ *
+ * Uses binary-search on the maximum column height to find the tightest
+ * contiguous partitioning of threads into ≤ numColumns groups.
+ */
+function layoutPreserveOrder(heights: number[], numColumns: number): number[][] {
+    const maxH = Math.max(...heights);
+    const totalH = heights.reduce((s, h) => s + h, 0);
+
+    // Can we fit all threads into `numColumns` columns with no column > target?
+    const canPartition = (target: number): boolean => {
+        let cols = 1, cur = 0;
+        for (const h of heights) {
+            if (cur + h > target && cur > 0) {
+                cols++;
+                cur = h;
+                if (cols > numColumns) return false;
+            } else {
+                cur += h;
+            }
+        }
+        return true;
+    };
+
+    // Binary-search for the minimum feasible max-column height
+    let lo = maxH, hi = totalH;
+    while (lo < hi) {
+        const mid = Math.floor((lo + hi) / 2);
+        if (canPartition(mid)) hi = mid; else lo = mid + 1;
+    }
+
+    // Build the actual partition with the optimal target
+    const target = lo;
+    const columns: number[][] = [[]];
+    let cur = 0;
+    for (let i = 0; i < heights.length; i++) {
+        if (cur + heights[i] > target && columns[columns.length - 1].length > 0) {
+            columns.push([]);
+            cur = 0;
+        }
+        columns[columns.length - 1].push(i);
+        cur += heights[i];
+    }
+
+    return columns;
+}
+
+/**
+ * Choose the best column layout that balances scroll burden vs whitespace.
+ *
+ * 1. If a single column fits within SCROLL_TOLERANCE × viewportHeight,
+ *    use one column — the small scroll is preferable to the whitespace
+ *    of an extra column (e.g. one long thread + one tiny thread).
+ * 2. Otherwise, evaluate layouts for 1 … maxColumns and pick the smallest
+ *    column count whose tallest column fits within viewportHeight.
+ * 3. If nothing eliminates scrolling, pick the layout that minimises the
+ *    tallest column (least scrolling).
+ */
+const SCROLL_TOLERANCE = 1.5; // allow up to 50% overflow before adding columns
+
+function chooseBestColumnLayout(
+    heights: number[],
+    maxColumns: number,
+    viewportHeight: number,
+    flexOrder: boolean = false,
+): number[][] {
+    if (heights.length === 0) return [];
+
+    const cap = Math.min(maxColumns, heights.length);
+    const tolerantHeight = viewportHeight * SCROLL_TOLERANCE;
+
+    // Compute effective column height including gaps between threads
+    const columnEffectiveHeight = (col: number[]) => {
+        const contentH = col.reduce((sum, idx) => sum + heights[idx], 0);
+        const gapH = Math.max(0, col.length - 1) * LAYOUT_THREAD_GAP;
+        return contentH + gapH;
+    };
+
+    // Evaluate every candidate column count (1 … cap).
+    // Pick the smallest n whose tallest column fits within tolerance.
+    // If none fits, pick the one with the shortest tallest column.
+    let bestLayout: number[][] = [];
+    let bestMaxH = Infinity;
+
+    for (let n = 1; n <= cap; n++) {
+        const layout = computeThreadColumnLayout(heights, n, flexOrder);
+        const maxH = Math.max(...layout.map(columnEffectiveHeight));
+
+        // Smallest n that fits within tolerance → least whitespace
+        if (maxH <= tolerantHeight) {
+            return layout;
+        }
+
+        // Otherwise track the layout with the shortest tallest column
+        if (maxH < bestMaxH) {
+            bestMaxH = maxH;
+            bestLayout = layout;
+        }
+    }
+
+    return bestLayout;
+}
+
 export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
 
     let tables = useSelector((state: DataFormulatorState) => state.tables);
@@ -1732,10 +2000,10 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
     let chartSynthesisInProgress = useSelector((state: DataFormulatorState) => state.chartSynthesisInProgress);
 
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
-
-    let [threadDrawerOpen, setThreadDrawerOpen] = useState<boolean>(false);
+    const agentActions = useSelector((state: DataFormulatorState) => state.agentActions);
 
     const scrollRef = useRef<null | HTMLDivElement>(null)
+    const containerRef = useRef<null | HTMLDivElement>(null)
 
     const executeScroll = (smooth: boolean = true) => { 
         if (scrollRef.current != null) {
@@ -1745,15 +2013,8 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
             }) 
         }
     }
-    // run this function from an event handler or an effect to execute scroll
 
-  
     const dispatch = useDispatch();
-
-    useEffect(() => {
-        // make it smooth when drawer from open -> close, otherwise just jump
-        executeScroll(!threadDrawerOpen);
-    }, [threadDrawerOpen])
 
     useEffect(() => {
         // load the example datasets
@@ -1886,146 +2147,172 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
         thread0Group['thread0'] = hangingTables;
     }
 
-    let drawerOpen = threadDrawerOpen && (Object.keys(filteredLeafTableGroups).length > 0 || hangingTables.length > 0);
-    let allGroupsForWidth = { ...filteredLeafTableGroups, ...thread0Group };
-    let collaposedViewWidth = Math.max(...Object.values(allGroupsForWidth).map(x => x.length)) > 1 ? 248 : 232
+    let hasContent = Object.keys(filteredLeafTableGroups).length > 0 || hangingTables.length > 0;
 
-    let view = <Box maxWidth={drawerOpen ? 720 : collaposedViewWidth} sx={{ 
-        overflow: 'auto', // Add horizontal scroll when drawer is open
-        position: 'relative',
-        display: drawerOpen ? '-webkit-box' : 'flex', 
-        flexDirection: 'column',
-        direction: 'ltr',
-        height: 'calc(100% - 16px)',
-        flexWrap: drawerOpen ? 'wrap' : 'nowrap',
-        gap: 1,
-        p: 1,
-        transition: 'max-width 0.1s linear', // Smooth width transition
-    }}>
-        {/* Render thread0 (hanging tables) first if it exists - using compact view */}
-        {Object.entries(thread0Group).map(([groupId, leafTables], i) => {
-            return <CompactThread0View
-                key={`thread-${groupId}-${i}`}
-                scrollRef={scrollRef}
-                leafTables={leafTables} 
-                chartElements={chartElements} 
-                sx={{
-                    backgroundColor: 'white', 
-                    borderRadius: 2,
-                    padding: 1,
-                    my: 0.5,
-                    flex:  'none',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    height: 'fit-content',
-                    width: leafTables.length > 1 ? '216px' : '200px', 
-                    transition: 'all 0.3s ease',
-                }} />
-        })}
-        {/* Render regular threads (length > 1) */}
-        {Object.entries(filteredLeafTableGroups).map(([groupId, leafTables], i) => {
-            // Calculate used tables from thread0 and previous threads
-            let usedIntermediateTableIds = Object.values(thread0Group).flat()
-                .map(x => [ ...getTriggers(x, tables).map(y => y.tableId) || []]).flat();
-            let usedLeafTableIds = Object.values(thread0Group).flat().map(x => x.id);
-            
-            // Add tables from previous regular threads
-            const previousThreadGroups = Object.values(filteredLeafTableGroups).slice(0, i);
-            usedIntermediateTableIds = [...usedIntermediateTableIds, ...previousThreadGroups.flat()
-                .map(x => [ ...getTriggers(x, tables).map(y => y.tableId) || []]).flat()];
-            usedLeafTableIds = [...usedLeafTableIds, ...previousThreadGroups.flat().map(x => x.id)];
-                
+    // Build thread entries and their estimated heights for layout
+    type ThreadEntry = { key: string; groupId: string; leafTables: DictTable[]; isCompact: boolean; threadIdx: number };
+    let allThreadEntries: ThreadEntry[] = [];
+    let allThreadHeights: number[] = [];
+
+    // Track which table IDs have been claimed by earlier threads
+    // (mirrors usedIntermediateTableIds logic in rendering)
+    let claimedTableIds = new Set<string>();
+
+    // thread0 first — claim all its table IDs
+    Object.entries(thread0Group).forEach(([groupId, lts]) => {
+        lts.forEach(lt => {
+            claimedTableIds.add(lt.id);
+            getTriggers(lt, tables).forEach(t => claimedTableIds.add(t.tableId));
+        });
+
+        allThreadEntries.push({
+            key: `thread0-${groupId}`,
+            groupId,
+            leafTables: lts,
+            isCompact: true,
+            threadIdx: -1,
+        });
+        allThreadHeights.push(estimateThreadHeight({
+            tableCount: lts.length,
+            triggerCount: 0,
+            chartCount: 0,
+            messageCount: 0,
+            isCompact: true,
+        }));
+    });
+
+    // then regular threads — only count NEW (unclaimed) tables in each thread
+    Object.entries(filteredLeafTableGroups).forEach(([groupId, lts], i) => {
+        // Collect all table IDs in this thread's chains
+        let threadTableIds = new Set<string>();
+        lts.forEach(lt => {
+            const triggers = getTriggers(lt, tables);
+            triggers.forEach(t => threadTableIds.add(t.tableId));
+            threadTableIds.add(lt.id);
+        });
+
+        // Only new (unclaimed) tables contribute to this thread's height
+        let newTableIds = [...threadTableIds].filter(id => !claimedTableIds.has(id));
+
+        // Triggers are only for new intermediate tables (not the leaf)
+        let newTriggerCount = lts.reduce((max, lt) => {
+            const triggers = getTriggers(lt, tables);
+            const newTriggers = triggers.filter(t => newTableIds.includes(t.resultTableId));
+            return Math.max(max, newTriggers.length);
+        }, 0);
+
+        // Charts only on new tables
+        let chartCount = newTableIds.reduce((sum, tid) => {
+            return sum + chartElements.filter(ce => ce.tableId === tid).length;
+        }, 0);
+
+        // Agent messages only on new tables
+        let messageCount = newTableIds.reduce((sum, tid) => {
+            return sum + agentActions.filter(a => a.tableId === tid && !a.hidden).length;
+        }, 0);
+
+        // Claim this thread's tables for subsequent threads
+        threadTableIds.forEach(id => claimedTableIds.add(id));
+
+        allThreadEntries.push({
+            key: `thread-${groupId}-${i}`,
+            groupId,
+            leafTables: lts,
+            isCompact: false,
+            threadIdx: i,
+        });
+        allThreadHeights.push(estimateThreadHeight({
+            tableCount: newTableIds.length,
+            triggerCount: newTriggerCount,
+            chartCount,
+            messageCount,
+            isCompact: false,
+        }));
+    });
+
+    // Pick the best column layout: balances scroll burden vs whitespace.
+    // Measure actual panel height from the DOM (accounts for browser zoom, panel resizing, etc.)
+    const availableHeight = containerRef.current?.clientHeight ?? 600;
+    const MAX_COLUMNS = 3;
+    const columnLayout: number[][] = chooseBestColumnLayout(
+        allThreadHeights, MAX_COLUMNS, availableHeight, /* flexOrder */ false
+    );
+    const actualColumns = columnLayout.length || 1;
+
+    let renderThreadEntry = (entry: ThreadEntry) => {
+        if (entry.isCompact) {
             return <SingleThreadGroupView
-                key={`thread-${groupId}-${i}`}
+                key={entry.key}
                 scrollRef={scrollRef}
-                threadIdx={i} 
-                leafTables={leafTables} 
-                chartElements={chartElements} 
-                usedIntermediateTableIds={[...usedIntermediateTableIds, ...usedLeafTableIds]} 
+                threadIdx={entry.threadIdx}
+                leafTables={entry.leafTables}
+                chartElements={chartElements}
+                usedIntermediateTableIds={[]}
+                compact={true}
                 sx={{
-                    backgroundColor: 'white', 
+                    backgroundColor: 'white',
                     borderRadius: 2,
                     padding: 1,
                     my: 0.5,
-                    flex:  'none',
+                    flex: 'none',
                     display: 'flex',
                     flexDirection: 'column',
                     height: 'fit-content',
-                    width: leafTables.length > 1 ? '216px' : '200px', 
+                    width: entry.leafTables.length > 1 ? '216px' : '200px',
                     transition: 'all 0.3s ease',
-                }} />
-        })}
-    </Box>
+                }} />;
+        } else {
+            // Calculate used tables from thread0 and previous regular threads
+            let usedIntermediateTableIds = Object.values(thread0Group).flat()
+                .map(x => [...getTriggers(x, tables).map(y => y.tableId) || []]).flat();
+            let usedLeafTableIds = Object.values(thread0Group).flat().map(x => x.id);
 
-    // Calculate total thread count (thread0 + regular threads)
-    let totalThreadCount = Object.keys(filteredLeafTableGroups).length + (Object.keys(thread0Group).length > 0 ? 1 : 0);
+            const previousThreadGroups = Object.values(filteredLeafTableGroups).slice(0, entry.threadIdx);
+            usedIntermediateTableIds = [...usedIntermediateTableIds, ...previousThreadGroups.flat()
+                .map(x => [...getTriggers(x, tables).map(y => y.tableId) || []]).flat()];
+            usedLeafTableIds = [...usedLeafTableIds, ...previousThreadGroups.flat().map(x => x.id)];
+
+            return <SingleThreadGroupView
+                key={entry.key}
+                scrollRef={scrollRef}
+                threadIdx={entry.threadIdx}
+                leafTables={entry.leafTables}
+                chartElements={chartElements}
+                usedIntermediateTableIds={[...usedIntermediateTableIds, ...usedLeafTableIds]}
+                sx={{
+                    backgroundColor: 'white',
+                    borderRadius: 2,
+                    padding: 1,
+                    my: 0.5,
+                    flex: 'none',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    height: 'fit-content',
+                    width: entry.leafTables.length > 1 ? '216px' : '200px',
+                    transition: 'all 0.3s ease',
+                }} />;
+        }
+    };
+
+    // Thread navigation buttons
     let threadIndices: number[] = [];
     if (Object.keys(thread0Group).length > 0) {
         threadIndices.push(-1); // thread0
     }
     threadIndices.push(...Array.from({length: Object.keys(filteredLeafTableGroups).length}, (_, i) => i));
 
-    let jumpButtonsDrawerOpen = <ButtonGroup size="small" color="primary">
-        {_.chunk(threadIndices, 3).map((group, groupIdx) => {
-            const getLabel = (idx: number) => idx === -1 ? '0' : String(idx + 1);
-            const startNum = getLabel(group[0]);
-            const endNum = getLabel(group[group.length - 1]);
-            const label = startNum === endNum ? startNum : `${startNum}-${endNum}`;
-            
-            return (
-                <Tooltip key={`thread-nav-group-${groupIdx}`} title={`Jump to thread${startNum === endNum ? '' : 's'} ${label}`}>
-                    <IconButton
-                        size="small"
-                        color="primary"
-                        sx={{ fontSize: '12px' }}
-                        onClick={() => {
-                            setTimeout(() => {
-                                // Get currently most visible thread index
-                                const viewportCenter = window.innerWidth / 2;
-                                const currentIndex = Array.from(document.querySelectorAll('[data-thread-index]')).reduce((closest, element) => {
-                                    const rect = element.getBoundingClientRect();
-                                    const distance = Math.abs(rect.left + rect.width/2 - viewportCenter);
-                                    const idx = parseInt(element.getAttribute('data-thread-index') || '0');
-                                    if (!closest || distance < closest.distance) {
-                                        return { index: idx, distance };
-                                    }
-                                    return closest;
-                                }, null as { index: number, distance: number } | null)?.index || 0;
-
-                                // If moving from larger to smaller numbers (scrolling left), target first element
-                                // If moving from smaller to larger numbers (scrolling right), target last element
-                                const targetIndex = currentIndex > group[0] ? group[0] : group[group.length - 1];
-                                
-                                const targetElement = document.querySelector(`[data-thread-index="${targetIndex}"]`);
-                                if (targetElement) {
-                                    targetElement.scrollIntoView({
-                                        behavior: 'smooth',
-                                        block: 'nearest', // Don't change vertical scroll
-                                        inline: currentIndex > group[group.length - 1] ? 'start' : 'end'
-                                    });
-                                }
-                            }, 100);
-                        }}
-                    >
-                        {label}
-                    </IconButton>
-                </Tooltip>
-            );
-        })}
-    </ButtonGroup>
-
-    let jumpButtonDrawerClosed = <ButtonGroup size="small" color="primary" sx={{ gap: 0 }}>
+    let jumpButtons = <ButtonGroup size="small" color="primary" sx={{ gap: 0 }}>
         {threadIndices.map((threadIdx) => {
             const label = threadIdx === -1 ? '0' : String(threadIdx + 1);
             return (
-                <Tooltip key={`thread-nav-${threadIdx}`} title={`Jump to thread${threadIdx === -1 ? '0' : ` ${threadIdx + 1}`}`}>
+                <Tooltip key={`thread-nav-${threadIdx}`} title={`Jump to thread ${label}`}>
                     <IconButton 
                         size="small" 
                         color="primary"
                         sx={{ fontSize: '12px', padding: '4px' }} 
                         onClick={() => {
                             const threadElement = document.querySelector(`[data-thread-index="${threadIdx}"]`);
-                            threadElement?.scrollIntoView({ behavior: 'smooth' });
+                            threadElement?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
                         }}
                     > 
                         {label}
@@ -2035,9 +2322,41 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
         })}
     </ButtonGroup>
 
-    let jumpButtons = drawerOpen ? jumpButtonsDrawerOpen : jumpButtonDrawerClosed;
+    // Column-based panel width: each column ≈ 224px + gaps + padding
+    const COLUMN_WIDTH = 224;
+    const panelWidth = actualColumns * COLUMN_WIDTH + (actualColumns - 1) * 8 + 16;
 
-    let carousel = (
+    let view = hasContent ? (
+        <Box sx={{ 
+            overflowY: 'auto',
+            overflowX: 'hidden',
+            position: 'relative',
+            display: 'flex',
+            flexDirection: 'row',
+            direction: 'ltr',
+            height: 'calc(100% - 16px)',
+            gap: 1,
+            p: 1,
+            width: panelWidth,
+        }}>
+            {columnLayout.map((columnIndices: number[], colIdx: number) => (
+                <Box key={`thread-column-${colIdx}`} sx={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 0,
+                    flex: 1,
+                    minWidth: 0,
+                }}>
+                    {columnIndices.map((idx: number) => {
+                        const entry = allThreadEntries[idx];
+                        return entry ? renderThreadEntry(entry) : null;
+                    })}
+                </Box>
+            ))}
+        </Box>
+    ) : null;
+
+    return (
         <Box className="data-thread" sx={{ ...sx, position: 'relative' }}>
             <Box sx={{
                 direction: 'ltr', display: 'flex',
@@ -2047,44 +2366,20 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
                     <Typography className="view-title" component="h2" sx={{ marginTop: "6px" }}>
                         Data Threads
                     </Typography>
-                    {jumpButtons}
-                </Box>
-                
-                <Box sx={{ display: 'flex', alignItems: 'center' }}>   
-                    <Tooltip title={"collapse"}>
-                        <span>
-                            <IconButton size={'small'} color="primary" 
-                            disabled={drawerOpen === false} onClick={() => { setThreadDrawerOpen(false); }}>
-                                <ChevronLeftIcon />
-                            </IconButton>
-                        </span>
-                    </Tooltip>
-                    <Tooltip title={"expand"}>
-                        <span>
-                            <IconButton size={'small'} color="primary" 
-                                disabled={totalThreadCount <= 1} onClick={() => { 
-                                    setThreadDrawerOpen(true); 
-                                }}>
-                                <ChevronRightIcon />
-                            </IconButton>
-                        </span>
-                    </Tooltip>
+                    {threadIndices.length > 0 && jumpButtons}
                 </Box>
             </Box>
 
-            <Box sx={{
+            <Box ref={containerRef} sx={{
                     overflow: 'hidden', 
                     direction: 'rtl', 
                     display: 'block', 
                     flex: 1,
                     height: 'calc(100% - 48px)',
-                    transition: 'width 0.3s ease-in-out', // Smooth width transition for container
                 }}>
                 {view}
             </Box>
         </Box>
     );
-
-    return carousel;
 }
 

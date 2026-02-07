@@ -649,11 +649,11 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                     key="chat-dialog-btn"
                     onClick={() => { setChatDialogOpen(!chatDialogOpen) }}
                     sx={{
-                        backgroundColor: conceptExplanationsOpen ? 'rgba(25, 118, 210, 0.2)' : 'transparent',
-                        color: conceptExplanationsOpen ? 'primary.main' : 'text.secondary',
-                        fontWeight: conceptExplanationsOpen ? 600 : 500,
+                        backgroundColor: chatDialogOpen ? 'rgba(25, 118, 210, 0.2)' : 'transparent',
+                        color: chatDialogOpen ? 'primary.main' : 'text.secondary',
+                        fontWeight: chatDialogOpen ? 600 : 500,
                         '&:hover': {
-                            backgroundColor: conceptExplanationsOpen ? 'rgba(25, 118, 210, 0.25)' : 'rgba(25, 118, 210, 0.08)',
+                            backgroundColor: chatDialogOpen ? 'rgba(25, 118, 210, 0.25)' : 'rgba(25, 118, 210, 0.08)',
                         },
                     }}
                 >

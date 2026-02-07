@@ -196,7 +196,7 @@ export const ChatDialog: FC<ChatDialogProps> = function ChatDialog({code, dialog
             open={open}
             key="chat-dialog-dialog"
         >
-            <DialogTitle><Typography>Dialog with Agents</Typography></DialogTitle>
+            <DialogTitle><Typography>Agent Log</Typography></DialogTitle>
             <DialogContent ref={dialogContentRef} sx={{overflowY: "auto", overflowX: "hidden"}} dividers>
                 {body}
             </DialogContent>
