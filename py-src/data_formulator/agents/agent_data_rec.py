@@ -65,7 +65,7 @@ Concretely, you should infer the appropriate data and create a Python script bas
         "opacity": "",
         "facet": "",
         "longitude": "",
-        "latitude": "",
+        "latitude": ""
     } // object: map visualization channels (x, y, color, size, opacity, facet, longitude, latitude, etc.) to a subset of output fields, appropriate visual channels for different chart types are defined below.
     "projection": "" // string (optional, only for worldmap/usmap): one of "mercator", "equalEarth", "naturalEarth1", "orthographic", "stereographic", "albers", "conicEqualArea", "gnomonic", "azimuthalEquidistant". Default is "equalEarth" for worldmap, "albersUsa" for usmap.
     "projection_center": [0, 0] // [longitude, latitude] (optional, only for worldmap): the center point of the map projection. Use to focus on specific regions, e.g., [105, 35] for China, [-98, 39] for USA, [10, 50] for Europe, [139, 36] for Japan.
