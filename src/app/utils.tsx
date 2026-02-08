@@ -412,10 +412,11 @@ export const assembleVegaChart = (
     tableMetadata: {[key: string]: {type: Type, semanticType: string, levels: any[]}},
     maxFacetNominalValues: number = 30,
     aggrPreprocessed: boolean = false, // whether the data has been preprocessed for aggregation and binning
-    defaultChartWidth: number = 100,
-    defaultChartHeight: number = 80,
+    baseChartWidth: number = 100,
+    baseChartHeight: number = 80,
     addTooltips: boolean = false,
-    chartConfig?: Record<string, any> // additional chart config properties (e.g., projection, projectionCenter for maps)
+    chartConfig?: Record<string, any>, // additional chart config properties (e.g., projection, projectionCenter for maps)
+    scaleFactor: number = 1,
 ) => {
 
     if (chartType == "Table") {
@@ -781,6 +782,10 @@ export const assembleVegaChart = (
         xOffset: 0,
     }
 
+    // Apply scale factor to base dimensions
+    let defaultChartWidth = Math.round(baseChartWidth * scaleFactor);
+    let defaultChartHeight = Math.round(baseChartHeight * scaleFactor);
+
     // by default, we allow strech width twice and fit as many bars as possible with minStepSize
     // Scale step size proportionally when chart is resized (base reference: 300px)
     let baseRefSize = 300;
@@ -1072,14 +1077,14 @@ export const assembleVegaChart = (
         "axisY": {"labelFontSize": stepSize <= 10 ? stepSize : 10},
     }
 
-    // Scale hardcoded template width/height (e.g. map charts) proportionally to requested dimensions
+    // For specs with hardcoded width/height (e.g. map charts), apply scaleFactor and sync continuousWidth/Height
     if (typeof vgObj['width'] === 'number') {
-        const ratio = defaultChartWidth / (chartTemplate.template.width || defaultChartWidth);
-        vgObj['width'] = Math.round(vgObj['width'] * ratio);
+        vgObj['width'] = Math.round(vgObj['width'] * scaleFactor);
+        vgObj['config']['view']['continuousWidth'] = vgObj['width'];
     }
     if (typeof vgObj['height'] === 'number') {
-        const ratio = defaultChartHeight / (chartTemplate.template.height || defaultChartHeight);
-        vgObj['height'] = Math.round(vgObj['height'] * ratio);
+        vgObj['height'] = Math.round(vgObj['height'] * scaleFactor);
+        vgObj['config']['view']['continuousHeight'] = vgObj['height'];
     }
 
     if (totalFacets > 6) {

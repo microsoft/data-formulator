@@ -314,7 +314,8 @@ const VegaChartRenderer: FC<{
             chartWidth, 
             chartHeight,
             true,
-            chart.config
+            chart.config,
+            scaleFactor,
         );
 
         if (!spec || spec === "Table") {
@@ -949,8 +950,8 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                                         conceptShelfItems={conceptShelfItems}
                                         visTableRows={activeVisTableRows}
                                         tableMetadata={table.metadata}
-                                        chartWidth={Math.round(config.defaultChartWidth * localScaleFactor)}
-                                        chartHeight={Math.round(config.defaultChartHeight * localScaleFactor)}
+                                        chartWidth={config.defaultChartWidth}
+                                        chartHeight={config.defaultChartHeight}
                                         scaleFactor={localScaleFactor}
                                         chartUnavailable={chartUnavailable}
                                     />
