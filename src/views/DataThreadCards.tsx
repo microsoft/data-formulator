@@ -173,11 +173,9 @@ export let buildChartCard = (
             display: 'flex',
             position: 'relative',
             border: 'none',
+            borderRadius: '6px',
             backgroundColor: 'white',
             px: 1,
-            ...(unread && {
-                boxShadow: '0 0 6px rgba(255, 152, 0, 0.15), 0 0 12px rgba(255, 152, 0, 0.15)',
-            })
         }}>
         {chartElement.element}
     </Card>
@@ -188,6 +186,7 @@ export let buildChartCard = (
 export let buildTriggerCard = (
     trigger: Trigger,
     focusedChartId: string | undefined,
+    highlighted: boolean = false,
 ) => {
     let selectedClassName = trigger.chart?.id == focusedChartId ? 'selected-card' : '';
     
@@ -195,6 +194,7 @@ export let buildTriggerCard = (
         <Box sx={{ flex: 1 }} >
             <TriggerCard className={selectedClassName} trigger={trigger} 
                 hideFields={trigger.instruction != ""} 
+                highlighted={highlighted}
                 sx={{
                     '& .MuiBox-root': { mx: 0.5, my: 0.25 },
                     '& .MuiSvgIcon-root': { width: '12px', height: '12px' },
@@ -307,6 +307,7 @@ export let buildTableCard = (props: BuildTableCardProps) => {
             sx={{ width: '100%', 
                 backgroundColor: primaryBgColor,
                 ...ComponentBorderStyle,
+                ...(isHighlighted ? { borderColor: 'primary.main' } : {}),
                 borderRadius: '6px',
                 }}
             onClick={() => {

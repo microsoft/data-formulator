@@ -697,6 +697,60 @@ def data_loader_view_query_sample():
         return jsonify({"status": "error", "sample": [], "message": safe_msg}), status_code
 
 
+@tables_bp.route('/data-loader/fetch-data', methods=['POST'])
+def data_loader_fetch_data():
+    """Fetch data from an external data loader and return as JSON rows WITHOUT saving to workspace.
+    
+    This is used when storeOnServer=false (local-only / incognito mode).
+    The data is returned directly to the frontend without being persisted as parquet.
+    """
+    try:
+        data = request.get_json()
+        data_loader_type = data.get('data_loader_type')
+        data_loader_params = data.get('data_loader_params')
+        table_name = data.get('table_name')
+        row_limit = data.get('row_limit', 10000)
+        sort_columns = data.get('sort_columns')
+        sort_order = data.get('sort_order', 'asc')
+
+        if not data_loader_type or not table_name:
+            return jsonify({"status": "error", "message": "data_loader_type and table_name are required"}), 400
+
+        if data_loader_type not in DATA_LOADERS:
+            return jsonify({"status": "error", "message": f"Invalid data loader type. Must be one of: {', '.join(DATA_LOADERS.keys())}"}), 400
+
+        data_loader = DATA_LOADERS[data_loader_type](data_loader_params)
+        
+        # Fetch data as DataFrame (not Arrow, since we need JSON output not parquet)
+        df = data_loader.fetch_data_as_dataframe(
+            source_table=table_name,
+            size=row_limit,
+            sort_columns=sort_columns,
+            sort_order=sort_order,
+        )
+        
+        total_row_count = len(df)
+        # Apply row limit
+        if len(df) > row_limit:
+            df = df.head(row_limit)
+        
+        rows = json.loads(df.to_json(orient='records', date_format='iso'))
+        columns = [{"name": col, "type": str(df[col].dtype)} for col in df.columns]
+        
+        return jsonify({
+            "status": "success",
+            "rows": rows,
+            "columns": columns,
+            "total_row_count": total_row_count,
+            "row_limit_applied": row_limit,
+        })
+    except Exception as e:
+        logger.error(f"Error fetching data from data loader: {str(e)}")
+        logger.error(traceback.format_exc())
+        safe_msg, status_code = sanitize_db_error_message(e)
+        return jsonify({"status": "error", "message": safe_msg}), status_code
+
+
 @tables_bp.route('/data-loader/ingest-data-from-query', methods=['POST'])
 def data_loader_ingest_data_from_query():
     """Ingest data from a query into the workspace as parquet."""

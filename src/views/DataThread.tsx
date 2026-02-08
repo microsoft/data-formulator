@@ -59,6 +59,7 @@ import EditIcon from '@mui/icons-material/Edit';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import StreamIcon from '@mui/icons-material/Stream';
 import ChatBubbleOutlineIcon from '@mui/icons-material/ChatBubbleOutline';
+import AddIcon from '@mui/icons-material/Add';
 
 import { alpha } from '@mui/material/styles';
 
@@ -69,6 +70,7 @@ import { AppDispatch } from '../app/store';
 import StopIcon from '@mui/icons-material/Stop';
 import { useDataRefresh } from '../app/useDataRefresh';
 import { AgentStatusBox, buildChartCard, buildTriggerCard, buildTableCard, BuildTableCardProps } from './DataThreadCards';
+import { UnifiedDataUploadDialog } from './UnifiedDataUploadDialog';
 import { ViewBorderStyle, transition, radius } from '../app/tokens';
 
 
@@ -491,6 +493,9 @@ let SingleThreadGroupView: FC<{
     const [selectedTableForMetadata, setSelectedTableForMetadata] = useState<DictTable | null>(null);
     const [metadataAnchorEl, setMetadataAnchorEl] = useState<HTMLElement | null>(null);
 
+    // Upload dialog state (workspace "add data" button)
+    const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
+
     // Table menu state
     const [tableMenuAnchorEl, setTableMenuAnchorEl] = useState<HTMLElement | null>(null);
     const [selectedTableForMenu, setSelectedTableForMenu] = useState<DictTable | null>(null);
@@ -726,8 +731,8 @@ let SingleThreadGroupView: FC<{
     // Use the global highlighted table IDs (computed at DataThread level from the focused table's full ancestor chain)
     let highlightedTableIds = globalHighlightedTableIds;
 
-    let _buildTriggerCard = (trigger: Trigger) => {
-        return buildTriggerCard(trigger, focusedChartId);
+    let _buildTriggerCard = (trigger: Trigger, highlighted: boolean = false) => {
+        return buildTriggerCard(trigger, focusedChartId, highlighted);
     }
 
     // Shared props for buildTableCard calls
@@ -743,7 +748,11 @@ let SingleThreadGroupView: FC<{
     }
 
     let tableElementList = newTableIds.map((tableId, i) => _buildTableCard(tableId));
-    let triggerCards = newTriggers.map((trigger) => _buildTriggerCard(trigger));
+    let triggerCards = newTriggers.map((trigger) => {
+        const triggerTableId = trigger.resultTableId;
+        const isHL = triggerTableId ? highlightedTableIds.includes(triggerTableId) : false;
+        return _buildTriggerCard(trigger, isHL);
+    });
 
     // Build a flat sequence of timeline items: [trigger, table, charts, trigger, table, charts, ...]
     let timelineItems: { key: string; element: React.ReactNode; type: 'used-table' | 'trigger' | 'table' | 'chart' | 'leaf-trigger' | 'leaf-table'; highlighted: boolean; tableId?: string; isRunning?: boolean }[] = [];
@@ -836,7 +845,7 @@ let SingleThreadGroupView: FC<{
                 key: `leaf-trigger-${lt.id}`,
                 type: 'leaf-trigger',
                 highlighted: highlightedTableIds.includes(lt.id),
-                element: _buildTriggerCard(leafTrigger),
+                element: _buildTriggerCard(leafTrigger, highlightedTableIds.includes(lt.id)),
             });
         }
         let leafCards = _buildTableCard(lt.id);
@@ -868,7 +877,7 @@ let SingleThreadGroupView: FC<{
         const isTable = item.type === 'table' || item.type === 'leaf-table' || item.type === 'used-table';
         const color = item.highlighted 
             ? theme.palette.primary.main
-            : 'rgba(0,0,0,0.25)';
+            : 'rgba(0,0,0,0.4)';
 
         // For running agent items, show a spinner instead of a dot
         if (item.isRunning) {
@@ -884,7 +893,7 @@ let SingleThreadGroupView: FC<{
             if (isStreaming) {
                 return <StreamIcon sx={{ 
                     ...iconSx, 
-                    color: item.highlighted ? theme.palette.success.main : 'rgba(0,0,0,0.25)',
+                    color: item.highlighted ? theme.palette.success.main : 'rgba(0,0,0,0.4)',
                     animation: 'pulse 2s infinite',
                     '@keyframes pulse': {
                         '0%': { opacity: 1 },
@@ -909,16 +918,13 @@ let SingleThreadGroupView: FC<{
         const isTrigger = item.type === 'trigger' || item.type === 'leaf-trigger';
         const isTable = item.type === 'table' || item.type === 'leaf-table' || item.type === 'used-table';
         const isChart = item.type === 'chart';
-        const dashedColor = item.highlighted ? theme.palette.primary.main : 'rgba(0,0,0,0.1)';
-        const dashedWidth = item.highlighted ? '1.5px' : '1px';
+        const dashedColor = item.highlighted ? theme.palette.primary.main : 'rgba(0,0,0,0.4)';
+        const dashedWidth = item.highlighted ? '2px' : '1px';
         const dashedStyle = item.highlighted ? 'solid' : 'dashed';
         const triggerColor = item.highlighted 
             ? alpha(theme.palette.custom.main, 0.5)
-            : 'rgba(0,0,0,0.15)';
-        // In ancestor threads, non-highlighted items get white bg to dim them out
-        const rowHighlightSx = (isAncestorThread && !item.highlighted && item.type !== 'used-table')
-            ? { backgroundColor: 'rgba(255,255,255,0.75)', borderRadius: 0, mx: -1, px: 1 }
-            : {};
+            : 'rgba(0,0,0,0.12)';
+        const rowHighlightSx = {};
 
         // Triggers: thick solid bar with a dot in the middle and a horizontal tick to the card
         if (isTrigger) {
@@ -1010,20 +1016,120 @@ let SingleThreadGroupView: FC<{
         );
     };
 
-    // Compact mode: just show leaf table cards in a simple column
+    // Compact mode (thread0): show standalone tables with the same timeline layout
     if (compact) {
+        // Build timeline item groups — one group per table (table + its charts).
+        // Each group is rendered as an independent mini-timeline so unrelated
+        // workspace tables are NOT connected to each other with vertical lines.
+        let compactTimelineGroups: (typeof timelineItems)[] = [];
+        leafTables.forEach((table) => {
+            const tableCards = _buildTableCard(table.id);
+            if (Array.isArray(tableCards)) {
+                const group: typeof timelineItems = [];
+                tableCards.forEach((subItem: any, j: number) => {
+                    if (!subItem) return;
+                    const subKey = subItem?.key || `compact-${table.id}-${j}`;
+                    const isChart = subKey.includes('chart') || subKey.includes('agent');
+                    const isAgent = subKey.includes('agent');
+                    const isAgentRunning = isAgent && runningAgentTableIds.has(table.id);
+                    group.push({
+                        key: subKey,
+                        type: isChart ? 'chart' : 'table',
+                        tableId: isChart ? undefined : table.id,
+                        highlighted: highlightedTableIds.includes(table.id),
+                        element: subItem,
+                        ...(isAgentRunning ? { isRunning: true } : {}),
+                    });
+                });
+                if (group.length > 0) {
+                    compactTimelineGroups.push(group);
+                }
+            }
+        });
+
         return (
-            <Box sx={{ ...sx, display: 'flex', flexDirection: 'column', gap: 0.25 }}>
-                {leafTables.map((table) => {
-                    const tableCardResult = _buildTableCard(table.id);
-                    // buildTableCard returns an array [regularTableBox, chartBox]
-                    // In compact mode, we want to show them stacked
-                    return (
-                        <React.Fragment key={`compact-table-${table.id}`}>
-                            {tableCardResult}
-                        </React.Fragment>
-                    );
-                })}
+            <Box sx={{ ...sx, 
+                '& .selected-card': { 
+                    boxShadow: `0 0 0 2px ${theme.palette.primary.light}`,
+                    my: 0.5,
+                    borderColor: 'transparent',
+                },
+                transition: transition.fast,
+                padding: '6px',
+                backgroundColor: 'rgba(0,0,0,0.02)',
+                borderRadius: '8px',
+                border: '1px solid rgba(0,0,0,0.06)',
+            }}>
+                <Box sx={{ display: 'flex', direction: 'ltr', margin: '2px 2px 6px 2px' }}>
+                    <Divider flexItem sx={{
+                        margin: 'auto',
+                        "& .MuiDivider-wrapper": { display: 'flex', flexDirection: 'row' },
+                        "&::before, &::after": { borderColor: 'rgba(0,0,0,0.15)', borderWidth: '1px', width: 40 },
+                    }}>
+                        <Typography sx={{ fontSize: '10px', fontWeight: 600, color: 'rgba(0,0,0,0.5)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                            workspace
+                        </Typography>
+                    </Divider>
+                </Box>
+                <div style={{ padding: '2px 4px 2px 4px', marginTop: 0, direction: 'ltr', position: 'relative' }}>
+                    {/* Vertical backbone line through timeline column */}
+                    <Box sx={{
+                        position: 'absolute',
+                        left: `${4 + TIMELINE_WIDTH / 2}px`,
+                        top: 8,
+                        bottom: 8,
+                        width: 0,
+                        borderLeft: '1px dotted rgba(0,0,0,0.12)',
+                        pointerEvents: 'none',
+                        zIndex: 0,
+                    }} />
+                    {compactTimelineGroups.map((group, groupIndex) => (
+                        <div key={`group-${groupIndex}`} style={{ marginBottom: groupIndex < compactTimelineGroups.length - 1 ? 4 : 0 }}>
+                            {group.map((item, index) => renderTimelineItem(item, index, index === group.length - 1))}
+                        </div>
+                    ))}
+                    {/* Add data button — styled like a table card row */}
+                    <Box sx={{ display: 'flex', flexDirection: 'row', mt: 0.5 }}>
+                        <Box sx={{ 
+                            width: TIMELINE_WIDTH, flexShrink: 0, 
+                            display: 'flex', flexDirection: 'column', alignItems: 'center',
+                            justifyContent: 'center',
+                        }}>
+                            <AddIcon sx={{ fontSize: 14, color: 'rgba(0,0,0,0.4)' }} />
+                        </Box>
+                        <Box 
+                            onClick={() => setUploadDialogOpen(true)}
+                            sx={{ 
+                                flex: 1, minWidth: 0, pl: 0.5,
+                                display: 'flex', alignItems: 'center',
+                                py: '4px',
+                            }}
+                        >
+                            <Box sx={{
+                                px: 1, py: '4px',
+                                borderRadius: '6px',
+                                cursor: 'pointer',
+                                transition: transition.fast,
+                                '&:hover': { 
+                                    backgroundColor: 'rgba(0,0,0,0.04)',
+                                },
+                            }}>
+                                <Typography sx={{
+                                    fontSize: 12,
+                                    fontWeight: 500,
+                                    color: 'text.secondary',
+                                }}>
+                                    add data
+                                </Typography>
+                            </Box>
+                        </Box>
+                    </Box>
+                </div>
+                <UnifiedDataUploadDialog
+                    open={uploadDialogOpen}
+                    onClose={() => setUploadDialogOpen(false)}
+                    initialTab="menu"
+                />
                 <MetadataPopup
                     open={metadataPopupOpen}
                     anchorEl={metadataAnchorEl}
@@ -1171,22 +1277,19 @@ let SingleThreadGroupView: FC<{
             '& .selected-card': { 
                 boxShadow: `0 0 0 2px ${theme.palette.primary.light}`,
                 my: 0.5,
-                border: 'none'
+                borderColor: 'transparent',
             },
             transition: transition.fast,
-            padding: '4px',
-            ...(shouldHighlightThread
-                ? { backgroundColor: theme.palette.derived.bgcolor, borderRadius: '8px' }
-                : {}),
+            padding: '6px',
         }}
         >
-        <Box sx={{ display: 'flex', direction: 'ltr', margin: '2px 2px 8px 2px' }}>
+        <Box sx={{ display: 'flex', direction: 'ltr', margin: '2px 2px 6px 2px' }}>
             <Divider flexItem sx={{
                 margin: 'auto',
                 "& .MuiDivider-wrapper": { display: 'flex', flexDirection: 'row' },
-                "&::before, &::after": { borderColor: alpha(theme.palette.custom.main, 0.5), borderWidth: '2px', width: 60 },
+                "&::before, &::after": { borderColor: 'rgba(0,0,0,0.15)', borderWidth: '1px', width: 40 },
             }}>
-                <Typography sx={{ fontSize: "10px",  color: 'text.secondary', textTransform: 'none' }}>
+                <Typography sx={{ fontSize: '10px', fontWeight: 600, color: 'rgba(0,0,0,0.5)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                     {threadLabel || (threadIdx === -1 ? 'thread0' : `thread - ${threadIdx + 1}`)}
                 </Typography>
             </Divider>
@@ -1882,13 +1985,12 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
         return undefined;
     }, [focusedTableId, leafTables, tables]);
 
-    let hasContent = leafTables.length > 0;
+    let hasContent = leafTables.length > 0 || tables.some(t => !t.derive);
 
-    // Separate standalone tables (no derivation chain) from threaded tables
-    let standaloneTables = leafTables.filter(lt => {
-        const triggers = getTriggers(lt, tables);
-        return triggers.length + 1 <= 1;
-    });
+    // Collect all base (non-derived) tables for thread 0 — they serve as source tables
+    // and will automatically appear as "used table" references in derived threads.
+    let baseTables = tables.filter(t => !t.derive);
+    // Threaded tables: leaf tables that have a derivation chain
     let threadedTables = leafTables.filter(lt => {
         const triggers = getTriggers(lt, tables);
         return triggers.length + 1 > 1;
@@ -1905,20 +2007,20 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
     // Track which table IDs have been claimed by earlier threads
     let claimedTableIds = new Set<string>();
 
-    // thread0: group all standalone tables into one compact thread
-    if (standaloneTables.length > 0) {
-        standaloneTables.forEach(lt => claimedTableIds.add(lt.id));
+    // thread0: group all base (non-derived) tables into one compact thread
+    if (baseTables.length > 0) {
+        baseTables.forEach(lt => claimedTableIds.add(lt.id));
         allThreadEntries.push({
             key: 'thread0',
             groupId: 'thread0',
-            leafTables: standaloneTables,
+            leafTables: baseTables,
             isCompact: true,
             threadIdx: -1,
         });
-        let standaloneChartCount = standaloneTables.reduce((sum, lt) => {
+        let baseChartCount = baseTables.reduce((sum, lt) => {
             return sum + chartElements.filter(ce => ce.tableId === lt.id).length;
         }, 0);
-        allThreadHeights.push(estimateThreadHeight(standaloneTables.length, 0, standaloneChartCount, 0));
+        allThreadHeights.push(estimateThreadHeight(baseTables.length, 0, baseChartCount, 0));
     }
 
     // Regular threads: one per threaded leaf table

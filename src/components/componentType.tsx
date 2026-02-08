@@ -161,7 +161,7 @@ export function createDictTable(
     anchored: boolean = false,
     createdBy: 'user' | 'agent' = 'user', // by default, all tables are created by the user
     attachedMetadata: string = '',
-    source: DataSourceConfig | undefined = undefined
+    source: DataSourceConfig | undefined = undefined,
 ) : DictTable {
     
     let names = Object.keys(rows[0])
@@ -184,7 +184,7 @@ export function createDictTable(
         anchored,
         createdBy,
         attachedMetadata,
-        source
+        source,
     }
 }
 

@@ -62,6 +62,7 @@ import { dfActions, dfSelectors } from '../app/dfSlice';
 import { alpha } from '@mui/material';
 import { DataFormulatorState } from '../app/dfSlice';
 import { fetchFieldSemanticType } from '../app/dfSlice';
+import { loadTable } from '../app/tableThunks';
 import { AppDispatch } from '../app/store';
 import Markdown from 'markdown-to-jsx';
 
@@ -182,7 +183,8 @@ interface ColumnStatistics {
 
 
 export const DBManagerPane: React.FC<{ 
-}> = function DBManagerPane({ }) {
+    onClose?: () => void;
+}> = function DBManagerPane({ onClose }) {
     
     const theme = useTheme();
 
@@ -201,31 +203,8 @@ export const DBManagerPane: React.FC<{
     const [dbTables, setDbTables] = useState<DBTable[]>([]);
     const [selectedTabKey, setSelectedTabKey] = useState("");
     const [selectedDataLoader, setSelectedDataLoader] = useState<string>("");
-    const [connectorMenuAnchorEl, setConnectorMenuAnchorEl] = useState<HTMLElement | null>(null);
 
     const [isUploading, setIsUploading] = useState<boolean>(false);
-    const [resetAnchorEl, setResetAnchorEl] = useState<HTMLElement | null>(null);
-    const [tableMenuAnchorEl, setTableMenuAnchorEl] = useState<HTMLElement | null>(null);
-    const [showViews, setShowViews] = useState<boolean>(false);
-    const dbFileInputRef = useRef<HTMLInputElement>(null);
-    const menuButtonRef = useRef<HTMLButtonElement>(null);
-    
-    // Watch/auto-refresh settings for the currently selected table
-    const [watchEnabled, setWatchEnabled] = useState<boolean>(false);
-    const [watchInterval, setWatchInterval] = useState<number>(600);
-    
-    // Reset watch settings when selected table changes
-    useEffect(() => {
-        setWatchEnabled(false);
-        setWatchInterval(600);
-    }, [selectedTabKey]);
-    
-    // Helper to format interval for display
-    const formatInterval = (seconds: number) => {
-        if (seconds < 60) return `${seconds}s`;
-        if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
-        return `${Math.floor(seconds / 3600)}h`;
-    };
 
     let setSystemMessage = (content: string, severity: "error" | "warning" | "info" | "success") => {
         dispatch(dfActions.addMessages({
@@ -286,580 +265,58 @@ export const DBManagerPane: React.FC<{
         });
     }
 
-    const handleDBUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-        const file = event.target.files?.[0];
-        if (!file) return;
-    
-        const formData = new FormData();
-        formData.append('file', file);
-        formData.append('table_name', file.name.split('.')[0]);
-    
-        try {
-            setIsUploading(true);
-            const response = await fetchWithIdentity(getUrls().UPLOAD_DB_FILE, {
-                method: 'POST',
-                body: formData
-            });
-            const data = await response.json();
-            if (data.status === 'success') {
-                fetchTables();  // Refresh table list
-            } else {
-                // Handle error from server
-                setSystemMessage(data.error || 'Failed to upload table', "error");
-            }
-        } catch (error) {
-            setSystemMessage('Failed to upload table, please check if the server is running', "error");
-        } finally {
-            setIsUploading(false);
-        }
-    };
-
-    const handleDBFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-        const file = event.target.files?.[0];
-        if (!file) return;
-    
-        const formData = new FormData();
-        formData.append('file', file);
-        formData.append('table_name', file.name.split('.')[0]);
-    
-        try {
-            setIsUploading(true);
-            const response = await fetchWithIdentity(getUrls().CREATE_TABLE, {
-                method: 'POST',
-                body: formData
-            });
-            const data = await response.json();
-            if (data.status === 'success') {
-                if (data.is_renamed) {
-                    setSystemMessage(`Table ${data.original_name} already exists. Renamed to ${data.table_name}`, "warning");
-                } 
-                fetchTables();  // Refresh table list
-            } else {
-                setSystemMessage(data.error || 'Failed to upload table', "error");
-            }
-        } catch (error) {
-            setSystemMessage('Failed to upload table, please check if the server is running', "error");
-        } finally {
-            setIsUploading(false);
-            // Clear the file input value to allow uploading the same file again
-            if (event.target) {
-                event.target.value = '';
-            }
-        }
-    };
-
-    const handleDBReset = async () => {
-        try {
-            const response = await fetchWithIdentity(getUrls().RESET_DB_FILE, {
-                method: 'POST',
-            });
-            const data = await response.json();
-            if (data.status === 'success') {
-                fetchTables();
-            } else {
-                setSystemMessage(data.error || 'Failed to reset database', "error");
-            }
-        } catch (error) {
-            setSystemMessage('Failed to reset database', "error");
-        }
-    }
-
-    const handleCleanDerivedViews = async () => {
-        let unreferencedViews = dbTables.filter(t => t.view_source !== null && t.view_source !== undefined && !tables.some(t2 => t2.id === t.name));
-
-        if (unreferencedViews.length > 0) {
-            if (confirm(`Are you sure you want to delete the following unreferenced derived views? \n${unreferencedViews.map(v => `- ${v.name}`).join("\n")}`)) {
-                let deletedViews = [];
-                for (let view of unreferencedViews) {
-                    try {
-                        const response = await fetchWithIdentity(getUrls().DELETE_TABLE, {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json',
-                            },
-                            body: JSON.stringify({ table_name: view.name })
-                        });
-                        const data = await response.json();
-                        if (data.status === 'success') {
-                            deletedViews.push(view.name);
-                        } else {
-                            setSystemMessage(data.error || 'Failed to delete table', "error");
-                        }
-                    } catch (error) {
-                        setSystemMessage('Failed to delete table, please check if the server is running', "error");
-                    }
-                }
-                if (deletedViews.length > 0) {
-                    setSystemMessage(`Deleted ${deletedViews.length} unreferenced derived views: ${deletedViews.join(", ")}`, "success");
-                }
-                fetchTables();
-                setSelectedTabKey(dbTables.length > 0 ? dbTables[0].name : "");
-            }
-        }
-    }
-
-    // Delete table
-    const handleDropTable = async (tableName: string) => {
-        if (tables.some(t => t.id === tableName)) {
-            if (!confirm(`Are you sure you want to delete ${tableName}? \n ${tableName} is currently loaded into the data formulator and will be removed from the database.`)) return;
-        }
-
-        try {
-            const response = await fetchWithIdentity(getUrls().DELETE_TABLE, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ table_name: tableName })
-            });
-            const data = await response.json();
-            if (data.status === 'success') {
-                fetchTables();
-                setSelectedTabKey(dbTables.length > 0 ? dbTables[0].name : "");
-            } else {
-                setSystemMessage(data.error || 'Failed to delete table', "error");
-            }
-        } catch (error) {
-            setSystemMessage('Failed to delete table, please check if the server is running', "error");
-        }
-    };
-
-    const handleAddTableToDF = (dbTable: DBTable, refreshSettings?: {autoRefresh: boolean, refreshIntervalSeconds: number}) => {
-        const convertSqlTypeToAppType = (sqlType: string): Type => {
-            // Convert SQL types to application types
-            sqlType = sqlType.toUpperCase();
-            if (sqlType.includes('INT') || sqlType === 'BIGINT' || sqlType === 'SMALLINT' || sqlType === 'TINYINT') {
-                return Type.Integer;
-            } else if (sqlType.includes('FLOAT') || sqlType.includes('DOUBLE') || sqlType.includes('DECIMAL') || sqlType.includes('NUMERIC') || sqlType.includes('REAL')) {
-                return Type.Number;
-            } else if (sqlType.includes('BOOL')) {
-                return Type.Boolean;
-            } else if (sqlType.includes('DATE') || sqlType.includes('TIME') || sqlType.includes('TIMESTAMP')) {
-                return Type.Date;
-            } else {
-                return Type.String;
-            }
-        };
-
-        // Build source config - backend stores connection details, frontend just manages refresh timing
-        const sourceMeta = dbTable.source_metadata;
-        const sourceConfig: DataSourceConfig = {
-            type: 'database',
-            databaseTable: dbTable.name,
-            // Frontend manages these refresh settings (from user selection)
-            autoRefresh: refreshSettings?.autoRefresh ?? false,
-            refreshIntervalSeconds: refreshSettings?.refreshIntervalSeconds ?? 60,
-            // Backend has connection info if source_metadata exists
-            canRefresh: sourceMeta != null,
-            lastRefreshed: Date.now()
-        };
-
-        let table: DictTable = {
-            id: dbTable.name,
-            displayId: dbTable.name,
-            names: dbTable.columns.map((col: any) => col.name),
-            metadata: dbTable.columns.reduce((acc: Record<string, {type: Type, semanticType: string, levels: any[]}>, col: any) => ({
-                ...acc,
-                [col.name]: {
-                    type: convertSqlTypeToAppType(col.type),
-                    semanticType: "",
-                    levels: []
-                }
-            }), {}),
-            rows: dbTable.sample_rows,
-            virtual: {
-                tableId: dbTable.name,
-                rowCount: dbTable.row_count,
-            },
-            anchored: true, // by default, db tables are anchored
-            createdBy: 'user',
-            attachedMetadata: '',
-            source: sourceConfig
-        }
-       dispatch(dfActions.loadTable(table));
-       dispatch(fetchFieldSemanticType(table));
-    }
-
-
     useEffect(() => {
         fetchTables();
     }, []);
 
-    function uploadFileButton(element: React.ReactNode, buttonSx?: SxProps) {
-        return (
-            <Tooltip title="upload a csv/tsv file to the local database">
-                <span>
-                    <Button
-                        variant="text"
-                        component="label"
-                        sx={{ fontSize: "inherit", ...buttonSx}}                    
-                        disabled={isUploading}
-                    >
-                        {element}
-                        <input
-                            type="file"
-                            hidden
-                            onChange={handleDBFileUpload}
-                            accept=".csv,.xlsx,.json"
-                            disabled={isUploading}
-                        />
-                    </Button>
-                </span>
-            </Tooltip>
-        );
-    }
-
     let tableSelectionPanel = <Box sx={{ 
-        px: 0.5, pt: 1, 
+        pt: 1, 
         display: 'flex', 
         flexDirection: 'column', 
-        width: '100%'
+        width: '100%',
     }}>
-        {/* Recent Data Loaders */}
-        <Box sx={{ px: 1, mb: 1 }}>
-                <Typography variant="caption" sx={{
-                    color: "text.disabled",
-                    fontSize: "0.75rem",
-                    my: 1,
-                    display: 'block'
-                }}>
-                    External Data Loaders
-                </Typography>
-                <Box sx={{ 
-                    display: 'flex', 
-                    flexWrap: 'wrap', 
-                    gap: 0.5,
-                    alignItems: 'flex-start',
+        {/* Data loaders */}
+        {Object.keys(dataLoaderMetadata ?? {}).map((dataLoaderType) => (
+            <Button
+                key={dataLoaderType}
+                variant="text"
+                size="small"
+                color="primary"
+                onClick={() => setSelectedDataLoader(dataLoaderType)}
+                sx={{
+                    fontSize: 12,
+                    textTransform: "none",
                     width: '100%',
-                    minWidth: 0
-                }}>
-                    <Chip
-                        key="file upload"
-                        label="file"
-                        size="small"
-                        variant="outlined"
-                        onClick={() => setSelectedDataLoader("file upload")}
-                        sx={{
-                            fontSize: '0.7rem',
-                            height: 20,
-                            maxWidth: '100%',
-                            borderColor: selectedDataLoader === "file upload"
-                                ? theme.palette.secondary.main
-                                : theme.palette.divider,
-                            '& .MuiChip-label': {
-                                overflow: 'hidden',
-                                textOverflow: 'ellipsis',
-                                whiteSpace: 'nowrap'
-                            },
-                        }}
-                    />
-                    {Object.keys(dataLoaderMetadata ?? {})
-                        .map((dataLoaderType) => (
-                            <Chip
-                                key={dataLoaderType}
-                                label={dataLoaderType}
-                                size="small"
-                                variant="outlined"
-                                onClick={() => setSelectedDataLoader(dataLoaderType)}
-                                sx={{
-                                    fontSize: '0.7rem',
-                                    height: 20,
-                                    maxWidth: '100%',
-                                    backgroundColor: selectedDataLoader === dataLoaderType 
-                                        ? alpha(theme.palette.secondary.main, 0.2) 
-                                        : 'transparent',
-                                    borderColor: selectedDataLoader === dataLoaderType
-                                        ? theme.palette.secondary.main
-                                        : theme.palette.divider,
-                                    '& .MuiChip-label': {
-                                        overflow: 'hidden',
-                                        textOverflow: 'ellipsis',
-                                        whiteSpace: 'nowrap'
-                                    },
-                                }}
-                            />
-                        ))}
-                </Box>
-            </Box>
-        
-        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', px: 1, my: 1 }}>
-            <Typography variant="caption" sx={{
-                color: "text.disabled", 
-                fontWeight: "500", 
-                flexGrow: 1,
-                fontSize: "0.75rem",
-            }}>
-                Local DuckDB
-            </Typography>
-            <IconButton 
-                ref={menuButtonRef}
-                size="small" 
-                onClick={(e) => setTableMenuAnchorEl(e.currentTarget)}
-                sx={{ 
-                    padding: 0.5,
-                    '&:hover': {
-                        backgroundColor: alpha(theme.palette.primary.main, 0.08),
-                    }
+                    justifyContent: 'flex-start',
+                    textAlign: 'left',
+                    borderRadius: 0,
+                    py: 1,
+                    px: 2,
+                    color: selectedDataLoader === dataLoaderType ? 'primary.main' : 'text.secondary',
+                    borderRight: selectedDataLoader === dataLoaderType ? 2 : 0,
+                    borderColor: 'primary.main',
                 }}
             >
-                <MoreVertIcon sx={{ fontSize: 16 }} />
-            </IconButton>
-            <Menu
-                anchorEl={tableMenuAnchorEl}
-                open={Boolean(tableMenuAnchorEl)}
-                onClose={() => setTableMenuAnchorEl(null)}
-                anchorOrigin={{
-                    vertical: 'bottom',
-                    horizontal: 'right',
-                }}
-                transformOrigin={{
-                    vertical: 'top',
-                    horizontal: 'left',
-                }}
-            >
-                <MenuItem 
-                    onClick={() => {
-                        fetchTables();
-                        setTableMenuAnchorEl(null);
-                    }}
-                    dense
-                >
-                    <RefreshIcon sx={{ fontSize: 16, mr: 1 }} />
-                    Refresh table list
-                </MenuItem>
-                <Divider />
-                <MenuItem 
-                    onClick={() => {
-                        dbFileInputRef.current?.click();
-                        setTableMenuAnchorEl(null);
-                    }}
-                    disabled={isUploading}
-                    dense
-                >
-                    <UploadFileIcon sx={{ fontSize: 16, mr: 1 }} />
-                    Import database file
-                </MenuItem>
-                <MenuItem 
-                    onClick={() => {
-                        if (!isUploading && dbTables.length > 0) {
-                            handleDBDownload(identity.id)
-                                .catch(error => {
-                                    console.error('Failed to download database:', error);
-                                    setSystemMessage('Failed to download database file', "error");
-                                });
-                        }
-                        setTableMenuAnchorEl(null);
-                    }}
-                    disabled={isUploading || dbTables.length === 0}
-                    dense
-                >
-                    <DownloadIcon sx={{ fontSize: 16, mr: 1 }} />
-                    Export database file
-                </MenuItem>
-                <MenuItem 
-                    onClick={() => {
-                        setTableMenuAnchorEl(null);
-                        if (!isUploading && menuButtonRef.current) {
-                            // Use setTimeout to ensure menu closes before popover opens
-                            setTimeout(() => {
-                                setResetAnchorEl(menuButtonRef.current);
-                            }, 100);
-                        }
-                    }}
-                    disabled={isUploading}
-                    dense
-                    sx={{ color: 'error.main' }}
-                >
-                    <RestartAltIcon sx={{ fontSize: 16, mr: 1 }} />
-                    Reset database
-                </MenuItem>
-            </Menu>
-            <input 
-                ref={dbFileInputRef}
-                type="file" 
-                hidden 
-                onChange={handleDBUpload} 
-                accept=".db" 
-                disabled={isUploading} 
-            />
-        </Box>
-    
-        
-        {dbTables.length == 0 && 
-            <Typography variant="caption" sx={{color: "lightgray", px: 2, py: 0.5, fontStyle: "italic"}}>
-                no tables available
-            </Typography>
-        }
-        
-        {/* Regular Tables */}
-        {dbTables.filter(t => t.view_source === null).map((t, i) => {
-            const isLoaded = tables.some(loadedTable => loadedTable.id === t.name);
-            return (
-                <Button
-                    key={t.name}
-                    variant="text"
-                    size="small"
-                    color='primary'
-                    onClick={() => {
-                        setSelectedTabKey(t.name);
-                        // If in data loader view, go back to table view
-                        if (selectedDataLoader !== "") {
-                            setSelectedDataLoader("");
-                        }
-                    }}
-                    sx={{
-                        textTransform: "none",
-                        width: '100%',
-                        maxWidth: '100%',
-                        justifyContent: 'flex-start',
-                        textAlign: 'left',
-                        borderRadius: 0,
-                        py: 0.5,
-                        px: 2,
-                        color: (selectedTabKey === t.name && selectedDataLoader === "") ? 'primary.main' : 'text.secondary',
-                        borderRight: (selectedTabKey === t.name && selectedDataLoader === "") ? 2 : 0,
-                        minWidth: 0,
-                    }}
-                    startIcon={<TableIcon />}
-                    endIcon={isLoaded ? <CheckIcon sx={{ fontSize: 14, color: 'success.main' }} /> : null}
-                >
-                    <Typography 
-                        fontSize='inherit'
-                        sx={{
-                            flex: 1,
-                            minWidth: 0,
-                            textAlign: 'left', 
-                            textOverflow: 'ellipsis', 
-                            overflow: 'hidden', 
-                            whiteSpace: 'nowrap',
-                        }}>
-                        {t.name}
-                    </Typography>
-                </Button>
-            );
-        })}
-        
-        {/* Derived Views Section */}
-        {dbTables.filter(t => t.view_source !== null).length > 0 && (
-            <Box sx={{ mt: 2, display: 'flex', flexDirection: 'column' }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', width: '100%' }}>
-                    <Button
-                        variant="text"
-                        size="small"
-                        onClick={() => setShowViews(!showViews)}
-                        sx={{
-                            textTransform: "none",
-                            flex: 1,
-                            justifyContent: 'flex-start',
-                            textAlign: 'left',
-                            borderRadius: 0,
-                            py: 0.5,
-                            px: 2,
-                            color: 'text.secondary',
-                            minWidth: 0,
-                            '&:hover': {
-                                backgroundColor: alpha(theme.palette.primary.main, 0.08)
-                            }
-                        }}
-                        startIcon={showViews ? <ExpandLessIcon sx={{ fontSize: 16 }} /> : <ExpandMoreIcon sx={{ fontSize: 16 }} />}
-                    >
-                        <Typography 
-                            fontSize='0.75rem'
-                            sx={{
-                                flex: 1,
-                                minWidth: 0,
-                                textAlign: 'left',
-                            }}>
-                            Views ({dbTables.filter(t => t.view_source !== null).length})
-                        </Typography>
-                    </Button>
-                    <Tooltip title="Clean up unused views">
-                        <IconButton
-                            size="small"
-                            onClick={handleCleanDerivedViews}
-                            disabled={dbTables.filter(t => t.view_source !== null && t.view_source !== undefined && !tables.some(t2 => t2.id === t.name)).length === 0}
-                            sx={{
-                                padding: 0.5,
-                                mr: 0.5,
-                                '&:hover': {
-                                    backgroundColor: alpha(theme.palette.primary.main, 0.08),
-                                }
-                            }}
-                        >
-                            <CleaningServicesIcon sx={{ fontSize: 16 }} />
-                        </IconButton>
-                    </Tooltip>
-                </Box>
-                <Collapse in={showViews}>
-                    <Box sx={{ display: 'flex', flexDirection: 'column' }}>
-                        {dbTables.filter(t => t.view_source !== null).map((t, i) => {
-                            return (
-                            <Button
-                                key={t.name}
-                                variant="text"
-                                size="small"
-                                onClick={() => {
-                                    setSelectedTabKey(t.name);
-                                    // If in data loader view, go back to table view
-                                    if (selectedDataLoader !== "") {
-                                        setSelectedDataLoader("");
-                                    }
-                                }}
-                                sx={{
-                                    textTransform: "none",
-                                    width: '100%',
-                                    maxWidth: '100%',
-                                    justifyContent: 'flex-start',
-                                    textAlign: 'left',
-                                    borderRadius: 0,
-                                    py: 0.5,
-                                    px: 2,
-                                    color: (selectedTabKey === t.name && selectedDataLoader === "") ? 'primary.main' : 'text.secondary',
-                                    backgroundColor: 'transparent',
-                                    borderRight: (selectedTabKey === t.name && selectedDataLoader === "") ? 2 : 0,
-                                    borderColor: 'primary.main',
-                                    minWidth: 0,
-                                    '&:hover': {
-                                        backgroundColor: (selectedTabKey === t.name && selectedDataLoader === "") ? 'primary.100' : 'primary.50'
-                                    }
-                                }}
-                                startIcon={<ViewIcon />}
-                            >
-                                <Typography 
-                                    fontSize='inherit'
-                                    sx={{
-                                        flex: 1,
-                                        minWidth: 0,
-                                        textAlign: 'left', 
-                                        textOverflow: 'ellipsis', 
-                                        overflow: 'hidden', 
-                                        whiteSpace: 'nowrap',
-                                    }}>
-                                    {t.name}
-                                </Typography>
-                            </Button>
-                            );
-                        })}
-                    </Box>
-                </Collapse>
-            </Box>
-        )}
+                {dataLoaderType}
+            </Button>
+        ))}
     </Box>
 
-    let dataConnectorView = <Box sx={{ height: '100%', overflowY: 'auto', overflowX: 'hidden', p: 2, display: 'flex', flexDirection: 'column', minWidth: 0, overscrollBehavior: 'contain' }}>
+    let dataConnectorView = <Box sx={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, overflowY: 'auto', overflowX: 'hidden', p: 2, pb: 4, display: 'flex', flexDirection: 'column', minWidth: 0, overscrollBehavior: 'contain' }}>
 
-        
-        {/* File upload */}
-        {selectedDataLoader === 'file upload' && (
-            <Box>
-                {uploadFileButton(<Typography component="span" fontSize={18} textTransform="none">{isUploading ? 'uploading...' : 'upload a csv/tsv file to the local database'}</Typography>)} 
+        {/* Empty state when no loader selected */}
+        {selectedDataLoader === '' && (
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 1, color: 'text.disabled' }}>
+                <Typography variant="body2" sx={{ fontStyle: 'italic' }}>
+                    Select a data loader from the left panel
+                </Typography>
             </Box>
         )}
         
         {/* Data loader forms */}
         {dataLoaderMetadata && Object.entries(dataLoaderMetadata).map(([dataLoaderType, metadata]) => (
             selectedDataLoader === dataLoaderType && (
-                <Box key={`dataLoader:${dataLoaderType}`} sx={{ position: "relative", maxWidth: '100%' }}>
+                <Box key={`dataLoader:${dataLoaderType}`} sx={{ position: "relative", maxWidth: '100%', flexShrink: 0 }}>
                     <DataLoaderForm 
                         key={`data-loader-form-${dataLoaderType}`}
                         dataLoaderType={dataLoaderType} 
@@ -870,15 +327,9 @@ export const DBManagerPane: React.FC<{
                         }} 
                         onFinish={(status, message, importedTables) => {
                             setIsUploading(false);
-                            fetchTables().then(() => {
-                                // Switch back to tables view after import
-                                setSelectedDataLoader("");
-                                // Navigate to the first imported table after tables are fetched
-                                if (status === "success" && importedTables && importedTables.length > 0) {
-                                    setSelectedTabKey(importedTables[0]);
-                                }
-                            });
-                            if (status === "error") {
+                            if (status === "success") {
+                                onClose?.();
+                            } else {
                                 setSystemMessage(message, "error");
                             }
                         }} 
@@ -888,172 +339,11 @@ export const DBManagerPane: React.FC<{
         ))}
     </Box>;
 
-    let tableView = <Box sx={{ height: '100%', overflowY: 'auto', overflowX: 'hidden', p: 2, minWidth: 0, overscrollBehavior: 'contain' }}>
-        {/* Empty state */}
-        {selectedTabKey === '' && (
-            <Typography variant="caption" sx={{color: "text.secondary", px: 1}}>
-                The database is empty, refresh the table list or import some data to get started.
-            </Typography>
-        )}
-        
-        {/* Table content */}
-        {dbTables.map((t, i) => {
-            if (selectedTabKey !== t.name) return null;
-            
-            const currentTable = t;
-            
-            return (
-                <Box key={t.name} sx={{ maxWidth: '100%', overflowX: 'auto', display: 'flex', flexDirection: 'column', gap: 1 }}>
-                    <Box sx={{ px: 1, display: 'flex', alignItems: 'center' }}>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                            {currentTable.view_source ? <ViewIcon /> : <TableIcon />}
-                            <Typography component="span" sx={{fontSize: 16, fontWeight: "bold"}}>
-                                {currentTable.name}
-                            </Typography>
-                            <Typography component="span" sx={{fontSize: 12, color: 'text.secondary'}}>
-                                {currentTable.source_metadata && `imported from ${currentTable.source_metadata.data_loader_type}.${currentTable.source_metadata.source_table_name}`}
-                            </Typography>
-                        </Box>
-                        <Tooltip title="Drop Table">
-                            <IconButton 
-                                size="small" 
-                                color="error"
-                                sx={{ml: 'auto'}}
-                                onClick={() => handleDropTable(currentTable.name)}
-                                title="Drop Table"
-                            >
-                                <DeleteIcon fontSize="small" />
-                            </IconButton>
-                        </Tooltip>
-                    </Box>
-                    <Box sx={{ }}>
-                        <Card variant="outlined" sx={{ position: 'relative' }}>
-                            <CustomReactTable
-                                rows={currentTable.sample_rows.slice(0, 9).map((row: any) => {
-                                    return Object.fromEntries(
-                                        currentTable.columns.map((col) => [col.name, String(row[col.name] ?? '')])
-                                    );
-                                })}
-                                columnDefs={currentTable.columns.map((col) => ({
-                                    id: col.name,
-                                    label: col.name,
-                                    minWidth: 80
-                                }))}
-                                rowsPerPageNum={-1}
-                                compact={false}
-                                maxCellWidth={80}
-                                isIncompleteTable={currentTable.row_count > 10}
-                                maxHeight={340}
-                            />
-                        </Card>
-                        {currentTable.row_count > 10 && (
-                            <Box sx={{ px: 1, py: 0.5}}>
-                                <Typography variant="caption" sx={{ fontSize: 9, color: 'text.secondary', fontStyle: 'italic' }}>
-                                    Showing first 9 rows of {currentTable.row_count} total rows
-                                </Typography>
-                            </Box>
-                        )}
-                    </Box>
-                    {tables.some(t => t.id === currentTable.name) ? (
-                        <Box 
-                            sx={{
-                                ml: 'auto',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: 0.5,
-                                color: 'success.main',
-                                fontSize: '12px',
-                                fontWeight: 500
-                            }}
-                        >
-                            <CheckIcon sx={{ fontSize: 16 }} />
-                            <Typography sx={{ fontSize: 'inherit', color: 'inherit', fontWeight: 'inherit' }}>
-                                Loaded
-                            </Typography>
-                        </Box>
-                    ) : (
-                        <Box sx={{  display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 1, mt: 2 }}>
-                            {/* Watch settings - only show for tables that can be refreshed */}
-                            {currentTable.source_metadata && (
-                                <Paper variant="outlined" sx={{ px: 2, py: 1, borderRadius: 1 }}>
-                                    <Box sx={{ display: 'flex', flexDirection: 'row', gap: 1, alignItems: 'center', height: 24 }}>
-                                        <FormControlLabel
-                                            control={
-                                                <Switch
-                                                    checked={watchEnabled}
-                                                    onChange={(e) => setWatchEnabled(e.target.checked)}
-                                                    size="small"
-                                                />
-                                            }
-                                            label={
-                                                <Typography component="span" variant="body2" sx={{ fontWeight: 500 }}>
-                                                    Watch Mode
-                                                </Typography>
-                                            }
-                                        />
-                                        {watchEnabled ? (
-                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, }}>
-                                                <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.8rem' }}>
-                                                    check for updates every
-                                                </Typography>
-                                                {[
-                                                    { seconds: 10, label: '10s' },
-                                                    { seconds: 30, label: '30s' },
-                                                    { seconds: 60, label: '1m' },
-                                                    { seconds: 300, label: '5m' },
-                                                    { seconds: 600, label: '10m' },
-                                                    { seconds: 1800, label: '30m' },
-                                                    { seconds: 3600, label: '1h' },
-                                                    { seconds: 86400, label: '24h' },
-                                                ].map((opt) => (
-                                                    <Chip
-                                                        key={opt.seconds}
-                                                        label={opt.label}
-                                                        size="small"
-                                                        variant={watchInterval === opt.seconds ? 'filled' : 'outlined'}
-                                                        color={watchInterval === opt.seconds ? 'primary' : 'default'}
-                                                        onClick={() => setWatchInterval(opt.seconds)}
-                                                        sx={{ 
-                                                            cursor: 'pointer', 
-                                                            fontSize: '0.7rem',
-                                                            height: 24,
-                                                        }}
-                                                    />
-                                                ))}
-                                            </Box>
-                                        ) : <Typography component="span" variant="caption" color="text.secondary">
-                                            automatically check and refresh data from the database at regular intervals
-                                        </Typography>}
-                                    </Box>
-                                </Paper>
-                            )}
-                            <Button 
-                                variant="contained"
-                                sx={{ textTransform: 'none', ml: 'auto'}}
-                                disabled={isUploading || dbTables.length === 0 || dbTables.find(t => t.name === selectedTabKey) === undefined}
-                                onClick={() => {
-                                    let t = dbTables.find(t => t.name === selectedTabKey);
-                                    if (t) {
-                                        handleAddTableToDF(t, currentTable.source_metadata ? {
-                                            autoRefresh: watchEnabled,
-                                            refreshIntervalSeconds: watchInterval
-                                        } : undefined);
-                                    }
-                                }}>
-                                Load {watchEnabled? 'Live' : ''} Table
-                            </Button>
-                        </Box>
-                    )}
-                </Box>
-            );
-        })}
-    </Box>;
-
     let mainContent =  
         <Box sx={{ display: 'flex', flexDirection: 'column', bgcolor: 'white', flex: 1, overflow: 'hidden', height: '100%' }}>
             <Box sx={{ display: 'flex', flexDirection: 'row', flex: 1, overflow: 'hidden', minHeight: 0, height: '100%' }}>
                 {/* Button navigation - similar to TableSelectionView */}
-                <Box sx={{ display: 'flex', flexDirection: 'column', px: 1, width: 240, minWidth: 240, maxWidth: 240, overflow: 'hidden', height: '100%' }}>
+                <Box sx={{ display: 'flex', flexDirection: 'column', px: 0, width: 150, minWidth: 150, maxWidth: 150, overflow: 'hidden', height: '100%' }}>
                     <Box sx={{ 
                         display: 'flex',
                         flexDirection: 'column',
@@ -1069,51 +359,10 @@ export const DBManagerPane: React.FC<{
                         {/* Available Tables Section - always visible */}
                         {tableSelectionPanel}
                     </Box>
-                    {/* Reset Confirmation Popover */}
-                    <Popover
-                        open={Boolean(resetAnchorEl)}
-                        anchorEl={resetAnchorEl}
-                        onClose={() => setResetAnchorEl(null)}
-                        anchorOrigin={{
-                            vertical: 'bottom',
-                            horizontal: 'left',
-                        }}
-                        transformOrigin={{
-                            vertical: 'top',
-                            horizontal: 'left',
-                        }}
-                    >
-                        <Box sx={{ p: 1.5, width: '240px' }}>
-                            <Typography variant="body2" sx={{ mb: 1.5, fontSize: '12px' }}>
-                                Reset backend database and delete all tables? This cannot be undone.
-                            </Typography>
-                            <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end' }}>
-                                <Button
-                                    size="small"
-                                    onClick={() => setResetAnchorEl(null)}
-                                    sx={{ textTransform: 'none', fontSize: '12px', minWidth: 'auto', px: 0.75, py: 0.25, minHeight: '24px' }}
-                                >
-                                    Cancel
-                                </Button>
-                                <Button
-                                    size="small"
-                                    color="error"
-                                    variant="contained"
-                                    onClick={async () => {
-                                        setResetAnchorEl(null);
-                                        await handleDBReset();
-                                    }}
-                                    sx={{ textTransform: 'none', fontSize: '12px', minWidth: 'auto', px: 0.75, py: 0.25, minHeight: '24px' }}
-                                >
-                                    Reset
-                                </Button>
-                            </Box>
-                        </Box>
-                    </Popover>
                 </Box>
-                {/* Content area - show connector view if a connector is selected, otherwise show table view */}
+                {/* Content area - show selected data loader form */}
                 <Box sx={{ flex: 1, overflow: 'hidden', minWidth: 0, minHeight: 0, height: '100%', position: 'relative' }}>
-                    {selectedDataLoader !== "" ? dataConnectorView : tableView}
+                    {dataConnectorView}
                 </Box>
             </Box>
         </Box>  
@@ -1151,15 +400,19 @@ export const DataLoaderForm: React.FC<{
     onFinish: (status: "success" | "error", message: string, importedTables?: string[]) => void
 }> = ({dataLoaderType, paramDefs, authInstructions, onImport, onFinish}) => {
 
-    const dispatch = useDispatch();
+    const dispatch = useDispatch<AppDispatch>();
     const theme = useTheme();
     const params = useSelector((state: DataFormulatorState) => state.dataLoaderConnectParams[dataLoaderType] ?? {});
+    const frontendRowLimit = useSelector((state: DataFormulatorState) => state.config?.frontendRowLimit ?? 10000);
 
     const [tableMetadata, setTableMetadata] = useState<Record<string, any>>({});
     let [displaySamples, setDisplaySamples] = useState<Record<string, boolean>>({});
     let [tableFilter, setTableFilter] = useState<string>("");
     const [tableImportConfigs, setTableImportConfigs] = useState<Record<string, TableImportConfig>>({});
     const [subsetConfigAnchor, setSubsetConfigAnchor] = useState<{element: HTMLElement, tableName: string} | null>(null);
+    
+    // Store on server toggle for data loader imports
+    const [importStoreOnServer, setImportStoreOnServer] = useState<boolean>(true);
     
     // Helper to get import config for a table (defaults to 'none')
     const getTableConfig = (tableName: string): TableImportConfig => {
@@ -1490,69 +743,95 @@ export const DataLoaderForm: React.FC<{
                 );
             })()}
         </Popover>,
-        Object.keys(tableMetadata).length > 0 && <Box sx={{ display: 'flex', justifyContent: 'center', mt: 2}}>
+        Object.keys(tableMetadata).length > 0 && <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', mt: 2, gap: 1}}>
+            <Tooltip title={importStoreOnServer 
+                ? "Data will be stored on the server workspace (supports large tables)" 
+                : `Data stays in browser only (limited to ${frontendRowLimit.toLocaleString()} rows, like incognito mode)`}>
+                <FormControlLabel
+                    control={
+                        <Switch
+                            checked={importStoreOnServer}
+                            onChange={(e) => setImportStoreOnServer(e.target.checked)}
+                            size="small"
+                        />
+                    }
+                    label={
+                        <Typography variant="body2" sx={{ fontSize: '0.75rem', color: importStoreOnServer ? 'text.primary' : 'text.secondary' }}>
+                            {importStoreOnServer ? 'Store on server' : `Local only (≤${frontendRowLimit.toLocaleString()} rows)`}
+                        </Typography>
+                    }
+                />
+            </Tooltip>
             <Button 
                 variant="contained" 
-                color="secondary"
+                color="primary"
                 disabled={selectedTables.length === 0}
                 sx={{ textTransform: 'none' }}
                 onClick={() => {
                     const tablesToImport = selectedTables;
                     onImport();
                     
-                    // Import all selected tables sequentially
+                    // Import all selected tables using loadTable thunk
                     const importPromises = tablesToImport.map(tableName => {
                         const config = getTableConfig(tableName);
+                        const metadata = tableMetadata[tableName];
                         
                         // Build import options based on config
                         const importOptions: any = {};
                         if (config.mode === 'subset') {
-                            importOptions.row_limit = config.rowLimit;
+                            importOptions.rowLimit = config.rowLimit;
                             if (config.sortColumns.length > 0) {
-                                importOptions.sort_columns = config.sortColumns;
-                                importOptions.sort_order = config.sortOrder;
+                                importOptions.sortColumns = config.sortColumns;
+                                importOptions.sortOrder = config.sortOrder;
                             }
                         }
                         
-                        return fetchWithIdentity(getUrls().DATA_LOADER_INGEST_DATA, {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json',
+                        // Build a preliminary DictTable from the metadata
+                        const sampleRows = metadata?.sample_rows || [];
+                        const columns = metadata?.columns || [];
+                        const tableObj: DictTable = {
+                            id: tableName.split('.').pop() || tableName,
+                            displayId: tableName,
+                            names: columns.map((c: any) => c.name),
+                            metadata: columns.reduce((acc: Record<string, any>, col: any) => ({
+                                ...acc,
+                                [col.name]: { type: 'string' as any, semanticType: '', levels: [] }
+                            }), {}),
+                            rows: sampleRows,
+                            anchored: true,
+                            createdBy: 'user' as const,
+                            attachedMetadata: '',
+                            source: {
+                                type: 'database' as const,
+                                databaseTable: tableName,
+                                canRefresh: true,
+                                lastRefreshed: Date.now(),
                             },
-                            body: JSON.stringify({
-                                data_loader_type: dataLoaderType, 
-                                data_loader_params: params, 
-                                table_name: tableName,
-                                import_options: Object.keys(importOptions).length > 0 ? importOptions : undefined
-                            })
-                        }).then((response: Response) => response.json());
+                        };
+                        
+                        return dispatch(loadTable({
+                            table: tableObj,
+                            storeOnServer: importStoreOnServer,
+                            dataLoaderType,
+                            dataLoaderParams: params,
+                            sourceTableName: tableName,
+                            importOptions: Object.keys(importOptions).length > 0 ? importOptions : undefined,
+                        })).unwrap();
                     });
                     
                     Promise.all(importPromises)
                         .then(results => {
-                            const errors = results.filter(r => r.status !== "success");
-                            if (errors.length === 0) {
-                                setTableImportConfigs({});
-                                // Get the actual table names that were created (may be sanitized)
-                                const actualTableNames = results
-                                    .filter(r => r.status === "success" && r.table_name)
-                                    .map(r => r.table_name);
-                                // Fallback to original names if actual names not provided
-                                const finalTableNames = actualTableNames.length > 0 ? actualTableNames : tablesToImport;
-                                onFinish("success", `Successfully imported ${tablesToImport.length} table(s)`, finalTableNames);
-                            } else {
-                                // Backend returns 'message' field for errors
-                                const errorMessages = errors.map(e => e.message || e.error || 'Unknown error').filter(Boolean);
-                                onFinish("error", `Failed to import some tables: ${errorMessages.join(", ")}`);
-                            }
+                            setTableImportConfigs({});
+                            const tableNames = results.map(r => r.table.id);
+                            onFinish("success", `Successfully loaded ${tablesToImport.length} table(s)`, tableNames);
                         })
                         .catch(error => {
-                            console.error('Failed to ingest data:', error);
-                            onFinish("error", `Failed to ingest data: ${error}`);
+                            console.error('Failed to load data:', error);
+                            onFinish("error", `Failed to load data: ${error}`);
                         });
                 }}
             >
-                Import Selected Tables to Local DuckDB ({selectedTables.length})
+                Load Selected Tables ({selectedTables.length})
             </Button>
         </Box>
     ]
@@ -1560,7 +839,7 @@ export const DataLoaderForm: React.FC<{
     const isConnected = Object.keys(tableMetadata).length > 0;
 
     return (
-        <Box sx={{p: 0}}>
+        <Box sx={{p: 0, pb: 2}}>
             <Typography sx={{fontSize: 16, flex: 1}}>
                 Import tables from <Typography component="span" sx={{ fontSize: 'inherit', color: 'secondary.main', fontWeight: 'bold'}}>{dataLoaderType}</Typography>
             </Typography>
@@ -1573,111 +852,94 @@ export const DataLoaderForm: React.FC<{
             </Box>}
             {isConnected ? (
                 // Connected state: show connection parameters and disconnect button
-                <Box sx={{mt: 2}}>
-                    <Box sx={{mb: 2}}>
-                        <Box sx={{display: "flex", flexDirection: "row", alignItems: "center", gap: 1, mb: 2, flexWrap: "wrap"}}>
-                            <Box sx={{flex: 1, minWidth: 200, display: "flex", flexDirection: "row", alignItems: "center", gap: 1.5, flexWrap: "wrap"}}>
-                                {paramDefs.filter((paramDef) => params[paramDef.name]).map((paramDef, index) => (
-                                    <Box key={paramDef.name} sx={{display: "flex", alignItems: "center", gap: 0.5}}>
-                                        <Typography variant="body2" component="span" sx={{fontSize: 13, color: 'text.secondary', fontWeight: 500}}>
-                                            {paramDef.name}:
-                                        </Typography>
-                                        <Typography variant="body2" component="span" sx={{fontSize: 13, color: 'text.primary'}}>
-                                            {params[paramDef.name] || '(empty)'}
-                                        </Typography>
-                                        {index < paramDefs.filter((paramDef) => params[paramDef.name]).length - 1 && (
-                                            <Typography variant="body2" component="span" sx={{fontSize: 13, color: 'text.secondary', mx: 0.5}}>
-                                                •
-                                            </Typography>
-                                        )}
-                                    </Box>
-                                ))}
-                            </Box>
-                        </Box>
-                        <Box sx={{display: "flex", flexDirection: "row", gap: 1}}>
-                            <Box sx={{display: "flex", flexDirection: "row", alignItems: "center", gap: 1, width: "calc(40% - 1rem)"}}>
-                                <Box sx={{display: "flex", flexDirection: "row", alignItems: "center", gap: 0.5, minWidth: "70px"}}>
-                                    <SearchIcon sx={{ fontSize: 12, color: theme.palette.secondary.main }} />
-                                    <Typography 
-                                        sx={{
-                                            fontSize: 12,
-                                            fontWeight: 400,
-                                            color: theme.palette.secondary.main
-                                        }}
-                                    >
-                                        table filter
+                <Box sx={{mt: 1}}>
+                    <Box sx={{mb: 1.5}}>
+                        <Box sx={{display: "flex", flexDirection: "row", alignItems: "center", gap: 0.5, mb: 1.5, flexWrap: "wrap"}}>
+                            {paramDefs.filter((paramDef) => params[paramDef.name]).map((paramDef, index) => (
+                                <React.Fragment key={paramDef.name}>
+                                    <Typography variant="body2" component="span" sx={{fontSize: 11, color: 'text.secondary'}}>
+                                        {paramDef.name}:
                                     </Typography>
-                                </Box>
+                                    <Typography variant="body2" component="span" sx={{fontSize: 11, color: 'text.primary', fontWeight: 500, mr: 0.5}}>
+                                        {params[paramDef.name] || '(empty)'}
+                                    </Typography>
+                                    {index < paramDefs.filter((p) => params[p.name]).length - 1 && (
+                                        <Typography variant="body2" component="span" sx={{fontSize: 11, color: 'text.disabled', mr: 0.5}}>·</Typography>
+                                    )}
+                                </React.Fragment>
+                            ))}
+                        </Box>
+                        <Box sx={{display: "flex", flexDirection: "row", alignItems: "flex-end", gap: 1.5}}>
+                            <Box sx={{ display: "flex", flexDirection: "column", gap: 0.25, flex: 1, maxWidth: 300 }}>
+                                <Typography sx={{ fontSize: 11, fontWeight: 500, color: 'text.secondary', lineHeight: 1.3, display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                    <SearchIcon sx={{ fontSize: 11 }} /> table filter
+                                </Typography>
                                 <TextField
                                     sx={{
-                                        flex: 1,
-                                        '& .MuiInputBase-root': {fontSize: 12, height: '32px'},
-                                        '& .MuiInputBase-input': {fontSize: 12, py: 0.75},
+                                        '& .MuiInputBase-root': {fontSize: 12, height: '30px'},
+                                        '& .MuiInputBase-input': {fontSize: 12, py: 0.5, px: 1},
                                         '& .MuiInputBase-input::placeholder': {fontSize: 11, fontStyle: "italic"},
                                         '& .MuiOutlinedInput-root': {
-                                            '& fieldset': {borderColor: theme.palette.secondary.main},
-                                            '&:hover fieldset': {borderColor: theme.palette.secondary.dark},
+                                            '& fieldset': { borderColor: 'rgba(0,0,0,0.15)' },
                                         }
                                     }}
                                     variant="outlined"
                                     size="small"
-                                    color="secondary"
+                                    fullWidth
                                     autoComplete="off"
-                                    placeholder="load only tables containing keywords"
+                                    placeholder="filter tables by keyword"
                                     value={tableFilter}
                                     onChange={(event) => setTableFilter(event.target.value)}
                                 />
                             </Box>
-                            <Box sx={{display: "flex", flexDirection: "row", alignItems: "center", gap: 1}}>
-                                <Button
-                                    variant="outlined"
-                                    size="small"
-                                    sx={{textTransform: "none"}}
-                                    onClick={() => {
-                                        setIsConnecting(true);
-                                        fetchWithIdentity(getUrls().DATA_LOADER_LIST_TABLES, {
-                                            method: 'POST',
-                                            headers: {
-                                                'Content-Type': 'application/json',
-                                            },
-                                            body: JSON.stringify({
-                                                data_loader_type: dataLoaderType, 
-                                                data_loader_params: params,
-                                                table_filter: tableFilter.trim() || null
-                                            })
-                                        }).then((response: Response) => response.json())
-                                    .then((data: any) => {
-                                        if (data.status === "success") {
-                                            console.log(data.tables);
-                                            setTableMetadata(Object.fromEntries(data.tables.map((table: any) => {
-                                                return [table.name, table.metadata];
-                                            })));
-                                        } else {
-                                            console.error('Failed to fetch data loader tables: {}', data.message);
-                                            onFinish("error", `Failed to fetch data loader tables: ${data.message}`);
-                                        }
-                                        setIsConnecting(false);
-                                    })
-                                    .catch((error: any) => {
-                                        onFinish("error", `Failed to fetch data loader tables, please check the server is running`);
-                                        setIsConnecting(false);
-                                    });
-                                    }}
-                                >
-                                    Refresh
-                                </Button>
-                                <Button
-                                    variant="outlined"
-                                    size="small"
-                                    sx={{textTransform: "none"}}
-                                    onClick={() => {
-                                        setTableMetadata({});
-                                        setTableFilter("");
-                                    }}
-                                >
-                                    Disconnect
-                                </Button>
-                            </Box>
+                            <Button
+                                variant="outlined"
+                                size="small"
+                                sx={{textTransform: "none", height: 30, fontSize: 12}}
+                                onClick={() => {
+                                    setIsConnecting(true);
+                                    fetchWithIdentity(getUrls().DATA_LOADER_LIST_TABLES, {
+                                        method: 'POST',
+                                        headers: {
+                                            'Content-Type': 'application/json',
+                                        },
+                                        body: JSON.stringify({
+                                            data_loader_type: dataLoaderType, 
+                                            data_loader_params: params,
+                                            table_filter: tableFilter.trim() || null
+                                        })
+                                    }).then((response: Response) => response.json())
+                                .then((data: any) => {
+                                    if (data.status === "success") {
+                                        console.log(data.tables);
+                                        setTableMetadata(Object.fromEntries(data.tables.map((table: any) => {
+                                            return [table.name, table.metadata];
+                                        })));
+                                    } else {
+                                        console.error('Failed to fetch data loader tables: {}', data.message);
+                                        onFinish("error", `Failed to fetch data loader tables: ${data.message}`);
+                                    }
+                                    setIsConnecting(false);
+                                })
+                                .catch((error: any) => {
+                                    onFinish("error", `Failed to fetch data loader tables, please check the server is running`);
+                                    setIsConnecting(false);
+                                });
+                                }}
+                            >
+                                Refresh
+                            </Button>
+                            <Button
+                                variant="outlined"
+                                size="small"
+                                sx={{textTransform: "none", height: 30, fontSize: 12}}
+                                onClick={() => {
+                                    setTableMetadata({});
+                                    setTableFilter("");
+                                }}
+                            >
+                                Disconnect
+                            </Button>
                         </Box>
                     </Box>
                     
@@ -1686,33 +948,40 @@ export const DataLoaderForm: React.FC<{
             ) : (
                 // Not connected: show connection forms
                 <>
-                    <Box sx={{display: "flex", flexDirection: "row", flexWrap: "wrap", gap: 1, mt: 2}}>
+                    <Box sx={{
+                        display: "grid",
+                        gridTemplateColumns: "repeat(3, 1fr)",
+                        gap: 1.5,
+                        mt: 2,
+                    }}>
                         {paramDefs.map((paramDef) => (
-                            <Box key={paramDef.name} 
-                                sx={{display: "flex", flexDirection: "row", mr: 1,alignItems: "center", gap: 1, width: "calc(50% - 1rem)"}}>
+                            <Box key={paramDef.name} sx={{ display: "flex", flexDirection: "column", gap: 0.25 }}>
                                 <Typography 
                                     sx={{
-                                        minWidth: "70px",
-                                        fontSize: 12,
-                                        fontWeight: paramDef.required ? 500 : 400,
-                                        color: paramDef.required ? 'text.primary' : 'text.secondary'
+                                        fontSize: 11,
+                                        fontWeight: 500,
+                                        color: paramDef.required ? 'text.primary' : 'text.secondary',
+                                        lineHeight: 1.3,
                                     }}
                                 >
                                     {paramDef.name}
-                                    {paramDef.required && <span style={{color: 'red'}}> *</span>}
+                                    {paramDef.required && <span style={{color: '#d32f2f'}}> *</span>}
                                 </Typography>
                                 <TextField
                                     sx={{
-                                        flex: 1,
-                                        '& .MuiInputBase-root': {fontSize: 12, height: '32px'},
-                                        '& .MuiInputBase-input': {fontSize: 12, py: 0.75},
-                                        '& .MuiInputBase-input::placeholder': {fontSize: 11, fontStyle: "italic"}
+                                        '& .MuiInputBase-root': {fontSize: 12, height: '30px'},
+                                        '& .MuiInputBase-input': {fontSize: 12, py: 0.5, px: 1},
+                                        '& .MuiInputBase-input::placeholder': {fontSize: 11, fontStyle: "italic"},
+                                        '& .MuiOutlinedInput-root': {
+                                            '& fieldset': { borderColor: 'rgba(0,0,0,0.15)' },
+                                        }
                                     }}
                                     variant="outlined"
                                     size="small"
+                                    fullWidth
                                     required={paramDef.required}
                                     value={params[paramDef.name] ?? ''}
-                                    placeholder={paramDef.default ? `e.g. ${paramDef.default}` : paramDef.description}
+                                    placeholder={paramDef.default ? `${paramDef.default}` : paramDef.description || ''}
                                     onChange={(event: any) => { 
                                         dispatch(dfActions.updateDataLoaderConnectParam({
                                             dataLoaderType, paramName: paramDef.name, 
@@ -1721,35 +990,26 @@ export const DataLoaderForm: React.FC<{
                                 />
                             </Box>
                         ))}
-                        <Box sx={{display: "flex", flexDirection: "row", alignItems: "center", gap: 1, width: "calc(50% - 1rem)", mr: 1}}>
-                            <Box sx={{display: "flex", flexDirection: "row", alignItems: "center", gap: 0.5, minWidth: "70px"}}>
-                                <SearchIcon sx={{ fontSize: 12, color: theme.palette.secondary.main }} />
-                                <Typography 
-                                    sx={{
-                                        fontSize: 12,
-                                        fontWeight: 400,
-                                        color: theme.palette.secondary.main
-                                    }}
-                                >
-                                    table filter
-                                </Typography>
-                            </Box>
+                    </Box>
+                    <Box sx={{ display: "flex", flexDirection: "row", alignItems: "flex-end", gap: 1.5, mt: 2 }}>
+                        <Box sx={{ display: "flex", flexDirection: "column", gap: 0.25, flex: 1, maxWidth: 300 }}>
+                            <Typography sx={{ fontSize: 11, fontWeight: 500, color: 'text.secondary', lineHeight: 1.3, display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                <SearchIcon sx={{ fontSize: 11 }} /> table filter
+                            </Typography>
                             <TextField
                                 sx={{
-                                    flex: 1,
-                                    '& .MuiInputBase-root': {fontSize: 12, height: '32px'},
-                                    '& .MuiInputBase-input': {fontSize: 12, py: 0.75},
+                                    '& .MuiInputBase-root': {fontSize: 12, height: '30px'},
+                                    '& .MuiInputBase-input': {fontSize: 12, py: 0.5, px: 1},
                                     '& .MuiInputBase-input::placeholder': {fontSize: 11, fontStyle: "italic"},
                                     '& .MuiOutlinedInput-root': {
-                                        '& fieldset': {borderColor: theme.palette.secondary.main},
-                                        '&:hover fieldset': {borderColor: theme.palette.secondary.dark},
+                                        '& fieldset': { borderColor: 'rgba(0,0,0,0.15)' },
                                     }
                                 }}
                                 variant="outlined"
                                 size="small"
-                                color="secondary"
+                                fullWidth
                                 autoComplete="off"
-                                placeholder="load only tables containing keywords"
+                                placeholder="filter tables by keyword"
                                 value={tableFilter}
                                 onChange={(event) => setTableFilter(event.target.value)}
                             />
@@ -1758,7 +1018,8 @@ export const DataLoaderForm: React.FC<{
                             <Button 
                                 variant="contained"
                                 color="primary"
-                                sx={{textTransform: "none", minWidth: 120}}
+                                size="small"
+                                sx={{textTransform: "none", minWidth: 100, height: 30}}
                                 onClick={() => {
                                     setIsConnecting(true);
                                     fetchWithIdentity(getUrls().DATA_LOADER_LIST_TABLES, {
@@ -1789,18 +1050,16 @@ export const DataLoaderForm: React.FC<{
                                     setIsConnecting(false);
                                 });
                             }}>
-                                Connect {tableFilter.trim() ? "with filter" : ""}
+                                Connect{tableFilter.trim() ? " with filter" : ""}
                             </Button>}
                     </Box>
-                    <Box  sx={{display: "flex", flexDirection: "row", alignItems: "center", gap: 1, ml: 4, mt: 4}}>
-                        
-                    </Box>
-                    <Typography variant="body2" sx={{
-                        color: "text.secondary",
-                        fontSize: 12, overflowY: "auto", whiteSpace: "pre-wrap", p: 1}}>
-                        {authInstructions.trim()}
-                    </Typography>
-                </>
+                    {authInstructions.trim() && (
+                        <Typography variant="body2" sx={{
+                            color: "text.secondary",
+                            fontSize: 11, whiteSpace: "pre-wrap", mt: 2, lineHeight: 1.5}}>
+                            {authInstructions.trim()}
+                        </Typography>
+                    )}</>
             )}
         </Box>
     );

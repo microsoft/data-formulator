@@ -135,7 +135,8 @@ export const TriggerCard: FC<{
     trigger: Trigger, 
     hideFields?: boolean, 
     mini?: boolean,
-    sx?: SxProps<Theme>}> = function ({ className, trigger, hideFields, mini = false, sx }) {
+    highlighted?: boolean,
+    sx?: SxProps<Theme>}> = function ({ className, trigger, hideFields, mini = false, highlighted = false, sx }) {
 
     let theme = useTheme();
 
@@ -225,7 +226,7 @@ export const TriggerCard: FC<{
             px: 1,
             borderRadius: radius.sm,
             backgroundColor: theme.palette.custom.bgcolor,
-            border: `1px solid ${borderColor.component}`,
+            border: `1px solid ${highlighted ? theme.palette.custom.main : borderColor.component}`,
             '& .MuiChip-label': { px: 0.5, fontSize: "10px"},
             ...sx,
         }} 

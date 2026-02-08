@@ -12,6 +12,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { AppDispatch } from '../app/store';
 import { DataFormulatorState, dfActions, fetchFieldSemanticType } from '../app/dfSlice';
 import { createTableFromText } from '../data/utils';
+import { loadTable } from '../app/tableThunks';
 import { createOrderedThreadBlocks, DataLoadingInputBox, DataPreviewBox, SingleDataCleanThreadView } from './DataLoadingThread';
 
 
@@ -30,7 +31,7 @@ const getUniqueTableName = (baseName: string, existingNames: Set<string>): strin
     return uniqueName;
 };
 
-export const DataLoadingChat: React.FC = () => {
+export const DataLoadingChat: React.FC<{storeOnServer?: boolean}> = ({storeOnServer = true}) => {
     const theme = useTheme();
     const dispatch = useDispatch<AppDispatch>();
     const inputBoxRef = useRef<(() => void) | null>(null);
@@ -83,8 +84,8 @@ export const DataLoadingChat: React.FC = () => {
         const unique = getUniqueTableName(base, existingNames);
         const table = createTableFromText(unique, selectedTable.content.value, selectedTable.context);
         if (table) {
-            dispatch(dfActions.loadTable(table));
-            dispatch(fetchFieldSemanticType(table));
+            const tableWithSource = { ...table, source: { type: 'extract' as const } };
+            dispatch(loadTable({ table: tableWithSource, storeOnServer }));
         }
     };
 

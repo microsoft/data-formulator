@@ -346,7 +346,13 @@ const ResetDialog: React.FC = () => {
                 </DialogContent>
                 <DialogActions>
                     <Button 
-                        onClick={() => { 
+                        onClick={async () => { 
+                            // Clear workspace on server first
+                            try {
+                                await fetchWithIdentity(getUrls().RESET_DB_FILE, { method: 'POST' });
+                            } catch (e) {
+                                console.warn('Failed to reset server workspace:', e);
+                            }
                             dispatch(dfActions.resetState()); 
                             setOpen(false);
                             
@@ -376,11 +382,13 @@ const ConfigDialog: React.FC = () => {
 
     const [defaultChartWidth, setDefaultChartWidth] = useState(config.defaultChartWidth);
     const [defaultChartHeight, setDefaultChartHeight] = useState(config.defaultChartHeight);
+    const [frontendRowLimit, setFrontendRowLimit] = useState(config.frontendRowLimit);
 
     // Add check for changes
     const hasChanges = formulateTimeoutSeconds !== config.formulateTimeoutSeconds || 
                       defaultChartWidth !== config.defaultChartWidth ||
-                      defaultChartHeight !== config.defaultChartHeight;
+                      defaultChartHeight !== config.defaultChartHeight ||
+                      frontendRowLimit !== config.frontendRowLimit;
 
     return (
         <>
@@ -450,6 +458,35 @@ const ConfigDialog: React.FC = () => {
                                 />
                             </Box>
                         </Box>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                            <Box sx={{ flex: 1 }}>
+                                <TextField
+                                    label="local-only row limit"
+                                    type="number"
+                                    variant="outlined"
+                                    value={frontendRowLimit}
+                                    onChange={(e) => {
+                                        const value = parseInt(e.target.value);
+                                        setFrontendRowLimit(value);
+                                    }}
+                                    fullWidth
+                                    slotProps={{
+                                        input: {
+                                            inputProps: {
+                                                min: 100,
+                                                max: 1000000
+                                            }
+                                        }
+                                    }}
+                                    error={frontendRowLimit < 100 || frontendRowLimit > 1000000}
+                                    helperText={frontendRowLimit < 100 || frontendRowLimit > 1000000 ? 
+                                        "Value must be between 100 and 1,000,000 rows" : ""}
+                                />
+                                <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+                                    Maximum number of rows kept when loading data locally (not stored on server).
+                                </Typography>
+                            </Box>
+                        </Box>
                         <Divider><Typography variant="caption">Backend</Typography></Divider>
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                             <Box sx={{ flex: 1 }}>
@@ -483,15 +520,17 @@ const ConfigDialog: React.FC = () => {
                         setFormulateTimeoutSeconds(30);
                         setDefaultChartWidth(300);
                         setDefaultChartHeight(300);
+                        setFrontendRowLimit(10000);
                     }}>Reset to default</Button>
                     <Button onClick={() => setOpen(false)}>Cancel</Button>
                     <Button 
                         variant={hasChanges ? "contained" : "text"}
                         disabled={!hasChanges || isNaN(formulateTimeoutSeconds) || formulateTimeoutSeconds <= 0 || formulateTimeoutSeconds > 3600
                             || isNaN(defaultChartWidth) || defaultChartWidth <= 0 || defaultChartWidth > 1000
-                            || isNaN(defaultChartHeight) || defaultChartHeight <= 0 || defaultChartHeight > 1000}
+                            || isNaN(defaultChartHeight) || defaultChartHeight <= 0 || defaultChartHeight > 1000
+                            || isNaN(frontendRowLimit) || frontendRowLimit < 100 || frontendRowLimit > 1000000}
                         onClick={() => {
-                            dispatch(dfActions.setConfig({formulateTimeoutSeconds, defaultChartWidth, defaultChartHeight}));
+                            dispatch(dfActions.setConfig({formulateTimeoutSeconds, defaultChartWidth, defaultChartHeight, frontendRowLimit}));
                             setOpen(false);
                         }}
                     >

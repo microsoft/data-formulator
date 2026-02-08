@@ -36,6 +36,7 @@ import StreamIcon from '@mui/icons-material/Stream';
 import { useDispatch, useSelector } from 'react-redux';
 import { DataFormulatorState, dfActions, fetchFieldSemanticType } from '../app/dfSlice';
 import { AppDispatch } from '../app/store';
+import { loadTable } from '../app/tableThunks';
 import { DataSourceConfig, DictTable } from '../components/ComponentType';
 import { createTableFromFromObjectArray, createTableFromText, loadTextDataWrapper, loadBinaryDataWrapper } from '../data/utils';
 import { DataLoadingChat } from './DataLoadingChat';
@@ -465,11 +466,15 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
     const existingTables = useSelector((state: DataFormulatorState) => state.tables);
     const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
     const dataCleanBlocks = useSelector((state: DataFormulatorState) => state.dataCleanBlocks);
+    const frontendRowLimit = useSelector((state: DataFormulatorState) => state.config?.frontendRowLimit ?? 10000);
     const existingNames = new Set(existingTables.map(t => t.id));
 
     const [activeTab, setActiveTab] = useState<UploadTabType>(initialTab === 'menu' ? 'menu' : initialTab);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const urlInputRef = useRef<HTMLInputElement>(null);
+
+    // Store on server toggle (default: true, like normal browsing mode)
+    const [storeOnServer, setStoreOnServer] = useState<boolean>(true);
 
     // Paste tab state
     const [pasteContent, setPasteContent] = useState<string>("");
@@ -711,8 +716,11 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
         if (table) {
             const sourceConfig: DataSourceConfig = { type: 'file', fileName: filePreviewFiles[0]?.name };
             const tableWithSource = { ...table, source: sourceConfig };
-            dispatch(dfActions.loadTable(tableWithSource));
-            dispatch(fetchFieldSemanticType(tableWithSource));
+            dispatch(loadTable({
+                table: tableWithSource,
+                storeOnServer,
+                file: storeOnServer ? filePreviewFiles[filePreviewActiveIndex] || filePreviewFiles[0] : undefined,
+            }));
             handleClose();
         }
     };
@@ -725,8 +733,11 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
             const table = filePreviewTables[i];
             const sourceConfig: DataSourceConfig = { type: 'file', fileName: filePreviewFiles[i]?.name || filePreviewFiles[0]?.name };
             const tableWithSource = { ...table, source: sourceConfig };
-            dispatch(dfActions.loadTable(tableWithSource));
-            dispatch(fetchFieldSemanticType(tableWithSource));
+            dispatch(loadTable({
+                table: tableWithSource,
+                storeOnServer,
+                file: storeOnServer ? filePreviewFiles[i] || filePreviewFiles[0] : undefined,
+            }));
         }
         handleClose();
     };
@@ -784,8 +795,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
         if (table) {
             // Add source info for paste data
             const tableWithSource = { ...table, source: { type: 'paste' as const } };
-            dispatch(dfActions.loadTable(tableWithSource));
-            dispatch(fetchFieldSemanticType(tableWithSource));
+            dispatch(loadTable({ table: tableWithSource, storeOnServer }));
             handleClose();
         }
     };
@@ -883,8 +893,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                 sourceConfig = { type: 'url', url: tableURL };
             }
             const tableWithSource = { ...table, source: sourceConfig };
-            dispatch(dfActions.loadTable(tableWithSource));
-            dispatch(fetchFieldSemanticType(tableWithSource));
+            dispatch(loadTable({ table: tableWithSource, storeOnServer }));
             handleClose();
         }
     };
@@ -908,8 +917,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                 sourceConfig = { type: 'url', url: tableURL };
             }
             const tableWithSource = { ...table, source: sourceConfig };
-            dispatch(dfActions.loadTable(tableWithSource));
-            dispatch(fetchFieldSemanticType(tableWithSource));
+            dispatch(loadTable({ table: tableWithSource, storeOnServer }));
         }
         handleClose();
     };
@@ -993,8 +1001,29 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                         </IconButton>
                     </Tooltip>
                 )}
+                {activeTab !== 'menu' && activeTab !== 'database' && (
+                    <Tooltip title={storeOnServer 
+                        ? "Data will be stored on the server workspace (supports large tables)" 
+                        : `Data stays in browser only (limited to ${frontendRowLimit.toLocaleString()} rows, like incognito mode)`}>
+                        <FormControlLabel
+                            sx={{ ml: 'auto', mr: 0 }}
+                            control={
+                                <Switch
+                                    checked={storeOnServer}
+                                    onChange={(e) => setStoreOnServer(e.target.checked)}
+                                    size="small"
+                                />
+                            }
+                            label={
+                                <Typography variant="body2" sx={{ fontSize: '0.75rem', color: storeOnServer ? 'text.primary' : 'warning.main' }}>
+                                    {storeOnServer ? 'Store on server' : `Local only (≤${frontendRowLimit.toLocaleString()} rows)`}
+                                </Typography>
+                            }
+                        />
+                    </Tooltip>
+                )}
                 <IconButton
-                    sx={{ marginLeft: 'auto' }}
+                    sx={{ marginLeft: activeTab === 'menu' || activeTab === 'database' ? 'auto' : undefined }}
                     size="small"
                     onClick={handleClose}
                     aria-label="close"
@@ -1459,13 +1488,13 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                             </Typography>
                         </Box>
                     ) : (
-                        <DBManagerPane />
+                        <DBManagerPane onClose={handleClose} />
                     )}
                 </TabPanel>
 
                 {/* Extract Data Tab */}
                 <TabPanel value={activeTab} index="extract">
-                    <DataLoadingChat />
+                    <DataLoadingChat storeOnServer={storeOnServer} />
                 </TabPanel>
 
                 {/* Explore Sample Datasets Tab */}
@@ -1509,8 +1538,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                                 // Regular example data
                                                 dictTable.source = { type: 'example', url: table.url };
                                             }
-                                            dispatch(dfActions.loadTable(dictTable));
-                                            dispatch(fetchFieldSemanticType(dictTable));
+                                            dispatch(loadTable({ table: dictTable, storeOnServer }));
                                         }
                                     });
                             }

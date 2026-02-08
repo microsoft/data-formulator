@@ -60,6 +60,7 @@ export interface ClientConfig {
     formulateTimeoutSeconds: number;
     defaultChartWidth: number;
     defaultChartHeight: number;
+    frontendRowLimit: number; // max rows to keep in browser when loading locally (non-virtual)
 }
 
 export interface GeneratedReport {
@@ -167,6 +168,7 @@ const initialState: DataFormulatorState = {
         formulateTimeoutSeconds: 60,
         defaultChartWidth: 300,
         defaultChartHeight: 300,
+        frontendRowLimit: 10000,
     },
 
     dataLoaderConnectParams: {},
@@ -452,7 +454,7 @@ export const dataFormulatorSlice = createSlice({
                 {id: id, status, message}
             ];
         },
-        loadTable: (state, action: PayloadAction<DictTable>) => {
+        addTableToStore: (state, action: PayloadAction<DictTable>) => {
             let table = action.payload;
             // Compute content hash if not already set
             if (!table.contentHash) {
