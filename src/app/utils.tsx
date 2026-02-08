@@ -1082,7 +1082,8 @@ export const assembleVegaChart = (
     }
 
     // Apply custom projection for map charts
-    if (chartType.toLowerCase().includes('map')) {
+    const isMapChart = /\bmap\b/i.test(chartType);
+    if (isMapChart) {
         // Update projection in all layers
         if (vgObj.layer && Array.isArray(vgObj.layer)) {
             for (const layer of vgObj.layer) {
