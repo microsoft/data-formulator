@@ -310,7 +310,9 @@ const VegaChartRenderer: FC<{
             true, 
             chartWidth, 
             chartHeight,
-            true
+            true,
+            chart.projection,
+            chart.projectionCenter
         );
 
         // Use "canvas" renderer for Vega charts instead of "svg".
@@ -324,7 +326,7 @@ const VegaChartRenderer: FC<{
             //console.error('Chart rendering error:', error);
         });
 
-    }, [chart.id, chart.chartType, chart.encodingMap, conceptShelfItems, visTableRows, tableMetadata, chartWidth, chartHeight, scaleFactor, chartUnavailable]);
+    }, [chart.id, chart.chartType, chart.encodingMap, chart.projection, chart.projectionCenter, conceptShelfItems, visTableRows, tableMetadata, chartWidth, chartHeight, scaleFactor, chartUnavailable]);
 
     if (chart.chartType === "Auto") {
         return <Box sx={{ position: "relative", display: "flex", flexDirection: "column", margin: 'auto', color: 'darkgray' }}>

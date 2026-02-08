@@ -414,7 +414,9 @@ export const assembleVegaChart = (
     aggrPreprocessed: boolean = false, // whether the data has been preprocessed for aggregation and binning
     defaultChartWidth: number = 100,
     defaultChartHeight: number = 80,
-    addTooltips: boolean = false
+    addTooltips: boolean = false,
+    projection?: string, // for map charts
+    projectionCenter?: [number, number] // [longitude, latitude] for map projection center
 ) => {
 
     if (chartType == "Table") {
@@ -1077,6 +1079,37 @@ export const assembleVegaChart = (
             vgObj.config = {};
         }
         vgObj.config.mark = { ...vgObj.config.mark, tooltip: true };
+    }
+
+    // Apply custom projection for map charts
+    if (chartType.toLowerCase().includes('map')) {
+        // Update projection in all layers
+        if (vgObj.layer && Array.isArray(vgObj.layer)) {
+            for (const layer of vgObj.layer) {
+                if (layer.projection) {
+                    if (projection && projection !== 'default') {
+                        layer.projection.type = projection;
+                    }
+                    if (projectionCenter) {
+                        layer.projection.center = projectionCenter;
+                        // When center is set, need to specify scale and disable fit
+                        layer.projection.scale = 150;
+                        layer.projection.translate = [300, 175]; // half of width/height (600x350)
+                    }
+                }
+            }
+        }
+        // Also update root-level projection if exists
+        if (vgObj.projection) {
+            if (projection && projection !== 'default') {
+                vgObj.projection.type = projection;
+            }
+            if (projectionCenter) {
+                vgObj.projection.center = projectionCenter;
+                vgObj.projection.scale = 150;
+                vgObj.projection.translate = [300, 175];
+            }
+        }
     }
 
     return {...vgObj, data: {values: values}}
