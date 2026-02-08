@@ -674,7 +674,7 @@ const mapCharts: ChartTemplate[] = [
                     if (projectionCenter) {
                         obj.projection.center = projectionCenter;
                         obj.projection.scale = 150;
-                        obj.projection.translate = [300, 175];
+                        obj.projection.translate = [(vgSpec.width || 600) / 2, (vgSpec.height || 350) / 2];
                     }
                 }
             };

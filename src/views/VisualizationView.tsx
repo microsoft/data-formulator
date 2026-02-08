@@ -39,7 +39,6 @@ import { borderColor } from '../app/tokens';
 
 import ButtonGroup from '@mui/material/ButtonGroup';
 
-import embed from 'vega-embed';
 
 import '../scss/VisualizationView.scss';
 import { useDispatch, useSelector } from 'react-redux';
@@ -61,6 +60,8 @@ import ZoomOutIcon from '@mui/icons-material/ZoomOut';
 import TextSnippetIcon from '@mui/icons-material/TextSnippet';
 import InfoIcon from '@mui/icons-material/Info';
 import CasinoIcon from '@mui/icons-material/Casino';
+import SaveAltIcon from '@mui/icons-material/SaveAlt';
+import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 
 import { CHART_TEMPLATES, getChartTemplate } from '../components/ChartTemplates';
 
@@ -279,7 +280,7 @@ export let SampleSizeEditor: FC<{
     </Box>
 }
 
-// Simple component that only handles Vega chart rendering
+// Simple component that only handles Vega chart rendering — now uses headless toSVG()
 const VegaChartRenderer: FC<{
     chart: Chart;
     conceptShelfItems: FieldItem[];
@@ -291,16 +292,18 @@ const VegaChartRenderer: FC<{
     chartUnavailable: boolean;
 }> = React.memo(({ chart, conceptShelfItems, visTableRows, tableMetadata, chartWidth, chartHeight, scaleFactor, chartUnavailable }) => {
     
-    const elementId = `focused-chart-element-${chart.id}`;
-    
+    const [svgContent, setSvgContent] = useState<string | null>(null);
+    const [assembledSpec, setAssembledSpec] = useState<any>(null);
+
     useEffect(() => {
         
         if (chart.chartType === "Auto" || chart.chartType === "Table" || chartUnavailable) {
+            setSvgContent(null);
+            setAssembledSpec(null);
             return;
         }
 
-
-        const assembledChart = assembleVegaChart(
+        const spec = assembleVegaChart(
             chart.chartType, 
             chart.encodingMap, 
             conceptShelfItems, 
@@ -314,18 +317,77 @@ const VegaChartRenderer: FC<{
             chart.config
         );
 
-        // Use "canvas" renderer for Vega charts instead of "svg".
-        // Reason: Canvas provides better performance for large datasets and complex charts,
-        // and avoids some SVG rendering issues in certain browsers. Note that this may affect
-        // accessibility and text selection. If SVG features are needed, consider reverting.
-        embed('#' + elementId, { ...assembledChart }, { actions: true, renderer: "canvas" })
-        .then(function (result) {
-            // any post-processing of the canvas can go here
-        }).catch((error) => {
-            //console.error('Chart rendering error:', error);
-        });
+        if (!spec || spec === "Table") {
+            setSvgContent(null);
+            setAssembledSpec(null);
+            return;
+        }
+
+        spec['background'] = 'white';
+        setAssembledSpec(spec);
+
+        // Headless render via Vega: compile VL → parse → View → toSVG()
+        let cancelled = false;
+        (async () => {
+            try {
+                const { compile: vlCompile } = await import('vega-lite');
+                const vega = await import('vega');
+                const vgSpec = vlCompile(spec as any).spec;
+                const runtime = vega.parse(vgSpec);
+                const view = new vega.View(runtime, { renderer: 'none' });
+                await view.runAsync();
+                const svg = await view.toSVG();
+                view.finalize();
+                if (!cancelled) {
+                    setSvgContent(svg);
+                }
+            } catch (err) {
+                console.warn('VegaChartRenderer: SVG render failed', err);
+                if (!cancelled) {
+                    setSvgContent(null);
+                }
+            }
+        })();
+
+        return () => { cancelled = true; };
 
     }, [chart.id, chart.chartType, chart.encodingMap, chart.config, conceptShelfItems, visTableRows, tableMetadata, chartWidth, chartHeight, scaleFactor, chartUnavailable]);
+
+    const handleSavePng = useCallback(async () => {
+        if (!assembledSpec) return;
+        try {
+            const { compile: vlCompile } = await import('vega-lite');
+            const vega = await import('vega');
+            const vgSpec = vlCompile(assembledSpec as any).spec;
+            const runtime = vega.parse(vgSpec);
+            const view = new vega.View(runtime, { renderer: 'none' });
+            await view.runAsync();
+            const pngUrl = await view.toImageURL('png', 2);
+            view.finalize();
+
+            // Trigger download
+            const link = document.createElement('a');
+            link.download = `${chart.chartType}-${chart.id}.png`;
+            link.href = pngUrl;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        } catch (err) {
+            console.error('Save PNG failed:', err);
+        }
+    }, [assembledSpec, chart.chartType, chart.id]);
+
+    const handleOpenInVegaEditor = useCallback(() => {
+        if (!assembledSpec) return;
+        // Copy spec to clipboard, then open Vega Editor
+        const editorUrl = 'https://vega.github.io/editor/';
+        navigator.clipboard.writeText(JSON.stringify(assembledSpec, null, 2)).then(() => {
+            window.open(editorUrl, '_blank');
+        }).catch(() => {
+            // Fallback: open editor even if clipboard fails
+            window.open(editorUrl, '_blank');
+        });
+    }, [assembledSpec]);
 
     if (chart.chartType === "Auto") {
         return <Box sx={{ position: "relative", display: "flex", flexDirection: "column", margin: 'auto', color: 'darkgray' }}>
@@ -346,7 +408,40 @@ const VegaChartRenderer: FC<{
         </Box>
     }
 
-    return <Box id={elementId} sx={{mx: 2}}></Box>;
+    return (
+        <Box sx={{ mx: 2, display: 'flex', flexDirection: 'column', alignItems: 'center', maxWidth: '100%', overflow: 'hidden' }}>
+            {svgContent ? (
+                <Box 
+                    dangerouslySetInnerHTML={{ __html: svgContent }}
+                    sx={{
+                        maxWidth: '100%',
+                        '& svg': { display: 'block', maxWidth: '100%', height: 'auto' },
+                    }}
+                />
+            ) : (
+                <Box sx={{ 
+                    width: chartWidth, height: chartHeight, 
+                    display: 'flex', alignItems: 'center', justifyContent: 'center' 
+                }}>
+                    {generateChartSkeleton(chartTemplate?.icon, 48, 48, 0.3)}
+                </Box>
+            )}
+            {svgContent && (
+                <Box sx={{ display: 'flex', gap: 0.5, mt: 0.5 }}>
+                    <Tooltip title="Save as PNG">
+                        <IconButton size="small" onClick={handleSavePng} sx={{ fontSize: 12, padding: '2px' }}>
+                            <SaveAltIcon sx={{ fontSize: 16 }} />
+                        </IconButton>
+                    </Tooltip>
+                    <Tooltip title="Copy spec & open Vega Editor">
+                        <IconButton size="small" onClick={handleOpenInVegaEditor} sx={{ fontSize: 12, padding: '2px' }}>
+                            <OpenInNewIcon sx={{ fontSize: 16 }} />
+                        </IconButton>
+                    </Tooltip>
+                </Box>
+            )}
+        </Box>
+    );
 });
 
 
@@ -384,11 +479,11 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
 
     // Reset local UI state when focused chart changes
     useEffect(() => {
-        setLocalScaleFactor(1);
         setCodeViewOpen(false);
         setCodeExplViewOpen(false);
         setConceptExplanationsOpen(false);
         setChatDialogOpen(false);
+        setLocalScaleFactor(1);
     }, [focusedChartId]);
 
     // Combined useEffect to scroll to exploration components when any of them open
@@ -846,8 +941,8 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
 
     let focusedElement = <Fade key={`fade-${focusedChart.id}-${dataVersion}-${focusedChart.chartType}-${JSON.stringify(focusedChart.encodingMap)}`} 
                             in={!isDataStale} timeout={600}>    
-                            <Box sx={{display: "flex", flexDirection: "column", flexShrink: 0, justifyContent: 'center', justifyItems: 'center'}} className="chart-box">
-                                <Box sx={{m: 'auto', minHeight: 240, overflow: "auto"}}>
+                            <Box sx={{display: "flex", flexDirection: "column", flexShrink: 0, justifyContent: 'center', justifyItems: 'center', maxWidth: '100%'}} className="chart-box">
+                                <Box sx={{m: 'auto', minHeight: 240, maxWidth: '100%', overflow: 'hidden'}}>
                                     <VegaChartRenderer
                                         key={focusedChart.id}
                                         chart={focusedChart}
@@ -856,7 +951,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                                         tableMetadata={table.metadata}
                                         chartWidth={Math.round(config.defaultChartWidth * localScaleFactor)}
                                         chartHeight={Math.round(config.defaultChartHeight * localScaleFactor)}
-                                        scaleFactor={1}
+                                        scaleFactor={localScaleFactor}
                                         chartUnavailable={chartUnavailable}
                                     />
                                 </Box>
@@ -955,7 +1050,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
         <Tooltip key="zoom-out-tooltip" title="zoom out">
             <span>
                 <IconButton color="primary" size='small' disabled={localScaleFactor <= scaleMin} onClick={() => {
-                    setLocalScaleFactor(prev => Math.max(scaleMin, prev - 0.1));
+                    setLocalScaleFactor(s => Math.max(scaleMin, Math.round((s - 0.1) * 10) / 10));
                 }}>
                     <ZoomOutIcon fontSize="small" />
                 </IconButton>
@@ -968,7 +1063,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
         <Tooltip key="zoom-in-tooltip" title="zoom in">
             <span>
                 <IconButton color="primary" size='small' disabled={localScaleFactor >= scaleMax} onClick={() => {
-                    setLocalScaleFactor(prev => Math.min(scaleMax, prev + 0.1));
+                    setLocalScaleFactor(s => Math.min(scaleMax, Math.round((s + 0.1) * 10) / 10));
                 }}>
                     <ZoomInIcon fontSize="small" />
                 </IconButton>

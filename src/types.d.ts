@@ -8,3 +8,7 @@ declare module "prettier";
 declare module "prettier/parser-babel";
 
 declare module "vm-browserify";
+
+declare module "vega-lite" {
+    export function compile(spec: any, options?: any): { spec: any };
+}

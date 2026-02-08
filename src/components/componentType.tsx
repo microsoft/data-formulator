@@ -197,6 +197,7 @@ export type Chart = {
     source: "user" | "trigger",
     unread: boolean,
     config?: Record<string, any>,  // additional chart config properties defined by the chart template's configProperties
+    thumbnail?: string,  // PNG data URL for thumbnail display (managed by ChartRenderService, not persisted)
 }
 
 export let duplicateChart = (chart: Chart) : Chart => {

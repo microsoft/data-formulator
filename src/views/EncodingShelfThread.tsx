@@ -22,9 +22,8 @@ import { Chart, Trigger } from "../components/ComponentType";
 import '../scss/EncodingShelf.scss';
 import { DictTable } from "../components/ComponentType";
 import { Type } from '../data/types';
-import embed from 'vega-embed';
 
-import { getTriggers, assembleVegaChart } from '../app/utils';
+import { getTriggers } from '../app/utils';
 
 import { getChartTemplate } from '../components/ChartTemplates';
 import { checkChartAvailability, generateChartSkeleton } from './VisualizationView';
@@ -52,7 +51,6 @@ export let ChartElementFC: FC<{
     boxWidth?: number, boxHeight?: number}> = function({chart, tableRows, tableMetadata, boxWidth, boxHeight}) {
 
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
-    const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
 
     let WIDTH = boxWidth || 120;
     let HEIGHT = boxHeight || 80;
@@ -73,83 +71,27 @@ export let ChartElementFC: FC<{
         </Box>
     } 
 
-    // if (chart.chartType == "Table") {
-    //     return renderTableChart(chart, conceptShelfItems, tableRows);
-    // }
-
-    // prepare the chart to be rendered
-    let assembledChart = assembleVegaChart(chart.chartType, chart.encodingMap, conceptShelfItems, tableRows, tableMetadata, 20, false, 100, 80, false, chart.config);
-    assembledChart["background"] = "transparent";
-    // chart["autosize"] = {
-    //     "type": "fit",
-    //     "contains": "padding"
-    // };
-
-    const id = `chart-thumbnail-${chart.id}-${(Math.random() + 1).toString(36).substring(7)}`;
-    const element = <Box id={id} sx={{ margin: "auto", backgroundColor: chart.saved ? "rgba(255,215,0,0.05)" : "white" }}></Box>;
-
-    // Temporary fix, down sample the dataset
-    if (assembledChart["data"]["values"].length > serverConfig.MAX_DISPLAY_ROWS) {
-        let values = assembledChart["data"]["values"];
-        assembledChart = (({ data, ...o }) => o)(assembledChart);
-
-        let getRandom = (seed: number) => {
-            let x = Math.sin(seed++) * 10000;
-            return x - Math.floor(x);
-        }
-        let getRandomSubarray = (arr: any[], size: number) => {
-            let shuffled = arr.slice(0), i = arr.length, temp, index;
-            while (i--) {
-                index = Math.floor((i + 1) * getRandom(233 * i + 888));
-                temp = shuffled[index];
-                shuffled[index] = shuffled[i];
-                shuffled[i] = temp;
-            }
-            return shuffled.slice(0, size);
-        }
-        assembledChart["data"] = { "values": getRandomSubarray(values, serverConfig.MAX_DISPLAY_ROWS) };
+    // Use cached thumbnail from ChartRenderService when available
+    if (chart.thumbnail) {
+        return (
+            <Box sx={{ margin: "auto", display: 'flex', justifyContent: 'center', alignItems: 'center',
+                       backgroundColor: chart.saved ? "rgba(255,215,0,0.05)" : "white" }}>
+                <img 
+                    src={chart.thumbnail} 
+                    alt={`${chart.chartType} chart`}
+                    style={{ maxWidth: WIDTH, maxHeight: HEIGHT, objectFit: 'contain' }} 
+                />
+            </Box>
+        );
     }
 
-    assembledChart['config'] = {
-        "axis": {"labelLimit": 30}
-    }
-
-    embed('#' + id, assembledChart, { actions: false, renderer: "canvas" }).then(function (result) {
-        // Access the Vega view instance (https://vega.github.io/vega/docs/api/view/) as result.view
-        if (result.view.container()?.getElementsByTagName("canvas")) {
-            let comp = result.view.container()?.getElementsByTagName("canvas")[0];
-
-            // Doesn't seem like width & height are actual numbers here on Edge bug
-            // let width = parseInt(comp?.style.width as string);
-            // let height = parseInt(comp?.style.height as string);
-            if (comp) {
-                const { width, height } = comp.getBoundingClientRect();
-                //console.log(`THUMB: width = ${width} height = ${height}`);
-
-                if (width > WIDTH || height > HEIGHT) {
-                    let ratio = width / height;
-                    let fixedWidth = width;
-                    if (ratio * HEIGHT < width) {
-                        fixedWidth = ratio * HEIGHT;
-                    }
-                    if (fixedWidth > WIDTH) {
-                        fixedWidth = WIDTH;
-                    }
-                    //console.log("THUMB: width or height are oversized");
-                    //console.log(`THUMB: new width = ${fixedWidth}px height = ${fixedWidth / ratio}px`)
-                    comp?.setAttribute("style", 
-                        `max-width: ${WIDTH}px; max-height: ${HEIGHT}px; width: ${Math.round(fixedWidth)}px; height: ${Math.round(fixedWidth / ratio)}px; `);
-                }
-            } else {
-                console.log("THUMB: Could not get Canvas HTML5 element")
-            }
-        }
-    }).catch((reason) => {
-        // console.log(reason)
-        // console.error(reason)
-    });
-
-    return element;
+    // Fallback: skeleton while ChartRenderService is processing
+    return (
+        <Box sx={{ margin: "auto", display: 'flex', justifyContent: 'center', alignItems: 'center',
+                   width: WIDTH, height: HEIGHT }}>
+            {generateChartSkeleton(chartTemplate?.icon, 48, 48, 0.3)}
+        </Box>
+    );
 }
 
 export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ chartId }) {

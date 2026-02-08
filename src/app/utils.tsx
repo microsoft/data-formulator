@@ -782,7 +782,10 @@ export const assembleVegaChart = (
     }
 
     // by default, we allow strech width twice and fit as many bars as possible with minStepSize
-    let defaultStepSize = 20;
+    // Scale step size proportionally when chart is resized (base reference: 300px)
+    let baseRefSize = 300;
+    let sizeRatio = Math.max(defaultChartWidth, defaultChartHeight) / baseRefSize;
+    let defaultStepSize = Math.round(20 * Math.max(1, sizeRatio));
     let maxXYToKeep = Math.min(defaultChartWidth * 2 / defaultStepSize, 48);
 
     // Decide what are top values to keep for each channel
@@ -1068,6 +1071,17 @@ export const assembleVegaChart = (
         "axisX": {"labelLimit": 100, "labelFontSize": stepSize <= 10 ? stepSize : 10},
         "axisY": {"labelFontSize": stepSize <= 10 ? stepSize : 10},
     }
+
+    // Scale hardcoded template width/height (e.g. map charts) proportionally to requested dimensions
+    if (typeof vgObj['width'] === 'number') {
+        const ratio = defaultChartWidth / (chartTemplate.template.width || defaultChartWidth);
+        vgObj['width'] = Math.round(vgObj['width'] * ratio);
+    }
+    if (typeof vgObj['height'] === 'number') {
+        const ratio = defaultChartHeight / (chartTemplate.template.height || defaultChartHeight);
+        vgObj['height'] = Math.round(vgObj['height'] * ratio);
+    }
+
     if (totalFacets > 6) {
         vgObj['config']['header'] = { labelLimit: 120, labelFontSize: 9 };
     }

@@ -729,6 +729,12 @@ export const dataFormulatorSlice = createSlice({
                 }
             }
         },
+        updateChartThumbnail: (state, action: PayloadAction<{chartId: string, thumbnail: string}>) => {
+            let chart = dfSelectors.getAllCharts(state).find(c => c.id == action.payload.chartId);
+            if (chart) {
+                chart.thumbnail = action.payload.thumbnail;
+            }
+        },
         updateChartEncoding: (state, action: PayloadAction<{chartId: string, channel: Channel, encoding: EncodingItem}>) => {
             let chartId = action.payload.chartId;
             let channel = action.payload.channel;

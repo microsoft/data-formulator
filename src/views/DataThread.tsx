@@ -27,13 +27,12 @@ import {
     FormControlLabel,
 } from '@mui/material';
 
-import { VegaLite } from 'react-vega'
 
 import '../scss/VisualizationView.scss';
 import { batch, useDispatch, useSelector } from 'react-redux';
 import { DataFormulatorState, dfActions, SSEMessage } from '../app/dfSlice';
-import { assembleVegaChart, getTriggers, prepVisTable } from '../app/utils';
-import { Chart, DictTable, EncodingItem, FieldItem, Trigger } from "../components/ComponentType";
+import { getTriggers } from '../app/utils';
+import { Chart, DictTable, Trigger } from "../components/ComponentType";
 
 import DeleteIcon from '@mui/icons-material/Delete';
 import StarIcon from '@mui/icons-material/Star';
@@ -1295,83 +1294,14 @@ let SingleThreadGroupView: FC<{
     </Box>
     }
 
-const VegaLiteChartElement = memo<{
-    chart: Chart,
-    assembledSpec: any,
-    table: any,
-    status: 'available' | 'pending' | 'unavailable',
-    isSaved?: boolean,
-    onChartClick: (chartId: string, tableId: string) => void,
-    onDelete: (chartId: string) => void
-}>(({ chart, assembledSpec, table, status, isSaved, onChartClick, onDelete }) => {
-    const id = `data-thread-chart-Element-${chart.id}`;
-    return (
-        <Box
-            onClick={() => onChartClick(chart.id, table.id)}
-            className="vega-thumbnail-box"
-            style={{ width: "100%", position: "relative", cursor: "pointer !important" }}
-        >
-            <Box sx={{ margin: "auto" }}>
-                {isSaved && <Typography sx={{ position: "absolute", margin: "5px", zIndex: 2 }}>
-                    <StarIcon sx={{ color: "gold" }} fontSize="small" />
-                </Typography>}
-                {status == 'pending' && <Box sx={{
-                    position: "absolute", height: "100%", width: "100%", zIndex: 20,
-                    backgroundColor: "rgba(243, 243, 243, 0.8)", display: "flex", alignItems: "center", cursor: "pointer"
-                }}>
-                    <LinearProgress sx={{ width: "100%", height: "100%", opacity: 0.05 }} />
-                </Box>}
-                <Box className='data-thread-chart-card-action-button'
-                    sx={{ zIndex: 10, color: 'blue', position: "absolute", right: 1, background: 'rgba(255, 255, 255, 0.95)' }}>
-                    <Tooltip title="delete chart">
-                        <IconButton 
-                            size="small" 
-                            color="warning" 
-                            onClick={(event) => {
-                                event.stopPropagation();
-                                onDelete(chart.id);
-                            }}
-                        >
-                            <DeleteIcon fontSize="small" />
-                        </IconButton>
-                    </Tooltip>
-                </Box>
-                <Box className={"vega-thumbnail"}
-                    id={id}
-                    sx={{
-                        display: "flex",
-                        backgroundColor: isSaved ? "rgba(255,215,0,0.05)" : "white",
-                        '& .vega-embed': { margin: 'auto' },
-                        '& canvas': { width: 'auto !important', height: 'auto !important', maxWidth: 120, maxHeight: 100 }
-                    }}
-                >
-                    <VegaLite spec={assembledSpec} actions={false} />
-                </Box>
-            </Box>
-        </Box>
-    );
-});
-
-const MemoizedChartObject = memo<{
+/** Lightweight chart thumbnail — shows cached PNG, skeleton, or status icon. */
+const ChartThumbnail: FC<{
     chart: Chart;
     table: DictTable;
-    conceptShelfItems: FieldItem[];
     status: 'available' | 'pending' | 'unavailable';
     onChartClick: (chartId: string, tableId: string) => void;
     onDelete: (chartId: string) => void;
-}>(({ chart, table, conceptShelfItems, status, onChartClick, onDelete }) => {
-    
-    const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
-
-    let visTableRows: any[] = [];
-    if (table.rows.length > 1000) {
-        visTableRows = structuredClone(_.sampleSize(table.rows, 1000));
-    } else {
-        visTableRows = structuredClone(table.rows);
-    }
-
-    // Preprocess the data for aggregations (same as VisualizationView)
-    visTableRows = prepVisTable(visTableRows, conceptShelfItems, chart.encodingMap);
+}> = ({ chart, table, status, onChartClick, onDelete }) => {
 
     let deleteButton = <Box className='data-thread-chart-card-action-button'
         sx={{ zIndex: 10, color: 'blue', position: "absolute", right: 1, background: 'rgba(255, 255, 255, 0.95)' }}>
@@ -1383,39 +1313,31 @@ const MemoizedChartObject = memo<{
         </Tooltip>
     </Box>
 
+    const pendingOverlay = status == 'pending' ? <Box sx={{
+        position: "absolute", height: "100%", width: "100%", zIndex: 20,
+        backgroundColor: "rgba(243, 243, 243, 0.8)", display: "flex", alignItems: "center", cursor: "pointer"
+    }}>
+        <LinearProgress sx={{ width: "100%", height: "100%", opacity: 0.05 }} />
+    </Box> : null;
+
     if (['Auto', '?'].includes(chart.chartType)) {
-        let element = <Box 
+        return <Box 
             className="vega-thumbnail-box"
             onClick={() => onChartClick(chart.id, table.id)}
             sx={{ width: "100%", color: 'text.secondary', height: 48, display: "flex", backgroundColor: "white", position: 'relative', flexDirection: "column" }}>
-            {status == 'pending' ? <Box sx={{
-                position: "absolute", height: "100%", width: "100%", zIndex: 20,
-                backgroundColor:  "rgba(243, 243, 243, 0.8)" , display: "flex", alignItems: "center", cursor: "pointer"
-            }}>
-                <LinearProgress sx={{ width: "100%", height: "100%", opacity: 0.05 }} />
-            </Box> : ''}
+            {pendingOverlay}
             <InsightsIcon sx={{ margin: 'auto', color: 'darkgray' }}  fontSize="medium" />
             {deleteButton}
-        </Box>
-        return element;
+        </Box>;
     }
 
     if (status == 'unavailable' || chart.chartType == "Table") {
         let chartTemplate = getChartTemplate(chart.chartType);
-
-        let element = <Box key={`unavailable-${chart.id}`} width={"100%"}
+        return <Box key={`unavailable-${chart.id}`} width={"100%"}
             className={"vega-thumbnail vega-thumbnail-box"}
             onClick={() => onChartClick(chart.id, table.id)}
-            sx={{
-                display: "flex", backgroundColor: "white", position: 'relative',
-                flexDirection: "column"
-            }}>
-            {status == 'pending' ? <Box sx={{
-                position: "absolute", height: "100%", width: "100%", zIndex: 20,
-                backgroundColor:  "rgba(243, 243, 243, 0.8)" , display: "flex", alignItems: "center", cursor: "pointer"
-            }}>
-                <LinearProgress sx={{ width: "100%", height: "100%", opacity: 0.05 }} />
-            </Box> : ''}
+            sx={{ display: "flex", backgroundColor: "white", position: 'relative', flexDirection: "column" }}>
+            {pendingOverlay}
             <Box sx={{ display: "flex", flexDirection: "column", margin: "auto", height: 48}}>
                 <Box sx={{ margin: "auto", transform: chart.chartType == 'Table' ? "rotate(15deg)" : undefined }} >
                     {generateChartSkeleton(chartTemplate?.icon, 32, 32, chart.chartType == 'Table' ? 1 : 0.5)} 
@@ -1423,73 +1345,70 @@ const MemoizedChartObject = memo<{
                 {deleteButton}
             </Box>
         </Box>;
-        return element;
     }
 
-    // prepare the chart to be rendered
-    let assembledChart = assembleVegaChart(chart.chartType, chart.encodingMap, conceptShelfItems, visTableRows, table.metadata, 20, true, 100, 80, false, chart.config);
-    assembledChart["background"] = "transparent";
-
-    // Temporary fix, down sample the dataset
-    if (assembledChart["data"]["values"].length > serverConfig.MAX_DISPLAY_ROWS) {
-        let values = assembledChart["data"]["values"];
-        assembledChart = (({ data, ...o }) => o)(assembledChart);
-
-        let getRandom = (seed: number) => {
-            let x = Math.sin(seed++) * 10000;
-            return x - Math.floor(x);
-        }
-        let getRandomSubarray = (arr: any[], size: number) => {
-            let shuffled = arr.slice(0), i = arr.length, temp, index;
-            while (i--) {
-                index = Math.floor((i + 1) * getRandom(233 * i + 888));
-                temp = shuffled[index];
-                shuffled[index] = shuffled[i];
-                shuffled[i] = temp;
-            }
-            return shuffled.slice(0, size);
-        }
-        assembledChart["data"] = { "values": getRandomSubarray(values, serverConfig.MAX_DISPLAY_ROWS) };
+    // ---- Thumbnail path: use cached PNG from ChartRenderService ----
+    if (chart.thumbnail) {
+        return (
+            <Box
+                onClick={() => onChartClick(chart.id, table.id)}
+                className="vega-thumbnail-box"
+                style={{ width: "100%", position: "relative", cursor: "pointer" }}
+            >
+                <Box sx={{ margin: "auto" }}>
+                    {chart.saved && <Typography sx={{ position: "absolute", margin: "5px", zIndex: 2 }}>
+                        <StarIcon sx={{ color: "gold" }} fontSize="small" />
+                    </Typography>}
+                    {pendingOverlay}
+                    {deleteButton}
+                    <Box className={"vega-thumbnail"}
+                        sx={{
+                            display: "flex",
+                            backgroundColor: chart.saved ? "rgba(255,215,0,0.05)" : "white",
+                            justifyContent: 'center',
+                            alignItems: 'center',
+                        }}
+                    >
+                        <img 
+                            src={chart.thumbnail} 
+                            alt={`${chart.chartType} chart`}
+                            style={{ maxWidth: 120, maxHeight: 100, objectFit: 'contain' }} 
+                        />
+                    </Box>
+                </Box>
+            </Box>
+        );
     }
 
-    assembledChart['config'] = {
-        "axis": { "labelLimit": 30 }
-    }
-
-    const element = <VegaLiteChartElement
-        chart={chart}
-        assembledSpec={assembledChart}
-        table={table}
-        status={status}
-        isSaved={chart.saved}
-        onChartClick={() => onChartClick(chart.id, table.id)}
-        onDelete={() => onDelete(chart.id)}
-    />;
-
-    return element;
-}, (prevProps, nextProps) => {
-    // Custom comparison function for memoization
-    // Only re-render if the chart or its dependencies have changed
-
-    // when conceptShelfItems change, we only need to re-render the chart if the conceptShelfItems depended by the chart have changed
-    let nextReferredConcepts = Object.values(nextProps.chart.encodingMap).filter(e => e.fieldID || e.aggregate).map(e => `${e.fieldID}:${e.aggregate}`);
-
+    // ---- Fallback: skeleton while ChartRenderService is still processing ----
+    let chartTemplate = getChartTemplate(chart.chartType);
     return (
-        prevProps.chart.id === nextProps.chart.id &&
-        prevProps.chart.chartType === nextProps.chart.chartType &&
-        prevProps.chart.saved === nextProps.chart.saved &&
-        prevProps.status === nextProps.status &&
-        _.isEqual(prevProps.chart.encodingMap, nextProps.chart.encodingMap) &&
-        _.isEqual(prevProps.chart.config, nextProps.chart.config) &&
-        // Only check tables/charts that this specific chart depends on
-        _.isEqual(prevProps.table, nextProps.table) &&
-        _.isEqual(prevProps.table.attachedMetadata, nextProps.table.attachedMetadata) &&
-        // Check if conceptShelfItems have changed
-        _.isEqual(
-            prevProps.conceptShelfItems.filter(c => nextReferredConcepts.includes(c.id)), 
-            nextProps.conceptShelfItems.filter(c => nextReferredConcepts.includes(c.id)))
+        <Box
+            onClick={() => onChartClick(chart.id, table.id)}
+            className="vega-thumbnail-box"
+            style={{ width: "100%", position: "relative", cursor: "pointer" }}
+        >
+            <Box sx={{ margin: "auto" }}>
+                {chart.saved && <Typography sx={{ position: "absolute", margin: "5px", zIndex: 2 }}>
+                    <StarIcon sx={{ color: "gold" }} fontSize="small" />
+                </Typography>}
+                {pendingOverlay}
+                {deleteButton}
+                <Box className={"vega-thumbnail"}
+                    sx={{
+                        display: "flex",
+                        backgroundColor: chart.saved ? "rgba(255,215,0,0.05)" : "white",
+                        justifyContent: 'center',
+                        alignItems: 'center',
+                        minHeight: 60,
+                    }}
+                >
+                    {generateChartSkeleton(chartTemplate?.icon, 48, 48, 0.3)}
+                </Box>
+            </Box>
+        </Box>
     );
-});
+};
 
 // Height estimation constants (px) – per-type heights + py:4px (8px) gap per row
 const LAYOUT_TABLE_HEIGHT = 28 + 8;     // table card + row padding
@@ -1716,10 +1635,9 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
             const table = getDataTable(chart, tables, charts, conceptShelfItems);
             let status: 'available' | 'pending' | 'unavailable' = chartSynthesisInProgress.includes(chart.id) ? 'pending' : 
                 checkChartAvailability(chart, conceptShelfItems, table.rows) ? 'available' : 'unavailable';
-            let element = <MemoizedChartObject
+            let element = <ChartThumbnail
                 chart={chart}
                 table={table}
-                conceptShelfItems={conceptShelfItems}
                 status={status}
                 onChartClick={() => {
                     dispatch(dfActions.setFocusedChart(chart.id));

@@ -60,6 +60,7 @@ import {
 } from "react-router-dom";
 import { About } from '../views/About';
 import { MessageSnackbar } from '../views/MessageSnackbar';
+import { ChartRenderService } from '../views/ChartRenderService';
 import { DictTable } from '../components/ComponentType';
 import { AppDispatch } from './store';
 import dfLogo from '../assets/df-logo.png';
@@ -915,6 +916,7 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
                 {appBar}
                 <RouterProvider router={router} />
                 <MessageSnackbar />
+                <ChartRenderService />
             </Box>
         </Box>;
 
