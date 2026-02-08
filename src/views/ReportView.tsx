@@ -566,7 +566,9 @@ export const ReportView: FC = () => {
                 true,
                 config.defaultChartWidth,
                 config.defaultChartHeight,
-                true
+                true,
+                chart.projection,
+                chart.projectionCenter
             );
 
             // Create a temporary container for embedding

@@ -713,6 +713,22 @@ export const dataFormulatorSlice = createSlice({
                 }
             })
         },
+        updateChartProjection: (state, action: PayloadAction<{chartId: string, projection: string}>) => {
+            let chartId = action.payload.chartId;
+            let projection = action.payload.projection;
+            let chart = dfSelectors.getAllCharts(state).find(c => c.id == chartId);
+            if (chart) {
+                chart.projection = projection;
+            }
+        },
+        updateProjectionCenter: (state, action: PayloadAction<{chartId: string, center: [number, number] | undefined}>) => {
+            let chartId = action.payload.chartId;
+            let center = action.payload.center;
+            let chart = dfSelectors.getAllCharts(state).find(c => c.id == chartId);
+            if (chart) {
+                chart.projectionCenter = center;
+            }
+        },
         updateChartEncoding: (state, action: PayloadAction<{chartId: string, channel: Channel, encoding: EncodingItem}>) => {
             let chartId = action.payload.chartId;
             let channel = action.payload.channel;

@@ -47,6 +47,58 @@ export const CHANNEL_LIST =  ["x", "y", "x2", "y2", "id", "color", "opacity", "s
                               "row", "latitude", "longitude", "theta", "radius", "detail", "group",
                               "field 1", "field 2", "field 3", "field 4", "field 5", 'field 6'] as const;
 
+// Supported map projections for Vega-Lite
+export const MAP_PROJECTIONS = [
+    { value: "mercator", label: "Mercator" },
+    { value: "equalEarth", label: "Equal Earth" },
+    { value: "orthographic", label: "Orthographic (Globe)" },
+    { value: "stereographic", label: "Stereographic" },
+    { value: "conicEqualArea", label: "Conic Equal Area" },
+    { value: "conicEquidistant", label: "Conic Equidistant" },
+    { value: "azimuthalEquidistant", label: "Azimuthal Equidistant" },
+    { value: "mollweide", label: "Mollweide" },
+    { value: "albersUsa", label: "Albers USA" },
+] as const;
+
+// Preset projection centers for different countries/regions
+export const PROJECTION_CENTER_PRESETS: { label: string; center: [number, number] }[] = [
+    { label: "World (Atlantic)", center: [0, 0] },
+    { label: "World (Pacific)", center: [150, 0] },
+    { label: "China", center: [105, 35] },
+    { label: "USA", center: [-98, 39] },
+    { label: "Europe", center: [10, 50] },
+    { label: "Japan", center: [138, 36] },
+    { label: "India", center: [78, 22] },
+    { label: "Brazil", center: [-52, -14] },
+    { label: "Australia", center: [134, -25] },
+    { label: "Russia", center: [100, 60] },
+    { label: "Africa", center: [20, 0] },
+    { label: "Middle East", center: [45, 28] },
+    { label: "Southeast Asia", center: [115, 5] },
+    { label: "South America", center: [-60, -15] },
+    { label: "North America", center: [-100, 45] },
+    { label: "UK", center: [-2, 54] },
+    { label: "Germany", center: [10, 51] },
+    { label: "France", center: [2, 47] },
+    { label: "Korea", center: [128, 36] },
+];
+
+// Explicit list of chart types that should be treated as map charts.
+// Use lowercase values here and perform case-insensitive matching in isMapChart.
+const MAP_CHART_TYPES = new Set<string>([
+    "map",
+    "world map",
+    "us map",
+]);
+
+export const isMapChart = (chartType: string) => {
+    if (!chartType) {
+        return false;
+    }
+    const normalized = chartType.trim().toLowerCase();
+    return MAP_CHART_TYPES.has(normalized);
+}
+
 /**
  * Ensures one axis (x or y) is nominal based on the spec and data cardinality.
  * If neither axis is nominal, converts the one with lower cardinality to nominal.
