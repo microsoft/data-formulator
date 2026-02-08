@@ -78,7 +78,7 @@ export let ChartElementFC: FC<{
     // }
 
     // prepare the chart to be rendered
-    let assembledChart = assembleVegaChart(chart.chartType, chart.encodingMap, conceptShelfItems, tableRows, tableMetadata, 20);
+    let assembledChart = assembleVegaChart(chart.chartType, chart.encodingMap, conceptShelfItems, tableRows, tableMetadata, 20, false, 100, 80, false, chart.projection, chart.projectionCenter);
     assembledChart["background"] = "transparent";
     // chart["autosize"] = {
     //     "type": "fit",

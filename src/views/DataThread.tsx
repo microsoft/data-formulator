@@ -1427,7 +1427,7 @@ const MemoizedChartObject = memo<{
     }
 
     // prepare the chart to be rendered
-    let assembledChart = assembleVegaChart(chart.chartType, chart.encodingMap, conceptShelfItems, visTableRows, table.metadata, 20, true);
+    let assembledChart = assembleVegaChart(chart.chartType, chart.encodingMap, conceptShelfItems, visTableRows, table.metadata, 20, true, 100, 80, false, chart.projection, chart.projectionCenter);
     assembledChart["background"] = "transparent";
 
     // Temporary fix, down sample the dataset

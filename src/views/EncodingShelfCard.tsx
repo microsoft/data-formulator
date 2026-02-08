@@ -48,7 +48,7 @@ import { createDictTable, DictTable } from "../components/ComponentType";
 import { getUrls, resolveChartFields, getTriggers, assembleVegaChart, resolveRecommendedChart, fetchWithIdentity } from '../app/utils';
 import { EncodingBox } from './EncodingBox';
 
-import { ChannelGroups, CHART_TEMPLATES, getChartChannels, getChartTemplate } from '../components/ChartTemplates';
+import { ChannelGroups, CHART_TEMPLATES, getChartChannels, getChartTemplate, MAP_PROJECTIONS, isMapChart, PROJECTION_CENTER_PRESETS } from '../components/ChartTemplates';
 import { checkChartAvailability, getDataTable } from './VisualizationView';
 import TableRowsIcon from '@mui/icons-material/TableRowsOutlined';
 import ChangeCircleOutlinedIcon from '@mui/icons-material/ChangeCircleOutlined';
@@ -380,7 +380,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
             }
 
             let chartAvailable = checkChartAvailability(chart, conceptShelfItems, currentTable.rows);
-            let currentChartPng = chartAvailable ? await vegaLiteSpecToPng(assembleVegaChart(chart.chartType, chart.encodingMap, activeFields, currentTable.rows, currentTable.metadata, 20)) : undefined;
+            let currentChartPng = chartAvailable ? await vegaLiteSpecToPng(assembleVegaChart(chart.chartType, chart.encodingMap, activeFields, currentTable.rows, currentTable.metadata, 20, false, 100, 80, false, chart.projection, chart.projectionCenter)) : undefined;
 
             let actionTables = actionTableIds.map(id => tables.find(t => t.id == id) as DictTable);
 
@@ -1092,6 +1092,93 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                         })}
                     </Select>
                 </FormControl>
+                {/* Projection selector for map charts */}
+                {isMapChart(chart.chartType) && (
+                    <FormControl sx={{ m: 1, minWidth: 120, width: "100%", margin: "8px 0 0 0"}} size="small">
+                        <Select
+                            variant="standard"
+                            labelId="projection-select-label"
+                            id="projection-select"
+                            value={chart.projection || "default"}
+                            onChange={(event) => {
+                                dispatch(dfActions.updateChartProjection({chartId, projection: event.target.value}));
+                            }}
+                            renderValue={(value: string) => {
+                                const proj = MAP_PROJECTIONS.find(p => p.value === value);
+                                return (
+                                    <div style={{display: 'flex', padding: "0px 0px 0px 4px", alignItems: 'center'}}>
+                                        <Typography sx={{fontSize: 11, color: 'text.secondary', marginRight: 1}}>Projection:</Typography>
+                                        <Typography sx={{fontSize: 12}}>{proj?.label || "Default"}</Typography>
+                                    </div>
+                                )
+                            }}
+                        >
+                            <MenuItem value="default" key="projection-default">
+                                <ListItemText slotProps={{primary: {fontSize: 11}}} sx={{ margin: 0 }}>
+                                    Default (from template)
+                                </ListItemText>
+                            </MenuItem>
+                            {MAP_PROJECTIONS.map((proj, i) => (
+                                <MenuItem value={proj.value} key={`projection-${i}`}>
+                                    <ListItemText slotProps={{primary: {fontSize: 11}}} sx={{ margin: 0 }}>
+                                        {proj.label}
+                                    </ListItemText>
+                                </MenuItem>
+                            ))}
+                        </Select>
+                    </FormControl>
+                )}
+                {/* Projection center selector for map charts */}
+                {isMapChart(chart.chartType) && (
+                    <FormControl sx={{ m: 1, minWidth: 120, width: "100%", margin: "8px 0 0 0"}} size="small">
+                        <Select
+                            variant="standard"
+                            labelId="projection-center-select-label"
+                            id="projection-center-select"
+                            value={chart.projectionCenter ? JSON.stringify(chart.projectionCenter) : "default"}
+                            onChange={(event) => {
+                                const value = event.target.value;
+                                if (value === "default") {
+                                    dispatch(dfActions.updateProjectionCenter({chartId, center: undefined}));
+                                } else {
+                                    const center = JSON.parse(value) as [number, number];
+                                    dispatch(dfActions.updateProjectionCenter({chartId, center}));
+                                }
+                            }}
+                            renderValue={(value: string) => {
+                                if (value === "default") {
+                                    return (
+                                        <div style={{display: 'flex', padding: "0px 0px 0px 4px", alignItems: 'center'}}>
+                                            <Typography sx={{fontSize: 11, color: 'text.secondary', marginRight: 1}}>Center:</Typography>
+                                            <Typography sx={{fontSize: 12}}>Default</Typography>
+                                        </div>
+                                    );
+                                }
+                                const center = JSON.parse(value) as [number, number];
+                                const preset = PROJECTION_CENTER_PRESETS.find(p => p.center[0] === center[0] && p.center[1] === center[1]);
+                                return (
+                                    <div style={{display: 'flex', padding: "0px 0px 0px 4px", alignItems: 'center'}}>
+                                        <Typography sx={{fontSize: 11, color: 'text.secondary', marginRight: 1}}>Center:</Typography>
+                                        <Typography sx={{fontSize: 12}}>{preset?.label || `[${center[0]}, ${center[1]}]`}</Typography>
+                                    </div>
+                                );
+                            }}
+                        >
+                            <MenuItem value="default" key="center-default">
+                                <ListItemText slotProps={{primary: {fontSize: 11}}} sx={{ margin: 0 }}>
+                                    Default (from template)
+                                </ListItemText>
+                            </MenuItem>
+                            {PROJECTION_CENTER_PRESETS.map((preset, i) => (
+                                <MenuItem value={JSON.stringify(preset.center)} key={`center-${i}`}>
+                                    <ListItemText slotProps={{primary: {fontSize: 11}}} sx={{ margin: 0 }}>
+                                        {preset.label} [{preset.center[0]}, {preset.center[1]}]
+                                    </ListItemText>
+                                </MenuItem>
+                            ))}
+                        </Select>
+                    </FormControl>
+                )}
             </Box>
             <Box key='encoding-groups' sx={{ flex: '1 1 auto' }} style={{ height: "calc(100% - 100px)" }} className="encoding-list">
                 {encodingBoxGroups}

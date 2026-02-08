@@ -196,6 +196,8 @@ export type Chart = {
     saved: boolean,
     source: "user" | "trigger",
     unread: boolean,
+    projection?: string,  // for map charts: mercator, equalEarth, naturalEarth1, etc.
+    projectionCenter?: [number, number],  // [longitude, latitude] for map projection center
 }
 
 export let duplicateChart = (chart: Chart) : Chart => {
@@ -207,6 +209,8 @@ export let duplicateChart = (chart: Chart) : Chart => {
         saved: false,
         source: chart.source,
         unread: false,
+        projection: chart.projection,
+        projectionCenter: chart.projectionCenter,
     }
 }
 

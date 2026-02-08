@@ -50,24 +50,25 @@ Concretely, you should infer the appropriate data and create a Python script bas
 
 ```json
 {
-    "mode": "", // string, one of "infer", "overview", "distribution", "summary", "forecast"
-    "recap": "...", // string, a short summary of the user's goal
-    "display_instruction": "...", // string, the even shorter verb phrase describing the users' goal
-    "recommendation": "...", // string, explain why this recommendation is made
-    "input_tables": [...], // string[], describe names of the input tables that will be used in the transformation
-    "output_fields": [...], // string[], describe the desired output fields that the output data should have
-    "chart_type": "", // string, one of "point", "bar", "line", "area", "heatmap", "group_bar", "boxplot"
+    "mode": "" // string, one of "infer", "overview", "distribution", "summary", "forecast"
+    "recap": "..." // string, a short summary of the user's goal.
+    "display_instruction": "..." // string, the even shorter verb phrase describing the users' goal.
+    "recommendation": "..." // string, explain why this recommendation is made
+    "input_tables": [...] // string[], describe names of the input tables that will be used in the transformation.
+    "output_fields": [...] // string[], describe the desired output fields that the output data should have (i.e., the goal of transformed data), it's a good idea to preserve intermediate fields here
+    "chart_type": "" // string, one of "point", "bar", "line", "area", "heatmap", "group_bar", "boxplot", "worldmap", "usmap". "chart_type" should either be inferred from user instruction, or recommend if the user didn't specify any.
     "chart_encodings": {
         "x": "",
         "y": "",
         "color": "",
         "size": "",
         "opacity": "",
-        "facet": ""
-    }, // object: map visualization channels to a subset of output fields
-    "output_variable": "..." // string, the name of the Python variable containing the final result.
-                        // Should be descriptive and informative (e.g., "sales_by_region", "monthly_revenue", "top_10_products"),
-                        // not generic names like "result_df" or "output". Use snake_case.
+        "facet": "",
+        "longitude": "",
+        "latitude": ""
+    } // object: map visualization channels (x, y, color, size, opacity, facet, longitude, latitude, etc.) to a subset of output fields, appropriate visual channels for different chart types are defined below.
+    "projection": "" // string (optional, only for worldmap/usmap): one of "mercator", "equalEarth", "naturalEarth1", "orthographic", "stereographic", "albersUsa", "conicEqualArea", "gnomonic", "azimuthalEquidistant". Default is "equalEarth" for worldmap, "albersUsa" for usmap.
+    "projection_center": [0, 0] // [longitude, latitude] (optional, only for worldmap): the center point of the map projection. Use to focus on specific regions, e.g., [105, 35] for China, [-98, 39] for USA, [10, 50] for Europe, [139, 36] for Japan.
 }
 ```
 
@@ -95,7 +96,7 @@ Concretely:
     - determine "input_tables", the names of a subset of input tables from [CONTEXT] section that will be used to achieve the user's goal.
         - **IMPORTANT** Note that the Table 1 in [CONTEXT] section is the table the user is currently viewing, it should take precedence if the user refers to insights about the "current table".
         - At the same time, leverage table information to determine which tables are relevant to the user's goal and should be used.
-    - "chart_type" must be one of "point", "bar", "line", "area", "heatmap", "group_bar", "boxplot"
+    - "chart_type" must be one of "point", "bar", "line", "area", "heatmap", "group_bar", "boxplot", "worldmap", "usmap"
     - "chart_encodings" should specify which fields should be used to create the visualization
         - decide which visual channels should be used to create the visualization appropriate for the chart type.
             - point: x, y, color, size, facet
@@ -106,6 +107,8 @@ Concretely:
             - heatmap: x, y, color, facet
             - group_bar: x, y, color, facet
             - boxplot: x, y, color, facet
+            - worldmap: longitude, latitude, color, size
+            - usmap: longitude, latitude, color, size
         - note that all fields used in "chart_encodings" should be included in "output_fields".
             - all fields you need for visualizations should be transformed into the output fields!
             - "output_fields" should include important intermediate fields that are not used in visualization but are used for data transformation.
@@ -143,6 +146,22 @@ Concretely:
                 - best for: Distribution of a quantitative field
                 - use x values directly if x values are categorical, and transform the data into bins if the field values are quantitative.
                 - when color is specified, the boxplot will be grouped automatically (items with the same x values will be grouped).
+            - (worldmap) World Map: longitude: Quantitative (geographic longitude -180 to 180), latitude: Quantitative (geographic latitude -90 to 90), color: Categorical/Quantitative (optional), size: Quantitative (optional)
+                - best for: Geographic data visualization on a world map
+                - use when the data contains geographic coordinates (longitude, latitude) for locations around the world
+                - the data must have longitude and latitude fields representing geographic coordinates
+                - color can be used to show categories (e.g., country, region) or quantitative values (e.g., population, sales)
+                - size can be used to show quantitative values (e.g., magnitude, count)
+                - example use cases: plotting cities, earthquakes, sales by location, etc.
+                - projection options: "mercator", "equalEarth" (default), "naturalEarth1", "orthographic", "stereographic", "albers", "conicEqualArea"
+                - projection_center: set [longitude, latitude] to center the map on a specific region:
+                    * China: [105, 35], USA: [-98, 39], Europe: [10, 50], Japan: [139, 36], India: [78, 22]
+                    * Brazil: [-55, -10], Australia: [134, -25], Russia: [100, 60], South Africa: [25, -29]
+            - (usmap) US Map: longitude: Quantitative (geographic longitude), latitude: Quantitative (geographic latitude), color: Categorical/Quantitative (optional), size: Quantitative (optional)
+                - best for: Geographic data visualization focused on the United States
+                - use when the data is specifically about US locations
+                - uses albersUsa projection optimized for US geography (includes Alaska and Hawaii)
+                - the data must have longitude and latitude fields representing US geographic coordinates
         - facet channel is available for all chart types, it supports a categorical field with small cardinality to visualize the data in different facets.
         - if you really need additional legend fields:
             - you can use opacity for legend (support Quantitative and Categorical).
