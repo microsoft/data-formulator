@@ -28,6 +28,7 @@ import exampleImageTable from "../assets/example-image-table.png";
 import { useDispatch, useSelector } from 'react-redux';
 import { AppDispatch } from '../app/store';
 import { DataFormulatorState, dfActions, dfSelectors, fetchFieldSemanticType } from '../app/dfSlice';
+import { borderColor, shadow, transition, radius } from '../app/tokens';
 import { DataCleanBlock, DataCleanTableOutput } from '../components/ComponentType';
 import { getUrls, fetchWithIdentity } from '../app/utils';
 import { CustomReactTable } from './ReactTable';
@@ -70,15 +71,15 @@ const SampleTaskChip: React.FC<{
                 fontSize: '12px',
                 minHeight: '32px',
                 height: 'auto',
-                borderRadius: 2,
+                borderRadius: radius.md,
                 border: `1px solid ${alpha(theme.palette.primary.main, 0.2)}`,
-                boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
-                transition: 'all 0.2s ease-in-out',
+                boxShadow: shadow.sm,
+                transition: transition.normal,
                 backgroundColor: alpha(theme.palette.background.paper, 0.9),
                 cursor: disabled ? 'default' : 'pointer',
                 opacity: disabled ? 0.6 : 1,
                 '&:hover': disabled ? {} : {
-                    boxShadow: '0 2px 6px rgba(0,0,0,0.1)',
+                    boxShadow: shadow.md,
                     borderColor: alpha(theme.palette.primary.main, 0.5),
                     transform: 'translateY(-1px)',
                 },
@@ -100,8 +101,7 @@ const SampleTaskChip: React.FC<{
                         objectFit: 'cover',
                         borderRadius: 0.5,
                         mr: 1,
-                        border: '1px solid',
-                        borderColor: 'divider'
+                        border: `1px solid ${borderColor.divider}`
                     }}
                 />
             )}
@@ -600,8 +600,7 @@ Revenue in More Personal Computing was $13.5 billion and increased 9%, with the 
                                     maxWidth: inputImages.length > 1 ? '30%' : 600,
                                     objectFit: 'cover',
                                     borderRadius: 1,
-                                    border: '1px solid',
-                                    borderColor: 'divider'
+                                    border: `1px solid ${borderColor.divider}`
                                 }}
                             />
                             {userImages.includes(imageUrl) ? <IconButton  
@@ -808,12 +807,8 @@ export const SingleDataCleanThreadView: React.FC<{thread: ThreadBlock, sx?: SxPr
             flexDirection: 'column', 
             gap: 0,
             mb: 2,
-            borderRadius: 2,
-            //boxShadow: isThreadFocused ? "0 2px 8px rgba(0,0,0,0.08), 0 1px 3px rgba(0,0,0,0.12)" : "none",
-            transition: 'all 0.2s ease-in-out',
-            // '&:hover': {
-            //     boxShadow: '0 2px 8px rgba(0,0,0,0.12)',
-            // },
+            borderRadius: radius.md,
+            transition: transition.normal,
             ...sx
         }}>
             {/* Thread header */}
@@ -901,8 +896,7 @@ export const SingleDataCleanThreadView: React.FC<{thread: ThreadBlock, sx?: SxPr
                                                     maxWidth: 100,
                                                     objectFit: 'cover',
                                                     borderRadius: 0.5,
-                                                    border: '1px solid',
-                                                    borderColor: 'divider'
+                                                    border: `1px solid ${borderColor.divider}`
                                                 }}
                                             />
                                         ))}
@@ -925,11 +919,11 @@ export const SingleDataCleanThreadView: React.FC<{thread: ThreadBlock, sx?: SxPr
                                     sx={{
                                         py: 0,
                                         mt: itemId === 0 ? 0 : 0.5,
-                                        border: isItemSelected ? `2px solid ${theme.palette.primary.light}` : '1px solid lightgray',
+                                        border: isItemSelected ? `2px solid ${theme.palette.primary.light}` : `1px solid ${borderColor.component}`,
                                         cursor: 'pointer',
                                         backgroundColor: alpha(theme.palette.primary.light, 0.1), 
                                         '&:hover': {
-                                            boxShadow: '0 0 3px rgba(33,33,33,.2)',
+                                            boxShadow: shadow.md,
                                             transform: "translate(0px, 1px)",  
                                         }
                                     }}

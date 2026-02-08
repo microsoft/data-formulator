@@ -2,6 +2,7 @@
 // Licensed under the MIT License.
 
 import * as React from 'react';
+import { shadow, transition } from '../app/tokens';
 import { TableVirtuoso } from 'react-virtuoso';
 import Table from '@mui/material/Table';
 import TableBody from '@mui/material/TableBody';
@@ -178,7 +179,7 @@ const DraggableHeader: React.FC<DraggableHeaderProps> = ({
                 ...(field && {
                     '&:hover': {
                         backgroundColor: hoverBackgroundColor,
-                        boxShadow: '0 2px 4px rgba(0,0,0,0.08)',
+                        boxShadow: shadow.md,
                     },
                 }),
             }}

@@ -2,6 +2,7 @@
 // Licensed under the MIT License.
 
 import React, { FC, useState, useEffect } from 'react';
+import { radius } from '../app/tokens';
 import {
     Button,
     Typography,
@@ -152,7 +153,7 @@ export const AgentRulesDialog: React.FC = () => {
                         <Box
                             sx={{
                                 border: `1px solid ${theme.palette.primary.main}`,
-                                borderRadius: 1,
+                                borderRadius: radius.sm,
                                 overflow: 'auto',
                                 height: 180,
                                 boxShadow: `0 2px 8px ${theme.palette.primary.main}40`,
@@ -200,7 +201,7 @@ export const AgentRulesDialog: React.FC = () => {
                         <Box
                             sx={{
                                 border: `1px solid ${theme.palette.secondary.main}`,
-                                borderRadius: 1,
+                                borderRadius: radius.sm,
                                 overflow: 'auto',
                                 height: 180,
                                 boxShadow: `0 2px 8px ${theme.palette.secondary.main}40`,

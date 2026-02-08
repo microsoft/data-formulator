@@ -2,6 +2,7 @@
 // Licensed under the MIT License.
 
 import React, { FC, useState, useRef, useEffect, memo, useMemo } from 'react';
+import { borderColor, shadow, transition, radius } from '../app/tokens';
 import {
     Box,
     Button,
@@ -128,27 +129,27 @@ const notionStyleMarkdownOverrides = {
     li: { component: Typography, props: { component: 'li', variant: 'body1',
         sx: { ...BODY_TEXT_BASE, mb: 0.5 } } },
     blockquote: { component: Box, props: { sx: { 
-        borderLeft: '3px solid', borderColor: 'rgba(0, 0, 0, 0.15)', pl: 2.5, py: 1, my: 2.5,
+        borderLeft: '3px solid', borderColor: borderColor.component, pl: 2.5, py: 1, my: 2.5,
         fontFamily: FONT_FAMILY_SERIF, fontStyle: 'italic', color: COLOR_MUTED, fontSize: '1rem', lineHeight: 1.7 
     } } },
     pre: { component: Paper, props: { elevation: 0, sx: { 
         backgroundColor: COLOR_BG_LIGHT, p: 2, borderRadius: '4px', overflow: 'auto', my: 2, 
-        border: '1px solid', borderColor: 'rgba(0, 0, 0, 0.08)',
+        border: `1px solid ${borderColor.divider}`,
         '& code': { 
             backgroundColor: 'transparent !important', padding: '0 !important', fontSize: '0.8125rem',
             fontFamily: FONT_FAMILY_MONO, lineHeight: 1.7, color: COLOR_BODY
         } 
     } } },
     table: { component: TableContainer, props: { component: Paper, elevation: 0,
-        sx: { my: 2, border: '1px solid', borderColor: 'divider' } } },
+        sx: { my: 2, border: `1px solid ${borderColor.divider}` } } },
     thead: { component: TableHead, props: { sx: { backgroundColor: COLOR_BG_LIGHT } } },
     tbody: { component: TableBody },
     tr: { component: TableRow },
     th: { component: TableCell, props: { sx: { 
-        ...TABLE_CELL_BASE, fontWeight: 600, borderBottom: '2px solid', borderColor: 'divider'
+        ...TABLE_CELL_BASE, fontWeight: 600, borderBottom: `2px solid ${borderColor.divider}`
     } } },
     td: { component: TableCell, props: { sx: { 
-        ...TABLE_CELL_BASE, borderBottom: '1px solid', borderColor: 'divider', lineHeight: 1.6 
+        ...TABLE_CELL_BASE, borderBottom: `1px solid ${borderColor.divider}`, lineHeight: 1.6 
     } } },
     hr: { component: Divider, props: { sx: { my: 3 } } }
 } as any;
@@ -849,13 +850,13 @@ export const ReportView: FC = () => {
                                 backgroundColor: 'rgba(255, 255, 255, 0.9)',
                                 backdropFilter: 'blur(12px)',
                                 border: '1px solid',
-                                borderColor: 'rgba(0, 0, 0, 0.08)',
-                                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.06)',
+                                borderColor: borderColor.view,
+                                boxShadow: shadow.lg,
                                 '&:hover': {
                                     backgroundColor: 'rgba(255, 255, 255, 0.95)',
-                                    borderColor: 'rgba(0, 0, 0, 0.12)',
-                                    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)',
-                                    transition: 'all 0.2s ease-in-out'
+                                    borderColor: borderColor.view,
+                                    boxShadow: shadow.xl,
+                                    transition: transition.normal
                                 },
                                 '.MuiTypography-root': {
                                     fontSize: '1rem',
@@ -1000,10 +1001,10 @@ export const ReportView: FC = () => {
                                                 cursor: 'pointer', position: 'relative', overflow: 'hidden',
                                                 backgroundColor: selectedChartIds.has(chart.id) ? alpha(theme.palette.primary.main, 0.08) : 'background.paper',
                                                 border:  selectedChartIds.has(chart.id) ? '2px solid' : '1px solid', 
-                                                borderColor: selectedChartIds.has(chart.id) ? 'primary.main' : 'divider',
+                                                borderColor: selectedChartIds.has(chart.id) ? 'primary.main' : borderColor.divider,
                                                 '&:hover': { 
                                                     backgroundColor: 'action.hover', boxShadow: 3,
-                                                    transform: 'translateY(-2px)', transition: 'all 0.2s ease-in-out'
+                                                    transform: 'translateY(-2px)', transition: transition.normal
                                                 },
                                             }}
                                             onClick={() => toggleChartSelection(chart.id)}
@@ -1079,8 +1080,7 @@ export const ReportView: FC = () => {
                                 display: 'flex',
                                 overflowY: 'auto',
                                 flexDirection: 'column',
-                                borderRight: 1,
-                                borderColor: 'divider',
+                                borderRight: `1px solid ${borderColor.view}`,
                                 height: 'fit-content',
                                 background: alpha(theme.palette.background.paper, 0.9),
                             }}>

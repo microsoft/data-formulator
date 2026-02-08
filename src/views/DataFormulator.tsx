@@ -26,6 +26,7 @@ import {
     useTheme,
     alpha,
 } from '@mui/material';
+import { borderColor, shadow, radius } from '../app/tokens';
 
 import { FreeDataViewFC } from './DataView';
 import { VisualizationViewFC } from './VisualizationView';
@@ -201,8 +202,8 @@ export const DataFormulatorFC = ({ }) => {
         </Box>);
 
     let borderBoxStyle = {
-        border: '1px solid rgba(0,0,0,0.1)', 
-        borderRadius: '16px', 
+        border: `1px solid ${borderColor.view}`, 
+        borderRadius: radius.pill, 
         //boxShadow: '0 0 5px rgba(0,0,0,0.1)',
     }
 
@@ -243,7 +244,7 @@ export const DataFormulatorFC = ({ }) => {
                                 backgroundColor: 'rgba(255, 255, 255, 0.95)',
                                 backdropFilter: 'blur(8px)',
                                 borderRadius: '14px',
-                                boxShadow: '0 2px 12px rgba(0,0,0,0.08)',
+                                boxShadow: shadow.xl,
                                 px: 1.5, py: 0.25,
                                 '& .MuiCard-root': {
                                     border: 'none',

@@ -5,6 +5,7 @@ import * as React from 'react';
 import { useEffect, useRef, useState } from 'react';
 
 import { Box, Button, Divider, IconButton, Typography, Tooltip, CircularProgress, alpha, useTheme } from '@mui/material';
+import { borderColor, transition, radius } from '../app/tokens';
 
 
 import { useDispatch, useSelector } from 'react-redux';
@@ -50,13 +51,13 @@ export const DataLoadingChat: React.FC = () => {
     let threadsComponent = dataCleanBlocksThread.map((thread, i) => {
         return <SingleDataCleanThreadView key={`data-clean-thread-${i}`} thread={thread} sx={{
             backgroundColor: 'white', 
-            borderRadius: 2,
+            borderRadius: radius.md,
             padding: 1,
             flex:  'none',
             display: 'flex',
             flexDirection: 'column',
             height: 'fit-content',
-            transition: 'all 0.3s ease',
+            transition: transition.fast,
         }} />
     })
 
@@ -189,8 +190,7 @@ export const DataLoadingChat: React.FC = () => {
                     maxWidth: 240, 
                     overflow: 'hidden', 
                     height: '100%',
-                    borderRight: '1px solid',
-                    borderColor: 'divider'
+                    borderRight: `1px solid ${borderColor.view}`
                 }}>
                     <Box sx={{ 
                         display: 'flex',
@@ -220,8 +220,7 @@ export const DataLoadingChat: React.FC = () => {
                         )}
                     </Box>
                     <Box sx={{ 
-                        borderTop: '1px solid',
-                        borderColor: 'divider',
+                        borderTop: `1px solid ${borderColor.divider}`,
                         p: 1
                     }}>
                         <DataLoadingInputBox 
@@ -334,8 +333,7 @@ export const DataLoadingChat: React.FC = () => {
                                         flexDirection: 'row', 
                                         alignItems: 'center', 
                                         gap: 1, 
-                                        borderTop: '1px solid',
-                                        borderColor: 'divider',
+                                        borderTop: `1px solid ${borderColor.divider}`,
                                         '& .MuiButton-root': { textTransform: 'none' } 
                                     }}>
                                         <Button

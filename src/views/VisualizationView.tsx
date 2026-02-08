@@ -35,6 +35,8 @@ import {
 
 import _ from 'lodash';
 
+import { borderColor } from '../app/tokens';
+
 import ButtonGroup from '@mui/material/ButtonGroup';
 
 import embed from 'vega-embed';
@@ -624,7 +626,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
             backgroundColor: 'rgba(0, 0, 0, 0.02)',
             borderRadius: 1,
             padding: '2px',
-            border: '1px solid rgba(0, 0, 0, 0.06)'
+            border: `1px solid ${borderColor.component}`
         }}>
             <ButtonGroup
                 key="explanation-button-group"
@@ -875,7 +877,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                     </Box>
                 </Collapse>
                 <Collapse in={codeViewOpen}>
-                    <Box sx={{minWidth: 440, maxWidth: 960, padding: "0px 8px", position: 'relative', margin: '8px auto'}}>
+                    <Box sx={{minWidth: 440, maxWidth: 800, padding: "0px 8px", position: 'relative', margin: '8px auto'}}>
                         <ButtonGroup sx={{position: 'absolute', right: 8, top: 1}}>
                             <IconButton onClick={() => {
                                 setCodeViewOpen(false);

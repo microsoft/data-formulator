@@ -2,6 +2,7 @@
 // Licensed under the MIT License.
 
 import { FC, useEffect, useState, useRef } from 'react'
+import { transition } from '../app/tokens';
 import { useSelector, useDispatch } from 'react-redux'
 import { DataFormulatorState, dfActions, dfSelectors, fetchCodeExpl, fetchFieldSemanticType, generateFreshChart } from '../app/dfSlice';
 
@@ -115,7 +116,7 @@ export const IdeaChip: FC<{
                 height: 'auto',
                 borderRadius: 2,
                 border: `1px solid ${alpha(styleColor, 0.2)}`,
-                transition: 'all 0.1s ease-in-out',
+                transition: transition.fast,
                 backgroundColor: alpha(theme.palette.background.paper, 0.9),
                 cursor: disabled ? 'default' : 'pointer',
                 opacity: disabled ? 0.6 : 1,
@@ -181,7 +182,7 @@ export const AgentIdeaChip: FC<{
                 height: 'auto',
                 borderRadius: 2,
                 border: `1px solid ${alpha(styleColor, 0.2)}`,
-                transition: 'all 0.1s ease-in-out',
+                transition: transition.fast,
                 backgroundColor: alpha(theme.palette.background.paper, 0.9),
                 cursor: disabled ? 'default' : 'pointer',
                 opacity: disabled ? 0.6 : 1,

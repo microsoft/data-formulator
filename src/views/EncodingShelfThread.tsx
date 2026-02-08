@@ -3,26 +3,21 @@
 
 import { FC, useState } from 'react'
 import { useSelector, useDispatch } from 'react-redux'
-import { DataFormulatorState, dfActions, dfSelectors, fetchCodeExpl, fetchFieldSemanticType, generateFreshChart } from '../app/dfSlice';
+import { DataFormulatorState, dfActions, dfSelectors } from '../app/dfSlice';
 
 import {
     Box,
     Typography,
     Button,
-    CircularProgress,
-    IconButton,
     Tooltip,
     Collapse,
-    Stack,
     Card,
-    ListItemIcon,
 } from '@mui/material';
 
 import React from 'react';
 
-import { EncodingItem, Chart, Trigger } from "../components/ComponentType";
+import { Chart, Trigger } from "../components/ComponentType";
 
-import _ from 'lodash';
 
 import '../scss/EncodingShelf.scss';
 import { DictTable } from "../components/ComponentType";
@@ -36,17 +31,14 @@ import { checkChartAvailability, generateChartSkeleton } from './VisualizationVi
 
 import TableRowsIcon from '@mui/icons-material/TableRowsOutlined';
 import InsightsIcon from '@mui/icons-material/Insights';
-import AnchorIcon from '@mui/icons-material/Anchor';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 
 import { AppDispatch } from '../app/store';
 
 import { EncodingShelfCard, TriggerCard } from './EncodingShelfCard';
 
-import { useTheme } from '@mui/material/styles';
+import { useTheme, alpha } from '@mui/material/styles';
 
 // Property and state of an encoding shelf
 export interface EncodingShelfThreadProps { 
@@ -174,96 +166,105 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
     
     const dispatch = useDispatch<AppDispatch>();
 
-    const interleaveArrays: any = (a: any[], b: any[], spaceElement?: any): any[] => {
-        if (a.length === 0) return b;
-        // Filter out null/undefined and empty strings to avoid key warnings
-        const result = [a[0], ...interleaveArrays(b, a.slice(1), spaceElement)];
-        return result.filter(x => x !== null && x !== undefined && x !== '');
-    };
+    const theme = useTheme();
+    const TIMELINE_WIDTH = 16;
+    const dashedColor = 'rgba(0,0,0,0.15)';
+    const dashedWidth = '1px';
+    const dashedStyle = 'dashed';
 
     let previousInstructions : any = ""
 
-    let buildTableCard = (tableId: string) => {
+    let buildTimelineTableRow = (tableId: string, isFirst: boolean, isLast: boolean) => {
         let table = tables.find(t => t.id == tableId) as DictTable;
-        return <div
-                key={`${tableId}-table-list-item`}
-                className="table-list-item">
-                <Button variant="text" sx={{textTransform: 'none', padding: 0, minWidth: 0}} onClick={() => { dispatch(dfActions.setFocusedTable(tableId)) }}>
-                <Stack direction="row" sx={{fontSize: '12px'}} alignItems="center" gap={"2px"}>
-                    {table && table.anchored ? <AnchorIcon fontSize="inherit" /> : <TableRowsIcon fontSize="inherit" />}
-                    <Typography sx={{fontSize: '12px'}} >
-                        {table.displayId || tableId}
+        return (
+            <Box key={`timeline-table-${tableId}`} sx={{ display: 'flex', flexDirection: 'row' }}>
+                <Box sx={{ width: TIMELINE_WIDTH, flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                    {!isFirst && <Box sx={{ width: 0, flex: '1 1 0', minHeight: 4, borderLeft: `${dashedWidth} ${dashedStyle} ${dashedColor}` }} />}
+                    {isFirst && <Box sx={{ flex: '1 1 0', minHeight: 4 }} />}
+                    <Box sx={{ flexShrink: 0, zIndex: 1 }}>
+                        <TableRowsIcon sx={{ fontSize: 12, color: 'rgba(0,0,0,0.35)' }} />
+                    </Box>
+                    {!isLast && <Box sx={{ width: 0, flex: '1 1 0', minHeight: 4, borderLeft: `${dashedWidth} ${dashedStyle} ${dashedColor}` }} />}
+                    {isLast && <Box sx={{ flex: '1 1 0', minHeight: 4 }} />}
+                </Box>
+                <Box sx={{ flex: 1, minWidth: 0, pl: 0.5, display: 'flex', alignItems: 'center' }}>
+                    <Typography 
+                        sx={{ fontSize: '11px', cursor: 'pointer', color: theme.palette.primary.main, '&:hover': { textDecoration: 'underline' } }} 
+                        onClick={() => { dispatch(dfActions.setFocusedTable(tableId)) }}>
+                        {table?.displayId || tableId}
                     </Typography>
-                </Stack>
-            </Button>
-        </div>
-    }
+                </Box>
+            </Box>
+        );
+    };
+
+    let buildTimelineTriggerRow = (trigger: Trigger) => {
+        const triggerColor = alpha(theme.palette.custom.main, 0.4);
+        return (
+            <Box key={`timeline-trigger-${trigger.tableId}`} sx={{ display: 'flex', flexDirection: 'row' }}>
+                <Box sx={{ width: TIMELINE_WIDTH, flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                    <Box sx={{ width: 0, flex: '0 0 auto', height: 6, borderLeft: `${dashedWidth} ${dashedStyle} ${dashedColor}` }} />
+                    <Box sx={{ width: 2, flex: '1 1 0', minHeight: 4, borderRadius: '2px', backgroundColor: triggerColor }} />
+                    <Box sx={{ width: 0, flex: '0 0 auto', height: 6, borderLeft: `${dashedWidth} ${dashedStyle} ${dashedColor}` }} />
+                </Box>
+                <Box sx={{ flex: 1, minWidth: 0, pl: 0.5, py: 0.25 }}>
+                    <TriggerCard 
+                        className="encoding-shelf-trigger-card" 
+                        trigger={trigger} 
+                        hideFields={trigger.instruction != ""} 
+                        mini={true} />
+                </Box>
+            </Box>
+        );
+    };
+
+    let buildTimelineEllipsisRow = () => (
+        <Box key="timeline-ellipsis" sx={{ display: 'flex', flexDirection: 'row' }}>
+            <Box sx={{ width: TIMELINE_WIDTH, flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                <Box sx={{ width: 0, flex: '1 1 0', minHeight: 4, borderLeft: `${dashedWidth} ${dashedStyle} ${dashedColor}` }} />
+            </Box>
+            <Box sx={{ flex: 1, minWidth: 0, pl: 0.5, display: 'flex', alignItems: 'center' }}>
+                <Typography sx={{ fontSize: '10px', color: 'text.disabled' }}>…</Typography>
+            </Box>
+        </Box>
+    );
 
     let tableList = activeTableThread.map((tableId) => {
         let table = tables.find(t => t.id == tableId) as DictTable;
         if (!table) {
             return null;
         }
-        return buildTableCard(tableId);
-    }).filter(x => x !== null);
+        return tableId;
+    }).filter(x => x !== null) as string[];
 
     let leafTable = tables.find(t => t.id == activeTableThread[activeTableThread.length - 1]) as DictTable;
 
-    let triggers =  getTriggers(leafTable, tables)
+    let triggers = getTriggers(leafTable, tables)
 
-    let instructionCards = triggers.map((trigger, i) => {
-        let extractActiveFields = (t: Trigger) => {
-            let encodingMap = allCharts.find(c => c.id == t.chart?.id)?.encodingMap;
-            if (!encodingMap) {
-                return [];
-            }
-            return Array.from(Object.values(encodingMap)).map((enc: EncodingItem) => enc.fieldID).filter(x => x != undefined)
-        };
-        let previousActiveFields = new Set(i == 0 ? [] : extractActiveFields(triggers[i - 1]))
-        let currentActiveFields = new Set(extractActiveFields(trigger))
-        let fieldsIdentical = _.isEqual(previousActiveFields, currentActiveFields)
-        return <Box 
-            key={`${trigger.tableId}-trigger-card`}
-            sx={{padding: 0, display: 'flex', flexDirection: 'column'}}>
-            <Box sx={{ml: '8px', height: '4px', borderLeft: '1px solid lightgray'}}></Box>
+    // Simplified timeline: source table → (…) → last trigger → current table
+    let timelineRows: React.ReactNode[] = [];
+    if (tableList.length > 0) {
+        // Source table
+        timelineRows.push(buildTimelineTableRow(tableList[0], true, false));
+        // Ellipsis if intermediate steps were skipped
+        if (tableList.length > 2) {
+            timelineRows.push(buildTimelineEllipsisRow());
+        }
+        // Most recent trigger (if any)
+        if (triggers.length > 0) {
+            timelineRows.push(buildTimelineTriggerRow(triggers[triggers.length - 1]));
+        }
+        // Current table (if different from source)
+        if (tableList.length > 1) {
+            timelineRows.push(buildTimelineTableRow(tableList[tableList.length - 1], false, true));
+        }
+    }
 
-            <TriggerCard 
-                className="encoding-shelf-trigger-card" 
-                trigger={trigger} 
-                hideFields={trigger.instruction != ""} 
-                mini={true} />
-            <Box sx={{ml: '8px', height: '4px', borderLeft: '1px solid darkgray'}}></Box>
+    previousInstructions = (
+        <Box sx={{ display: 'flex', flexDirection: 'column' }}>
+            {timelineRows}
         </Box>
-    })
-    
-    let spaceElement = "" //<Box sx={{padding: '4px 0px', background: 'aliceblue', margin: 'auto', width: '200px', height: '3px', paddingBottom: 0.5}}></Box>;
-
-    let truncated = tableList.length > 3;
-
-    previousInstructions = truncated ? 
-        <Box  sx={{padding: '4px 0px', display: 'flex', flexDirection: "column" }}>
-            {tableList[0]}
-            <Box key="truncated-indicator" sx={{height: '24px', borderLeft: '1px dashed darkgray', 
-                position: 'relative',
-                ml: '8px', display: 'flex', alignItems: 'center', cursor: 'pointer',
-                '&:hover': {
-                    ml: '7px',
-                    borderLeft: '3px solid darkgray',
-                }}}>
-                <Typography sx={{fontSize: '12px', color: 'darkgray', ml: 2}}>
-                    ...
-                </Typography>
-            </Box>
-            {tableList[tableList.length - 3]}
-            {instructionCards[instructionCards.length - 2]}
-            {tableList[tableList.length - 2]}
-            {instructionCards[instructionCards.length - 1]}
-            {tableList[tableList.length - 1]}
-        </Box> 
-    :
-        <Box  sx={{padding: '4px 0px', display: 'flex', flexDirection: "column" }}>
-            {interleaveArrays(tableList, instructionCards, spaceElement)}
-        </Box>;
+    );
 
     let postInstruction : any = "";
     if (chartTrigger) {
@@ -283,43 +284,39 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
         })
 
         postInstruction = <Collapse orientation="vertical" in={true} sx={{width: "100%"}}>
-            <Box key="post-instruction" sx={{width: '17px', height: '12px'}}>
-                <Box sx={{padding:0, width: '1px', margin:'auto', height: '100%',
-                                        backgroundImage: 'linear-gradient(180deg, darkgray, darkgray 75%, transparent 75%, transparent 100%)',
-                                        backgroundSize: '1px 6px, 3px 100%'}}></Box>
-            </Box>
-            {buildTableCard(resultTable.id)}
-            <Box key="post-instruction-2" sx={{width: '17px', height: '12px'}}>
-                <Box sx={{padding:0, width: '1px', margin:'auto', height: '100%',
-                                        backgroundImage: 'linear-gradient(180deg, darkgray, darkgray 75%, transparent 75%, transparent 100%)',
-                                        backgroundSize: '1px 6px, 3px 100%'}}></Box>
-            </Box>
-            <Box sx={{display: 'flex', flexDirection: 'column', gap: '4px'}}>
-                {endChartCards}
-            </Box>
-            </Collapse>
+            {buildTimelineTableRow(resultTable.id, false, endChartCards.length === 0)}
+            {endChartCards.length > 0 && (
+                <Box sx={{ display: 'flex', flexDirection: 'row' }}>
+                    <Box sx={{ width: TIMELINE_WIDTH, flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                        <Box sx={{ width: 0, flex: '1 1 0', minHeight: 4, borderLeft: `${dashedWidth} ${dashedStyle} ${dashedColor}` }} />
+                    </Box>
+                    <Box sx={{ flex: 1, minWidth: 0, pl: 0.5, py: 0.5, display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        {endChartCards}
+                    </Box>
+                </Box>
+            )}
+        </Collapse>
     }
+
+    // Connector between previousInstructions and EncodingShelfCard
+    const timelineConnector = (
+        <Box sx={{ display: 'flex', flexDirection: 'row' }}>
+            <Box sx={{ width: TIMELINE_WIDTH, flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                <Box sx={{ width: 0, flex: '1 1 0', minHeight: 8, borderLeft: `${dashedWidth} ${dashedStyle} ${dashedColor}` }} />
+            </Box>
+        </Box>
+    );
 
     const encodingShelf = (
         <Box className="encoding-shelf-compact" sx={{height: '100%',
             width: 236,
             overflowY: 'auto',
-            transition: 'height 300ms cubic-bezier(0.4, 0, 0.2, 1) 0ms',
+            transition: 'height 150ms cubic-bezier(0.4, 0, 0.2, 1) 0ms',
             alignItems: 'flex-start',
             paddingRight: '8px',
         }}>
-             {[   
-                <Box
-                    key="encoding-shelf" 
-                    sx={{display: 'flex'}}> 
-                    {previousInstructions}
-                </Box>,
-            ]}
-            <Box sx={{width: '17px', height: '12px'}}>
-                <Box sx={{padding:0, width: '1px', margin:'auto', height: '100%',
-                                        backgroundImage: 'linear-gradient(180deg, darkgray, darkgray 75%, transparent 75%, transparent 100%)',
-                                        backgroundSize: '1px 6px, 3px 100%'}}></Box>
-            </Box>
+            {previousInstructions}
+            {timelineConnector}
             <EncodingShelfCard chartId={chartId}/>
             {postInstruction}
             <Box sx={{height: '12px'}}></Box>

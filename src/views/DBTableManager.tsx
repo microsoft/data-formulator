@@ -53,6 +53,7 @@ type TableImportConfig =
     | { mode: 'subset'; rowLimit: number; sortColumns: string[]; sortOrder: 'asc' | 'desc' };
 
 import { getUrls, fetchWithIdentity } from '../app/utils';
+import { borderColor } from '../app/tokens';
 import { CustomReactTable } from './ReactTable';
 import { DataSourceConfig, DictTable } from '../components/ComponentType';
 import { Type } from '../data/types';
@@ -1062,7 +1063,7 @@ export const DBManagerPane: React.FC<{
                         minHeight: 0,
                         height: '100%',
                         position: 'relative',
-                        borderRight: `1px solid ${theme.palette.divider}`,
+                        borderRight: `1px solid ${borderColor.view}`,
                         overscrollBehavior: 'contain'
                     }}>
                         {/* Available Tables Section - always visible */}
@@ -1182,7 +1183,7 @@ export const DataLoaderForm: React.FC<{
     }
 
     let tableMetadataBox = [
-        <TableContainer component={Box} sx={{borderTop: '1px solid rgba(0, 0, 0, 0.1)', maxHeight: 340, overflowY: "auto"}} >
+        <TableContainer component={Box} sx={{borderTop: `1px solid ${borderColor.divider}`, maxHeight: 340, overflowY: "auto"}} >
             <Table sx={{ minWidth: 650 }} size="small" aria-label="simple table">
                 <TableHead>
                     <TableRow sx={{ '& .MuiTableCell-root': { fontSize: 12 } }}>

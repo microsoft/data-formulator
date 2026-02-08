@@ -7,6 +7,7 @@ import { useEffect, useState, useMemo } from 'react';
 import Typography from '@mui/material/Typography';
 import Box from '@mui/material/Box';
 import { Button, Chip } from '@mui/material';
+import { borderColor } from '../app/tokens';
 import StreamIcon from '@mui/icons-material/Stream';
 import { createTableFromFromObjectArray } from '../data/utils';
 import { MultiTablePreview } from './MultiTablePreview';
@@ -89,8 +90,7 @@ export const DatasetSelectionView: React.FC<DatasetSelectionViewProps> = functio
                 width: 180,
                 display: 'flex',
                 flexDirection: 'column',
-                borderRight: 1,
-                borderColor: 'divider',
+                borderRight: `1px solid ${borderColor.view}`,
                 overflow: 'hidden',
                 height: '100%'
             }}>

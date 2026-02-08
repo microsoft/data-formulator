@@ -69,6 +69,8 @@ import { AppDispatch } from '../app/store';
 import StopIcon from '@mui/icons-material/Stop';
 import { useDataRefresh } from '../app/useDataRefresh';
 import { AgentStatusBox, buildChartCard, buildTriggerCard, buildTableCard, BuildTableCardProps } from './DataThreadCards';
+import { ViewBorderStyle, transition, radius } from '../app/tokens';
+
 
 export const ThinkingBanner = (message: string, sx?: SxProps) => (
     <Box sx={{ 
@@ -97,20 +99,12 @@ export const ThinkingBanner = (message: string, sx?: SxProps) => (
         },
         ...sx
     }}>
-        <Box sx={{ 
-            display: 'flex', 
-            alignItems: 'center', 
-            justifyContent: 'left',
+        <Typography variant="body2" sx={{ 
+            fontSize: 10, 
+            color: 'rgba(0, 0, 0, 0.7) !important'
         }}>
-            <CircularProgress size={10} sx={{ color: 'text.secondary' }} />
-            <Typography variant="body2" sx={{ 
-                ml: 1, 
-                fontSize: 10, 
-                color: 'rgba(0, 0, 0, 0.7) !important'
-            }}>
-                {message}
-            </Typography>
-        </Box>
+            {message}
+        </Typography>
     </Box>
 );
 
@@ -198,8 +192,7 @@ const StreamingSettingsPopup = memo<{
                         fontSize: 12,
                         p: 1.5,
                         mt: 1,
-                        border: '1px solid',
-                        borderColor: 'divider'
+                        ...ViewBorderStyle,
                     }}
                 >
                     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
@@ -329,8 +322,7 @@ const MetadataPopup = memo<{
                         fontSize: 12,
                         p: 2,
                         mt: 1,
-                        border: '1px solid',
-                        borderColor: 'divider'
+                        ...ViewBorderStyle,
                     }}
                 >
                     <Typography variant="subtitle2" sx={{ mb: 1 }}>
@@ -407,7 +399,7 @@ const RenameTablePopup = memo<{
             <ClickAwayListener onClickAway={onClose}>
                 <Paper
                     elevation={8}
-                    sx={{ width: 240, fontSize: 12, p: 1.5, mt: 1, border: '1px solid', borderColor: 'divider' }}
+                    sx={{ width: 240, fontSize: 12, p: 1.5, mt: 1, ...ViewBorderStyle }}
                 >
                     <Typography variant="subtitle2" sx={{ mb: 0.5, fontSize: 12 }}>
                         Rename table
@@ -460,6 +452,7 @@ let SingleThreadGroupView: FC<{
 
     let tables = useSelector((state: DataFormulatorState) => state.tables);
     const { manualRefresh } = useDataRefresh();
+    const tableById = useMemo(() => new Map(tables.map(t => [t.id, t])), [tables]);
 
     let leafTableIds = leafTables.map(lt => lt.id);
     // Thread is highlighted only if this thread's leaf tables include the focused thread's leaf
@@ -477,12 +470,21 @@ let SingleThreadGroupView: FC<{
         });
     const shouldHighlightThread = threadHighlighted || isAncestorThread;
     let parentTableId = leafTables[0].derive?.trigger.tableId || undefined;
-    let parentTable = tables.find(t => t.id == parentTableId) as DictTable;
+    let parentTable = (parentTableId ? tableById.get(parentTableId) : undefined) as DictTable;
 
     let charts = useSelector(dfSelectors.getAllCharts);
     let focusedChartId = useSelector((state: DataFormulatorState) => state.focusedChartId);
     let focusedTableId = useSelector((state: DataFormulatorState) => state.focusedTableId);
     let agentActions = useSelector((state: DataFormulatorState) => state.agentActions);
+
+    // Pre-index running agent table IDs for O(1) lookup
+    const runningAgentTableIds = useMemo(() => {
+        const ids = new Set<string>();
+        for (const a of agentActions) {
+            if (!a.hidden && a.status === 'running') ids.add(a.tableId);
+        }
+        return ids;
+    }, [agentActions]);
 
     // Metadata popup state
     const [metadataPopupOpen, setMetadataPopupOpen] = useState(false);
@@ -744,7 +746,7 @@ let SingleThreadGroupView: FC<{
     let triggerCards = newTriggers.map((trigger) => _buildTriggerCard(trigger));
 
     // Build a flat sequence of timeline items: [trigger, table, charts, trigger, table, charts, ...]
-    let timelineItems: { key: string; element: React.ReactNode; type: 'used-table' | 'trigger' | 'table' | 'chart' | 'leaf-trigger' | 'leaf-table'; highlighted: boolean; tableId?: string }[] = [];
+    let timelineItems: { key: string; element: React.ReactNode; type: 'used-table' | 'trigger' | 'table' | 'chart' | 'leaf-trigger' | 'leaf-table'; highlighted: boolean; tableId?: string; isRunning?: boolean }[] = [];
 
     // Add used (shared) tables at the top
     // Only show the immediate parent + "..." for further ancestors
@@ -764,7 +766,7 @@ let SingleThreadGroupView: FC<{
         });
     }
     displayedUsedTableIds.forEach((tableId, i) => {
-        let table = tables.find(t => t.id === tableId) as DictTable;
+        let table = tableById.get(tableId) as DictTable;
         timelineItems.push({
             key: `used-table-${tableId}-${i}`,
             type: 'used-table',
@@ -812,12 +814,15 @@ let SingleThreadGroupView: FC<{
                 if (!subItem) return;
                 const subKey = subItem?.key || `woven-${tableId}-${j}`;
                 const isChart = subKey.includes('chart') || subKey.includes('agent');
+                const isAgent = subKey.includes('agent');
+                const isAgentRunning = isAgent && runningAgentTableIds.has(tableId);
                 timelineItems.push({
                     key: subKey,
                     type: isChart ? 'chart' : 'table',
                     tableId: isChart ? undefined : tableId,
                     highlighted: isHighlighted,
                     element: subItem,
+                    ...(isAgentRunning ? { isRunning: true } : {}),
                 });
             });
         }
@@ -840,12 +845,15 @@ let SingleThreadGroupView: FC<{
                 if (!subItem) return;
                 const subKey = subItem?.key || `leaf-card-${lt.id}-${j}`;
                 const isChart = subKey.includes('chart') || subKey.includes('agent');
+                const isAgent = subKey.includes('agent');
+                const isAgentRunning = isAgent && runningAgentTableIds.has(lt.id);
                 timelineItems.push({
                     key: subKey,
                     type: isChart ? 'chart' : 'leaf-table',
                     tableId: isChart ? undefined : lt.id,
                     highlighted: highlightedTableIds.includes(lt.id),
                     element: subItem,
+                    ...(isAgentRunning ? { isRunning: true } : {}),
                 });
             });
         }
@@ -862,9 +870,14 @@ let SingleThreadGroupView: FC<{
             ? theme.palette.primary.main
             : 'rgba(0,0,0,0.25)';
 
+        // For running agent items, show a spinner instead of a dot
+        if (item.isRunning) {
+            return <CircularProgress size={12} thickness={5} sx={{ color: theme.palette.primary.main }} />;
+        }
+
         // For table items, show a type-specific icon instead of a dot
         if (isTable && item.tableId) {
-            const tableForDot = tables.find(t => t.id === item.tableId);
+            const tableForDot = tableById.get(item.tableId);
             const iconSx = { fontSize: 14, color };
             const isStreaming = tableForDot && (tableForDot.source?.type === 'stream' || tableForDot.source?.type === 'database') && tableForDot.source?.autoRefresh;
 
@@ -907,7 +920,7 @@ let SingleThreadGroupView: FC<{
             ? { backgroundColor: 'rgba(255,255,255,0.75)', borderRadius: 0, mx: -1, px: 1 }
             : {};
 
-        // Triggers: solid colored line on the left (no dash), indicating an action area
+        // Triggers: thick solid bar with a dot in the middle and a horizontal tick to the card
         if (isTrigger) {
             return (
                 <Box key={`timeline-row-${item.key}`} sx={{ display: 'flex', flexDirection: 'row', position: 'relative', ...rowHighlightSx }}>
@@ -918,10 +931,20 @@ let SingleThreadGroupView: FC<{
                     }}>
                         {/* Dashed connector from previous element */}
                         <Box sx={{ width: 0, flex: '0 0 auto', height: 10, borderLeft: `${dashedWidth} ${dashedStyle} ${dashedColor}` }} />
-                        {/* Solid bar alongside trigger content */}
+                        {/* Thick solid bar — top half */}
                         <Box sx={{ 
                             width: item.highlighted ? 3 : 2, flex: '1 1 0', minHeight: 4, 
-                            borderRadius: '2px',
+                            borderRadius: '2px 2px 0 0',
+                            backgroundColor: triggerColor,
+                        }} />
+                        {/* Horizontal tick to the right */}
+                        <Box sx={{ flexShrink: 0, zIndex: 1, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <Box sx={{ position: 'absolute', left: '100%', width: 8, height: 0, borderTop: `1.5px solid ${item.highlighted ? alpha(theme.palette.custom.main, 0.5) : 'rgba(0,0,0,0.15)'}` }} />
+                        </Box>
+                        {/* Thick solid bar — bottom half */}
+                        <Box sx={{ 
+                            width: item.highlighted ? 3 : 2, flex: '1 1 0', minHeight: 4, 
+                            borderRadius: '0 0 2px 2px',
                             backgroundColor: triggerColor,
                         }} />
                         {/* Dashed connector to next element */}
@@ -958,7 +981,7 @@ let SingleThreadGroupView: FC<{
         }
 
         // Tables (primary nodes): settings icon on the timeline, more vertical spacing
-        const tableForItem = item.tableId ? tables.find(t => t.id === item.tableId) : undefined;
+        const tableForItem = item.tableId ? tableById.get(item.tableId) : undefined;
         return (
             <Box key={`timeline-row-${item.key}`} sx={{ display: 'flex', flexDirection: 'row', position: 'relative', ...rowHighlightSx }}>
                 <Box sx={{ 
@@ -1146,9 +1169,11 @@ let SingleThreadGroupView: FC<{
 
     return <Box sx={{ ...sx, 
             '& .selected-card': { 
-                boxShadow: `0 0 0 1.5px ${theme.palette.primary.light}`,
+                boxShadow: `0 0 0 2px ${theme.palette.primary.light}`,
+                my: 0.5,
+                border: 'none'
             },
-            transition: "all 0.15s ease",
+            transition: transition.fast,
             padding: '4px',
             ...(shouldHighlightThread
                 ? { backgroundColor: theme.palette.derived.bgcolor, borderRadius: '8px' }
@@ -1717,6 +1742,18 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
         }
     }, [focusedTableId]);
 
+    // O(1) table lookup by ID
+    const tableById = useMemo(() => new Map(tables.map(t => [t.id, t])), [tables]);
+
+    // Cached getTriggers — avoids repeated chain walks within a single render
+    const _tCache = new Map<string, Trigger[]>();
+    const getCachedTriggers = (lt: DictTable): Trigger[] => {
+        if (_tCache.has(lt.id)) return _tCache.get(lt.id)!;
+        const triggers = getTriggers(lt, tables);
+        _tCache.set(lt.id, triggers);
+        return triggers;
+    };
+
     // Now use useMemo to memoize the chartElements array
     let chartElements = useMemo(() => {
         return charts.filter(c => c.source == "user").map((chart) => {
@@ -1754,20 +1791,33 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
     // MAX_CHAIN_TABLES steps. The sort (shorter chains first) ensures the intermediate
     // leaf is processed before the real leaf, so its tables get claimed — making the
     // real leaf's thread show only the remaining (new) tables.
+    // When counting chain length, exclude "used" tables (already claimed by an earlier
+    // chain) so that shared ancestors don't inflate the count. The first chain to
+    // contain a table still counts it as owned.
     const MAX_CHAIN_TABLES = 5;
+
+    // Process leaves in order, tracking claimed tables to simulate the later claim loop.
+    // A table is "used" for a chain only if a *previous* chain already claimed it.
+    const claimedForSplit = new Set<string>();
     const extraLeaves: DictTable[] = [];
     for (const lt of leafTables) {
-        const triggers = getTriggers(lt, tables);
-        const chainLen = triggers.length + 1; // total tables in this derivation chain
-        if (chainLen > MAX_CHAIN_TABLES) {
-            for (let pos = MAX_CHAIN_TABLES - 1; pos < triggers.length; pos += MAX_CHAIN_TABLES) {
-                const midId = triggers[pos].tableId;
-                const midTable = tables.find(t => t.id === midId);
+        const triggers = getCachedTriggers(lt);
+        const allChainIds = [lt.id, ...triggers.map(t => t.tableId)];
+        // Tables not yet claimed by an earlier chain count as owned
+        const ownedIds = allChainIds.filter(id => !claimedForSplit.has(id));
+        if (ownedIds.length > MAX_CHAIN_TABLES) {
+            // Walk only owned (unclaimed) triggers for split positions
+            const ownedTriggers = triggers.filter(t => !claimedForSplit.has(t.tableId));
+            for (let pos = MAX_CHAIN_TABLES - 1; pos < ownedTriggers.length; pos += MAX_CHAIN_TABLES) {
+                const midId = ownedTriggers[pos].tableId;
+                const midTable = tableById.get(midId);
                 if (midTable && !leafTables.includes(midTable) && !extraLeaves.includes(midTable)) {
                     extraLeaves.push(midTable);
                 }
             }
         }
+        // Claim all tables in this chain for subsequent chains
+        allChainIds.forEach(id => claimedForSplit.add(id));
     }
     if (extraLeaves.length > 0) {
         leafTables.push(...extraLeaves);
@@ -1778,7 +1828,7 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
     // when tables are anchored, we want to give them a higher order (so that they are displayed after their peers)
     let tableOrder = Object.fromEntries(tables.map((table, index) => [table.id, index + (table.anchored ? 1 : 0) * tables.length]));
     let getAncestorOrders = (leafTable: DictTable) => {
-        let triggers = getTriggers(leafTable, tables);
+        let triggers = getCachedTriggers(leafTable);
         return [...triggers.map(t => tableOrder[t.tableId]), tableOrder[leafTable.id]];
     }
 
@@ -1800,7 +1850,7 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
     // Compute global highlighted table IDs from the focused table's full ancestor chain
     let globalHighlightedTableIds: string[] = useMemo(() => {
         if (!focusedTableId) return [];
-        let focusedTable = tables.find(t => t.id === focusedTableId);
+        let focusedTable = tableById.get(focusedTableId);
         if (!focusedTable) return [];
         // Walk up the trigger chain from the focused table to collect all ancestor IDs
         let ids: string[] = [focusedTableId];
@@ -1808,12 +1858,12 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
         while (current.derive && !current.anchored) {
             let parentId = current.derive.trigger.tableId;
             ids.unshift(parentId);
-            let parent = tables.find(t => t.id === parentId);
+            let parent = tableById.get(parentId);
             if (!parent) break;
             current = parent;
         }
         return ids;
-    }, [focusedTableId, tables]);
+    }, [focusedTableId, tableById]);
 
     // Determine which leaf table's thread the focused table belongs to
     let focusedThreadLeafId: string | undefined = useMemo(() => {
@@ -1823,7 +1873,7 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
         if (directLeaf) return directLeaf.id;
         // Otherwise, find the leaf table whose ancestor chain includes the focused table
         for (const lt of leafTables) {
-            const triggers = getTriggers(lt, tables);
+            const triggers = getCachedTriggers(lt);
             const chainIds = [...triggers.map(t => t.tableId), lt.id];
             if (chainIds.includes(focusedTableId)) {
                 return lt.id;
@@ -1845,7 +1895,7 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
     });
 
     // Build thread entries and their estimated heights for layout
-    type ThreadEntry = { key: string; groupId: string; leafTables: DictTable[]; isCompact: boolean; threadIdx: number; threadLabel?: string; isSplitThread?: boolean };
+    type ThreadEntry = { key: string; groupId: string; leafTables: DictTable[]; isCompact: boolean; threadIdx: number; threadLabel?: string; isSplitThread?: boolean; usedTableIds?: string[] };
     let allThreadEntries: ThreadEntry[] = [];
     let allThreadHeights: number[] = [];
 
@@ -1882,7 +1932,7 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
     for (const lt of threadedTables) {
         if (!extraLeafIds.has(lt.id)) {
             // This is a real leaf — find all extra leaves that are ancestors of it
-            const triggers = getTriggers(lt, tables);
+            const triggers = getCachedTriggers(lt);
             const chainIds = triggers.map(t => t.tableId);
             const myExtras: string[] = [];
             for (const extraId of extraLeafIds) {
@@ -1904,7 +1954,7 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
     let subThreadCounters = new Map<number, number>();
 
     threadedTables.forEach((lt, i) => {
-        const triggers = getTriggers(lt, tables);
+        const triggers = getCachedTriggers(lt);
 
         // Collect all table IDs in this thread's chain
         let threadTableIds = new Set<string>();
@@ -1967,6 +2017,18 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
         allThreadHeights.push(estimateThreadHeight(totalTables, totalTriggers, chartCount, messageCount));
     });
 
+    // Pre-compute usedTableIds for each entry (avoids quadratic recomputation in renderThreadEntry)
+    {
+        let accumulated: string[] = [];
+        for (const entry of allThreadEntries) {
+            entry.usedTableIds = [...accumulated];
+            for (const lt of entry.leafTables) {
+                const triggers = getCachedTriggers(lt);
+                accumulated.push(...triggers.map(t => t.tableId), lt.id);
+            }
+        }
+    }
+
     // Pick the best column layout: balances scroll burden vs whitespace.
     // Measure actual panel height from the DOM (accounts for browser zoom, panel resizing, etc.)
     const availableHeight = containerRef.current?.clientHeight ?? 600;
@@ -1982,14 +2044,7 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
     const CARD_GAP = 12; // padding + spacing between cards in a column
 
     let renderThreadEntry = (entry: ThreadEntry) => {
-        // Calculate used tables from all previous threads
-        const previousEntries = allThreadEntries.slice(0, allThreadEntries.indexOf(entry));
-        let usedTableIds = previousEntries.flatMap(e => {
-            return e.leafTables.flatMap(lt => {
-                const triggers = getTriggers(lt, tables);
-                return [...triggers.map(t => t.tableId), lt.id];
-            });
-        });
+        let usedTableIds = entry.usedTableIds || [];
 
         if (entry.isCompact) {
             return <SingleThreadGroupView
@@ -2006,7 +2061,7 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
                 compact={true}
                 sx={{
                     backgroundColor: 'white',
-                    borderRadius: 2,
+                    borderRadius: radius.md,
                     padding: 1,
                     my: 0.5,
                     flex: 'none',
@@ -2014,7 +2069,7 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
                     flexDirection: 'column',
                     height: 'fit-content',
                     width: CARD_WIDTH,
-                    transition: 'all 0.3s ease',
+                    transition: transition.fast,
                 }} />;
         } else {
             return <SingleThreadGroupView
@@ -2030,7 +2085,7 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
                 focusedThreadLeafId={focusedThreadLeafId}
                 sx={{
                     backgroundColor: 'white',
-                    borderRadius: 2,
+                    borderRadius: radius.md,
                     padding: 1,
                     my: 0.5,
                     flex: 'none',
@@ -2038,7 +2093,7 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
                     flexDirection: 'column',
                     height: 'fit-content',
                     width: CARD_WIDTH,
-                    transition: 'all 0.3s ease',
+                    transition: transition.fast,
                 }} />;
         }
     };

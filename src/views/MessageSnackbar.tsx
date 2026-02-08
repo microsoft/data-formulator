@@ -9,6 +9,7 @@ import CloseIcon from '@mui/icons-material/Close';
 import { DataFormulatorState, dfActions } from '../app/dfSlice';
 import { useDispatch, useSelector } from 'react-redux';
 import { Alert, alpha, Box, Chip, Collapse, Divider, Paper, Tooltip, Typography } from '@mui/material';
+import { shadow, transition } from '../app/tokens';
 import InfoIcon from '@mui/icons-material/Info';
 import AssignmentIcon from '@mui/icons-material/Assignment';
 import DeleteIcon from '@mui/icons-material/Delete';
@@ -136,8 +137,8 @@ export function MessageSnackbar() {
             },
             border: '1px solid',
             
-            boxShadow: '0 0 10px rgba(0,0,0,0.1)',
-            transition: 'all 0.3s ease'
+            boxShadow: shadow.xl,
+            transition: transition.slow
         }}}>
             <Tooltip placement="left" title="view system messages">
                 <IconButton 

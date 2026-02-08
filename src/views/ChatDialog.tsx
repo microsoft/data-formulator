@@ -2,6 +2,7 @@
 // Licensed under the MIT License.
 
 import { FC, useRef, useEffect } from 'react'
+import { radius } from '../app/tokens';
 import { Divider } from "@mui/material";
 import {
 		Card,
@@ -161,7 +162,7 @@ export const ChatDialog: FC<ChatDialogProps> = function ChatDialog({code, dialog
                             backgroundColor: isUser ? alpha(theme.palette.primary.main, 0.05) : alpha(theme.palette.custom.main, 0.05),
                             border: isUser ? "1px solid" : "1px solid",
                             borderColor: isUser ? alpha(theme.palette.primary.main, 0.2) : alpha(theme.palette.custom.main, 0.2),
-                            borderRadius: 2,
+                            borderRadius: radius.md,
                         }}>
                         <CardContent sx={{display: "flex", flexDirection: "column", flexGrow: 1, padding: '8px 12px', paddingBottom: '8px !important'}}>
                             <Typography sx={{ 

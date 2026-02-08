@@ -31,6 +31,8 @@ import CancelOutlinedIcon from '@mui/icons-material/CancelOutlined';
 
 import { TriggerCard } from './EncodingShelfCard';
 import { ThinkingBanner } from './DataThread';
+import { ComponentBorderStyle, shadow, transition } from '../app/tokens';
+
 
 // ─── Agent Status Box ────────────────────────────────────────────────────────
 
@@ -108,7 +110,7 @@ export const AgentStatusBox = memo<{
                             sx={{
                                 padding: '2px',
                                 ml: 'auto',
-                                transition: 'opacity 0.2s ease-in-out',
+                                transition: 'opacity 0.1s ease-in-out',
                                 '& .MuiSvgIcon-root': { fontSize: 12, color: 'darkgray !important' }
                             }}
                             onClick={(event) => {
@@ -247,10 +249,10 @@ export let buildTableCard = (props: BuildTableCardProps) => {
                     cursor: 'pointer',
                     padding: '2px 4px',
                     borderRadius: '4px',
-                    transition: 'all 0.2s ease',
+                    transition: transition.fast,
                     '&:hover': {
                         backgroundColor: 'rgba(0, 0, 0, 0.04)',
-                        boxShadow: '0 2px 4px rgba(0,0,0,0.05)'
+                        boxShadow: shadow.sm
                     }
                 }}
                 onClick={(event) => {
@@ -304,7 +306,7 @@ export let buildTableCard = (props: BuildTableCardProps) => {
         <Card className={`data-thread-card ${selectedClassName}`} elevation={0}
             sx={{ width: '100%', 
                 backgroundColor: primaryBgColor,
-                border: '1px solid rgba(0,0,0,0.08)',
+                ...ComponentBorderStyle,
                 borderRadius: '6px',
                 }}
             onClick={() => {
@@ -333,7 +335,7 @@ export let buildTableCard = (props: BuildTableCardProps) => {
                     <Tooltip key="more-options-btn-tooltip" title="more options">
                         <IconButton className="more-options-btn" color="primary" aria-label="more options" size="small" sx={{ padding: 0.25, '&:hover': {
                             transform: 'scale(1.2)',
-                            transition: 'all 0.1s linear'
+                            transition: transition.fast
                             } }}
                             onClick={(event) => {
                                 event.stopPropagation();
@@ -346,7 +348,7 @@ export let buildTableCard = (props: BuildTableCardProps) => {
                     <Tooltip key="create-new-chart-btn-tooltip" title="create a new chart">
                         <IconButton aria-label="create chart" size="small" sx={{ padding: 0.25, '&:hover': {
                             transform: 'scale(1.2)',
-                            transition: 'all 0.1s linear'
+                            transition: transition.fast
                             } }}
                             onClick={(event) => {
                                 event.stopPropagation();

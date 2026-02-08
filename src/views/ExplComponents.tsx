@@ -13,6 +13,7 @@ import {
 } from '@mui/material';
 import { styled } from '@mui/material/styles';
 import { alpha } from '@mui/material/styles';
+import { borderColor, shadow, transition, radius } from '../app/tokens';
 import 'katex/dist/katex.min.css';
 import { InlineMath, BlockMath } from 'react-katex';
 
@@ -129,12 +130,12 @@ const ConceptExplanationCard = styled(Card, {
     margin: '4px',
 
     borderRadius: '6px',
-    border: `1px solid ${alpha(theme.palette.divider, 0.2)}`,
-    boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
-    transition: 'all 0.2s ease-in-out',
+    border: `1px solid ${borderColor.divider}`,
+    boxShadow: shadow.sm,
+    transition: transition.normal,
     backgroundColor: alpha(theme.palette.background.paper, 0.9),
     '&:hover': {
-        boxShadow: '0 2px 6px rgba(0,0,0,0.1)',
+        boxShadow: shadow.lg,
         borderColor: !secondary ? theme.palette.primary.light : theme.palette.secondary.light, 
         transform: 'translateY(-1px)',
     },
@@ -224,8 +225,7 @@ export const ConceptExplCards: FC<ConceptExplCardsProps> = ({
                         justifyContent: 'center', 
                         marginTop: 1,
                         paddingTop: 1,
-                        borderTop: '1px solid',
-                        borderColor: 'divider',
+                        borderTop: `1px solid ${borderColor.divider}`,
                     }}>
                         <Tooltip title={expanded ? "Show fewer concepts" : "Show all concepts"}>
                             <IconButton
@@ -281,13 +281,12 @@ export const CodeExplanationCard: FC<{
             display: "flex", 
             flexGrow: 1, 
             margin: 0,
-            borderRadius: 2,
-            border: '1px solid',
-            borderColor: 'divider',
-            boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
-            transition: 'all 0.2s ease-in-out',
+            borderRadius: radius.md,
+            border: `1px solid ${borderColor.divider}`,
+            boxShadow: shadow.sm,
+            transition: transition.normal,
             '&:hover': {
-                boxShadow: '0 2px 8px rgba(0,0,0,0.12)',
+                boxShadow: shadow.lg,
                 borderColor: 'primary.main',
             }
         }}
@@ -326,8 +325,7 @@ export const CodeExplanationCard: FC<{
                     flex: 'auto', 
                     padding: 1.5, 
                     background: 'background.default',
-                    borderTop: '1px solid',
-                    borderColor: 'divider',
+                    borderTop: `1px solid ${borderColor.divider}`,
                     borderRadius: '0 0 8px 8px'
                 }}
             >

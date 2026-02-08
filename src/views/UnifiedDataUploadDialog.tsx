@@ -3,6 +3,7 @@
 
 import * as React from 'react';
 import { useState, useCallback, useEffect, useRef } from 'react';
+import { borderColor, transition, radius } from '../app/tokens';
 import {
     Box,
     Button,
@@ -99,11 +100,10 @@ const DataSourceCard: React.FC<DataSourceCardProps> = ({
             sx={{
                 p: 1.5,
                 cursor: disabled ? 'not-allowed' : 'pointer',
-                border: '1px solid',
-                borderColor: 'divider',
-                borderRadius: 1,
+                border: `1px solid ${borderColor.divider}`,
+                borderRadius: radius.sm,
                 opacity: disabled ? 0.5 : 1,
-                transition: 'all 0.15s ease',
+                transition: transition.fast,
                 display: 'flex',
                 alignItems: 'center',
                 gap: 1.5,
@@ -1044,12 +1044,12 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                             <Box
                                 sx={{
                                     border: '2px dashed',
-                                    borderColor: 'divider',
-                                    borderRadius: 2,
+                                    borderColor: borderColor.divider,
+                                    borderRadius: radius.md,
                                     p: showFilePreview ? 2 : 3,
                                     textAlign: 'center',
                                     cursor: 'pointer',
-                                    transition: 'all 0.2s',
+                                    transition: transition.normal,
                                     '&:hover': {
                                         borderColor: 'primary.main',
                                         backgroundColor: alpha(theme.palette.primary.main, 0.04),

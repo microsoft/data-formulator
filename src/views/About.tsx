@@ -2,6 +2,7 @@
 // Licensed under the MIT License.
 
 import { Box, Typography, Button, useTheme, alpha, Divider } from "@mui/material";
+import { borderColor, radius } from '../app/tokens';
 import React, { FC } from "react";
 import GridViewIcon from '@mui/icons-material/GridView';
 import GitHubIcon from '@mui/icons-material/GitHub';
@@ -167,9 +168,9 @@ export const About: FC<{}> = function About({ }) {
                             {/* Media Content */}
                             <Box sx={{ 
                                 flex: 1,
-                                borderRadius: 2,
+                                borderRadius: radius.md,
                                 overflow: 'hidden',
-                                border: '1px solid rgba(0,0,0,0.1)',
+                                border: `1px solid ${borderColor.divider}`,
                             }}>
                                 {feature.mediaType === 'video' ? (
                                     <Box

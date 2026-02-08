@@ -57,6 +57,8 @@ import CheckIcon from '@mui/icons-material/Check';
 import { ThinkingBanner } from './DataThread';
 
 import { AppDispatch } from '../app/store';
+import { borderColor, transition, radius } from '../app/tokens';
+
 import PrecisionManufacturing from '@mui/icons-material/PrecisionManufacturing';
 import { Type } from '../data/types';
 import DeleteIcon from '@mui/icons-material/Delete';
@@ -116,7 +118,7 @@ export const renderTextWithEmphasis = (text: string, highlightChipSx?: SxProps<T
                     sx={{
                         color: 'inherit',
                         padding: '0px 2px',
-                        borderRadius: '4px',
+                        borderRadius: radius.sm,
                         ...highlightChipSx
                     }}
                 >
@@ -175,8 +177,9 @@ export const TriggerCard: FC<{
                         <Chip 
                             key={`trigger-${channel}-${field?.id}`}
                             sx={{color:'inherit', maxWidth: '110px', m: 0.25,
-                                   height: 18, fontSize: 12, borderRadius: '4px', 
-                                   border: '1px solid rgb(250 235 215)', background: 'rgb(250 235 215 / 70%)',
+                                   height: 18, fontSize: 12, borderRadius: radius.sm, 
+                                   border: `1px solid ${borderColor.component}`, 
+                                   background: 'rgb(250 235 215 / 70%)',
                                    '& .MuiChip-label': { px: 0.5 }}} 
                               label={`${field?.name}`} />]
             })
@@ -192,24 +195,20 @@ export const TriggerCard: FC<{
     // Process the prompt to highlight content in ** **
     const processedPrompt = renderTextWithEmphasis(prompt, {
         fontSize: mini ? 10 : 11, padding: '1px 4px',
-        borderRadius: '4px',
+        borderRadius: radius.sm,
         background: alpha(theme.palette.custom.main, 0.08), 
     });
 
     if (mini) {
         return <Typography component="div" sx={{
-            ml: '7px', borderLeft: '3px solid', 
-            borderColor: alpha(theme.palette.custom.main, 0.5), 
-            paddingLeft: '8px', 
             fontSize: '10px', color: theme.palette.text.secondary,
             my: '2px', textWrap: 'balance',
             '&:hover': {
-                borderLeft: '3px solid',
-                borderColor: theme.palette.custom.main,
                 cursor: 'pointer',
                 color: theme.palette.text.primary,
             },
             '& .MuiChip-label': { px: 0.5, fontSize: "10px"},
+            ...sx,
         }} onClick={handleClick}>
             {processedPrompt} 
             {hideFields ? "" : encodingComp}
@@ -224,9 +223,9 @@ export const TriggerCard: FC<{
             textAlign: 'left',
             py: 0.5,
             px: 1,
-            borderRadius: '4px',
+            borderRadius: radius.sm,
             backgroundColor: theme.palette.custom.bgcolor,
-            border: `1px solid ${alpha(theme.palette.secondary.main, 0.12)}`,
+            border: `1px solid ${borderColor.component}`,
             '& .MuiChip-label': { px: 0.5, fontSize: "10px"},
             ...sx,
         }} 
@@ -933,7 +932,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
             alignItems: 'center', 
             gap: 1, 
             padding: '4px 8px',
-            borderBottom: '1px solid rgba(0, 0, 0, 0.08)',
+            borderBottom: `1px solid ${borderColor.component}`,
             backgroundColor: 'rgba(0, 0, 0, 0.02)'
         }}>
             <Typography 
@@ -944,11 +943,11 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                     fontSize: 11, 
                     cursor: 'pointer',
                     padding: '2px 6px',
-                    borderRadius: 1,
+                    borderRadius: radius.sm,
                     backgroundColor: ideateMode ? 'rgba(25, 118, 210, 0.08)' : 'transparent',
                     color: ideateMode ? 'primary.main' : 'text.secondary',
                     fontWeight: ideateMode ? 500 : 400,
-                    transition: 'all 0.2s ease',
+                    transition: transition.fast,
                     '&:hover': {
                         backgroundColor: ideateMode ? 'rgba(25, 118, 210, 0.12)' : 'rgba(0, 0, 0, 0.04)'
                     }
@@ -985,11 +984,11 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                     fontSize: 11, 
                     cursor: 'pointer',
                     padding: '2px 6px',
-                    borderRadius: 1,
+                    borderRadius: radius.sm,
                     backgroundColor: !ideateMode ? 'rgba(25, 118, 210, 0.08)' : 'transparent',
                     color: !ideateMode ? 'primary.main' : 'text.secondary',
                     fontWeight: !ideateMode ? 500 : 400,
-                    transition: 'all 0.2s ease',
+                    transition: transition.fast,
                     '&:hover': {
                         backgroundColor: !ideateMode ? 'rgba(25, 118, 210, 0.12)' : 'rgba(0, 0, 0, 0.04)'
                     }
@@ -1105,6 +1104,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
             maxWidth: "400px", 
             display: 'flex', 
             flexDirection: 'column', 
+            borderColor: borderColor.component,
             backgroundColor: trigger ? "rgba(255, 160, 122, 0.07)" : "" 
         }}>
             <ModeToggleHeader />
