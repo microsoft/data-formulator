@@ -1158,13 +1158,22 @@ export const resolveRecommendedChart = (refinedGoal: any, allFields: FieldItem[]
         "boxplot": "Boxplot",
         "area": "Custom Area",
         "heatmap": "Heatmap",
-        "group_bar": "Grouped Bar Chart"
+        "group_bar": "Grouped Bar Chart",
+        "worldmap": "World Map",
+        "usmap": "US Map"
     }
     let chartType = chartTypeMap[rawChartType] || 'Scatter Plot';
     let newChart = generateFreshChart(table.id, chartType) as Chart;
     newChart = resolveChartFields(newChart, allFields, chartEncodings, table);
     if (rawChartType == "histogram") {
         newChart.encodingMap.y = { aggregate: "count" };
+    }
+    // Handle map projection settings
+    if ((rawChartType === "worldmap" || rawChartType === "usmap") && refinedGoal['projection']) {
+        newChart.projection = refinedGoal['projection'];
+    }
+    if ((rawChartType === "worldmap" || rawChartType === "usmap") && refinedGoal['projection_center']) {
+        newChart.projectionCenter = refinedGoal['projection_center'];
     }
     return newChart;
 }
