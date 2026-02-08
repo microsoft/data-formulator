@@ -83,8 +83,20 @@ export const PROJECTION_CENTER_PRESETS: { label: string; center: [number, number
     { label: "Korea", center: [128, 36] },
 ];
 
+// Explicit list of chart types that should be treated as map charts.
+// Use lowercase values here and perform case-insensitive matching in isMapChart.
+const MAP_CHART_TYPES = new Set<string>([
+    "map",
+    "world map",
+    "us map",
+]);
+
 export const isMapChart = (chartType: string) => {
-    return chartType.toLowerCase().includes('map');
+    if (!chartType) {
+        return false;
+    }
+    const normalized = chartType.trim().toLowerCase();
+    return MAP_CHART_TYPES.has(normalized);
 }
 
 /**
