@@ -1992,7 +1992,7 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
     );
     const actualColumns = columnLayout.length || 1;
 
-    const CARD_WIDTH = hasMultipleThreads ? 220 : 240;
+    const CARD_WIDTH = hasMultipleThreads ? 220 : 220;
     const CARD_GAP = 12; // padding + spacing between cards in a column
 
     let renderThreadEntry = (entry: ThreadEntry) => {
