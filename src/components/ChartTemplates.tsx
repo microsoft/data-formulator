@@ -29,7 +29,6 @@ import chartIconPie from '../assets/chart-icon-pie-min.png';
 import chartIconUSMap from '../assets/chart-icon-us-map-min.png';
 import chartIconPyramid from '../assets/chart-icon-pyramid-min.png';
 import chartIconWorldMap from '../assets/chart-icon-world-map-min.png';
-import { lab } from "d3";
 
 // Chart Icon Component using static imports
 const ChartIcon: React.FC<{ src: string; alt?: string }> = ({ src, alt = "" }) => {
