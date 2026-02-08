@@ -426,29 +426,138 @@ const RenameTablePopup = memo<{
     );
 });
 
+const WorkspacePanel: FC<{
+    tables: DictTable[],
+    chartElements: { tableId: string, chartId: string, element: any }[],
+    sx?: SxProps,
+}> = function ({ tables, chartElements, sx }) {
+    const theme = useTheme();
+    const dispatch = useDispatch();
+    const focusedTableId = useSelector((state: DataFormulatorState) => state.focusedTableId);
+    const focusedChartId = useSelector((state: DataFormulatorState) => state.focusedChartId);
+    const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
+
+    const fileItemSx = (isActive: boolean) => ({
+        display: 'flex',
+        alignItems: 'center',
+        gap: 0.75,
+        px: 1,
+        py: '3px',
+        borderRadius: '4px',
+        cursor: 'pointer',
+        fontSize: 11,
+        transition: transition.fast,
+        backgroundColor: isActive ? alpha(theme.palette.primary.main, 0.08) : 'transparent',
+        '&:hover': {
+            backgroundColor: isActive ? alpha(theme.palette.primary.main, 0.12) : 'rgba(0,0,0,0.04)',
+        },
+    });
+
+    const getTableIcon = (table: DictTable) => {
+        const isStreaming = (table.source?.type === 'stream' || table.source?.type === 'database') && table.source?.autoRefresh;
+        const iconSx = { fontSize: 14, color: 'text.secondary', flexShrink: 0 };
+        if (isStreaming) return <StreamIcon sx={{ ...iconSx, color: theme.palette.success.main, animation: 'pulse 2s infinite', '@keyframes pulse': { '0%': { opacity: 1 }, '50%': { opacity: 0.4 }, '100%': { opacity: 1 } } }} />;
+        if (table.virtual) return <CloudQueueIcon sx={iconSx} />;
+        return <TableRowsIcon sx={iconSx} />;
+    };
+
+    return (
+        <Box sx={{ ...sx,
+            transition: transition.fast,
+            padding: '6px',
+            backgroundColor: 'rgba(0,0,0,0.02)',
+            borderRadius: '8px',
+            border: '1px solid rgba(0,0,0,0.06)',
+        }}>
+            <Typography sx={{ fontSize: 10, fontWeight: 600, color: 'rgba(0,0,0,0.4)', textTransform: 'uppercase', letterSpacing: '0.5px', px: 1, mb: 0.5 }}>
+                workspace
+            </Typography>
+
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
+                {tables.map((table) => {
+                    const isActive = focusedTableId === table.id;
+                    const tableCharts = chartElements.filter(ce => ce.tableId === table.id);
+                    const handleTableClick = () => {
+                        dispatch(dfActions.setFocusedTable(table.id));
+                        if (tableCharts.length === 0) {
+                            // No charts yet — create a placeholder to enter chart creation view
+                            dispatch(dfActions.setFocusedChart(null));
+                        } else {
+                            // Has charts — focus the first one if not already viewing one from this table
+                            const alreadyFocused = tableCharts.some(ce => ce.chartId === focusedChartId);
+                            if (!alreadyFocused) {
+                                dispatch(dfActions.setFocusedChart(tableCharts[0].chartId));
+                            }
+                        }
+                    };
+                    return (
+                        <Box
+                            key={table.id}
+                            sx={fileItemSx(isActive)}
+                            onClick={handleTableClick}
+                        >
+                            {getTableIcon(table)}
+                            <Typography sx={{
+                                fontSize: 11,
+                                fontWeight: isActive ? 500 : 400,
+                                color: isActive ? 'primary.main' : 'text.primary',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap',
+                                flex: 1,
+                                minWidth: 0,
+                            }}>
+                                {table.displayId || table.id}
+                            </Typography>
+                            {table.attachedMetadata && (
+                                <AttachFileIcon sx={{ fontSize: 10, color: 'text.disabled', flexShrink: 0 }} />
+                            )}
+                        </Box>
+                    );
+                })}
+                <Box
+                    sx={fileItemSx(false)}
+                    onClick={() => setUploadDialogOpen(true)}
+                >
+                    <AddIcon sx={{ fontSize: 14, color: 'text.disabled', flexShrink: 0 }} />
+                    <Typography sx={{ fontSize: 11, color: 'text.disabled' }}>
+                        add data...
+                    </Typography>
+                </Box>
+            </Box>
+
+            <UnifiedDataUploadDialog
+                open={uploadDialogOpen}
+                onClose={() => setUploadDialogOpen(false)}
+                initialTab="menu"
+            />
+        </Box>
+    );
+};
+
 let SingleThreadGroupView: FC<{
     scrollRef: any,
     threadIdx: number,
     threadLabel?: string, // Custom label like "thread 1.1" for split sub-threads
     isSplitThread?: boolean, // When true, truncate used tables to immediate parent + "..."
+    hideLabel?: boolean, // When true, hide the thread label divider
     leafTables: DictTable[];
     chartElements: { tableId: string, chartId: string, element: any }[];
     usedIntermediateTableIds: string[],
     globalHighlightedTableIds: string[],
     focusedThreadLeafId?: string, // The leaf table ID of the thread containing the focused table
-    compact?: boolean, // When true, only show table cards in a simple column (for thread0)
     sx?: SxProps
 }> = function ({
     scrollRef,
     threadIdx,
     threadLabel,
     isSplitThread = false,
+    hideLabel = false,
     leafTables,
     chartElements,
     usedIntermediateTableIds, // tables that have been used
     globalHighlightedTableIds,
     focusedThreadLeafId,
-    compact = false,
     sx
 }) {
 
@@ -492,9 +601,6 @@ let SingleThreadGroupView: FC<{
     const [metadataPopupOpen, setMetadataPopupOpen] = useState(false);
     const [selectedTableForMetadata, setSelectedTableForMetadata] = useState<DictTable | null>(null);
     const [metadataAnchorEl, setMetadataAnchorEl] = useState<HTMLElement | null>(null);
-
-    // Upload dialog state (workspace "add data" button)
-    const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
 
     // Table menu state
     const [tableMenuAnchorEl, setTableMenuAnchorEl] = useState<HTMLElement | null>(null);
@@ -1016,262 +1122,6 @@ let SingleThreadGroupView: FC<{
         );
     };
 
-    // Compact mode (thread0): show standalone tables with the same timeline layout
-    if (compact) {
-        // Build timeline item groups — one group per table (table + its charts).
-        // Each group is rendered as an independent mini-timeline so unrelated
-        // workspace tables are NOT connected to each other with vertical lines.
-        let compactTimelineGroups: (typeof timelineItems)[] = [];
-        leafTables.forEach((table) => {
-            const tableCards = _buildTableCard(table.id);
-            if (Array.isArray(tableCards)) {
-                const group: typeof timelineItems = [];
-                tableCards.forEach((subItem: any, j: number) => {
-                    if (!subItem) return;
-                    const subKey = subItem?.key || `compact-${table.id}-${j}`;
-                    const isChart = subKey.includes('chart') || subKey.includes('agent');
-                    const isAgent = subKey.includes('agent');
-                    const isAgentRunning = isAgent && runningAgentTableIds.has(table.id);
-                    group.push({
-                        key: subKey,
-                        type: isChart ? 'chart' : 'table',
-                        tableId: isChart ? undefined : table.id,
-                        highlighted: highlightedTableIds.includes(table.id),
-                        element: subItem,
-                        ...(isAgentRunning ? { isRunning: true } : {}),
-                    });
-                });
-                if (group.length > 0) {
-                    compactTimelineGroups.push(group);
-                }
-            }
-        });
-
-        return (
-            <Box sx={{ ...sx, 
-                '& .selected-card': { 
-                    boxShadow: `0 0 0 2px ${theme.palette.primary.light}`,
-                    my: 0.5,
-                    borderColor: 'transparent',
-                },
-                transition: transition.fast,
-                padding: '6px',
-                backgroundColor: 'rgba(0,0,0,0.02)',
-                borderRadius: '8px',
-                border: '1px solid rgba(0,0,0,0.06)',
-            }}>
-                <Box sx={{ display: 'flex', direction: 'ltr', margin: '2px 2px 6px 2px' }}>
-                    <Divider flexItem sx={{
-                        margin: 'auto',
-                        "& .MuiDivider-wrapper": { display: 'flex', flexDirection: 'row' },
-                        "&::before, &::after": { borderColor: 'rgba(0,0,0,0.15)', borderWidth: '1px', width: 40 },
-                    }}>
-                        <Typography sx={{ fontSize: '10px', fontWeight: 600, color: 'rgba(0,0,0,0.5)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                            workspace
-                        </Typography>
-                    </Divider>
-                </Box>
-                <div style={{ padding: '2px 4px 2px 4px', marginTop: 0, direction: 'ltr', position: 'relative' }}>
-                    {/* Vertical backbone line through timeline column */}
-                    <Box sx={{
-                        position: 'absolute',
-                        left: `${4 + TIMELINE_WIDTH / 2}px`,
-                        top: 8,
-                        bottom: 8,
-                        width: 0,
-                        borderLeft: '1px dotted rgba(0,0,0,0.12)',
-                        pointerEvents: 'none',
-                        zIndex: 0,
-                    }} />
-                    {compactTimelineGroups.map((group, groupIndex) => (
-                        <div key={`group-${groupIndex}`} style={{ marginBottom: groupIndex < compactTimelineGroups.length - 1 ? 4 : 0 }}>
-                            {group.map((item, index) => renderTimelineItem(item, index, index === group.length - 1))}
-                        </div>
-                    ))}
-                    {/* Add data button — styled like a table card row */}
-                    <Box sx={{ display: 'flex', flexDirection: 'row', mt: 0.5 }}>
-                        <Box sx={{ 
-                            width: TIMELINE_WIDTH, flexShrink: 0, 
-                            display: 'flex', flexDirection: 'column', alignItems: 'center',
-                            justifyContent: 'center',
-                        }}>
-                            <AddIcon sx={{ fontSize: 14, color: 'rgba(0,0,0,0.4)' }} />
-                        </Box>
-                        <Box 
-                            onClick={() => setUploadDialogOpen(true)}
-                            sx={{ 
-                                flex: 1, minWidth: 0, pl: 0.5,
-                                display: 'flex', alignItems: 'center',
-                                py: '4px',
-                            }}
-                        >
-                            <Box sx={{
-                                px: 1, py: '4px',
-                                borderRadius: '6px',
-                                cursor: 'pointer',
-                                transition: transition.fast,
-                                '&:hover': { 
-                                    backgroundColor: 'rgba(0,0,0,0.04)',
-                                },
-                            }}>
-                                <Typography sx={{
-                                    fontSize: 12,
-                                    fontWeight: 500,
-                                    color: 'text.secondary',
-                                }}>
-                                    add data
-                                </Typography>
-                            </Box>
-                        </Box>
-                    </Box>
-                </div>
-                <UnifiedDataUploadDialog
-                    open={uploadDialogOpen}
-                    onClose={() => setUploadDialogOpen(false)}
-                    initialTab="menu"
-                />
-                <MetadataPopup
-                    open={metadataPopupOpen}
-                    anchorEl={metadataAnchorEl}
-                    onClose={handleCloseMetadataPopup}
-                    onSave={handleSaveMetadata}
-                    initialValue={selectedTableForMetadata?.attachedMetadata || ''}
-                    tableName={selectedTableForMetadata?.displayId || selectedTableForMetadata?.id || ''}
-                />
-                <RenameTablePopup
-                    open={renamePopupOpen}
-                    anchorEl={renameAnchorEl}
-                    onClose={handleCloseRenamePopup}
-                    onSave={handleSaveRename}
-                    initialValue={selectedTableForRename?.displayId || selectedTableForRename?.id || ''}
-                    tableName={selectedTableForRename?.displayId || selectedTableForRename?.id || ''}
-                />
-                <Menu
-                    anchorEl={tableMenuAnchorEl}
-                    open={Boolean(tableMenuAnchorEl)}
-                    onClose={handleCloseTableMenu}
-                    onClick={(e) => e.stopPropagation()}
-                >
-                    <MenuItem 
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            if (selectedTableForMenu) {
-                                handleOpenRenamePopup(selectedTableForMenu, tableMenuAnchorEl!);
-                            }
-                            handleCloseTableMenu();
-                        }}
-                        sx={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 1 }}
-                    >
-                        <EditIcon sx={{ fontSize: 16, color: 'text.secondary' }}/>
-                        Rename
-                    </MenuItem>
-                    {/* Pin option - only for derived tables */}
-                    {selectedTableForMenu?.derive != undefined && (
-                        <MenuItem 
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                if (selectedTableForMenu) {
-                                    dispatch(dfActions.updateTableAnchored({tableId: selectedTableForMenu.id, anchored: !selectedTableForMenu.anchored}));
-                                }
-                                handleCloseTableMenu();
-                            }}
-                            sx={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 1 }}
-                        >
-                            <AnchorIcon sx={{ fontSize: 16, color: selectedTableForMenu?.anchored ? 'primary.main' : 'text.secondary' }}/>
-                            {selectedTableForMenu?.anchored ? "Unpin table" : "Pin table"}
-                        </MenuItem>
-                    )}
-                    {/* Non-derived table options */}
-                    {selectedTableForMenu?.derive == undefined && (
-                        <MenuItem 
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                if (selectedTableForMenu) {
-                                    handleOpenMetadataPopup(selectedTableForMenu, tableMenuAnchorEl!);
-                                }
-                                handleCloseTableMenu();
-                            }}
-                            sx={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 1 }}
-                        >
-                            <AttachFileIcon sx={{ 
-                                fontSize: 16,
-                                color: selectedTableForMenu?.attachedMetadata ? 'secondary.main' : 'text.secondary',
-                            }}/>
-                            {selectedTableForMenu?.attachedMetadata ? "Edit metadata" : "Attach metadata"}
-                        </MenuItem>
-                    )}
-                    {/* Watch for updates option - only shown when table has stream/database source but not actively watching */}
-                    {selectedTableForMenu && 
-                     selectedTableForMenu.derive == undefined &&
-                     (selectedTableForMenu.source?.type === 'stream' || selectedTableForMenu.source?.type === 'database') && 
-                     (
-                        <MenuItem 
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                if (selectedTableForMenu) {
-                                    handleOpenStreamingSettingsPopup(selectedTableForMenu, tableMenuAnchorEl!);
-                                }
-                                handleCloseTableMenu();
-                            }}
-                            sx={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 1 }}
-                        >
-                            <StreamIcon sx={{ fontSize: 16, color: 'text.secondary' }}/>
-                            Watch for updates
-                        </MenuItem>
-                    )}
-                    {/* Refresh data - hidden for database tables and derived tables */}
-                    {selectedTableForMenu?.derive == undefined && selectedTableForMenu?.source?.type !== 'database' && (
-                        <MenuItem 
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                if (selectedTableForMenu) {
-                                    handleOpenRefreshDialog(selectedTableForMenu);
-                                }
-                            }}
-                            sx={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 1 }}
-                        >
-                            <RefreshIcon sx={{ fontSize: 16, color: 'primary.main' }}/>
-                            Refresh data
-                        </MenuItem>
-                    )}
-                    {/* Delete table */}
-                    {selectedTableForMenu && !tables.some(t => t.derive?.trigger.tableId === selectedTableForMenu.id) && (
-                        <MenuItem 
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                if (selectedTableForMenu) {
-                                    dispatch(dfActions.deleteTable(selectedTableForMenu.id));
-                                }
-                                handleCloseTableMenu();
-                            }}
-                            sx={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 1, color: 'warning.main' }}
-                        >
-                            <DeleteIcon sx={{ fontSize: 16 }} color='warning'/>
-                            Delete table
-                        </MenuItem>
-                    )}
-                </Menu>
-                {selectedTableForRefresh && (
-                    <RefreshDataDialog
-                        open={refreshDialogOpen}
-                        onClose={handleCloseRefreshDialog}
-                        table={selectedTableForRefresh}
-                        onRefreshComplete={handleRefreshComplete}
-                    />
-                )}
-                {selectedTableForStreamingSettings && (
-                    <StreamingSettingsPopup
-                        open={streamingSettingsPopupOpen}
-                        anchorEl={streamingSettingsAnchorEl}
-                        onClose={handleCloseStreamingSettingsPopup}
-                        table={selectedTableForStreamingSettings}
-                        onUpdateSettings={handleUpdateStreamingSettings}
-                        onRefreshNow={() => manualRefresh(selectedTableForStreamingSettings.id)}
-                    />
-                )}
-            </Box>
-        );
-    }
 
     return <Box sx={{ ...sx, 
             '& .selected-card': { 
@@ -1283,17 +1133,19 @@ let SingleThreadGroupView: FC<{
             padding: '6px',
         }}
         >
-        <Box sx={{ display: 'flex', direction: 'ltr', margin: '2px 2px 6px 2px' }}>
-            <Divider flexItem sx={{
-                margin: 'auto',
-                "& .MuiDivider-wrapper": { display: 'flex', flexDirection: 'row' },
-                "&::before, &::after": { borderColor: 'rgba(0,0,0,0.15)', borderWidth: '1px', width: 40 },
-            }}>
-                <Typography sx={{ fontSize: '10px', fontWeight: 600, color: 'rgba(0,0,0,0.5)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                    {threadLabel || (threadIdx === -1 ? 'thread0' : `thread - ${threadIdx + 1}`)}
-                </Typography>
-            </Divider>
-        </Box>
+        {!hideLabel && (
+            <Box sx={{ display: 'flex', direction: 'ltr', margin: '2px 2px 6px 2px' }}>
+                <Divider flexItem sx={{
+                    margin: 'auto',
+                    "& .MuiDivider-wrapper": { display: 'flex', flexDirection: 'row' },
+                    "&::before, &::after": { borderColor: 'rgba(0,0,0,0.15)', borderWidth: '1px', width: 40 },
+                }}>
+                    <Typography sx={{ fontSize: '10px', fontWeight: 600, color: 'rgba(0,0,0,0.5)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                        {threadLabel || (threadIdx === -1 ? 'thread0' : `thread - ${threadIdx + 1}`)}
+                    </Typography>
+                </Divider>
+            </Box>
+        )}
         <div style={{ padding: '2px 4px 2px 4px', marginTop: 0, direction: 'ltr' }}>
             {timelineItems.map((item, index) => renderTimelineItem(item, index, index === timelineItems.length - 1))}
         </div>
@@ -1987,8 +1839,7 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
 
     let hasContent = leafTables.length > 0 || tables.some(t => !t.derive);
 
-    // Collect all base (non-derived) tables for thread 0 — they serve as source tables
-    // and will automatically appear as "used table" references in derived threads.
+    // Collect all base (non-derived) tables for the workspace panel.
     let baseTables = tables.filter(t => !t.derive);
     // Threaded tables: leaf tables that have a derivation chain
     let threadedTables = leafTables.filter(lt => {
@@ -1997,7 +1848,7 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
     });
 
     // Build thread entries and their estimated heights for layout
-    type ThreadEntry = { key: string; groupId: string; leafTables: DictTable[]; isCompact: boolean; threadIdx: number; threadLabel?: string; isSplitThread?: boolean; usedTableIds?: string[] };
+    type ThreadEntry = { key: string; groupId: string; leafTables: DictTable[]; threadIdx: number; threadLabel?: string; isSplitThread?: boolean; usedTableIds?: string[]; hideLabel?: boolean };
     let allThreadEntries: ThreadEntry[] = [];
     let allThreadHeights: number[] = [];
 
@@ -2007,20 +1858,20 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
     // Track which table IDs have been claimed by earlier threads
     let claimedTableIds = new Set<string>();
 
-    // thread0: group all base (non-derived) tables into one compact thread
-    if (baseTables.length > 0) {
-        baseTables.forEach(lt => claimedTableIds.add(lt.id));
+    // Hanging tables: source tables with no children — displayed as a group before thread 1
+    let hangingTables = leafTables.filter(lt => !lt.derive);
+    if (hangingTables.length > 0) {
+        hangingTables.forEach(lt => claimedTableIds.add(lt.id));
+        let hangingChartCount = hangingTables.reduce((sum, lt) => sum + chartElements.filter(ce => ce.tableId === lt.id).length, 0);
+        let hangingMessageCount = hangingTables.reduce((sum, lt) => sum + agentActions.filter(a => a.tableId === lt.id && !a.hidden).length, 0);
         allThreadEntries.push({
-            key: 'thread0',
-            groupId: 'thread0',
-            leafTables: baseTables,
-            isCompact: true,
+            key: 'hanging-tables',
+            groupId: 'hanging-tables',
+            leafTables: hangingTables,
             threadIdx: -1,
+            hideLabel: true,
         });
-        let baseChartCount = baseTables.reduce((sum, lt) => {
-            return sum + chartElements.filter(ce => ce.tableId === lt.id).length;
-        }, 0);
-        allThreadHeights.push(estimateThreadHeight(baseTables.length, 0, baseChartCount, 0));
+        allThreadHeights.push(estimateThreadHeight(hangingTables.length, 0, hangingChartCount, hangingMessageCount));
     }
 
     // Regular threads: one per threaded leaf table
@@ -2111,7 +1962,6 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
             key: `thread-${lt.id}-${i}`,
             groupId: lt.id,
             leafTables: [lt],
-            isCompact: false,
             threadIdx: threadIdxForEntry,
             threadLabel,
             isSplitThread: isContinuation,
@@ -2148,62 +1998,51 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
     let renderThreadEntry = (entry: ThreadEntry) => {
         let usedTableIds = entry.usedTableIds || [];
 
-        if (entry.isCompact) {
-            return <SingleThreadGroupView
-                key={entry.key}
-                scrollRef={scrollRef}
-                threadIdx={entry.threadIdx}
-                threadLabel={entry.threadLabel}
-                isSplitThread={entry.isSplitThread}
-                leafTables={entry.leafTables}
-                chartElements={chartElements}
-                usedIntermediateTableIds={usedTableIds}
-                globalHighlightedTableIds={globalHighlightedTableIds}
-                focusedThreadLeafId={focusedThreadLeafId}
-                compact={true}
-                sx={{
-                    backgroundColor: 'white',
-                    borderRadius: radius.md,
-                    padding: 1,
-                    my: 0.5,
-                    flex: 'none',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    height: 'fit-content',
-                    width: CARD_WIDTH,
-                    transition: transition.fast,
-                }} />;
-        } else {
-            return <SingleThreadGroupView
-                key={entry.key}
-                scrollRef={scrollRef}
-                threadIdx={entry.threadIdx}
-                threadLabel={entry.threadLabel}
-                isSplitThread={entry.isSplitThread}
-                leafTables={entry.leafTables}
-                chartElements={chartElements}
-                usedIntermediateTableIds={usedTableIds}
-                globalHighlightedTableIds={globalHighlightedTableIds}
-                focusedThreadLeafId={focusedThreadLeafId}
-                sx={{
-                    backgroundColor: 'white',
-                    borderRadius: radius.md,
-                    padding: 1,
-                    my: 0.5,
-                    flex: 'none',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    height: 'fit-content',
-                    width: CARD_WIDTH,
-                    transition: transition.fast,
-                }} />;
-        }
+        return <SingleThreadGroupView
+            key={entry.key}
+            scrollRef={scrollRef}
+            threadIdx={entry.threadIdx}
+            threadLabel={entry.threadLabel}
+            isSplitThread={entry.isSplitThread}
+            hideLabel={entry.hideLabel}
+            leafTables={entry.leafTables}
+            chartElements={chartElements}
+            usedIntermediateTableIds={usedTableIds}
+            globalHighlightedTableIds={globalHighlightedTableIds}
+            focusedThreadLeafId={focusedThreadLeafId}
+            sx={{
+                backgroundColor: 'white',
+                borderRadius: radius.md,
+                padding: 1,
+                my: 0.5,
+                flex: 'none',
+                display: 'flex',
+                flexDirection: 'column',
+                height: 'fit-content',
+                width: CARD_WIDTH,
+                transition: transition.fast,
+            }} />;
     };
 
     // Column-based panel width: each column = CARD_WIDTH + CARD_GAP
     const COLUMN_WIDTH = CARD_WIDTH + CARD_GAP;
     const MIN_PANEL_WIDTH = 0; // ensure enough room for floating chat chip
     const panelWidth = Math.max(actualColumns * COLUMN_WIDTH + 16, MIN_PANEL_WIDTH);
+
+    let workspacePanel = baseTables.length > 0 ? (
+        <WorkspacePanel
+            tables={baseTables}
+            chartElements={chartElements}
+            sx={{
+                my: 0.5,
+                flex: 'none',
+                display: 'flex',
+                flexDirection: 'column',
+                height: 'fit-content',
+                width: CARD_WIDTH,
+            }}
+        />
+    ) : null;
 
     let view = hasContent ? (
         <Box sx={{ 
@@ -2218,8 +2057,24 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
             p: 1,
             width: panelWidth,
         }}>
-            {columnLayout.map((columnIndices: number[], colIdx: number) => (
-                <Box key={`thread-column-${colIdx}`} sx={{
+            {/* First column: workspace panel + first batch of threads */}
+            <Box key="thread-column-0" sx={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: 0,
+                flex: 1,
+                minWidth: 0,
+            }}>
+                {workspacePanel}
+                {(columnLayout[0] || []).map((idx: number) => {
+                    const entry = allThreadEntries[idx];
+                    return entry ? renderThreadEntry(entry) : null;
+                })}
+            </Box>
+            {/* Remaining columns */}
+            {columnLayout.slice(1).map((columnIndices: number[], colIdx: number) => (
+                <Box key={`thread-column-${colIdx + 1}`} sx={{
                     display: 'flex',
                     flexDirection: 'column',
                     alignItems: 'center',

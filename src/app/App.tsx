@@ -71,7 +71,6 @@ import { handleDBDownload } from '../views/DBTableManager';
 import { getUrls, fetchWithIdentity } from './utils';
 import { UnifiedDataUploadDialog } from '../views/UnifiedDataUploadDialog';
 import ChatIcon from '@mui/icons-material/Chat';
-import { AgentRulesDialog } from '../views/AgentRulesDialog';
 import ArticleIcon from '@mui/icons-material/Article';
 import EditIcon from '@mui/icons-material/Edit';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
@@ -767,7 +766,6 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
                             </ToggleButton>
                         </ToggleButtonGroup>
                         <ConfigDialog />
-                        <AgentRulesDialog />
                         <Divider orientation="vertical" variant="middle" flexItem /></React.Fragment>}
                         <ModelSelectionButton />
                         <Divider orientation="vertical" variant="middle" flexItem />

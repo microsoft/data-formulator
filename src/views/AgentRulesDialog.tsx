@@ -23,9 +23,13 @@ import { useDispatch, useSelector } from 'react-redux';
 import { DataFormulatorState, dfActions } from '../app/dfSlice';
 import Editor from 'react-simple-code-editor';
 
-export const AgentRulesDialog: React.FC = () => {
+export const AgentRulesDialog: React.FC<{
+    externalOpen?: boolean;
+    onExternalClose?: () => void;
+}> = ({ externalOpen, onExternalClose }) => {
     const theme = useTheme();
-    const [open, setOpen] = useState(false);
+    const [internalOpen, setInternalOpen] = useState(false);
+    const open = externalOpen !== undefined ? externalOpen : internalOpen;
     const dispatch = useDispatch();
     const agentRules = useSelector((state: DataFormulatorState) => state.agentRules);
 
@@ -84,7 +88,11 @@ export const AgentRulesDialog: React.FC = () => {
         // Reset to original values
         setCodingRules(agentRules.coding);
         setExplorationRules(agentRules.exploration);
-        setOpen(false);
+        if (onExternalClose) {
+            onExternalClose();
+        } else {
+            setInternalOpen(false);
+        }
     };
 
     // Check if there are changes for each tab
@@ -118,7 +126,7 @@ export const AgentRulesDialog: React.FC = () => {
                 <Button
                     variant="text"
                     sx={{ textTransform: 'none' }}
-                    onClick={() => setOpen(true)}
+                    onClick={() => externalOpen !== undefined ? undefined : setInternalOpen(true)}
                     startIcon={<RuleIcon />}
                 >
                     Agent Rules
