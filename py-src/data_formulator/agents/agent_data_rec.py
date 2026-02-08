@@ -55,7 +55,7 @@ Concretely, you should infer the appropriate data and create a Python script bas
     "display_instruction": "..." // string, the even shorter verb phrase describing the users' goal.
     "recommendation": "..." // string, explain why this recommendation is made
     "input_tables": [...] // string[], describe names of the input tables that will be used in the transformation.
-    "output_fields": [...] // string[], describe the desired output fields that the output data should have (i.e., the goal of transformed data), it's a good idea to preseve intermediate fields here
+    "output_fields": [...] // string[], describe the desired output fields that the output data should have (i.e., the goal of transformed data), it's a good idea to preserve intermediate fields here
     "chart_type": "" // string, one of "point", "bar", "line", "area", "heatmap", "group_bar", "boxplot", "worldmap", "usmap". "chart_type" should either be inferred from user instruction, or recommend if the user didn't specify any.
     "chart_encodings": {
         "x": "",
@@ -67,7 +67,7 @@ Concretely, you should infer the appropriate data and create a Python script bas
         "longitude": "",
         "latitude": ""
     } // object: map visualization channels (x, y, color, size, opacity, facet, longitude, latitude, etc.) to a subset of output fields, appropriate visual channels for different chart types are defined below.
-    "projection": "" // string (optional, only for worldmap/usmap): one of "mercator", "equalEarth", "naturalEarth1", "orthographic", "stereographic", "albers", "conicEqualArea", "gnomonic", "azimuthalEquidistant". Default is "equalEarth" for worldmap, "albersUsa" for usmap.
+    "projection": "" // string (optional, only for worldmap/usmap): one of "mercator", "equalEarth", "naturalEarth1", "orthographic", "stereographic", "albersUsa", "conicEqualArea", "gnomonic", "azimuthalEquidistant". Default is "equalEarth" for worldmap, "albersUsa" for usmap.
     "projection_center": [0, 0] // [longitude, latitude] (optional, only for worldmap): the center point of the map projection. Use to focus on specific regions, e.g., [105, 35] for China, [-98, 39] for USA, [10, 50] for Europe, [139, 36] for Japan.
 }
 ```
