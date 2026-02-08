@@ -196,8 +196,7 @@ export type Chart = {
     saved: boolean,
     source: "user" | "trigger",
     unread: boolean,
-    projection?: string,  // for map charts: mercator, equalEarth, naturalEarth1, etc.
-    projectionCenter?: [number, number],  // [longitude, latitude] for map projection center
+    config?: Record<string, any>,  // additional chart config properties defined by the chart template's configProperties
 }
 
 export let duplicateChart = (chart: Chart) : Chart => {
@@ -209,8 +208,7 @@ export let duplicateChart = (chart: Chart) : Chart => {
         saved: false,
         source: chart.source,
         unread: false,
-        projection: chart.projection,
-        projectionCenter: chart.projectionCenter,
+        config: chart.config ? JSON.parse(JSON.stringify(chart.config)) : undefined,
     }
 }
 
@@ -229,13 +227,27 @@ export interface EncodingItem {
     scheme?: string
 }
 
+// Defines a configurable property for a chart template
+// These are surfaced in the chart UI for user customization
+export interface ConfigPropertyDef {
+    key: string;                // the property key stored in chart.config
+    label: string;              // display label in the UI
+    type: 'select' | 'slider';  // input type
+    options?: { value: any; label: string }[];  // for 'select': list of options; value can be any type
+    min?: number;               // for 'slider': minimum value
+    max?: number;               // for 'slider': maximum value
+    step?: number;              // for 'slider': step increment
+    defaultValue?: any;         // default value (undefined means "use template default")
+}
+
 export type ChartTemplate = {
     chart: string,
     icon: any,
     template: any,
     channels: string[],
     paths: { [key: string]: (string | number)[] | (string | number)[][]; },
-    postProcessor?: (vgSpec: any, table: any[]) => any
+    postProcessor?: (vgSpec: any, table: any[], config?: Record<string, any>) => any,
+    configProperties?: ConfigPropertyDef[],  // additional configurable properties for this chart type
 }
 
 export const AGGR_OP_LIST = ["count", "sum", "average"] as const

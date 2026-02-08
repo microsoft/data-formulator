@@ -713,20 +713,20 @@ export const dataFormulatorSlice = createSlice({
                 }
             })
         },
-        updateChartProjection: (state, action: PayloadAction<{chartId: string, projection: string}>) => {
+        updateChartConfig: (state, action: PayloadAction<{chartId: string, key: string, value: any}>) => {
             let chartId = action.payload.chartId;
-            let projection = action.payload.projection;
+            let key = action.payload.key;
+            let value = action.payload.value;
             let chart = dfSelectors.getAllCharts(state).find(c => c.id == chartId);
             if (chart) {
-                chart.projection = projection;
-            }
-        },
-        updateProjectionCenter: (state, action: PayloadAction<{chartId: string, center: [number, number] | undefined}>) => {
-            let chartId = action.payload.chartId;
-            let center = action.payload.center;
-            let chart = dfSelectors.getAllCharts(state).find(c => c.id == chartId);
-            if (chart) {
-                chart.projectionCenter = center;
+                if (!chart.config) {
+                    chart.config = {};
+                }
+                if (value === undefined) {
+                    delete chart.config[key];
+                } else {
+                    chart.config[key] = value;
+                }
             }
         },
         updateChartEncoding: (state, action: PayloadAction<{chartId: string, channel: Channel, encoding: EncodingItem}>) => {

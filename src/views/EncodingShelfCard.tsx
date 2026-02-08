@@ -28,6 +28,7 @@ import {
     useTheme,
     SxProps,
     Theme,
+    Slider,
     CircularProgress,
     Button,
     Dialog,
@@ -48,7 +49,7 @@ import { createDictTable, DictTable } from "../components/ComponentType";
 import { getUrls, resolveChartFields, getTriggers, assembleVegaChart, resolveRecommendedChart, fetchWithIdentity } from '../app/utils';
 import { EncodingBox } from './EncodingBox';
 
-import { ChannelGroups, CHART_TEMPLATES, getChartChannels, getChartTemplate, MAP_PROJECTIONS, isMapChart, PROJECTION_CENTER_PRESETS } from '../components/ChartTemplates';
+import { ChannelGroups, CHART_TEMPLATES, getChartChannels, getChartTemplate } from '../components/ChartTemplates';
 import { checkChartAvailability, getDataTable } from './VisualizationView';
 import TableRowsIcon from '@mui/icons-material/TableRowsOutlined';
 import ChangeCircleOutlinedIcon from '@mui/icons-material/ChangeCircleOutlined';
@@ -380,7 +381,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
             }
 
             let chartAvailable = checkChartAvailability(chart, conceptShelfItems, currentTable.rows);
-            let currentChartPng = chartAvailable ? await vegaLiteSpecToPng(assembleVegaChart(chart.chartType, chart.encodingMap, activeFields, currentTable.rows, currentTable.metadata, 20, false, 100, 80, false, chart.projection, chart.projectionCenter)) : undefined;
+            let currentChartPng = chartAvailable ? await vegaLiteSpecToPng(assembleVegaChart(chart.chartType, chart.encodingMap, activeFields, currentTable.rows, currentTable.metadata, 20, false, 100, 80, false, chart.config)) : undefined;
 
             let actionTables = actionTableIds.map(id => tables.find(t => t.id == id) as DictTable);
 
@@ -1092,93 +1093,103 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                         })}
                     </Select>
                 </FormControl>
-                {/* Projection selector for map charts */}
-                {isMapChart(chart.chartType) && (
-                    <FormControl sx={{ m: 1, minWidth: 120, width: "100%", margin: "8px 0 0 0"}} size="small">
-                        <Select
-                            variant="standard"
-                            labelId="projection-select-label"
-                            id="projection-select"
-                            value={chart.projection || "default"}
-                            onChange={(event) => {
-                                dispatch(dfActions.updateChartProjection({chartId, projection: event.target.value}));
-                            }}
-                            renderValue={(value: string) => {
-                                const proj = MAP_PROJECTIONS.find(p => p.value === value);
-                                return (
-                                    <div style={{display: 'flex', padding: "0px 0px 0px 4px", alignItems: 'center'}}>
-                                        <Typography sx={{fontSize: 11, color: 'text.secondary', marginRight: 1}}>Projection:</Typography>
-                                        <Typography sx={{fontSize: 12}}>{proj?.label || "Default"}</Typography>
-                                    </div>
-                                )
-                            }}
-                        >
-                            <MenuItem value="default" key="projection-default">
-                                <ListItemText slotProps={{primary: {fontSize: 11}}} sx={{ margin: 0 }}>
-                                    Default (from template)
-                                </ListItemText>
-                            </MenuItem>
-                            {MAP_PROJECTIONS.map((proj, i) => (
-                                <MenuItem value={proj.value} key={`projection-${i}`}>
-                                    <ListItemText slotProps={{primary: {fontSize: 11}}} sx={{ margin: 0 }}>
-                                        {proj.label}
-                                    </ListItemText>
-                                </MenuItem>
-                            ))}
-                        </Select>
-                    </FormControl>
-                )}
-                {/* Projection center selector for map charts */}
-                {isMapChart(chart.chartType) && (
-                    <FormControl sx={{ m: 1, minWidth: 120, width: "100%", margin: "8px 0 0 0"}} size="small">
-                        <Select
-                            variant="standard"
-                            labelId="projection-center-select-label"
-                            id="projection-center-select"
-                            value={chart.projectionCenter ? JSON.stringify(chart.projectionCenter) : "default"}
-                            onChange={(event) => {
-                                const value = event.target.value;
-                                if (value === "default") {
-                                    dispatch(dfActions.updateProjectionCenter({chartId, center: undefined}));
-                                } else {
-                                    const center = JSON.parse(value) as [number, number];
-                                    dispatch(dfActions.updateProjectionCenter({chartId, center}));
-                                }
-                            }}
-                            renderValue={(value: string) => {
-                                if (value === "default") {
+                {/* Template-driven config property selectors */}
+                {(() => {
+                    const template = getChartTemplate(chart.chartType);
+                    const configProps = template?.configProperties;
+                    if (!configProps || configProps.length === 0) return null;
+                    return (
+                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: '3px', margin: '6px 3px 2px 3px' }}>
+                            {configProps.map((propDef) => {
+                                if (propDef.type === 'slider') {
+                                    const currentValue = chart.config?.[propDef.key] ?? propDef.defaultValue ?? propDef.min ?? 0;
                                     return (
-                                        <div style={{display: 'flex', padding: "0px 0px 0px 4px", alignItems: 'center'}}>
-                                            <Typography sx={{fontSize: 11, color: 'text.secondary', marginRight: 1}}>Center:</Typography>
-                                            <Typography sx={{fontSize: 12}}>Default</Typography>
-                                        </div>
+                                        <Box key={`config-${propDef.key}`} sx={{
+                                            display: 'flex', alignItems: 'center', 
+                                            borderRadius: '12px',
+                                            backgroundColor: 'rgba(0,0,0,0.04)', minHeight: '22px',
+                                            overflow: 'hidden', padding: '0px 10px 0px 0px',
+                                            '&:hover': { backgroundColor: 'rgba(0,0,0,0.07)' },
+                                        }}>
+                                            <Typography variant="caption" sx={{
+                                                padding: '0px 8px', color: 'text.secondary', fontSize: 10,
+                                                whiteSpace: 'nowrap', fontWeight: 500, minWidth: '40px',
+                                            }}>
+                                                {propDef.label}
+                                            </Typography>
+                                            <Slider
+                                                size="small"
+                                                value={currentValue}
+                                                min={propDef.min}
+                                                max={propDef.max}
+                                                step={propDef.step}
+                                                onChange={(_event, newValue) => {
+                                                    dispatch(dfActions.updateChartConfig({chartId, key: propDef.key, value: newValue as number}));
+                                                }}
+                                                valueLabelDisplay="auto"
+                                                sx={{
+                                                    flex: 1, height: 4, mx: 0.5,
+                                                    '& .MuiSlider-thumb': { width: 12, height: 12 },
+                                                    '& .MuiSlider-valueLabel': { fontSize: 10, padding: '2px 4px', lineHeight: 1.2 },
+                                                }}
+                                            />
+                                            <Typography variant="caption" sx={{ fontSize: 10, color: 'text.secondary', minWidth: '20px', textAlign: 'right' }}>
+                                                {currentValue}
+                                            </Typography>
+                                        </Box>
                                     );
                                 }
-                                const center = JSON.parse(value) as [number, number];
-                                const preset = PROJECTION_CENTER_PRESETS.find(p => p.center[0] === center[0] && p.center[1] === center[1]);
+                                if (propDef.type !== 'select' || !propDef.options) return null;
+                                const currentValue = chart.config?.[propDef.key] ?? propDef.defaultValue;
+                                const options = propDef.options;
+                                // Find the index of the current value in options (deep compare via JSON)
+                                const currentSerialized = JSON.stringify(currentValue);
+                                let selectedIndex = options.findIndex(o => JSON.stringify(o.value) === currentSerialized);
+                                if (selectedIndex < 0) selectedIndex = 0;
                                 return (
-                                    <div style={{display: 'flex', padding: "0px 0px 0px 4px", alignItems: 'center'}}>
-                                        <Typography sx={{fontSize: 11, color: 'text.secondary', marginRight: 1}}>Center:</Typography>
-                                        <Typography sx={{fontSize: 12}}>{preset?.label || `[${center[0]}, ${center[1]}]`}</Typography>
-                                    </div>
+                                    <Box key={`config-${propDef.key}`} sx={{
+                                        display: 'flex', alignItems: 'center', 
+                                        borderRadius: '12px',
+                                        backgroundColor: 'rgba(0,0,0,0.04)', minHeight: '22px',
+                                        overflow: 'hidden',
+                                        '&:hover': { backgroundColor: 'rgba(0,0,0,0.07)' },
+                                    }}>
+                                        <Typography variant="caption" sx={{
+                                            padding: '0px 8px', color: 'text.secondary', fontSize: 10,
+                                            whiteSpace: 'nowrap', fontWeight: 500,
+                                        }}>
+                                            {propDef.label}
+                                        </Typography>
+                                        <Select
+                                            variant="standard"
+                                            id={`config-${propDef.key}-select`}
+                                            value={selectedIndex}
+                                            onChange={(event) => {
+                                                const idx = event.target.value as number;
+                                                dispatch(dfActions.updateChartConfig({chartId, key: propDef.key, value: options[idx].value}));
+                                            }}
+                                            disableUnderline
+                                            sx={{
+                                                flex: 1, fontSize: 11, height: '22px',
+                                                '& .MuiSelect-select': { padding: '1px 20px 1px 0px !important', fontSize: 11 },
+                                                '& .MuiSvgIcon-root': { fontSize: 14, right: 2 },
+                                            }}
+                                            renderValue={(idx: number) => {
+                                                return <span style={{fontSize: 11}}>{options[idx]?.label || "Default"}</span>;
+                                            }}
+                                        >
+                                            {options.map((opt, i) => (
+                                                <MenuItem value={i} key={`config-${propDef.key}-${i}`} sx={{ fontSize: 11, minHeight: '28px' }}>
+                                                    {opt.label}
+                                                </MenuItem>
+                                            ))}
+                                        </Select>
+                                    </Box>
                                 );
-                            }}
-                        >
-                            <MenuItem value="default" key="center-default">
-                                <ListItemText slotProps={{primary: {fontSize: 11}}} sx={{ margin: 0 }}>
-                                    Default (from template)
-                                </ListItemText>
-                            </MenuItem>
-                            {PROJECTION_CENTER_PRESETS.map((preset, i) => (
-                                <MenuItem value={JSON.stringify(preset.center)} key={`center-${i}`}>
-                                    <ListItemText slotProps={{primary: {fontSize: 11}}} sx={{ margin: 0 }}>
-                                        {preset.label} [{preset.center[0]}, {preset.center[1]}]
-                                    </ListItemText>
-                                </MenuItem>
-                            ))}
-                        </Select>
-                    </FormControl>
-                )}
+                            })}
+                        </Box>
+                    );
+                })()}
             </Box>
             <Box key='encoding-groups' sx={{ flex: '1 1 auto' }} style={{ height: "calc(100% - 100px)" }} className="encoding-list">
                 {encodingBoxGroups}

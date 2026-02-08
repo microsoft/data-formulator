@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-import { ChartTemplate } from "./ComponentType";
+import { ChartTemplate, ConfigPropertyDef } from "./ComponentType";
 import InsightsIcon from '@mui/icons-material/Insights';
 import PublicIcon from '@mui/icons-material/Public';
 import PieChartOutlineIcon from '@mui/icons-material/PieChartOutline';
@@ -203,6 +203,21 @@ const scatterPlots: ChartTemplate[] = [
             "opacity": ["encoding", "opacity"],
             "column": ["encoding", "column"],
             "row": ["encoding", "row"]
+        },
+        "configProperties": [
+            { key: "opacity", label: "Opacity", type: "slider", min: 0.1, max: 1, step: 0.05, defaultValue: 1 },
+        ] as ConfigPropertyDef[],
+        "postProcessor": (vgSpec: any, _table: any[], config?: Record<string, any>) => {
+            if (!config) return vgSpec;
+            const opacity = config.opacity;
+            if (opacity !== undefined && opacity < 1) {
+                if (typeof vgSpec.mark === 'string') {
+                    vgSpec.mark = { type: vgSpec.mark, opacity };
+                } else {
+                    vgSpec.mark = { ...vgSpec.mark, opacity };
+                }
+            }
+            return vgSpec;
         }
     },
     {
@@ -321,6 +336,21 @@ const barCharts: ChartTemplate[] = [
             "opacity": ["encoding", "opacity"],
             "column": ["encoding", "column"],
             "row": ["encoding", "row"]
+        },
+        "configProperties": [
+            { key: "cornerRadius", label: "Corners", type: "slider", min: 0, max: 15, step: 1, defaultValue: 0 },
+        ] as ConfigPropertyDef[],
+        "postProcessor": (vgSpec: any, _table: any[], config?: Record<string, any>) => {
+            if (!config) return vgSpec;
+            const cr = config.cornerRadius;
+            if (cr !== undefined && cr > 0) {
+                if (typeof vgSpec.mark === 'string') {
+                    vgSpec.mark = { type: vgSpec.mark, cornerRadiusEnd: cr };
+                } else {
+                    vgSpec.mark = { ...vgSpec.mark, cornerRadiusEnd: cr };
+                }
+            }
+            return vgSpec;
         }
     },
     {
@@ -432,7 +462,7 @@ const barCharts: ChartTemplate[] = [
         "template": {
             "mark": "bar",
             "encoding": {
-                "x": {"bin": {"size": 10}},
+                "x": {"bin": true},
                 "y": {"aggregate": "count"}
             }
         },
@@ -442,6 +472,17 @@ const barCharts: ChartTemplate[] = [
             "color": ["encoding", "color"],
             "column": ["encoding", "column"],
             "row": ["encoding", "row"]
+        },
+        "configProperties": [
+            { key: "binCount", label: "Bins", type: "slider", min: 5, max: 50, step: 1, defaultValue: 10 },
+        ] as ConfigPropertyDef[],
+        "postProcessor": (vgSpec: any, _table: any[], config?: Record<string, any>) => {
+            if (!config) return vgSpec;
+            const binCount = config.binCount;
+            if (binCount !== undefined && vgSpec.encoding?.x) {
+                vgSpec.encoding.x.bin = { maxbins: binCount };
+            }
+            return vgSpec;
         }
     },
     {
@@ -453,13 +494,35 @@ const barCharts: ChartTemplate[] = [
         },
         "channels": ["x", "y", "color", "column", "row"],
         "paths": Object.fromEntries(["x", "y", "color", "column", "row"].map(channel => [channel, ["encoding", channel]])),
-        "postProcessor": (vgSpec: any, table: any[]) => {
+        "configProperties": [
+            { key: "colorScheme", label: "Scheme", type: "select", options: [
+                {value: undefined, label: "Default"},
+                {value: "viridis", label: "Viridis"},
+                {value: "inferno", label: "Inferno"},
+                {value: "magma", label: "Magma"},
+                {value: "plasma", label: "Plasma"},
+                {value: "turbo", label: "Turbo"},
+                {value: "blues", label: "Blues"},
+                {value: "reds", label: "Reds"},
+                {value: "greens", label: "Greens"},
+                {value: "oranges", label: "Oranges"},
+                {value: "purples", label: "Purples"},
+                {value: "greys", label: "Greys"},
+                {value: "blueorange", label: "Blue-Orange (diverging)"},
+                {value: "redblue", label: "Red-Blue (diverging)"},
+            ]},
+        ] as ConfigPropertyDef[],
+        "postProcessor": (vgSpec: any, table: any[], config?: Record<string, any>) => {
             if (vgSpec.encoding.y && vgSpec.encoding.y.type != "nominal") {
                 vgSpec.encoding.y.type = "nominal";
             } 
             if (vgSpec.encoding.x && vgSpec.encoding.x.type != "nominal") {
                 vgSpec.encoding.x.type = "nominal";
-            } 
+            }
+            if (config?.colorScheme && vgSpec.encoding.color) {
+                if (!vgSpec.encoding.color.scale) vgSpec.encoding.color.scale = {};
+                vgSpec.encoding.color.scale.scheme = config.colorScheme;
+            }
             return vgSpec;
         }
     }
@@ -510,6 +573,32 @@ const mapCharts: ChartTemplate[] = [
             "latitude": ["layer", 1, "encoding", "latitude"],
             "color": ["layer", 1, "encoding", "color"],
             "size": ["layer", 1, "encoding", "size"]
+        },
+        "configProperties": [
+            {
+                key: "projection",
+                label: "Projection",
+                type: "select",
+                options: [{value: "default", label: "Default (from template)"}, ...MAP_PROJECTIONS.map(p => ({value: p.value, label: p.label}))],
+                defaultValue: "default",
+            },
+        ] as ConfigPropertyDef[],
+        "postProcessor": (vgSpec: any, _table: any[], config?: Record<string, any>) => {
+            if (!config) return vgSpec;
+            const projection = config.projection;
+            // Apply projection to all layers and root
+            const applyProjection = (obj: any) => {
+                if (obj?.projection) {
+                    if (projection && projection !== 'default') {
+                        obj.projection.type = projection;
+                    }
+                }
+            };
+            if (vgSpec.layer && Array.isArray(vgSpec.layer)) {
+                for (const layer of vgSpec.layer) applyProjection(layer);
+            }
+            applyProjection(vgSpec);
+            return vgSpec;
         }
     },
     {
@@ -556,6 +645,44 @@ const mapCharts: ChartTemplate[] = [
             "latitude": ["layer", 1, "encoding", "latitude"],
             "color": ["layer", 1, "encoding", "color"],
             "size": ["layer", 1, "encoding", "size"]
+        },
+        "configProperties": [
+            {
+                key: "projection",
+                label: "Projection",
+                type: "select",
+                options: [{value: "default", label: "Default"}, ...MAP_PROJECTIONS.map(p => ({value: p.value, label: p.label}))],
+                defaultValue: "default",
+            },
+            {
+                key: "projectionCenter",
+                label: "Center",
+                type: "select",
+                options: [{value: undefined, label: "Default"}, ...PROJECTION_CENTER_PRESETS.map(p => ({value: p.center, label: `${p.label} [${p.center[0]}, ${p.center[1]}]`}))],
+                defaultValue: undefined,
+            },
+        ] as ConfigPropertyDef[],
+        "postProcessor": (vgSpec: any, _table: any[], config?: Record<string, any>) => {
+            if (!config) return vgSpec;
+            const projection = config.projection;
+            const projectionCenter = config.projectionCenter;
+            const applyProjection = (obj: any) => {
+                if (obj?.projection) {
+                    if (projection && projection !== 'default') {
+                        obj.projection.type = projection;
+                    }
+                    if (projectionCenter) {
+                        obj.projection.center = projectionCenter;
+                        obj.projection.scale = 150;
+                        obj.projection.translate = [300, 175];
+                    }
+                }
+            };
+            if (vgSpec.layer && Array.isArray(vgSpec.layer)) {
+                for (const layer of vgSpec.layer) applyProjection(layer);
+            }
+            applyProjection(vgSpec);
+            return vgSpec;
         }
     }
 ]
@@ -574,6 +701,21 @@ const pieCharts: ChartTemplate[] = [
             "color": ["encoding", "color"],
             "column": ["encoding", "column"],
             "row": ["encoding", "row"]
+        },
+        "configProperties": [
+            { key: "innerRadius", label: "Donut", type: "slider", min: 0, max: 100, step: 5, defaultValue: 0 },
+        ] as ConfigPropertyDef[],
+        "postProcessor": (vgSpec: any, _table: any[], config?: Record<string, any>) => {
+            if (!config) return vgSpec;
+            const innerRadius = config.innerRadius;
+            if (innerRadius !== undefined && innerRadius > 0) {
+                if (typeof vgSpec.mark === 'string') {
+                    vgSpec.mark = { type: vgSpec.mark, innerRadius };
+                } else {
+                    vgSpec.mark = { ...vgSpec.mark, innerRadius };
+                }
+            }
+            return vgSpec;
         }
     }
 ]
@@ -594,6 +736,28 @@ let lineCharts = [
             "opacity": ["encoding", "opacity"],
             "column": ["encoding", "column"],
             "row": ["encoding", "row"]
+        },
+        "configProperties": [
+            { key: "interpolate", label: "Curve", type: "select", options: [
+                {value: undefined, label: "Default (linear)"},
+                {value: "linear", label: "Linear"},
+                {value: "monotone", label: "Monotone (smooth)"},
+                {value: "step", label: "Step"},
+                {value: "step-before", label: "Step Before"},
+                {value: "step-after", label: "Step After"},
+                {value: "basis", label: "Basis (smooth)"},
+                {value: "cardinal", label: "Cardinal"},
+                {value: "catmull-rom", label: "Catmull-Rom"},
+            ]},
+        ] as ConfigPropertyDef[],
+        "postProcessor": (vgSpec: any, _table: any[], config?: Record<string, any>) => {
+            if (!config?.interpolate) return vgSpec;
+            if (typeof vgSpec.mark === 'string') {
+                vgSpec.mark = { type: vgSpec.mark, interpolate: config.interpolate };
+            } else {
+                vgSpec.mark = { ...vgSpec.mark, interpolate: config.interpolate };
+            }
+            return vgSpec;
         }
     },
     {
@@ -611,6 +775,28 @@ let lineCharts = [
             "opacity": ["encoding", "opacity"],
             "column": ["encoding", "column"],
             "row": ["encoding", "row"]
+        },
+        "configProperties": [
+            { key: "interpolate", label: "Curve", type: "select", options: [
+                {value: undefined, label: "Default (linear)"},
+                {value: "linear", label: "Linear"},
+                {value: "monotone", label: "Monotone (smooth)"},
+                {value: "step", label: "Step"},
+                {value: "step-before", label: "Step Before"},
+                {value: "step-after", label: "Step After"},
+                {value: "basis", label: "Basis (smooth)"},
+                {value: "cardinal", label: "Cardinal"},
+                {value: "catmull-rom", label: "Catmull-Rom"},
+            ]},
+        ] as ConfigPropertyDef[],
+        "postProcessor": (vgSpec: any, _table: any[], config?: Record<string, any>) => {
+            if (!config?.interpolate) return vgSpec;
+            if (typeof vgSpec.mark === 'string') {
+                vgSpec.mark = { type: vgSpec.mark, interpolate: config.interpolate };
+            } else {
+                vgSpec.mark = { ...vgSpec.mark, interpolate: config.interpolate };
+            }
+            return vgSpec;
         }
     },
 ]

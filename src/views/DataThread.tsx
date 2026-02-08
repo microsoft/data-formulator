@@ -1427,7 +1427,7 @@ const MemoizedChartObject = memo<{
     }
 
     // prepare the chart to be rendered
-    let assembledChart = assembleVegaChart(chart.chartType, chart.encodingMap, conceptShelfItems, visTableRows, table.metadata, 20, true, 100, 80, false, chart.projection, chart.projectionCenter);
+    let assembledChart = assembleVegaChart(chart.chartType, chart.encodingMap, conceptShelfItems, visTableRows, table.metadata, 20, true, 100, 80, false, chart.config);
     assembledChart["background"] = "transparent";
 
     // Temporary fix, down sample the dataset
@@ -1480,6 +1480,7 @@ const MemoizedChartObject = memo<{
         prevProps.chart.saved === nextProps.chart.saved &&
         prevProps.status === nextProps.status &&
         _.isEqual(prevProps.chart.encodingMap, nextProps.chart.encodingMap) &&
+        _.isEqual(prevProps.chart.config, nextProps.chart.config) &&
         // Only check tables/charts that this specific chart depends on
         _.isEqual(prevProps.table, nextProps.table) &&
         _.isEqual(prevProps.table.attachedMetadata, nextProps.table.attachedMetadata) &&
