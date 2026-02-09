@@ -394,6 +394,9 @@ class DataRecAgent(object):
                         else:
                             query_output = full_df
 
+                        # Remove duplicate columns to avoid orient='records' error
+                        query_output = query_output.loc[:, ~query_output.columns.duplicated()]
+
                         result = {
                             "status": "ok",
                             "code": code,

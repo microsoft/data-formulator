@@ -209,6 +209,25 @@ export function useDataRefresh() {
                     if (dataChanged) {
                         console.log(`[DataRefresh] Table "${table.id}" data changed (hash: ${oldContentHash?.slice(0, 8) || 'none'} -> ${newContentHash.slice(0, 8)}), updating...`);
                         
+                        // For stream sources with virtual tables, sync the new data to workspace
+                        // so that sandbox code (derived table refresh) reads fresh data from parquet.
+                        // Database sources don't need this — their backend refresh already updates workspace.
+                        if (table.source?.type === 'stream' && table.virtual?.tableId) {
+                            try {
+                                await fetchWithIdentity(getUrls().SYNC_TABLE_DATA, {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({
+                                        table_name: table.virtual.tableId,
+                                        rows: result.newRows
+                                    })
+                                });
+                                console.log(`[DataRefresh] Synced stream data for "${table.virtual.tableId}" to workspace`);
+                            } catch (syncError) {
+                                console.warn(`[DataRefresh] Failed to sync stream data to workspace:`, syncError);
+                            }
+                        }
+
                         // Update the table rows - this will trigger useDerivedTableRefresh
                         // Pass contentHash from backend for virtual/DB tables so it reflects full table state
                         dispatch(dfActions.updateTableRows({

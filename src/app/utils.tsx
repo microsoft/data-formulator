@@ -50,6 +50,7 @@ export function getUrls() {
         DELETE_TABLE: `/api/tables/delete-table`,
         GET_COLUMN_STATS: `/api/tables/analyze`,
         SAMPLE_TABLE: `/api/tables/sample-table`,
+        SYNC_TABLE_DATA: `/api/tables/sync-table-data`,
 
         DATA_LOADER_LIST_DATA_LOADERS: `/api/tables/data-loader/list-data-loaders`,
         DATA_LOADER_LIST_TABLES: `/api/tables/data-loader/list-tables`,

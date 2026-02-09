@@ -780,9 +780,13 @@ def refresh_derived_data():
                         display_df = result_df.head(max_display_rows)
                     else:
                         display_df = result_df
+                    # Remove duplicate columns to avoid orient='records' error
+                    display_df = display_df.loc[:, ~display_df.columns.duplicated()]
                     response_data["rows"] = json.loads(display_df.to_json(orient='records', date_format='iso'))
                 else:
                     # Temp table: return full data since there's no workspace storage
+                    # Remove duplicate columns to avoid orient='records' error
+                    result_df = result_df.loc[:, ~result_df.columns.duplicated()]
                     response_data["rows"] = json.loads(result_df.to_json(orient='records', date_format='iso'))
                 
                 return jsonify(response_data)

@@ -725,8 +725,10 @@ let SingleThreadGroupView: FC<{
                     if (sourceTable) {
                         // Use the new rows if this is the table being refreshed
                         const rows = sourceId === sourceTableId ? newRows : sourceTable.rows;
+                        // Use workspace table name for virtual tables so sandbox code can find the parquet
+                        const tableName = sourceTable.virtual?.tableId || sourceTable.id.replace(/\.[^/.]+$/, "");
                         return {
-                            name: sourceTable.id,
+                            name: tableName,
                             rows: rows
                         };
                     }

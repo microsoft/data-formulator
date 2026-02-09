@@ -58,6 +58,18 @@ def _quote_duckdb(col: str) -> str:
     return '"' + str(col).replace('"', '""') + '"'
 
 
+def _dedup_dataframe_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """Remove duplicate columns from a DataFrame, keeping the first occurrence."""
+    if df.columns.duplicated().any():
+        return df.loc[:, ~df.columns.duplicated()]
+    return df
+
+
+def _dedup_list(items: list) -> list:
+    """Remove duplicates from a list while preserving order."""
+    return list(dict.fromkeys(items))
+
+
 def _build_parquet_sample_sql(
     columns: list[str],
     aggregate_fields_and_functions: list,
@@ -71,7 +83,7 @@ def _build_parquet_sample_sql(
     Returns (main_sql, count_sql) where each contains {parquet} placeholder.
     """
     valid_agg = [(f, fn) for (f, fn) in aggregate_fields_and_functions if f is None or f in columns]
-    valid_select = [f for f in select_fields if f in columns]
+    valid_select = _dedup_list([f for f in select_fields if f in columns])
     valid_order = [f for f in order_by_fields if f in columns]
 
     if valid_agg:
@@ -176,6 +188,7 @@ def list_tables():
                         else:
                             df = workspace.read_data_as_df(table_name)
                             df = df.head(1000)
+                        df = _dedup_dataframe_columns(df)
                         sample_rows = json.loads(df.to_json(orient='records', date_format='iso'))
                     except Exception:
                         pass
@@ -214,7 +227,7 @@ def _apply_aggregation_and_sample(
         (f, fn) for (f, fn) in aggregate_fields_and_functions
         if f is None or f in columns
     ]
-    valid_select = [f for f in select_fields if f in columns]
+    valid_select = _dedup_list([f for f in select_fields if f in columns])
     valid_order = [f for f in order_by_fields if f in columns]
 
     if valid_agg:
@@ -295,6 +308,7 @@ def sample_table():
                 order_by_fields,
                 sample_size,
             )
+        result_df = _dedup_dataframe_columns(result_df)
         rows_json = json.loads(result_df.to_json(orient='records', date_format='iso'))
         return jsonify({
             "status": "success",
@@ -326,10 +340,12 @@ def get_table_data():
                 table_name,
                 f"SELECT * FROM {{parquet}} AS t LIMIT {page_size} OFFSET {offset}",
             )
+            page_df = _dedup_dataframe_columns(page_df)
             columns = list(page_df.columns)
             rows = json.loads(page_df.to_json(orient='records', date_format='iso'))
         else:
             df = workspace.read_data_as_df(table_name)
+            df = _dedup_dataframe_columns(df)
             total_rows = len(df)
             columns = list(df.columns)
             page_df = df.iloc[offset : offset + page_size]
@@ -409,6 +425,41 @@ def create_table():
         safe_msg, status_code = sanitize_db_error_message(e)
         return jsonify({"status": "error", "message": safe_msg}), status_code
 
+
+@tables_bp.route('/sync-table-data', methods=['POST'])
+def sync_table_data():
+    """Update an existing workspace table's parquet with new row data.
+    
+    Used when the frontend has fresher data than the workspace (e.g., from stream refresh)
+    and needs to sync it so sandbox code reads the latest data.
+    """
+    try:
+        data = request.get_json()
+        table_name = data.get('table_name')
+        rows = data.get('rows')
+
+        if not table_name:
+            return jsonify({"status": "error", "message": "table_name is required"}), 400
+        if rows is None:
+            return jsonify({"status": "error", "message": "rows is required"}), 400
+
+        workspace = _get_workspace()
+
+        if table_name not in workspace.list_tables():
+            return jsonify({"status": "error", "message": f"Table '{table_name}' not found in workspace"}), 404
+
+        df = pd.DataFrame(rows) if rows else pd.DataFrame()
+        workspace.write_parquet(df, table_name)
+
+        return jsonify({
+            "status": "success",
+            "table_name": table_name,
+            "row_count": len(df),
+        })
+    except Exception as e:
+        logger.error(f"Error syncing table data: {str(e)}")
+        safe_msg, status_code = sanitize_db_error_message(e)
+        return jsonify({"status": "error", "message": safe_msg}), status_code
 
 
 @tables_bp.route('/delete-table', methods=['POST'])
@@ -734,6 +785,7 @@ def data_loader_fetch_data():
         if len(df) > row_limit:
             df = df.head(row_limit)
         
+        df = _dedup_dataframe_columns(df)
         rows = json.loads(df.to_json(orient='records', date_format='iso'))
         columns = [{"name": col, "type": str(df[col].dtype)} for col in df.columns]
         

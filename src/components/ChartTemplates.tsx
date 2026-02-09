@@ -574,30 +574,8 @@ const mapCharts: ChartTemplate[] = [
             "color": ["layer", 1, "encoding", "color"],
             "size": ["layer", 1, "encoding", "size"]
         },
-        "configProperties": [
-            {
-                key: "projection",
-                label: "Projection",
-                type: "select",
-                options: [{value: "default", label: "Default (from template)"}, ...MAP_PROJECTIONS.map(p => ({value: p.value, label: p.label}))],
-                defaultValue: "default",
-            },
-        ] as ConfigPropertyDef[],
-        "postProcessor": (vgSpec: any, _table: any[], config?: Record<string, any>) => {
-            if (!config) return vgSpec;
-            const projection = config.projection;
-            // Apply projection to all layers and root
-            const applyProjection = (obj: any) => {
-                if (obj?.projection) {
-                    if (projection && projection !== 'default') {
-                        obj.projection.type = projection;
-                    }
-                }
-            };
-            if (vgSpec.layer && Array.isArray(vgSpec.layer)) {
-                for (const layer of vgSpec.layer) applyProjection(layer);
-            }
-            applyProjection(vgSpec);
+        "configProperties": [] as ConfigPropertyDef[],
+        "postProcessor": (vgSpec: any, _table: any[], _config?: Record<string, any>) => {
             return vgSpec;
         }
     },
@@ -671,10 +649,10 @@ const mapCharts: ChartTemplate[] = [
                     if (projection && projection !== 'default') {
                         obj.projection.type = projection;
                     }
-                    if (projectionCenter) {
-                        obj.projection.center = projectionCenter;
-                        obj.projection.scale = 150;
-                        obj.projection.translate = [(vgSpec.width || 600) / 2, (vgSpec.height || 350) / 2];
+                    // albersUsa is a composite projection that doesn't support rotate/center
+                    if (projectionCenter && obj.projection.type !== 'albersUsa') {
+                        // In Vega-Lite, use rotate to re-center the map (negate lon/lat)
+                        obj.projection.rotate = [-projectionCenter[0], -projectionCenter[1], 0];
                     }
                 }
             };

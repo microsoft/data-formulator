@@ -380,14 +380,34 @@ const VegaChartRenderer: FC<{
 
     const handleOpenInVegaEditor = useCallback(() => {
         if (!assembledSpec) return;
-        // Copy spec to clipboard, then open Vega Editor
+        // Use postMessage to pass spec to Vega Editor (same approach as vega-embed)
         const editorUrl = 'https://vega.github.io/editor/';
-        navigator.clipboard.writeText(JSON.stringify(assembledSpec, null, 2)).then(() => {
-            window.open(editorUrl, '_blank');
-        }).catch(() => {
-            // Fallback: open editor even if clipboard fails
-            window.open(editorUrl, '_blank');
-        });
+        const editor = window.open(editorUrl);
+        if (!editor) return;
+
+        const wait = 10_000;
+        const step = 250;
+        const { origin } = new URL(editorUrl);
+        let count = Math.floor(wait / step);
+
+        function listen(evt: MessageEvent) {
+            if (evt.source === editor) {
+                count = 0;
+                window.removeEventListener('message', listen, false);
+            }
+        }
+        window.addEventListener('message', listen, false);
+
+        function send() {
+            if (count <= 0) return;
+            editor!.postMessage({
+                spec: JSON.stringify(assembledSpec, null, 2),
+                mode: 'vega-lite',
+            }, origin);
+            setTimeout(send, step);
+            count -= 1;
+        }
+        setTimeout(send, step);
     }, [assembledSpec]);
 
     if (chart.chartType === "Auto") {
@@ -434,7 +454,7 @@ const VegaChartRenderer: FC<{
                             <SaveAltIcon sx={{ fontSize: 16 }} />
                         </IconButton>
                     </Tooltip>
-                    <Tooltip title="Copy spec & open Vega Editor">
+                    <Tooltip title="Open in Vega Editor">
                         <IconButton size="small" onClick={handleOpenInVegaEditor} sx={{ fontSize: 12, padding: '2px' }}>
                             <OpenInNewIcon sx={{ fontSize: 16 }} />
                         </IconButton>

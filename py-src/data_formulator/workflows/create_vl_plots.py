@@ -418,6 +418,9 @@ def assemble_vegailte_chart(
         "encoding": {}
     }
     
+    # Remove duplicate columns before converting to records
+    if df.columns.duplicated().any():
+        df = df.loc[:, ~df.columns.duplicated()]
     # Add data to the spec (inline data from dataframe)
     table_data = df.to_dict('records')
     
@@ -451,15 +454,6 @@ def assemble_vegailte_chart(
             field_type = detect_field_type(df[field_name])
             encoding_obj["field"] = field_name
             encoding_obj["type"] = field_type
-            
-            # For ordinal fields on positional channels, use quantitative if the
-            # underlying data is numeric. Ordinal on a numeric axis makes Vega-Lite
-            # treat values as discrete categories, which breaks grouped/stacked bar
-            # charts and continuous axis layouts. Ordinal is only meaningful for
-            # aesthetic/facet channels (color, size, column, row).
-            if field_type == 'ordinal' and channel not in ['color', 'size', 'column', 'row']:
-                if pd.api.types.is_numeric_dtype(df[field_name]):
-                    encoding_obj["type"] = "quantitative"
             
             # Special handling for year/date fields
             if pd.api.types.is_datetime64_any_dtype(df[field_name]):
