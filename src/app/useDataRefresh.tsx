@@ -3,7 +3,7 @@
 
 import { useEffect, useRef, useCallback } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
-import { DataFormulatorState, dfActions } from './dfSlice';
+import { DataFormulatorState, dfActions, selectRefreshConfigs } from './dfSlice';
 import { AppDispatch } from './store';
 import { DictTable } from '../components/ComponentType';
 import { createTableFromText } from '../data/utils';
@@ -20,14 +20,30 @@ interface RefreshResult {
 /**
  * Custom hook that manages automatic data refresh for tables with streaming or database sources.
  * It sets up intervals for each table that has auto-refresh enabled.
+ *
+ * Performance: timers are driven by `selectRefreshConfigs` (which is stable when
+ * only row data changes) instead of the full `state.tables` array.  A ref keeps
+ * track of the latest tables snapshot so callbacks always have fresh data without
+ * causing the effect to re-run.
  */
 export function useDataRefresh() {
     const dispatch = useDispatch<AppDispatch>();
     const tables = useSelector((state: DataFormulatorState) => state.tables);
+    const refreshConfigs = useSelector(selectRefreshConfigs);
     const timeoutRefs = useRef<Map<string, NodeJS.Timeout>>(new Map());
     const refreshInProgressRef = useRef<Map<string, boolean>>(new Map());
     const isActiveRef = useRef<Map<string, boolean>>(new Map());
-    const initializedTablesRef = useRef<Set<string>>(new Set()); // Track tables that have been initialized
+    const initializedTablesRef = useRef<Set<string>>(new Set());
+
+    // Keep a ref to the latest tables so callbacks can read fresh data
+    // without adding `tables` to useEffect/useCallback deps.
+    const tablesRef = useRef(tables);
+    tablesRef.current = tables;
+
+    /** Read latest table from store (avoids stale closure issues). */
+    const getLatestTable = useCallback((tableId: string): DictTable | undefined => {
+        return tablesRef.current.find(t => t.id === tableId);
+    }, []);
 
     /**
      * Fetches fresh data from a streaming URL
@@ -271,55 +287,50 @@ export function useDataRefresh() {
      */
     const scheduleNextRefresh = useCallback((tableId: string) => {
         // Look up the current table state to get latest source config
-        const table = tables.find(t => t.id === tableId);
+        const table = getLatestTable(tableId);
         if (!table) {
-            // Table no longer exists, stop scheduling
             isActiveRef.current.set(tableId, false);
             return;
         }
 
         const source = table.source;
         if (!source?.autoRefresh || !source.refreshIntervalSeconds || source.refreshIntervalSeconds <= 0) {
-            // Auto-refresh disabled or invalid interval, stop scheduling
             isActiveRef.current.set(tableId, false);
             return;
         }
 
-        // Check if this table is still active (hasn't been removed or disabled)
         if (!isActiveRef.current.get(tableId)) {
             return;
         }
 
         const intervalMs = source.refreshIntervalSeconds * 1000;
         
-        // Schedule the next refresh
         const timeout = setTimeout(async () => {
-            // Check again if still active before performing refresh
             if (!isActiveRef.current.get(tableId)) {
                 return;
             }
 
-            // Look up table again to get latest state
-            const currentTable = tables.find(t => t.id === tableId);
+            // Read latest table from ref (not stale closure)
+            const currentTable = getLatestTable(tableId);
             if (!currentTable) {
                 isActiveRef.current.set(tableId, false);
                 return;
             }
 
-            // Perform refresh and wait for it to complete
             await performRefresh(currentTable);
             
-            // Schedule the next refresh after this one completes
             scheduleNextRefresh(tableId);
         }, intervalMs);
 
         timeoutRefs.current.set(tableId, timeout);
-    }, [tables, performRefresh]);
+    }, [getLatestTable, performRefresh]);
 
     /**
      * Set up refresh intervals for tables with auto-refresh enabled.
-     * Uses recursive setTimeout pattern to ensure updates wait until complete.
-     * Triggers immediate refresh for newly loaded tables.
+     *
+     * This effect depends on `refreshConfigs` (a memoized projection of tables
+     * that only contains refresh-relevant fields) — so it does NOT re-run when
+     * only table rows change. Timer churn is eliminated.
      */
     useEffect(() => {
         // Clear all existing timeouts
@@ -327,85 +338,83 @@ export function useDataRefresh() {
         timeoutRefs.current.clear();
         isActiveRef.current.clear();
 
-        // Set up new refresh schedules for tables with auto-refresh
-        tables.forEach((table) => {
-            const source = table.source;
-            
-            // Check if auto-refresh is enabled
-            const shouldAutoRefresh = source?.autoRefresh && 
-                source.refreshIntervalSeconds && 
-                source.refreshIntervalSeconds > 0;
+        // Set up new refresh schedules
+        refreshConfigs.forEach((config) => {
+            const shouldAutoRefresh = config.autoRefresh && 
+                config.refreshIntervalSeconds && 
+                config.refreshIntervalSeconds > 0;
 
             if (shouldAutoRefresh) {
-                const intervalMs = source.refreshIntervalSeconds! * 1000;
-                const isNewTable = !initializedTablesRef.current.has(table.id);
+                const intervalMs = config.refreshIntervalSeconds! * 1000;
+                const isNewTable = !initializedTablesRef.current.has(config.id);
                 
-                console.log(`[DataRefresh] Setting up auto-refresh for "${table.id}" every ${source.refreshIntervalSeconds}s (new=${isNewTable})`);
+                console.log(`[DataRefresh] Setting up auto-refresh for "${config.id}" every ${config.refreshIntervalSeconds}s (new=${isNewTable})`);
                 
-                // Mark as active and initialized
-                isActiveRef.current.set(table.id, true);
-                initializedTablesRef.current.add(table.id);
+                isActiveRef.current.set(config.id, true);
+                initializedTablesRef.current.add(config.id);
                 
                 if (isNewTable) {
-                    // For newly loaded tables, trigger immediate refresh then schedule next
-                    console.log(`[DataRefresh] Triggering immediate first refresh for newly loaded table "${table.id}"`);
+                    console.log(`[DataRefresh] Triggering immediate first refresh for newly loaded table "${config.id}"`);
                     (async () => {
-                        if (!isActiveRef.current.get(table.id)) {
+                        if (!isActiveRef.current.get(config.id)) {
                             return;
                         }
-                        await performRefresh(table);
-                        scheduleNextRefresh(table.id);
+                        const table = getLatestTable(config.id);
+                        if (table) {
+                            await performRefresh(table);
+                        }
+                        scheduleNextRefresh(config.id);
                     })();
                 } else {
-                    // For existing tables, continue with normal interval
                     const initialTimeout = setTimeout(async () => {
-                        if (!isActiveRef.current.get(table.id)) {
+                        if (!isActiveRef.current.get(config.id)) {
                             return;
                         }
-                        await performRefresh(table);
-                        scheduleNextRefresh(table.id);
+                        const table = getLatestTable(config.id);
+                        if (table) {
+                            await performRefresh(table);
+                        }
+                        scheduleNextRefresh(config.id);
                     }, intervalMs);
 
-                    timeoutRefs.current.set(table.id, initialTimeout);
+                    timeoutRefs.current.set(config.id, initialTimeout);
                 }
             }
         });
 
         // Clean up tables that no longer exist from the initialized set
-        const currentTableIds = new Set(tables.map(t => t.id));
+        const currentTableIds = new Set(refreshConfigs.map(c => c.id));
         initializedTablesRef.current.forEach(tableId => {
             if (!currentTableIds.has(tableId)) {
                 initializedTablesRef.current.delete(tableId);
             }
         });
 
-        // Cleanup on unmount or when tables change
         return () => {
             timeoutRefs.current.forEach((timeout) => clearTimeout(timeout));
             timeoutRefs.current.clear();
             isActiveRef.current.clear();
         };
-    }, [tables, performRefresh, scheduleNextRefresh]);
+    }, [refreshConfigs, performRefresh, scheduleNextRefresh, getLatestTable]);
 
     /**
      * Manual refresh function that can be called from components
      */
     const manualRefresh = useCallback(async (tableId: string) => {
-        const table = tables.find(t => t.id === tableId);
+        const table = getLatestTable(tableId);
         if (table) {
             await performRefresh(table);
         }
-    }, [tables, performRefresh]);
+    }, [getLatestTable, performRefresh]);
 
     /**
      * Get refresh info for a table
      */
     const getRefreshInfo = useCallback((tableId: string) => {
-        const table = tables.find(t => t.id === tableId);
+        const table = getLatestTable(tableId);
         if (!table) return null;
 
         const source = table.source;
-        // Can refresh if: stream with URL, or database table with backend connection info
         const canRefresh = (source?.type === 'stream' && !!source.url) || 
                           (source?.type === 'database' && source.canRefresh === true);
         return {
@@ -415,7 +424,7 @@ export function useDataRefresh() {
             lastRefreshed: source?.lastRefreshed,
             sourceType: source?.type
         };
-    }, [tables]);
+    }, [getLatestTable]);
 
     return {
         manualRefresh,
@@ -426,19 +435,24 @@ export function useDataRefresh() {
 /**
  * Hook to handle refreshing derived tables when their source tables change.
  * This should be used in conjunction with useDataRefresh.
+ *
+ * Key performance optimisation: all derived table refreshes triggered by a
+ * single source-table change are fetched in parallel and then dispatched as
+ * a **single** `updateMultipleTableRows` action — collapsing N state updates
+ * (and N full-app re-renders) into one.
  */
 export function useDerivedTableRefresh() {
     const dispatch = useDispatch<AppDispatch>();
     const tables = useSelector((state: DataFormulatorState) => state.tables);
     const prevTableRowsRef = useRef<Map<string, string>>(new Map());
-    const refreshInProgressRef = useRef<Set<string>>(new Set());
+    const refreshInProgressRef = useRef<boolean>(false);
 
     /**
      * Refresh a SQL view (virtual table) by re-sampling from DuckDB.
-     * DuckDB views auto-update when base tables change, so we just need fresh data.
+     * Returns the result rather than dispatching directly.
      */
-    const refreshSqlView = useCallback(async (derivedTable: DictTable): Promise<boolean> => {
-        if (!derivedTable.virtual?.tableId) return false;
+    const refreshSqlView = useCallback(async (derivedTable: DictTable): Promise<{tableId: string, rows: any[]} | null> => {
+        if (!derivedTable.virtual?.tableId) return null;
 
         const tableName = derivedTable.virtual.tableId;
         console.log(`[DerivedRefresh] Re-sampling SQL view "${tableName}" (DuckDB auto-updated)...`);
@@ -456,58 +470,36 @@ export function useDerivedTableRefresh() {
             const data = await response.json();
             if (data.status === 'success' && data.rows) {
                 console.log(`[DerivedRefresh] Successfully re-sampled SQL view "${tableName}" (${data.rows.length} rows)`);
-                
-                dispatch(dfActions.updateTableRows({
-                    tableId: derivedTable.id,
-                    rows: data.rows
-                }));
-
-                dispatch(dfActions.addMessages({
-                    timestamp: Date.now(),
-                    component: 'Data Refresh',
-                    type: 'info',
-                    value: `View "${derivedTable.displayId || derivedTable.id}" refreshed (${data.rows.length} rows)`
-                }));
-                return true;
+                return { tableId: derivedTable.id, rows: data.rows };
             }
-            return false;
+            return null;
         } catch (error) {
             console.error(`[DerivedRefresh] Error re-sampling SQL view ${tableName}:`, error);
-            return false;
+            return null;
         }
-    }, [dispatch]);
+    }, []);
 
     /**
-     * Refresh a derived table by re-running its derivation code (Python)
-     * or re-sampling if it's an SQL view.
+     * Refresh a single derived table. Returns the result for batching.
      */
-    const refreshDerivedTable = useCallback(async (derivedTable: DictTable, allTables: DictTable[]) => {
-        if (!derivedTable.derive) return;
-        
-        // Prevent concurrent refreshes of the same table
-        if (refreshInProgressRef.current.has(derivedTable.id)) {
-            console.log(`[DerivedRefresh] Refresh already in progress for: ${derivedTable.id}`);
-            return;
-        }
-        
-        refreshInProgressRef.current.add(derivedTable.id);
+    const refreshOneDerivedTable = useCallback(async (
+        derivedTable: DictTable,
+        allTables: DictTable[]
+    ): Promise<{tableId: string, rows: any[]} | null> => {
+        if (!derivedTable.derive) return null;
 
         try {
-            // For SQL views (virtual tables without Python derive code), DuckDB auto-updates the view
-            // We just need to re-sample to get the updated data
+            // SQL views — DuckDB auto-updates; just re-sample
             if (derivedTable.virtual?.tableId && !derivedTable.derive?.code) {
                 console.log(`[DerivedRefresh] Table "${derivedTable.id}" is an SQL view - DuckDB auto-updates it`);
-                await refreshSqlView(derivedTable);
-                return;
+                return await refreshSqlView(derivedTable);
             }
 
-            // For Python-derived tables, we need to re-run the transformation code
+            // Python-derived tables — re-run the transformation code
             const { source: sourceTableIds, code } = derivedTable.derive;
 
             console.log(`[DerivedRefresh] Looking for source tables: ${sourceTableIds.join(', ')}`);
-            console.log(`[DerivedRefresh] Available tables: ${allTables.map(t => t.id).join(', ')}`);
             
-            // Get the actual source table data
             const inputTables: {name: string, rows: any[]}[] = [];
             for (const sourceId of sourceTableIds) {
                 const sourceTable = allTables.find(t => t.id === sourceId);
@@ -516,21 +508,16 @@ export function useDerivedTableRefresh() {
                     continue;
                 }
                 const tableName = sourceTable.virtual?.tableId || sourceTable.id.replace(/\.[^/.]+$/, "");
-                console.log(`[DerivedRefresh] Found source table "${sourceId}" -> "${tableName}" with ${sourceTable.rows.length} rows`);
-                inputTables.push({
-                    name: tableName,
-                    rows: sourceTable.rows
-                });
+                inputTables.push({ name: tableName, rows: sourceTable.rows });
             }
 
             if (inputTables.length !== sourceTableIds.length) {
                 console.error(`[DerivedRefresh] Missing source tables for: ${derivedTable.id} (got ${inputTables.length}/${sourceTableIds.length})`);
-                return;
+                return null;
             }
 
             console.log(`[DerivedRefresh] Calling server to refresh "${derivedTable.id}" with ${inputTables.length} input tables, code length: ${code.length}`);
 
-            // Call the server to re-run the derivation
             const requestBody: any = {
                 input_tables: inputTables,
                 code: code,
@@ -549,18 +536,7 @@ export function useDerivedTableRefresh() {
             
             if (data.status === 'ok' && data.rows) {
                 console.log(`[DerivedRefresh] Successfully refreshed "${derivedTable.id}" with ${data.rows.length} rows`);
-                
-                dispatch(dfActions.updateTableRows({
-                    tableId: derivedTable.id,
-                    rows: data.rows
-                }));
-
-                dispatch(dfActions.addMessages({
-                    timestamp: Date.now(),
-                    component: 'Data Refresh',
-                    type: 'info',
-                    value: `Derived table "${derivedTable.displayId || derivedTable.id}" refreshed (${data.rows.length} rows)`
-                }));
+                return { tableId: derivedTable.id, rows: data.rows };
             } else {
                 console.error(`[DerivedRefresh] Failed to refresh "${derivedTable.id}": ${data.message}`);
                 dispatch(dfActions.addMessages({
@@ -569,6 +545,7 @@ export function useDerivedTableRefresh() {
                     type: 'warning',
                     value: `Failed to refresh "${derivedTable.displayId || derivedTable.id}": ${data.message}`
                 }));
+                return null;
             }
         } catch (error) {
             console.error(`[DerivedRefresh] Error refreshing derived table ${derivedTable.id}:`, error);
@@ -578,15 +555,13 @@ export function useDerivedTableRefresh() {
                 type: 'error',
                 value: `Error refreshing "${derivedTable.displayId || derivedTable.id}": ${error instanceof Error ? error.message : 'Unknown error'}`
             }));
-        } finally {
-            refreshInProgressRef.current.delete(derivedTable.id);
+            return null;
         }
     }, [dispatch, refreshSqlView]);
 
     /**
      * Check for table changes and refresh dependent derived tables.
-     * Uses content hashes for source tables only - derived tables don't need hashing
-     * since their changes are driven by source table changes.
+     * All refreshes are fetched in parallel, then committed as a single batch dispatch.
      */
     useEffect(() => {
         console.log(`[DerivedRefresh] useEffect triggered, ${tables.length} tables in state`);
@@ -594,9 +569,7 @@ export function useDerivedTableRefresh() {
         // Build a map of content hashes for source tables only (non-derived tables)
         const currentHashMap = new Map<string, string>();
         tables.forEach(table => {
-            // Only track hashes for source tables (non-derived)
             if (!table.derive) {
-                // Use stored contentHash if available, otherwise compute it
                 const hash = table.contentHash || computeContentHash(table.rows, table.names);
                 currentHashMap.set(table.id, hash);
             }
@@ -612,45 +585,57 @@ export function useDerivedTableRefresh() {
             }
         });
 
-        // Log if no previous hashes (first run)
         if (prevTableRowsRef.current.size === 0 && tables.length > 0) {
             const sourceTableCount = tables.filter(t => !t.derive).length;
             console.log(`[DerivedRefresh] First run, initializing content hashes for ${sourceTableCount} source tables`);
         }
 
-        // If any source tables changed, find and refresh derived tables that depend on them
-        if (changedTableIds.length > 0) {
+        // If any source tables changed, find and refresh all dependent derived tables in parallel
+        if (changedTableIds.length > 0 && !refreshInProgressRef.current) {
             console.log(`[DerivedRefresh] Source tables changed: ${changedTableIds.join(', ')}`);
             
-            // Find derived tables that DIRECTLY depend on the changed tables
             const directlyDependentTables: DictTable[] = [];
-            
             tables.forEach(table => {
                 if (table.derive) {
-                    // Check if this table directly depends on any changed table
                     const dependsOnChanged = table.derive.source.some(
                         sourceId => changedTableIds.includes(sourceId)
                     );
-                    
-                    const inProgress = refreshInProgressRef.current.has(table.id);
-                    
-                    console.log(`[DerivedRefresh] Checking derived table "${table.id}": dependsOnChanged=${dependsOnChanged}, inProgress=${inProgress}, sources=[${table.derive.source.join(', ')}]`);
-                    
-                    // Only refresh if:
-                    // 1. It depends on a changed source table
-                    // 2. It's not already being refreshed
-                    if (dependsOnChanged && !inProgress) {
+                    console.log(`[DerivedRefresh] Checking derived table "${table.id}": dependsOnChanged=${dependsOnChanged}, sources=[${table.derive.source.join(', ')}]`);
+                    if (dependsOnChanged) {
                         directlyDependentTables.push(table);
                     }
                 }
             });
 
             if (directlyDependentTables.length > 0) {
-                console.log(`[DerivedRefresh] Will refresh ${directlyDependentTables.length} directly dependent tables: ${directlyDependentTables.map(t => t.id).join(', ')}`);
+                console.log(`[DerivedRefresh] Will refresh ${directlyDependentTables.length} directly dependent tables in parallel: ${directlyDependentTables.map(t => t.id).join(', ')}`);
                 
-                // Refresh each directly dependent table
-                directlyDependentTables.forEach(derivedTable => {
-                    refreshDerivedTable(derivedTable, tables);
+                refreshInProgressRef.current = true;
+
+                // Fire all refreshes in parallel, then batch the results into ONE dispatch
+                Promise.all(
+                    directlyDependentTables.map(dt => refreshOneDerivedTable(dt, tables))
+                ).then(results => {
+                    const successfulUpdates = results.filter((r): r is {tableId: string, rows: any[]} => r !== null);
+                    
+                    if (successfulUpdates.length > 0) {
+                        // Single dispatch for ALL derived table updates
+                        dispatch(dfActions.updateMultipleTableRows(successfulUpdates));
+                        
+                        // One summary message instead of N individual messages
+                        const names = successfulUpdates.map(u => {
+                            const t = tables.find(t => t.id === u.tableId);
+                            return `"${t?.displayId || u.tableId}" (${u.rows.length} rows)`;
+                        });
+                        dispatch(dfActions.addMessages({
+                            timestamp: Date.now(),
+                            component: 'Data Refresh',
+                            type: 'info',
+                            value: `Refreshed ${successfulUpdates.length} derived table(s): ${names.join(', ')}`
+                        }));
+                    }
+                }).finally(() => {
+                    refreshInProgressRef.current = false;
                 });
             } else {
                 console.log(`[DerivedRefresh] No derived tables need refreshing`);
@@ -659,5 +644,5 @@ export function useDerivedTableRefresh() {
 
         // Update the previous hashes reference (only source tables)
         prevTableRowsRef.current = currentHashMap;
-    }, [tables, refreshDerivedTable]);
+    }, [tables, refreshOneDerivedTable, dispatch]);
 }

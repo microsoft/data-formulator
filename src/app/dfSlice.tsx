@@ -529,6 +529,30 @@ export const dataFormulatorSlice = createSlice({
                 return t;
             });
         },
+        updateMultipleTableRows: (state, action: PayloadAction<{tableId: string, rows: any[], contentHash?: string}[]>) => {
+            // Batch-update rows for multiple tables in a single state mutation.
+            // This avoids N separate dispatches (each creating a new state.tables reference)
+            // when refreshing derived tables after a source table changes.
+            const updates = new Map(action.payload.map(u => [u.tableId, u]));
+            state.tables = state.tables.map(t => {
+                const update = updates.get(t.id);
+                if (!update) return t;
+                const newRows = update.rows;
+                const providedContentHash = update.contentHash;
+                let newMetadata = { ...t.metadata };
+                for (let name of t.names) {
+                    if (newRows.length > 0 && name in newRows[0]) {
+                        newMetadata[name] = {
+                            ...newMetadata[name],
+                            type: inferTypeFromValueArray(newRows.map(r => r[name])),
+                        };
+                    }
+                }
+                const updatedSource = t.source ? { ...t.source, lastRefreshed: Date.now() } : undefined;
+                const newContentHash = providedContentHash || computeContentHash(newRows, t.names);
+                return { ...t, rows: newRows, metadata: newMetadata, source: updatedSource, contentHash: newContentHash };
+            });
+        },
         updateTableSource: (state, action: PayloadAction<{tableId: string, source: DataSourceConfig}>) => {
             // Update the source configuration of a table
             let tableId = action.payload.tableId;
@@ -1069,6 +1093,86 @@ export const dataFormulatorSlice = createSlice({
     },
 })
 
+// ─── Memoized granular selectors ─────────────────────────────────────────────
+// These avoid re-renders in components that don't care about row data changes.
+
+/** Returns a stable array of table IDs. Only changes when tables are added/removed/reordered. */
+export const selectTableIds = createSelector(
+    [(state: DataFormulatorState) => state.tables],
+    (tables) => tables.map(t => t.id),
+    {
+        memoizeOptions: {
+            resultEqualityCheck: (prev: string[], next: string[]) => {
+                if (prev.length !== next.length) return false;
+                for (let i = 0; i < prev.length; i++) {
+                    if (prev[i] !== next[i]) return false;
+                }
+                return true;
+            }
+        }
+    }
+);
+
+/**
+ * Returns a stable "refresh config" fingerprint for auto-refresh timer management.
+ * Only changes when a table's autoRefresh/refreshIntervalSeconds/source.type changes,
+ * or when tables are added/removed — NOT when rows are updated.
+ */
+export const selectRefreshConfigs = createSelector(
+    [(state: DataFormulatorState) => state.tables],
+    (tables) => tables.map(t => ({
+        id: t.id,
+        autoRefresh: t.source?.autoRefresh ?? false,
+        refreshIntervalSeconds: t.source?.refreshIntervalSeconds,
+        sourceType: t.source?.type,
+        canRefresh: t.source?.canRefresh ?? false,
+        url: t.source?.url,
+        hasVirtual: !!t.virtual?.tableId,
+    })),
+    {
+        memoizeOptions: {
+            resultEqualityCheck: (prev: any[], next: any[]) => {
+                if (prev.length !== next.length) return false;
+                for (let i = 0; i < prev.length; i++) {
+                    const a = prev[i], b = next[i];
+                    if (a.id !== b.id || a.autoRefresh !== b.autoRefresh ||
+                        a.refreshIntervalSeconds !== b.refreshIntervalSeconds ||
+                        a.sourceType !== b.sourceType || a.canRefresh !== b.canRefresh ||
+                        a.url !== b.url || a.hasVirtual !== b.hasVirtual) return false;
+                }
+                return true;
+            }
+        }
+    }
+);
+
+/**
+ * Extracts trigger charts from tables. Uses a stable serialization key so the
+ * output array only changes when trigger charts are actually added/removed/modified
+ * — not when table rows change.
+ */
+const selectTriggerCharts = createSelector(
+    [(state: DataFormulatorState) => state.tables],
+    (tables) => {
+        return tables
+            .filter(t => t.derive?.trigger?.chart)
+            .map(t => t.derive?.trigger?.chart) as Chart[];
+    },
+    {
+        memoizeOptions: {
+            // Use a result equality check so row-only changes don't produce a new array
+            // if trigger charts themselves haven't changed.
+            resultEqualityCheck: (prev: Chart[], next: Chart[]) => {
+                if (prev.length !== next.length) return false;
+                for (let i = 0; i < prev.length; i++) {
+                    if (prev[i] !== next[i]) return false;
+                }
+                return true;
+            }
+        }
+    }
+);
+
 export const dfSelectors = {
     getActiveModel: (state: DataFormulatorState) : ModelConfig => {
         return state.models.find(m => m.id == state.selectedModelId) || state.models[0];
@@ -1081,14 +1185,12 @@ export const dfSelectors = {
         return sourceTables;
     },
     
-    // Memoized chart selector that combines both sources
+    // Memoized chart selector that combines both sources.
+    // Decoupled from row-data changes via selectTriggerCharts.
     getAllCharts: createSelector(
         [(state: DataFormulatorState) => state.charts, 
-         (state: DataFormulatorState) => state.tables],
-        (userCharts, tables) => {
-            const triggerCharts = tables
-                .filter(t => t.derive?.trigger?.chart)
-                .map(t => t.derive?.trigger?.chart) as Chart[];
+         selectTriggerCharts],
+        (userCharts, triggerCharts) => {
             return [...userCharts, ...triggerCharts];
         }
     ),

@@ -712,76 +712,73 @@ let SingleThreadGroupView: FC<{
         }
     };
 
-    // Function to refresh derived tables
+    // Function to refresh derived tables in batch.
+    // Collects all results first, then dispatches a single updateMultipleTableRows.
     const refreshDerivedTables = async (sourceTableId: string, newRows: any[]) => {
-        // Find all tables that are derived from this source table
         const derivedTables = tables.filter(t => t.derive?.source?.includes(sourceTableId));
+        if (derivedTables.length === 0) return;
         
-        for (const derivedTable of derivedTables) {
-            if (derivedTable.derive && derivedTable.derive.code) {
-                // Gather all parent tables for this derived table
-                const parentTableData = derivedTable.derive.source.map(sourceId => {
+        const refreshPromises = derivedTables
+            .filter(dt => dt.derive && dt.derive.code)
+            .map(async (derivedTable) => {
+                const parentTableData = derivedTable.derive!.source.map(sourceId => {
                     const sourceTable = tables.find(t => t.id === sourceId);
                     if (sourceTable) {
-                        // Use the new rows if this is the table being refreshed
                         const rows = sourceId === sourceTableId ? newRows : sourceTable.rows;
-                        // Use workspace table name for virtual tables so sandbox code can find the parquet
                         const tableName = sourceTable.virtual?.tableId || sourceTable.id.replace(/\.[^/.]+$/, "");
-                        return {
-                            name: tableName,
-                            rows: rows
-                        };
+                        return { name: tableName, rows };
                     }
                     return null;
                 }).filter(t => t !== null);
 
-                if (parentTableData.length > 0) {
-                    try {
-                        // Build request body with required output_variable and virtual flag
-                        const requestBody: any = {
-                            input_tables: parentTableData,
-                            code: derivedTable.derive.code,
-                            output_variable: derivedTable.derive.outputVariable || 'result_df',
-                            virtual: !!derivedTable.virtual?.tableId,
-                            output_table_name: derivedTable.virtual?.tableId
-                        };
-                        
-                        const response = await fetchWithIdentity(getUrls().REFRESH_DERIVED_DATA, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify(requestBody)
-                        });
+                if (parentTableData.length === 0) return null;
 
-                        const result = await response.json();
-                        if (result.status === 'ok' && result.rows) {
-                            // Update the derived table with new rows
-                            dispatch(dfActions.updateTableRows({
-                                tableId: derivedTable.id,
-                                rows: result.rows
-                            }));
+                try {
+                    const requestBody: any = {
+                        input_tables: parentTableData,
+                        code: derivedTable.derive!.code,
+                        output_variable: derivedTable.derive!.outputVariable || 'result_df',
+                        virtual: !!derivedTable.virtual?.tableId,
+                        output_table_name: derivedTable.virtual?.tableId
+                    };
+                    
+                    const response = await fetchWithIdentity(getUrls().REFRESH_DERIVED_DATA, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(requestBody)
+                    });
 
-                            // Recursively refresh tables derived from this one
-                            await refreshDerivedTables(derivedTable.id, result.rows);
-                        } else {
-                            console.error(`Failed to refresh derived table ${derivedTable.id}:`, result.message);
-                            dispatch(dfActions.addMessages({
-                                timestamp: Date.now(),
-                                type: 'error',
-                                component: 'data refresh',
-                                value: `Failed to refresh derived table "${derivedTable.displayId || derivedTable.id}": ${result.message || 'Unknown error'}`
-                            }));
-                        }
-                    } catch (error) {
-                        console.error(`Error refreshing derived table ${derivedTable.id}:`, error);
+                    const result = await response.json();
+                    if (result.status === 'ok' && result.rows) {
+                        return { tableId: derivedTable.id, rows: result.rows } as { tableId: string, rows: any[] };
+                    } else {
+                        console.error(`Failed to refresh derived table ${derivedTable.id}:`, result.message);
                         dispatch(dfActions.addMessages({
                             timestamp: Date.now(),
                             type: 'error',
                             component: 'data refresh',
-                            value: `Error refreshing derived table "${derivedTable.displayId || derivedTable.id}"`
+                            value: `Failed to refresh derived table "${derivedTable.displayId || derivedTable.id}": ${result.message || 'Unknown error'}`
                         }));
+                        return null;
                     }
+                } catch (error) {
+                    console.error(`Error refreshing derived table ${derivedTable.id}:`, error);
+                    dispatch(dfActions.addMessages({
+                        timestamp: Date.now(),
+                        type: 'error',
+                        component: 'data refresh',
+                        value: `Error refreshing derived table "${derivedTable.displayId || derivedTable.id}"`
+                    }));
+                    return null;
                 }
-            }
+            });
+
+        const results = await Promise.all(refreshPromises);
+        const successfulUpdates = results.filter((r): r is { tableId: string, rows: any[] } => r !== null);
+        
+        if (successfulUpdates.length > 0) {
+            // Single batch dispatch instead of N individual dispatches
+            dispatch(dfActions.updateMultipleTableRows(successfulUpdates));
         }
     };
 
@@ -1222,11 +1219,10 @@ let SingleThreadGroupView: FC<{
                     {selectedTableForMenu?.attachedMetadata ? "Edit metadata" : "Attach metadata"}
                 </MenuItem>
             )}
-            {/* Watch for updates option - only shown when table has stream/database source but not actively watching */}
+            {/* Refresh settings - shown for stream/database sources to configure auto-refresh interval */}
             {selectedTableForMenu && 
              selectedTableForMenu.derive == undefined &&
-             (selectedTableForMenu.source?.type === 'stream' || selectedTableForMenu.source?.type === 'database') && 
-             !selectedTableForMenu.source?.autoRefresh && (
+             (selectedTableForMenu.source?.type === 'stream' || selectedTableForMenu.source?.type === 'database') && (
                 <MenuItem 
                     onClick={(e) => {
                         e.stopPropagation();
@@ -1237,8 +1233,8 @@ let SingleThreadGroupView: FC<{
                     }}
                     sx={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 1 }}
                 >
-                    <StreamIcon sx={{ fontSize: 16, color: 'text.secondary' }}/>
-                    Watch for updates
+                    <StreamIcon sx={{ fontSize: 16, color: selectedTableForMenu.source?.autoRefresh ? 'success.main' : 'text.secondary' }}/>
+                    {selectedTableForMenu.source?.autoRefresh ? 'Refresh settings' : 'Watch for updates'}
                 </MenuItem>
             )}
             {/* Refresh data - hidden for database tables and derived tables */}
@@ -1253,7 +1249,7 @@ let SingleThreadGroupView: FC<{
                     sx={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 1 }}
                 >
                     <RefreshIcon sx={{ fontSize: 16, color: 'primary.main' }}/>
-                    Refresh data
+                    Replace data
                 </MenuItem>
             )}
             <MenuItem 
