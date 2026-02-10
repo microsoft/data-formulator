@@ -10,12 +10,59 @@ as an MCP (Model Context Protocol) server with the following tools:
 1. visualize_data: Given data + instruction → transformed data + chart (PNG)
 2. explore_data: Multi-turn iterative exploration → rounds of response + data + chart
 
-Usage:
-    # Run as stdio MCP server (for MCP clients like Claude Desktop, VS Code, etc.)
+Setup:
+    # Install with uv (recommended)
+    uv pip install -e ".[mcp]"          # from project root
+    # or install mcp separately
+    uv pip install mcp
+
+Running the MCP server:
+    # Option 1: Run directly with uv
+    uv run python -m data_formulator.mcp_server
+
+    # Option 2: Run with python (after installing)
     python -m data_formulator.mcp_server
 
-    # Or with uvx
-    uvx mcp run data_formulator.mcp_server
+    # Option 3: Run the module file directly
+    uv run py-src/data_formulator/mcp_server.py
+
+Configure in Claude Desktop (claude_desktop_config.json):
+    {
+      "mcpServers": {
+        "data-formulator": {
+          "command": "uv",
+          "args": [
+            "--directory", "/path/to/data-formulator",
+            "run", "python", "-m", "data_formulator.mcp_server"
+          ],
+          "env": {
+            "OPENAI_API_KEY": "sk-...",
+            "DF_MCP_MODEL_ENDPOINT": "openai",
+            "DF_MCP_MODEL_NAME": "gpt-4o"
+          }
+        }
+      }
+    }
+
+Configure in VS Code (settings.json):
+    {
+      "mcp": {
+        "servers": {
+          "data-formulator": {
+            "command": "uv",
+            "args": [
+              "--directory", "/path/to/data-formulator",
+              "run", "python", "-m", "data_formulator.mcp_server"
+            ],
+            "env": {
+              "OPENAI_API_KEY": "sk-...",
+              "DF_MCP_MODEL_ENDPOINT": "openai",
+              "DF_MCP_MODEL_NAME": "gpt-4o"
+            }
+          }
+        }
+      }
+    }
 
 Environment variables:
     OPENAI_API_KEY / ANTHROPIC_API_KEY / etc. - API keys for LLM providers
