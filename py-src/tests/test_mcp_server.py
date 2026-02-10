@@ -18,12 +18,28 @@ Prerequisites:
     # Install dependencies with uv (from project root):
     uv pip install -e ".[mcp]"
     # or:
-    uv pip install mcp pandas vl-convert-python
+    uv pip install mcp pandas vl-convert-python requests
 
-    # Set your LLM API key:
-    export OPENAI_API_KEY="sk-..."          # or ANTHROPIC_API_KEY, etc.
-    export DF_MCP_MODEL_ENDPOINT="openai"   # openai | anthropic | azure | gemini | ollama
-    export DF_MCP_MODEL_NAME="gpt-4o"       # model name
+    # Azure OpenAI with Azure AD auth (recommended for Microsoft users):
+    #   No API key needed — uses DefaultAzureCredential (az login).
+    export DF_MCP_MODEL_ENDPOINT="azure"
+    export DF_MCP_MODEL_NAME="gpt-4o"
+    export DF_MCP_API_BASE="https://YOUR_RESOURCE.openai.azure.com/"
+    export DF_MCP_API_VERSION="2025-04-01-preview"   # optional, has default
+
+    # Alternative: OpenAI
+    #   export DF_MCP_MODEL_ENDPOINT="openai"
+    #   export DF_MCP_MODEL_NAME="gpt-4o"
+    #   export OPENAI_API_KEY="sk-..."
+
+    # Alternative: Anthropic
+    #   export DF_MCP_MODEL_ENDPOINT="anthropic"
+    #   export DF_MCP_MODEL_NAME="claude-sonnet-4-20250514"
+    #   export ANTHROPIC_API_KEY="sk-ant-..."
+
+    # Alternative: Ollama (local, no key)
+    #   export DF_MCP_MODEL_ENDPOINT="ollama"
+    #   export DF_MCP_MODEL_NAME="llama3"
 
 Usage:
     # Run all demos with uv (recommended):
@@ -58,53 +74,17 @@ OUTPUT_DIR.mkdir(exist_ok=True)
 
 
 # ╔═════════════════════════════════════════════════════════════════════════╗
-# ║                         SAMPLE DATA                                    ║
+# ║                   DEMO DATA URLS                                       ║
 # ╚═════════════════════════════════════════════════════════════════════════╝
 
-SAMPLE_CSV = """Country,Year,GDP_Billion,Population_Million,CO2_Emission_MT
-United States,2018,20580,327,5280
-United States,2019,21430,329,5130
-United States,2020,20940,331,4570
-United States,2021,23320,332,5010
-United States,2022,25460,333,5060
-China,2018,13890,1393,10060
-China,2019,14280,1398,10170
-China,2020,14720,1402,10670
-China,2021,17730,1405,11470
-China,2022,17960,1406,11400
-Germany,2018,3970,83,759
-Germany,2019,3890,83,702
-Germany,2020,3890,83,644
-Germany,2021,4220,83,675
-Germany,2022,4070,84,666
-India,2018,2710,1353,2480
-India,2019,2870,1366,2600
-India,2020,2660,1380,2440
-India,2021,3180,1393,2710
-India,2022,3390,1407,2830
-Japan,2018,4970,126,1160
-Japan,2019,5080,126,1140
-Japan,2020,5040,126,1060
-Japan,2021,4940,125,1070
-Japan,2022,4230,125,1050
-Brazil,2018,1870,210,460
-Brazil,2019,1870,211,470
-Brazil,2020,1440,212,440
-Brazil,2021,1650,213,490
-Brazil,2022,1920,214,490"""
+# These URLs come from the predefined demo datasets (also available via
+# the list_demo_data MCP tool). You can use any publicly accessible URL
+# pointing to a csv, tsv, json, jsonl, or xlsx file.
 
-SAMPLE_JSON = json.dumps([
-    {"Student": "Alice",   "Math": 92, "Science": 88, "English": 95, "History": 78, "Grade": "A"},
-    {"Student": "Bob",     "Math": 76, "Science": 82, "English": 71, "History": 89, "Grade": "B"},
-    {"Student": "Charlie", "Math": 88, "Science": 91, "English": 84, "History": 92, "Grade": "A"},
-    {"Student": "Diana",   "Math": 65, "Science": 70, "English": 90, "History": 85, "Grade": "B"},
-    {"Student": "Eve",     "Math": 95, "Science": 97, "English": 92, "History": 88, "Grade": "A"},
-    {"Student": "Frank",   "Math": 58, "Science": 62, "English": 68, "History": 72, "Grade": "C"},
-    {"Student": "Grace",   "Math": 84, "Science": 79, "English": 88, "History": 91, "Grade": "B"},
-    {"Student": "Henry",   "Math": 91, "Science": 85, "English": 79, "History": 83, "Grade": "A"},
-    {"Student": "Iris",    "Math": 73, "Science": 68, "English": 82, "History": 76, "Grade": "B"},
-    {"Student": "Jack",    "Math": 87, "Science": 93, "English": 86, "History": 80, "Grade": "A"},
-])
+GAPMINDER_URL = "https://raw.githubusercontent.com/vega/vega-datasets/refs/heads/main/data/gapminder.json"
+DISASTERS_URL = "https://raw.githubusercontent.com/vega/vega-datasets/refs/heads/main/data/disasters.csv"
+LIFE_EXPECTANCY_URL = "https://raw.githubusercontent.com/rfordatascience/tidytuesday/refs/heads/main/data/2023/2023-12-05/life_expectancy.csv"
+MOVIES_URL = "https://raw.githubusercontent.com/rfordatascience/tidytuesday/refs/heads/main/data/2025/2025-07-29/movies.csv"
 
 
 # ╔═════════════════════════════════════════════════════════════════════════╗
@@ -147,23 +127,33 @@ def print_section(title: str) -> None:
 def demo_1_one_shot_visualization():
     """
     Demonstrates the `visualize_data` tool:
-      Input:  data (CSV or JSON) + natural language instruction
+      Input:  data URLs + natural language instruction
       Output: transformed data + chart image (PNG) + reasoning
     """
     print_section("DEMO 1: One-shot Data Visualization")
 
-    # Import the MCP tool function directly
-    from data_formulator.mcp_server import visualize_data
+    # Import the MCP tool functions directly
+    from data_formulator.mcp_server import visualize_data, list_demo_data
 
-    # --- Example 1a: CSV data, let AI recommend a visualization ---
-    print("\n📊 Example 1a: GDP trends (CSV, AI-recommended chart)")
-    print("   Instruction: 'Show GDP trends over time for each country as a line chart'")
+    # --- Example 1.0: List demo datasets ---
+    print("\n📋 Example 1.0: List available demo datasets")
+    demo_data = list_demo_data()
+    print(f"   Found {len(demo_data['datasets'])} demo datasets:")
+    for ds in demo_data["datasets"]:
+        urls = [t["url"] for t in ds["tables"]]
+        print(f"   • {ds['name']}: {ds['description'][:60]}...")
+        for t in ds["tables"]:
+            print(f"     URL: {t['url'][:80]}... ({t['format']})")
+
+    # --- Example 1a: Gapminder (JSON URL), let AI recommend a visualization ---
+    print("\n📊 Example 1a: Gapminder life expectancy trends (JSON URL)")
+    print(f"   URL: {GAPMINDER_URL}")
+    print("   Instruction: 'Show life expectancy trends over time for the top 5 most populous countries'")
 
     result = visualize_data(
-        data=SAMPLE_CSV,
-        instruction="Show GDP trends over time for each country as a line chart",
-        data_format="csv",
-        table_name="world_economy",
+        data_urls=[GAPMINDER_URL],
+        instruction="Show life expectancy trends over time for the top 5 most populous countries as a line chart",
+        table_names=["gapminder"],
     )
 
     print(f"   Status: {result['status']}")
@@ -173,20 +163,20 @@ def demo_1_one_shot_visualization():
         print(f"   Encodings: {result['chart_encodings']}")
         print(f"   Data rows: {result['transformed_data_full_count']}")
         print(f"   Code:\n{result['code'][:300]}...")
-        save_chart(result.get("chart_image_base64"), "demo1a_gdp_trends.png")
+        save_chart(result.get("chart_image_base64"), "demo1a_gapminder.png")
         save_json_result(result, "demo1a_result.json")
     else:
         print(f"   Error: {result.get('message', 'Unknown')}")
 
-    # --- Example 1b: JSON data, with encoding hints ---
-    print("\n📊 Example 1b: Student scores (JSON, with encoding hints)")
-    print("   Instruction: 'Compare students by their average score across all subjects'")
+    # --- Example 1b: Disasters (CSV URL) ---
+    print("\n📊 Example 1b: Natural disasters deaths over time (CSV URL)")
+    print(f"   URL: {DISASTERS_URL}")
+    print("   Instruction: 'Show total deaths by disaster type over time'")
 
     result = visualize_data(
-        data=SAMPLE_JSON,
-        instruction="Compare students by their average score across all subjects",
-        data_format="json",
-        table_name="student_scores",
+        data_urls=[DISASTERS_URL],
+        instruction="Show the total deaths by disaster entity for the top 5 deadliest disaster types as a bar chart",
+        table_names=["disasters"],
     )
 
     print(f"   Status: {result['status']}")
@@ -195,20 +185,20 @@ def demo_1_one_shot_visualization():
         print(f"   Chart type: {result['chart_type']}")
         print(f"   Encodings: {result['chart_encodings']}")
         print(f"   Output fields: {result['reasoning']['output_fields']}")
-        save_chart(result.get("chart_image_base64"), "demo1b_student_avg.png")
+        save_chart(result.get("chart_image_base64"), "demo1b_disasters.png")
         save_json_result(result, "demo1b_result.json")
     else:
         print(f"   Error: {result.get('message', 'Unknown')}")
 
-    # --- Example 1c: CO2 per capita analysis ---
-    print("\n📊 Example 1c: CO2 per capita (CSV, computed metric)")
-    print("   Instruction: 'Calculate CO2 emissions per capita and show as a grouped bar chart by country and year'")
+    # --- Example 1c: Netflix movies (CSV URL), computed metric ---
+    print("\n📊 Example 1c: Netflix most viewed movies (CSV URL)")
+    print(f"   URL: {MOVIES_URL}")
+    print("   Instruction: 'Show top 10 most viewed movies'")
 
     result = visualize_data(
-        data=SAMPLE_CSV,
-        instruction="Calculate CO2 emissions per capita (CO2 / Population) and show as a grouped bar chart by country for the latest year",
-        data_format="csv",
-        table_name="world_economy",
+        data_urls=[MOVIES_URL],
+        instruction="Show the top 10 most viewed movies as a horizontal bar chart sorted by views",
+        table_names=["netflix_movies"],
     )
 
     print(f"   Status: {result['status']}")
@@ -216,7 +206,7 @@ def demo_1_one_shot_visualization():
         print(f"   Summary: {result['instruction_summary']}")
         print(f"   Chart type: {result['chart_type']}")
         print(f"   Data preview: {result['transformed_data'][:3]}")
-        save_chart(result.get("chart_image_base64"), "demo1c_co2_per_capita.png")
+        save_chart(result.get("chart_image_base64"), "demo1c_netflix.png")
         save_json_result(result, "demo1c_result.json")
     else:
         print(f"   Error: {result.get('message', 'Unknown')}")
@@ -229,7 +219,7 @@ def demo_1_one_shot_visualization():
 def demo_2_iterative_exploration():
     """
     Demonstrates the `explore_data` tool:
-      Input:  data + high-level question
+      Input:  data URLs + high-level question
       Output: multiple rounds of analysis, each with data + chart + reasoning
 
     The AI agent:
@@ -242,17 +232,17 @@ def demo_2_iterative_exploration():
 
     from data_formulator.mcp_server import explore_data
 
-    # --- Example 2a: Explore world economy data ---
-    print("\n🔍 Example 2a: Explore world economy trends")
-    print("   Question: 'Explore the relationship between GDP growth, population, and CO2 emissions'")
+    # --- Example 2a: Explore Gapminder data ---
+    print("\n🔍 Example 2a: Explore Gapminder global development trends")
+    print(f"   URL: {GAPMINDER_URL}")
+    print("   Question: 'Explore the relationship between population growth, life expectancy, and fertility'")
     print("   Max iterations: 3")
     print("   (This may take a minute as the AI performs multiple analysis rounds...)\n")
 
     result = explore_data(
-        data=SAMPLE_CSV,
-        question="Explore the relationship between GDP growth, population, and CO2 emissions across countries. What patterns emerge?",
-        data_format="csv",
-        table_name="world_economy",
+        data_urls=[GAPMINDER_URL],
+        question="Explore the relationship between population growth, life expectancy, and fertility rates across countries. What patterns emerge?",
+        table_names=["gapminder"],
         max_iterations=3,
     )
 
@@ -276,16 +266,16 @@ def demo_2_iterative_exploration():
 
         save_json_result(result, "demo2a_exploration.json")
 
-    # --- Example 2b: Explore student performance ---
-    print("\n\n🔍 Example 2b: Explore student performance patterns")
-    print("   Question: 'Analyze student performance across subjects and identify strengths/weaknesses'")
+    # --- Example 2b: Explore life expectancy data ---
+    print("\n\n🔍 Example 2b: Explore life expectancy across countries")
+    print(f"   URL: {LIFE_EXPECTANCY_URL}")
+    print("   Question: 'Analyze life expectancy trends and identify countries with the fastest improvements'")
     print("   Max iterations: 3\n")
 
     result = explore_data(
-        data=SAMPLE_JSON,
-        question="Analyze student performance across subjects. Which subjects are hardest? Do grades correlate with specific subjects?",
-        data_format="json",
-        table_name="student_scores",
+        data_urls=[LIFE_EXPECTANCY_URL],
+        question="Analyze life expectancy trends over time. Which regions improved the most? Are there any countries that regressed?",
+        table_names=["life_expectancy"],
         max_iterations=3,
     )
 
@@ -351,16 +341,23 @@ async def demo_3_mcp_client():
             tools = await session.list_tools()
             print(f"  📦 Available tools: {[t.name for t in tools.tools]}")
 
+            # --- Call list_demo_data via MCP ---
+            print("\n  📋 Calling list_demo_data via MCP protocol...")
+            demo_result = await session.call_tool("list_demo_data", arguments={})
+            for content in demo_result.content:
+                if hasattr(content, "text"):
+                    result = json.loads(content.text)
+                    print(f"  Found {len(result.get('datasets', []))} demo datasets")
+
             # --- Call visualize_data via MCP ---
             print("\n  📊 Calling visualize_data via MCP protocol...")
 
             viz_result = await session.call_tool(
                 "visualize_data",
                 arguments={
-                    "data": SAMPLE_CSV,
-                    "instruction": "Show GDP per capita trends over time for each country",
-                    "data_format": "csv",
-                    "table_name": "world_economy",
+                    "data_urls": [GAPMINDER_URL],
+                    "instruction": "Show life expectancy vs fertility as a scatter plot colored by cluster",
+                    "table_names": ["gapminder"],
                 },
             )
 
@@ -382,10 +379,9 @@ async def demo_3_mcp_client():
             explore_result = await session.call_tool(
                 "explore_data",
                 arguments={
-                    "data": SAMPLE_CSV,
-                    "question": "What are the key economic trends across countries?",
-                    "data_format": "csv",
-                    "table_name": "world_economy",
+                    "data_urls": [DISASTERS_URL],
+                    "question": "What are the most common and deadliest types of natural disasters?",
+                    "table_names": ["disasters"],
                     "max_iterations": 2,
                 },
             )
@@ -430,19 +426,26 @@ Examples:
     )
     args = parser.parse_args()
 
+    endpoint = os.getenv("DF_MCP_MODEL_ENDPOINT", "azure")
+
     print("🚀 Data Formulator MCP Server Demo")
     print(f"   Output directory: {OUTPUT_DIR}")
-    print(f"   Model endpoint:  {os.getenv('DF_MCP_MODEL_ENDPOINT', 'openai')}")
+    print(f"   Model endpoint:  {endpoint}")
     print(f"   Model name:      {os.getenv('DF_MCP_MODEL_NAME', 'gpt-4o')}")
+    if endpoint == "azure":
+        print(f"   API base:        {os.getenv('DF_MCP_API_BASE', '(not set)')}")
+        print(f"   Auth:            Azure AD (DefaultAzureCredential)")
 
-    # Check for API key
-    endpoint = os.getenv("DF_MCP_MODEL_ENDPOINT", "openai")
+    # Check for API key (not required for Azure AD auth)
     api_key = os.getenv("DF_MCP_API_KEY", os.getenv(f"{endpoint.upper()}_API_KEY", ""))
-    if not api_key:
-        print(f"\n⚠️  No API key found! Set one of:")
+    if not api_key and endpoint not in ("azure", "ollama"):
+        print(f"\n⚠️  No API key found for endpoint '{endpoint}'! Set one of:")
         print(f"   export DF_MCP_API_KEY='your-key'")
         print(f"   export {endpoint.upper()}_API_KEY='your-key'")
         print(f"   (or set them in api-keys.env)")
+        print(f"\n   For Azure OpenAI with AD auth (no key needed):")
+        print(f"   export DF_MCP_MODEL_ENDPOINT=azure")
+        print(f"   export DF_MCP_API_BASE=https://YOUR_RESOURCE.openai.azure.com/")
         sys.exit(1)
 
     if args.demo == "1":

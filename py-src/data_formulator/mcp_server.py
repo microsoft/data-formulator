@@ -7,8 +7,10 @@ Data Formulator MCP Server
 Exposes Data Formulator's AI-powered data visualization capabilities
 as an MCP (Model Context Protocol) server with the following tools:
 
-1. visualize_data: Given data + instruction → transformed data + chart (PNG)
-2. explore_data: Multi-turn iterative exploration → rounds of response + data + chart
+1. list_demo_data: List predefined demo datasets with URLs
+2. visualize_data: Given data URLs + instruction → transformed data + chart (PNG)
+3. explore_data: Multi-turn iterative exploration → rounds of response + data + chart
+4. create_chart: Create a chart directly from data URLs + field mappings
 
 Setup:
     # Install with uv (recommended)
@@ -27,6 +29,27 @@ Running the MCP server:
     uv run py-src/data_formulator/mcp_server.py
 
 Configure in Claude Desktop (claude_desktop_config.json):
+
+    Azure OpenAI with Azure AD auth (recommended for Microsoft users):
+    {
+      "mcpServers": {
+        "data-formulator": {
+          "command": "uv",
+          "args": [
+            "--directory", "/path/to/data-formulator",
+            "run", "python", "-m", "data_formulator.mcp_server"
+          ],
+          "env": {
+            "DF_MCP_MODEL_ENDPOINT": "azure",
+            "DF_MCP_MODEL_NAME": "gpt-4o",
+            "DF_MCP_API_BASE": "https://YOUR_RESOURCE.openai.azure.com/",
+            "DF_MCP_API_VERSION": "2025-04-01-preview"
+          }
+        }
+      }
+    }
+
+    OpenAI (with API key):
     {
       "mcpServers": {
         "data-formulator": {
@@ -45,6 +68,29 @@ Configure in Claude Desktop (claude_desktop_config.json):
     }
 
 Configure in VS Code (settings.json):
+
+    Azure OpenAI with Azure AD auth (recommended for Microsoft users):
+    {
+      "mcp": {
+        "servers": {
+          "data-formulator": {
+            "command": "uv",
+            "args": [
+              "--directory", "/path/to/data-formulator",
+              "run", "python", "-m", "data_formulator.mcp_server"
+            ],
+            "env": {
+              "DF_MCP_MODEL_ENDPOINT": "azure",
+              "DF_MCP_MODEL_NAME": "gpt-4o",
+              "DF_MCP_API_BASE": "https://YOUR_RESOURCE.openai.azure.com/",
+              "DF_MCP_API_VERSION": "2025-04-01-preview"
+            }
+          }
+        }
+      }
+    }
+
+    OpenAI (with API key):
     {
       "mcp": {
         "servers": {
@@ -65,12 +111,26 @@ Configure in VS Code (settings.json):
     }
 
 Environment variables:
-    OPENAI_API_KEY / ANTHROPIC_API_KEY / etc. - API keys for LLM providers
-    DF_MCP_MODEL_ENDPOINT - LLM provider (default: "openai")
+    DF_MCP_MODEL_ENDPOINT - LLM provider: "azure" | "openai" | "anthropic" | "gemini" | "ollama"
+                            (default: "azure")
     DF_MCP_MODEL_NAME     - Model name (default: "gpt-4o")
-    DF_MCP_API_KEY        - API key (overrides provider-specific key)
-    DF_MCP_API_BASE       - Custom API base URL (optional)
+    DF_MCP_API_BASE       - API base URL (required for azure, e.g. "https://YOUR_RESOURCE.openai.azure.com/")
+    DF_MCP_API_VERSION    - API version for Azure (default: "2025-04-01-preview")
+    DF_MCP_API_KEY        - API key (optional for Azure AD auth; required for OpenAI/Anthropic)
+    OPENAI_API_KEY        - Fallback API key for OpenAI endpoint
+    ANTHROPIC_API_KEY     - Fallback API key for Anthropic endpoint
     DATALAKE_ROOT         - Workspace root directory (optional)
+
+    Azure AD auth (no API key needed):
+        When using DF_MCP_MODEL_ENDPOINT=azure with no API key set, the server
+        automatically uses DefaultAzureCredential for token-based auth.
+        Make sure you are logged in via `az login` or have a managed identity.
+
+    Other providers:
+        export DF_MCP_MODEL_ENDPOINT="openai"   && export OPENAI_API_KEY="sk-..."
+        export DF_MCP_MODEL_ENDPOINT="anthropic" && export ANTHROPIC_API_KEY="sk-ant-..."
+        export DF_MCP_MODEL_ENDPOINT="gemini"   && export GEMINI_API_KEY="..."
+        export DF_MCP_MODEL_ENDPOINT="ollama"    # no key needed, runs locally
 """
 
 import os
@@ -79,10 +139,13 @@ import json
 import base64
 import logging
 import tempfile
+from io import StringIO, BytesIO
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 import pandas as pd
+import requests
 
 from dotenv import load_dotenv
 
@@ -104,6 +167,7 @@ from data_formulator.workflows.create_vl_plots import (
     create_chart_spec,
 )
 from data_formulator.workflows.exploration_flow import create_chart_spec_from_data
+from data_formulator.example_datasets_config import EXAMPLE_DATASETS
 
 logger = logging.getLogger(__name__)
 
@@ -113,7 +177,7 @@ logger = logging.getLogger(__name__)
 
 def _get_model_config() -> dict[str, str]:
     """Build model config from environment variables."""
-    endpoint = os.getenv("DF_MCP_MODEL_ENDPOINT", "openai")
+    endpoint = os.getenv("DF_MCP_MODEL_ENDPOINT", "azure")
     model = os.getenv("DF_MCP_MODEL_NAME", "gpt-4o")
 
     # Resolve API key: explicit > provider-specific
@@ -143,32 +207,83 @@ def _get_workspace(session_id: str = "mcp_session") -> Workspace:
     return Workspace(session_id)
 
 
-def _parse_data_input(data: str, data_format: str = "auto") -> pd.DataFrame:
+def _detect_format_from_url(url: str) -> str:
+    """Detect data format from URL file extension."""
+    path = urlparse(url).path.lower()
+    if path.endswith(".csv"):
+        return "csv"
+    elif path.endswith(".tsv"):
+        return "tsv"
+    elif path.endswith(".json"):
+        return "json"
+    elif path.endswith(".jsonl"):
+        return "jsonl"
+    elif path.endswith(".xlsx") or path.endswith(".xls"):
+        return "xlsx"
+    return "csv"  # default to CSV
+
+
+def _load_data_from_url(url: str, data_format: str = "auto") -> pd.DataFrame:
     """
-    Parse data from a string (JSON or CSV) into a DataFrame.
+    Download and parse tabular data from a URL.
+
+    Supported formats: csv, tsv, json, jsonl, xlsx.
+    If data_format is "auto", the format is detected from the URL extension.
 
     Args:
-        data: Raw data string (JSON array or CSV text)
-        data_format: "json", "csv", or "auto" (detect automatically)
+        url: URL pointing to a data file (csv, tsv, json, jsonl, or xlsx).
+        data_format: "csv", "tsv", "json", "jsonl", "xlsx", or "auto".
 
     Returns:
         pandas DataFrame
     """
     if data_format == "auto":
-        stripped = data.strip()
-        if stripped.startswith("[") or stripped.startswith("{"):
-            data_format = "json"
-        else:
-            data_format = "csv"
+        data_format = _detect_format_from_url(url)
+
+    resp = requests.get(url, timeout=60)
+    resp.raise_for_status()
 
     if data_format == "json":
-        parsed = json.loads(data)
+        parsed = resp.json()
         if isinstance(parsed, dict):
             parsed = [parsed]
         return pd.DataFrame(parsed)
-    else:
-        from io import StringIO
-        return pd.read_csv(StringIO(data))
+    elif data_format == "jsonl":
+        lines = resp.text.strip().split("\n")
+        records = [json.loads(line) for line in lines if line.strip()]
+        return pd.DataFrame(records)
+    elif data_format == "tsv":
+        return pd.read_csv(StringIO(resp.text), sep="\t")
+    elif data_format in ("xlsx", "xls"):
+        return pd.read_excel(BytesIO(resp.content))
+    else:  # csv
+        return pd.read_csv(StringIO(resp.text))
+
+
+def _load_multiple_urls(data_urls: list[str], table_names: list[str] | None = None) -> list[dict]:
+    """
+    Load multiple data URLs and return a list of table dicts.
+
+    Args:
+        data_urls: List of URLs to load.
+        table_names: Optional list of names for each table.
+                     If not provided, names are derived from the URL filename.
+
+    Returns:
+        List of {"name": str, "rows": list[dict]} dicts.
+    """
+    tables = []
+    for i, url in enumerate(data_urls):
+        df = _load_data_from_url(url)
+        rows = json.loads(df.to_json(orient="records", date_format="iso"))
+        if table_names and i < len(table_names):
+            name = table_names[i]
+        else:
+            # Derive name from URL filename (strip extension)
+            filename = urlparse(url).path.split("/")[-1]
+            name = filename.rsplit(".", 1)[0] if "." in filename else filename
+        tables.append({"name": name, "rows": rows})
+    return tables
 
 
 def _make_chart_image(
@@ -196,25 +311,76 @@ def _make_chart_image(
     return None
 
 
+
+
+
 # ---------------------------------------------------------------------------
 # MCP Server
 # ---------------------------------------------------------------------------
 
 mcp = FastMCP(
     "Data Formulator",
-    description=(
+    instructions=(
         "AI-powered data visualization server. "
-        "Transform data, generate charts, and explore datasets interactively."
+        "Transform data, generate charts, and explore datasets interactively. "
+        "Use list_demo_data to browse available demo datasets, then pass their "
+        "URLs to visualize_data, explore_data, or create_chart."
     ),
 )
 
 
 @mcp.tool()
+def list_demo_data() -> dict[str, Any]:
+    """
+    List predefined demo datasets available for visualization and exploration.
+
+    Returns a curated list of datasets with their URLs, formats, descriptions,
+    and sample data. Use the returned URLs as input to visualize_data,
+    explore_data, or create_chart.
+
+    Returns:
+        A dictionary with:
+        - status: "ok"
+        - datasets: List of dataset entries, each containing:
+            - name: Human-readable dataset name
+            - source: Data source (e.g. "vegadatasets", "tidytuesday")
+            - description: Short description of the dataset
+            - tables: List of tables, each with:
+                - url: URL to download the data file
+                - format: File format ("csv", "json", etc.)
+                - sample: A few sample rows (string or list) to preview the data
+    """
+    datasets = []
+    for ds in EXAMPLE_DATASETS:
+        entry = {
+            "name": ds["name"],
+            "source": ds.get("source", ""),
+            "description": ds.get("description", ""),
+            "tables": [],
+        }
+        for table in ds.get("tables", []):
+            t = {
+                "url": table["url"],
+                "format": table.get("format", "csv"),
+            }
+            # Include a short sample preview
+            sample = table.get("sample", "")
+            if isinstance(sample, list):
+                t["sample"] = sample[:5]  # first 5 rows
+            elif isinstance(sample, str):
+                lines = sample.strip().split("\n")
+                t["sample"] = "\n".join(lines[:6])  # header + 5 rows
+            entry["tables"].append(t)
+        datasets.append(entry)
+
+    return {"status": "ok", "datasets": datasets}
+
+
+@mcp.tool()
 def visualize_data(
-    data: str,
+    data_urls: list[str],
     instruction: str,
-    data_format: str = "auto",
-    table_name: str = "input_data",
+    table_names: list[str] | None = None,
     chart_type: str = "",
     x: str = "",
     y: str = "",
@@ -226,10 +392,13 @@ def visualize_data(
     """
     Transform data and generate a visualization based on a natural language instruction.
 
-    Given tabular data (JSON or CSV) and a natural language instruction, this tool:
-    1. Uses an AI agent to understand the intent and generate transformation code
-    2. Executes the transformation to produce the output data
-    3. Creates a chart (PNG) from the transformed data
+    Given one or more data URLs and a natural language instruction, this tool:
+    1. Downloads the data from the URLs (supports csv, tsv, json, jsonl, xlsx)
+    2. Uses an AI agent to understand the intent and generate transformation code
+    3. Executes the transformation to produce the output data
+    4. Creates a chart (PNG) from the transformed data
+
+    Use list_demo_data to discover available demo datasets and their URLs.
 
     Use this for one-shot data analysis tasks like:
     - "Show average sales by region as a bar chart"
@@ -237,10 +406,11 @@ def visualize_data(
     - "Forecast the next 6 months of revenue"
 
     Args:
-        data: Tabular data as a JSON array of objects or CSV text.
+        data_urls: List of URLs pointing to data files (csv, tsv, json, jsonl, xlsx).
+                   The format is auto-detected from the file extension.
         instruction: Natural language description of what visualization to create.
-        data_format: "json", "csv", or "auto" (default: auto-detect).
-        table_name: Name for the input table (default: "input_data").
+        table_names: Optional list of names for each table (one per URL).
+                     If not provided, names are derived from the URL filename.
         chart_type: Optional chart type hint ("bar", "point", "line", "area", "heatmap",
                      "group_bar", "boxplot", "worldmap", "usmap"). Leave empty to let the AI decide.
         x: Optional field name for x-axis encoding.
@@ -263,11 +433,8 @@ def visualize_data(
         - reasoning: The AI's reasoning about the transformation
     """
     try:
-        # Parse input data
-        df = _parse_data_input(data, data_format)
-        rows = json.loads(df.to_json(orient="records", date_format="iso"))
-
-        input_tables = [{"name": table_name, "rows": rows}]
+        # Load data from URLs
+        input_tables = _load_multiple_urls(data_urls, table_names)
 
         # Build chart encodings from optional hints
         chart_encodings = {}
@@ -283,9 +450,9 @@ def visualize_data(
         # Set up workspace + agent
         client = _get_client()
         workspace = _get_workspace()
-        temp_data = [{"name": table_name, "rows": rows}]
 
-        with WorkspaceWithTempData(workspace, temp_data) as ws:
+        # Use register_metadata=True so agents can resolve tables via read_data_as_df
+        with WorkspaceWithTempData(workspace, input_tables, register_metadata=True) as ws:
             if mode == "recommendation":
                 agent = DataRecAgent(client=client, workspace=ws)
                 results = agent.run(input_tables, instruction, n=1)
@@ -358,20 +525,22 @@ def visualize_data(
 
 @mcp.tool()
 def explore_data(
-    data: str,
+    data_urls: list[str],
     question: str,
-    data_format: str = "auto",
-    table_name: str = "input_data",
+    table_names: list[str] | None = None,
     max_iterations: int = 3,
     max_repair_attempts: int = 1,
 ) -> dict[str, Any]:
     """
     Iteratively explore a dataset through multiple rounds of AI-driven analysis.
 
-    Given tabular data and a high-level exploration question, this tool:
-    1. Breaks the question into a multi-step analysis plan
-    2. For each step: transforms data, creates a chart, and decides the next step
-    3. Returns all exploration steps with their data and charts
+    Given one or more data URLs and a high-level exploration question, this tool:
+    1. Downloads the data from the URLs (supports csv, tsv, json, jsonl, xlsx)
+    2. Breaks the question into a multi-step analysis plan
+    3. For each step: transforms data, creates a chart, and decides the next step
+    4. Returns all exploration steps with their data and charts
+
+    Use list_demo_data to discover available demo datasets and their URLs.
 
     Use this for open-ended data exploration like:
     - "What are the key trends and patterns in this sales data?"
@@ -379,10 +548,11 @@ def explore_data(
     - "Analyze the relationship between weather and energy consumption"
 
     Args:
-        data: Tabular data as a JSON array of objects or CSV text.
+        data_urls: List of URLs pointing to data files (csv, tsv, json, jsonl, xlsx).
+                   The format is auto-detected from the file extension.
         question: High-level exploration question or topic.
-        data_format: "json", "csv", or "auto" (default: auto-detect).
-        table_name: Name for the input table (default: "input_data").
+        table_names: Optional list of names for each table (one per URL).
+                     If not provided, names are derived from the URL filename.
         max_iterations: Maximum number of exploration rounds (default: 3).
         max_repair_attempts: Max code repair retries per step (default: 1).
 
@@ -403,19 +573,15 @@ def explore_data(
         - total_steps: Number of steps completed
     """
     try:
-        # Parse input data
-        df = _parse_data_input(data, data_format)
-        rows = json.loads(df.to_json(orient="records", date_format="iso"))
-
-        input_tables = [{"name": table_name, "rows": rows}]
+        # Load data from URLs
+        input_tables = _load_multiple_urls(data_urls, table_names)
 
         client = _get_client()
         workspace = _get_workspace()
-        temp_data = [{"name": table_name, "rows": rows}]
-
         steps = []
 
-        with WorkspaceWithTempData(workspace, temp_data) as ws:
+        # Use register_metadata=True so agents can resolve tables via read_data_as_df
+        with WorkspaceWithTempData(workspace, input_tables, register_metadata=True) as ws:
             rec_agent = DataRecAgent(client=client, workspace=ws)
             exploration_agent = ExplorationAgent(client=client, workspace=ws)
 
@@ -534,7 +700,6 @@ def explore_data(
                 except Exception as e:
                     logger.warning(f"Exploration planning failed: {e}")
                     break
-
         # Build summary
         summary_parts = []
         for s in steps:
@@ -556,23 +721,24 @@ def explore_data(
 
 @mcp.tool()
 def create_chart(
-    data: str,
+    data_url: str,
     chart_type: str,
     x: str = "",
     y: str = "",
     color: str = "",
     size: str = "",
     facet: str = "",
-    data_format: str = "auto",
 ) -> dict[str, Any]:
     """
-    Create a chart directly from data and field mappings (no AI, no transformation).
+    Create a chart directly from a data URL and field mappings (no AI, no transformation).
 
     This is a fast, deterministic tool for creating standard charts when you already
     know exactly which fields to use and how to map them.
 
+    Use list_demo_data to discover available demo datasets and their URLs.
+
     Args:
-        data: Tabular data as a JSON array of objects or CSV text.
+        data_url: URL pointing to a data file (csv, tsv, json, jsonl, xlsx).
         chart_type: One of "bar", "point", "line", "area", "heatmap",
                     "group_bar", "boxplot".
         x: Field name for x-axis.
@@ -580,7 +746,6 @@ def create_chart(
         color: Optional field name for color encoding.
         size: Optional field name for size encoding.
         facet: Optional field name for faceting.
-        data_format: "json", "csv", or "auto".
 
     Returns:
         A dictionary with:
@@ -590,7 +755,7 @@ def create_chart(
         - fields_used: List of fields mapped to channels
     """
     try:
-        df = _parse_data_input(data, data_format)
+        df = _load_data_from_url(data_url)
 
         # Build encoding dict
         fields = []
