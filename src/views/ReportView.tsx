@@ -47,12 +47,11 @@ import embed from 'vega-embed';
 import { getDataTable } from './VisualizationView';
 import { DictTable } from '../components/ComponentType';
 import { AppDispatch } from '../app/store';
-import TableRowsIcon from '@mui/icons-material/TableRows';
 import { Collapse } from '@mui/material';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import { convertToChartifact, openChartifactViewer } from './ChartifactDialog';
-import StreamIcon from '@mui/icons-material/Stream';
+import { StreamIcon } from '../icons';
 
 // Typography constants
 const FONT_FAMILY_SYSTEM = '-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, "Apple Color Emoji", Arial, sans-serif, "Segoe UI Emoji", "Segoe UI Symbol"';
@@ -482,45 +481,32 @@ export const ReportView: FC = () => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []); // Only cleanup on unmount, not when images change
 
-    // Generate preview images for all charts
+    // Use existing thumbnails from ChartRenderService instead of re-rendering
     useEffect(() => {
-        const generatePreviews = async () => {
-            setIsLoadingPreviews(true);
-            const newPreviewImages = new Map<string, { url: string; width: number; height: number }>();
+        const newPreviewImages = new Map<string, { url: string; width: number; height: number }>();
 
-            // Clean up old preview images
-            previewImages.forEach(({ url }) => {
-                if (url.startsWith('blob:')) {
-                    URL.revokeObjectURL(url);
-                }
-            });
+        // Clean up old blob URLs
+        previewImages.forEach(({ url }) => {
+            if (url.startsWith('blob:')) {
+                URL.revokeObjectURL(url);
+            }
+        });
 
-            await Promise.all(
-                sortedCharts.map(async (chart) => {
-                    try {
-                        const chartTable = tables.find(t => t.id === chart.tableRef);
-                        if (!chartTable || chart.chartType === 'Table' || chart.chartType === '?' || chart.chartType === 'Auto') {
-                            return;
-                        }
-
-                        const { blobUrl, width, height } = await getChartImageFromVega(chart, chartTable);
-                        if (blobUrl) {
-                            newPreviewImages.set(chart.id, { url: blobUrl, width, height });
-                        }
-                    } catch (error) {
-                        console.warn(`Failed to generate preview for chart ${chart.id}:`, error);
-                    }
-                })
-            );
-
-            setPreviewImages(newPreviewImages);
-            setIsLoadingPreviews(false);
-        };
-
-        if (sortedCharts.length > 0) {
-            generatePreviews();
+        for (const chart of sortedCharts) {
+            if (chart.chartType === 'Table' || chart.chartType === '?' || chart.chartType === 'Auto') continue;
+            if (chart.thumbnail) {
+                // Use the pre-rendered thumbnail from ChartRenderService
+                newPreviewImages.set(chart.id, {
+                    url: chart.thumbnail,
+                    width: config.defaultChartWidth,
+                    height: config.defaultChartHeight,
+                });
+            }
         }
-    }, [sortedCharts, tables, conceptShelfItems, config]);
+
+        setPreviewImages(newPreviewImages);
+        setIsLoadingPreviews(false);
+    }, [sortedCharts, config]);
 
     const toggleChartSelection = (chartId: string) => {
         const newSelection = new Set(selectedChartIds);

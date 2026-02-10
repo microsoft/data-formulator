@@ -51,7 +51,7 @@ import { EncodingBox } from './EncodingBox';
 
 import { ChannelGroups, CHART_TEMPLATES, getChartChannels, getChartTemplate } from '../components/ChartTemplates';
 import { checkChartAvailability, getDataTable } from './VisualizationView';
-import TableRowsIcon from '@mui/icons-material/TableRowsOutlined';
+import { TableIcon, AgentIcon as PrecisionManufacturing } from '../icons';
 import ChangeCircleOutlinedIcon from '@mui/icons-material/ChangeCircleOutlined';
 import AddIcon from '@mui/icons-material/Add';
 import CheckIcon from '@mui/icons-material/Check';
@@ -60,7 +60,6 @@ import { ThinkingBanner } from './DataThread';
 import { AppDispatch } from '../app/store';
 import { borderColor, transition, radius } from '../app/tokens';
 
-import PrecisionManufacturing from '@mui/icons-material/PrecisionManufacturing';
 import { Type } from '../data/types';
 import DeleteIcon from '@mui/icons-material/Delete';
 import CloseIcon from '@mui/icons-material/Close';
@@ -866,7 +865,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
         />
         {trigger ? 
             <Box sx={{display: 'flex'}}>
-                <Tooltip title={<Typography sx={{fontSize: 11}}>formulate and override <TableRowsIcon sx={{fontSize: 10, marginBottom: '-1px'}}/>{trigger.resultTableId}</Typography>}>
+                <Tooltip title={<Typography sx={{fontSize: 11}}>formulate and override <TableIcon sx={{width: 10, height: 10, marginBottom: '-1px'}}/>{trigger.resultTableId}</Typography>}>
                     <span>
                         <IconButton sx={{ marginLeft: "0"}} size="small"
                              color={"warning"} onClick={() => { 

@@ -75,7 +75,7 @@ import 'prismjs/themes/prism.css'; //Example style, you can use another
 import { ChatDialog } from './ChatDialog';
 import { EncodingShelfThread } from './EncodingShelfThread';
 import { CustomReactTable } from './ReactTable';
-import InsightsIcon from '@mui/icons-material/Insights';
+import { InsightIcon } from '../icons';
 
 import { MuiMarkdown, getOverrides } from 'mui-markdown';
 
@@ -280,6 +280,14 @@ export let SampleSizeEditor: FC<{
     </Box>
 }
 
+/**
+ * Module-level caches that persist across component remounts.
+ * - displayRowsCache: avoids re-fetching server data when switching back to a chart
+ * - displaySvgCache: avoids re-running toSVG when chart+data haven't changed
+ */
+const displayRowsCache = new Map<string, { rows: any[], totalCount: number }>();
+const displaySvgCache = new Map<string, { specKey: string; svg: string; spec: any }>();
+
 // Simple component that only handles Vega chart rendering — now uses headless toSVG()
 const VegaChartRenderer: FC<{
     chart: Chart;
@@ -292,14 +300,21 @@ const VegaChartRenderer: FC<{
     chartUnavailable: boolean;
 }> = React.memo(({ chart, conceptShelfItems, visTableRows, tableMetadata, chartWidth, chartHeight, scaleFactor, chartUnavailable }) => {
     
-    const [svgContent, setSvgContent] = useState<string | null>(null);
-    const [assembledSpec, setAssembledSpec] = useState<any>(null);
+    // Initialize from display SVG cache for instant display on chart switch
+    const svgCached = displaySvgCache.get(chart.id);
+    const [svgContent, setSvgContent] = useState<string | null>(svgCached?.svg ?? null);
+    const [assembledSpec, setAssembledSpec] = useState<any>(svgCached?.spec ?? null);
 
     useEffect(() => {
         
         if (chart.chartType === "Auto" || chart.chartType === "Table" || chartUnavailable) {
             setSvgContent(null);
             setAssembledSpec(null);
+            return;
+        }
+
+        // Skip rendering when we have no data yet (data is being fetched)
+        if (visTableRows.length === 0) {
             return;
         }
 
@@ -325,6 +340,16 @@ const VegaChartRenderer: FC<{
         }
 
         spec['background'] = 'white';
+
+        // Check display SVG cache — skip toSVG entirely if spec matches
+        const specKey = JSON.stringify(spec);
+        const cached = displaySvgCache.get(chart.id);
+        if (cached && cached.specKey === specKey) {
+            setSvgContent(cached.svg);
+            setAssembledSpec(cached.spec);
+            return;
+        }
+
         setAssembledSpec(spec);
 
         // Headless render via Vega: compile VL → parse → View → toSVG()
@@ -341,6 +366,8 @@ const VegaChartRenderer: FC<{
                 view.finalize();
                 if (!cancelled) {
                     setSvgContent(svg);
+                    // Cache the rendered SVG for instant reuse on revisit
+                    displaySvgCache.set(chart.id, { specKey, svg, spec });
                 }
             } catch (err) {
                 console.warn('VegaChartRenderer: SVG render failed', err);
@@ -412,13 +439,13 @@ const VegaChartRenderer: FC<{
 
     if (chart.chartType === "Auto") {
         return <Box sx={{ position: "relative", display: "flex", flexDirection: "column", margin: 'auto', color: 'darkgray' }}>
-            <InsightsIcon fontSize="large"/>
+            <InsightIcon fontSize="large"/>
         </Box>
     }
 
     if (chart.chartType === "Table") {
         return visTableRows.length > 0 ? renderTableChart(chart, conceptShelfItems, visTableRows) : <Box sx={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }} >
-            <InsightsIcon fontSize="large"/>
+            <InsightIcon fontSize="large"/>
         </Box>;
     }
 
@@ -531,11 +558,10 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
         let sortedFields = [...aggregateFields.map(f => `${f[0]}_${f[1]}`), ...groupByFields].sort();
 
         return JSON.stringify({
-            chartId: focusedChart.id,
             tableId: table.id,
             sortedFields
         });
-    }, [focusedChart.encodingMap, conceptShelfItems, focusedChart.id, table.id]);
+    }, [focusedChart.encodingMap, conceptShelfItems, table.id]);
 
     let setSystemMessage = (content: string, severity: "error" | "warning" | "info" | "success") => {
         dispatch(dfActions.addMessages({
@@ -564,9 +590,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
         return visTable;
     }
 
-    const processedData = createVisTableRowsLocal(table.rows);
-
-    const [visTableRows, setVisTableRows] = useState<any[]>(processedData);
+    const [visTableRows, setVisTableRows] = useState<any[]>(() => createVisTableRowsLocal(table.rows));
 
     const [visTableTotalRowCount, setVisTableTotalRowCount] = useState<number>(table.virtual?.rowCount || table.rows.length);
 
@@ -574,13 +598,12 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
     let sortedVisDataFields = [...aggregateFields.map(f => `${f[0]}_${f[1]}`), ...groupByFields].sort();
 
     // Track which chart+table+requiredFields the current data belongs to (prevents showing stale data during transitions)
-    const [dataVersion, setDataVersion] = useState<string>(`${focusedChart.id}-${table.id}-${sortedVisDataFields.join("_")}`);
+    const [dataVersion, setDataVersion] = useState<string>(`${table.id}-${sortedVisDataFields.join("_")}`);
     const currentRequestRef = useRef<string>('');
     
-    // Check if current data is stale (belongs to different chart/table)
-    const isDataStale = dataVersion !== `${focusedChart.id}-${table.id}-${sortedVisDataFields.join("_")}`;
+    // Check if current data is stale (belongs to different table/fields)
+    const isDataStale = dataVersion !== `${table.id}-${sortedVisDataFields.join("_")}`;
 
-    
     // Use empty data if stale to avoid showing incorrect data during transitions
     const activeVisTableRows = isDataStale ? [] : visTableRows;
     const activeVisTableTotalRowCount = isDataStale ? 0 : visTableTotalRowCount;
@@ -615,11 +638,13 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
             .then(data => {
                 // Only update if this is still the current request (not stale)
                 if (currentRequestRef.current === requestId) {
-                    const versionId = `${focusedChart.id}-${table.id}-${sortedVisDataFields.join("_")}`;
+                    const versionId = `${table.id}-${sortedVisDataFields.join("_")}`;
                     if (data.status == "success") {
                         setVisTableRows(data.rows);
                         setVisTableTotalRowCount(data.total_row_count);
                         setDataVersion(versionId);
+                        // Cache for instant reuse on chart revisit
+                        displayRowsCache.set(versionId, { rows: data.rows, totalCount: data.total_row_count });
                     } else {
                         setVisTableRows([]);
                         setVisTableTotalRowCount(0);
@@ -638,9 +663,13 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
         } else {
             // All rows available locally — sample in-memory
             let rowSample = _.sampleSize(table.rows, sampleSize);
-            setVisTableRows(structuredClone(rowSample));
+            const clonedRows = structuredClone(rowSample);
+            const versionId = `${table.id}-${sortedVisDataFields.join("_")}`;
+            setVisTableRows(clonedRows);
             setVisTableTotalRowCount(table.rows.length);
-            setDataVersion(`${focusedChart.id}-${table.id}-${sortedVisDataFields.join("_")}`);
+            setDataVersion(versionId);
+            // Cache for instant reuse on chart revisit
+            displayRowsCache.set(versionId, { rows: clonedRows, totalCount: table.rows.length });
         }
     }
 
@@ -652,12 +681,18 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
     }, [])
 
     useEffect(() => {
-        const versionId = `${focusedChart.id}-${table.id}-${sortedVisDataFields.join("_")}`;
+        const versionId = `${table.id}-${sortedVisDataFields.join("_")}`;
 
         if (visFields.length > 0 && dataFieldsAllAvailable) {
-            // table or fields changed — fetchDisplayRows handles both
-            // local (all rows in memory) and remote (virtual, large) cases
-            fetchDisplayRows();
+            // Check cache first — avoid server round-trip on chart revisit
+            const cached = displayRowsCache.get(versionId);
+            if (cached) {
+                setVisTableRows(cached.rows);
+                setVisTableTotalRowCount(cached.totalCount);
+                setDataVersion(versionId);
+            } else {
+                fetchDisplayRows();
+            }
         } else {
             // If no fields, just use the table rows directly
             setVisTableRows(table.rows);

@@ -24,7 +24,6 @@ import {
 
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
-import PrecisionManufacturingIcon from '@mui/icons-material/PrecisionManufacturing';
 import ForkRightIcon from '@mui/icons-material/ForkRight';
 import ZoomInIcon from '@mui/icons-material/ZoomIn';
 import HideSourceIcon from '@mui/icons-material/HideSource';

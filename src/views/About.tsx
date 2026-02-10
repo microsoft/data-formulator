@@ -7,7 +7,7 @@ import React, { FC } from "react";
 import GridViewIcon from '@mui/icons-material/GridView';
 import GitHubIcon from '@mui/icons-material/GitHub';
 import YouTubeIcon from '@mui/icons-material/YouTube';
-import PrecisionManufacturingIcon from '@mui/icons-material/PrecisionManufacturing';
+import { AgentIcon as PrecisionManufacturingIcon } from '../icons';
 
 import { toolName } from "../app/App";
 import { useSelector } from "react-redux";

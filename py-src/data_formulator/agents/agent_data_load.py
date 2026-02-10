@@ -19,8 +19,8 @@ Given a dataset provided by the user,
 1. suggest a descriptive name for the table if the table name is a generic name like table-6, the suggested name should best capture meaning of the table but also very concise.
     - if the table already have a descriptive name provided in the bracket (...), use it; if the provided name is not descriptive, suggest a new name.
     - format table name using '-' when it contains multiple words (e.g., "income", "weather-seattle-atlanta")
-    - the suggested table name should be similar to variable names that are very descriptive and concise, no more than 3 words.
-    - the suggested name should best be within 12 characters, be smart with abbreviations (yet still descriptive and follow common practices), when in doubt, use less words but less abbreviation.
+    - the suggested table name should be similar to variable names that are very descriptive and concise, no more than 5 words.
+    - the suggested name should best be within 24 characters, be smart with abbreviations (yet still descriptive and follow common practices), when in doubt, use less words but less abbreviation.
 2. identify their type and semantic type
 3. provide a very short summary of the dataset.
 

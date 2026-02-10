@@ -26,7 +26,6 @@ export const generateFreshChart = (tableRef: string, chartType: string, source: 
         tableRef: tableRef,
         saved: false,
         source: source,
-        unread: true,
     }
 }
 
@@ -224,14 +223,6 @@ let deleteChartsRoutine = (state: DataFormulatorState, chartIds: string[]) => {
     // update focusedChart and activeThreadChart
     state.charts = charts;
     state.focusedChartId = focusedChartId;
-    
-    // Set unread to false for the newly focused chart
-    if (focusedChartId) {
-        let chart = charts.find(c => c.id === focusedChartId);
-        if (chart) {
-            chart.unread = false;
-        }
-    }
 
     let unrefedDerivedTableIds = getUnrefedDerivedTableIds(state);
     let tableIdsToDelete = state.tables.filter(t => !t.anchored && unrefedDerivedTableIds.includes(t.id)).map(t => t.id);
@@ -663,7 +654,6 @@ export const dataFormulatorSlice = createSlice({
             state.charts = [ freshChart , ...state.charts];
             state.focusedTableId = tableId;
             state.focusedChartId = freshChart.id;
-            freshChart.unread = false;
         },
         addChart: (state, action: PayloadAction<Chart>) => {
             let chart = action.payload;
@@ -673,19 +663,15 @@ export const dataFormulatorSlice = createSlice({
             let chart = action.payload;
             state.charts = [chart, ...state.charts];
             state.focusedChartId = chart.id;
-            // Set unread to false when focusing the chart
-            chart.unread = false;
         },
         duplicateChart: (state, action: PayloadAction<string>) => {
             let chartId = action.payload;
 
             let chartCopy = JSON.parse(JSON.stringify(state.charts.find(chart => chart.id == chartId) as Chart)) as Chart;
-            chartCopy = { ...chartCopy, saved: false, unread: true }
+            chartCopy = { ...chartCopy, saved: false }
             chartCopy.id = `chart-${Date.now()- Math.floor(Math.random() * 10000)}`;
             state.charts.push(chartCopy);
             state.focusedChartId = chartCopy.id;
-            // Set unread to false when focusing the duplicated chart
-            chartCopy.unread = false;
         },
         saveUnsaveChart: (state, action: PayloadAction<string>) => {
             let chartId = action.payload;
@@ -931,21 +917,6 @@ export const dataFormulatorSlice = createSlice({
 
             if (state.viewMode == 'report') {
                 state.viewMode = 'editor';
-            }
-            
-            // Set unread to false when a chart is focused
-            if (chartId) {
-                // Find the chart in the charts array
-                let chart = state.charts.find(c => c.id === chartId);
-                if (chart) {
-                    chart.unread = false;
-                } else {
-                    // Check if it's a trigger chart in tables
-                    let table = state.tables.find(t => t.derive?.trigger?.chart?.id === chartId);
-                    if (table?.derive?.trigger?.chart) {
-                        table.derive.trigger.chart.unread = false;
-                    }
-                }
             }
         },
         changeChartRunningStatus: (state, action: PayloadAction<{chartId: string, status: boolean}>) => {

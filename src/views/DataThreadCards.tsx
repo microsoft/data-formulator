@@ -20,9 +20,7 @@ import { Chart, DictTable, Trigger } from "../components/ComponentType";
 
 import DeleteIcon from '@mui/icons-material/Delete';
 import AddchartIcon from '@mui/icons-material/Addchart';
-import TableRowsIcon from '@mui/icons-material/TableRowsOutlined';
-import AnchorIcon from '@mui/icons-material/Anchor';
-import CloudQueueIcon from '@mui/icons-material/CloudQueue';
+import { AnchorIcon } from '../icons';
 import SettingsIcon from '@mui/icons-material/Settings';
 import CloseIcon from '@mui/icons-material/Close';
 import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
@@ -164,7 +162,6 @@ export const AgentStatusBox = memo<{
 export let buildChartCard = (
     chartElement: { tableId: string, chartId: string, element: any },
     focusedChartId?: string,
-    unread?: boolean
 ) => {
     let selectedClassName = focusedChartId == chartElement.chartId ? 'selected-card' : '';
     return <Card className={`data-thread-card ${selectedClassName}`} elevation={0}
@@ -296,7 +293,7 @@ export let buildTableCard = (props: BuildTableCardProps) => {
         <Box key={`relevant-chart-${ce.chartId}`}
             sx={{ 
                 display: 'flex', padding: 0, ...collapsedProps }}>
-            {buildChartCard(ce, focusedChartId, charts.find(c => c.id == ce.chartId)?.unread)}
+            {buildChartCard(ce, focusedChartId)}
         </Box>)
 
     const isHighlighted = highlightedTableIds.includes(tableId);

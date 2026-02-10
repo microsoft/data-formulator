@@ -17,7 +17,7 @@ import { createTableFromFromObjectArray } from '../data/utils';
 import { SelectableDataGrid } from './SelectableDataGrid';
 
 import ParkIcon from '@mui/icons-material/Park';
-import AnchorIcon from '@mui/icons-material/Anchor';
+import { AnchorIcon } from '../icons';
 
 export interface FreeDataViewProps {
 }

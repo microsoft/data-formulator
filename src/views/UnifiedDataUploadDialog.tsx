@@ -25,6 +25,7 @@ import CloseIcon from '@mui/icons-material/Close';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 import ContentPasteIcon from '@mui/icons-material/ContentPaste';
 import LinkIcon from '@mui/icons-material/Link';
+import { StreamIcon } from '../icons';
 import StorageIcon from '@mui/icons-material/Storage';
 import ImageSearchIcon from '@mui/icons-material/ImageSearch';
 import ExploreIcon from '@mui/icons-material/Explore';
@@ -32,7 +33,6 @@ import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import Paper from '@mui/material/Paper';
 
-import StreamIcon from '@mui/icons-material/Stream';
 import { useDispatch, useSelector } from 'react-redux';
 import { DataFormulatorState, dfActions, fetchFieldSemanticType } from '../app/dfSlice';
 import { AppDispatch } from '../app/store';

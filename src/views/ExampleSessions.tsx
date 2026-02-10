@@ -11,7 +11,7 @@ import {
     alpha,
     useTheme,
 } from '@mui/material';
-import StreamIcon from '@mui/icons-material/Stream';
+import { StreamIcon } from '../icons';
 
 // Example session data for pre-built sessions
 export interface ExampleSession {

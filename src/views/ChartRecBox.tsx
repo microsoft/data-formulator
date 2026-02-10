@@ -47,7 +47,7 @@ import { createDictTable, DictTable } from "../components/ComponentType";
 import { getUrls, getTriggers, resolveRecommendedChart, fetchWithIdentity } from '../app/utils';
 
 import AddIcon from '@mui/icons-material/Add';
-import PrecisionManufacturing from '@mui/icons-material/PrecisionManufacturing';
+import { AgentIcon as PrecisionManufacturing } from '../icons';
 import SmartToyIcon from '@mui/icons-material/SmartToy';
 import TouchAppIcon from '@mui/icons-material/TouchApp';
 import { Type } from '../data/types';

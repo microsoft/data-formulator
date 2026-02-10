@@ -24,7 +24,7 @@ a json object that explains tables in the raw data, cleaning rationale, and sugg
 {
     "tables": [
         {
-            "name": ..., // suggest a descriptive, meaningful but short name for this dataset, no more than 3 words, if there are duplicate names, add a suffix -1, -2, etc. (e.g., "sales-2024", "customer-survey", "weather-forecast")
+            "name": ..., // suggest a descriptive, meaningful but short name for this dataset, no more than 5 words, if there are duplicate names, add a suffix -1, -2, etc. (e.g., "sales-2024", "us-customer-survey-2024", "seattle-weather-forecast")
             "description": ..., // describe the table in a few sentences, including the table structure, the cleaning process, and the rationale for the cleaning.
             "reason": ..., // explain the extraction reason here, including the table structure, the cleaning process, and the rationale for the cleaning.
             "content": {

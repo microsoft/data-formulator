@@ -36,14 +36,9 @@ import {
   FormControlLabel
 } from '@mui/material';
 
-import DeleteIcon from '@mui/icons-material/Delete';
-import CloseIcon from '@mui/icons-material/Close';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import TableRowsIcon from '@mui/icons-material/TableRows';
-import RefreshIcon from '@mui/icons-material/Refresh';
 import SearchIcon from '@mui/icons-material/Search';
-import StreamIcon from '@mui/icons-material/Stream';
 import Autocomplete from '@mui/material/Autocomplete';
 
 // Type for table import configuration
@@ -73,45 +68,8 @@ import MoreVertIcon from '@mui/icons-material/MoreVert';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 import DownloadIcon from '@mui/icons-material/Download';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
-import StorageIcon from '@mui/icons-material/Storage';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import SettingsIcon from '@mui/icons-material/Settings';
-
-// Industry-standard database icons
-const TableIcon: React.FC<{ sx?: SxProps }> = ({ sx }) => (
-    <Box
-        component="svg"
-        viewBox="0 0 16 16"
-        sx={{
-            width: 16,
-            height: 16,
-            ...sx
-        }}
-    >
-        {/* Single rectangle with grid lines - standard table icon */}
-        <rect x="2" y="2" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.2" rx="0.5"/>
-        <line x1="2" y1="6" x2="14" y2="6" stroke="currentColor" strokeWidth="1"/>
-        <line x1="2" y1="10" x2="14" y2="10" stroke="currentColor" strokeWidth="1"/>
-        <line x1="6" y1="2" x2="6" y2="14" stroke="currentColor" strokeWidth="1"/>
-        <line x1="10" y1="2" x2="10" y2="14" stroke="currentColor" strokeWidth="1"/>
-    </Box>
-);
-
-const ViewIcon: React.FC<{ sx?: SxProps }> = ({ sx }) => (
-    <Box
-        component="svg"
-        viewBox="0 0 16 16"
-        sx={{
-            width: 16,
-            height: 16,
-            ...sx
-        }}
-    >
-        {/* Two overlapping rectangles - standard view icon */}
-        <rect x="2" y="2" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.2" rx="0.5" opacity="0.8"/>
-        <rect x="4" y="4" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.2" rx="0.5"/>
-    </Box>
-);
 
 export const handleDBDownload = async (identityId: string) => {
     try {

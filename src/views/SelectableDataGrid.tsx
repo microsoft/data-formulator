@@ -24,7 +24,7 @@ import _ from 'lodash';
 import { FieldSource, FieldItem } from '../components/ComponentType';
 
 import FileDownloadIcon from '@mui/icons-material/FileDownload';
-import CloudQueueIcon from '@mui/icons-material/CloudQueue';
+import { TableIcon } from '../icons';
 import CasinoIcon from '@mui/icons-material/Casino';
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
 import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
@@ -432,7 +432,7 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({
                 sx={{ display: 'flex', flexDirection: 'row',  position: 'absolute', bottom: 6, right: 12 }}>
                 <Box sx={{display: 'flex', alignItems: 'center', mx: 1}}>
                     <Typography sx={{display: 'flex', alignItems: 'center', fontSize: '12px'}}>
-                        {virtual && <CloudQueueIcon sx={{fontSize: 16, mr: 1}}/> }
+                        {virtual && <TableIcon sx={{width: 14, height: 14, mr: 1}}/> }
                         {`${rowCount} rows`}
                     </Typography>
                     {virtual && rowCount > 10000 && (

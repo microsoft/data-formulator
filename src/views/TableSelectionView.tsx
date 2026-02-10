@@ -8,7 +8,7 @@ import Typography from '@mui/material/Typography';
 import Box from '@mui/material/Box';
 import { Button, Chip } from '@mui/material';
 import { borderColor } from '../app/tokens';
-import StreamIcon from '@mui/icons-material/Stream';
+import { StreamIcon } from '../icons';
 import { createTableFromFromObjectArray } from '../data/utils';
 import { MultiTablePreview } from './MultiTablePreview';
 import { DictTable } from '../components/ComponentType';

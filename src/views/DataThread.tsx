@@ -5,7 +5,6 @@ import React, { FC, useEffect, useMemo, useRef, useState, useCallback, memo } fr
 
 import {
     Box,
-    Divider,
     Typography,
     LinearProgress,
     ListItemIcon,
@@ -36,11 +35,7 @@ import { Chart, DictTable, Trigger } from "../components/ComponentType";
 
 import DeleteIcon from '@mui/icons-material/Delete';
 import StarIcon from '@mui/icons-material/Star';
-import SouthIcon from '@mui/icons-material/South';
-import TableRowsIcon from '@mui/icons-material/TableRowsOutlined';
-import AnchorIcon from '@mui/icons-material/Anchor';
-import PanoramaFishEyeIcon from '@mui/icons-material/PanoramaFishEye';
-import InsightsIcon from '@mui/icons-material/Insights';
+import { TableIcon, AnchorIcon, InsightIcon, StreamIcon } from '../icons';
 
 
 import _ from 'lodash';
@@ -52,13 +47,13 @@ import 'prismjs/themes/prism.css'; //Example style, you can use another
 
 import { checkChartAvailability, generateChartSkeleton, getDataTable } from './VisualizationView';
 
-import CloudQueueIcon from '@mui/icons-material/CloudQueue';
 import AttachFileIcon from '@mui/icons-material/AttachFile';
 import EditIcon from '@mui/icons-material/Edit';
 import RefreshIcon from '@mui/icons-material/Refresh';
-import StreamIcon from '@mui/icons-material/Stream';
 import ChatBubbleOutlineIcon from '@mui/icons-material/ChatBubbleOutline';
 import AddIcon from '@mui/icons-material/Add';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 
 import { alpha } from '@mui/material/styles';
 
@@ -434,15 +429,18 @@ const WorkspacePanel: FC<{
     const dispatch = useDispatch();
     const focusedTableId = useSelector((state: DataFormulatorState) => state.focusedTableId);
     const focusedChartId = useSelector((state: DataFormulatorState) => state.focusedChartId);
+    const charts = useSelector(dfSelectors.getAllCharts);
+    const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
     const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
+    const [workspaceExpanded, setWorkspaceExpanded] = useState(false);
 
-    const fileItemSx = (isActive: boolean) => ({
+    const fileItemSx = (isActive: boolean, isNested: boolean = false) => ({
         display: 'flex',
         alignItems: 'center',
-        gap: 0.75,
-        px: 1,
+        gap: 0.5,
+        px: 0.75,
         py: '3px',
-        borderRadius: '4px',
+        borderRadius: '3px',
         cursor: 'pointer',
         fontSize: 11,
         transition: transition.fast,
@@ -454,10 +452,55 @@ const WorkspacePanel: FC<{
 
     const getTableIcon = (table: DictTable) => {
         const isStreaming = (table.source?.type === 'stream' || table.source?.type === 'database') && table.source?.autoRefresh;
-        const iconSx = { fontSize: 14, color: 'text.secondary', flexShrink: 0 };
+        const iconSx = { width: 14, height: 14, color: 'text.secondary', flexShrink: 0 };
         if (isStreaming) return <StreamIcon sx={{ ...iconSx, color: theme.palette.success.main, animation: 'pulse 2s infinite', '@keyframes pulse': { '0%': { opacity: 1 }, '50%': { opacity: 0.4 }, '100%': { opacity: 1 } } }} />;
-        if (table.virtual) return <CloudQueueIcon sx={iconSx} />;
-        return <TableRowsIcon sx={iconSx} />;
+        if (table.virtual) return <TableIcon sx={{ ...iconSx, width: 14, height: 14 }} />;
+        return <TableIcon sx={iconSx} />;
+    };
+
+    const getChartIcon = (chartType: string) => {
+        const template = getChartTemplate(chartType);
+        if (template && template.icon) {
+            // Use chart template icon (it's an image path)
+            if (typeof template.icon === 'string') {
+                return <Box component="img" src={template.icon} sx={{ width: 14, height: 14, objectFit: 'contain' }} />;
+            }
+            // Or it could be a React component
+            return <Box sx={{ width: 14, height: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'text.secondary' }}>{template.icon}</Box>;
+        }
+        // Fallback to generic chart icon
+        return <InsightIcon sx={{ fontSize: 14, color: 'text.secondary' }} />;
+    };
+
+    const getChartFields = (chart: Chart) => {
+        const encodings = Object.entries(chart.encodingMap)
+            .filter(([_, encoding]) => encoding.fieldID)
+            .map(([channel, encoding]) => {
+                const field = conceptShelfItems.find(f => f.id === encoding.fieldID);
+                return field?.name || encoding.fieldID;
+            })
+            .filter(Boolean);
+        return encodings.slice(0, 3).join(', ') + (encodings.length > 3 ? '...' : '');
+    };
+
+    const getTableSourceName = (table: DictTable) => {
+        // Get the source file name from table source
+        if (table.source?.type === 'file' && table.source?.fileName) {
+            return table.source.fileName;
+        }
+        if (table.source?.type === 'database' && table.source?.databaseTable) {
+            return table.source.databaseTable;
+        }
+        if (table.source?.type === 'stream' && table.source?.url) {
+            // Extract a meaningful name from URL
+            try {
+                const url = new URL(table.source.url);
+                return url.hostname;
+            } catch {
+                return 'stream';
+            }
+        }
+        return null;
     };
 
     return (
@@ -465,65 +508,209 @@ const WorkspacePanel: FC<{
             transition: transition.fast,
             padding: '6px',
             backgroundColor: 'rgba(0,0,0,0.02)',
-            borderRadius: '8px',
+            borderRadius: '6px',
             border: '1px solid rgba(0,0,0,0.06)',
         }}>
-            <Typography sx={{ fontSize: 10, fontWeight: 600, color: 'rgba(0,0,0,0.4)', textTransform: 'uppercase', letterSpacing: '0.5px', px: 1, mb: 0.5 }}>
-                workspace
-            </Typography>
-
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
-                {tables.map((table) => {
-                    const isActive = focusedTableId === table.id;
-                    const tableCharts = chartElements.filter(ce => ce.tableId === table.id);
-                    const handleTableClick = () => {
-                        dispatch(dfActions.setFocusedTable(table.id));
-                        if (tableCharts.length === 0) {
-                            // No charts yet — create a placeholder to enter chart creation view
-                            dispatch(dfActions.setFocusedChart(null));
-                        } else {
-                            // Has charts — focus the first one if not already viewing one from this table
-                            const alreadyFocused = tableCharts.some(ce => ce.chartId === focusedChartId);
-                            if (!alreadyFocused) {
-                                dispatch(dfActions.setFocusedChart(tableCharts[0].chartId));
-                            }
-                        }
-                    };
-                    return (
-                        <Box
-                            key={table.id}
-                            sx={fileItemSx(isActive)}
-                            onClick={handleTableClick}
-                        >
-                            {getTableIcon(table)}
-                            <Typography sx={{
-                                fontSize: 11,
-                                fontWeight: isActive ? 500 : 400,
-                                color: isActive ? 'primary.main' : 'text.primary',
-                                overflow: 'hidden',
-                                textOverflow: 'ellipsis',
-                                whiteSpace: 'nowrap',
-                                flex: 1,
-                                minWidth: 0,
-                            }}>
-                                {table.displayId || table.id}
-                            </Typography>
-                            {table.attachedMetadata && (
-                                <AttachFileIcon sx={{ fontSize: 10, color: 'text.disabled', flexShrink: 0 }} />
-                            )}
-                        </Box>
-                    );
-                })}
-                <Box
-                    sx={fileItemSx(false)}
-                    onClick={() => setUploadDialogOpen(true)}
-                >
-                    <AddIcon sx={{ fontSize: 14, color: 'text.disabled', flexShrink: 0 }} />
-                    <Typography sx={{ fontSize: 11, color: 'text.disabled' }}>
-                        add data...
-                    </Typography>
-                </Box>
+            <Box
+                sx={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    px: 0.75,
+                    py: '4px',
+                    cursor: 'pointer',
+                    borderRadius: '3px',
+                    '&:hover': {
+                        backgroundColor: 'rgba(0,0,0,0.04)',
+                    },
+                }}
+                onClick={() => setWorkspaceExpanded(!workspaceExpanded)}
+            >
+                {workspaceExpanded ?
+                    <ExpandMoreIcon sx={{ fontSize: 14, color: 'rgba(0,0,0,0.4)' }} /> :
+                    <ChevronRightIcon sx={{ fontSize: 14, color: 'rgba(0,0,0,0.4)' }} />
+                }
+                <Typography sx={{ fontSize: 10, fontWeight: 600, color: 'rgba(0,0,0,0.4)', textTransform: 'uppercase', letterSpacing: '0.5px', ml: 0.5 }}>
+                    Workspace
+                </Typography>
             </Box>
+
+            {workspaceExpanded && (
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: '2px', mt: '4px', ml: '14px' }}>
+                    {tables.map((table, tableIndex) => {
+                        const isTableActive = focusedTableId === table.id;
+                        const tableCharts = chartElements.filter(ce => ce.tableId === table.id);
+                        const sourceName = getTableSourceName(table);
+                        const isLastTable = tableIndex === tables.length - 1;
+
+                        const handleTableClick = () => {
+                            dispatch(dfActions.setFocusedTable(table.id));
+                            if (tableCharts.length === 0) {
+                                dispatch(dfActions.setFocusedChart(undefined));
+                            } else {
+                                const alreadyFocused = tableCharts.some(ce => ce.chartId === focusedChartId);
+                                if (!alreadyFocused) {
+                                    dispatch(dfActions.setFocusedChart(tableCharts[0].chartId));
+                                }
+                            }
+                        };
+
+                        return (
+                            <Box
+                                key={table.id}
+                                sx={{
+                                    position: 'relative',
+                                    pl: 1.5,
+                                    '&::before': {
+                                        content: '""',
+                                        position: 'absolute',
+                                        left: 0,
+                                        top: 0,
+                                        bottom: isLastTable ? 'calc(100% - 10px)' : 0,
+                                        width: '1px',
+                                        backgroundColor: 'rgba(0,0,0,0.08)',
+                                    },
+                                    '&::after': {
+                                        content: '""',
+                                        position: 'absolute',
+                                        left: 0,
+                                        top: '10px',
+                                        width: '8px',
+                                        height: '1px',
+                                        backgroundColor: 'rgba(0,0,0,0.08)',
+                                    }
+                                }}
+                            >
+                                <Box
+                                    sx={fileItemSx(isTableActive)}
+                                    onClick={handleTableClick}
+                                >
+                                    {getTableIcon(table)}
+                                    <Typography sx={{
+                                        fontSize: 11,
+                                        fontWeight: isTableActive ? 600 : 400,
+                                        color: isTableActive ? 'primary.main' : 'text.primary',
+                                        overflow: 'hidden',
+                                        textOverflow: 'ellipsis',
+                                        whiteSpace: 'nowrap',
+                                        flex: 1,
+                                        minWidth: 0,
+                                    }}>
+                                        {table.displayId || table.id}
+                                        {sourceName && (
+                                            <Typography component="span" sx={{
+                                                fontSize: 10,
+                                                color: 'text.disabled',
+                                                ml: 0.5,
+                                            }}>
+                                                ({sourceName})
+                                            </Typography>
+                                        )}
+                                    </Typography>
+                                    {table.attachedMetadata && (
+                                        <AttachFileIcon sx={{ fontSize: 10, color: 'text.disabled', flexShrink: 0 }} />
+                                    )}
+                                </Box>
+
+                                {/* Show all charts for this table with vertical guide line */}
+                                {tableCharts.length > 0 && (
+                                    <Box sx={{
+                                        position: 'relative',
+                                        ml: '14px',
+                                        mt: '2px',
+                                    }}>
+                                        {tableCharts.map((chartElement, idx) => {
+                                            const chart = charts.find(c => c.id === chartElement.chartId);
+                                            if (!chart) return null;
+
+                                            const isChartActive = focusedChartId === chart.id;
+                                            const isLast = idx === tableCharts.length - 1;
+
+                                            const handleChartClick = () => {
+                                                dispatch(dfActions.setFocusedTable(table.id));
+                                                dispatch(dfActions.setFocusedChart(chart.id));
+                                            };
+
+                                            return (
+                                                <Box
+                                                    key={chart.id}
+                                                    sx={{
+                                                        position: 'relative',
+                                                        pl: 1.5, // Connector area
+                                                        '&::before': {
+                                                            content: '""',
+                                                            position: 'absolute',
+                                                            left: 0,
+                                                            top: 0,
+                                                            bottom: isLast ? '50%' : 0,
+                                                            width: '1px',
+                                                            backgroundColor: 'rgba(0,0,0,0.08)',
+                                                        },
+                                                        '&::after': {
+                                                            content: '""',
+                                                            position: 'absolute',
+                                                            left: 0,
+                                                            top: '50%',
+                                                            width: '8px',
+                                                            height: '1px',
+                                                            backgroundColor: 'rgba(0,0,0,0.08)',
+                                                        }
+                                                    }}
+                                                >
+                                                <Box
+                                                    sx={fileItemSx(isChartActive, true)}
+                                                    onClick={handleChartClick}
+                                                >
+                                                    {getChartIcon(chart.chartType)}
+                                                    <Typography sx={{
+                                                        fontSize: 10,
+                                                        fontWeight: isChartActive ? 600 : 400,
+                                                        color: isChartActive ? 'primary.main' : 'text.secondary',
+                                                        overflow: 'hidden',
+                                                        textOverflow: 'ellipsis',
+                                                        whiteSpace: 'nowrap',
+                                                        flex: 1,
+                                                        minWidth: 0,
+                                                    }}>
+                                                        {chart.chartType}
+                                                    </Typography>
+                                                </Box>
+                                                </Box>
+                                            );
+                                        })}
+                                    </Box>
+                                )}
+                            </Box>
+                        );
+                    })}
+                    <Box
+                        sx={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 0.5,
+                            px: 0.75,
+                            py: '3px',
+                            mt: '3px',
+                            borderRadius: '3px',
+                            cursor: 'pointer',
+                            fontSize: 11,
+                            transition: transition.fast,
+                            border: '1px solid',
+                            borderColor: alpha(theme.palette.primary.main, 0.3),
+                            backgroundColor: alpha(theme.palette.primary.main, 0.02),
+                            '&:hover': {
+                                backgroundColor: alpha(theme.palette.primary.main, 0.08),
+                                borderColor: alpha(theme.palette.primary.main, 0.5),
+                            },
+                        }}
+                        onClick={() => setUploadDialogOpen(true)}
+                    >
+                        <AddIcon sx={{ fontSize: 14, color: 'primary.main', flexShrink: 0 }} />
+                        <Typography sx={{ fontSize: 11, color: 'primary.main', fontWeight: 500 }}>
+                            Add Data
+                        </Typography>
+                    </Box>
+                </Box>
+            )}
 
             <UnifiedDataUploadDialog
                 open={uploadDialogOpen}
@@ -991,7 +1178,7 @@ let SingleThreadGroupView: FC<{
         // For table items, show a type-specific icon instead of a dot
         if (isTable && item.tableId) {
             const tableForDot = tableById.get(item.tableId);
-            const iconSx = { fontSize: 14, color };
+            const iconSx = { width: 14, height: 14, color };
             const isStreaming = tableForDot && (tableForDot.source?.type === 'stream' || tableForDot.source?.type === 'database') && tableForDot.source?.autoRefresh;
 
             if (isStreaming) {
@@ -1007,9 +1194,9 @@ let SingleThreadGroupView: FC<{
                 }} />;
             }
             if (tableForDot?.virtual) {
-                return <CloudQueueIcon sx={iconSx} />;
+                return <TableIcon sx={{ ...iconSx, width: 14, height: 14 }} />;
             }
-            return <TableRowsIcon sx={iconSx} />;
+            return <TableIcon sx={iconSx} />;
         }
 
         return <Box sx={{ 
@@ -1132,16 +1319,10 @@ let SingleThreadGroupView: FC<{
         }}
         >
         {!hideLabel && (
-            <Box sx={{ display: 'flex', direction: 'ltr', margin: '2px 2px 6px 2px' }}>
-                <Divider flexItem sx={{
-                    margin: 'auto',
-                    "& .MuiDivider-wrapper": { display: 'flex', flexDirection: 'row' },
-                    "&::before, &::after": { borderColor: 'rgba(0,0,0,0.15)', borderWidth: '1px', width: 40 },
-                }}>
-                    <Typography sx={{ fontSize: '10px', fontWeight: 600, color: 'rgba(0,0,0,0.5)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                        {threadLabel || (threadIdx === -1 ? 'thread0' : `thread - ${threadIdx + 1}`)}
-                    </Typography>
-                </Divider>
+            <Box sx={{ display: 'flex', justifyContent: 'center', direction: 'ltr', margin: '2px 2px 6px 2px' }}>
+                <Typography sx={{ fontSize: '10px', fontWeight: 600, color: 'rgba(0,0,0,0.5)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    {threadLabel || (threadIdx === -1 ? 'thread0' : `thread - ${threadIdx + 1}`)}
+                </Typography>
             </Box>
         )}
         <div style={{ padding: '2px 4px 2px 4px', marginTop: 0, direction: 'ltr' }}>
@@ -1324,7 +1505,7 @@ const ChartThumbnail: FC<{
             onClick={() => onChartClick(chart.id, table.id)}
             sx={{ width: "100%", color: 'text.secondary', height: 48, display: "flex", backgroundColor: "white", position: 'relative', flexDirection: "column" }}>
             {pendingOverlay}
-            <InsightsIcon sx={{ margin: 'auto', color: 'darkgray' }}  fontSize="medium" />
+            <InsightIcon sx={{ margin: 'auto', color: 'darkgray' }}  fontSize="medium" />
             {deleteButton}
         </Box>;
     }
@@ -1754,10 +1935,10 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
         return undefined;
     }, [focusedTableId, leafTables, tables]);
 
-    let hasContent = leafTables.length > 0 || tables.some(t => !t.derive);
+    let hasContent = leafTables.length > 0 || tables.length > 0;
 
-    // Collect all base (non-derived) tables for the workspace panel.
-    let baseTables = tables.filter(t => !t.derive);
+    // Collect all tables (including derived ones) for the workspace panel.
+    let baseTables = tables;
     // Threaded tables: leaf tables that have a derivation chain
     let threadedTables = leafTables.filter(lt => {
         const triggers = getTriggers(lt, tables);

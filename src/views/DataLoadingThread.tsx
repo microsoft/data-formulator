@@ -15,7 +15,7 @@ import CircleIcon from '@mui/icons-material/Circle';
 import TableIcon from '@mui/icons-material/TableChart';
 import LinkIcon from '@mui/icons-material/Link';
 import DeleteIcon from '@mui/icons-material/Delete';
-import PrecisionManufacturingIcon from '@mui/icons-material/PrecisionManufacturing';
+import { AgentIcon as PrecisionManufacturingIcon } from '../icons';
 import SouthIcon from '@mui/icons-material/South';
 import LanguageIcon from '@mui/icons-material/Language';
 import ImageIcon from '@mui/icons-material/Image';

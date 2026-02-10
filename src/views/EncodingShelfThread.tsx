@@ -28,8 +28,7 @@ import { getTriggers } from '../app/utils';
 import { getChartTemplate } from '../components/ChartTemplates';
 import { checkChartAvailability, generateChartSkeleton } from './VisualizationView';
 
-import TableRowsIcon from '@mui/icons-material/TableRowsOutlined';
-import InsightsIcon from '@mui/icons-material/Insights';
+import { TableIcon, InsightIcon } from '../icons';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 
@@ -61,7 +60,7 @@ export let ChartElementFC: FC<{
 
     if (chart.chartType == "Auto") {
         return <Box sx={{ position: "relative", display: "flex", flexDirection: "column", margin: 'auto', color: 'darkgray' }}>
-            <InsightsIcon fontSize="large"/>
+            <InsightIcon fontSize="large"/>
         </Box>
     }
 
@@ -124,7 +123,7 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
                     {!isFirst && <Box sx={{ width: 0, flex: '1 1 0', minHeight: 4, borderLeft: `${dashedWidth} ${dashedStyle} ${dashedColor}` }} />}
                     {isFirst && <Box sx={{ flex: '1 1 0', minHeight: 4 }} />}
                     <Box sx={{ flexShrink: 0, zIndex: 1 }}>
-                        <TableRowsIcon sx={{ fontSize: 12, color: 'rgba(0,0,0,0.35)' }} />
+                        <TableIcon sx={{ width: 12, height: 12, color: 'rgba(0,0,0,0.35)' }} />
                     </Box>
                     {!isLast && <Box sx={{ width: 0, flex: '1 1 0', minHeight: 4, borderLeft: `${dashedWidth} ${dashedStyle} ${dashedColor}` }} />}
                     {isLast && <Box sx={{ flex: '1 1 0', minHeight: 4 }} />}
