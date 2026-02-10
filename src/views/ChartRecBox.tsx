@@ -292,7 +292,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                     .map(trigger => ({
                         name: trigger.resultTableId,
                         rows: tables.find(t2 => t2.id === trigger.resultTableId)?.rows,
-                        description: `Derive from ${trigger.sourceTableIds} with instruction: ${trigger.instruction}`,
+                        description: `Derive from ${tables.find(t2 => t2.id === trigger.resultTableId)?.derive?.source} with instruction: ${trigger.instruction}`,
                     }));
             }
 
@@ -622,7 +622,6 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                             dialog: dialog,
                             trigger: {
                                 tableId: tableId,
-                                sourceTableIds: selectedTableIds,
                                 instruction: instruction,
                                 displayInstruction: displayInstruction,
                                 chart: refChart, // No upfront chart reference
@@ -825,7 +824,6 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                     dialog: dialog || [],
                     trigger: {
                         tableId: triggerTableId,
-                        sourceTableIds: selectedTableIds,
                         instruction: question,
                         displayInstruction: displayInstruction,
                         chart: undefined, // Will be set after chart creation

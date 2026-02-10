@@ -598,11 +598,17 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
     let sortedVisDataFields = [...aggregateFields.map(f => `${f[0]}_${f[1]}`), ...groupByFields].sort();
 
     // Track which chart+table+requiredFields the current data belongs to (prevents showing stale data during transitions)
-    const [dataVersion, setDataVersion] = useState<string>(`${table.id}-${sortedVisDataFields.join("_")}`);
+    const computeVersionId = () => {
+        const contentSuffix = table.contentHash ? `-${table.contentHash.slice(0, 8)}` : `-${table.rows.length}`;
+        return `${table.id}-${sortedVisDataFields.join("_")}${contentSuffix}`;
+    };
+    const [dataVersion, setDataVersion] = useState<string>(computeVersionId());
     const currentRequestRef = useRef<string>('');
     
-    // Check if current data is stale (belongs to different table/fields)
-    const isDataStale = dataVersion !== `${table.id}-${sortedVisDataFields.join("_")}`;
+    // Check if current data is stale (belongs to different table/fields — ignoring contentHash for stale check 
+    // since we want to show the previous render while new data is loading)
+    const baseVersionId = `${table.id}-${sortedVisDataFields.join("_")}`;
+    const isDataStale = !dataVersion.startsWith(baseVersionId);
 
     // Use empty data if stale to avoid showing incorrect data during transitions
     const activeVisTableRows = isDataStale ? [] : visTableRows;
@@ -638,7 +644,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
             .then(data => {
                 // Only update if this is still the current request (not stale)
                 if (currentRequestRef.current === requestId) {
-                    const versionId = `${table.id}-${sortedVisDataFields.join("_")}`;
+                    const versionId = computeVersionId();
                     if (data.status == "success") {
                         setVisTableRows(data.rows);
                         setVisTableTotalRowCount(data.total_row_count);
@@ -664,7 +670,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
             // All rows available locally — sample in-memory
             let rowSample = _.sampleSize(table.rows, sampleSize);
             const clonedRows = structuredClone(rowSample);
-            const versionId = `${table.id}-${sortedVisDataFields.join("_")}`;
+            const versionId = computeVersionId();
             setVisTableRows(clonedRows);
             setVisTableTotalRowCount(table.rows.length);
             setDataVersion(versionId);
@@ -681,7 +687,9 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
     }, [])
 
     useEffect(() => {
-        const versionId = `${table.id}-${sortedVisDataFields.join("_")}`;
+        // Include contentHash in versionId so the cache invalidates when streaming/refreshed data changes
+        const contentSuffix = table.contentHash ? `-${table.contentHash.slice(0, 8)}` : `-${table.rows.length}`;
+        const versionId = `${table.id}-${sortedVisDataFields.join("_")}${contentSuffix}`;
 
         if (visFields.length > 0 && dataFieldsAllAvailable) {
             // Check cache first — avoid server round-trip on chart revisit

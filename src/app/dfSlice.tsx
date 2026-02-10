@@ -185,7 +185,8 @@ const initialState: DataFormulatorState = {
 let getUnrefedDerivedTableIds = (state: DataFormulatorState) => {
     // find tables directly referred by charts
     let allCharts = dfSelectors.getAllCharts(state);
-    let chartRefedTables = allCharts.map(chart => getDataTable(chart, state.tables, allCharts, state.conceptShelfItems)).map(t => t.id);
+    let chartRefedTables = allCharts.map(chart => getDataTable(chart, state.tables, allCharts, state.conceptShelfItems))
+        .filter(t => t != undefined).map(t => t.id);
     let tableWithDescendants = state.tables.filter(table => state.tables.some(t => t.derive?.trigger.tableId == table.id)).map(t => t.id);
 
     return state.tables.filter(table => table.derive && !tableWithDescendants.includes(table.id) && !chartRefedTables.includes(table.id)).map(t => t.id);
@@ -463,18 +464,50 @@ export const dataFormulatorSlice = createSlice({
         deleteTable: (state, action: PayloadAction<string>) => {
             let tableId = action.payload;
             
-            // Clean up virtual table from workspace before removing from state
+            // Find the table to delete
             let tableToDelete = state.tables.find(t => t.id == tableId);
-            if (tableToDelete) {
-                cleanupVirtualTablesFromWorkspace([tableToDelete]);
+            if (!tableToDelete) return;
+
+            // Clean up virtual table from workspace before removing from state
+            cleanupVirtualTablesFromWorkspace([tableToDelete]);
+
+            // Find direct children: tables derived from or triggered by this table
+            let directChildren = state.tables.filter(t => 
+                t.derive?.trigger.tableId === tableId || 
+                t.derive?.source.includes(tableId)
+            );
+
+            // If the deleted table is derived and has children, re-parent their triggers
+            if (directChildren.length > 0 && tableToDelete.derive) {
+                const parentTriggerId = tableToDelete.derive.trigger.tableId;
+
+                state.tables = state.tables.map(t => {
+                    if (!t.derive) return t;
+
+                    // Only update trigger.tableId — derive.source stays as-is
+                    // since each table has its own specific data sources
+                    if (t.derive.trigger.tableId !== tableId) return t;
+
+                    return {
+                        ...t,
+                        derive: {
+                            ...t.derive,
+                            trigger: {
+                                ...t.derive.trigger,
+                                tableId: parentTriggerId,
+                            }
+                        }
+                    };
+                });
             }
             
+            // Remove the table
             state.tables = state.tables.filter(t => t.id != tableId);
 
-            // feels problematic???
+            // Clean up concept shelf items referencing this table
             state.conceptShelfItems = state.conceptShelfItems.filter(f => !(f.tableRef == tableId));
             
-            // delete charts that refer to this table and intermediate charts that produce this table
+            // Delete charts that refer to this table
             let chartIdsToDelete = state.charts.filter(c => c.tableRef == tableId).map(c => c.id);
             deleteChartsRoutine(state, chartIdsToDelete);
         },
@@ -886,7 +919,8 @@ export const dataFormulatorSlice = createSlice({
         clearUnReferencedTables: (state) => {
             // remove all tables that are not referred
             let allCharts = dfSelectors.getAllCharts(state);
-            let referredTableId = allCharts.map(chart => getDataTable(chart, state.tables, allCharts, state.conceptShelfItems).id);
+            let referredTableId = allCharts.map(chart => getDataTable(chart, state.tables, allCharts, state.conceptShelfItems))
+                .filter(t => t != undefined).map(t => t.id);
             let tablesToRemove = state.tables.filter(t => t.derive && !referredTableId.some(tableId => tableId == t.id));
             
             // Clean up virtual tables from workspace

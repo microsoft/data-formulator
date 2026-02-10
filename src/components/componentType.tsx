@@ -34,8 +34,6 @@ export const duplicateField = (field: FieldItem) => {
 export interface Trigger {
     tableId: string, // on which table this action is triggered
 
-    sourceTableIds: string[], // which tables are used in the trigger
-
     chart?: Chart, // what's the intented chart from the user when running formulation
     instruction: string,
     displayInstruction: string, // the short instruction that will be displayed to the user

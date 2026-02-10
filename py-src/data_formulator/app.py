@@ -93,7 +93,7 @@ def _register_blueprints(disable_database: bool):
     from data_formulator.agent_routes import agent_bp
     
     # Import demo stream routes
-    from data_formulator.demo_stream_routes import demo_stream_bp, limiter as demo_stream_limiter
+    from data_formulator.demo_stream_routes import demo_stream_bp, limiter as demo_stream_limiter, start_iss_collector
     demo_stream_limiter.init_app(app)
     
     # Register blueprints
@@ -101,6 +101,9 @@ def _register_blueprints(disable_database: bool):
         app.register_blueprint(tables_bp)
     app.register_blueprint(agent_bp)
     app.register_blueprint(demo_stream_bp)
+    
+    # Start background ISS position collector
+    start_iss_collector()
 
 
 @app.route('/api/example-datasets')

@@ -235,10 +235,11 @@ def generate_data_summary(
         sections = []
 
         # 1. Table Header with basic stats
-        header = f"## {table_name_prefix} {idx + 1}: {table_name} (file: {data_file_path})"
+        header = f"## {table_name_prefix} {idx + 1}: {table_name}"
         if num_rows > 0:
             header += f" ({num_rows:,} rows × {num_cols} columns)"
         sections.append(header)
+        sections.append(f"- **file path:** `{data_file_path}`")
         sections.append("")  # Empty line for spacing
 
         # 2. Description (if available) - provides context first

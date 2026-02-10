@@ -147,8 +147,19 @@ export const ChatDialog: FC<ChatDialogProps> = function ChatDialog({code, dialog
                 {dialog.filter(entry => entry["role"] != 'system').map((chatEntry, idx) => {
 
                     let role = chatEntry['role'];
-                    let message : any = chatEntry['content'] as string;
+                    let content : any = chatEntry['content'];
                     const isUser = role === 'user';
+
+                    // Handle multimodal content (array with text + image_url objects)
+                    let message: string;
+                    if (Array.isArray(content)) {
+                        message = content
+                            .filter((part: any) => part.type === 'text')
+                            .map((part: any) => part.text)
+                            .join('\n');
+                    } else {
+                        message = content as string;
+                    }
 
                     message = message.trimEnd();
 

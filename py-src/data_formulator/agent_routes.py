@@ -343,6 +343,8 @@ def derive_data():
         
         max_repair_attempts = content["max_repair_attempts"] if "max_repair_attempts" in content else 1
         agent_coding_rules = content.get("agent_coding_rules", "")
+        current_visualization = content.get("current_visualization", None)
+        expected_visualization = content.get("expected_visualization", None)
 
         if "additional_messages" in content:
             prev_messages = content["additional_messages"]
@@ -376,7 +378,8 @@ def derive_data():
             else:
                 # Use unified Python agent that generates Python scripts with DuckDB + pandas
                 agent = DataTransformationAgent(client=client, workspace=workspace, agent_coding_rules=agent_coding_rules, max_display_rows=max_display_rows)
-                results = agent.run(input_tables, instruction, chart_type, chart_encodings, prev_messages)
+                results = agent.run(input_tables, instruction, prev_messages,
+                                    current_visualization=current_visualization, expected_visualization=expected_visualization)
 
             repair_attempts = 0
             while results[0]['status'] == 'error' and repair_attempts < max_repair_attempts:
@@ -386,7 +389,7 @@ def derive_data():
                 prev_dialog = results[0]['dialog']
 
                 if mode == "transform":
-                    results = agent.followup(input_tables, prev_dialog, [], chart_type, chart_encodings, new_instruction, n=1)
+                    results = agent.followup(input_tables, prev_dialog, [], new_instruction, n=1)
                 if mode == "recommendation":
                     results = agent.followup(input_tables, prev_dialog, [], new_instruction, n=1)
 
@@ -519,6 +522,8 @@ def refine_data():
         latest_data_sample = content["latest_data_sample"]
         max_repair_attempts = content.get("max_repair_attempts", 1)
         agent_coding_rules = content.get("agent_coding_rules", "")
+        current_visualization = content.get("current_visualization", None)
+        expected_visualization = content.get("expected_visualization", None)
 
         logger.info("== input tables ===>")
         for table in input_tables:
@@ -538,7 +543,8 @@ def refine_data():
         with WorkspaceWithTempData(workspace, temp_data) as workspace:
             # Use unified Python agent for followup transformations
             agent = DataTransformationAgent(client=client, workspace=workspace, agent_coding_rules=agent_coding_rules, max_display_rows=max_display_rows)
-            results = agent.followup(input_tables, dialog, latest_data_sample, chart_type, chart_encodings, new_instruction, n=1)
+            results = agent.followup(input_tables, dialog, latest_data_sample, new_instruction, n=1,
+                                    current_visualization=current_visualization, expected_visualization=expected_visualization)
 
             repair_attempts = 0
             while results[0]['status'] == 'error' and repair_attempts < max_repair_attempts:
@@ -546,7 +552,7 @@ def refine_data():
                 new_instruction = f"We run into the following problem executing the code, please fix it:\n\n{error_message}\n\nPlease think step by step, reflect why the error happens and fix the code so that no more errors would occur."
                 prev_dialog = results[0]['dialog']
 
-                results = agent.followup(input_tables, prev_dialog, [], chart_type, chart_encodings, new_instruction, n=1)
+                results = agent.followup(input_tables, prev_dialog, [], new_instruction, n=1)
                 repair_attempts += 1
 
         response = flask.jsonify({ "token": token, "status": "ok", "results": results})

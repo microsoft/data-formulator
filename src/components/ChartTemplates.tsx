@@ -612,17 +612,19 @@ const mapCharts: ChartTemplate[] = [
                         "longitude": { },
                         "latitude": { },
                         "size": {},
-                        "color": {}
+                        "color": {},
+                        "opacity": {}
                     }
                 }
             ]
         },
-        "channels": ["longitude", "latitude", "color", "size"],
+        "channels": ["longitude", "latitude", "color", "size", "opacity"],
         "paths": {
             "longitude": ["layer", 1, "encoding", "longitude"],
             "latitude": ["layer", 1, "encoding", "latitude"],
             "color": ["layer", 1, "encoding", "color"],
-            "size": ["layer", 1, "encoding", "size"]
+            "size": ["layer", 1, "encoding", "size"],
+            "opacity": ["layer", 1, "encoding", "opacity"]
         },
         "configProperties": [
             {

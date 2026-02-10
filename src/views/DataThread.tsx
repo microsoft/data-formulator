@@ -1513,7 +1513,9 @@ let SingleThreadGroupView: FC<{
                     }
                     handleCloseTableMenu();
                 }}
-                disabled={selectedTableForMenu ? tables.some(t => t.derive?.trigger.tableId === selectedTableForMenu.id) : true}
+                disabled={selectedTableForMenu 
+                    ? (!selectedTableForMenu.derive && tables.some(t => t.derive?.trigger.tableId === selectedTableForMenu.id)) 
+                    : true}
                 sx={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 1, color: 'warning.main' }}
             >
                 <DeleteIcon sx={{ fontSize: 16 }} color='warning'/>

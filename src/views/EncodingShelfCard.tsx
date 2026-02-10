@@ -375,7 +375,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                     .map(trigger => ({
                         name: trigger.resultTableId,
                         rows: tables.find(t2 => t2.id === trigger.resultTableId)?.rows,
-                        description: `Derive from ${trigger.sourceTableIds} with instruction: ${trigger.instruction}`,
+                        description: `Derive from ${tables.find(t2 => t2.id === trigger.resultTableId)?.derive?.source} with instruction: ${trigger.instruction}`,
                     }));
             }
 
@@ -496,7 +496,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
     };
 
 
-    let deriveNewData = (
+    let deriveNewData = async (
         instruction: string, 
         mode: 'formulate' | 'ideate' = 'formulate', 
         overrideTableId?: string,
@@ -536,6 +536,30 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
 
         let token = String(Date.now());
 
+        // Build chart visualization context
+        let chartComplete = checkChartAvailability(chart, conceptShelfItems, currentTable.rows);
+        let chartSpec = (mode == 'formulate' && Object.keys(activeSimpleEncodings).length > 0) ? {
+            chart_type: chartType,
+            chart_encodings: activeSimpleEncodings,
+            ...(chart.config ? { chart_options: chart.config } : {})
+        } : undefined;
+
+        let currentChartImage: string | null | undefined = undefined;
+        if (chartComplete && chartSpec) {
+            currentChartImage = await vegaLiteSpecToPng(assembleVegaChart(
+                chart.chartType, chart.encodingMap, activeFields, currentTable.rows,
+                currentTable.metadata, 20, false, 100, 80, false, chart.config
+            ));
+        }
+
+        // current_visualization: chart is complete (image optional + spec)
+        // expected_visualization: chart is incomplete (spec only)
+        let currentVisualization = (chartComplete && chartSpec) ? {
+            chart_spec: chartSpec,
+            ...(currentChartImage ? { chart_image: currentChartImage } : {})
+        } : undefined;
+        let expectedVisualization = (!chartComplete && chartSpec) ? { chart_spec: chartSpec } : undefined;
+
         // if nothing is specified, just a formulation from the beginning
         let messageBody = JSON.stringify({
             token: token,
@@ -550,7 +574,9 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
             chart_encodings: mode == 'formulate' ? activeSimpleEncodings : {},
             extra_prompt: instruction,
             model: activeModel,
-            agent_coding_rules: agentRules.coding
+            agent_coding_rules: agentRules.coding,
+            current_visualization: currentVisualization,
+            expected_visualization: expectedVisualization,
         })
 
         let engine = getUrls().DERIVE_DATA;
@@ -583,7 +609,9 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                     extra_prompt: instruction,
                     model: activeModel,
                     additional_messages: additionalMessages,
-                    agent_coding_rules: agentRules.coding
+                    agent_coding_rules: agentRules.coding,
+                    current_visualization: currentVisualization,
+                    expected_visualization: expectedVisualization,
                 });
                 engine = getUrls().DERIVE_DATA;
             } else {
@@ -602,7 +630,9 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                     latest_data_sample: currentTable.rows.slice(0, 10),
                     new_instruction: instruction,
                     model: activeModel,
-                    agent_coding_rules: agentRules.coding
+                    agent_coding_rules: agentRules.coding,
+                    current_visualization: currentVisualization,
+                    expected_visualization: expectedVisualization,
                 })
                 engine = getUrls().REFINE_DATA;
             } 
@@ -684,7 +714,6 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
 
                             let currentTrigger: Trigger =  { 
                                 tableId: currentTable.id, 
-                                sourceTableIds: actionTableIds,
                                 instruction: instruction, 
                                 displayInstruction: displayInstruction,
                                 chart: triggerChartSpec,

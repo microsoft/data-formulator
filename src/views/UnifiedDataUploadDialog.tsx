@@ -499,7 +499,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
     const [urlPreviewActiveIndex, setUrlPreviewActiveIndex] = useState<number>(0);
     
     // Example URLs state
-    const [exampleUrls, setExampleUrls] = useState<Array<{ label: string; url: string; refreshSeconds: number }>>([]);
+    const [exampleUrls, setExampleUrls] = useState<Array<{ label: string; url: string; refreshSeconds: number; resetUrl?: string }>>([]); 
 
     // Sample datasets state
     const [datasetPreviews, setDatasetPreviews] = useState<DatasetMetadata[]>([]);
@@ -584,7 +584,8 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                     .map((ex: any) => ({
                         label: ex.name,
                         url: ex.url,
-                        refreshSeconds: ex.refresh_seconds || 60
+                        refreshSeconds: ex.refresh_seconds || 60,
+                        resetUrl: ex.reset_url || undefined,
                 }));
                 
                 setExampleUrls(demoExamples);
@@ -1305,6 +1306,33 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                                 >
                                                     {example.label}
                                                 </Typography>
+                                                {example.resetUrl && (
+                                                    <Typography
+                                                        component="span"
+                                                        variant="caption"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            fetchWithIdentity(`${window.location.origin}${example.resetUrl}`, { method: 'POST' })
+                                                                .then(() => {
+                                                                    console.log('Reset successful');
+                                                                })
+                                                                .catch(err => console.error('Reset failed:', err));
+                                                        }}
+                                                        sx={{
+                                                            fontSize: '0.7rem',
+                                                            color: 'text.secondary',
+                                                            ml: 1,
+                                                            cursor: 'pointer',
+                                                            display: 'inline-flex',
+                                                            alignItems: 'center',
+                                                            gap: 0.25,
+                                                            '&:hover': { color: 'warning.main' },
+                                                        }}
+                                                    >
+                                                        <RestartAltIcon sx={{ fontSize: 12 }} />
+                                                        reset
+                                                    </Typography>
+                                                )}
                                             </Box>
                                         ))}
                                     </Box>

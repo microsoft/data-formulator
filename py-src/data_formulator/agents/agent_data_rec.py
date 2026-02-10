@@ -25,8 +25,8 @@ The [CONTEXT] shows what the current dataset is, and the [GOAL] describes what t
 
 **About the execution environment:**
 - You can use BOTH DuckDB SQL and pandas operations in the same script
-- The script will run in the workspace data directory where all files are located
-- You can reference files directly by their filename (e.g., 'sales_data.parquet')
+- The script will run in the workspace data directory
+- Use the file path shown in the [CONTEXT] section (under "**file path:**") to load data (e.g., `read_parquet('student_exam.parquet')` or `pd.read_parquet('data/sales.parquet')`)
 - **Allowed libraries:** pandas, numpy, duckdb, math, datetime, json, statistics, collections, re, sklearn, scipy, random, itertools, functools, operator, time
 - **Not allowed:** matplotlib, plotly, seaborn, requests, subprocess, os, sys, io, or any other library not listed above. Do NOT import them — the sandbox will reject the import.
 - File system access (open, write) and network access are also forbidden.
@@ -199,11 +199,14 @@ The script should be as simple as possible and easily readable. If there is no d
 
 **Example data loading patterns:**
 
+Use the **file path** shown in the [CONTEXT] section to load data:
+
 ```python
-# Option 1: Load with DuckDB SQL
+# Option 1: Load with DuckDB SQL (use file path from context)
 import pandas as pd
 import duckdb
 
+# If context shows: - **file path:** `student_exam.parquet`
 df = duckdb.sql("""
     SELECT
         student,
@@ -218,9 +221,10 @@ result_df = df
 ```
 
 ```python
-# Option 2: Load with pandas then transform
+# Option 2: Load with pandas (use file path from context)
 import pandas as pd
 
+# If context shows: - **file path:** `student_exam.parquet`
 df = pd.read_parquet('student_exam.parquet')
 df['average_score'] = (df['math'] + df['reading'] + df['writing']) / 3.0
 df['rank'] = df['average_score'].rank(ascending=False, method='min')
@@ -261,8 +265,8 @@ For example:
 
 Here are our datasets, here are their field summaries and samples:
 
-## Table 1: student_exam (student_exam.parquet)
-(1000 rows × 5 columns)
+## Table 1: student_exam (1000 rows × 5 columns)
+- **file path:** `student_exam.parquet`
 
 ### Schema (5 fields)
   - student -- type: int64, values: 1, 2, 3, ..., 997, 998, 999, 1000
@@ -365,10 +369,13 @@ class DataRecAgent(object):
                 try:
                     # Import the sandbox execution function
                     from data_formulator.sandbox.py_sandbox import run_unified_transform_in_sandbox
-                    from flask import current_app
 
-                    # Get exec_python_in_subprocess setting
-                    exec_python_in_subprocess = current_app.config.get('CLI_ARGS', {}).get('exec_python_in_subprocess', False)
+                    # Get exec_python_in_subprocess setting (with fallback for non-Flask contexts like MCP server)
+                    try:
+                        from flask import current_app
+                        exec_python_in_subprocess = current_app.config.get('CLI_ARGS', {}).get('exec_python_in_subprocess', False)
+                    except (ImportError, RuntimeError):
+                        exec_python_in_subprocess = False
 
                     # Execute the Python script in sandbox
                     execution_result = run_unified_transform_in_sandbox(

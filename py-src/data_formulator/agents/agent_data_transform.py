@@ -23,8 +23,8 @@ The users' instruction includes "chart_type" and "chart_encodings" that describe
 
 **About the execution environment:**
 - You can use BOTH DuckDB SQL and pandas operations in the same script
-- The script will run in the workspace data directory where all files are located
-- You can reference files directly by their filename (e.g., 'sales_data.parquet')
+- The script will run in the workspace data directory
+- Use the file path shown in the [CONTEXT] section (under "**file path:**") to load data (e.g., `read_parquet('student_exam.parquet')` or `pd.read_parquet('data/sales.parquet')`)
 - **Allowed libraries:** pandas, numpy, duckdb, math, datetime, json, statistics, collections, re, sklearn, scipy, random, itertools, functools, operator, time
 - **Not allowed:** matplotlib, plotly, seaborn, requests, subprocess, os, sys, io, or any other library not listed above. Do NOT import them — the sandbox will reject the import.
 - File system access (open, write) and network access are also forbidden.
@@ -125,11 +125,14 @@ The script should be as simple as possible and easily readable. If there is no d
 
 **Example data loading patterns:**
 
+Use the **file path** shown in the [CONTEXT] section to load data:
+
 ```python
-# Option 1: Load with DuckDB SQL
+# Option 1: Load with DuckDB SQL (use file path from context)
 import pandas as pd
 import duckdb
 
+# If context shows: - **file path:** `sales_data.parquet`
 df = duckdb.sql("""
     SELECT
         date,
@@ -138,7 +141,7 @@ df = duckdb.sql("""
     GROUP BY date
 """).df()
 
-# Option 2: Load with pandas
+# Option 2: Load with pandas (use file path from context)
 import pandas as pd
 df = pd.read_parquet('sales_data.parquet')
 
@@ -171,8 +174,8 @@ EXAMPLE='''
 
 Here are 1 dataset with their summaries:
 
-## Table 1: weather_seattle_atlanta (weather_seattle_atlanta.parquet)
-(548 rows × 3 columns)
+## Table 1: weather_seattle_atlanta (548 rows × 3 columns)
+- **file path:** `weather_seattle_atlanta.parquet`
 
 ### Schema (3 fields)
   - Date -- type: VARCHAR, values: 1/1/2020, 1/10/2020, 1/11/2020, ..., 9/7/2020, 9/8/2020, 9/9/2020
@@ -282,10 +285,13 @@ class DataTransformationAgent(object):
                 try:
                     # Import the sandbox execution function
                     from data_formulator.sandbox.py_sandbox import run_unified_transform_in_sandbox
-                    from flask import current_app
 
-                    # Get exec_python_in_subprocess setting
-                    exec_python_in_subprocess = current_app.config.get('CLI_ARGS', {}).get('exec_python_in_subprocess', False)
+                    # Get exec_python_in_subprocess setting (with fallback for non-Flask contexts like MCP server)
+                    try:
+                        from flask import current_app
+                        exec_python_in_subprocess = current_app.config.get('CLI_ARGS', {}).get('exec_python_in_subprocess', False)
+                    except (ImportError, RuntimeError):
+                        exec_python_in_subprocess = False
 
                     # Execute the Python script in sandbox
                     execution_result = run_unified_transform_in_sandbox(
@@ -358,44 +364,67 @@ class DataTransformationAgent(object):
         return candidates
 
 
-    def run(self, input_tables, description, chart_type: str, chart_encodings: dict, prev_messages: list[dict] = [], n=1):
+    def run(self, input_tables, description, prev_messages: list[dict] = [], n=1,
+             current_visualization=None, expected_visualization=None):
         """Args:
             input_tables: list[dict], each dict contains 'name' (table name in workspace)
             description: str, the description of the data transformation
-            chart_type: str, the chart type for visualization
-            chart_encodings: dict, the chart encodings mapping visualization channels to fields
             prev_messages: list[dict], the previous messages
             n: int, the number of candidates
+            current_visualization: dict or None, contains chart_spec and optional chart_image for complete charts
+            expected_visualization: dict or None, contains chart_spec for incomplete charts
         """
         # Generate data summary with file references
         from data_formulator.agents.agent_utils import generate_data_summary
         data_summary = generate_data_summary(input_tables, workspace=self.workspace)
 
-        goal = {
-            "instruction": description,
-            "chart_type": chart_type,
-            "chart_encodings": chart_encodings,
-        }
+        # Build visualization context section
+        vis_section = ""
+        if current_visualization:
+            vis_section = f"\n\n[CURRENT VISUALIZATION] This is the current visualization the user has:\n\n{json.dumps(current_visualization.get('chart_spec', {}), indent=4)}"
+        elif expected_visualization:
+            vis_section = f"\n\n[EXPECTED VISUALIZATION] This is the visualization expected by the user:\n\n{json.dumps(expected_visualization.get('chart_spec', {}), indent=4)}"
 
-        user_query = f"[CONTEXT]\n\n{data_summary}\n\n[GOAL]\n\n{json.dumps(goal, indent=4)}"
+        # Order: context → visualization → goal
         if len(prev_messages) > 0:
-            user_query = f"The user wants a new transformation based off the following updated context and goal:\n\n[CONTEXT]\n\n{data_summary}\n\n[GOAL]\n\n{description}"
+            user_query = f"The user wants a new transformation based off the following updated context and goal:\n\n[CONTEXT]\n\n{data_summary}{vis_section}\n\n[GOAL]\n\n{description}"
+        else:
+            user_query = f"[CONTEXT]\n\n{data_summary}{vis_section}\n\n[GOAL]\n\n{description}"
 
         logger.info(user_query)
 
         # Filter out system messages from prev_messages
         filtered_prev_messages = [msg for msg in prev_messages if msg.get("role") != "system"]
 
-        messages = [{"role":"system", "content": self.system_prompt},
-                    *filtered_prev_messages,
-                    {"role":"user","content": user_query}]
+        # Build user message content: include chart image if available
+        chart_image = current_visualization.get('chart_image') if current_visualization else None
+        try:
+            if chart_image:
+                user_content = [
+                    {"type": "text", "text": user_query},
+                    {"type": "image_url", "image_url": {"url": chart_image, "detail": "high"}}
+                ]
+            else:
+                user_content = user_query
 
-        response = self.client.get_completion(messages = messages)
+            messages = [{"role":"system", "content": self.system_prompt},
+                        *filtered_prev_messages,
+                        {"role":"user","content": user_content}]
+
+            response = self.client.get_completion(messages = messages)
+        except Exception as e:
+            # Fallback to text-only if model doesn't support images
+            logger.warning(f"Image-based completion failed, falling back to text-only: {e}")
+            messages = [{"role":"system", "content": self.system_prompt},
+                        *filtered_prev_messages,
+                        {"role":"user","content": user_query}]
+            response = self.client.get_completion(messages = messages)
 
         return self.process_gpt_response(response, messages)
 
 
-    def followup(self, input_tables, dialog, latest_data_sample, chart_type: str, chart_encodings: dict, new_instruction: str, n=1):
+    def followup(self, input_tables, dialog, latest_data_sample, new_instruction: str, n=1,
+                 current_visualization=None, expected_visualization=None):
         """
         Followup transformation based on previous dialog and new instruction.
 
@@ -403,27 +432,51 @@ class DataTransformationAgent(object):
             input_tables: list of input tables
             dialog: previous conversation history
             latest_data_sample: sample of the latest transformation result
-            chart_type: chart type
-            chart_encodings: chart encodings
             new_instruction: new user instruction for followup
             n: number of candidates
+            current_visualization: dict or None, contains chart_spec and optional chart_image for complete charts
+            expected_visualization: dict or None, contains chart_spec for incomplete charts
         """
-        goal = {
-            "followup_instruction": new_instruction,
-            "chart_type": chart_type,
-            "chart_encodings": chart_encodings
-        }
+        if not new_instruction or not new_instruction.strip():
+            new_instruction = "Update the transformation based on the updated visualization context."
 
-        logger.info(f"GOAL: \n\n{goal}")
+        logger.info(f"GOAL: \n\n{new_instruction}")
 
         updated_dialog = [{"role":"system", "content": self.system_prompt}, *dialog[1:]]
 
         # Format sample data
         sample_data_str = pd.DataFrame(latest_data_sample).head(10).to_string() + '\n......'
 
-        messages = [*updated_dialog, {"role":"user",
-                              "content": f"This is the result from the latest transformation:\n\n{sample_data_str}\n\nUpdate the Python script above based on the following instruction:\n\n{json.dumps(goal, indent=4)}"}]
+        # Build visualization context section
+        vis_section = ""
+        if current_visualization:
+            vis_section = f"\n\n[CURRENT VISUALIZATION] This is the current visualization the user has:\n\n{json.dumps(current_visualization.get('chart_spec', {}), indent=4)}"
+        elif expected_visualization:
+            vis_section = f"\n\n[EXPECTED VISUALIZATION] This is the visualization expected by the user:\n\n{json.dumps(expected_visualization.get('chart_spec', {}), indent=4)}"
 
-        response = self.client.get_completion(messages = messages)
+        # Order: data sample → visualization → instruction
+        followup_text = f"This is the result from the latest transformation:\n\n{sample_data_str}{vis_section}\n\nUpdate the Python script above based on the following instruction:\n\n{new_instruction}"
+
+        logger.info(followup_text)
+
+        # Build user message content: include chart image if available
+        chart_image = current_visualization.get('chart_image') if current_visualization else None
+        try:
+            if chart_image:
+                user_content = [
+                    {"type": "text", "text": followup_text},
+                    {"type": "image_url", "image_url": {"url": chart_image, "detail": "high"}}
+                ]
+            else:
+                user_content = followup_text
+
+            messages = [*updated_dialog, {"role":"user", "content": user_content}]
+
+            response = self.client.get_completion(messages = messages)
+        except Exception as e:
+            # Fallback to text-only if model doesn't support images
+            logger.warning(f"Image-based completion failed, falling back to text-only: {e}")
+            messages = [*updated_dialog, {"role":"user", "content": followup_text}]
+            response = self.client.get_completion(messages = messages)
 
         return self.process_gpt_response(response, messages)
