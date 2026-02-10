@@ -323,7 +323,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
         .map(([group, channelList]) => {
 
             let component = <Box key={`encoding-group-box-${group}`}>
-                <Typography key={`encoding-group-${group}`} sx={{ fontSize: 10, color: "text.secondary", marginTop: "6px", marginBottom: "2px" }}>{group}</Typography>
+                {group && <Typography key={`encoding-group-${group}`} sx={{ fontSize: 10, color: "text.secondary", marginBottom: "3px" }}>{group}</Typography>}
                 {channelList.filter(channel => Object.keys(encodingMap).includes(channel))
                     .map(channel => <EncodingBox key={`shelf-${channel}`} channel={channel as Channel} chartId={chartId} tableId={currentTable.id} />)}
             </Box>
@@ -830,7 +830,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
     // zip multiple components together
     const w: any = (a: any[], b: any[]) => a.length ? [a[0], ...w(b, a.slice(1))] : b;
 
-    let formulateInputBox = <Box key='text-input-boxes' sx={{display: 'flex', flexDirection: 'row', flex: 1, padding: '0px 4px'}}>
+    let formulateInputBox = <Box key='text-input-boxes' sx={{display: 'flex', flexDirection: 'row', flex: 1, padding: '0px 2px'}}>
         <TextField
             id="outlined-multiline-flexible"
             sx={{
@@ -932,7 +932,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
             display: 'flex', 
             alignItems: 'center', 
             gap: 1, 
-            padding: '4px 8px',
+            padding: '4px 10px',
             borderBottom: `1px solid ${borderColor.component}`,
             backgroundColor: 'rgba(0, 0, 0, 0.02)'
         }}>
@@ -1002,7 +1002,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
     );
 
     let channelComponent = (
-        <Box sx={{ width: "100%", minWidth: "210px", height: '100%', display: "flex", flexDirection: "column" }}>
+        <Box sx={{ width: "100%", minWidth: "210px", height: '100%', display: "flex", flexDirection: "column", gap: '6px' }}>
             <Box key='mark-selector-box' sx={{ flex: '0 0 auto' }}>
                 <FormControl sx={{ m: 1, minWidth: 120, width: "100%", margin: "0px 0"}} size="small">
                     <Select
@@ -1092,13 +1092,14 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                         })}
                     </Select>
                 </FormControl>
-                {/* Template-driven config property selectors */}
-                {(() => {
+            </Box>
+            {/* Template-driven config property selectors */}
+            {(() => {
                     const template = getChartTemplate(chart.chartType);
                     const configProps = template?.configProperties;
                     if (!configProps || configProps.length === 0) return null;
                     return (
-                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: '3px', margin: '6px 3px 2px 3px' }}>
+                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                             {configProps.map((propDef) => {
                                 if (propDef.type === 'slider') {
                                     const currentValue = chart.config?.[propDef.key] ?? propDef.defaultValue ?? propDef.min ?? 0;
@@ -1112,7 +1113,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                                         }}>
                                             <Typography variant="caption" sx={{
                                                 padding: '0px 8px', color: 'text.secondary', fontSize: 10,
-                                                whiteSpace: 'nowrap', fontWeight: 500, minWidth: '40px',
+                                                whiteSpace: 'nowrap', fontWeight: 500, minWidth: '40px', userSelect: 'none',
                                             }}>
                                                 {propDef.label}
                                             </Typography>
@@ -1155,7 +1156,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                                     }}>
                                         <Typography variant="caption" sx={{
                                             padding: '0px 8px', color: 'text.secondary', fontSize: 10,
-                                            whiteSpace: 'nowrap', fontWeight: 500,
+                                            whiteSpace: 'nowrap', fontWeight: 500, userSelect: 'none',
                                         }}>
                                             {propDef.label}
                                         </Typography>
@@ -1189,7 +1190,6 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                         </Box>
                     );
                 })()}
-            </Box>
             <Box key='encoding-groups' sx={{ flex: '1 1 auto' }} style={{ height: "calc(100% - 100px)" }} className="encoding-list">
                 {encodingBoxGroups}
             </Box>
@@ -1207,7 +1207,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
         }}>
             <ModeToggleHeader />
             {ideateMode ? (
-                <Box sx={{ padding: 1 }}>
+                <Box sx={{ padding: '8px 10px' }}>
                     <Tooltip title={`get ideas for visualization`}>
                         <span>
                             <Button 
@@ -1229,7 +1229,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                     {ideasSection}
                 </Box>
             ) : (
-                <Box sx={{ padding: 1 }}>
+                <Box sx={{ padding: '8px 10px' }}>
                     {channelComponent}
                 </Box>
             )}
