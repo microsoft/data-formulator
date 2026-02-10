@@ -246,7 +246,6 @@ export let buildTableCard = (props: BuildTableCardProps) => {
                     cursor: 'pointer',
                     padding: '2px 4px',
                     borderRadius: '4px',
-                    transition: transition.fast,
                     '&:hover': {
                         backgroundColor: 'rgba(0, 0, 0, 0.04)',
                         boxShadow: shadow.sm
@@ -304,7 +303,7 @@ export let buildTableCard = (props: BuildTableCardProps) => {
             sx={{ width: '100%', 
                 backgroundColor: primaryBgColor,
                 ...ComponentBorderStyle,
-                ...(isHighlighted ? { borderColor: 'primary.main' } : {}),
+                ...(isHighlighted ? { borderLeft: '2px solid', borderLeftColor: 'primary.main' } : {}),
                 borderRadius: '6px',
                 }}
             onClick={() => {

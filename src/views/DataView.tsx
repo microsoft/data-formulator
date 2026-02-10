@@ -6,6 +6,7 @@ import React, { FC, useEffect, useMemo } from 'react';
 import _ from 'lodash';
 
 import { Typography, Box, Link, Breadcrumbs, useTheme, Fade } from '@mui/material';
+import { alpha } from '@mui/material/styles';
 
 import '../scss/DataView.scss';
 

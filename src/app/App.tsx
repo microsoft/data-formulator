@@ -14,6 +14,7 @@ import {
 import { getBrowserId } from './identity';
 
 import { red, purple, blue, brown, yellow, orange, } from '@mui/material/colors';
+import { palettes, activePaletteKey, bgAlpha } from './tokens';
 
 import _ from 'lodash';
 
@@ -612,45 +613,19 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
             ].join(",")
         },
         // Default Material UI palette
-        // palette: {
-        //     primary: {
-        //         main: blue[700]
-        //     },
-        //     secondary: {
-        //         main: purple[700]
-        //     },
-        //     derived: {
-        //         main: yellow[700], 
-        //     },
-        //     custom: {
-        //         main: orange[700], //lightsalmon
-        //     },
-        //     warning: {
-        //         main: '#bf5600', // New accessible color, original (#ed6c02) has insufficient color contrast of 3.11
-        //     },
-        // },
-       // Microsoft Fluent UI palette (alternative option)
-        palette: {
-            primary: {
-                main: '#0078d4',      // Fluent UI themePrimary (Microsoft Blue)
-                bgcolor: '#f2f8fd',   // solid equiv of 5% #0078d4 on white
-            },
-            secondary: {
-                main: '#8764b8',      // Fluent UI purple
-                bgcolor: '#f7f5fb',   // solid equiv of 5% #8764b8 on white
-            },
-            derived: {
-                main: '#ffb900',     // Fluent UI yellow/gold
-                bgcolor: '#fffbf2',  // solid equiv of 5% #ffb900 on white
-            },
-            custom: {
-                main: '#d83b01',     // Fluent UI orange (Office orange)
-                bgcolor: '#fdf5f2',  // solid equiv of 5% #d83b01 on white
-            },
-            warning: {
-                main: '#a4262c',     // Fluent UI red (accessible)
-            },
-        },
+        // Active palette from tokens — change activePaletteKey in tokens.ts to switch
+        // Available: material, fluent, vivid, jewel, electric, tealCoral, copilot
+        palette: (() => {
+            const p = palettes[activePaletteKey];
+            const bg = (color: string) => alpha(color, bgAlpha);
+            return {
+                primary:   { main: p.primary.main,   bgcolor: bg(p.primary.main)   },
+                secondary: { main: p.secondary.main, bgcolor: bg(p.secondary.main) },
+                derived:   { main: p.derived.main,   bgcolor: bg(p.derived.main)   },
+                custom:    { main: p.custom.main,    bgcolor: bg(p.custom.main)    },
+                warning:   { main: p.warning.main },
+            };
+        })(),
     });
 
     // Check if we're on the about page

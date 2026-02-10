@@ -129,13 +129,13 @@ const DraggableHeader: React.FC<DraggableHeaderProps> = ({
         }),
     }), [field]);
 
-    let backgroundColor = "white";
+    let backgroundColor: string;
     let borderBottomColor = theme.palette.primary.main;
     if (columnDef.source == "custom") {
-        backgroundColor = alpha(theme.palette.custom.main, 0.05);
+        backgroundColor = theme.palette.custom.bgcolor || alpha(theme.palette.custom.main, 0.1);
         borderBottomColor = theme.palette.custom.main;
     } else {
-        backgroundColor = alpha(theme.palette.primary.main, 0.05);
+        backgroundColor = theme.palette.primary.bgcolor || alpha(theme.palette.primary.main, 0.1);
         borderBottomColor = theme.palette.primary.main;
     }
 

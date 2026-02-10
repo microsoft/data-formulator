@@ -65,7 +65,7 @@ import StopIcon from '@mui/icons-material/Stop';
 import { useDataRefresh } from '../app/useDataRefresh';
 import { AgentStatusBox, buildChartCard, buildTriggerCard, buildTableCard, BuildTableCardProps } from './DataThreadCards';
 import { UnifiedDataUploadDialog } from './UnifiedDataUploadDialog';
-import { ViewBorderStyle, transition, radius } from '../app/tokens';
+import { ViewBorderStyle, transition, radius, borderColor } from '../app/tokens';
 
 
 export const ThinkingBanner = (message: string, sx?: SxProps) => (
@@ -505,11 +505,11 @@ const WorkspacePanel: FC<{
 
     return (
         <Box sx={{ ...sx,
-            transition: transition.fast,
             padding: '6px',
+            pb: 1,
+            mb: 0.5,
             backgroundColor: 'rgba(0,0,0,0.02)',
-            borderRadius: '6px',
-            border: '1px solid rgba(0,0,0,0.06)',
+            borderBottom: `1px solid ${borderColor.divider}`,
         }}>
             <Box
                 sx={{
@@ -526,16 +526,64 @@ const WorkspacePanel: FC<{
                 onClick={() => setWorkspaceExpanded(!workspaceExpanded)}
             >
                 {workspaceExpanded ?
-                    <ExpandMoreIcon sx={{ fontSize: 14, color: 'rgba(0,0,0,0.4)' }} /> :
-                    <ChevronRightIcon sx={{ fontSize: 14, color: 'rgba(0,0,0,0.4)' }} />
+                    <ExpandMoreIcon sx={{ fontSize: 14, color: 'rgba(0,0,0,0.5)' }} /> :
+                    <ChevronRightIcon sx={{ fontSize: 14, color: 'rgba(0,0,0,0.5)' }} />
                 }
-                <Typography sx={{ fontSize: 10, fontWeight: 600, color: 'rgba(0,0,0,0.4)', textTransform: 'uppercase', letterSpacing: '0.5px', ml: 0.5 }}>
+                <Typography sx={{ fontSize: 10, fontWeight: 600, color: 'rgba(0,0,0,0.55)', textTransform: 'uppercase', letterSpacing: '0.5px', ml: 0.5 }}>
                     Workspace
                 </Typography>
             </Box>
 
             {workspaceExpanded && (
                 <Box sx={{ display: 'flex', flexDirection: 'column', gap: '2px', mt: '4px', ml: '14px' }}>
+                    <Box
+                        sx={{
+                            position: 'relative',
+                            pl: 1.5,
+                            '&::before': {
+                                content: '""',
+                                position: 'absolute',
+                                left: 0,
+                                top: 0,
+                                bottom: tables.length > 0 ? 0 : 'calc(100% - 10px)',
+                                width: '1px',
+                                backgroundColor: borderColor.divider,
+                            },
+                            '&::after': {
+                                content: '""',
+                                position: 'absolute',
+                                left: 0,
+                                top: '10px',
+                                width: '8px',
+                                height: '1px',
+                                backgroundColor: borderColor.divider,
+                            }
+                        }}
+                    >
+                        <Box
+                            sx={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 0.5,
+                                px: 0.75,
+                                py: '3px',
+                                borderRadius: '3px',
+                                cursor: 'pointer',
+                                fontSize: 11,
+                                width: 'fit-content',
+                                backgroundColor: theme.palette.primary.main,
+                                '&:hover': {
+                                    backgroundColor: theme.palette.primary.dark,
+                                },
+                            }}
+                            onClick={() => setUploadDialogOpen(true)}
+                        >
+                            <AddIcon sx={{ fontSize: 14, color: 'white', flexShrink: 0 }} />
+                            <Typography sx={{ fontSize: 11, color: 'white', fontWeight: 500 }}>
+                                Add Data
+                            </Typography>
+                        </Box>
+                    </Box>
                     {tables.map((table, tableIndex) => {
                         const isTableActive = focusedTableId === table.id;
                         const tableCharts = chartElements.filter(ce => ce.tableId === table.id);
@@ -567,7 +615,7 @@ const WorkspacePanel: FC<{
                                         top: 0,
                                         bottom: isLastTable ? 'calc(100% - 10px)' : 0,
                                         width: '1px',
-                                        backgroundColor: 'rgba(0,0,0,0.08)',
+                                        backgroundColor: borderColor.divider,
                                     },
                                     '&::after': {
                                         content: '""',
@@ -576,7 +624,7 @@ const WorkspacePanel: FC<{
                                         top: '10px',
                                         width: '8px',
                                         height: '1px',
-                                        backgroundColor: 'rgba(0,0,0,0.08)',
+                                        backgroundColor: borderColor.divider,
                                     }
                                 }}
                             >
@@ -643,7 +691,7 @@ const WorkspacePanel: FC<{
                                                             top: 0,
                                                             bottom: isLast ? '50%' : 0,
                                                             width: '1px',
-                                                            backgroundColor: 'rgba(0,0,0,0.08)',
+                                                            backgroundColor: borderColor.divider,
                                                         },
                                                         '&::after': {
                                                             content: '""',
@@ -652,7 +700,7 @@ const WorkspacePanel: FC<{
                                                             top: '50%',
                                                             width: '8px',
                                                             height: '1px',
-                                                            backgroundColor: 'rgba(0,0,0,0.08)',
+                                                            backgroundColor: borderColor.divider,
                                                         }
                                                     }}
                                                 >
@@ -662,9 +710,9 @@ const WorkspacePanel: FC<{
                                                 >
                                                     {getChartIcon(chart.chartType)}
                                                     <Typography sx={{
-                                                        fontSize: 10,
+                                                        fontSize: 11,
                                                         fontWeight: isChartActive ? 600 : 400,
-                                                        color: isChartActive ? 'primary.main' : 'text.secondary',
+                                                        color: isChartActive ? 'primary.main' : 'text.primary',
                                                         overflow: 'hidden',
                                                         textOverflow: 'ellipsis',
                                                         whiteSpace: 'nowrap',
@@ -682,33 +730,6 @@ const WorkspacePanel: FC<{
                             </Box>
                         );
                     })}
-                    <Box
-                        sx={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 0.5,
-                            px: 0.75,
-                            py: '3px',
-                            mt: '3px',
-                            borderRadius: '3px',
-                            cursor: 'pointer',
-                            fontSize: 11,
-                            transition: transition.fast,
-                            border: '1px solid',
-                            borderColor: alpha(theme.palette.primary.main, 0.3),
-                            backgroundColor: alpha(theme.palette.primary.main, 0.02),
-                            '&:hover': {
-                                backgroundColor: alpha(theme.palette.primary.main, 0.08),
-                                borderColor: alpha(theme.palette.primary.main, 0.5),
-                            },
-                        }}
-                        onClick={() => setUploadDialogOpen(true)}
-                    >
-                        <AddIcon sx={{ fontSize: 14, color: 'primary.main', flexShrink: 0 }} />
-                        <Typography sx={{ fontSize: 11, color: 'primary.main', fontWeight: 500 }}>
-                            Add Data
-                        </Typography>
-                    </Box>
                 </Box>
             )}
 
@@ -1205,17 +1226,27 @@ let SingleThreadGroupView: FC<{
         }} />;
     };
 
-    const renderTimelineItem = (item: typeof timelineItems[0], index: number, isLast: boolean) => {
+    const hasHighlighting = highlightedTableIds.length > 0;
+    // Whether the thread header is highlighted (any non-used-table item in this thread is highlighted)
+    const headerHL = timelineItems.some(item => item.highlighted && item.type !== 'used-table');
+
+    const renderTimelineItem = (item: typeof timelineItems[0], index: number, isLast: boolean, nextHighlighted: boolean) => {
         const isTrigger = item.type === 'trigger' || item.type === 'leaf-trigger';
         const isTable = item.type === 'table' || item.type === 'leaf-table' || item.type === 'used-table';
         const isChart = item.type === 'chart';
         const dashedColor = item.highlighted ? theme.palette.primary.main : 'rgba(0,0,0,0.4)';
         const dashedWidth = item.highlighted ? '2px' : '1px';
         const dashedStyle = item.highlighted ? 'solid' : 'dashed';
+        // Bottom connector uses unhighlighted style if next item isn't highlighted
+        const bottomHighlighted = item.highlighted && nextHighlighted;
+        const bottomDashedColor = bottomHighlighted ? theme.palette.primary.main : 'rgba(0,0,0,0.4)';
+        const bottomDashedWidth = bottomHighlighted ? '2px' : '1px';
+        const bottomDashedStyle = bottomHighlighted ? 'solid' : 'dashed';
         const triggerColor = item.highlighted 
-            ? alpha(theme.palette.custom.main, 0.5)
-            : 'rgba(0,0,0,0.12)';
-        const rowHighlightSx = {};
+            ? theme.palette.custom.main
+            : dashedColor;
+        // Dim non-highlighted cards when highlighting is active
+        const rowHighlightSx = (hasHighlighting && !item.highlighted) ? { opacity: 0.8 } : {};
 
         // Triggers: thick solid bar with a dot in the middle and a horizontal tick to the card
         if (isTrigger) {
@@ -1230,22 +1261,26 @@ let SingleThreadGroupView: FC<{
                         <Box sx={{ width: 0, flex: '0 0 auto', height: 10, borderLeft: `${dashedWidth} ${dashedStyle} ${dashedColor}` }} />
                         {/* Thick solid bar — top half */}
                         <Box sx={{ 
-                            width: item.highlighted ? 3 : 2, flex: '1 1 0', minHeight: 4, 
+                            width: item.highlighted ? 3 : 0, flex: '1 1 0', minHeight: 4, 
                             borderRadius: '2px 2px 0 0',
-                            backgroundColor: triggerColor,
+                            ...(item.highlighted 
+                                ? { backgroundColor: triggerColor }
+                                : { borderLeft: `${dashedWidth} ${dashedStyle} ${dashedColor}` }),
                         }} />
                         {/* Horizontal tick to the right */}
                         <Box sx={{ flexShrink: 0, zIndex: 1, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            <Box sx={{ position: 'absolute', left: '100%', width: 8, height: 0, borderTop: `1.5px solid ${item.highlighted ? alpha(theme.palette.custom.main, 0.5) : 'rgba(0,0,0,0.15)'}` }} />
+                            <Box sx={{ position: 'absolute', left: '100%', width: 8, height: 0, borderTop: `${dashedWidth} ${dashedStyle} ${item.highlighted ? theme.palette.custom.main : dashedColor}` }} />
                         </Box>
                         {/* Thick solid bar — bottom half */}
                         <Box sx={{ 
-                            width: item.highlighted ? 3 : 2, flex: '1 1 0', minHeight: 4, 
+                            width: bottomHighlighted ? 3 : 0, flex: '1 1 0', minHeight: 4, 
                             borderRadius: '0 0 2px 2px',
-                            backgroundColor: triggerColor,
+                            ...(bottomHighlighted 
+                                ? { backgroundColor: triggerColor }
+                                : { borderLeft: `${bottomDashedWidth} ${bottomDashedStyle} ${bottomDashedColor}` }),
                         }} />
                         {/* Dashed connector to next element */}
-                        <Box sx={{ width: 0, flex: '0 0 auto', height: 10, borderLeft: `${dashedWidth} ${dashedStyle} ${dashedColor}` }} />
+                        <Box sx={{ width: 0, flex: '0 0 auto', height: 10, borderLeft: `${bottomDashedWidth} ${bottomDashedStyle} ${bottomDashedColor}` }} />
                     </Box>
                     <Box sx={{ flex: 1, minWidth: 0, py: CARD_PY, pl: 0.5 }}>
                         {item.element}
@@ -1267,7 +1302,7 @@ let SingleThreadGroupView: FC<{
                             {getTimelineDot(item)}
                             <Box sx={{ position: 'absolute', left: '100%', width: 6, height: 0, borderTop: `${dashedWidth} ${dashedStyle} ${item.highlighted ? theme.palette.primary.main : 'rgba(0,0,0,0.25)'}` }} />
                         </Box>
-                        {!isLast && <Box sx={{ width: 0, flex: '1 1 0', minHeight: 2, borderLeft: `${dashedWidth} ${dashedStyle} ${dashedColor}` }} />}
+                        {!isLast && <Box sx={{ width: 0, flex: '1 1 0', minHeight: 2, borderLeft: `${bottomDashedWidth} ${bottomDashedStyle} ${bottomDashedColor}` }} />}
                         {isLast && <Box sx={{ flex: '1 1 0', minHeight: 2 }} />}
                     </Box>
                     <Box sx={{ flex: 1, minWidth: 0, py: CARD_PY, pl: 0.5 }}>
@@ -1286,15 +1321,20 @@ let SingleThreadGroupView: FC<{
                     display: 'flex', flexDirection: 'column', alignItems: 'center',
                     position: 'relative',
                 }}>
-                    {index > 0 && (
-                        <Box sx={{ width: 0, flex: '1 1 0', minHeight: 6, borderLeft: `${dashedWidth} ${dashedStyle} ${dashedColor}` }} />
-                    )}
-                    {index === 0 && <Box sx={{ flex: '1 1 0', minHeight: 6 }} />}
+                    {(index > 0 || !hideLabel) && (() => {
+                        // When connecting to the header (index 0, label visible), match the header's highlight state
+                        const useHeader = index === 0 && !hideLabel;
+                        const topColor = useHeader ? (headerHL ? theme.palette.primary.main : 'rgba(0,0,0,0.4)') : dashedColor;
+                        const topWidth = useHeader ? (headerHL ? '2px' : '1px') : dashedWidth;
+                        const topStyle = useHeader ? (headerHL ? 'solid' : 'dashed') : dashedStyle;
+                        return <Box sx={{ width: 0, flex: '1 1 0', minHeight: 6, borderLeft: `${topWidth} ${topStyle} ${topColor}` }} />;
+                    })()}
+                    {index === 0 && hideLabel && <Box sx={{ flex: '1 1 0', minHeight: 6 }} />}
                     <Box sx={{ flexShrink: 0, zIndex: 1, backgroundColor: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                         {getTimelineDot(item)}
                     </Box>
                     {!isLast && (
-                        <Box sx={{ width: 0, flex: '1 1 0', minHeight: 6, borderLeft: `${dashedWidth} ${dashedStyle} ${dashedColor}` }} />
+                        <Box sx={{ width: 0, flex: '1 1 0', minHeight: 6, borderLeft: `${bottomDashedWidth} ${bottomDashedStyle} ${bottomDashedColor}` }} />
                     )}
                     {isLast && <Box sx={{ flex: '1 1 0', minHeight: 6 }} />}
                 </Box>
@@ -1311,22 +1351,46 @@ let SingleThreadGroupView: FC<{
     return <Box sx={{ ...sx, 
             '& .selected-card': { 
                 boxShadow: `0 0 0 2px ${theme.palette.primary.light}`,
-                my: 0.5,
                 borderColor: 'transparent',
             },
-            transition: transition.fast,
             padding: '6px',
         }}
         >
-        {!hideLabel && (
-            <Box sx={{ display: 'flex', justifyContent: 'center', direction: 'ltr', margin: '2px 2px 6px 2px' }}>
-                <Typography sx={{ fontSize: '10px', fontWeight: 600, color: 'rgba(0,0,0,0.5)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                    {threadLabel || (threadIdx === -1 ? 'thread0' : `thread - ${threadIdx + 1}`)}
-                </Typography>
-            </Box>
-        )}
         <div style={{ padding: '2px 4px 2px 4px', marginTop: 0, direction: 'ltr' }}>
-            {timelineItems.map((item, index) => renderTimelineItem(item, index, index === timelineItems.length - 1))}
+            {!hideLabel && (() => {
+                const hlColor = theme.palette.primary.main;
+                const nhColor = 'rgba(0,0,0,0.35)';
+                const connColor = headerHL ? hlColor : 'rgba(0,0,0,0.4)';
+                const connWidth = headerHL ? '2px' : '1px';
+                const connStyle = headerHL ? 'solid' : 'dashed';
+                return (
+                <Box sx={{ display: 'flex', flexDirection: 'row', ...(hasHighlighting && !headerHL ? { opacity: 0.8 } : {}) }}>
+                    <Box sx={{ 
+                        width: TIMELINE_WIDTH, flexShrink: 0, 
+                        display: 'flex', flexDirection: 'column', alignItems: 'center',
+                    }}>
+                        <Box sx={{ flex: '1 1 0', minHeight: 6 }} />
+                        <Box sx={{ 
+                            width: 8, height: 8, borderRadius: '50%', 
+                            border: `1.5px solid ${headerHL ? hlColor : nhColor}`,
+                            backgroundColor: 'transparent',
+                            flexShrink: 0,
+                        }} />
+                        <Box sx={{ width: 0, flex: '1 1 0', minHeight: 10, borderLeft: `${connWidth} ${connStyle} ${connColor}` }} />
+                    </Box>
+                    <Box sx={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', pl: 0.5 }}>
+                        <Typography sx={{ 
+                            fontSize: '11px', fontWeight: 700, 
+                            textTransform: 'uppercase', letterSpacing: '0.02em',
+                            color: headerHL ? hlColor : 'rgba(0,0,0,0.55)', 
+                        }}>
+                            {threadLabel || (threadIdx === -1 ? 'Thread 0' : `Thread ${threadIdx + 1}`)}
+                        </Typography>
+                    </Box>
+                </Box>
+                );
+            })()}
+            {timelineItems.map((item, index) => renderTimelineItem(item, index, index === timelineItems.length - 1, timelineItems[index + 1]?.highlighted ?? false))}
         </div>
         <MetadataPopup
             open={metadataPopupOpen}
