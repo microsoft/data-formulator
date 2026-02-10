@@ -449,7 +449,7 @@ const WorkspacePanel: FC<{
         alignItems: 'center',
         gap: 0.5,
         px: 0.75,
-        py: '1px',
+        py: '3px',
         borderRadius: '3px',
         cursor: 'pointer',
         fontSize: 11,
@@ -515,8 +515,7 @@ const WorkspacePanel: FC<{
 
     return (
         <Box sx={{ ...sx,
-            padding: '6px',
-            pb: 1,
+            py: 0,
             mb: 0.5,
             backgroundColor: 'rgba(0,0,0,0.02)',
             borderBottom: `1px solid ${borderColor.divider}`,
@@ -534,6 +533,7 @@ const WorkspacePanel: FC<{
                 <Box
                     sx={{ display: 'flex', alignItems: 'center', cursor: 'pointer', borderRadius: '3px',
                         '&:hover': { backgroundColor: 'rgba(0,0,0,0.04)' },
+                        pr: 0.5, py: 0.5,
                     }}
                     onClick={() => setWorkspaceExpanded(!workspaceExpanded)}
                 >
@@ -541,7 +541,7 @@ const WorkspacePanel: FC<{
                         <ExpandMoreIcon sx={{ fontSize: 14, color: 'rgba(0,0,0,0.5)' }} /> :
                         <ChevronRightIcon sx={{ fontSize: 14, color: 'rgba(0,0,0,0.5)' }} />
                     }
-                    <Typography sx={{ fontSize: 10, fontWeight: 600, color: 'rgba(0,0,0,0.55)', textTransform: 'uppercase', letterSpacing: '0.5px', ml: 0.5 }}>
+                    <Typography sx={{ fontSize: 11, fontWeight: 600, color: 'rgba(0,0,0,0.55)', textTransform: 'uppercase', letterSpacing: '0.5px', ml: 0.5 }}>
                         Workspace
                     </Typography>
                 </Box>
@@ -555,13 +555,13 @@ const WorkspacePanel: FC<{
                         '&:hover': { backgroundColor: alpha(theme.palette.primary.main, 0.08) },
                     }}
                 >
-                    <AddIcon sx={{ fontSize: 13 }} />
-                    <Typography sx={{ fontSize: 10, fontWeight: 600 }}>add data</Typography>
+                    <AddIcon sx={{ fontSize: 14 }} />
+                    <Typography sx={{ fontSize: 11, fontWeight: 600 }}>add data</Typography>
                 </Box>
             </Box>
 
             <Collapse in={workspaceExpanded} timeout={150}>
-                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0, mt: '2px', ml: '14px' }}>
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0, mt: '2px', ml: '14px', py: 0.5 }}>
                     {tables.map((table, tableIndex) => {
                         const isTableActive = focusedTableId === table.id;
                         const tableCharts = chartElements.filter(ce => ce.tableId === table.id);
