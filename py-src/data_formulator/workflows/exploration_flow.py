@@ -58,7 +58,7 @@ def run_exploration_flow_streaming(
     model_config: dict[str, str],
     input_tables: list[dict[str, Any]],
     initial_plan: list[str],
-    session_id: str | None = None,
+    identity_id: str | None = None,
     exec_python_in_subprocess: bool = False,
     max_iterations: int = 5,
     max_repair_attempts: int = 1,
@@ -72,7 +72,7 @@ def run_exploration_flow_streaming(
         model_config: Dictionary with endpoint, model, api_key, api_base, api_version
         input_tables: List of input table dictionaries with 'name' 'rows' and 'attached_metadata'
         plan: List of steps to continue exploring
-        session_id: Database session ID for SQL connections
+        identity_id: Identity ID for workspace access
         exec_python_in_subprocess: Whether to execute Python in subprocess
         max_iterations: Maximum number of exploration iterations
         max_repair_attempts: Maximum number of code repair attempts
@@ -96,17 +96,17 @@ def run_exploration_flow_streaming(
     # Initialize client and agents
     client = Client.from_config(model_config)
 
-    if not session_id:
+    if not identity_id:
         yield {
             "iteration": iteration,
             "type": "data_transformation",
             "content": {},
             "status": "error",
-            "error_message": "Session ID required for exploration"
+            "error_message": "Identity ID required for exploration"
         }
         return
 
-    workspace = Workspace(session_id)
+    workspace = Workspace(identity_id)
     
     # Determine temp tables by checking which input tables don't exist in the workspace
     existing_tables = set(workspace.list_tables())

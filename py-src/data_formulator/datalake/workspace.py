@@ -574,137 +574,95 @@ class Workspace:
         return f"Workspace(identity_id={self._identity_id!r}, path={self._path!r})"
 
 
-class WorkspaceWithTempData:
+class WorkspaceWithTempData(Workspace):
     """
-    Context manager that temporarily adds temp data (list of {name, rows}) to a workspace
-    as parquet files, yields the same workspace, and removes those files on exit.
+    A Workspace with an in-memory metadata overlay for temporary tables.
 
-    OPTIMIZATION: Temp files are written directly to disk WITHOUT metadata updates.
-    This eliminates metadata file locking contention when multiple temp tables are
-    created concurrently. Since temp files are ephemeral (exist only during the context),
-    they don't need to be tracked in workspace.yaml.
+    Inherits from :class:`Workspace` so it is a drop-in replacement everywhere
+    a ``Workspace`` is expected.  Used as a context manager:
 
-    Python code can still access temp files via relative paths (e.g., pd.read_parquet())
-    because the sandbox execution runs with workspace._path as the current working directory.
+    .. code-block:: python
 
-    Use when the client sends in-memory data (e.g. language == "python"): wrap the
-    workspace so temp tables are visible for the block and then cleaned up.
+        with WorkspaceWithTempData(workspace, temp_data) as ws:
+            ws.read_data_as_df("my_temp_table")  # works
+
+    On enter:
+      - Writes each temp table as ``<name>.parquet`` in the workspace dir.
+      - Overrides ``get_table_metadata`` / ``list_tables`` to resolve temp
+        tables from a fast in-memory dict, without touching ``workspace.yaml``.
+
+    On exit:
+      - Deletes the parquet files from disk.
+
+    The original ``Workspace`` is never mutated.  Nesting is supported:
+    inner overlays delegate to outer overlays via ``_base``.
     """
 
     def __init__(self, workspace: Workspace, temp_data: Optional[list[dict[str, Any]]] = None):
-        self._workspace = workspace
+        # Shallow-copy all state from the base workspace.
+        # Deliberately skip Workspace.__init__ (no mkdir, no metadata init,
+        # no stale-file cleanup — those were already done on *workspace*).
+        self.__dict__.update(workspace.__dict__)
+        self._base = workspace  # delegate misses here (supports nesting)
         self._temp_data = temp_data if temp_data else None
-        self._temp_files: list[Path] = []  # Track file paths for cleanup (not table names)
+        self._temp_files: list[Path] = []
+        self._overlay: dict[str, TableMetadata] = {}
 
-    def __enter__(self) -> Workspace:
+    # ---- metadata overrides ------------------------------------------------
+
+    def get_table_metadata(self, table_name: str) -> Optional[TableMetadata]:
+        result = self._overlay.get(table_name)
+        if result is None:
+            result = self._overlay.get(sanitize_table_name(table_name))
+        if result is not None:
+            return result
+        return self._base.get_table_metadata(table_name)
+
+    def list_tables(self) -> list[str]:
+        names = self._base.list_tables()
+        for name in self._overlay:
+            if name not in names:
+                names.append(name)
+        return names
+
+    # ---- context manager ---------------------------------------------------
+
+    def __enter__(self) -> "WorkspaceWithTempData":
         if not self._temp_data:
-            return self._workspace
-
-        from data_formulator.datalake.parquet_utils import sanitize_table_name
+            return self
 
         for item in self._temp_data:
             base_name = item.get("name", "table")
             safe_name = sanitize_table_name(base_name)
+            filename = f"{safe_name}.parquet"
+            file_path = self._path / filename
 
-            # Use .temp_ prefix to distinguish from persistent tables
-            # This also helps with crash recovery - stale temp files can be identified and cleaned up
-            temp_filename = f".temp_{safe_name}.parquet"
-            file_path = self._workspace._path / temp_filename
-
-            # Handle name conflicts by checking filesystem directly (no metadata read needed)
-            counter = 1
-            while file_path.exists():
-                temp_filename = f".temp_{safe_name}_{counter}.parquet"
-                file_path = self._workspace._path / temp_filename
-                counter += 1
-
-            # CRITICAL: Write parquet directly - NO metadata update
-            # This is the key optimization that eliminates metadata file locking contention.
-            # Temp files don't need metadata tracking since they're ephemeral and only
-            # live for the duration of this context.
-            #
-            # Python code can still access them via relative paths since the sandbox
-            # runs with workspace._path as cwd, e.g.:
-            #   pd.read_parquet('.temp_sales.parquet')
-            #   conn.execute("SELECT * FROM read_parquet('.temp_sales.parquet')")
             rows = item.get("rows", [])
             df = pd.DataFrame(rows) if rows else pd.DataFrame()
             df.to_parquet(file_path)
 
+            self._overlay[safe_name] = TableMetadata(
+                name=safe_name,
+                source_type="upload",
+                filename=filename,
+                file_type="parquet",
+                created_at=datetime.now(),
+                row_count=len(df),
+            )
             self._temp_files.append(file_path)
             logger.debug(
-                f"Added temp file {file_path.name} to workspace "
-                f"({len(df)} rows, no metadata update)"
+                f"Mounted temp table '{safe_name}' "
+                f"({len(df)} rows, in-memory metadata)"
             )
 
-        return self._workspace
+        return self
 
     def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
-        # Delete temp files directly - NO metadata update
-        # This is safe because we never added them to metadata in the first place
         for file_path in self._temp_files:
             try:
                 file_path.unlink(missing_ok=True)
-                logger.debug(f"Removed temp file {file_path.name}")
             except Exception as e:
                 logger.warning(f"Failed to remove temp file {file_path}: {e}")
 
         self._temp_files.clear()
-
-
-# ==============================================================================
-# FUTURE OPTIMIZATION: Virtual Files (In-Memory Tables)
-# ==============================================================================
-#
-# For further performance gains beyond the current optimization, we could implement
-# "virtual files" that map file paths to in-memory DataFrames without any disk I/O.
-#
-# OPTION A: Monkey-patch I/O in sandbox
-# ---------------------------------------
-# Intercept pd.read_parquet() and duckdb read_parquet() calls:
-#
-#   def virtual_read_parquet(path, **kwargs):
-#       if path in workspace._virtual_files:
-#           return workspace._virtual_files[path].copy()
-#       return original_read_parquet(path, **kwargs)
-#
-#   pd.read_parquet = virtual_read_parquet
-#
-# Pros: Transparent to user code, no code generation changes
-# Cons: Fragile (depends on library internals), hard to maintain,
-#       difficult to handle DuckDB's read_parquet() function
-#
-# OPTION B: Pre-inject DataFrames as variables
-# ----------------------------------------------
-# Pass DataFrames directly in sandbox allowed_objects:
-#
-#   allowed_objects = {
-#       'sales': workspace.get_table_df('sales'),  # Pre-loaded DataFrame
-#       'orders': workspace.get_table_df('orders'),
-#       output_variable: None
-#   }
-#
-# Generate code using variables instead of file reads:
-#   # Instead of: df = pd.read_parquet('sales.parquet')
-#   # Generate:   df = sales
-#
-# Pros: Clean, no I/O, no fragile monkey-patching
-# Cons: Requires changing code generation patterns across all agents
-#
-# CURRENT APPROACH: Disk files without metadata
-# -----------------------------------------------
-# The current approach (write parquet, skip metadata) is a good balance:
-# - Fast enough for most use cases (parquet I/O is very quick on modern SSDs)
-# - No complexity or fragility
-# - Unified filesystem logic preserved (all code uses file paths)
-# - Eliminates the main bottleneck (metadata locking contention)
-#
-# Benchmark data:
-# - Writing 1K-row parquet: ~5ms
-# - Writing 10K-row parquet: ~30ms
-# - Writing 100K-row parquet: ~200ms
-# - Metadata update with locking: ~20-100ms (much slower, and serialized!)
-#
-# Only consider virtual files if profiling shows disk I/O for temp tables
-# is a significant bottleneck (unlikely in practice).
-# ==============================================================================
+        self._overlay.clear()
