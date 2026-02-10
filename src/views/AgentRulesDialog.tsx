@@ -105,33 +105,35 @@ export const AgentRulesDialog: React.FC<{
 
     return (
         <>
-            <Badge 
-                color="primary" 
-                variant="standard" 
-                invisible={ruleCount === 0}
-                badgeContent={ruleCount}
-                sx={{
-                    '& .MuiBadge-badge': {
-                        minWidth: 0,
-                        height: 12,
-                        fontSize: 8,
-                        top: 12,
-                        right: 8,
-                        px: 0.5,
-                        color: theme.palette.primary.main,
-                        background: alpha(theme.palette.primary.light, 0.2),
-                    },
-                }}
-            >
-                <Button
-                    variant="text"
-                    sx={{ textTransform: 'none' }}
-                    onClick={() => externalOpen !== undefined ? undefined : setInternalOpen(true)}
-                    startIcon={<RuleIcon />}
+            {externalOpen === undefined && (
+                <Badge 
+                    color="primary" 
+                    variant="standard" 
+                    invisible={ruleCount === 0}
+                    badgeContent={ruleCount}
+                    sx={{
+                        '& .MuiBadge-badge': {
+                            minWidth: 0,
+                            height: 12,
+                            fontSize: 8,
+                            top: 12,
+                            right: 8,
+                            px: 0.5,
+                            color: theme.palette.primary.textColor || theme.palette.primary.main,
+                            background: alpha(theme.palette.primary.light, 0.2),
+                        },
+                    }}
                 >
-                    Agent Rules
-                </Button>
-            </Badge>
+                    <Button
+                        variant="text"
+                        sx={{ textTransform: 'none' }}
+                        onClick={() => setInternalOpen(true)}
+                        startIcon={<RuleIcon />}
+                    >
+                        Agent Rules
+                    </Button>
+                </Badge>
+            )}
             <Dialog
                 onClose={handleClose}
                 open={open}

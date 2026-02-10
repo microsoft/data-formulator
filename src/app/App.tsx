@@ -14,7 +14,7 @@ import {
 import { getBrowserId } from './identity';
 
 import { red, purple, blue, brown, yellow, orange, } from '@mui/material/colors';
-import { palettes, activePaletteKey, bgAlpha } from './tokens';
+import { palettes, defaultPaletteKey, paletteKeys, bgAlpha } from './tokens';
 
 import _ from 'lodash';
 
@@ -41,6 +41,10 @@ import {
     useTheme,
     SvgIcon,
     IconButton,
+    Select,
+    FormControl,
+    InputLabel,
+    ListItemText,
 } from '@mui/material';
 
 
@@ -103,9 +107,11 @@ const AppBar = styled(MuiAppBar)(({ theme }) => ({
 declare module '@mui/material/styles' {
     interface PaletteColor {
         bgcolor?: string;
+        textColor?: string;
     }
     interface SimplePaletteColorOptions {
         bgcolor?: string;
+        textColor?: string;
     }
     interface Palette {
         derived: Palette['primary'];
@@ -379,17 +385,21 @@ const ConfigDialog: React.FC = () => {
     const config = useSelector((state: DataFormulatorState) => state.config);
 
 
-    const [formulateTimeoutSeconds, setFormulateTimeoutSeconds] = useState(config.formulateTimeoutSeconds);
+    const [formulateTimeoutSeconds, setFormulateTimeoutSeconds] = useState(config.formulateTimeoutSeconds ?? 30);
 
-    const [defaultChartWidth, setDefaultChartWidth] = useState(config.defaultChartWidth);
-    const [defaultChartHeight, setDefaultChartHeight] = useState(config.defaultChartHeight);
-    const [frontendRowLimit, setFrontendRowLimit] = useState(config.frontendRowLimit);
+    const [defaultChartWidth, setDefaultChartWidth] = useState(config.defaultChartWidth ?? 300);
+    const [defaultChartHeight, setDefaultChartHeight] = useState(config.defaultChartHeight ?? 300);
+    const [frontendRowLimit, setFrontendRowLimit] = useState(config.frontendRowLimit ?? 10000);
+    const [paletteKey, setPaletteKey] = useState(
+        (config.paletteKey && palettes[config.paletteKey]) ? config.paletteKey : defaultPaletteKey
+    );
 
     // Add check for changes
     const hasChanges = formulateTimeoutSeconds !== config.formulateTimeoutSeconds || 
                       defaultChartWidth !== config.defaultChartWidth ||
                       defaultChartHeight !== config.defaultChartHeight ||
-                      frontendRowLimit !== config.frontendRowLimit;
+                      frontendRowLimit !== config.frontendRowLimit ||
+                      paletteKey !== ((config.paletteKey && palettes[config.paletteKey]) ? config.paletteKey : defaultPaletteKey);
 
     return (
         <>
@@ -406,6 +416,39 @@ const ConfigDialog: React.FC = () => {
                         maxWidth: 400
                     }}>
                         <Divider><Typography variant="caption">Frontend</Typography></Divider>
+                        <FormControl fullWidth size="small">
+                            <InputLabel id="palette-select-label" sx={{ fontSize: 13 }}>Color Theme</InputLabel>
+                            <Select
+                                labelId="palette-select-label"
+                                value={paletteKey}
+                                label="Color Theme"
+                                onChange={(e) => setPaletteKey(e.target.value)}
+                                sx={{ fontSize: 13 }}
+                                renderValue={(key) => {
+                                    const p = palettes[key];
+                                    return (
+                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                            <Box sx={{ width: 12, height: 12, borderRadius: '50%', backgroundColor: p.primary.main, flexShrink: 0 }} />
+                                            <Box sx={{ width: 12, height: 12, borderRadius: '50%', backgroundColor: p.custom.main, flexShrink: 0 }} />
+                                            <Typography sx={{ fontSize: 13 }}>{p.name}</Typography>
+                                        </Box>
+                                    );
+                                }}
+                            >
+                                {paletteKeys.map(key => {
+                                    const p = palettes[key];
+                                    return (
+                                        <MenuItem key={key} value={key} sx={{ py: 0.5 }}>
+                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mr: 1.5 }}>
+                                                <Box sx={{ width: 14, height: 14, borderRadius: '50%', backgroundColor: p.primary.main, border: '1px solid rgba(0,0,0,0.1)' }} />
+                                                <Box sx={{ width: 14, height: 14, borderRadius: '50%', backgroundColor: p.custom.main, border: '1px solid rgba(0,0,0,0.1)' }} />
+                                            </Box>
+                                            <ListItemText primary={p.name} slotProps={{ primary: { sx: { fontSize: 13 } } }} />
+                                        </MenuItem>
+                                    );
+                                })}
+                            </Select>
+                        </FormControl>
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                             <Box sx={{ flex: 1 }}>
                                 <TextField
@@ -522,6 +565,7 @@ const ConfigDialog: React.FC = () => {
                         setDefaultChartWidth(300);
                         setDefaultChartHeight(300);
                         setFrontendRowLimit(10000);
+                        setPaletteKey(defaultPaletteKey);
                     }}>Reset to default</Button>
                     <Button onClick={() => setOpen(false)}>Cancel</Button>
                     <Button 
@@ -531,7 +575,7 @@ const ConfigDialog: React.FC = () => {
                             || isNaN(defaultChartHeight) || defaultChartHeight <= 0 || defaultChartHeight > 1000
                             || isNaN(frontendRowLimit) || frontendRowLimit < 100 || frontendRowLimit > 1000000}
                         onClick={() => {
-                            dispatch(dfActions.setConfig({formulateTimeoutSeconds, defaultChartWidth, defaultChartHeight, frontendRowLimit}));
+                            dispatch(dfActions.setConfig({formulateTimeoutSeconds, defaultChartWidth, defaultChartHeight, frontendRowLimit, paletteKey}));
                             setOpen(false);
                         }}
                     >
@@ -550,6 +594,8 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
     const generatedReports = useSelector((state: DataFormulatorState) => state.generatedReports);
     const focusedTableId = useSelector((state: DataFormulatorState) => state.focusedTableId);
     const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
+    const rawPaletteKey = useSelector((state: DataFormulatorState) => state.config.paletteKey);
+    const activePaletteKey = (rawPaletteKey && palettes[rawPaletteKey]) ? rawPaletteKey : defaultPaletteKey;
 
     useEffect(() => {
         fetchWithIdentity(getUrls().APP_CONFIG)
@@ -613,19 +659,66 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
             ].join(",")
         },
         // Default Material UI palette
-        // Active palette from tokens — change activePaletteKey in tokens.ts to switch
+        // Active palette from user config — selectable via Settings dialog
         // Available: material, fluent, vivid, jewel, electric, tealCoral, copilot
         palette: (() => {
             const p = palettes[activePaletteKey];
-            const bg = (color: string) => alpha(color, bgAlpha);
+            const bg = (entry: { main: string; bgcolor?: string }) => entry.bgcolor ?? alpha(entry.main, bgAlpha);
+            const tc = (entry: { main: string; textColor?: string }) => entry.textColor ?? entry.main;
             return {
-                primary:   { main: p.primary.main,   bgcolor: bg(p.primary.main)   },
-                secondary: { main: p.secondary.main, bgcolor: bg(p.secondary.main) },
-                derived:   { main: p.derived.main,   bgcolor: bg(p.derived.main)   },
-                custom:    { main: p.custom.main,    bgcolor: bg(p.custom.main)    },
+                primary:   { main: p.primary.main,   bgcolor: bg(p.primary),   textColor: tc(p.primary)   },
+                secondary: { main: p.secondary.main, bgcolor: bg(p.secondary), textColor: tc(p.secondary) },
+                derived:   { main: p.derived.main,   bgcolor: bg(p.derived),   textColor: tc(p.derived)   },
+                custom:    { main: p.custom.main,    bgcolor: bg(p.custom),    textColor: tc(p.custom)    },
                 warning:   { main: p.warning.main },
             };
         })(),
+        components: {
+            MuiButton: {
+                styleOverrides: {
+                    text: ({ ownerState, theme: t }) => {
+                        const c = ownerState.color;
+                        if (c && c !== 'inherit' && c !== 'error' && c !== 'info' && c !== 'success' && c in t.palette) {
+                            const p = (t.palette as any)[c];
+                            if (p?.textColor) return { color: p.textColor };
+                        }
+                        return {};
+                    },
+                    outlined: ({ ownerState, theme: t }) => {
+                        const c = ownerState.color;
+                        if (c && c !== 'inherit' && c !== 'error' && c !== 'info' && c !== 'success' && c in t.palette) {
+                            const p = (t.palette as any)[c];
+                            if (p?.textColor) return { color: p.textColor, borderColor: alpha(p.textColor, 0.5) };
+                        }
+                        return {};
+                    },
+                },
+            },
+            MuiIconButton: {
+                styleOverrides: {
+                    root: ({ ownerState, theme: t }) => {
+                        const c = ownerState.color;
+                        if (c && c !== 'inherit' && c !== 'default' && c !== 'error' && c !== 'info' && c !== 'success' && c in t.palette) {
+                            const p = (t.palette as any)[c];
+                            if (p?.textColor) return { color: p.textColor };
+                        }
+                        return {};
+                    },
+                },
+            },
+            MuiLink: {
+                styleOverrides: {
+                    root: ({ ownerState, theme: t }) => {
+                        const c = ownerState.color as string | undefined;
+                        if (c && c !== 'inherit' && c in t.palette) {
+                            const p = (t.palette as any)[c];
+                            if (p?.textColor) return { color: p.textColor };
+                        }
+                        return {};
+                    },
+                },
+            },
+        },
     });
 
     // Check if we're on the about page

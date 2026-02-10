@@ -24,6 +24,7 @@ import {
     MenuItem,
     Switch,
     FormControlLabel,
+    Collapse,
 } from '@mui/material';
 
 
@@ -35,7 +36,7 @@ import { Chart, DictTable, Trigger } from "../components/ComponentType";
 
 import DeleteIcon from '@mui/icons-material/Delete';
 import StarIcon from '@mui/icons-material/Star';
-import { TableIcon, AnchorIcon, InsightIcon, StreamIcon } from '../icons';
+import { TableIcon, AnchorIcon, InsightIcon, StreamIcon, AgentIcon } from '../icons';
 
 
 import _ from 'lodash';
@@ -62,9 +63,16 @@ import { RefreshDataDialog } from './RefreshDataDialog';
 import { getUrls, fetchWithIdentity } from '../app/utils';
 import { AppDispatch } from '../app/store';
 import StopIcon from '@mui/icons-material/Stop';
+import BarChartIcon from '@mui/icons-material/BarChart';
+import ShowChartIcon from '@mui/icons-material/ShowChart';
+import ScatterPlotIcon from '@mui/icons-material/ScatterPlot';
+import PieChartOutlineIcon from '@mui/icons-material/PieChartOutline';
+import GridOnIcon from '@mui/icons-material/GridOn';
 import { useDataRefresh } from '../app/useDataRefresh';
 import { AgentStatusBox, buildChartCard, buildTriggerCard, buildTableCard, BuildTableCardProps } from './DataThreadCards';
 import { UnifiedDataUploadDialog } from './UnifiedDataUploadDialog';
+import { AgentRulesDialog } from './AgentRulesDialog';
+import RuleIcon from '@mui/icons-material/Rule';
 import { ViewBorderStyle, transition, radius, borderColor } from '../app/tokens';
 
 
@@ -423,8 +431,9 @@ const RenameTablePopup = memo<{
 const WorkspacePanel: FC<{
     tables: DictTable[],
     chartElements: { tableId: string, chartId: string, element: any }[],
+    suppressScrollRef?: React.MutableRefObject<boolean>,
     sx?: SxProps,
-}> = function ({ tables, chartElements, sx }) {
+}> = function ({ tables, chartElements, suppressScrollRef, sx }) {
     const theme = useTheme();
     const dispatch = useDispatch();
     const focusedTableId = useSelector((state: DataFormulatorState) => state.focusedTableId);
@@ -432,6 +441,7 @@ const WorkspacePanel: FC<{
     const charts = useSelector(dfSelectors.getAllCharts);
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
     const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
+    const [agentRulesOpen, setAgentRulesOpen] = useState(false);
     const [workspaceExpanded, setWorkspaceExpanded] = useState(false);
 
     const fileItemSx = (isActive: boolean, isNested: boolean = false) => ({
@@ -439,7 +449,7 @@ const WorkspacePanel: FC<{
         alignItems: 'center',
         gap: 0.5,
         px: 0.75,
-        py: '3px',
+        py: '1px',
         borderRadius: '3px',
         cursor: 'pointer',
         fontSize: 11,
@@ -510,6 +520,7 @@ const WorkspacePanel: FC<{
             mb: 0.5,
             backgroundColor: 'rgba(0,0,0,0.02)',
             borderBottom: `1px solid ${borderColor.divider}`,
+            userSelect: 'none',
         }}>
             <Box
                 sx={{
@@ -517,73 +528,40 @@ const WorkspacePanel: FC<{
                     alignItems: 'center',
                     px: 0.75,
                     py: '4px',
-                    cursor: 'pointer',
                     borderRadius: '3px',
-                    '&:hover': {
-                        backgroundColor: 'rgba(0,0,0,0.04)',
-                    },
                 }}
-                onClick={() => setWorkspaceExpanded(!workspaceExpanded)}
             >
-                {workspaceExpanded ?
-                    <ExpandMoreIcon sx={{ fontSize: 14, color: 'rgba(0,0,0,0.5)' }} /> :
-                    <ChevronRightIcon sx={{ fontSize: 14, color: 'rgba(0,0,0,0.5)' }} />
-                }
-                <Typography sx={{ fontSize: 10, fontWeight: 600, color: 'rgba(0,0,0,0.55)', textTransform: 'uppercase', letterSpacing: '0.5px', ml: 0.5 }}>
-                    Workspace
-                </Typography>
+                <Box
+                    sx={{ display: 'flex', alignItems: 'center', cursor: 'pointer', borderRadius: '3px',
+                        '&:hover': { backgroundColor: 'rgba(0,0,0,0.04)' },
+                    }}
+                    onClick={() => setWorkspaceExpanded(!workspaceExpanded)}
+                >
+                    {workspaceExpanded ?
+                        <ExpandMoreIcon sx={{ fontSize: 14, color: 'rgba(0,0,0,0.5)' }} /> :
+                        <ChevronRightIcon sx={{ fontSize: 14, color: 'rgba(0,0,0,0.5)' }} />
+                    }
+                    <Typography sx={{ fontSize: 10, fontWeight: 600, color: 'rgba(0,0,0,0.55)', textTransform: 'uppercase', letterSpacing: '0.5px', ml: 0.5 }}>
+                        Workspace
+                    </Typography>
+                </Box>
+                <Box
+                    onClick={(e) => { e.stopPropagation(); setUploadDialogOpen(true); }}
+                    sx={{
+                        display: 'flex', alignItems: 'center', gap: '2px',
+                        ml: 'auto', px: '5px', py: '2px', borderRadius: '3px',
+                        cursor: 'pointer', 
+                        color: theme.palette.primary.textColor || theme.palette.primary.main,
+                        '&:hover': { backgroundColor: alpha(theme.palette.primary.main, 0.08) },
+                    }}
+                >
+                    <AddIcon sx={{ fontSize: 13 }} />
+                    <Typography sx={{ fontSize: 10, fontWeight: 600 }}>add data</Typography>
+                </Box>
             </Box>
 
-            {workspaceExpanded && (
-                <Box sx={{ display: 'flex', flexDirection: 'column', gap: '2px', mt: '4px', ml: '14px' }}>
-                    <Box
-                        sx={{
-                            position: 'relative',
-                            pl: 1.5,
-                            '&::before': {
-                                content: '""',
-                                position: 'absolute',
-                                left: 0,
-                                top: 0,
-                                bottom: tables.length > 0 ? 0 : 'calc(100% - 10px)',
-                                width: '1px',
-                                backgroundColor: borderColor.divider,
-                            },
-                            '&::after': {
-                                content: '""',
-                                position: 'absolute',
-                                left: 0,
-                                top: '10px',
-                                width: '8px',
-                                height: '1px',
-                                backgroundColor: borderColor.divider,
-                            }
-                        }}
-                    >
-                        <Box
-                            sx={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: 0.5,
-                                px: 0.75,
-                                py: '3px',
-                                borderRadius: '3px',
-                                cursor: 'pointer',
-                                fontSize: 11,
-                                width: 'fit-content',
-                                backgroundColor: theme.palette.primary.main,
-                                '&:hover': {
-                                    backgroundColor: theme.palette.primary.dark,
-                                },
-                            }}
-                            onClick={() => setUploadDialogOpen(true)}
-                        >
-                            <AddIcon sx={{ fontSize: 14, color: 'white', flexShrink: 0 }} />
-                            <Typography sx={{ fontSize: 11, color: 'white', fontWeight: 500 }}>
-                                Add Data
-                            </Typography>
-                        </Box>
-                    </Box>
+            <Collapse in={workspaceExpanded} timeout={150}>
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0, mt: '2px', ml: '14px' }}>
                     {tables.map((table, tableIndex) => {
                         const isTableActive = focusedTableId === table.id;
                         const tableCharts = chartElements.filter(ce => ce.tableId === table.id);
@@ -591,6 +569,7 @@ const WorkspacePanel: FC<{
                         const isLastTable = tableIndex === tables.length - 1;
 
                         const handleTableClick = () => {
+                            if (suppressScrollRef) suppressScrollRef.current = true;
                             dispatch(dfActions.setFocusedTable(table.id));
                             if (tableCharts.length === 0) {
                                 dispatch(dfActions.setFocusedChart(undefined));
@@ -615,7 +594,7 @@ const WorkspacePanel: FC<{
                                         top: 0,
                                         bottom: isLastTable ? 'calc(100% - 10px)' : 0,
                                         width: '1px',
-                                        backgroundColor: borderColor.divider,
+                                        backgroundColor: 'rgba(0,0,0,0.2)',
                                     },
                                     '&::after': {
                                         content: '""',
@@ -624,7 +603,7 @@ const WorkspacePanel: FC<{
                                         top: '10px',
                                         width: '8px',
                                         height: '1px',
-                                        backgroundColor: borderColor.divider,
+                                        backgroundColor: 'rgba(0,0,0,0.2)',
                                     }
                                 }}
                             >
@@ -674,6 +653,7 @@ const WorkspacePanel: FC<{
                                             const isLast = idx === tableCharts.length - 1;
 
                                             const handleChartClick = () => {
+                                                if (suppressScrollRef) suppressScrollRef.current = true;
                                                 dispatch(dfActions.setFocusedTable(table.id));
                                                 dispatch(dfActions.setFocusedChart(chart.id));
                                             };
@@ -691,7 +671,7 @@ const WorkspacePanel: FC<{
                                                             top: 0,
                                                             bottom: isLast ? '50%' : 0,
                                                             width: '1px',
-                                                            backgroundColor: borderColor.divider,
+                                                            backgroundColor: 'rgba(0,0,0,0.2)',
                                                         },
                                                         '&::after': {
                                                             content: '""',
@@ -700,7 +680,7 @@ const WorkspacePanel: FC<{
                                                             top: '50%',
                                                             width: '8px',
                                                             height: '1px',
-                                                            backgroundColor: borderColor.divider,
+                                                            backgroundColor: 'rgba(0,0,0,0.2)',
                                                         }
                                                     }}
                                                 >
@@ -731,12 +711,16 @@ const WorkspacePanel: FC<{
                         );
                     })}
                 </Box>
-            )}
+            </Collapse>
 
             <UnifiedDataUploadDialog
                 open={uploadDialogOpen}
                 onClose={() => setUploadDialogOpen(false)}
                 initialTab="menu"
+            />
+            <AgentRulesDialog
+                externalOpen={agentRulesOpen}
+                onExternalClose={() => setAgentRulesOpen(false)}
             />
         </Box>
     );
@@ -1067,7 +1051,7 @@ let SingleThreadGroupView: FC<{
     });
 
     // Build a flat sequence of timeline items: [trigger, table, charts, trigger, table, charts, ...]
-    let timelineItems: { key: string; element: React.ReactNode; type: 'used-table' | 'trigger' | 'table' | 'chart' | 'leaf-trigger' | 'leaf-table'; highlighted: boolean; tableId?: string; isRunning?: boolean }[] = [];
+    let timelineItems: { key: string; element: React.ReactNode; type: 'used-table' | 'trigger' | 'table' | 'chart' | 'leaf-trigger' | 'leaf-table'; highlighted: boolean; tableId?: string; chartType?: string; isRunning?: boolean }[] = [];
 
     // Add used (shared) tables at the top
     // Only show the immediate parent + "..." for further ancestors
@@ -1137,10 +1121,20 @@ let SingleThreadGroupView: FC<{
                 const isChart = subKey.includes('chart') || subKey.includes('agent');
                 const isAgent = subKey.includes('agent');
                 const isAgentRunning = isAgent && runningAgentTableIds.has(tableId);
+                // Extract chartType from the key (pattern: 'relevant-chart-{chartId}' or 'agent-status-{chartId}')
+                let itemChartType: string | undefined;
+                if (isChart) {
+                    const cIdMatch = subKey.match(/(?:chart|agent-status)-(.+)$/);
+                    if (cIdMatch) {
+                        const cObj = charts.find(c => c.id === cIdMatch[1]);
+                        itemChartType = cObj?.chartType;
+                    }
+                }
                 timelineItems.push({
                     key: subKey,
                     type: isChart ? 'chart' : 'table',
                     tableId: isChart ? undefined : tableId,
+                    chartType: itemChartType,
                     highlighted: isHighlighted,
                     element: subItem,
                     ...(isAgentRunning ? { isRunning: true } : {}),
@@ -1168,10 +1162,19 @@ let SingleThreadGroupView: FC<{
                 const isChart = subKey.includes('chart') || subKey.includes('agent');
                 const isAgent = subKey.includes('agent');
                 const isAgentRunning = isAgent && runningAgentTableIds.has(lt.id);
+                let leafChartType: string | undefined;
+                if (isChart) {
+                    const cIdMatch = subKey.match(/(?:chart|agent-status)-(.+)$/);
+                    if (cIdMatch) {
+                        const cObj = charts.find(c => c.id === cIdMatch[1]);
+                        leafChartType = cObj?.chartType;
+                    }
+                }
                 timelineItems.push({
                     key: subKey,
                     type: isChart ? 'chart' : 'leaf-table',
                     tableId: isChart ? undefined : lt.id,
+                    chartType: leafChartType,
                     highlighted: highlightedTableIds.includes(lt.id),
                     element: subItem,
                     ...(isAgentRunning ? { isRunning: true } : {}),
@@ -1181,7 +1184,8 @@ let SingleThreadGroupView: FC<{
     });
 
     // Timeline rendering helper
-    const TIMELINE_WIDTH = 16;
+    const TIMELINE_WIDTH = 14;
+    const TIMELINE_GAP = '4px'; // gap between timeline and card content
     const DOT_SIZE = 6;
     const CARD_PY = '4px'; // vertical padding for each timeline row
 
@@ -1220,6 +1224,29 @@ let SingleThreadGroupView: FC<{
             return <TableIcon sx={iconSx} />;
         }
 
+        // For chart items, show a chart-type-specific icon
+        if (item.type === 'chart' && item.chartType) {
+            const iconSx = { width: 14, height: 14, color };
+            const ct = item.chartType.toLowerCase();
+            if (ct.includes('scatter') || ct.includes('point') || ct.includes('dot') || ct.includes('boxplot')) {
+                return <ScatterPlotIcon sx={iconSx} />;
+            }
+            if (ct.includes('line') || ct.includes('regression')) {
+                return <ShowChartIcon sx={iconSx} />;
+            }
+            if (ct.includes('pie')) {
+                return <PieChartOutlineIcon sx={iconSx} />;
+            }
+            if (ct.includes('heatmap')) {
+                return <GridOnIcon sx={iconSx} />;
+            }
+            if (ct.includes('table')) {
+                return <TableIcon sx={iconSx} />;
+            }
+            // Bar, histogram, stacked, grouped, pyramid, and default
+            return <BarChartIcon sx={iconSx} />;
+        }
+
         return <Box sx={{ 
             width: DOT_SIZE, height: DOT_SIZE, borderRadius: '50%', 
             backgroundColor: color,
@@ -1246,51 +1273,10 @@ let SingleThreadGroupView: FC<{
             ? theme.palette.custom.main
             : dashedColor;
         // Dim non-highlighted cards when highlighting is active
-        const rowHighlightSx = (hasHighlighting && !item.highlighted) ? { opacity: 0.8 } : {};
+        const rowHighlightSx = (hasHighlighting && !item.highlighted) ? { opacity: 1 } : {};
 
-        // Triggers: thick solid bar with a dot in the middle and a horizontal tick to the card
+        // Triggers: agent icon on the timeline
         if (isTrigger) {
-            return (
-                <Box key={`timeline-row-${item.key}`} sx={{ display: 'flex', flexDirection: 'row', position: 'relative', ...rowHighlightSx }}>
-                    <Box sx={{ 
-                        width: TIMELINE_WIDTH, flexShrink: 0, 
-                        display: 'flex', flexDirection: 'column', alignItems: 'center',
-                        position: 'relative',
-                    }}>
-                        {/* Dashed connector from previous element */}
-                        <Box sx={{ width: 0, flex: '0 0 auto', height: 10, borderLeft: `${dashedWidth} ${dashedStyle} ${dashedColor}` }} />
-                        {/* Thick solid bar — top half */}
-                        <Box sx={{ 
-                            width: item.highlighted ? 3 : 0, flex: '1 1 0', minHeight: 4, 
-                            borderRadius: '2px 2px 0 0',
-                            ...(item.highlighted 
-                                ? { backgroundColor: triggerColor }
-                                : { borderLeft: `${dashedWidth} ${dashedStyle} ${dashedColor}` }),
-                        }} />
-                        {/* Horizontal tick to the right */}
-                        <Box sx={{ flexShrink: 0, zIndex: 1, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            <Box sx={{ position: 'absolute', left: '100%', width: 8, height: 0, borderTop: `${dashedWidth} ${dashedStyle} ${item.highlighted ? theme.palette.custom.main : dashedColor}` }} />
-                        </Box>
-                        {/* Thick solid bar — bottom half */}
-                        <Box sx={{ 
-                            width: bottomHighlighted ? 3 : 0, flex: '1 1 0', minHeight: 4, 
-                            borderRadius: '0 0 2px 2px',
-                            ...(bottomHighlighted 
-                                ? { backgroundColor: triggerColor }
-                                : { borderLeft: `${bottomDashedWidth} ${bottomDashedStyle} ${bottomDashedColor}` }),
-                        }} />
-                        {/* Dashed connector to next element */}
-                        <Box sx={{ width: 0, flex: '0 0 auto', height: 10, borderLeft: `${bottomDashedWidth} ${bottomDashedStyle} ${bottomDashedColor}` }} />
-                    </Box>
-                    <Box sx={{ flex: 1, minWidth: 0, py: CARD_PY, pl: 0.5 }}>
-                        {item.element}
-                    </Box>
-                </Box>
-            );
-        }
-
-        // Charts/agents: dot on the timeline with a horizontal tick line to the chart
-        if (isChart) {
             return (
                 <Box key={`timeline-row-${item.key}`} sx={{ display: 'flex', flexDirection: 'row', position: 'relative', ...rowHighlightSx }}>
                     <Box sx={{ 
@@ -1299,13 +1285,34 @@ let SingleThreadGroupView: FC<{
                     }}>
                         <Box sx={{ width: 0, flex: '1 1 0', minHeight: 2, borderLeft: `${dashedWidth} ${dashedStyle} ${dashedColor}` }} />
                         <Box sx={{ flexShrink: 0, zIndex: 1, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            {getTimelineDot(item)}
-                            <Box sx={{ position: 'absolute', left: '100%', width: 6, height: 0, borderTop: `${dashedWidth} ${dashedStyle} ${item.highlighted ? theme.palette.primary.main : 'rgba(0,0,0,0.25)'}` }} />
+                            <AgentIcon sx={{ width: 14, height: 14, color: triggerColor }} />
                         </Box>
                         {!isLast && <Box sx={{ width: 0, flex: '1 1 0', minHeight: 2, borderLeft: `${bottomDashedWidth} ${bottomDashedStyle} ${bottomDashedColor}` }} />}
                         {isLast && <Box sx={{ flex: '1 1 0', minHeight: 2 }} />}
                     </Box>
-                    <Box sx={{ flex: 1, minWidth: 0, py: CARD_PY, pl: 0.5 }}>
+                    <Box sx={{ flex: 1, minWidth: 0, py: CARD_PY, pl: TIMELINE_GAP }}>
+                        {item.element}
+                    </Box>
+                </Box>
+            );
+        }
+
+        // Charts: chart-type icon on the timeline
+        if (isChart) {
+            return (
+                <Box key={`timeline-row-${item.key}`} sx={{ display: 'flex', flexDirection: 'row', position: 'relative', ...rowHighlightSx }}>
+                    <Box sx={{
+                        width: TIMELINE_WIDTH, flexShrink: 0,
+                        display: 'flex', flexDirection: 'column', alignItems: 'center',
+                    }}>
+                        <Box sx={{ width: 0, flex: '1 1 0', borderLeft: `${dashedWidth} ${dashedStyle} ${dashedColor}` }} />
+                        <Box sx={{ flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            {getTimelineDot(item)}
+                        </Box>
+                        {!isLast && <Box sx={{ width: 0, flex: '1 1 0', minHeight: 2, borderLeft: `${bottomDashedWidth} ${bottomDashedStyle} ${bottomDashedColor}` }} />}
+                        {isLast && <Box sx={{ flex: '1 1 0', minHeight: 2 }} />}
+                    </Box>
+                    <Box sx={{ flex: 1, minWidth: 0, py: CARD_PY, pl: TIMELINE_GAP }}>
                         {item.element}
                     </Box>
                 </Box>
@@ -1338,7 +1345,7 @@ let SingleThreadGroupView: FC<{
                     )}
                     {isLast && <Box sx={{ flex: '1 1 0', minHeight: 6 }} />}
                 </Box>
-                <Box sx={{ flex: 1, minWidth: 0, py: item.type === 'used-table' ? '1px' : CARD_PY, pl: 0.5,
+                <Box sx={{ flex: 1, minWidth: 0, py: item.type === 'used-table' ? '1px' : CARD_PY, pl: TIMELINE_GAP,
                     ...(item.type === 'used-table' && { display: 'flex', alignItems: 'center' }),
                 }}>
                     {item.element}
@@ -1352,6 +1359,7 @@ let SingleThreadGroupView: FC<{
             '& .selected-card': { 
                 boxShadow: `0 0 0 2px ${theme.palette.primary.light}`,
                 borderColor: 'transparent',
+                margin: '1px 0',
             },
             padding: '6px',
         }}
@@ -1841,6 +1849,7 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
 
     const scrollRef = useRef<null | HTMLDivElement>(null)
     const containerRef = useRef<null | HTMLDivElement>(null)
+    const suppressScrollRef = useRef(false);
 
     const executeScroll = (smooth: boolean = true) => { 
         if (scrollRef.current != null) {
@@ -1856,7 +1865,11 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
     useEffect(() => {
         // load the example datasets
         if (focusedTableId) {
-            executeScroll(true);
+            if (suppressScrollRef.current) {
+                suppressScrollRef.current = false;
+            } else {
+                executeScroll(true);
+            }
         }
     }, [focusedTableId]);
 
@@ -2195,6 +2208,7 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
         <WorkspacePanel
             tables={baseTables}
             chartElements={chartElements}
+            suppressScrollRef={suppressScrollRef}
             sx={{
                 my: 0.5,
                 flex: 'none',

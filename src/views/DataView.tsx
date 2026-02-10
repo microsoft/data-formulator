@@ -155,7 +155,7 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView() {
 
     let genTableLink =  (t: DictTable) => 
         <Link underline="hover" key={t.id} sx={{cursor: "pointer"}} 
-            color={theme.palette.primary.main} onClick={()=>{ dispatch(dfActions.setFocusedTable(t.id)) }}>
+            color={theme.palette.primary.textColor || theme.palette.primary.main} onClick={()=>{ dispatch(dfActions.setFocusedTable(t.id)) }}>
             <Typography sx={{fontWeight: t.id === focusedTableId ? "bold" : "inherit", fontSize: 'inherit'}} component='span'>{t.displayId || t.id}</Typography>
         </Link>;
 

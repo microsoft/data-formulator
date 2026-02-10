@@ -130,7 +130,7 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
                 </Box>
                 <Box sx={{ flex: 1, minWidth: 0, pl: 0.5, display: 'flex', alignItems: 'center' }}>
                     <Typography 
-                        sx={{ fontSize: '11px', cursor: 'pointer', color: theme.palette.primary.main, '&:hover': { textDecoration: 'underline' } }} 
+                        sx={{ fontSize: '11px', cursor: 'pointer', color: theme.palette.primary.textColor || theme.palette.primary.main, '&:hover': { textDecoration: 'underline' } }} 
                         onClick={() => { dispatch(dfActions.setFocusedTable(tableId)) }}>
                         {table?.displayId || tableId}
                     </Typography>

@@ -60,6 +60,7 @@ export interface ClientConfig {
     defaultChartWidth: number;
     defaultChartHeight: number;
     frontendRowLimit: number; // max rows to keep in browser when loading locally (non-virtual)
+    paletteKey: string; // active color palette key from tokens.ts
 }
 
 export interface GeneratedReport {
@@ -168,6 +169,7 @@ const initialState: DataFormulatorState = {
         defaultChartWidth: 300,
         defaultChartHeight: 300,
         frontendRowLimit: 10000,
+        paletteKey: 'fluent',
     },
 
     dataLoaderConnectParams: {},
@@ -391,7 +393,7 @@ export const dataFormulatorSlice = createSlice({
 
             state.chartSynthesisInProgress = [];
 
-            state.config = savedState.config;
+            state.config = { ...initialState.config, ...(savedState.config || {}) };
 
             state.dataCleanBlocks = savedState.dataCleanBlocks || [];
             state.cleanInProgress = false;

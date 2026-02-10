@@ -232,7 +232,6 @@ export const TriggerCard: FC<{
             ...sx,
         }} 
         onClick={handleClick}>
-            <PrecisionManufacturing sx={{ fontSize: 12, mr: 0.5, verticalAlign: 'middle', opacity: 0.45 }} />
             {processedPrompt}
             {hideFields ? "" : <>{" "}{encodingComp}</>}
     </Typography>
@@ -973,7 +972,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                             '0%': {
                             },
                             '50%': {
-                                color: theme.palette.derived.main,
+                                color: theme.palette.derived.textColor || theme.palette.derived.main,
                             },
                             '100%': {
                             }
