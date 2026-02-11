@@ -24,12 +24,10 @@ import {
     Typography,
     Box,
     Toolbar,
-    Input,
     Divider,
     DialogTitle,
     Dialog,
     DialogContent,
-    Avatar,
     Link,
     DialogContentText,
     DialogActions,
@@ -38,12 +36,12 @@ import {
     Menu,
     MenuItem,
     TextField,
-    useTheme,
     SvgIcon,
     IconButton,
     Select,
     FormControl,
     InputLabel,
+    ListItemIcon,
     ListItemText,
 } from '@mui/material';
 
@@ -73,7 +71,8 @@ import { ModelSelectionButton } from '../views/ModelSelectionDialog';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 import DownloadIcon from '@mui/icons-material/Download';
-import { handleDBDownload } from '../views/DBTableManager';
+import SaveIcon from '@mui/icons-material/Save';
+import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import { getUrls, fetchWithIdentity } from './utils';
 import { UnifiedDataUploadDialog } from '../views/UnifiedDataUploadDialog';
 import ChatIcon from '@mui/icons-material/Chat';
@@ -123,105 +122,6 @@ declare module '@mui/material/styles' {
     }
 }
 
-export const ImportStateButton: React.FC<{}> = ({ }) => {
-    const dispatch = useDispatch();
-    const inputRef = React.useRef<HTMLInputElement>(null);
-
-    const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>): void => {
-        const files = event.target.files;
-        if (files) {
-            for (let file of files) {
-                file.text().then((text) => {
-                    try {
-                        let savedState = JSON.parse(text);
-                        dispatch(dfActions.loadState(savedState));
-                    } catch (error) {
-                        console.error('Failed to parse state file:', error);
-                    }
-                });
-            }
-        }
-        // Reset the input value to allow uploading the same file again
-        if (inputRef.current) {
-            inputRef.current.value = '';
-        }
-    };
-
-    return (
-        <Button 
-            variant="text" 
-            color="primary"
-            sx={{textTransform: 'none'}}
-            onClick={() => inputRef.current?.click()}
-            startIcon={<UploadFileIcon />}
-        >
-            <Input 
-                inputProps={{ 
-                    accept: '.json, .dfstate',
-                    multiple: false 
-                }}
-                id="upload-data-file"
-                type="file"
-                sx={{ display: 'none' }}
-                inputRef={inputRef}
-                onChange={handleFileUpload}
-            />
-            import session
-        </Button>
-    );
-}
-
-export const ExportStateButton: React.FC<{}> = ({ }) => {
-    const identity = useSelector((state: DataFormulatorState) => state.identity);
-    const tables = useSelector((state: DataFormulatorState) => state.tables);
-    const fullStateJson = useSelector((state: DataFormulatorState) => {
-        // Fields to exclude from serialization
-        const excludedFields = new Set([
-            'models',
-            'selectedModelId',
-            'testedModels',
-            'dataLoaderConnectParams',
-            'identity',
-            'agentRules',
-            'serverConfig',
-        ]);
-        
-        // Build new object with only allowed fields
-        const stateToSerialize: any = {};
-        for (const [key, value] of Object.entries(state)) {
-            if (!excludedFields.has(key)) {
-                stateToSerialize[key] = value;
-            }
-        }
-        
-        return JSON.stringify(stateToSerialize);
-    });
-
-    return <Tooltip title="save session locally">
-        <Button 
-            variant="text" 
-            sx={{textTransform: 'none'}} 
-            onClick={() => {
-                function download(content: string, fileName: string, contentType: string) {
-                    let a = document.createElement("a");
-                    let file = new Blob([content], { type: contentType });
-                    a.href = URL.createObjectURL(file);
-                    a.download = fileName;
-                    a.click();
-                }
-                let firstTableName = tables.length > 0 ? tables[0].id: '';
-                download(fullStateJson, `df_state_${firstTableName}_${identity.id.slice(0, 4)}.json`, 'text/plain');
-            }}
-            startIcon={<DownloadIcon />}
-        >
-            export session
-        </Button>
-    </Tooltip>
-}
-
-
-//type AppProps = ConnectedProps<typeof connector>;
-
 export const toolName = "Data Formulator"
 
 export interface AppFCProps {
@@ -251,14 +151,279 @@ const TableMenu: React.FC = () => {
     );
 };
 
+const SaveSessionDialog: React.FC<{open: boolean, onClose: () => void}> = ({open, onClose}) => {
+    const [sessionName, setSessionName] = useState('');
+    const [saving, setSaving] = useState(false);
+    const dispatch = useDispatch();
+    const tables = useSelector((state: DataFormulatorState) => state.tables);
+
+    const fullState = useSelector((state: DataFormulatorState) => {
+        const excludedFields = new Set([
+            'models', 'selectedModelId', 'testedModels',
+            'dataLoaderConnectParams', 'identity', 'agentRules', 'serverConfig',
+        ]);
+        const stateToSerialize: any = {};
+        for (const [key, value] of Object.entries(state)) {
+            if (!excludedFields.has(key)) {
+                stateToSerialize[key] = value;
+            }
+        }
+        return stateToSerialize;
+    });
+
+    const handleSave = async () => {
+        if (!sessionName.trim()) return;
+        setSaving(true);
+        try {
+            const res = await fetchWithIdentity(getUrls().SESSION_SAVE, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: sessionName.trim(), state: fullState }),
+            });
+            const data = await res.json();
+            if (data.status === 'ok') {
+                dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Session", type: "success", value: `Session "${sessionName}" saved` }));
+                onClose();
+            } else {
+                dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Session", type: "error", value: data.message || 'Save failed' }));
+            }
+        } catch (e) {
+            dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Session", type: "error", value: 'Failed to save session' }));
+        }
+        setSaving(false);
+    };
+
+    return (
+        <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth>
+            <DialogTitle>Save Session</DialogTitle>
+            <DialogContent>
+                <TextField
+                    autoFocus fullWidth margin="dense" label="Session name"
+                    value={sessionName} onChange={(e) => setSessionName(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') handleSave(); }}
+                    helperText={`${tables.length} table(s) will be saved`}
+                />
+            </DialogContent>
+            <DialogActions>
+                <Button onClick={onClose}>Cancel</Button>
+                <Button onClick={handleSave} disabled={!sessionName.trim() || saving}>
+                    {saving ? 'Saving...' : 'Save'}
+                </Button>
+            </DialogActions>
+        </Dialog>
+    );
+};
+
+const LoadSessionDialog: React.FC<{open: boolean, onClose: () => void}> = ({open, onClose}) => {
+    const [sessions, setSessions] = useState<{name: string, saved_at: string}[]>([]);
+    const [loading, setLoading] = useState(false);
+    const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+    const dispatch = useDispatch();
+
+    useEffect(() => {
+        if (!open) return;
+        (async () => {
+            try {
+                const res = await fetchWithIdentity(getUrls().SESSION_LIST);
+                const data = await res.json();
+                if (data.status === 'ok') setSessions(data.sessions);
+            } catch (e) { /* ignore */ }
+        })();
+    }, [open]);
+
+    const handleLoad = async (name: string) => {
+        setLoading(true);
+        try {
+            const res = await fetchWithIdentity(getUrls().SESSION_LOAD, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name }),
+            });
+            const data = await res.json();
+            if (data.status === 'ok') {
+                dispatch(dfActions.loadState(data.state));
+                dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Session", type: "success", value: `Session "${name}" loaded` }));
+                onClose();
+            } else {
+                dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Session", type: "error", value: data.message || 'Load failed' }));
+            }
+        } catch (e) {
+            dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Session", type: "error", value: 'Failed to load session' }));
+        }
+        setLoading(false);
+    };
+
+    const handleDelete = async (name: string) => {
+        try {
+            const res = await fetchWithIdentity(getUrls().SESSION_DELETE, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name }),
+            });
+            const data = await res.json();
+            if (data.status === 'ok') {
+                setSessions(prev => prev.filter(s => s.name !== name));
+                dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Session", type: "success", value: `Session "${name}" deleted` }));
+            }
+        } catch (e) { /* ignore */ }
+        setConfirmDelete(null);
+    };
+
+    return (
+        <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth>
+            <DialogTitle>Load Session</DialogTitle>
+            <DialogContent sx={{ px: 1 }}>
+                {sessions.length === 0 ? (
+                    <DialogContentText sx={{ px: 1 }}>No saved sessions found.</DialogContentText>
+                ) : (
+                    sessions.map(s => (
+                        <Box
+                            key={s.name}
+                            sx={{
+                                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                                px: 1.5, py: 1, mx: 0, my: 0.5, borderRadius: 1, cursor: 'pointer',
+                                '&:hover': { backgroundColor: 'action.hover' },
+                                transition: 'background-color 0.15s',
+                            }}
+                            onClick={() => handleLoad(s.name)}
+                        >
+                            <Box sx={{ flex: 1, minWidth: 0 }}>
+                                <Typography variant="body2" fontWeight="bold" noWrap>{s.name}</Typography>
+                                <Typography variant="caption" color="text.secondary">
+                                    {new Date(s.saved_at).toLocaleString()}
+                                </Typography>
+                            </Box>
+                            {confirmDelete === s.name ? (
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }} onClick={e => e.stopPropagation()}>
+                                    <Button size="small" color="error" sx={{ minWidth: 0, fontSize: 11, textTransform: 'none' }}
+                                        onClick={() => handleDelete(s.name)}>delete</Button>
+                                    <Button size="small" sx={{ minWidth: 0, fontSize: 11, textTransform: 'none' }}
+                                        onClick={() => setConfirmDelete(null)}>cancel</Button>
+                                </Box>
+                            ) : (
+                                <Tooltip title="Delete session">
+                                    <IconButton size="small" onClick={(e) => { e.stopPropagation(); setConfirmDelete(s.name); }}>
+                                        <ClearIcon fontSize="small" />
+                                    </IconButton>
+                                </Tooltip>
+                            )}
+                        </Box>
+                    ))
+                )}
+            </DialogContent>
+            <DialogActions>
+                <Button onClick={onClose}>Close</Button>
+            </DialogActions>
+        </Dialog>
+    );
+};
+
 const SessionMenu: React.FC = () => {
     const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
+    const [saveDialogOpen, setSaveDialogOpen] = useState(false);
+    const [loadDialogOpen, setLoadDialogOpen] = useState(false);
+    const [recentSessions, setRecentSessions] = useState<{name: string, saved_at: string}[]>([]);
+    const [exporting, setExporting] = useState(false);
+    const importRef = React.useRef<HTMLInputElement>(null);
     const open = Boolean(anchorEl);
-    const identity = useSelector((state: DataFormulatorState) => state.identity);
-    const tables = useSelector((state: DataFormulatorState) => state.tables);
-    const theme = useTheme();
-    
     const dispatch = useDispatch();
+
+    const fullState = useSelector((state: DataFormulatorState) => {
+        const excludedFields = new Set([
+            'models', 'selectedModelId', 'testedModels',
+            'dataLoaderConnectParams', 'identity', 'agentRules', 'serverConfig',
+        ]);
+        const obj: any = {};
+        for (const [key, value] of Object.entries(state)) {
+            if (!excludedFields.has(key)) obj[key] = value;
+        }
+        return obj;
+    });
+
+    // Fetch recent sessions when the menu opens
+    useEffect(() => {
+        if (!open) return;
+        (async () => {
+            try {
+                const res = await fetchWithIdentity(getUrls().SESSION_LIST);
+                const data = await res.json();
+                if (data.status === 'ok') setRecentSessions(data.sessions.slice(0, 3));
+            } catch (e) { /* ignore */ }
+        })();
+    }, [open]);
+
+    const closeMenu = () => setAnchorEl(null);
+
+    const handleLoadSession = async (name: string) => {
+        closeMenu();
+        try {
+            const res = await fetchWithIdentity(getUrls().SESSION_LOAD, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name }),
+            });
+            const data = await res.json();
+            if (data.status === 'ok') {
+                dispatch(dfActions.loadState(data.state));
+                dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Session", type: "success", value: `Session "${name}" loaded` }));
+            } else {
+                dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Session", type: "error", value: data.message || 'Load failed' }));
+            }
+        } catch (e) {
+            dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Session", type: "error", value: 'Failed to load session' }));
+        }
+    };
+
+    const handleExport = async () => {
+        closeMenu();
+        setExporting(true);
+        try {
+            const res = await fetchWithIdentity(getUrls().SESSION_EXPORT, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ state: fullState }),
+            });
+            if (!res.ok) throw new Error('Export failed');
+            const blob = await res.blob();
+            const disposition = res.headers.get('content-disposition');
+            const match = disposition?.match(/filename="?(.+?)"?$/);
+            const filename = match?.[1] || 'session.dfsession';
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = filename;
+            a.click();
+            URL.revokeObjectURL(a.href);
+            dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Session", type: "success", value: "Session exported" }));
+        } catch (e) {
+            dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Session", type: "error", value: 'Failed to export session' }));
+        }
+        setExporting(false);
+    };
+
+    const handleImport = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+        closeMenu();
+        try {
+            const formData = new FormData();
+            formData.append('file', file);
+            const res = await fetchWithIdentity(getUrls().SESSION_IMPORT, {
+                method: 'POST',
+                body: formData,
+            });
+            const data = await res.json();
+            if (data.status === 'ok') {
+                dispatch(dfActions.loadState(data.state));
+                dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Session", type: "success", value: `Session imported from ${file.name}` }));
+            } else {
+                dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Session", type: "error", value: data.message || 'Import failed' }));
+            }
+        } catch (e) {
+            dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Session", type: "error", value: 'Failed to import session' }));
+        }
+        if (importRef.current) importRef.current.value = '';
+    };
+
     return (
         <>
             <Button 
@@ -270,62 +435,55 @@ const SessionMenu: React.FC = () => {
                 Session
             </Button>
             <Menu
-                id="session-menu"
                 anchorEl={anchorEl}
                 open={open}
-                onClose={() => setAnchorEl(null)}
-                slotProps={{
-                    paper: { sx: { py: '4px', px: '8px' } }
-                }}
-                aria-labelledby="session-menu-button"
-                sx={{ '& .MuiMenuItem-root': { padding: 0, margin: 0 } }}
+                onClose={closeMenu}
+                slotProps={{ paper: { sx: { minWidth: 200 } } }}
             >
-                <MenuItem onClick={() => {}}>
-                    <ExportStateButton />
+                <MenuItem onClick={() => { setSaveDialogOpen(true); closeMenu(); }}
+                    sx={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <SaveIcon sx={{ fontSize: 16, color: 'text.secondary' }} /> Save session
                 </MenuItem>
-                <MenuItem onClick={(e) => {}}>
-                    <ImportStateButton />
+                <MenuItem onClick={() => { setLoadDialogOpen(true); closeMenu(); }}
+                    sx={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <FolderOpenIcon sx={{ fontSize: 16, color: 'text.secondary' }} /> Open session...
                 </MenuItem>
-                <Divider><Typography variant="caption" sx={{ fontSize: 12, color: 'text.secondary' }}>database file</Typography></Divider>
-                {tables.some(t => t.virtual) && 
-                    <Typography fontSize="inherit" sx={{ color: theme.palette.warning.main, width: '160px', display: 'flex', alignItems: 'center', gap: 1, fontSize: 9 }}>
-                        This session contains data stored in the database, export and reload the database to resume the session later.
-                    </Typography>}
-                <MenuItem disabled={!tables.some(t => t.virtual)}  onClick={() => {
-                    handleDBDownload(identity.id);
-                }}>
-                    <Button startIcon={<DownloadIcon />}
-                        sx={{ fontSize: 14, textTransform: 'none', display: 'flex', alignItems: 'center'}}>
-                        download database
-                    </Button>
+
+                {recentSessions.length > 0 && [
+                    <Divider key="div-recent" />,
+                    <Typography key="label-recent" variant="caption" sx={{ px: 2, py: 0.5, color: 'text.secondary', display: 'block', fontSize: 10 }}>
+                        Quick resume
+                    </Typography>,
+                    ...recentSessions.map(s => (
+                        <MenuItem key={s.name} onClick={() => handleLoadSession(s.name)}
+                            sx={{ pl: 4, py: 0.25, minHeight: 0, fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2 }}>
+                            <Typography noWrap sx={{ fontSize: 12 }}>{s.name}</Typography>
+                            <Typography noWrap sx={{ fontSize: 10, color: 'text.secondary', flexShrink: 0 }}>
+                                {new Date(s.saved_at).toLocaleDateString()}
+                            </Typography>
+                        </MenuItem>
+                    )),
+                ]}
+
+                <Divider />
+                <MenuItem onClick={handleExport} disabled={exporting}
+                    sx={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <DownloadIcon sx={{ fontSize: 16, color: 'text.secondary' }} /> {exporting ? 'Exporting...' : 'Export to file'}
                 </MenuItem>
-                <MenuItem onClick={() => {}}>
-                    <Button startIcon={<UploadIcon />} 
-                        sx={{ fontSize: 14, textTransform: 'none', display: 'flex', alignItems: 'center'}}
-                        component="label">
-                        import database
-                        <input type="file" hidden accept=".db" onChange={async (e) => {
-                            const file = e.target.files?.[0];
-                            if (!file) return;
-                            const formData = new FormData();
-                            formData.append('file', file);
-                            try {
-                                const response = await fetchWithIdentity(getUrls().UPLOAD_DB_FILE, { method: 'POST', body: formData });
-                                const data = await response.json();
-                                if (data.status === 'success') {
-                                    dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "DB Manager", type: "success", value: "Database imported successfully" }));
-                                } else {
-                                    dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "DB Manager", type: "error", value: data.message || 'Import failed' }));
-                                }
-                            } catch (error) {
-                                dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "DB Manager", type: "error", value: 'Import failed' }));
-                            }
-                            e.target.value = '';
-                        }} />
-                    </Button>
+                <MenuItem onClick={() => importRef.current?.click()}
+                    sx={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <UploadFileIcon sx={{ fontSize: 16, color: 'text.secondary' }} /> Import from file
+                    <input
+                        type="file"
+                        hidden
+                        accept=".dfsession,.zip"
+                        ref={importRef}
+                        onChange={handleImport}
+                    />
                 </MenuItem>
-                
             </Menu>
+            <SaveSessionDialog open={saveDialogOpen} onClose={() => setSaveDialogOpen(false)} />
+            <LoadSessionDialog open={loadDialogOpen} onClose={() => setLoadDialogOpen(false)} />
         </>
     );
 };
@@ -342,13 +500,13 @@ const ResetDialog: React.FC = () => {
                 onClick={() => setOpen(true)} 
                 endIcon={<PowerSettingsNewIcon />}
             >
-                Reset
+                Exit
             </Button>
             <Dialog onClose={() => setOpen(false)} open={open}>
-                <DialogTitle sx={{ display: "flex", alignItems: "center" }}>Reset Session?</DialogTitle>
+                <DialogTitle sx={{ display: "flex", alignItems: "center" }}>Exit Session?</DialogTitle>
                 <DialogContent>
                     <DialogContentText>
-                        All unexported content (charts, derived data, concepts) will be lost upon reset.
+                        All unsaved content (data, charts, reports) will be lost. Make sure to save your session before exiting.
                     </DialogContentText>
                 </DialogContent>
                 <DialogActions>
@@ -370,7 +528,7 @@ const ResetDialog: React.FC = () => {
                         }} 
                         endIcon={<PowerSettingsNewIcon />}
                     >
-                        reset session 
+                        exit session 
                     </Button>
                     <Button onClick={() => setOpen(false)}>cancel</Button>
                 </DialogActions>

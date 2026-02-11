@@ -367,41 +367,39 @@ export const dataFormulatorSlice = createSlice({
             
         },
         loadState: (state, action: PayloadAction<any>) => {
+            const saved = action.payload;
 
-            let savedState = action.payload;
+            // Return a brand-new state object so Immer skips
+            // recursive proxy / freeze on potentially huge table rows.
+            return {
+                // Preserve local-only / sensitive fields from current state
+                identity: state.identity,
+                agentRules: state.agentRules || initialState.agentRules,
+                models: state.models || [],
+                selectedModelId: state.selectedModelId || undefined,
+                testedModels: state.testedModels || [],
+                dataLoaderConnectParams: state.dataLoaderConnectParams || {},
+                serverConfig: initialState.serverConfig,
 
-            // models should not be loaded again, especially they may be from others
-            state.agentRules = state.agentRules || initialState.agentRules;
-            state.models = state.models || [];
-            state.selectedModelId = state.selectedModelId || undefined;
-            state.testedModels = state.testedModels || [];
-            state.dataLoaderConnectParams = state.dataLoaderConnectParams || {};
-            state.serverConfig = initialState.serverConfig;
+                // Restore from saved payload
+                tables: saved.tables || [],
+                charts: saved.charts || [],
+                conceptShelfItems: saved.conceptShelfItems || [],
+                focusedDataCleanBlockId: saved.focusedDataCleanBlockId || undefined,
+                focusedTableId: saved.focusedTableId || undefined,
+                focusedChartId: saved.focusedChartId || undefined,
+                config: { ...initialState.config, ...(saved.config || {}) },
+                dataCleanBlocks: saved.dataCleanBlocks || [],
+                agentActions: saved.agentActions || [],
+                generatedReports: saved.generatedReports || [],
 
-            //state.table = undefined;
-            state.tables = savedState.tables || [];
-            state.charts = savedState.charts || [];
-            
-            state.conceptShelfItems = savedState.conceptShelfItems || [];
-
-            state.messages = [];
-            state.displayedMessageIdx = -1;
-
-            state.focusedDataCleanBlockId = savedState.focusedDataCleanBlockId || undefined;
-
-            state.focusedTableId = savedState.focusedTableId || undefined;
-            state.focusedChartId = savedState.focusedChartId || undefined;
-
-            state.chartSynthesisInProgress = [];
-
-            state.config = { ...initialState.config, ...(savedState.config || {}) };
-
-            state.dataCleanBlocks = savedState.dataCleanBlocks || [];
-            state.cleanInProgress = false;
-
-            state.agentActions = savedState.agentActions || [];
-
-            state.generatedReports = savedState.generatedReports || [];
+                // Reset transient fields
+                messages: [],
+                displayedMessageIdx: -1,
+                viewMode: saved.viewMode || 'editor',
+                chartSynthesisInProgress: [],
+                cleanInProgress: false,
+            };
         },
         updateAgentWorkInProgress: (state, action: PayloadAction<{actionId: string, tableId?: string, description: string, status: 'running' | 'completed' | 'warning' | 'failed', hidden: boolean}>) => {
             if (state.agentActions.some(a => a.actionId == action.payload.actionId)) {

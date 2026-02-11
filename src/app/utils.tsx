@@ -67,6 +67,14 @@ export function getUrls() {
 
         // Refresh data endpoint
         REFRESH_DERIVED_DATA: `/api/agent/refresh-derived-data`,
+
+        // Session management
+        SESSION_SAVE: `/api/sessions/save`,
+        SESSION_LIST: `/api/sessions/list`,
+        SESSION_LOAD: `/api/sessions/load`,
+        SESSION_DELETE: `/api/sessions/delete`,
+        SESSION_EXPORT: `/api/sessions/export`,
+        SESSION_IMPORT: `/api/sessions/import`,
     };
 }
 

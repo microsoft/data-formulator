@@ -92,6 +92,9 @@ def _register_blueprints(disable_database: bool):
     print("  Loading AI agents...", flush=True)
     from data_formulator.agent_routes import agent_bp
     
+    # Import session routes
+    from data_formulator.session_routes import session_bp
+
     # Import demo stream routes
     from data_formulator.demo_stream_routes import demo_stream_bp, limiter as demo_stream_limiter, start_iss_collector
     demo_stream_limiter.init_app(app)
@@ -100,6 +103,7 @@ def _register_blueprints(disable_database: bool):
     if not disable_database:
         app.register_blueprint(tables_bp)
     app.register_blueprint(agent_bp)
+    app.register_blueprint(session_bp)
     app.register_blueprint(demo_stream_bp)
     
     # Start background ISS position collector
