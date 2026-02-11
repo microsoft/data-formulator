@@ -15,10 +15,10 @@ from pathlib import Path
 from typing import Literal, Any
 import yaml
 import logging
-import fcntl
 import tempfile
 import time
 import os
+import sys
 
 logger = logging.getLogger(__name__)
 
@@ -28,10 +28,74 @@ LOCK_FILENAME = ".workspace.lock"
 MAX_LOCK_WAIT_SECONDS = 10
 
 
+if sys.platform == 'win32':
+    # Windows: use LockFileEx/UnlockFileEx via ctypes for whole-file locking,
+    # semantically equivalent to fcntl.flock on Unix.
+    import ctypes
+    import ctypes.wintypes
+    import msvcrt as _msvcrt
+
+    # use_last_error=True: ctypes saves GetLastError() per-thread immediately
+    # after each call, avoiding races with other threads.
+    _kernel32 = ctypes.WinDLL('kernel32', use_last_error=True) 
+
+    _LOCKFILE_EXCLUSIVE_LOCK = 0x0002
+    _LOCKFILE_FAIL_IMMEDIATELY = 0x0001
+
+    class _OVERLAPPED(ctypes.Structure):
+        _fields_ = [
+            ('Internal', ctypes.POINTER(ctypes.c_ulong)),
+            ('InternalHigh', ctypes.POINTER(ctypes.c_ulong)),
+            ('Offset', ctypes.wintypes.DWORD),
+            ('OffsetHigh', ctypes.wintypes.DWORD),
+            ('hEvent', ctypes.wintypes.HANDLE),
+        ]
+
+    def _lock_file(fd: int) -> None:
+        """Acquire an exclusive, non-blocking lock on the whole file (Windows)."""
+        handle = _msvcrt.get_osfhandle(fd)
+        overlapped = _OVERLAPPED()
+        result = _kernel32.LockFileEx(
+            ctypes.wintypes.HANDLE(handle),
+            ctypes.wintypes.DWORD(_LOCKFILE_EXCLUSIVE_LOCK | _LOCKFILE_FAIL_IMMEDIATELY),
+            ctypes.wintypes.DWORD(0),       # reserved
+            ctypes.wintypes.DWORD(0xFFFFFFFF),  # bytes to lock (low)
+            ctypes.wintypes.DWORD(0xFFFFFFFF),  # bytes to lock (high)
+            ctypes.byref(overlapped),
+        )
+        if not result:
+            raise ctypes.WinError(ctypes.get_last_error())
+
+    def _unlock_file(fd: int) -> None:
+        """Release the whole-file lock (Windows)."""
+        handle = _msvcrt.get_osfhandle(fd)
+        overlapped = _OVERLAPPED()
+        result = _kernel32.UnlockFileEx(
+            ctypes.wintypes.HANDLE(handle),
+            ctypes.wintypes.DWORD(0),       # reserved
+            ctypes.wintypes.DWORD(0xFFFFFFFF),
+            ctypes.wintypes.DWORD(0xFFFFFFFF),
+            ctypes.byref(overlapped),
+        )
+        if not result:
+            raise ctypes.WinError(ctypes.get_last_error())
+else:
+    import fcntl as _fcntl
+
+    def _lock_file(fd: int) -> None:
+        """Acquire an exclusive, non-blocking lock on the whole file (Unix)."""
+        _fcntl.flock(fd, _fcntl.LOCK_EX | _fcntl.LOCK_NB)
+
+    def _unlock_file(fd: int) -> None:
+        """Release the whole-file lock (Unix)."""
+        _fcntl.flock(fd, _fcntl.LOCK_UN)
+
+
 class WorkspaceLock:
     """
     Context manager for acquiring an exclusive lock on workspace metadata.
     Prevents race conditions when multiple processes/threads modify metadata concurrently.
+    Uses LockFileEx on Windows and fcntl.flock on Unix — both provide whole-file locking.
     """
 
     def __init__(self, workspace_path: Path, timeout: float = MAX_LOCK_WAIT_SECONDS):
@@ -48,9 +112,10 @@ class WorkspaceLock:
         while True:
             try:
                 # Open lock file (create if doesn't exist)
-                self.lock_fd = open(self.lock_file, 'a')
-                # Try to acquire exclusive lock (non-blocking)
-                fcntl.flock(self.lock_fd.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                # 'a+' creates the file atomically if missing and allows seek/read
+                self.lock_fd = open(self.lock_file, 'a+')
+                # Try to acquire exclusive whole-file lock (non-blocking)
+                _lock_file(self.lock_fd.fileno())
                 logger.debug(f"Acquired workspace lock: {self.lock_file}")
                 return self
             except (IOError, OSError) as e:
@@ -73,7 +138,7 @@ class WorkspaceLock:
         """Release lock."""
         if self.lock_fd:
             try:
-                fcntl.flock(self.lock_fd.fileno(), fcntl.LOCK_UN)
+                _unlock_file(self.lock_fd.fileno())
                 self.lock_fd.close()
                 logger.debug(f"Released workspace lock: {self.lock_file}")
             except Exception as e:
