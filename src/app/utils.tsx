@@ -1151,34 +1151,24 @@ export const resolveRecommendedChart = (refinedGoal: any, allFields: FieldItem[]
 
     let chartTypeMap : any = {
         "line" : "Line Chart",
-        "histogram": "Bar Chart",
+        "histogram": "Histogram",
         "bar": "Bar Chart",
         "point": "Scatter Plot",
         "boxplot": "Boxplot",
         "area": "Custom Area",
         "heatmap": "Heatmap",
         "group_bar": "Grouped Bar Chart",
+        "pie": "Pie Chart",
         "worldmap": "World Map",
         "usmap": "US Map"
     }
     let chartType = chartTypeMap[rawChartType] || 'Scatter Plot';
     let newChart = generateFreshChart(table.id, chartType) as Chart;
     newChart = resolveChartFields(newChart, allFields, chartEncodings, table);
-    if (rawChartType == "histogram") {
-        newChart.encodingMap.y = { aggregate: "count" };
-    }
-    // Handle map projection settings via config
-    if ((rawChartType === "worldmap" || rawChartType === "usmap")) {
-        const config: Record<string, any> = {};
-        if (refinedGoal['projection']) {
-            config.projection = refinedGoal['projection'];
-        }
-        if (refinedGoal['projection_center']) {
-            config.projectionCenter = refinedGoal['projection_center'];
-        }
-        if (Object.keys(config).length > 0) {
-            newChart.config = config;
-        }
+
+    // Apply chart config properties from agent recommendation
+    if (refinedGoal['config'] && typeof refinedGoal['config'] === 'object') {
+        newChart.config = { ...refinedGoal['config'] };
     }
     return newChart;
 }

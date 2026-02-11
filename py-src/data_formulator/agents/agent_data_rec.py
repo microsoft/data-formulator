@@ -54,23 +54,101 @@ Concretely, you should infer the appropriate data and create a Python script bas
     "recap": "..." // string, a short summary of the user's goal.
     "display_instruction": "..." // string, the even shorter verb phrase describing the users' goal.
     "recommendation": "..." // string, explain why this recommendation is made
-    "input_tables": [...] // string[], describe names of the input tables that will be used in the transformation.
-    "output_fields": [...] // string[], describe the desired output fields that the output data should have (i.e., the goal of transformed data), it's a good idea to preserve intermediate fields here
-    "chart_type": "" // string, one of "point", "bar", "line", "area", "heatmap", "group_bar", "boxplot", "worldmap", "usmap". "chart_type" should either be inferred from user instruction, or recommend if the user didn't specify any.
-    "chart_encodings": {
-        "x": "",
-        "y": "",
-        "color": "",
-        "size": "",
-        "opacity": "",
-        "facet": "",
-        "longitude": "",
-        "latitude": ""
-    } // object: map visualization channels (x, y, color, size, opacity, facet, longitude, latitude, etc.) to a subset of output fields, appropriate visual channels for different chart types are defined below.
-    "projection": "" // string (optional, only for worldmap/usmap): one of "mercator", "equalEarth", "naturalEarth1", "orthographic", "stereographic", "albersUsa", "conicEqualArea", "gnomonic", "azimuthalEquidistant". Default is "equalEarth" for worldmap, "albersUsa" for usmap.
-    "projection_center": [0, 0] // [longitude, latitude] (optional, only for worldmap): the center point of the map projection. Use to focus on specific regions, e.g., [105, 35] for China, [-98, 39] for USA, [10, 50] for Europe, [139, 36] for Japan.
+    "input_tables": [...] // string[], names of input tables from [CONTEXT] that will be used.
+    "output_fields": [...] // string[], desired output fields for the transformed data; include intermediate fields too.
+    "chart_type": "" // string, one of the chart types defined in [CHART TYPE REFERENCE] below.
+    "chart_encodings": {} // object, map visual channels to output field names. Available channels depend on chart_type (see reference below).
+    "config": {} // object (optional), chart styling options. Available options depend on chart_type (see reference below). Only include when there's a clear reason.
+    "output_variable": "" // string, descriptive snake_case Python variable name for the final DataFrame.
 }
 ```
+
+**[CHART TYPE REFERENCE]**
+
+Each chart type specifies: encodings (visual channels → field types), when to use it, data expectations, and optional config.
+
+| chart_type | encodings | config |
+|---|---|---|
+| point | x, y, color, size, opacity, facet | opacity (0.1–1.0) |
+| bar | x, y, color, opacity, facet | cornerRadius (0–15) |
+| group_bar | x, y, color, facet | cornerRadius (0–15) |
+| histogram | x, color, facet | binCount (5–50) |
+| line | x, y, color, opacity, facet | interpolate |
+| area | x, y, color, facet | — |
+| heatmap | x, y, color, facet | colorScheme |
+| boxplot | x, y, color, facet | — |
+| pie | theta, color, facet | innerRadius (0–100) |
+| worldmap | longitude, latitude, color, size | projection, projectionCenter |
+| usmap | longitude, latitude, color, size | — |
+
+**Chart type details:**
+
+- **point** (Scatter Plot)
+    - x, y: Quantitative or Categorical; color: Categorical (optional); size: Quantitative (optional, for bubble chart)
+    - Best for: relationships, correlations, distributions, regression analysis
+    - Good default when other chart types don't clearly apply
+    - config: `{"opacity": 0.5}` — marker opacity (default 1.0). Use lower values for dense/overlapping data.
+
+- **histogram**
+    - x: Quantitative or Categorical; color: Categorical (optional, for grouped histogram)
+    - Best for: distribution of a single quantitative field
+    - Values are auto-binned; color grouping is automatic
+    - config: `{"binCount": 20}` — number of bins (default 10).
+
+- **bar** (Bar / Stacked Bar Chart)
+    - x: Categorical (nominal/ordinal); y: Quantitative; color: Categorical or Quantitative (optional)
+    - Best for: comparisons across categories
+    - Multiple rows with the same x value are automatically stacked
+    - When stacking doesn't make sense: aggregate y values or introduce facets
+    - config: `{"cornerRadius": 5}` — rounded bar ends (default 0).
+
+- **group_bar** (Grouped Bar Chart)
+    - x: Categorical; y: Quantitative; color: Categorical (required, defines groups)
+    - Bars from different color groups are placed side by side
+    - config: `{"cornerRadius": 5}` — rounded bar ends (default 0).
+
+- **line** (Line Chart)
+    - x: Temporal (preferred) or ordinal; y: Quantitative; color: Categorical (optional, for multiple lines)
+    - Best for: trends over time, continuous data, forecasting
+    - Multiple rows with same x+color but different y: aggregate y or use facets
+    - config: `{"interpolate": "monotone"}` — options: "linear", "monotone" (smooth), "step", "step-before", "step-after", "basis" (smooth), "cardinal", "catmull-rom".
+
+- **area** (Area Chart)
+    - x: Temporal (preferred) or ordinal; y: Quantitative; color: Categorical (optional, for stacked areas)
+    - Best for: trends over time, part-to-whole over time
+
+- **heatmap**
+    - x, y: Categorical (convert quantitative to nominal); color: Quantitative (intensity)
+    - Best for: pattern discovery in matrix data
+    - config: `{"colorScheme": "viridis"}` — options: "viridis", "inferno", "magma", "plasma", "turbo", "blues", "reds", "greens", "oranges", "purples", "greys", "blueorange" (diverging), "redblue" (diverging).
+
+- **boxplot** (Box Plot)
+    - x: Categorical; y: Quantitative; color: Categorical (optional, for grouped boxplots)
+    - Best for: distribution comparison across categories
+
+- **pie** (Pie / Donut Chart)
+    - theta: Quantitative (slice size); color: Categorical (slice labels)
+    - Best for: part-to-whole relationships, proportions
+    - Avoid when >7-8 categories — use bar chart instead
+    - config: `{"innerRadius": 50}` — 0 = pie, >0 = donut chart.
+
+- **worldmap** (World Map)
+    - longitude: Quantitative (-180 to 180); latitude: Quantitative (-90 to 90); color: Categorical/Quantitative (optional); size: Quantitative (optional)
+    - Best for: geographic data with coordinates (cities, events, sales by location)
+    - config: `{"projection": "equalEarth", "projectionCenter": [105, 35]}`
+        - projection options: "mercator", "equalEarth" (default), "naturalEarth1", "orthographic", "stereographic", "conicEqualArea", "gnomonic", "azimuthalEquidistant"
+        - projectionCenter: [lon, lat] — e.g., [105, 35] China, [-98, 39] USA, [10, 50] Europe, [139, 36] Japan
+
+- **usmap** (US Map)
+    - longitude: Quantitative; latitude: Quantitative; color: Categorical/Quantitative (optional); size: Quantitative (optional)
+    - Best for: US-focused geographic data
+    - Uses fixed albersUsa projection (includes Alaska and Hawaii); no config options.
+
+**General encoding rules:**
+- facet: available for all chart types; use a categorical field with small cardinality.
+- opacity: available as an additional legend channel (Quantitative or Categorical).
+- All fields in "chart_encodings" must also appear in "output_fields".
+- Typically use 2-3 encoding channels (x, y, color/size); add facet only when needed.
 
 Concretely:
     - recap what the user's goal is in a short summary in "recap".
@@ -96,75 +174,6 @@ Concretely:
     - determine "input_tables", the names of a subset of input tables from [CONTEXT] section that will be used to achieve the user's goal.
         - **IMPORTANT** Note that the Table 1 in [CONTEXT] section is the table the user is currently viewing, it should take precedence if the user refers to insights about the "current table".
         - At the same time, leverage table information to determine which tables are relevant to the user's goal and should be used.
-    - "chart_type" must be one of "point", "bar", "line", "area", "heatmap", "group_bar", "boxplot", "worldmap", "usmap"
-    - "chart_encodings" should specify which fields should be used to create the visualization
-        - decide which visual channels should be used to create the visualization appropriate for the chart type.
-            - point: x, y, color, size, facet
-            - histogram: x, color, facet
-            - bar: x, y, color, facet
-            - line: x, y, color, facet
-            - area: x, y, color, facet
-            - heatmap: x, y, color, facet
-            - group_bar: x, y, color, facet
-            - boxplot: x, y, color, facet
-            - worldmap: longitude, latitude, color, size
-            - usmap: longitude, latitude, color, size
-        - note that all fields used in "chart_encodings" should be included in "output_fields".
-            - all fields you need for visualizations should be transformed into the output fields!
-            - "output_fields" should include important intermediate fields that are not used in visualization but are used for data transformation.
-        - typically only 2-3 fields should be used to create the visualization (x, y, color/size), facet can be added if it's a faceted visualization.
-    - Guidelines for choosing chart type and visualization fields:
-        - Consider chart types as follows:
-            - (point) Scatter Plots: x,y: Quantitative/Categorical, color: Categorical (optional), size: Quantitative (optional for creating bubble chart),
-                - best for: Relationships, correlations, distributions, forecasting, regression analysis
-                - scatter plots are good default way to visualize data when other chart types are not applicable.
-                - use color to visualize points from different categories.
-                - use size to visualize data points with an additional quantitative dimension of the data points.
-            - (histogram) Histograms: x: Quantitative/Categorical, color: Categorical (optional for creating grouped histogram),
-                - best for: Distribution of a quantitative field
-                - use x values directly if x values are categorical, and transform the data into bins if the field values are quantitative.
-                - when color is specified, the histogram will be grouped automatically (items with the same x values will be grouped).
-            - (bar) Bar Charts: x: Categorical (nominal/ordinal), y: Quantitative, color: Categorical/Quantitative (for stacked bar chart / showing additional quantitative dimension),
-                - best for: Comparisons across categories
-                - use (bar) for simple bar chart or stacked bar chart (when it makes sense to add up Y values for each category with the same X value),
-                    - when color is specified, the bar will be stacked automatically (items with the same x values will be stacked).
-                    - note that when there are multiple rows in the data with same x values, the bar will be stacked automatically.
-                        - 1. consider to use an aggregated field for y values if the value is not suitable for stacking.
-                        - 2. consider to introduce facets so that each group is visualized in a separate bar.
-            - (group_bar) for grouped bar chart, x: Categorical (nominal/ordinal), y: Quantitative, color: Categorical
-                - when color is specified, bars from different groups will be grouped automatically.
-                - only use facet if the cardinality of color field is small (less than 5).
-            - (line) Line Charts: x: Temporal (preferred) or ordinal, y: Quantitative, color: Categorical (optional for creating multiple lines),
-                - best for: Trends over time, continuous data, forecasting, regression analysis
-                - note that when there are multiple rows in the data belong to the same group (same x and color values) but different y values, the line will not look correct.
-                - consider to use an aggregated field for y values, or introduce facets so that each group is visualized in a separate line.
-            - (area) Area Charts: x: Temporal (preferred) or ordinal, y: Quantitative, color: Categorical (optional for creating stacked areas),
-                - best for: Trends over time, continuous data
-            - (heatmap) Heatmaps: x,y: Categorical (you need to convert quantitative to nominal), color: Quantitative intensity,
-                - best for: Pattern discovery in matrix data
-            - (boxplot) Box plots: x: Categorical (nominal/ordinal), y: Quantitative, color: Categorical (optional for creating grouped boxplots),
-                - best for: Distribution of a quantitative field
-                - use x values directly if x values are categorical, and transform the data into bins if the field values are quantitative.
-                - when color is specified, the boxplot will be grouped automatically (items with the same x values will be grouped).
-            - (worldmap) World Map: longitude: Quantitative (geographic longitude -180 to 180), latitude: Quantitative (geographic latitude -90 to 90), color: Categorical/Quantitative (optional), size: Quantitative (optional)
-                - best for: Geographic data visualization on a world map
-                - use when the data contains geographic coordinates (longitude, latitude) for locations around the world
-                - the data must have longitude and latitude fields representing geographic coordinates
-                - color can be used to show categories (e.g., country, region) or quantitative values (e.g., population, sales)
-                - size can be used to show quantitative values (e.g., magnitude, count)
-                - example use cases: plotting cities, earthquakes, sales by location, etc.
-                - projection options: "mercator", "equalEarth" (default), "naturalEarth1", "orthographic", "stereographic", "albers", "conicEqualArea"
-                - projection_center: set [longitude, latitude] to center the map on a specific region:
-                    * China: [105, 35], USA: [-98, 39], Europe: [10, 50], Japan: [139, 36], India: [78, 22]
-                    * Brazil: [-55, -10], Australia: [134, -25], Russia: [100, 60], South Africa: [25, -29]
-            - (usmap) US Map: longitude: Quantitative (geographic longitude), latitude: Quantitative (geographic latitude), color: Categorical/Quantitative (optional), size: Quantitative (optional)
-                - best for: Geographic data visualization focused on the United States
-                - use when the data is specifically about US locations
-                - uses albersUsa projection optimized for US geography (includes Alaska and Hawaii)
-                - the data must have longitude and latitude fields representing US geographic coordinates
-        - facet channel is available for all chart types, it supports a categorical field with small cardinality to visualize the data in different facets.
-        - if you really need additional legend fields:
-            - you can use opacity for legend (support Quantitative and Categorical).
     - visualization fields require tidy data.
         - similar to VegaLite and ggplot2 so that each field is mapped to a visualization axis or legend.
         - consider data transformations if you want to visualize multiple fields together:
@@ -186,9 +195,7 @@ Concretely:
         - when the user asks for clustering:
             - the output should be a long format table where actual x, y pairs with a third column "cluster_id" that indicates the cluster id of the data point.
             - the recommended chart should be scatter plot (quantitative x, y)
-    - specify "output_variable", the name of the Python variable that will contain the final DataFrame result.
-      The name should be descriptive and reflect the data content (e.g., "sales_by_region", "monthly_trends", "customer_segments").
-      Avoid generic names like "result_df", "output", or "data". Use snake_case naming convention.
+    - "output_variable": descriptive snake_case name for the final DataFrame (e.g., "sales_by_region", "monthly_trends"). Avoid generic names like "result_df" or "data".
 
 2. Then, write a Python script based on the inferred goal. The script should transform input data into the desired output table containing all "output_fields" from the refined goal.
 The script should be as simple as possible and easily readable. If there is no data transformation needed based on "output_fields", the script can simply load and assign the data.
