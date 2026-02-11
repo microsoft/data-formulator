@@ -327,6 +327,8 @@ const SessionMenu: React.FC = () => {
     const importRef = React.useRef<HTMLInputElement>(null);
     const open = Boolean(anchorEl);
     const dispatch = useDispatch();
+    const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
+    const diskPersistenceDisabled = serverConfig.DISABLE_DATABASE;
 
     const fullState = useSelector((state: DataFormulatorState) => {
         const excludedFields = new Set([
@@ -342,7 +344,7 @@ const SessionMenu: React.FC = () => {
 
     // Fetch recent sessions when the menu opens
     useEffect(() => {
-        if (!open) return;
+        if (!open || diskPersistenceDisabled) return;
         (async () => {
             try {
                 const res = await fetchWithIdentity(getUrls().SESSION_LIST);
@@ -440,16 +442,24 @@ const SessionMenu: React.FC = () => {
                 onClose={closeMenu}
                 slotProps={{ paper: { sx: { minWidth: 200 } } }}
             >
-                <MenuItem onClick={() => { setSaveDialogOpen(true); closeMenu(); }}
-                    sx={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <SaveIcon sx={{ fontSize: 16, color: 'text.secondary' }} /> Save session
-                </MenuItem>
-                <MenuItem onClick={() => { setLoadDialogOpen(true); closeMenu(); }}
-                    sx={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <FolderOpenIcon sx={{ fontSize: 16, color: 'text.secondary' }} /> Open session...
-                </MenuItem>
+                <Tooltip title={diskPersistenceDisabled ? "Install locally to use this feature" : ""} placement="right">
+                    <span>
+                        <MenuItem disabled={diskPersistenceDisabled} onClick={() => { setSaveDialogOpen(true); closeMenu(); }}
+                            sx={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <SaveIcon sx={{ fontSize: 16, color: 'text.secondary' }} /> Save session
+                        </MenuItem>
+                    </span>
+                </Tooltip>
+                <Tooltip title={diskPersistenceDisabled ? "Install locally to use this feature" : ""} placement="right">
+                    <span>
+                        <MenuItem disabled={diskPersistenceDisabled} onClick={() => { setLoadDialogOpen(true); closeMenu(); }}
+                            sx={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <FolderOpenIcon sx={{ fontSize: 16, color: 'text.secondary' }} /> Open session...
+                        </MenuItem>
+                    </span>
+                </Tooltip>
 
-                {recentSessions.length > 0 && [
+                {!diskPersistenceDisabled && recentSessions.length > 0 && [
                     <Divider key="div-recent" />,
                     <Typography key="label-recent" variant="caption" sx={{ px: 2, py: 0.5, color: 'text.secondary', display: 'block', fontSize: 10 }}>
                         Quick resume

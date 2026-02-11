@@ -45,9 +45,14 @@ import { getUrls, fetchWithIdentity } from '../app/utils';
 import { DBManagerPane } from './DBTableManager';
 import { MultiTablePreview } from './MultiTablePreview';
 import { 
-    FormControlLabel, 
-    Switch
+    ToggleButton, 
+    ToggleButtonGroup,
+    FormControlLabel,
+    Switch,
 } from '@mui/material';
+import FolderOpenIcon from '@mui/icons-material/FolderOpen';
+import OpenInNewIcon from '@mui/icons-material/OpenInNew';
+import LanguageIcon from '@mui/icons-material/Language';
 
 export type UploadTabType = 'menu' | 'upload' | 'paste' | 'url' | 'database' | 'extract' | 'explore';
 
@@ -81,7 +86,6 @@ interface DataSourceCardProps {
     description: string;
     onClick: () => void;
     disabled?: boolean;
-    disabledReason?: string;
 }
 
 const DataSourceCard: React.FC<DataSourceCardProps> = ({ 
@@ -90,7 +94,6 @@ const DataSourceCard: React.FC<DataSourceCardProps> = ({
     description, 
     onClick, 
     disabled = false,
-    disabledReason 
 }) => {
     const theme = useTheme();
     
@@ -156,14 +159,6 @@ const DataSourceCard: React.FC<DataSourceCardProps> = ({
         </Paper>
     );
 
-    if (disabled && disabledReason) {
-        return (
-            <Tooltip title={disabledReason} placement="top">
-                <span>{card}</span>
-            </Tooltip>
-        );
-    }
-
     return card;
 };
 
@@ -197,32 +192,28 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
             title: 'Sample Datasets', 
             description: 'Explore and load curated example datasets',
             icon: <ExploreIcon />, 
-            disabled: false,
-            disabledReason: undefined
+            disabled: false
         },
         { 
             value: 'upload' as UploadTabType, 
             title: 'Upload File', 
             description: 'Upload local files (CSV, TSV, JSON, Excel)',
             icon: <UploadFileIcon />, 
-            disabled: false,
-            disabledReason: undefined
+            disabled: false
         },
         { 
             value: 'paste' as UploadTabType, 
             title: 'Paste Data', 
             description: 'Paste tabular data directly from clipboard',
             icon: <ContentPasteIcon />, 
-            disabled: false,
-            disabledReason: undefined
+            disabled: false
         },
         { 
             value: 'extract' as UploadTabType, 
             title: 'Extract Unstructured Data', 
             description: 'Extract tables from images or text using AI',
             icon: <ImageSearchIcon />, 
-            disabled: false,
-            disabledReason: undefined
+            disabled: false
         },
     ];
 
@@ -232,16 +223,14 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
             title: 'Load from URL', 
             description: 'Load data from a URL with optional auto-refresh',
             icon: <LinkIcon />, 
-            disabled: false,
-            disabledReason: undefined
+            disabled: false
         },
         { 
             value: 'database' as UploadTabType, 
             title: 'Database', 
             description: 'Connect to databases or data services',
             icon: <StorageIcon />, 
-            disabled: serverConfig.DISABLE_DATABASE,
-            disabledReason: 'Database connection is disabled in this environment'
+            disabled: false
         },
     ];
 
@@ -333,7 +322,6 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
                             description={source.description}
                             onClick={() => onSelectTab(source.value)}
                             disabled={source.disabled}
-                            disabledReason={source.disabledReason}
                         />
                     </Box>
                 ))}
@@ -352,7 +340,6 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
                             description={source.description}
                             onClick={() => onSelectTab(source.value)}
                             disabled={source.disabled}
-                            disabledReason={source.disabledReason}
                         />
                     </Box>
                 ))}
@@ -402,7 +389,6 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
                         description={source.description}
                         onClick={() => onSelectTab(source.value)}
                         disabled={source.disabled}
-                        disabledReason={source.disabledReason}
                     />
                 ))}
             </Box>
@@ -442,7 +428,6 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
                         description={source.description}
                         onClick={() => onSelectTab(source.value)}
                         disabled={source.disabled}
-                        disabledReason={source.disabledReason}
                     />
                 ))}
             </Box>
@@ -473,8 +458,9 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
     const fileInputRef = useRef<HTMLInputElement>(null);
     const urlInputRef = useRef<HTMLInputElement>(null);
 
-    // Store on server toggle (default: true, like normal browsing mode)
-    const [storeOnServer, setStoreOnServer] = useState<boolean>(true);
+    // Store on server toggle (forced off when DISABLE_DATABASE)
+    const diskPersistenceDisabled = serverConfig.DISABLE_DATABASE;
+    const [storeOnServer, setStoreOnServer] = useState<boolean>(!diskPersistenceDisabled);
 
     // Paste tab state
     const [pasteContent, setPasteContent] = useState<string>("");
@@ -1002,29 +988,52 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                         </IconButton>
                     </Tooltip>
                 )}
-                {activeTab !== 'menu' && activeTab !== 'database' && (
-                    <Tooltip title={storeOnServer 
-                        ? "Data will be stored on the server workspace (supports large tables)" 
-                        : `Data stays in browser only (limited to ${frontendRowLimit.toLocaleString()} rows, like incognito mode)`}>
-                        <FormControlLabel
-                            sx={{ ml: 'auto', mr: 0 }}
-                            control={
-                                <Switch
-                                    checked={storeOnServer}
-                                    onChange={(e) => setStoreOnServer(e.target.checked)}
+                {activeTab !== 'menu' && (
+                    <Box sx={{ ml: 'auto', mr: 0, display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                        <Typography variant="caption" sx={{ fontSize: '0.7rem', color: 'text.secondary', mr: 0.5 }}>
+                            Load data in
+                        </Typography>
+                        <ToggleButtonGroup
+                            value={storeOnServer ? 'disk' : 'browser'}
+                            exclusive
+                            onChange={(_, val) => { if (val) setStoreOnServer(val === 'disk'); }}
+                            size="small"
+                            sx={{ height: 26, '& .MuiToggleButton-root': { textTransform: 'none', fontSize: '0.7rem', px: 1, py: 0 } }}
+                        >
+                            <ToggleButton value="browser">
+                                <Tooltip title={`Data stays in browser only (limited to ${frontendRowLimit.toLocaleString()} rows)`} placement="bottom">
+                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                        <LanguageIcon sx={{ fontSize: 14 }} /> Browser
+                                    </Box>
+                                </Tooltip>
+                            </ToggleButton>
+                            <ToggleButton value="disk" disabled={diskPersistenceDisabled}>
+                                <Tooltip title={diskPersistenceDisabled
+                                    ? 'Install Data Formulator locally to unlock analysis for large datasets'
+                                    : `Data stored in workspace on disk (supports large tables)`} placement="bottom">
+                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                        <FolderOpenIcon sx={{ fontSize: 14 }} /> Disk
+                                    </Box>
+                                </Tooltip>
+                            </ToggleButton>
+                        </ToggleButtonGroup>
+                        {storeOnServer && !diskPersistenceDisabled && serverConfig.DATA_FORMULATOR_HOME && (
+                            <Tooltip title={`Open workspace: ${serverConfig.DATA_FORMULATOR_HOME}`} placement="bottom">
+                                <IconButton
                                     size="small"
-                                />
-                            }
-                            label={
-                                <Typography variant="body2" sx={{ fontSize: '0.75rem', color: storeOnServer ? 'text.primary' : 'warning.main' }}>
-                                    {storeOnServer ? 'Store on server' : `Local only (≤${frontendRowLimit.toLocaleString()} rows)`}
-                                </Typography>
-                            }
-                        />
-                    </Tooltip>
+                                    onClick={() => {
+                                        fetchWithIdentity(getUrls().OPEN_WORKSPACE, { method: 'POST' }).catch(() => {});
+                                    }}
+                                    sx={{ p: 0.5 }}
+                                >
+                                    <OpenInNewIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
+                                </IconButton>
+                            </Tooltip>
+                        )}
+                    </Box>
                 )}
                 <IconButton
-                    sx={{ marginLeft: activeTab === 'menu' || activeTab === 'database' ? 'auto' : undefined }}
+                    sx={{ marginLeft: activeTab === 'menu' ? 'auto' : undefined }}
                     size="small"
                     onClick={handleClose}
                     aria-label="close"
@@ -1499,25 +1508,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
 
                 {/* Database Tab */}
                 <TabPanel value={activeTab} index="database">
-                    {serverConfig.DISABLE_DATABASE ? (
-                        <Box sx={{ textAlign: 'center', py: 4, px: 2 }}>
-                            <Typography color="text.secondary" sx={{ mb: 2 }}>
-                                Database connection is disabled in this environment.
-                            </Typography>
-                            <Typography variant="body2" color="text.secondary">
-                                Install Data Formulator locally to use database features. <br />
-                                <Link 
-                                    href="https://github.com/microsoft/data-formulator" 
-                                    target="_blank" 
-                                    rel="noopener noreferrer"
-                                >
-                                    https://github.com/microsoft/data-formulator
-                                </Link>
-                            </Typography>
-                        </Box>
-                    ) : (
-                        <DBManagerPane onClose={handleClose} />
-                    )}
+                    <DBManagerPane onClose={handleClose} storeOnServer={storeOnServer} />
                 </TabPanel>
 
                 {/* Extract Data Tab */}

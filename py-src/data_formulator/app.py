@@ -56,6 +56,7 @@ app.config['CLI_ARGS'] = {
     'disable_file_upload': os.environ.get('DISABLE_FILE_UPLOAD', 'false').lower() == 'true',
     'project_front_page': os.environ.get('PROJECT_FRONT_PAGE', 'false').lower() == 'true',
     'max_display_rows': int(os.environ.get('MAX_DISPLAY_ROWS', '5000')),
+    'data_dir': os.environ.get('DATA_FORMULATOR_HOME', None),
 }
 
 # Get logger for this module (logging config moved to run_app function)
@@ -79,7 +80,7 @@ def configure_logging():
         app.logger.addHandler(handler)
 
 
-def _register_blueprints(disable_database: bool):
+def _register_blueprints():
     """
     Import and register blueprints. This is where heavy imports happen.
     Called from run_app() with progress feedback.
@@ -100,8 +101,7 @@ def _register_blueprints(disable_database: bool):
     demo_stream_limiter.init_app(app)
     
     # Register blueprints
-    if not disable_database:
-        app.register_blueprint(tables_bp)
+    app.register_blueprint(tables_bp)
     app.register_blueprint(agent_bp)
     app.register_blueprint(session_bp)
     app.register_blueprint(demo_stream_bp)
@@ -140,21 +140,12 @@ def get_app_config():
         "PROJECT_FRONT_PAGE": args['project_front_page'],
         "MAX_DISPLAY_ROWS": args['max_display_rows'],
     }
-    return flask.jsonify(config)
 
-@app.route('/api/tables/<path:path>', methods=['GET', 'POST'])
-def database_disabled_fallback(path):
-    """Fallback route for table endpoints when database is disabled"""
-    if app.config['CLI_ARGS']['disable_database']:
-        return flask.jsonify({
-            "status": "error",
-            "message": "Database functionality is disabled. Use --disable-database=false to enable table operations."
-        }), 503
-    else:
-        return flask.jsonify({
-            "status": "error", 
-            "message": "Table routes are not available"
-        }), 404
+    if not args['disable_database']:
+        from data_formulator.datalake.workspace import get_data_formulator_home
+        config["DATA_FORMULATOR_HOME"] = str(get_data_formulator_home())
+
+    return flask.jsonify(config)
 
 
 def parse_args() -> argparse.Namespace:
@@ -165,7 +156,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--disable-display-keys", action='store_true', default=False,
         help="Whether disable displaying keys in the frontend UI, recommended to turn on if you host the app not just for yourself.")
     parser.add_argument("--disable-database", action='store_true', default=False,
-        help="Disable database functionality and table routes. This prevents creation of local database files and disables table-related endpoints.")
+        help="Disable server-side data persistence. Data loaders and table routes remain available but data is not saved to disk. "
+             "The frontend forces local-only mode (storeOnServer=false) so all table data lives in the browser.")
     parser.add_argument("--disable-file-upload", action='store_true', default=False,
         help="Disable file upload functionality. This prevents the app from uploading files to the server.")
     parser.add_argument("--project-front-page", action='store_true', default=False,
@@ -173,6 +165,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-display-rows", type=int,
         default=int(os.environ.get('MAX_DISPLAY_ROWS', '10000')),
         help="Maximum number of rows to send to the frontend for display (default: 10000)")
+    parser.add_argument("--data-dir", type=str, default=None,
+        help="Data Formulator home directory for workspaces and sessions (default: ~/.data_formulator)")
     parser.add_argument("--dev", action='store_true', default=False,
         help="Launch the app in development mode (prevents the app from opening the browser automatically)")
     return parser.parse_args()
@@ -192,10 +186,11 @@ def run_app():
         'disable_file_upload': args.disable_file_upload,
         'project_front_page': args.project_front_page,
         'max_display_rows': args.max_display_rows,
+        'data_dir': args.data_dir,
     }
     
     # Register blueprints (this is where heavy imports happen)
-    _register_blueprints(args.disable_database)
+    _register_blueprints()
 
     url = "http://localhost:{0}".format(args.port)
     print(f"Ready! Open {url} in your browser.", flush=True)

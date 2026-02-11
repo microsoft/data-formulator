@@ -37,8 +37,8 @@ Example usage:
 from data_formulator.datalake.workspace import (
     Workspace,
     WorkspaceWithTempData,
+    get_data_formulator_home,
     get_default_workspace_root,
-    DATALAKE_ROOT_ENV,
 )
 
 # Metadata types and operations
@@ -73,8 +73,8 @@ __all__ = [
     # Workspace
     "Workspace",
     "WorkspaceWithTempData",
+    "get_data_formulator_home",
     "get_default_workspace_root",
-    "DATALAKE_ROOT_ENV",
     # Metadata
     "TableMetadata",
     "ColumnInfo",

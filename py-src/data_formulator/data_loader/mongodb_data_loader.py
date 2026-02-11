@@ -18,42 +18,25 @@ class MongoDBDataLoader(ExternalDataLoader):
     @staticmethod
     def list_params() -> list[dict[str, Any]]:
         params_list = [
-            {"name": "host", "type": "string", "required": True, "default": "localhost", "description": ""}, 
-            {"name": "port", "type": "int", "required": False, "default": 27017, "description": "MongoDB server port (default 27017)"},
-            {"name": "username", "type": "string", "required": False, "default": "", "description": ""},
-            {"name": "password", "type": "string", "required": False, "default": "", "description": ""},
-            {"name": "database", "type": "string", "required": True, "default": "", "description": ""},
-            {"name": "collection", "type": "string", "required": False, "default": "", "description": "If specified, only this collection will be accessed"},
-            {"name": "authSource", "type": "string", "required": False, "default": "", "description": "Authentication database (defaults to target database if empty)"}
+            {"name": "host", "type": "string", "required": True, "default": "localhost", "description": "server address"}, 
+            {"name": "port", "type": "int", "required": False, "default": 27017, "description": "server port"},
+            {"name": "username", "type": "string", "required": False, "default": "", "description": "leave blank if no auth"},
+            {"name": "password", "type": "string", "required": False, "default": "", "description": "leave blank if no auth"},
+            {"name": "database", "type": "string", "required": True, "default": "", "description": "database name"},
+            {"name": "collection", "type": "string", "required": False, "default": "", "description": "leave empty to list all collections"},
+            {"name": "authSource", "type": "string", "required": False, "default": "", "description": "auth database (defaults to target database)"}
         ]
         return params_list
 
     @staticmethod
     def auth_instructions() -> str:
-        return """
-MongoDB Connection Instructions:
+        return """**Example:** host: `localhost` · port: `27017` · database: `mydb` · collection: `users`
 
-1. Local MongoDB Setup:
-   - Ensure MongoDB server is running on your machine
-   - Default connection: host='localhost', port=27017
-   - If authentication is not enabled, leave username and password empty
+**Local setup:** Ensure MongoDB is running. Leave username and password blank if authentication is not enabled.
 
-2. Remote MongoDB Connection:
-   - Obtain host address, port, username, and password from your database administrator
-   - Ensure the MongoDB server allows remote connections
+**Remote setup:** Get host, port, username, and password from your database administrator.
 
-3. Common Connection Parameters:
-   - host: MongoDB server address (default: 'localhost')
-   - port: MongoDB server port (default: 27017)
-   - username: Your MongoDB username (leave empty if no auth)
-   - password: Your MongoDB password (leave empty if no auth)
-   - database: Target database name to connect to
-   - collection: (Optional) Specific collection to access, leave empty to list all collections
-
-4. Troubleshooting:
-   - Verify MongoDB service is running: `mongod --version`
-   - Test connection: `mongosh --host [host] --port [port]`
-"""
+**Troubleshooting:** Test with `mongosh --host <host> --port <port>`"""
 
     def __init__(self, params: dict[str, Any]):
         self.params = params

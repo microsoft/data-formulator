@@ -74,80 +74,17 @@ class AthenaDataLoader(ExternalDataLoader):
 
     @staticmethod
     def auth_instructions() -> str:
-        return """
-**Authentication Options (choose one):**
+        return """**Example (profile):** aws_profile: `default` · region_name: `us-east-1` · workgroup: `primary` · database: `my_database`
 
-**Option 1 - AWS Profile (Recommended):**
-- **AWS Profile**: Profile name from ~/.aws/credentials (e.g., 'default', 'myprofile')
-- Configure profiles via `aws configure --profile myprofile`
-- No need to enter access key or secret when using a profile
+**Example (keys):** aws_access_key_id: `AKIA...` · aws_secret_access_key: `wJalr...` · region_name: `us-east-1`
 
-**Option 2 - Explicit Credentials:**
-- **AWS Access Key ID**: Your AWS access key identifier
-- **AWS Secret Access Key**: Your AWS secret access key
-- **AWS Session Token**: Optional, for temporary credentials only
+**Option 1 — AWS Profile (recommended):**
+Set `aws_profile` to a profile name from `~/.aws/credentials`. Set up with `aws configure --profile <name>`. No access key or secret needed.
 
-**Common Parameters:**
-- **Region Name**: AWS region (e.g., 'us-east-1', 'ap-southeast-5')
-- **Workgroup**: Athena workgroup name (default: 'primary')
-- **Output Location**: S3 path for query results (e.g., 's3://my-bucket/athena-results/'). If empty, uses workgroup configuration.
-- **Database**: Optional default database/catalog for queries
-- **Query Timeout**: Query execution timeout in seconds (default: 300 = 5 minutes)
+**Option 2 — Explicit Credentials:**
+Enter `aws_access_key_id` and `aws_secret_access_key` directly. Add `aws_session_token` for temporary credentials.
 
-**Setting up AWS Profile:**
-```bash
-aws configure --profile myprofile
-# Enter: Access Key ID, Secret Access Key, Region, Output format
-```
-
-**Required Permissions:**
-```json
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Effect": "Allow",
-      "Action": [
-        "athena:StartQueryExecution",
-        "athena:GetQueryExecution",
-        "athena:GetQueryResults",
-        "athena:GetWorkGroup",
-        "athena:ListDatabases",
-        "athena:ListTableMetadata"
-      ],
-      "Resource": "*"
-    },
-    {
-      "Effect": "Allow",
-      "Action": [
-        "s3:GetObject",
-        "s3:ListBucket",
-        "s3:GetBucketLocation",
-        "s3:PutObject"
-      ],
-      "Resource": [
-        "arn:aws:s3:::your-athena-results-bucket",
-        "arn:aws:s3:::your-athena-results-bucket/*",
-        "arn:aws:s3:::your-data-bucket",
-        "arn:aws:s3:::your-data-bucket/*"
-      ]
-    },
-    {
-      "Effect": "Allow",
-      "Action": [
-        "glue:GetDatabase",
-        "glue:GetDatabases",
-        "glue:GetTable",
-        "glue:GetTables"
-      ],
-      "Resource": "*"
-    }
-  ]
-}
-```
-
-**Security:** Never share secret keys, rotate regularly, use least privilege permissions.
-        """
+**Required IAM permissions:** `athena:StartQueryExecution`, `athena:GetQueryExecution`, `athena:GetQueryResults`, `athena:GetWorkGroup`, `athena:ListDatabases`, `athena:ListTableMetadata`, plus S3 and Glue permissions on your data/results buckets."""
 
     def __init__(self, params: dict[str, Any]):
         self.params = params

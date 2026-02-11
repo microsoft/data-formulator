@@ -16,40 +16,25 @@ class KustoDataLoader(ExternalDataLoader):
     @staticmethod
     def list_params() -> list[dict[str, Any]]:
         params_list = [
-            {"name": "kusto_cluster", "type": "string", "required": True, "description": ""}, 
-            {"name": "kusto_database", "type": "string", "required": True, "description": ""}, 
-            {"name": "client_id", "type": "string", "required": False, "description": "only necessary for AppKey auth"}, 
-            {"name": "client_secret", "type": "string", "required": False, "description": "only necessary for AppKey auth"}, 
-            {"name": "tenant_id", "type": "string", "required": False, "description": "only necessary for AppKey auth"}
+            {"name": "kusto_cluster", "type": "string", "required": True, "description": "e.g., https://mycluster.region.kusto.windows.net"}, 
+            {"name": "kusto_database", "type": "string", "required": True, "description": "database name"}, 
+            {"name": "client_id", "type": "string", "required": False, "description": "only for App Key auth"}, 
+            {"name": "client_secret", "type": "string", "required": False, "description": "only for App Key auth"}, 
+            {"name": "tenant_id", "type": "string", "required": False, "description": "only for App Key auth"}
         ]
         return params_list
     
     @staticmethod
     def auth_instructions() -> str:
-        return """Azure Kusto Authentication Instructions
+        return """**Example (CLI):** kusto_cluster: `https://mycluster.westus.kusto.windows.net` · kusto_database: `mydb`
 
-Method 1: Azure CLI Authentication
-    1. Install Azure CLI: https://docs.microsoft.com/en-us/cli/azure/install-azure-cli
-    2. Run `az login` in your terminal to authenticate
-    3. Ensure you have access to the specified Kusto cluster and database
-    4. Leave client_id, client_secret, and tenant_id parameters empty
+**Example (App Key):** kusto_cluster: `https://mycluster.westus.kusto.windows.net` · kusto_database: `mydb` · client_id: `abc-123...` · client_secret: `xyz...` · tenant_id: `def-456...`
 
-Method 2: Application Key Authentication
-    1. Register an Azure AD application in your tenant
-    2. Generate a client secret for the application
-    3. Grant the application appropriate permissions to your Kusto cluster:
-        - Go to your Kusto cluster in Azure Portal
-        - Navigate to Permissions > Add
-        - Add your application as a user with appropriate role (e.g., "AllDatabasesViewer" for read access)
-    4. Provide the following parameters:
-        - client_id: Application (client) ID from your Azure AD app registration
-        - client_secret: Client secret value you generated
-        - tenant_id: Directory (tenant) ID from your Azure AD
+**Option 1 — Azure CLI (recommended):**
+Run `az login` in your terminal. Leave `client_id`, `client_secret`, and `tenant_id` empty.
 
-Required Parameters:
-    - kusto_cluster: Your Kusto cluster URI (e.g., "https://mycluster.region.kusto.windows.net")
-    - kusto_database: Name of the database you want to access
-"""
+**Option 2 — App Key Authentication:**
+Register an Azure AD application, generate a client secret, and grant it access to your Kusto cluster (e.g., "AllDatabasesViewer" role via Azure Portal → Kusto cluster → Permissions). Provide `client_id`, `client_secret`, and `tenant_id`."""
 
     def __init__(self, params: dict[str, Any]):
         self.params = params

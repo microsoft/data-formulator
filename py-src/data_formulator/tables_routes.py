@@ -153,6 +153,33 @@ def _table_metadata_to_source_metadata(meta: DatalakeTableMetadata) -> dict | No
     }
 
 
+@tables_bp.route('/open-workspace', methods=['POST'])
+def open_workspace():
+    """Open the Data Formulator home directory in the system file manager."""
+    from flask import current_app
+    from data_formulator.datalake.workspace import get_data_formulator_home
+    import subprocess, platform
+
+    if current_app.config.get('CLI_ARGS', {}).get('disable_database', False):
+        return jsonify(status="error", message="Workspace access is disabled"), 403
+
+    try:
+        home_path = str(get_data_formulator_home())
+        # Ensure directory exists
+        Path(home_path).mkdir(parents=True, exist_ok=True)
+        system = platform.system()
+        if system == "Darwin":
+            subprocess.Popen(["open", home_path])
+        elif system == "Windows":
+            subprocess.Popen(["explorer", home_path])
+        else:
+            subprocess.Popen(["xdg-open", home_path])
+        return jsonify(status="ok", path=home_path)
+    except Exception as e:
+        logger.error(f"Failed to open workspace: {e}")
+        return jsonify(status="error", message=str(e)), 500
+
+
 @tables_bp.route('/list-tables', methods=['GET'])
 def list_tables():
     """List all tables in the current workspace (datalake)."""

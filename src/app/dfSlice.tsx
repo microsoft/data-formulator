@@ -43,6 +43,7 @@ export interface ServerConfig {
     DISABLE_FILE_UPLOAD: boolean;
     PROJECT_FRONT_PAGE: boolean;
     MAX_DISPLAY_ROWS: number;
+    DATA_FORMULATOR_HOME?: string;
 }
 
 export interface ModelConfig {

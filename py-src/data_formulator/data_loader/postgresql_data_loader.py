@@ -26,7 +26,13 @@ class PostgreSQLDataLoader(ExternalDataLoader):
 
     @staticmethod
     def auth_instructions() -> str:
-        return "Provide your PostgreSQL connection details. The user must have SELECT permissions on the tables you want to access. Uses connectorx for fast Arrow-native data access."
+        return """**Example:** user: `postgres` · host: `localhost` · port: `5432` · database: `mydb`
+
+**Local setup:** Ensure PostgreSQL is running — `brew services list` (macOS) or `systemctl status postgresql` (Linux). Leave password blank if none is set.
+
+**Remote setup:** Get host, port, username, and password from your database administrator. The user must have SELECT permissions on the tables you want to access.
+
+**Troubleshooting:** Test with `psql -U <user> -h <host> -p <port> -d <database>`"""
 
     def __init__(self, params: dict[str, Any]):
         self.params = params
@@ -60,6 +66,41 @@ class PostgreSQLDataLoader(ExternalDataLoader):
             raise ValueError(f"Failed to connect to PostgreSQL database '{self.database}' on host '{self.host}': {e}") from e
         logger.info(f"Successfully connected to PostgreSQL: postgresql://{self.user}:***@{self.host}:{self.port}/{self.database}")
 
+    # PostgreSQL types that connectorx cannot handle natively
+    _CX_SPATIAL_TYPES = {'geometry', 'geography'}  # PostGIS types → ST_AsText()
+    _CX_OTHER_UNSUPPORTED = {'box', 'circle', 'line', 'lseg', 'path', 'point',
+                              'polygon', 'bit', 'bit varying', 'xml', 'tsvector', 'tsquery'}
+    _CX_UNSUPPORTED_TYPES = _CX_SPATIAL_TYPES | _CX_OTHER_UNSUPPORTED
+
+    def _safe_select_list(self, schema: str, table_name: str) -> str:
+        """Build a SELECT column list that converts unsupported types to text.
+        Uses ST_AsText() for PostGIS types, ::text for others.
+        Returns '*' if no unsupported columns are found."""
+        try:
+            columns_query = f"""
+                SELECT column_name, udt_name
+                FROM information_schema.columns
+                WHERE table_schema = '{schema}' AND table_name = '{table_name}'
+                ORDER BY ordinal_position
+            """
+            cols_arrow = cx.read_sql(self.connection_url, columns_query, return_type="arrow")
+            cols_df = cols_arrow.to_pandas()
+            has_unsupported = any(r['udt_name'].lower() in self._CX_UNSUPPORTED_TYPES for _, r in cols_df.iterrows())
+            if not has_unsupported:
+                return "*"
+            parts = []
+            for _, r in cols_df.iterrows():
+                col, dtype = r['column_name'], r['udt_name'].lower()
+                if dtype in self._CX_SPATIAL_TYPES:
+                    parts.append(f'ST_AsText("{col}") AS "{col}"')
+                elif dtype in self._CX_OTHER_UNSUPPORTED:
+                    parts.append(f'"{col}"::text AS "{col}"')
+                else:
+                    parts.append(f'"{col}"')
+            return ', '.join(parts)
+        except Exception:
+            return "*"
+
     def fetch_data_as_arrow(
         self,
         source_table: str,
@@ -70,7 +111,7 @@ class PostgreSQLDataLoader(ExternalDataLoader):
         """
         Fetch data from PostgreSQL as a PyArrow Table using connectorx.
         
-        connectorx provides extremely fast Arrow-native database access,
+        connectorx provides extremely fast Arrow-native data access,
         typically 2-10x faster than pandas-based approaches.
         """
         if not source_table:
@@ -80,7 +121,13 @@ class PostgreSQLDataLoader(ExternalDataLoader):
         table_ref = source_table
         if source_table.startswith("mypostgresdb."):
             table_ref = source_table[len("mypostgresdb."):]
-        base_query = f"SELECT * FROM {table_ref}"
+        # Build safe column list for the resolved schema.table
+        if '.' in table_ref:
+            s, t = table_ref.split('.', 1)
+            col_list = self._safe_select_list(s.strip('"'), t.strip('"'))
+        else:
+            col_list = self._safe_select_list('public', table_ref.strip('"'))
+        base_query = f"SELECT {col_list} FROM {table_ref}"
         
         # Add ORDER BY if sort columns specified
         order_by_clause = ""
@@ -150,11 +197,18 @@ class PostgreSQLDataLoader(ExternalDataLoader):
                         'type': col_row['data_type']
                     } for _, col_row in columns_df.iterrows()]
                     
+                    # Build safe column list (casts unsupported types to TEXT)
+                    col_list = self._safe_select_list(schema, table_name)
+                    
                     # Get sample data
-                    sample_query = f'SELECT * FROM "{schema}"."{table_name}" LIMIT 10'
-                    sample_arrow = cx.read_sql(self.connection_url, sample_query, return_type="arrow")
-                    sample_df = sample_arrow.to_pandas()
-                    sample_rows = json.loads(sample_df.to_json(orient="records"))
+                    sample_rows = []
+                    sample_query = f'SELECT {col_list} FROM "{schema}"."{table_name}" LIMIT 10'
+                    try:
+                        sample_arrow = cx.read_sql(self.connection_url, sample_query, return_type="arrow")
+                        sample_df = sample_arrow.to_pandas()
+                        sample_rows = json.loads(sample_df.to_json(orient="records"))
+                    except Exception as sample_err:
+                        logger.warning(f"Could not sample {full_table_name}: {sample_err}")
                     
                     # Get row count
                     count_query = f'SELECT COUNT(*) as cnt FROM "{schema}"."{table_name}"'

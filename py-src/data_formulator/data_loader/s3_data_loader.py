@@ -29,40 +29,13 @@ class S3DataLoader(ExternalDataLoader):
 
     @staticmethod
     def auth_instructions() -> str:
-        return """
-**Required AWS Credentials:**
-- **AWS Access Key ID**: Your AWS access key identifier
-- **AWS Secret Access Key**: Your AWS secret access key  
-- **Region Name**: AWS region (e.g., 'us-east-1', 'us-west-2')
-- **Bucket**: S3 bucket name
-- **AWS Session Token**: Optional, for temporary credentials only
+        return """**Example:** aws_access_key_id: `AKIA...` · aws_secret_access_key: `wJalr...` · region_name: `us-east-1` · bucket: `my-data-bucket`
 
-**Getting Credentials:**
-1. AWS Console → IAM → Users → Select user → Security credentials → Create access key
-2. Choose "Application running outside AWS"
+**Getting credentials:** AWS Console → IAM → Users → Security credentials → Create access key → choose "Application running outside AWS".
 
-**Required S3 Permissions:**
-```json
-{
-  "Version": "2012-10-17",
-  "Statement": [{
-    "Effect": "Allow",
-    "Action": ["s3:GetObject", "s3:ListBucket"],
-    "Resource": [
-      "arn:aws:s3:::your-bucket-name",
-      "arn:aws:s3:::your-bucket-name/*"
-    ]
-  }]
-}
-```
+**Required permissions:** `s3:GetObject` and `s3:ListBucket` on your bucket.
 
-**Supported File Formats:**
-- CSV files (.csv)
-- Parquet files (.parquet) 
-- JSON files (.json, .jsonl)
-
-**Security:** Never share secret keys, rotate regularly, use least privilege permissions.
-        """
+**Supported formats:** CSV, Parquet, JSON, JSONL"""
 
     def __init__(self, params: dict[str, Any]):
         self.params = params

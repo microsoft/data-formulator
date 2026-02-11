@@ -276,6 +276,21 @@ export const loadTable = createAsyncThunk<
         dispatch(dfActions.addTableToStore(finalTable));
         dispatch(fetchFieldSemanticType(finalTable));
 
+        // Notify user about truncation
+        if (truncated && originalRowCount) {
+            const diskDisabled = state.serverConfig?.DISABLE_DATABASE;
+            const baseMsg = `Table "${finalTable.displayId || finalTable.id}" was truncated from ${originalRowCount.toLocaleString()} to ${frontendRowLimit.toLocaleString()} rows (browser limit).`;
+            const installHint = diskDisabled
+                ? ` To load the full dataset, install Data Formulator locally and use disk storage.`
+                : ` To load the full dataset, switch to "Disk" storage mode.`;
+            dispatch(dfActions.addMessages({
+                timestamp: Date.now(),
+                type: 'warning',
+                component: 'data loader',
+                value: baseMsg + installHint,
+            }));
+        }
+
         return { table: finalTable, truncated, originalRowCount, duplicate: false };
     }
 );

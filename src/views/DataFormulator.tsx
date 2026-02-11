@@ -317,11 +317,6 @@ export const DataFormulatorFC = ({ }) => {
                     serverConfig={serverConfig}
                     variant="page"
                 />
-                <UnifiedDataUploadDialog 
-                    open={uploadDialogOpen}
-                    onClose={() => setUploadDialogOpen(false)}
-                    initialTab={uploadDialogInitialTab}
-                />
             </Box>
             <Box sx={{mt: 4}}>
                 <Divider sx={{width: '200px', mx: 'auto', mb: 3, fontSize: '1.2rem'}}>
@@ -352,6 +347,11 @@ export const DataFormulatorFC = ({ }) => {
         <Box sx={{ display: 'block', width: "100%", height: 'calc(100% - 54px)', position: 'relative' }}>
             <DndProvider backend={HTML5Backend}>
                 {tables.length > 0 ? fixedSplitPane : dataUploadRequestBox}
+                <UnifiedDataUploadDialog 
+                    open={uploadDialogOpen}
+                    onClose={() => setUploadDialogOpen(false)}
+                    initialTab={uploadDialogInitialTab}
+                />
                 {selectedModelId == undefined && (
                     <Box sx={{
                         position: 'absolute',

@@ -27,12 +27,20 @@ import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 
-from flask import Blueprint, request, jsonify, send_file
+from flask import Blueprint, request, jsonify, send_file, current_app
 
 from data_formulator.auth import get_identity_id
-from data_formulator.datalake.workspace import Workspace
+from data_formulator.datalake.workspace import Workspace, get_data_formulator_home
 
 logger = logging.getLogger(__name__)
+
+
+def _disk_persistence_enabled() -> bool:
+    """Return True unless --disable-database was passed (no disk persistence)."""
+    try:
+        return not current_app.config.get('CLI_ARGS', {}).get('disable_database', False)
+    except RuntimeError:
+        return True
 
 session_bp = Blueprint("sessions", __name__, url_prefix="/api/sessions")
 
@@ -40,14 +48,9 @@ session_bp = Blueprint("sessions", __name__, url_prefix="/api/sessions")
 # Helpers
 # ---------------------------------------------------------------------------
 
-_SESSIONS_ROOT_ENV = "SESSIONS_ROOT"
-
 
 def _get_sessions_root() -> Path:
-    env = os.getenv(_SESSIONS_ROOT_ENV)
-    if env:
-        return Path(env)
-    return Path.home() / ".data_formulator" / "sessions"
+    return get_data_formulator_home() / "sessions"
 
 
 def _sanitize(name: str) -> str:
@@ -106,6 +109,9 @@ def save_session():
         name:   str  – human-readable session name
         state:  dict – Redux UI state (saved as-is minus sensitive fields)
     """
+    if not _disk_persistence_enabled():
+        return jsonify(status="error", message="Session save is disabled (no disk persistence)"), 403
+
     data = request.get_json(force=True)
     name: str = data.get("name", "").strip()
     state: dict = data.get("state")
@@ -123,10 +129,11 @@ def save_session():
         shutil.rmtree(sess_dir)
     sess_dir.mkdir(parents=True)
 
-    # 1. Copy workspace directory as-is (skip if empty / missing)
-    ws_path = _get_workspace_path(identity_id)
-    if ws_path.exists() and any(ws_path.iterdir()):
-        shutil.copytree(ws_path, sess_dir / "workspace", dirs_exist_ok=True)
+    # 1. Copy workspace directory as-is (skip if persistence disabled or empty)
+    if _disk_persistence_enabled():
+        ws_path = _get_workspace_path(identity_id)
+        if ws_path.exists() and any(ws_path.iterdir()):
+            shutil.copytree(ws_path, sess_dir / "workspace", dirs_exist_ok=True)
 
     # 2. Save UI state (strip secrets, keep everything else including rows)
     clean_state = _strip_sensitive(state)
@@ -141,6 +148,9 @@ def save_session():
 @session_bp.route("/list", methods=["GET"])
 def list_sessions():
     """List saved sessions for the current user (sorted newest first)."""
+    if not _disk_persistence_enabled():
+        return jsonify(status="ok", sessions=[])
+
     identity_id = get_identity_id()
     user_dir = _identity_dir(identity_id)
 
@@ -171,6 +181,9 @@ def load_session():
 
     Restores the workspace directory and returns the UI state.
     """
+    if not _disk_persistence_enabled():
+        return jsonify(status="error", message="Session load is disabled (no disk persistence)"), 403
+
     data = request.get_json(force=True)
     name: str = data.get("name", "").strip()
     if not name:
@@ -183,13 +196,14 @@ def load_session():
     if not state_file.exists():
         return jsonify(status="error", message=f"Session '{name}' not found"), 404
 
-    # 1. Restore workspace (only if the saved session has one)
-    ws_saved = sess_dir / "workspace"
-    if ws_saved.exists():
-        ws_path = _get_workspace_path(identity_id)
-        if ws_path.exists():
-            shutil.rmtree(ws_path)
-        shutil.copytree(ws_saved, ws_path, dirs_exist_ok=True)
+    # 1. Restore workspace (only if persistence enabled and session has one)
+    if _disk_persistence_enabled():
+        ws_saved = sess_dir / "workspace"
+        if ws_saved.exists():
+            ws_path = _get_workspace_path(identity_id)
+            if ws_path.exists():
+                shutil.rmtree(ws_path)
+            shutil.copytree(ws_saved, ws_path, dirs_exist_ok=True)
 
     # 2. Return UI state
     state = json.loads(state_file.read_text(encoding="utf-8"))
@@ -204,6 +218,9 @@ def delete_session():
     Request JSON body:
         name: str  – session name to delete
     """
+    if not _disk_persistence_enabled():
+        return jsonify(status="error", message="Session delete is disabled (no disk persistence)"), 403
+
     data = request.get_json(force=True)
     name: str = data.get("name", "").strip()
     if not name:
@@ -240,13 +257,14 @@ def export_session():
         # UI state
         zf.writestr("state.json", json.dumps(clean_state, default=str))
 
-        # Workspace files
-        ws_path = _get_workspace_path(identity_id)
-        if ws_path.exists():
-            for ws_file in ws_path.rglob("*"):
-                if ws_file.is_file():
-                    arcname = "workspace/" + str(ws_file.relative_to(ws_path))
-                    zf.write(ws_file, arcname)
+        # Workspace files (skip if persistence disabled)
+        if _disk_persistence_enabled():
+            ws_path = _get_workspace_path(identity_id)
+            if ws_path.exists():
+                for ws_file in ws_path.rglob("*"):
+                    if ws_file.is_file():
+                        arcname = "workspace/" + str(ws_file.relative_to(ws_path))
+                        zf.write(ws_file, arcname)
     buf.seek(0)
 
     filename = f"df_session_{datetime.now().strftime('%Y%m%d_%H%M%S')}.dfsession"
@@ -271,20 +289,21 @@ def import_session():
 
             state = json.loads(zf.read("state.json"))
 
-            # Restore workspace files (only if the zip contains any)
-            workspace_entries = [n for n in zf.namelist()
-                                 if n.startswith("workspace/") and not n.endswith("/")]
-            if workspace_entries:
-                identity_id = get_identity_id()
-                ws_path = _get_workspace_path(identity_id)
-                if ws_path.exists():
-                    shutil.rmtree(ws_path)
-                ws_path.mkdir(parents=True, exist_ok=True)
-                for entry in workspace_entries:
-                    rel = entry[len("workspace/"):]
-                    dest = ws_path / rel
-                    dest.parent.mkdir(parents=True, exist_ok=True)
-                    dest.write_bytes(zf.read(entry))
+            # Restore workspace files (only if persistence enabled and zip contains any)
+            if _disk_persistence_enabled():
+                workspace_entries = [n for n in zf.namelist()
+                                     if n.startswith("workspace/") and not n.endswith("/")]
+                if workspace_entries:
+                    identity_id = get_identity_id()
+                    ws_path = _get_workspace_path(identity_id)
+                    if ws_path.exists():
+                        shutil.rmtree(ws_path)
+                    ws_path.mkdir(parents=True, exist_ok=True)
+                    for entry in workspace_entries:
+                        rel = entry[len("workspace/"):]
+                        dest = ws_path / rel
+                        dest.parent.mkdir(parents=True, exist_ok=True)
+                        dest.write_bytes(zf.read(entry))
 
         return jsonify(status="ok", state=state)
     except zipfile.BadZipFile:

@@ -24,42 +24,16 @@ class BigQueryDataLoader(ExternalDataLoader):
 
     @staticmethod
     def auth_instructions() -> str:
-        return """BigQuery Authentication Instructions
+        return """**Example:** project_id: `my-gcp-project` · dataset_id: `analytics` · credentials_path: `/path/to/key.json` · location: `US`
 
-Authentication Options (choose one):
+**Option 1 — Application Default Credentials (recommended):**
+Install [Google Cloud SDK](https://cloud.google.com/sdk/docs/install), then run `gcloud auth application-default login`. Leave `credentials_path` empty.
 
-Option 1 - Application Default Credentials (Recommended)
-    - Install Google Cloud SDK: https://cloud.google.com/sdk/docs/install
-    - Run `gcloud auth application-default login` in your terminal
-    - Leave `credentials_path` parameter empty
-    - Requires Google Cloud Project ID
+**Option 2 — Service Account Key File:**
+Create a service account in Google Cloud Console, download the JSON key, and enter the full path in `credentials_path`. Grant the account **BigQuery Data Viewer** and **BigQuery Job User** roles.
 
-Option 2 - Service Account Key File
-    - Create a service account in Google Cloud Console
-    - Download the JSON key file
-    - Provide the full path to the JSON file in `credentials_path` parameter
-    - Grant the service account BigQuery Data Viewer role (or appropriate permissions)
-
-Option 3 - Environment Variables
-    - Set GOOGLE_APPLICATION_CREDENTIALS environment variable to point to your service account JSON file
-    - Leave `credentials_path` parameter empty
-
-Required Permissions:
-    - BigQuery Data Viewer (for reading data)
-    - BigQuery Job User (for running queries)
-
-Parameters:
-    - project_id: Your Google Cloud Project ID (required)
-    - dataset_id: Specific dataset to browse (optional - leave empty to see all datasets)
-    - location: BigQuery location/region (default: US)
-    - credentials_path: Path to service account JSON file (optional)
-
-Supported Operations:
-    - Browse datasets and tables
-    - Preview table schemas and data
-    - Import data from tables
-    - Execute custom SQL queries
-"""
+**Option 3 — Environment Variable:**
+Set `GOOGLE_APPLICATION_CREDENTIALS` to your service account JSON file path. Leave `credentials_path` empty."""
 
     def __init__(self, params: dict[str, Any]):
         self.params = params

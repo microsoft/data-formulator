@@ -1,5 +1,5 @@
 // TableManager.tsx
-import React, { useState, useEffect, useCallback, FC, useRef } from 'react';
+import React, { useState, useEffect, useCallback, FC, useRef, useMemo } from 'react';
 import { 
   Card, 
   CardContent, 
@@ -12,40 +12,24 @@ import {
   TextField,
   Divider,
   SxProps,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
   CircularProgress,
   ButtonGroup,
   ToggleButton,
   ToggleButtonGroup,
-  Tooltip,
   MenuItem,
   Menu,
   Chip,
-  Collapse,
+  Checkbox,
+  FormControlLabel,
   styled,
   useTheme,
   Link,
-  Popover,
-  Switch,
-  Slider,
-  FormControlLabel
+  alpha,
 } from '@mui/material';
 
-import ExpandLessIcon from '@mui/icons-material/ExpandLess';
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import SearchIcon from '@mui/icons-material/Search';
-import Autocomplete from '@mui/material/Autocomplete';
 
-// Type for table import configuration
-type TableImportConfig = 
-    | { mode: 'none' }
-    | { mode: 'full' }
-    | { mode: 'subset'; rowLimit: number; sortColumns: string[]; sortOrder: 'asc' | 'desc' };
+import Autocomplete from '@mui/material/Autocomplete';
 
 import { getUrls, fetchWithIdentity } from '../app/utils';
 import { borderColor } from '../app/tokens';
@@ -54,7 +38,6 @@ import { DataSourceConfig, DictTable } from '../components/ComponentType';
 import { Type } from '../data/types';
 import { useDispatch, useSelector } from 'react-redux';
 import { dfActions, dfSelectors } from '../app/dfSlice';
-import { alpha } from '@mui/material';
 import { DataFormulatorState } from '../app/dfSlice';
 import { fetchFieldSemanticType } from '../app/dfSlice';
 import { loadTable } from '../app/tableThunks';
@@ -69,7 +52,7 @@ import UploadFileIcon from '@mui/icons-material/UploadFile';
 import DownloadIcon from '@mui/icons-material/Download';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
-import SettingsIcon from '@mui/icons-material/Settings';
+
 
 export const handleDBDownload = async (identityId: string) => {
     try {
@@ -142,7 +125,8 @@ interface ColumnStatistics {
 
 export const DBManagerPane: React.FC<{ 
     onClose?: () => void;
-}> = function DBManagerPane({ onClose }) {
+    storeOnServer?: boolean;
+}> = function DBManagerPane({ onClose, storeOnServer = true }) {
     
     const theme = useTheme();
 
@@ -189,7 +173,6 @@ export const DBManagerPane: React.FC<{
 
     // Fetch list of tables
     const fetchTables = async (): Promise<DBTable[] | undefined> => {
-        if (serverConfig.DISABLE_DATABASE) return undefined;
         try {
             const response = await fetchWithIdentity(getUrls().LIST_TABLES, { method: 'GET' });
             const data = await response.json();
@@ -280,13 +263,14 @@ export const DBManagerPane: React.FC<{
                         dataLoaderType={dataLoaderType} 
                         paramDefs={metadata.params}
                         authInstructions={metadata.auth_instructions}
+                        storeOnServer={storeOnServer}
                         onImport={() => {
                             setIsUploading(true);
                         }} 
                         onFinish={(status, message, importedTables) => {
                             setIsUploading(false);
                             if (status === "success") {
-                                onClose?.();
+                                setSystemMessage(message, "success");
                             } else {
                                 setSystemMessage(message, "error");
                             }
@@ -354,453 +338,314 @@ export const DataLoaderForm: React.FC<{
     dataLoaderType: string, 
     paramDefs: {name: string, default: string, type: string, required: boolean, description: string}[],
     authInstructions: string,
+    storeOnServer?: boolean,
     onImport: () => void,
     onFinish: (status: "success" | "error", message: string, importedTables?: string[]) => void
-}> = ({dataLoaderType, paramDefs, authInstructions, onImport, onFinish}) => {
+}> = ({dataLoaderType, paramDefs, authInstructions, storeOnServer = true, onImport, onFinish}) => {
 
     const dispatch = useDispatch<AppDispatch>();
     const theme = useTheme();
     const params = useSelector((state: DataFormulatorState) => state.dataLoaderConnectParams[dataLoaderType] ?? {});
     const frontendRowLimit = useSelector((state: DataFormulatorState) => state.config?.frontendRowLimit ?? 10000);
+    const workspaceTables = useSelector((state: DataFormulatorState) => state.tables);
 
     const [tableMetadata, setTableMetadata] = useState<Record<string, any>>({});
-    let [displaySamples, setDisplaySamples] = useState<Record<string, boolean>>({});
+    const [selectedPreviewTable, setSelectedPreviewTable] = useState<string | null>(null);
     let [tableFilter, setTableFilter] = useState<string>("");
-    const [tableImportConfigs, setTableImportConfigs] = useState<Record<string, TableImportConfig>>({});
-    const [subsetConfigAnchor, setSubsetConfigAnchor] = useState<{element: HTMLElement, tableName: string} | null>(null);
-    
-    // Store on server toggle for data loader imports
-    const [importStoreOnServer, setImportStoreOnServer] = useState<boolean>(true);
-    
-    // Helper to get import config for a table (defaults to 'none')
-    const getTableConfig = (tableName: string): TableImportConfig => {
-        return tableImportConfigs[tableName] ?? { mode: 'none' };
-    };
-    
-    // Helper to update config for a specific table
-    const updateTableConfig = (tableName: string, config: TableImportConfig) => {
-        setTableImportConfigs(prev => ({ ...prev, [tableName]: config }));
-    };
-    
-    // Get selected tables (those with mode !== 'none')
-    const selectedTables = Object.entries(tableImportConfigs)
-        .filter(([_, config]) => config.mode !== 'none')
-        .map(([tableName, _]) => tableName);
+    // Import mode for the currently selected table
+    const [importMode, setImportMode] = useState<'full' | 'subset'>('full');
+    const [subsetConfig, setSubsetConfig] = useState<{ rowLimit: number; sortColumns: string[]; sortOrder: 'asc' | 'desc' }>({ rowLimit: 1000, sortColumns: [], sortOrder: 'asc' });
+    // Track which tables have been loaded and how (persists across table selections)
+    const [loadedTables, setLoadedTables] = useState<Record<string, 'full' | 'subset'>>({});
+
+    // Cross-reference workspace tables with database tables to detect already-loaded ones
+    const workspaceLoadedTables = useMemo(() => {
+        const result: Record<string, 'full' | 'subset'> = {};
+        for (const wt of workspaceTables) {
+            const dbTableName = wt.source?.databaseTable;
+            if (dbTableName && wt.source?.type === 'database') {
+                // Determine if subset: if virtual exists and rowCount > loaded rows, it's a subset
+                const isSubset = wt.virtual ? wt.rows.length < wt.virtual.rowCount : false;
+                result[dbTableName] = isSubset ? 'subset' : 'full';
+            }
+        }
+        return result;
+    }, [workspaceTables]);
+
+    // Merge: local session loads take priority over workspace-detected loads
+    const effectiveLoadedTables = useMemo(() => {
+        return { ...workspaceLoadedTables, ...loadedTables };
+    }, [workspaceLoadedTables, loadedTables]);
 
     let [isConnecting, setIsConnecting] = useState(false);
 
-    const toggleDisplaySamples = (tableName: string) => {
-        setDisplaySamples({...displaySamples, [tableName]: !displaySamples[tableName]});
-    }
+    // Auto-select first table for preview when metadata loads
+    useEffect(() => {
+        const tableNames = Object.keys(tableMetadata);
+        if (tableNames.length > 0 && (!selectedPreviewTable || !tableMetadata[selectedPreviewTable])) {
+            setSelectedPreviewTable(tableNames[0]);
+        }
+    }, [tableMetadata]);
+
+    // Reset import mode when switching tables
+    useEffect(() => {
+        if (selectedPreviewTable && tableMetadata[selectedPreviewTable]) {
+            setImportMode('full');
+            const metadata = tableMetadata[selectedPreviewTable];
+            setSubsetConfig({ rowLimit: Math.min(1000, metadata.row_count || 1000), sortColumns: [], sortOrder: 'asc' });
+        }
+    }, [selectedPreviewTable]);
+
+    // Build preview DictTable for the selected table
+    const previewTable: DictTable | null = useMemo(() => {
+        if (!selectedPreviewTable || !tableMetadata[selectedPreviewTable]) return null;
+        const metadata = tableMetadata[selectedPreviewTable];
+        const sampleRows = metadata.sample_rows || [];
+        const columns = metadata.columns || [];
+        const names = columns.map((c: any) => c.name);
+        return {
+            id: selectedPreviewTable,
+            displayId: selectedPreviewTable,
+            names,
+            rows: sampleRows,
+            metadata: names.reduce((acc: Record<string, any>, name: string) => ({
+                ...acc,
+                [name]: { type: 'string' as any, semanticType: '', levels: [] }
+            }), {}),
+            anchored: true,
+            createdBy: 'user' as const,
+            attachedMetadata: '',
+        };
+    }, [selectedPreviewTable, tableMetadata]);
+
+    const tableNames = Object.keys(tableMetadata);
 
     let tableMetadataBox = [
-        <TableContainer component={Box} sx={{borderTop: `1px solid ${borderColor.divider}`, maxHeight: 340, overflowY: "auto"}} >
-            <Table sx={{ minWidth: 650 }} size="small" aria-label="simple table">
-                <TableHead>
-                    <TableRow sx={{ '& .MuiTableCell-root': { fontSize: 12 } }}>
-                        <TableCell> </TableCell>
-                        <TableCell>Table Name</TableCell>
-                        <TableCell>Columns</TableCell>
-                        <TableCell align="right">Import Options</TableCell>
-                    </TableRow>
-                </TableHead>
-                <TableBody>
-                    {Object.entries(tableMetadata).map(([tableName, metadata]) => {
-                        return [
-                        <TableRow
-                            key={tableName}
-                            sx={{ 
-                                '&:last-child td, &:last-child th': { border: 0 }, 
-                                '& .MuiTableCell-root': { 
-                                    borderBottom: displaySamples[tableName] ? 'none' : '1px solid rgba(0, 0, 0, 0.1)',
-                                    padding: 0.25, wordWrap: 'break-word', whiteSpace: 'normal'},
-                                backgroundColor: getTableConfig(tableName).mode !== 'none' ? 'action.selected' : 'inherit',
-                                '&:hover': { backgroundColor: getTableConfig(tableName).mode !== 'none' ? 'action.selected' : 'action.hover' },
-                            }}
-                        >
-                            <TableCell>
-                                <IconButton size="small" onClick={(e) => {
-                                    e.stopPropagation();
-                                    toggleDisplaySamples(tableName);
-                                }}>
-                                    {displaySamples[tableName] ? <ExpandLessIcon /> : <ExpandMoreIcon />}
-                                </IconButton>
-                            </TableCell>
-                            <TableCell sx={{maxWidth: 240}} component="th" scope="row">
-                                {tableName} <Typography variant="caption" sx={{color: "text.secondary"}} fontSize={10}>
-                                    ({metadata.row_count > 0 ? `${metadata.row_count} rows × ` : ""}{metadata.columns.length} cols)
-                                </Typography>
-                            </TableCell>
-                            <TableCell sx={{maxWidth: 400}}>
-                                {metadata.columns.map((column: any) => (
-                                    <Chip key={column.name} label={column.name} sx={{fontSize: 11, margin: 0.25, height: 20}} size="small" />
-                                ))}
-                            </TableCell>
-                            <TableCell sx={{width: 220}} align="right">
-                                <Box sx={{ display: 'flex', alignItems: 'flex-end', flexDirection: 'column', mx: 1 }}>
-                                    <Box sx={{ display: 'flex', alignItems: 'center', my: 1, gap: 0.5, flexDirection: 'row', justifyContent: 'flex-end' }}>
-                                        <ToggleButtonGroup
-                                            size="small"
-                                            value={getTableConfig(tableName).mode}
-                                            exclusive
-                                            onChange={(e, newMode) => {
-                                                if (newMode === null) return; // Prevent deselecting all
-                                                if (newMode === 'none') {
-                                                    updateTableConfig(tableName, { mode: 'none' });
-                                                } else if (newMode === 'full') {
-                                                    updateTableConfig(tableName, { mode: 'full' });
-                                                } else if (newMode === 'subset') {
-                                                    // Initialize with default values
-                                                    updateTableConfig(tableName, { 
-                                                        mode: 'subset', 
-                                                        rowLimit: Math.min(1000, metadata.row_count || 1000),
-                                                        sortColumns: [],
-                                                        sortOrder: 'asc'
-                                                    });
-                                                }
-                                            }}
-                                        >
-                                            <ToggleButton value="none" sx={{ 
-                                                px: 1, py: 0, fontSize: 11, textTransform: 'none',
-                                                '&.Mui-selected': { backgroundColor: 'grey.400', color: 'white' },
-                                                '&.Mui-selected:hover': { backgroundColor: 'grey.500' }
-                                            }}>
-                                                <Tooltip title="Don't import this table">
-                                                    <span>Skip</span>
-                                                </Tooltip>
-                                            </ToggleButton>
-                                            <ToggleButton value="full" sx={{ 
-                                                px: 1, py: 0, fontSize: 11, textTransform: 'none',
-                                                '&.Mui-selected': { backgroundColor: 'secondary.main', color: 'white' },
-                                                '&.Mui-selected:hover': { backgroundColor: 'secondary.dark' }
-                                            }}>
-                                                <Tooltip title="Import entire table">
-                                                    <span>Full</span>
-                                                </Tooltip>
-                                            </ToggleButton>
-                                            <ToggleButton value="subset" onClick={(e) => {
-                                                e.stopPropagation();
-                                                setSubsetConfigAnchor({ element: e.currentTarget, tableName });
-                                            }} sx={{ 
-                                                px: 1, py: 0, fontSize: 11, textTransform: 'none',
-                                                '&.Mui-selected': { backgroundColor: '#f9a825', color: 'white' },
-                                                '&.Mui-selected:hover': { backgroundColor: '#f57f17' }
-                                            }}>
-                                                <Tooltip title="Import first K rows (with optional sorting)">
-                                                    <span>Subset</span>
-                                                </Tooltip>
-                                            </ToggleButton>
-                                        </ToggleButtonGroup>
-                                    </Box>
-                                    {getTableConfig(tableName).mode === 'subset' && (
-                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexDirection: 'row', justifyContent: 'flex-end' }}>
-                                            <Button
-                                                size="small"
-                                                startIcon={<SettingsIcon sx={{ fontSize: 12 }} />}
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    setSubsetConfigAnchor({ element: e.currentTarget, tableName });
-                                                }}
-                                                sx={{ 
-                                                    fontSize: 11,
-                                                    textTransform: 'none',
-                                                    minWidth: 'auto',
-                                                    padding: '2px 4px',
-                                                }}
-                                            >
-                                                {(() => {
-                                                    const config = getTableConfig(tableName);
-                                                    if (config.mode === 'subset') {
-                                                        const sortInfo = config.sortColumns.length > 0 
-                                                            ? `, ${config.sortOrder === 'asc' ? '↑' : '↓'} by ${config.sortColumns.join(', ')} ` 
-                                                            : '';
-                                                        return `first ${config.rowLimit} rows${sortInfo}`;
-                                                    }
-                                                    return '';
-                                                })()}
-                                            </Button>
-                                        </Box>
-                                    )}
-                                </Box>
-                            </TableCell>
-                        </TableRow>,
-                        <TableRow key={`${tableName}-sample`}>
-                            <TableCell colSpan={4} sx={{ paddingBottom: 0, paddingTop: 0, px: 0, maxWidth: 800, overflowX: "auto", 
-                                            borderBottom: displaySamples[tableName] ? '1px solid rgba(0, 0, 0, 0.1)' : 'none' }}>
-                            <Collapse in={displaySamples[tableName]} timeout="auto" unmountOnExit>
-                                <Card variant="outlined" sx={{ ml: 5, my: 1}}>
-                                    <CustomReactTable rows={metadata.sample_rows.slice(0, 5).map((row: any) => {
-                                        return Object.fromEntries(Object.entries(row).map(([key, value]: [string, any]) => {
-                                            return [key, String(value)];
-                                        }));
-                                    })} 
-                                    columnDefs={metadata.columns.map((column: any) => ({id: column.name, label: column.name}))} 
-                                    rowsPerPageNum={-1} 
-                                    compact={false} 
-                                    isIncompleteTable={metadata.row_count > 10}
-                                    />
-                                </Card>
-                            </Collapse>
-                            </TableCell>
-                        </TableRow>]
-                    })}
-                    </TableBody>
-                </Table>
-            </TableContainer>,
-        // Subset configuration popover
-        <Popover
-            key="subset-config-popover"
-            open={subsetConfigAnchor !== null}
-            anchorEl={subsetConfigAnchor?.element}
-            onClose={() => setSubsetConfigAnchor(null)}
-            anchorOrigin={{
-                vertical: 'bottom',
-                horizontal: 'left',
-            }}
-            transformOrigin={{
-                vertical: 'top',
-                horizontal: 'left',
-            }}
-        >
-            {subsetConfigAnchor && (() => {
-                const tableName = subsetConfigAnchor.tableName;
-                const config = getTableConfig(tableName);
-                const metadata = tableMetadata[tableName];
-                if (config.mode !== 'subset' || !metadata) return null;
-                
-                return (
-                    <Box sx={{ fontSize: 12, p: 1.5, minWidth: 280, maxWidth: 360 }}>
-                        <Typography variant="body2" sx={{ mb: 1.5, fontSize: 14, fontWeight: 600 }}>
-                            Create a subset of "{tableName}"
-                        </Typography>
-                        <Typography variant="caption" sx={{  display: 'block', mb: 0.75, fontSize: 12, fontWeight: 500 }}>
-                            Row Limit (max: {metadata.row_count || 'unknown'} rows)
-                        </Typography>
-                        <Box sx={{ my: 2, ml: 2 }}>
-                            <TextField
+        // Tables as chips + preview below
+        tableNames.length > 0 && (
+            <Box key="table-chips-preview" sx={{ mt: 1 }}>
+                {/* Table chips */}
+                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mb: 1.5 }}>
+                    {tableNames.map((tableName) => {
+                        const metadata = tableMetadata[tableName];
+                        const isSelected = tableName === selectedPreviewTable;
+                        const loaded = effectiveLoadedTables[tableName];
+                        return (
+                            <Chip
+                                key={tableName}
+                                label={tableName}
                                 size="small"
-                                type="number"
-                                value={config.rowLimit}
-                                onChange={(e) => {
-                                    const value = parseInt(e.target.value) || 1;
-                                    const maxRows = metadata.row_count || 100000;
-                                    updateTableConfig(tableName, {
-                                        ...config,
-                                        rowLimit: Math.min(Math.max(1, value), maxRows)
-                                    });
+                                onClick={() => setSelectedPreviewTable(tableName)}
+                                icon={loaded ? <CheckIcon sx={{ fontSize: 14 }} /> : undefined}
+                                sx={{
+                                    cursor: 'pointer',
+                                    fontSize: 11,
+                                    height: 26,
+                                    borderRadius: 1,
+                                    ...(loaded === 'full' ? {
+                                        backgroundColor: alpha(theme.palette.success.main, 0.12),
+                                        borderColor: alpha(theme.palette.success.main, 0.5),
+                                        color: theme.palette.success.dark,
+                                        '& .MuiChip-icon': { color: theme.palette.success.main },
+                                    } : loaded === 'subset' ? {
+                                        backgroundColor: alpha('#f9a825', 0.15),
+                                        borderColor: alpha('#f9a825', 0.5),
+                                        color: '#e65100',
+                                        '& .MuiChip-icon': { color: '#f9a825' },
+                                    } : isSelected ? {
+                                        backgroundColor: alpha(theme.palette.primary.main, 0.12),
+                                        borderColor: alpha(theme.palette.primary.main, 0.5),
+                                        color: theme.palette.primary.main,
+                                    } : {}),
+                                    border: '1px solid',
+                                    borderColor: loaded === 'full' 
+                                        ? alpha(theme.palette.success.main, 0.5)
+                                        : loaded === 'subset' 
+                                            ? alpha('#f9a825', 0.5) 
+                                            : isSelected 
+                                                ? alpha(theme.palette.primary.main, 0.5)
+                                                : 'rgba(0,0,0,0.15)',
+                                    '&:hover': {
+                                        backgroundColor: loaded === 'full'
+                                            ? alpha(theme.palette.success.main, 0.18)
+                                            : loaded === 'subset'
+                                                ? alpha('#f9a825', 0.22)
+                                                : alpha(theme.palette.primary.main, 0.08),
+                                    },
                                 }}
-                                slotProps={{ 
-                                    input: {
-                                        inputProps: { 
-                                            min: 1, 
-                                            max: metadata.row_count || 100000,
-                                            step: 100
+                            />
+                        );
+                    })}
+                </Box>
+
+                {/* Preview + load controls */}
+                {previewTable && selectedPreviewTable && (
+                    <Box>
+                        <Card variant="outlined" sx={{ pb: 0.5 }}>
+                            <CustomReactTable
+                                rows={previewTable.rows.slice(0, 12)}
+                                columnDefs={previewTable.names.map(name => ({
+                                    id: name,
+                                    label: name,
+                                    minWidth: 60,
+                                }))}
+                                rowsPerPageNum={-1}
+                                compact={false}
+                                isIncompleteTable={previewTable.rows.length > 12}
+                                maxHeight={240}
+                            />
+                        </Card>
+                        <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
+                            {tableMetadata[selectedPreviewTable]?.row_count > 0 
+                                ? `${tableMetadata[selectedPreviewTable].row_count.toLocaleString()} rows` 
+                                : `${previewTable.rows.length} sample rows`
+                            } × {previewTable.names.length} columns
+                        </Typography>
+
+                        {/* Load controls */}
+                        <Box sx={{ mt: 1.5, pt: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 2, flexWrap: 'nowrap' }}>
+                            {/* Subset option */}
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexWrap: 'nowrap' }}>
+                                <Checkbox
+                                    checked={importMode === 'subset'}
+                                    onChange={(e) => setImportMode(e.target.checked ? 'subset' : 'full')}
+                                    size="small"
+                                    sx={{ p: 0.25 }}
+                                />
+                                <Typography variant="body2" sx={{ fontSize: 12, cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap' }}
+                                    onClick={() => setImportMode(importMode === 'subset' ? 'full' : 'subset')}
+                                >
+                                    Load a subset
+                                </Typography>
+                                {importMode === 'subset' && selectedPreviewTable && tableMetadata[selectedPreviewTable] && (() => {
+                                    const metadata = tableMetadata[selectedPreviewTable];
+                                    return (
+                                        <>
+                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexShrink: 0 }}>
+                                                <Typography variant="caption" sx={{ fontSize: 11, color: 'text.secondary', whiteSpace: 'nowrap' }}>Rows:</Typography>
+                                                <TextField
+                                                    size="small"
+                                                    type="number"
+                                                    value={subsetConfig.rowLimit}
+                                                    onChange={(e) => {
+                                                        const value = parseInt(e.target.value) || 1;
+                                                        const maxRows = metadata.row_count || 100000;
+                                                        setSubsetConfig(prev => ({ ...prev, rowLimit: Math.min(Math.max(1, value), maxRows) }));
+                                                    }}
+                                                    slotProps={{ input: { inputProps: { min: 1, max: metadata.row_count || 100000, step: 100 } } }}
+                                                    sx={{ width: 90, '& .MuiInputBase-root': { fontSize: 11, height: 26 }, '& .MuiInputBase-input': { py: 0.25, px: 0.75 } }}
+                                                />
+                                                <Typography variant="caption" sx={{ fontSize: 10, color: 'text.disabled', whiteSpace: 'nowrap' }}>/ {(metadata.row_count || '?').toLocaleString()}</Typography>
+                                            </Box>
+                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, minWidth: 0, maxWidth: 400 }}>
+                                                <Typography variant="caption" sx={{ fontSize: 11, color: 'text.secondary', whiteSpace: 'nowrap' }}>Sort:</Typography>
+                                                <Autocomplete
+                                                    multiple
+                                                    size="small"
+                                                    options={metadata.columns.map((col: any) => col.name)}
+                                                    value={subsetConfig.sortColumns}
+                                                    onChange={(_, newValue) => setSubsetConfig(prev => ({ ...prev, sortColumns: newValue }))}
+                                                    renderInput={(params) => (
+                                                        <TextField {...params} placeholder="columns..." size="small" sx={{ minWidth: 120, '& .MuiInputBase-root': { fontSize: 11, minHeight: 26, py: 0 } }} />
+                                                    )}
+                                                    renderTags={(value, getTagProps) =>
+                                                        value.map((option, index) => (
+                                                            <Chip {...getTagProps({ index })} key={option} label={option} size="small" sx={{ height: 18, fontSize: 10 }} />
+                                                        ))
+                                                    }
+                                                    slotProps={{ paper: { sx: { fontSize: 12, '& .MuiAutocomplete-option': { fontSize: 12, py: 0.5, minHeight: 28 } } } }}
+                                                    sx={{ flex: 1, minWidth: 0 }}
+                                                />
+                                                {subsetConfig.sortColumns.length > 0 && (
+                                                    <ToggleButtonGroup
+                                                        value={subsetConfig.sortOrder}
+                                                        exclusive
+                                                        onChange={(_, v) => { if (v) setSubsetConfig(prev => ({ ...prev, sortOrder: v })); }}
+                                                        size="small"
+                                                        sx={{ height: 24 }}
+                                                    >
+                                                        <ToggleButton value="asc" sx={{ px: 1, py: 0, fontSize: 10, textTransform: 'none' }}>↑</ToggleButton>
+                                                        <ToggleButton value="desc" sx={{ px: 1, py: 0, fontSize: 10, textTransform: 'none' }}>↓</ToggleButton>
+                                                    </ToggleButtonGroup>
+                                                )}
+                                            </Box>
+                                        </>
+                                    );
+                                })()}
+                            </Box>
+                            {/* Load Table button */}
+                            <Button
+                                variant="contained"
+                                size="medium"
+                                sx={{ textTransform: 'none', fontSize: 13, px: 4, height: 34, flexShrink: 0 }}
+                                onClick={() => {
+                                    const tableName = selectedPreviewTable;
+                                    const metadata = tableMetadata[tableName];
+                                    if (!metadata) return;
+
+                                    const importOptions: any = {};
+                                    if (importMode === 'subset') {
+                                        importOptions.rowLimit = subsetConfig.rowLimit;
+                                        if (subsetConfig.sortColumns.length > 0) {
+                                            importOptions.sortColumns = subsetConfig.sortColumns;
+                                            importOptions.sortOrder = subsetConfig.sortOrder;
                                         }
                                     }
+
+                                    const sampleRows = metadata.sample_rows || [];
+                                    const columns = metadata.columns || [];
+                                    const tableObj: DictTable = {
+                                        id: tableName.split('.').pop() || tableName,
+                                        displayId: tableName,
+                                        names: columns.map((c: any) => c.name),
+                                        metadata: columns.reduce((acc: Record<string, any>, col: any) => ({
+                                            ...acc,
+                                            [col.name]: { type: 'string' as any, semanticType: '', levels: [] }
+                                        }), {}),
+                                        rows: sampleRows,
+                                        anchored: true,
+                                        createdBy: 'user' as const,
+                                        attachedMetadata: '',
+                                        source: {
+                                            type: 'database' as const,
+                                            databaseTable: tableName,
+                                            canRefresh: true,
+                                            lastRefreshed: Date.now(),
+                                        },
+                                    };
+
+                                    onImport();
+                                    dispatch(loadTable({
+                                        table: tableObj,
+                                        storeOnServer,
+                                        dataLoaderType,
+                                        dataLoaderParams: params,
+                                        sourceTableName: tableName,
+                                        importOptions: Object.keys(importOptions).length > 0 ? importOptions : undefined,
+                                    })).unwrap()
+                                        .then((result) => {
+                                            setLoadedTables(prev => ({ ...prev, [tableName]: importMode }));
+                                            onFinish("success", `Loaded table "${tableName}"`, [result.table.id]);
+                                        })
+                                        .catch((error) => {
+                                            console.error('Failed to load data:', error);
+                                            onFinish("error", `Failed to load "${tableName}": ${error}`);
+                                        });
                                 }}
-                                fullWidth
-                                sx={{ mb: 1, '& .MuiInputBase-root': { fontSize: 12 } }}
-                            />
-                            <Slider
-                                size="small"
-                                value={config.rowLimit}
-                                onChange={(_, value) => {
-                                    updateTableConfig(tableName, {
-                                        ...config,
-                                        rowLimit: value as number
-                                    });
-                                }}
-                                min={1}
-                                max={metadata.row_count || 10000}
-                                step={Math.max(1, Math.floor((metadata.row_count || 10000) / 100))}
-                                valueLabelDisplay="auto"
-                            />
-                        </Box>
-                        
-                        <Typography variant="caption" sx={{  display: 'block', my: 1, fontSize: 12, fontWeight: 500 }}>
-                            Sort By <span style={{ fontWeight: 400, color: 'rgba(0, 0, 0, 0.6)' }}>(optional)</span>
-                        </Typography>
-                        <Box sx={{ my: 2, ml: 2 }}>
-                            <Autocomplete
-                                multiple
-                                size="small"
-                                options={metadata.columns.map((col: any) => col.name)}
-                                value={config.sortColumns}
-                                onChange={(_, newValue) => {
-                                    updateTableConfig(tableName, {
-                                        ...config,
-                                        sortColumns: newValue
-                                    });
-                                }}
-                                renderInput={(params) => (
-                                    <TextField 
-                                        {...params} 
-                                        placeholder="Select columns..."
-                                        size="small"
-                                        sx={{ '& .MuiInputBase-root': { fontSize: 12 } }}
-                                    />
-                                )}
-                                renderTags={(value, getTagProps) =>
-                                    value.map((option, index) => (
-                                        <Chip
-                                            {...getTagProps({ index })}
-                                            key={option}
-                                            label={option}
-                                            size="small"
-                                            sx={{ height: 20, fontSize: 11 }}
-                                        />
-                                    ))
-                                }
-                            />
-                            {config.sortColumns.length > 0 && (
-                                <Box sx={{ mt: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
-                                    <ToggleButtonGroup
-                                        value={config.sortOrder}
-                                        exclusive
-                                        onChange={(_, newValue) => {
-                                            if (newValue) {
-                                                updateTableConfig(tableName, {
-                                                    ...config,
-                                                    sortOrder: newValue
-                                                });
-                                            }
-                                        }}
-                                        size="small"
-                                        sx={{ height: 24 }}
-                                    >
-                                        <ToggleButton value="asc" sx={{ 
-                                            px: 1.5, py: 0, fontSize: 11, textTransform: 'none',
-                                            '&.Mui-selected': { backgroundColor: 'primary.main', color: 'white' },
-                                            '&.Mui-selected:hover': { backgroundColor: 'primary.dark' }
-                                        }}>
-                                            ↑ Asc
-                                        </ToggleButton>
-                                        <ToggleButton value="desc" sx={{ 
-                                            px: 1.5, py: 0, fontSize: 11, textTransform: 'none',
-                                            '&.Mui-selected': { backgroundColor: 'primary.main', color: 'white' },
-                                            '&.Mui-selected:hover': { backgroundColor: 'primary.dark' }
-                                        }}>
-                                            ↓ Desc
-                                        </ToggleButton>
-                                    </ToggleButtonGroup>
-                                </Box>
-                            )}
-                        </Box>
-                        
-                        <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 2 }}>
-                            <Button 
-                                size="small" 
-                                variant="contained" 
-                                onClick={() => setSubsetConfigAnchor(null)}
-                                sx={{ textTransform: 'none', fontSize: 11, height: 28 }}
                             >
-                                Done
+                                {importMode === 'subset' ? 'Load Table Subset' : 'Load Table'}
                             </Button>
                         </Box>
                     </Box>
-                );
-            })()}
-        </Popover>,
-        Object.keys(tableMetadata).length > 0 && <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', mt: 2, gap: 1}}>
-            <Tooltip title={importStoreOnServer 
-                ? "Data will be stored on the server workspace (supports large tables)" 
-                : `Data stays in browser only (limited to ${frontendRowLimit.toLocaleString()} rows, like incognito mode)`}>
-                <FormControlLabel
-                    control={
-                        <Switch
-                            checked={importStoreOnServer}
-                            onChange={(e) => setImportStoreOnServer(e.target.checked)}
-                            size="small"
-                        />
-                    }
-                    label={
-                        <Typography variant="body2" sx={{ fontSize: '0.75rem', color: importStoreOnServer ? 'text.primary' : 'text.secondary' }}>
-                            {importStoreOnServer ? 'Store on server' : `Local only (≤${frontendRowLimit.toLocaleString()} rows)`}
-                        </Typography>
-                    }
-                />
-            </Tooltip>
-            <Button 
-                variant="contained" 
-                color="primary"
-                disabled={selectedTables.length === 0}
-                sx={{ textTransform: 'none' }}
-                onClick={() => {
-                    const tablesToImport = selectedTables;
-                    onImport();
-                    
-                    // Import all selected tables using loadTable thunk
-                    const importPromises = tablesToImport.map(tableName => {
-                        const config = getTableConfig(tableName);
-                        const metadata = tableMetadata[tableName];
-                        
-                        // Build import options based on config
-                        const importOptions: any = {};
-                        if (config.mode === 'subset') {
-                            importOptions.rowLimit = config.rowLimit;
-                            if (config.sortColumns.length > 0) {
-                                importOptions.sortColumns = config.sortColumns;
-                                importOptions.sortOrder = config.sortOrder;
-                            }
-                        }
-                        
-                        // Build a preliminary DictTable from the metadata
-                        const sampleRows = metadata?.sample_rows || [];
-                        const columns = metadata?.columns || [];
-                        const tableObj: DictTable = {
-                            id: tableName.split('.').pop() || tableName,
-                            displayId: tableName,
-                            names: columns.map((c: any) => c.name),
-                            metadata: columns.reduce((acc: Record<string, any>, col: any) => ({
-                                ...acc,
-                                [col.name]: { type: 'string' as any, semanticType: '', levels: [] }
-                            }), {}),
-                            rows: sampleRows,
-                            anchored: true,
-                            createdBy: 'user' as const,
-                            attachedMetadata: '',
-                            source: {
-                                type: 'database' as const,
-                                databaseTable: tableName,
-                                canRefresh: true,
-                                lastRefreshed: Date.now(),
-                            },
-                        };
-                        
-                        return dispatch(loadTable({
-                            table: tableObj,
-                            storeOnServer: importStoreOnServer,
-                            dataLoaderType,
-                            dataLoaderParams: params,
-                            sourceTableName: tableName,
-                            importOptions: Object.keys(importOptions).length > 0 ? importOptions : undefined,
-                        })).unwrap();
-                    });
-                    
-                    Promise.all(importPromises)
-                        .then(results => {
-                            setTableImportConfigs({});
-                            const tableNames = results.map(r => r.table.id);
-                            onFinish("success", `Successfully loaded ${tablesToImport.length} table(s)`, tableNames);
-                        })
-                        .catch(error => {
-                            console.error('Failed to load data:', error);
-                            onFinish("error", `Failed to load data: ${error}`);
-                        });
-                }}
-            >
-                Load Selected Tables ({selectedTables.length})
-            </Button>
-        </Box>
+                )}
+            </Box>
+        ),
     ]
 
     const isConnected = Object.keys(tableMetadata).length > 0;
 
     return (
         <Box sx={{p: 0, pb: 2}}>
-            <Typography sx={{fontSize: 16, flex: 1}}>
-                Import tables from <Typography component="span" sx={{ fontSize: 'inherit', color: 'secondary.main', fontWeight: 'bold'}}>{dataLoaderType}</Typography>
-            </Typography>
             {isConnecting && <Box sx={{
                 position: "absolute", top: 0, left: 0, width: "100%", height: "100%", 
                 display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000,
@@ -810,9 +655,15 @@ export const DataLoaderForm: React.FC<{
             </Box>}
             {isConnected ? (
                 // Connected state: show connection parameters and disconnect button
-                <Box sx={{mt: 1}}>
+                <Box sx={{}}>
                     <Box sx={{mb: 1.5}}>
                         <Box sx={{display: "flex", flexDirection: "row", alignItems: "center", gap: 0.5, mb: 1.5, flexWrap: "wrap"}}>
+                            <Typography variant="body2" component="span" sx={{fontSize: 11, color: 'secondary.main', fontWeight: 600, mr: 0.5}}>
+                                {dataLoaderType}
+                            </Typography>
+                            {paramDefs.filter((paramDef) => params[paramDef.name]).length > 0 && (
+                                <Typography variant="body2" component="span" sx={{fontSize: 11, color: 'text.disabled', mr: 0.5}}>·</Typography>
+                            )}
                             {paramDefs.filter((paramDef) => params[paramDef.name]).map((paramDef, index) => (
                                 <React.Fragment key={paramDef.name}>
                                     <Typography variant="body2" component="span" sx={{fontSize: 11, color: 'text.secondary'}}>
@@ -906,11 +757,14 @@ export const DataLoaderForm: React.FC<{
             ) : (
                 // Not connected: show connection forms
                 <>
+                    <Typography variant="body2" sx={{fontSize: 12, color: 'secondary.main', fontWeight: 600, mt: 1}}>
+                        {dataLoaderType}
+                    </Typography>
                     <Box sx={{
                         display: "grid",
                         gridTemplateColumns: "repeat(3, 1fr)",
                         gap: 1.5,
-                        mt: 2,
+                        mt: 1,
                     }}>
                         {paramDefs.map((paramDef) => (
                             <Box key={paramDef.name} sx={{ display: "flex", flexDirection: "column", gap: 0.25 }}>
@@ -1012,11 +866,27 @@ export const DataLoaderForm: React.FC<{
                             </Button>}
                     </Box>
                     {authInstructions.trim() && (
-                        <Typography variant="body2" sx={{
-                            color: "text.secondary",
-                            fontSize: 11, whiteSpace: "pre-wrap", mt: 2, lineHeight: 1.5}}>
-                            {authInstructions.trim()}
-                        </Typography>
+                        <Box sx={(theme) => ({
+                            mt: 2, px: 1.5, py: 1, 
+                            backgroundColor: 'rgba(0,0,0,0.02)',
+                            borderRadius: 1,
+                            border: '1px solid rgba(0,0,0,0.06)',
+                            fontFamily: theme.typography.fontFamily,
+                            fontSize: '11px',
+                            color: 'text.secondary',
+                            lineHeight: 1.6,
+                            '& *': { fontFamily: theme.typography.fontFamily, fontSize: 'inherit', lineHeight: 'inherit', color: 'inherit' },
+                            '& p': { margin: '0 0 4px 0', '&:last-child': { marginBottom: 0 } },
+                            '& code': { fontSize: '10px', fontFamily: 'monospace !important', backgroundColor: 'rgba(0,0,0,0.06)', padding: '1px 4px', borderRadius: '3px' },
+                            '& pre': { fontSize: '10px', fontFamily: 'monospace !important', backgroundColor: 'rgba(0,0,0,0.04)', padding: '8px', borderRadius: '4px', overflow: 'auto', margin: '4px 0', '& code': { backgroundColor: 'transparent', padding: 0 } },
+                            '& a': { color: 'primary.main' },
+                            '& ul, & ol': { paddingLeft: '20px', margin: '4px 0' },
+                            '& li': { marginBottom: '2px' },
+                            '& strong': { fontWeight: 600, color: 'text.primary' },
+                            '& h1, & h2, & h3, & h4': { fontSize: '12px', fontWeight: 600, color: 'text.primary', margin: '4px 0' },
+                        })}>
+                            <Markdown>{authInstructions.trim()}</Markdown>
+                        </Box>
                     )}</>
             )}
         </Box>

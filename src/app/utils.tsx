@@ -75,6 +75,9 @@ export function getUrls() {
         SESSION_DELETE: `/api/sessions/delete`,
         SESSION_EXPORT: `/api/sessions/export`,
         SESSION_IMPORT: `/api/sessions/import`,
+
+        // Workspace
+        OPEN_WORKSPACE: `/api/tables/open-workspace`,
     };
 }
 

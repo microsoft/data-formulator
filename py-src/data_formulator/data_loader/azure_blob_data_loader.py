@@ -30,39 +30,23 @@ class AzureBlobDataLoader(ExternalDataLoader):
     
     @staticmethod
     def auth_instructions() -> str:
-        return """Authentication Options (choose one)
+        return """**Example (conn string):** connection_string: `DefaultEndpointsProtocol=https;AccountName=...` · container_name: `mydata`
 
-Option 1 - Connection String (Simplest)
-    - Get connection string from Azure Portal > Storage Account > Access keys
-    - Use `connection_string` parameter with full connection string
-    - `account_name` can be omitted when using connection string
+**Example (account key):** account_name: `mystorageacct` · container_name: `mydata` · account_key: `abc123...`
 
-Option 2 - Account Key
-    - Get account key from Azure Portal > Storage Account > Access keys
-    - Use `account_name` + `account_key` parameters
-    - Provides full access to storage account
+**Option 1 — Connection String (simplest):**
+Get it from Azure Portal → Storage Account → Access keys. Enter in `connection_string`; `account_name` can be omitted.
 
-Option 3 - SAS Token (Recommended for limited access)
-    - Generate SAS token from Azure Portal > Storage Account > Shared access signature
-    - Use `account_name` + `sas_token` parameters
-    - Can be time-limited and permission-scoped
+**Option 2 — Account Key:**
+From Azure Portal → Storage Account → Access keys. Use `account_name` + `account_key`.
 
-Option 4 - Credential Chain (Most Secure)
-    - Use `account_name` + `container_name` only (no explicit credentials)
-    - Requires Azure CLI login (`az login` in terminal) or Managed Identity
-    - Default chain: `cli;managed_identity;env`
-    - Customize with `credential_chain` parameter
+**Option 3 — SAS Token (recommended for limited access):**
+Generate from Azure Portal → Storage Account → Shared access signature. Use `account_name` + `sas_token`. Can be time-limited and permission-scoped.
 
-Additional Options
-    - `endpoint`: Custom endpoint (default: `blob.core.windows.net`)
-    - For Azure Government: `blob.core.usgovcloudapi.net`
-    - For Azure China: `blob.core.chinacloudapi.cn`
+**Option 4 — Azure CLI / Managed Identity (most secure):**
+Just provide `account_name` + `container_name`. Requires `az login` or Managed Identity.
 
-Supported File Formats:
-    - CSV files (.csv)
-    - Parquet files (.parquet) 
-    - JSON files (.json, .jsonl)
-"""
+**Supported formats:** CSV, Parquet, JSON, JSONL"""
 
     def __init__(self, params: dict[str, Any]):
         self.params = params

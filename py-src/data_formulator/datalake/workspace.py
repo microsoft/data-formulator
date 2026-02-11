@@ -11,7 +11,6 @@ plus a workspace.yaml metadata file.
 
 import os
 import shutil
-import tempfile
 import logging
 import time
 from datetime import datetime, timezone
@@ -41,23 +40,39 @@ from data_formulator.datalake.parquet_utils import (
 
 logger = logging.getLogger(__name__)
 
-# Environment variable for configuring workspace root
-DATALAKE_ROOT_ENV = "DATALAKE_ROOT"
 
-# Default subdirectory name under temp for workspaces
-DEFAULT_WORKSPACE_SUBDIR = "data_formulator_workspaces"
+def get_data_formulator_home() -> Path:
+    """
+    Get the Data Formulator home directory.
+
+    Resolution order:
+    1. Flask app.config['CLI_ARGS']['data_dir'] (set via --data-dir CLI flag)
+    2. DATA_FORMULATOR_HOME environment variable
+    3. Default: ~/.data_formulator
+    """
+    # Try Flask app config first (set by --data-dir CLI arg)
+    try:
+        from flask import current_app
+        data_dir = current_app.config.get('CLI_ARGS', {}).get('data_dir')
+        if data_dir:
+            return Path(data_dir)
+    except (RuntimeError, ImportError):
+        pass
+
+    env_home = os.getenv("DATA_FORMULATOR_HOME")
+    if env_home:
+        return Path(env_home)
+
+    return Path.home() / ".data_formulator"
 
 
 def get_default_workspace_root() -> Path:
     """
     Get the default workspace root directory.
 
-    Uses DATALAKE_ROOT env variable if set, otherwise uses system temp directory.
+    Returns DATA_FORMULATOR_HOME / "workspaces".
     """
-    env_root = os.getenv(DATALAKE_ROOT_ENV)
-    if env_root:
-        return Path(env_root)
-    return Path(tempfile.gettempdir()) / DEFAULT_WORKSPACE_SUBDIR
+    return get_data_formulator_home() / "workspaces"
 
 
 def cleanup_stale_temp_files(workspace_path: Path, max_age_hours: int = 24) -> int:
