@@ -813,14 +813,14 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
         >
             <Box sx={{ display: 'flex', flexDirection: "column", alignItems: 'flex-start', width: "100%", marginBottom: "4px" }}
                 component="form" className="channel-shelf-box encoding-item">
-                <Card sx={{ width: "100%", boxShadow: editMode ? "0 2px 2px 0 rgb(0 0 0 / 20%), 0 2px 2px 0 rgb(0 0 0 / 19%)" : "" }} variant="outlined">
+                <Card sx={{ width: "100%" }} variant="outlined">
                     <Box ref={drop} className="channel-encoded-field">
                         <IconButton //className="encoding-shelf-action-button"
                             onClick={() => { setEditMode(!editMode) }} color="default"
                             aria-label="axis settings" component="span"
                             size="small" sx={{
                                 padding: "0px", borderRadius: 0, textAlign: "left", fontSize: "inherit", height: "auto",
-                                position: "relative", borderRight: "1px solid lightgray", width: '64px', backgroundColor: "rgba(0,0,0,0.01)",
+                                position: "relative", borderRight: "1px solid lightgray", width: '64px', 
                                 display: "flex", justifyContent: "space-between"
                             }}>
                             <Typography variant="caption" component="span" sx={{ padding: "0px 0px 0px 6px" }}>{channelDisplay}</Typography>

@@ -63,6 +63,8 @@ import { RefreshDataDialog } from './RefreshDataDialog';
 import { getUrls, fetchWithIdentity } from '../app/utils';
 import { AppDispatch } from '../app/store';
 import StopIcon from '@mui/icons-material/Stop';
+import UnfoldMoreIcon from '@mui/icons-material/UnfoldMore';
+import UnfoldLessIcon from '@mui/icons-material/UnfoldLess';
 import BarChartIcon from '@mui/icons-material/BarChart';
 import ShowChartIcon from '@mui/icons-material/ShowChart';
 import ScatterPlotIcon from '@mui/icons-material/ScatterPlot';
@@ -1853,6 +1855,9 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
     const scrollRef = useRef<null | HTMLDivElement>(null)
     const containerRef = useRef<null | HTMLDivElement>(null)
     const suppressScrollRef = useRef(false);
+    const [expandedColumns, setExpandedColumns] = useState(false);
+
+    const theme = useTheme();
 
     const executeScroll = (smooth: boolean = true) => { 
         if (scrollRef.current != null) {
@@ -2159,7 +2164,7 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
         }
     }
 
-    // Pick the best column layout: balances scroll burden vs whitespace.
+    // Pick the best column la=yout: balances scroll burden vs whitespace.
     // Measure actual panel height from the DOM (accounts for browser zoom, panel resizing, etc.)
     const availableHeight = containerRef.current?.clientHeight ?? 600;
     const MAX_COLUMNS = 3;

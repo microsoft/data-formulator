@@ -29,8 +29,7 @@ import { getChartTemplate } from '../components/ChartTemplates';
 import { checkChartAvailability, generateChartSkeleton } from './VisualizationView';
 
 import { TableIcon, InsightIcon } from '../icons';
-import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
-import ChevronRightIcon from '@mui/icons-material/ChevronRight';
+
 
 import { AppDispatch } from '../app/store';
 
@@ -95,7 +94,7 @@ export let ChartElementFC: FC<{
 
 export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ chartId }) {
 
-    const [collapseEditor, setCollapseEditor] = useState(false);
+
     const tables = useSelector((state: DataFormulatorState) => state.tables);
     let allCharts = useSelector(dfSelectors.getAllCharts);
 
@@ -264,37 +263,5 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
         </Box>
     )
 
-    return <Collapse 
-        key='encoding-shelf'
-        collapsedSize={64} in={!collapseEditor} orientation='horizontal' 
-        sx={{
-            position: 'relative',
-            '& .MuiCollapse-wrapper': {
-                '& .MuiCollapse-wrapperInner': {
-                    '&::after': collapseEditor ? {
-                        content: '""',
-                        position: 'absolute',
-                        top: 0,
-                        right: 0,
-                        width: '20px',
-                        height: '100%',
-                        background: 'linear-gradient(to right, transparent, rgba(255,255,255,1))',
-                        pointerEvents: 'none',
-                        zIndex: 1
-                    } : {}
-                }
-            }
-        }}>
-        <Box sx={{display: 'flex', flexDirection: 'row', height: '100%', 
-            position: 'relative',
-        }}>
-            <Tooltip placement="left" title={collapseEditor ? "open editor" : "hide editor"}>
-                <Button color="primary"
-                        sx={{width: 18, minWidth: 18, p: 0}}
-                    onClick={()=>{setCollapseEditor(!collapseEditor)}}
-                >{collapseEditor ? <ChevronLeftIcon sx={{fontSize: 18}} /> : <ChevronRightIcon sx={{fontSize: 18}} />}</Button>
-            </Tooltip>
-            {encodingShelf}
-        </Box>
-    </Collapse>;
+    return encodingShelf;
 }

@@ -31,11 +31,13 @@ import {
     Slider,
     CircularProgress,
     Button,
+    Collapse,
     Dialog,
     DialogTitle,
     DialogContent,
     DialogActions,
 } from '@mui/material';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 
 import React from 'react';
 import { ThinkingBufferEffect } from '../components/FunComponents';
@@ -58,12 +60,13 @@ import CheckIcon from '@mui/icons-material/Check';
 import { ThinkingBanner } from './DataThread';
 
 import { AppDispatch } from '../app/store';
-import { borderColor, transition, radius } from '../app/tokens';
+import { borderColor, radius } from '../app/tokens';
 
 import DeleteIcon from '@mui/icons-material/Delete';
 import CloseIcon from '@mui/icons-material/Close';
-import LightbulbOutlinedIcon from '@mui/icons-material/LightbulbOutlined';
+
 import TipsAndUpdatesIcon from '@mui/icons-material/TipsAndUpdates';
+import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import { IdeaChip } from './ChartRecBox';
 
 // Property and state of an encoding shelf
@@ -251,14 +254,11 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
     let chart = allCharts.find(c => c.id == chartId) as Chart;
     let trigger = chart.source == "trigger" ? tables.find(t => t.derive?.trigger?.chart?.id == chartId)?.derive?.trigger : undefined;
 
-    let [ideateMode, setIdeateMode] = useState<boolean>(false);
     let [prompt, setPrompt] = useState<string>(trigger?.instruction || "");
+    let [ideateMode, setIdeateMode] = useState<boolean>(false);
 
     useEffect(() => {
         setPrompt(trigger?.instruction || "");
-        if (!(chartState[chartId] && chartState[chartId].ideas.length > 0)) {
-            setIdeateMode(false);
-        }
     }, [chartId]);
 
     let encodingMap = chart?.encodingMap;
@@ -488,7 +488,6 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
 
     // Function to handle idea chip click
     const handleIdeaClick = (ideaText: string) => {
-        setIdeateMode(true);
         setPrompt(ideaText);
         // Automatically start the data formulation process
         deriveNewData(ideaText, 'ideate');
@@ -872,6 +871,8 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
             sx={{
                 "& .MuiInputLabel-root": { fontSize: '12px' },
                 "& .MuiInput-input": { fontSize: '12px' },
+                "& .MuiInput-underline:before": { borderBottomColor: theme.palette.primary.main },
+                "& .MuiInput-underline:after": { borderBottomColor: theme.palette.primary.main },
             }}
             onChange={(event: any) => {
                 setPrompt(event.target.value);
@@ -889,9 +890,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
             }}
             value={prompt}
             label=""
-            placeholder={['Auto'].includes(chart.chartType) 
-                ? (isChartAvailable ? "what do you want to visualize?" : " ✏️ what do you want to visualize?")
-                : (isChartAvailable ? "formulate data" : " ✏️  formulate data")}
+            placeholder={"what's next?"}
             fullWidth
             multiline
             variant="standard"
@@ -962,85 +961,12 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
         </Box>
     ) : null;
 
-    // Mode toggle header component
-    const ModeToggleHeader = () => (
-        <Box sx={{ 
-            display: 'flex', 
-            alignItems: 'center', 
-            gap: 1, 
-            padding: '4px 10px',
-            borderBottom: `1px solid ${borderColor.component}`,
-            backgroundColor: 'rgba(0, 0, 0, 0.02)'
-        }}>
-            <Typography 
-                sx={{ 
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 0.5,
-                    fontSize: 11, 
-                    cursor: 'pointer',
-                    padding: '2px 6px',
-                    borderRadius: radius.sm,
-                    backgroundColor: ideateMode ? 'rgba(25, 118, 210, 0.08)' : 'transparent',
-                    color: ideateMode ? 'primary.main' : 'text.secondary',
-                    fontWeight: ideateMode ? 500 : 400,
-                    transition: transition.fast,
-                    '&:hover': {
-                        backgroundColor: ideateMode ? 'rgba(25, 118, 210, 0.12)' : 'rgba(0, 0, 0, 0.04)'
-                    }
-                }}
-                onClick={() => {
-                    if (currentChartIdeas.length > 0) {
-                        setIdeateMode(true);
-                        setPrompt("");
-                    } else {
-                        setIdeateMode(true);
-                        getIdeasForVisualization();
-                    }
-                }}
-            >
-                {currentChartIdeas.length > 0 ? "Ideas" : "Get Ideas"}
-                <LightbulbOutlinedIcon 
-                    sx={{
-                        fontSize: 12, 
-                        animation: 'pulse 3s ease-in-out infinite',
-                        '@keyframes pulse': {
-                            '0%': {
-                            },
-                            '50%': {
-                                color: theme.palette.derived.textColor || theme.palette.derived.main,
-                            },
-                            '100%': {
-                            }
-                        }
-                    }} 
-                />
-            </Typography>
-            <Typography 
-                sx={{ 
-                    fontSize: 11, 
-                    cursor: 'pointer',
-                    padding: '2px 6px',
-                    borderRadius: radius.sm,
-                    backgroundColor: !ideateMode ? 'rgba(25, 118, 210, 0.08)' : 'transparent',
-                    color: !ideateMode ? 'primary.main' : 'text.secondary',
-                    fontWeight: !ideateMode ? 500 : 400,
-                    transition: transition.fast,
-                    '&:hover': {
-                        backgroundColor: !ideateMode ? 'rgba(25, 118, 210, 0.12)' : 'rgba(0, 0, 0, 0.04)'
-                    }
-                }}
-                onClick={() => setIdeateMode(false)}
-            >
-                Editor
-            </Typography>
-        </Box>
-    );
+
 
     let channelComponent = (
         <Box sx={{ width: "100%", minWidth: "210px", height: '100%', display: "flex", flexDirection: "column", gap: '6px' }}>
-            <Box key='mark-selector-box' sx={{ flex: '0 0 auto' }}>
-                <FormControl sx={{ m: 1, minWidth: 120, width: "100%", margin: "0px 0"}} size="small">
+            <Box key='mark-selector-box' sx={{ flex: '0 0 auto', display: 'flex', alignItems: 'center' }}>
+                <FormControl sx={{ m: 1, minWidth: 120, flex: 1, margin: "0px 0"}} size="small">
                     <Select
                         variant="standard"
                         labelId="chart-mark-select-label"
@@ -1143,9 +1069,8 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                                         <Box key={`config-${propDef.key}`} sx={{
                                             display: 'flex', alignItems: 'center', 
                                             borderRadius: '12px',
-                                            backgroundColor: 'rgba(0,0,0,0.04)', minHeight: '22px',
+                                            minHeight: '22px',
                                             overflow: 'hidden', padding: '0px 10px 0px 0px',
-                                            '&:hover': { backgroundColor: 'rgba(0,0,0,0.07)' },
                                         }}>
                                             <Typography variant="caption" sx={{
                                                 padding: '0px 8px', color: 'text.secondary', fontSize: 10,
@@ -1233,43 +1158,105 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
         </Box>);
 
     const encodingShelfCard = (
-        <Card variant='outlined' sx={{ 
-            padding: 0, 
-            maxWidth: "400px", 
-            display: 'flex', 
-            flexDirection: 'column', 
-            borderColor: borderColor.component,
-            backgroundColor: trigger ? "rgba(255, 160, 122, 0.07)" : "" 
-        }}>
-            <ModeToggleHeader />
-            {ideateMode ? (
-                <Box sx={{ padding: '8px 10px' }}>
-                    <Tooltip title={`get ideas for visualization`}>
-                        <span>
-                            <Button 
+        <>
+            <Box sx={{ 
+                padding: '4px 6px', 
+                maxWidth: "400px", 
+                display: 'flex', 
+                flexDirection: 'column', 
+                borderRadius: '8px',
+                border: `1px solid ${theme.palette.divider}`,
+                backgroundColor: trigger ? "rgba(255, 160, 122, 0.04)" : "white",
+            }}>
+                {ideateMode ? (
+                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: '6px', padding: '4px 0px' }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                            <Button
                                 variant="text"
-                                disabled={isLoadingIdeas} 
-                                color={"primary"} 
                                 size="small"
-                                onClick={() => { getIdeasForVisualization(); }}
-                                startIcon={isLoadingIdeas ? undefined : <LightbulbOutlinedIcon sx={{fontSize: 10}} />}
+                                disabled={isLoadingIdeas}
+                                onClick={() => getIdeasForVisualization()}
+                                startIcon={<TipsAndUpdatesIcon sx={{ fontSize: 14 }} />}
                                 sx={{
-                                    fontSize: 12,
+                                    fontSize: 11,
                                     textTransform: 'none',
+                                    padding: '2px 6px',
+                                    borderRadius: '6px',
+                                    color: isLoadingIdeas ? 'text.disabled' : (theme.palette.custom.textColor || theme.palette.custom.main),
+                                    '&:hover': { backgroundColor: alpha(theme.palette.custom.main, 0.08) },
                                 }}
                             >
-                                {isLoadingIdeas ? ThinkingBanner('ideating...') : currentChartIdeas.length > 0 ? "Different ideas?" : "Get Ideas?"} 
+                                Other ideas?
                             </Button>
-                        </span>
-                    </Tooltip>
-                    {ideasSection}
+                        </Box>
+                        {/* Loading state */}
+                        {isLoadingIdeas && (
+                            <Box sx={{ padding: '2px 0' }}>
+                                {ThinkingBanner('ideating...')}
+                            </Box>
+                        )}
+                        {/* Ideas chips */}
+                        {ideasSection}
+                    </Box>
+                ) : (
+                    <Box sx={{ padding: '4px 0px' }}>
+                        {channelComponent}
+                    </Box>
+                )}
+            </Box>
+            {/* Buttons below card */}
+            {ideateMode ? (
+                <Box sx={{ 
+                    display: 'flex', 
+                    width: 'fit-content',
+                    padding: '6px 2px 0',
+                }}>
+                    <Button
+                        variant="text"
+                        size="small"
+                        onClick={() => setIdeateMode(false)}
+                        startIcon={<ArrowBackIcon sx={{ fontSize: 14 }} />}
+                        sx={{
+                            fontSize: 11,
+                            textTransform: 'none',
+                            padding: '2px 6px',
+                            borderRadius: '6px',
+                            color: 'text.secondary',
+                            '&:hover': { backgroundColor: 'rgba(0,0,0,0.04)' },
+                        }}
+                    >
+                        Back to editor
+                    </Button>
                 </Box>
             ) : (
-                <Box sx={{ padding: '8px 10px' }}>
-                    {channelComponent}
+                <Box sx={{ 
+                    display: 'flex', 
+                    width: 'fit-content',
+                    padding: '6px 2px 0',
+                }}>
+                    <Button 
+                        variant="text"
+                        disabled={isLoadingIdeas} 
+                        size="small"
+                        onClick={() => { setIdeateMode(true); if (currentChartIdeas.length === 0) getIdeasForVisualization(); }}
+                        startIcon={isLoadingIdeas ? undefined : <TipsAndUpdatesIcon sx={{ fontSize: 14 }} />}
+                        sx={{
+                            fontSize: 11,
+                            textTransform: 'none',
+                            justifyContent: 'flex-start',
+                            padding: '2px 6px',
+                            borderRadius: '6px',
+                            color: theme.palette.custom.textColor || theme.palette.custom.main,
+                            '&:hover': {
+                                backgroundColor: alpha(theme.palette.custom.main, 0.08),
+                            },
+                        }}
+                    >
+                        {currentChartIdeas.length > 0 ? "View ideas" : "Some ideas?"}
+                    </Button>
                 </Box>
             )}
-        </Card>
+        </>
     );
 
     return encodingShelfCard;
