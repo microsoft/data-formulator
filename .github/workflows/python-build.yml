@@ -9,6 +9,11 @@ on:
   pull_request:
     branches: [ "main" ]
 
+# Global permissions required for OIDC authentication
+permissions:
+  id-token: write
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest

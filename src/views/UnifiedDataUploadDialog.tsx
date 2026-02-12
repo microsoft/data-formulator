@@ -462,6 +462,13 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
     const diskPersistenceDisabled = serverConfig.DISABLE_DATABASE;
     const [storeOnServer, setStoreOnServer] = useState<boolean>(!diskPersistenceDisabled);
 
+    // When serverConfig loads and database is enabled, default to store on server
+    useEffect(() => {
+        if (!diskPersistenceDisabled) {
+            setStoreOnServer(true);
+        }
+    }, [diskPersistenceDisabled]);
+
     // Paste tab state
     const [pasteContent, setPasteContent] = useState<string>("");
     const [isLargeContent, setIsLargeContent] = useState<boolean>(false);

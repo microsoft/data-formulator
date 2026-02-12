@@ -504,8 +504,8 @@ export const DataLoaderForm: React.FC<{
 
                         {/* Load controls */}
                         <Box sx={{ mt: 1.5, pt: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 2, flexWrap: 'nowrap' }}>
-                            {/* Subset option */}
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexWrap: 'nowrap' }}>
+                            {/* Subset option - hidden when already loaded */}
+                            {!effectiveLoadedTables[selectedPreviewTable] && <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexWrap: 'nowrap' }}>
                                 <Checkbox
                                     checked={importMode === 'subset'}
                                     onChange={(e) => setImportMode(e.target.checked ? 'subset' : 'full')}
@@ -572,8 +572,46 @@ export const DataLoaderForm: React.FC<{
                                         </>
                                     );
                                 })()}
-                            </Box>
+                            </Box>}
                             {/* Load Table button */}
+                            {effectiveLoadedTables[selectedPreviewTable] ? (
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexShrink: 0 }}>
+                                <Button
+                                    variant="outlined"
+                                    size="medium"
+                                    disabled
+                                    startIcon={<CheckIcon sx={{ fontSize: 16 }} />}
+                                    sx={{ textTransform: 'none', fontSize: 13, px: 3, height: 34,
+                                        color: 'success.main', borderColor: 'success.main',
+                                        '&.Mui-disabled': { color: 'success.main', borderColor: 'success.main', opacity: 0.8 },
+                                    }}
+                                >
+                                    {effectiveLoadedTables[selectedPreviewTable] === 'subset' ? 'Subset loaded' : 'Loaded'}
+                                </Button>
+                                <Button
+                                    variant="text"
+                                    size="small"
+                                    onClick={() => {
+                                        const tableName = selectedPreviewTable;
+                                        // Find and remove the workspace table that matches this database table
+                                        const wt = workspaceTables.find(t => t.source?.databaseTable === tableName && t.source?.type === 'database');
+                                        if (wt) {
+                                            dispatch(dfActions.deleteTable(wt.id));
+                                        }
+                                        setLoadedTables(prev => {
+                                            const next = { ...prev };
+                                            delete next[tableName];
+                                            return next;
+                                        });
+                                    }}
+                                    sx={{ textTransform: 'none', fontSize: 11, px: 1, minWidth: 0, height: 28, color: 'text.secondary',
+                                        '&:hover': { color: 'error.main', backgroundColor: 'rgba(211,47,47,0.04)' },
+                                    }}
+                                >
+                                    Unload
+                                </Button>
+                            </Box>
+                            ) : (
                             <Button
                                 variant="contained"
                                 size="medium"
@@ -635,6 +673,7 @@ export const DataLoaderForm: React.FC<{
                             >
                                 {importMode === 'subset' ? 'Load Table Subset' : 'Load Table'}
                             </Button>
+                            )}
                         </Box>
                     </Box>
                 )}
