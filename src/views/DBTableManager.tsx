@@ -346,7 +346,7 @@ export const DataLoaderForm: React.FC<{
     const dispatch = useDispatch<AppDispatch>();
     const theme = useTheme();
     const params = useSelector((state: DataFormulatorState) => state.dataLoaderConnectParams[dataLoaderType] ?? {});
-    const frontendRowLimit = useSelector((state: DataFormulatorState) => state.config?.frontendRowLimit ?? 10000);
+    const frontendRowLimit = useSelector((state: DataFormulatorState) => state.config?.frontendRowLimit ?? 50000);
     const workspaceTables = useSelector((state: DataFormulatorState) => state.tables);
 
     const [tableMetadata, setTableMetadata] = useState<Record<string, any>>({});

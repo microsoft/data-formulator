@@ -451,7 +451,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
     const existingTables = useSelector((state: DataFormulatorState) => state.tables);
     const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
     const dataCleanBlocks = useSelector((state: DataFormulatorState) => state.dataCleanBlocks);
-    const frontendRowLimit = useSelector((state: DataFormulatorState) => state.config?.frontendRowLimit ?? 10000);
+    const frontendRowLimit = useSelector((state: DataFormulatorState) => state.config?.frontendRowLimit ?? 50000);
     const existingNames = new Set(existingTables.map(t => t.id));
 
     const [activeTab, setActiveTab] = useState<UploadTabType>(initialTab === 'menu' ? 'menu' : initialTab);

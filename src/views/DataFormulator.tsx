@@ -31,7 +31,6 @@ import { borderColor, shadow, radius } from '../app/tokens';
 import { FreeDataViewFC } from './DataView';
 import { VisualizationViewFC } from './VisualizationView';
 
-import { ConceptShelf } from './ConceptShelf';
 import { DndProvider } from 'react-dnd'
 import { HTML5Backend } from 'react-dnd-html5-backend'
 import { toolName } from '../app/App';
@@ -263,7 +262,6 @@ export const DataFormulatorFC = ({ }) => {
                 {viewMode === 'editor' ? (
                     <>
                         {visPane}
-                        {/* <ConceptShelf /> */}
                     </>
                 ) : (
                     <ReportView />

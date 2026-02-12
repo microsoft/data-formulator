@@ -43,6 +43,47 @@ export function clearCache(): void {
 }
 
 /**
+ * Get a higher-resolution PNG data URL from the cached SVG.
+ * Renders the SVG onto a canvas at specified dimensions and
+ * exports as a PNG data URL suitable for sending to a vision model.
+ * Falls back to the thumbnail if SVG rendering fails.
+ */
+export async function getChartPngDataUrl(
+    chartId: string,
+    width: number = 400,
+    height: number = 400,
+): Promise<string | undefined> {
+    const entry = cache.get(chartId);
+    if (!entry) return undefined;
+
+    try {
+        const svgBlob = new Blob([entry.svg], { type: 'image/svg+xml;charset=utf-8' });
+        const url = URL.createObjectURL(svgBlob);
+
+        const img = new Image();
+        await new Promise<void>((resolve, reject) => {
+            img.onload = () => resolve();
+            img.onerror = reject;
+            img.src = url;
+        });
+
+        const canvas = document.createElement('canvas');
+        canvas.width = width * 2;   // 2x for clarity
+        canvas.height = height * 2;
+        const ctx = canvas.getContext('2d')!;
+        ctx.fillStyle = 'white';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+        URL.revokeObjectURL(url);
+        return canvas.toDataURL('image/png');
+    } catch (err) {
+        console.warn('getChartPngDataUrl: SVG render failed, falling back to thumbnail', err);
+        return entry.thumbnailDataUrl || undefined;
+    }
+}
+
+/**
  * Compute a deterministic cache key from chart rendering inputs.
  * This is used to detect when a chart needs re-rendering.
  * We intentionally use JSON.stringify for simplicity — it's fast enough

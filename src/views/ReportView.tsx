@@ -224,6 +224,7 @@ export const ReportView: FC = () => {
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
     const config = useSelector((state: DataFormulatorState) => state.config);
     const allGeneratedReports = useSelector(dfSelectors.getAllGeneratedReports);
+    const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
     const focusedChartId = useSelector((state: DataFormulatorState) => state.focusedChartId);
     const theme = useTheme();
 
@@ -662,11 +663,26 @@ export const ReportView: FC = () => {
                 throw new Error('No model selected');
             }
 
-            const inputTables = tables.filter(t => t.anchored).map(table => ({
-                name: table.id,
-                rows: table.rows,
-                attached_metadata: table.attachedMetadata
-            }));
+            const maxRows = serverConfig.MAX_DISPLAY_ROWS;
+
+            const inputTables = tables.filter(t => t.anchored).map(table => {
+                const rows = table.rows.length > maxRows ? table.rows.slice(0, maxRows) : table.rows;
+                return {
+                    name: table.id,
+                    rows,
+                    attached_metadata: table.attachedMetadata
+                };
+            });
+
+            // Check if any table data was truncated
+            const truncatedTables = tables.filter(t => t.anchored).filter(t => {
+                const totalRows = t.virtual?.rowCount || t.rows.length;
+                return totalRows > maxRows;
+            });
+            const truncationNote = truncatedTables.length > 0
+                ? `\n\nNote: Some tables were truncated to ${maxRows.toLocaleString()} rows for this report. ` +
+                  `Tables affected: ${truncatedTables.map(t => `"${t.displayId || t.id}" (${(t.virtual?.rowCount || t.rows.length).toLocaleString()} total rows)`).join(', ')}.`
+                : '';
 
 
             const selectedCharts = await Promise.all(
@@ -693,7 +709,7 @@ export const ReportView: FC = () => {
                         code: chartTable.derive?.code || '',
                         chart_data: {
                             name: chartTable.id,
-                            rows: chartTable.rows
+                            rows: chartTable.rows.length > maxRows ? chartTable.rows.slice(0, maxRows) : chartTable.rows
                         },
                         chart_url: dataUrl // use data_url to send to the agent
                     };
@@ -706,7 +722,7 @@ export const ReportView: FC = () => {
                 model: model,
                 input_tables: inputTables,
                 charts: validCharts,
-                style: style
+                style: style + truncationNote
             };
 
             const response = await fetchWithIdentity(getUrls().GENERATE_REPORT_STREAM, {

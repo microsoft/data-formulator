@@ -9,14 +9,11 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-SYSTEM_PROMPT = r'''You are a data scientist to help user explain code, 
-so that a non-code can clearly understand what the code is doing, you are provided with a summary of the input data, and the transformation code.
+SYSTEM_PROMPT = r'''You are a data scientist to help user explain derived data concepts, 
+so that a non-coder can clearly understand what new fields mean. You are provided with a summary of the input data, and the transformation code.
 
 Your goal:
-1. You should generate a good itemized explanation of the code so that the reader can understand high-level steps of what the data transformation is doing.
-    - Be very concise, and stay at a high-level. The reader doesn't understand code and does not want to learn exactly what the code is doing. They just want to learn what have been done from a logical level.
-    - The explanation should be a markdown string that is a list of bullet points (with new lines), highlight constants, data fields, and important verbs.
-2. Generate a list of explanations for new fields (fields not from the input data) that introduce metrics/concepts that are not obvious from the code.
+1. Generate a list of explanations for new fields (fields not from the input data) that introduce metrics/concepts that are not obvious from the code.
     - provide a declarative definition that explains the new field, use a mathematical notation if applicable.
     - only include new fields explanation of new metrics that are involved in computation (e.g., ROI, commerical_success_score)
     - *DO NOT* explain trivial new fields like "Decade" or "Avg_Rating", "US_Sales" that are self-explanatory.
@@ -28,24 +25,18 @@ Your goal:
         - note: when using underscores as part of the text, you need to escape them with a backslash, e.g., `\_`
     - Note: don't use math notation for fields whose computation is trivial (use plain english), it will likely be confusing to the reader. 
       Only use math notation for fields that can not be easilyexplained in plain english. Use it sparingly.
-3. If there are multiple fields that have the similar computation, you can explain them together in one explanation.
+2. If there are multiple fields that have the similar computation, you can explain them together in one explanation.
     - in "field", you can provide a list of fields in format of "field1, field2, ..."
     - in "explanation", you can provide a single explanation for the computation of the fields.
     - for example, if you have fields like "Norm_Rating", "Norm_Gross", "Critical_Commercial_Score", you can explain Norm_Rating, Norm_Gross together in one explanation and explain Critical_Commercial_Score in another explanation.
-4. If the code is about statistical analysis, you should explain the statistical analysis in the explanation as a concept named "Statistical Analysis" in the [CONCEPTS EXPLANATION] section.
+3. If the code is about statistical analysis, you should explain the statistical analysis in the explanation as a concept named "Statistical Analysis".
     - explain how you model the data, which fields are used, how data processing is done, and what models are used.
     - suggest some other modeling approaches that can be used to analyze the data in the explanation as well.
     
-The focus is to explain how new fields are computed, don't generate explanation for low-level actions like "return", "load data" etc. 
+The focus is to explain how new fields are computed, don't generate explanation for low-level actions like "return", "load data" etc.
+If there are no non-trivial new fields/concepts, return an empty list.
 
-Provide the result in the following two sections:
-    - first section is the code explanation that should be a markdown block explaining the code, in the [CODE EXPLANATION] section.
-        - remember to highlight constants, data fields, and important verbs in the code explanation.
-    - second section is the concepts explanation that should be a json block (start with ```json) in the [CONCEPTS EXPLANATION] section.
-
-[CODE EXPLANATION]
-
-...(explanation of the code)
+Provide the result as a JSON block (start with ```json) in the [CONCEPTS EXPLANATION] section.
 
 [CONCEPTS EXPLANATION]
 
@@ -82,18 +73,6 @@ table_0 (movies) fields:
 	Rotten_Tomatoes_Rating -- type: float64, values: 1.0, 2.0, 3.0, ..., nan, nan, nan, nan
 	IMDB_Rating -- type: float64, values: 1.5, 2.5, 3.0, ..., nan, nan, nan, nan
 	IMDB_Votes -- type: float64, values: 24578.0, nan, 18.0, ..., 364077.0, 387438.0, 411088.0, 519541.0
-
-table_0 (movies) sample:
-
-```
-|Title|US_Gross|Worldwide_Gross|US_DVD_Sales|Production_Budget|Release_Date|MPAA_Rating|Running_Time_min|Distributor|Source|Major_Genre|Creative_Type|Director|Rotten_Tomatoes_Rating|IMDB_Rating|IMDB_Votes
-0|The Land Girls|146083|146083||8000000|Jun 12 1998|R||Gramercy||||||6.1|1071.0
-1|First Love, Last Rites|10876|10876||300000|Aug 07 1998|R||Strand||Drama||||6.9|207.0
-2|I Married a Strange Person|203134|203134||250000|Aug 28 1998|||Lionsgate||Comedy||||6.8|865.0
-3|Let's Talk About Sex|373615|373615||300000|Sep 11 1998|||Fine Line||Comedy|||13.0||
-4|Slam|1009819|1087521||1000000|Oct 09 1998|R||Trimark|Original Screenplay|Drama|Contemporary Fiction||62.0|3.4|165.0
-......
-```
 
 [CODE]
 
@@ -144,31 +123,18 @@ def transform_data(df_movies):
     return transformed_df
 ```
 
-[CODE EXPLANATION]
-
-1. **Average Rating** is calculated by averaging the **Rotten_Tomatoes_Rating** (normalized to a 0-10 scale) and **IMDB_Rating**, handling missing values.
-2. **Normalized Rating** is derived by scaling the **Average Rating** to a range between 0 and 1 using min-max normalization.
-3. **Worldwide Gross** is normalized by scaling the values of **Worldwide_Gross** to a range between 0 and 1 using min-max normalization.
-4. **Critical-Commercial Success Score** is computed as the product of **Normalized Rating** and **Normalized Worldwide Gross**, representing a combination of critical acclaim and commercial success.
-5. **Decade** is extracted from the **Release_Date** by identifying the year and grouping it into its respective decade (e.g., '1990s', '2000s').
-6. The resulting dataset includes original fields (**Title**, **Major_Genre**, **Release_Date**) and newly computed fields (**Decade**, **Avg_Rating**, **Norm_Rating**, **Norm_Gross**, **Critical_Commercial_Score**).
-
 [CONCEPTS EXPLANATION]
 
 ```json
-[  
+[
     {  
-        "field": "Norm_Rating",  
-        "explanation": "The normalized rating scales **Avg_Rating** between 0 and 1 using min-max normalization. Formula: -BSLASH-(-BSLASH-text{Norm-BSLASH-_Rating} = -BSLASH-frac{-BSLASH-text{Avg-BSLASH-_Rating} - -BSLASH-text{Min}(-BSLASH-text{Avg-BSLASH-_Rating})}{-BSLASH-text{Max}(-BSLASH-text{Avg-BSLASH-_Rating}) - -BSLASH-text{Min}(-BSLASH-text{Avg-BSLASH-_Rating})} -BSLASH-)"  
-    },  
-    {  
-        "field": "Norm_Gross",  
-        "explanation": "The normalized worldwide gross scales **Worldwide_Gross** between 0 and 1 using min-max normalization. Formula: -BSLASH-(-BSLASH-text{Norm-BSLASH-_Gross} = -BSLASH-frac{-BSLASH-text{Worldwide-BSLASH-_Gross} - -BSLASH-text{Min}(-BSLASH-text{Worldwide-BSLASH-_Gross})}{-BSLASH-text{Max}(-BSLASH-text{Worldwide-BSLASH-_Gross}) - -BSLASH-text{Min}(-BSLASH-text{Worldwide-BSLASH-_Gross})} -BSLASH-)"  
+        "field": "Norm_Rating, Norm_Gross",  
+        "explanation": "Normalized values that scale the original values between 0 and 1 using min-max normalization. Formula: -BSLASH-(-BSLASH-text{Normalized} = -BSLASH-frac{-BSLASH-text{Value} - -BSLASH-text{Min}}{-BSLASH-text{Max} - -BSLASH-text{Min}} -BSLASH-)"  
     },  
     {  
         "field": "Critical_Commercial_Score",  
         "explanation": "The critical-commercial success score combines **Norm_Rating** and **Norm_Gross** to represent a movie's critical acclaim and commercial performance. Formula: -BSLASH-(-BSLASH-text{Critical-BSLASH-_Commercial-BSLASH-_Score} = -BSLASH-text{Norm-BSLASH-_Rating} -BSLASH-times -BSLASH-text{Norm-BSLASH-_Gross} -BSLASH-)"  
-    }  
+    }
 ]  
 '''
 
@@ -197,21 +163,9 @@ class CodeExplanationAgent(object):
             logger.info("\n=== Code explanation result ===>\n")
             logger.info(choice.message.content + "\n")
             
-            # Inline parsing of both sections
+            # Inline parsing of concepts section
             response_content = choice.message.content
-            code_explanation = ""
             concepts = []
-            
-            # Find CODE EXPLANATION section
-            code_start = response_content.find('[CODE EXPLANATION]')
-            if code_start != -1:
-                code_start += len('[CODE EXPLANATION]')
-                # Find the end of code explanation (either CONCEPTS EXPLANATION or end of content)
-                concepts_start = response_content.find('[CONCEPTS EXPLANATION]', code_start)
-                if concepts_start != -1:
-                    code_explanation = response_content[code_start:concepts_start].strip()
-                else:
-                    code_explanation = response_content[code_start:].strip()
 
             # Find CONCEPTS EXPLANATION section
             concepts_start = response_content.find('[CONCEPTS EXPLANATION]')
@@ -220,7 +174,6 @@ class CodeExplanationAgent(object):
                 # Extract JSON from the concepts section
                 concepts_content = response_content[concepts_start:].strip()
                 try:
-                    # Escape backslashes by doubling them
                     raw_json_blocks = extract_code_from_gpt_response(concepts_content, "json")
                     json_blocks = [json.loads(block) for block in raw_json_blocks]
                 except Exception as e:
@@ -230,15 +183,14 @@ class CodeExplanationAgent(object):
                     concepts = json_blocks[0]
             
             # Build result
-            if code_explanation or concepts != []:
+            if concepts:
                 result = {
                     'status': 'ok', 
                     'concepts': concepts,
-                    'code': code_explanation
                 }
             else:
-                logger.error(f"unable to extract JSON from response: {response_content}")
-                result = {'status': 'other error', 'content': 'unable to create code and concepts explanation'}
+                # No non-trivial concepts found — that's ok, return empty list
+                result = {'status': 'ok', 'concepts': []}
             
             # individual dialog for the agent
             result['dialog'] = [*messages, {"role": choice.message.role, "content": choice.message.content}]

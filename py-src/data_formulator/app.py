@@ -55,7 +55,7 @@ app.config['CLI_ARGS'] = {
     'disable_database': os.environ.get('DISABLE_DATABASE', 'false').lower() == 'true',
     'disable_file_upload': os.environ.get('DISABLE_FILE_UPLOAD', 'false').lower() == 'true',
     'project_front_page': os.environ.get('PROJECT_FRONT_PAGE', 'false').lower() == 'true',
-    'max_display_rows': int(os.environ.get('MAX_DISPLAY_ROWS', '5000')),
+    'max_display_rows': int(os.environ.get('MAX_DISPLAY_ROWS', '10000')),
     'data_dir': os.environ.get('DATA_FORMULATOR_HOME', None),
 }
 

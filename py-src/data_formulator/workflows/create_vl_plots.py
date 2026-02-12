@@ -3,6 +3,37 @@ import numpy as np
 from typing import Any
 import vl_convert as vlc
 import base64
+import logging
+
+from data_formulator.agents.semantic_types import infer_vl_type_from_name
+
+logger = logging.getLogger(__name__)
+
+
+def resolve_field_type(
+    series: pd.Series,
+    field_name: str | None = None,
+) -> str:
+    """
+    Resolve the Vega-Lite type for a field.  Priority:
+      1. Column-name heuristic (catches derived columns like avg_revenue, year, etc.)
+      2. Pandas dtype detection (fallback)
+    
+    Parameters:
+    - series: the pandas Series for the field
+    - field_name: column name (used for name heuristics)
+    
+    Returns one of: 'quantitative', 'nominal', 'ordinal', 'temporal'
+    """
+    # 1. Try column-name heuristic (useful for derived columns)
+    if field_name:
+        inferred = infer_vl_type_from_name(field_name)
+        if inferred:
+            return inferred
+    
+    # 2. Fall back to pandas-based detection
+    return detect_field_type(series)
+
 
 def detect_field_type(series: pd.Series) -> str:
     """
@@ -64,8 +95,56 @@ CHART_TEMPLATES = [
         "chart": "boxplot",
         "mark": "boxplot",
         "channels": ["x", "y", "opacity", "column", "row"]
+    },
+    {
+        "chart": "histogram",
+        "mark": "bar",
+        "channels": ["x", "color", "column", "row"]
+    },
+    {
+        "chart": "pie",
+        "mark": "arc",
+        "channels": ["theta", "color", "column", "row"]
+    },
+    {
+        "chart": "worldmap",
+        "mark": "circle",
+        "channels": ["longitude", "latitude", "color", "size", "opacity"]
+    },
+    {
+        "chart": "usmap",
+        "mark": "circle",
+        "channels": ["longitude", "latitude", "color", "size"]
     }
 ]
+
+
+# Chart-type-aware expected types per (chart_type, channel).
+# When detect_field_type disagrees with what the chart semantics require,
+# the value here wins.  None means "keep detected".
+_CHANNEL_TYPE_OVERRIDES: dict[str, dict[str, str]] = {
+    "histogram":  {"x": "quantitative"},
+    "bar":        {"x": "nominal"},
+    "group_bar":  {"x": "nominal"},
+    "heatmap":    {"x": "nominal", "y": "nominal"},
+    "boxplot":    {"x": "nominal", "y": "quantitative"},
+    "pie":        {"theta": "quantitative", "color": "nominal"},
+    "worldmap":   {"longitude": "quantitative", "latitude": "quantitative"},
+    "usmap":      {"longitude": "quantitative", "latitude": "quantitative"},
+}
+
+
+def coerce_field_type(chart_type: str, channel: str, detected_type: str) -> str:
+    """
+    Return the Vega-Lite type that should actually be used for this
+    (chart_type, channel) combination.  If no override is needed the
+    originally detected type is returned unchanged.
+    """
+    overrides = _CHANNEL_TYPE_OVERRIDES.get(chart_type, {})
+    forced = overrides.get(channel)
+    if forced:
+        return forced
+    return detected_type
 
 
 def get_chart_template(chart_type: str) -> dict | None:
@@ -390,7 +469,8 @@ def assemble_vegailte_chart(
     df: pd.DataFrame, 
     chart_type: str, 
     encodings: dict[str, dict[str, str]],
-    max_nominal_values: int = 68
+    max_nominal_values: int = 68,
+    config: dict | None = None,
 ) -> dict:
     """
     Assemble a Vega-Lite chart specification from a dataframe, chart type, and encodings.
@@ -412,11 +492,43 @@ def assemble_vegailte_chart(
     if not template:
         raise ValueError(f"Chart type '{chart_type}' not found in templates")
     
-    # Create the spec structure directly
-    spec = {
-        "mark": template["mark"],
-        "encoding": {}
-    }
+    # Build initial spec — some chart types need special structure
+    if chart_type == "histogram":
+        spec = {
+            "mark": "bar",
+            "encoding": {
+                "x": {"bin": True},
+                "y": {"aggregate": "count"}
+            }
+        }
+    elif chart_type in ("worldmap", "usmap"):
+        projection_type = "albersUsa" if chart_type == "usmap" else "equalEarth"
+        topo_url = (
+            "https://vega.github.io/vega-lite/data/us-10m.json" if chart_type == "usmap"
+            else "https://vega.github.io/vega-lite/data/world-110m.json"
+        )
+        topo_feature = "states" if chart_type == "usmap" else "countries"
+        spec = {
+            "width": 500 if chart_type == "usmap" else 600,
+            "height": 300 if chart_type == "usmap" else 350,
+            "layer": [
+                {
+                    "data": {"url": topo_url, "format": {"type": "topojson", "feature": topo_feature}},
+                    "projection": {"type": projection_type},
+                    "mark": {"type": "geoshape", "fill": "lightgray", "stroke": "white"},
+                },
+                {
+                    "projection": {"type": projection_type},
+                    "mark": "circle",
+                    "encoding": {},
+                },
+            ],
+        }
+    else:
+        spec = {
+            "mark": template["mark"],
+            "encoding": {}
+        }
     
     # Remove duplicate columns before converting to records
     if df.columns.duplicated().any():
@@ -451,7 +563,7 @@ def assemble_vegailte_chart(
             encoding_obj["type"] = "quantitative"
         else:
             # Regular field encoding
-            field_type = detect_field_type(df[field_name])
+            field_type = resolve_field_type(df[field_name], field_name)
             encoding_obj["field"] = field_name
             encoding_obj["type"] = field_type
             
@@ -461,6 +573,10 @@ def assemble_vegailte_chart(
                     encoding_obj["type"] = "nominal"
                 else:
                     encoding_obj["type"] = "temporal"
+            
+            # Chart-type-aware type coercion (e.g. histogram x must be quantitative,
+            # bar x must be nominal, heatmap x/y must be nominal, etc.)
+            encoding_obj["type"] = coerce_field_type(chart_type, channel, encoding_obj["type"])
         
         # Scale configurations for quantitative line charts
         if (encoding_obj["type"] == "quantitative" and 
@@ -480,8 +596,23 @@ def assemble_vegailte_chart(
                     "labelFontSize": 8
                 }
         
-        # Add encoding to spec
-        spec["encoding"][channel] = encoding_obj
+        # For map charts, encodings go into the second layer
+        if chart_type in ("worldmap", "usmap"):
+            spec["layer"][1]["encoding"][channel] = encoding_obj
+        else:
+            # Add encoding to spec
+            spec["encoding"][channel] = encoding_obj
+    
+    # Special handling for histogram: ensure x has bin:true and y has count
+    if chart_type == "histogram":
+        if "x" in spec["encoding"]:
+            spec["encoding"]["x"]["bin"] = True
+        if "y" not in spec["encoding"]:
+            spec["encoding"]["y"] = {"aggregate": "count"}
+    
+    # Special handling for pie: mark is 'arc'
+    if chart_type == "pie":
+        spec["mark"] = "arc"
     
     # Special handling for group_bar: add xOffset using the same field as color
     if chart_type == "group_bar" and "color" in spec["encoding"]:
@@ -491,16 +622,27 @@ def assemble_vegailte_chart(
             "type": color_encoding.get("type", "nominal")
         }
     
+    # Apply config options
+    if config:
+        _apply_chart_config(spec, chart_type, config)
+    
+    # Handle agent "facet" channel → map to "column" so the existing column→facet logic picks it up
+    enc_target = spec["layer"][1]["encoding"] if chart_type in ("worldmap", "usmap") else spec.get("encoding", {})
+    if "facet" in enc_target and "column" not in enc_target:
+        enc_target["column"] = enc_target.pop("facet")
+    
     # Handle faceting (column without row becomes facet)
-    if "column" in spec["encoding"] and "row" not in spec["encoding"]:
-        spec["encoding"]["facet"] = spec["encoding"]["column"]
-        spec["encoding"]["facet"]["columns"] = 6
-        del spec["encoding"]["column"]
+    if "encoding" in spec:
+        if "column" in spec["encoding"] and "row" not in spec["encoding"]:
+            spec["encoding"]["facet"] = spec["encoding"]["column"]
+            spec["encoding"]["facet"]["columns"] = 6
+            del spec["encoding"]["column"]
     
     # Handle nominal axes with many entries
+    spec_encoding = spec.get("encoding", {})
     for channel in ['x', 'y', 'column', 'row']:
-        if channel in spec["encoding"]:
-            encoding = spec["encoding"][channel]
+        if channel in spec_encoding:
+            encoding = spec_encoding[channel]
             if encoding.get("type") == "nominal":
                 field_name = encoding["field"]
                 unique_values = df[field_name].unique()
@@ -542,6 +684,65 @@ def assemble_vegailte_chart(
     
     spec["data"] = {"values": table_data}
     return spec
+
+
+def _apply_chart_config(spec: dict, chart_type: str, config: dict):
+    """Apply optional config overrides to a Vega-Lite spec."""
+    if not config:
+        return
+    
+    def _ensure_mark_obj(s):
+        """Convert string mark to object so we can add properties."""
+        if isinstance(s.get("mark"), str):
+            s["mark"] = {"type": s["mark"]}
+    
+    if chart_type == "histogram":
+        bin_count = config.get("binCount")
+        if bin_count and "encoding" in spec and "x" in spec["encoding"]:
+            spec["encoding"]["x"]["bin"] = {"maxbins": int(bin_count)}
+    
+    elif chart_type == "pie":
+        inner_radius = config.get("innerRadius")
+        if inner_radius is not None:
+            _ensure_mark_obj(spec)
+            spec["mark"]["innerRadius"] = int(inner_radius)
+    
+    elif chart_type == "heatmap":
+        color_scheme = config.get("colorScheme")
+        if color_scheme and "encoding" in spec and "color" in spec["encoding"]:
+            spec["encoding"]["color"].setdefault("scale", {})["scheme"] = color_scheme
+    
+    elif chart_type == "point":
+        opacity = config.get("opacity")
+        if opacity is not None:
+            _ensure_mark_obj(spec)
+            spec["mark"]["opacity"] = float(opacity)
+    
+    elif chart_type in ("bar", "group_bar"):
+        corner_radius = config.get("cornerRadius")
+        if corner_radius is not None:
+            _ensure_mark_obj(spec)
+            spec["mark"]["cornerRadiusEnd"] = int(corner_radius)
+    
+    elif chart_type == "line":
+        interpolate = config.get("interpolate")
+        if interpolate:
+            _ensure_mark_obj(spec)
+            spec["mark"]["interpolate"] = interpolate
+    
+    elif chart_type == "worldmap":
+        projection = config.get("projection")
+        projection_center = config.get("projectionCenter")
+        if projection and "layer" in spec:
+            for layer in spec["layer"]:
+                if "projection" in layer:
+                    layer["projection"]["type"] = projection
+        if projection_center and "layer" in spec:
+            # projectionCenter [lon, lat] → rotate [-lon, -lat, 0]
+            lon, lat = projection_center
+            for layer in spec["layer"]:
+                if "projection" in layer:
+                    layer["projection"]["rotate"] = [-lon, -lat, 0]
 
 
 def _get_top_values(df: pd.DataFrame, field_name: str, unique_values: list, 

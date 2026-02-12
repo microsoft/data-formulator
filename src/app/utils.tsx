@@ -33,6 +33,7 @@ export function getUrls() {
         CLEAN_DATA_URL: `/api/agent/clean-data-stream`,
         
         CODE_EXPL_URL: `/api/agent/code-expl`,
+        CHART_INSIGHT_URL: `/api/agent/chart-insight`,
         SERVER_PROCESS_DATA_ON_LOAD: `/api/agent/process-data-on-load`,
 
         DERIVE_DATA: `/api/agent/derive-data`,
@@ -51,6 +52,7 @@ export function getUrls() {
         GET_COLUMN_STATS: `/api/tables/analyze`,
         SAMPLE_TABLE: `/api/tables/sample-table`,
         SYNC_TABLE_DATA: `/api/tables/sync-table-data`,
+        EXPORT_TABLE_CSV: `/api/tables/export-table-csv`,
 
         DATA_LOADER_LIST_DATA_LOADERS: `/api/tables/data-loader/list-data-loaders`,
         DATA_LOADER_LIST_TABLES: `/api/tables/data-loader/list-tables`,

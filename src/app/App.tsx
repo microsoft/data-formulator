@@ -557,7 +557,7 @@ const ConfigDialog: React.FC = () => {
 
     const [defaultChartWidth, setDefaultChartWidth] = useState(config.defaultChartWidth ?? 300);
     const [defaultChartHeight, setDefaultChartHeight] = useState(config.defaultChartHeight ?? 300);
-    const [frontendRowLimit, setFrontendRowLimit] = useState(config.frontendRowLimit ?? 10000);
+    const [frontendRowLimit, setFrontendRowLimit] = useState(config.frontendRowLimit ?? 50000);
     const [paletteKey, setPaletteKey] = useState(
         (config.paletteKey && palettes[config.paletteKey]) ? config.paletteKey : defaultPaletteKey
     );
@@ -732,7 +732,7 @@ const ConfigDialog: React.FC = () => {
                         setFormulateTimeoutSeconds(30);
                         setDefaultChartWidth(300);
                         setDefaultChartHeight(300);
-                        setFrontendRowLimit(10000);
+                        setFrontendRowLimit(50000);
                         setPaletteKey(defaultPaletteKey);
                     }}>Reset to default</Button>
                     <Button onClick={() => setOpen(false)}>Cancel</Button>

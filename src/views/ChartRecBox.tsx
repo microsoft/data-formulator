@@ -4,7 +4,7 @@
 import { FC, useEffect, useState, useRef } from 'react'
 import { transition } from '../app/tokens';
 import { useSelector, useDispatch } from 'react-redux'
-import { DataFormulatorState, dfActions, dfSelectors, fetchCodeExpl, fetchFieldSemanticType, generateFreshChart } from '../app/dfSlice';
+import { DataFormulatorState, dfActions, dfSelectors, fetchCodeExpl, fetchChartInsight, fetchFieldSemanticType, generateFreshChart } from '../app/dfSlice';
 
 import { AppDispatch } from '../app/store';
 
@@ -50,7 +50,6 @@ import AddIcon from '@mui/icons-material/Add';
 import { AgentIcon as PrecisionManufacturing } from '../icons';
 import SmartToyIcon from '@mui/icons-material/SmartToy';
 import TouchAppIcon from '@mui/icons-material/TouchApp';
-import { Type } from '../data/types';
 import CloseIcon from '@mui/icons-material/Close';
 import EmojiEventsIcon from '@mui/icons-material/EmojiEvents';
 import TipsAndUpdatesIcon from '@mui/icons-material/TipsAndUpdates';
@@ -647,11 +646,8 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                         const conceptsToAdd = missingNames.map((name) => ({
                             id: `concept-${name}-${Date.now()}`,
                             name: name,
-                            type: "auto" as Type,
-                            description: "",
                             source: "custom",
                             tableRef: "custom",
-                            temporary: true,
                         } as FieldItem));
 
                         dispatch(dfActions.addConceptItems(conceptsToAdd));
@@ -670,6 +666,11 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                             dispatch(dfActions.setFocusedChart(newChart.id));
                             dispatch(dfActions.setFocusedTable(candidateTable.id));
                         }
+
+                        // Auto-generate chart insight after rendering
+                        setTimeout(() => {
+                            dispatch(fetchChartInsight({ chartId: newChart.id, tableId: candidateTable.id }) as any);
+                        }, 1500);
 
                         dispatch(dfActions.addMessages({
                             "timestamp": Date.now(),
@@ -852,11 +853,8 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                 const conceptsToAdd = missingNames.map((name) => ({
                     id: `concept-${name}-${Date.now()}-${Math.random()}`,
                     name: name,
-                    type: "auto" as Type,
-                    description: "",
                     source: "custom",
                     tableRef: "custom",
-                    temporary: true,
                 } as FieldItem));
 
                 allNewConcepts.push(...conceptsToAdd);
@@ -892,6 +890,14 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                 dispatch(dfActions.insertDerivedTables(candidateTable));
                 dispatch(fetchFieldSemanticType(candidateTable));
                 dispatch(fetchCodeExpl(candidateTable));
+
+                // Auto-generate chart insight after rendering
+                if (createdCharts.length > 0) {
+                    const lastChart = createdCharts[createdCharts.length - 1];
+                    setTimeout(() => {
+                        dispatch(fetchChartInsight({ chartId: lastChart.id, tableId: candidateTable.id }) as any);
+                    }, 1500);
+                }
 
                 // Show progress message
                 dispatch(dfActions.addMessages({

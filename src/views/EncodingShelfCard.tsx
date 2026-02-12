@@ -3,7 +3,7 @@
 
 import { FC, useEffect, useState } from 'react'
 import { useSelector, useDispatch } from 'react-redux'
-import { DataFormulatorState, dfActions, dfSelectors, fetchCodeExpl, fetchFieldSemanticType, generateFreshChart } from '../app/dfSlice';
+import { DataFormulatorState, dfActions, dfSelectors, fetchCodeExpl, fetchChartInsight, fetchFieldSemanticType, generateFreshChart } from '../app/dfSlice';
 
 import embed from 'vega-embed';
 
@@ -60,7 +60,6 @@ import { ThinkingBanner } from './DataThread';
 import { AppDispatch } from '../app/store';
 import { borderColor, transition, radius } from '../app/tokens';
 
-import { Type } from '../data/types';
 import DeleteIcon from '@mui/icons-material/Delete';
 import CloseIcon from '@mui/icons-material/Close';
 import LightbulbOutlinedIcon from '@mui/icons-material/LightbulbOutlined';
@@ -391,7 +390,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                 input_tables: actionTables.map(t => ({
                     name: t.virtual?.tableId || t.id.replace(/\.[^/.]+$/, ""),
                     rows: t.rows,
-                    attached_metadata: t.attachedMetadata
+                    attached_metadata: t.attachedMetadata,
                 })),
                 exploration_thread: explorationThread,
                 current_data_sample: currentTable.rows.slice(0, 10),
@@ -568,7 +567,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                 return { 
                     name: t.virtual?.tableId || t.id.replace(/\.[^/.]+$/ , ""), 
                     rows: t.rows, 
-                    attached_metadata: t.attachedMetadata 
+                    attached_metadata: t.attachedMetadata,
                 }}),
             chart_type: chartType,
             chart_encodings: mode == 'formulate' ? activeSimpleEncodings : {},
@@ -602,7 +601,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                         return { 
                             name: t.virtual?.tableId || t.id.replace(/\.[^/.]+$/ , ""), 
                             rows: t.rows, 
-                            attached_metadata: t.attachedMetadata 
+                            attached_metadata: t.attachedMetadata,
                         }}),
                     chart_type: chartType,
                     chart_encodings: mode == 'formulate' ? activeSimpleEncodings : {},
@@ -622,7 +621,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                         return { 
                             name: t.virtual?.tableId || t.id.replace(/\.[^/.]+$/ , ""), 
                             rows: t.rows, 
-                            attached_metadata: t.attachedMetadata 
+                            attached_metadata: t.attachedMetadata,
                         }}),
                     chart_type: chartType,
                     chart_encodings: mode == 'formulate' ? activeSimpleEncodings : {},
@@ -751,11 +750,8 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                                 return {
                                     id: `concept-${name}-${Date.now()}`, 
                                     name: name, 
-                                    type: "auto" as Type, 
-                                    description: "", 
                                     source: "custom", 
                                     tableRef: "custom", 
-                                    temporary: true, 
                                 } as FieldItem
                             })
                             dispatch(dfActions.addConceptItems(conceptsToAdd));
@@ -768,6 +764,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
 
                             // PART 3: create new charts if necessary
                             let needToCreateNewChart = true;
+                            let focusedChartId: string | undefined;
                             
                             // different override strategy -- only override if there exists a chart that share the exact same encoding fields as the planned new chart.
                             if (mode != "ideate" && chart.chartType != "Auto" &&  overrideTableId != undefined && allCharts.filter(c => c.source == "user").find(c => c.tableRef == overrideTableId)) {
@@ -782,7 +779,8 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                                 });
                                 if (chartsWithSameEncoding.length > 0) {
                                     // find the chart to set as focus
-                                    dispatch(dfActions.setFocusedChart(chartsWithSameEncoding[0].id));
+                                    focusedChartId = chartsWithSameEncoding[0].id;
+                                    dispatch(dfActions.setFocusedChart(focusedChartId));
                                     needToCreateNewChart = false;
                                 }
                             }
@@ -803,7 +801,16 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                                     newChart = resolveChartFields(newChart, currentConcepts, refinedGoal['chart_encodings'], candidateTable);
                                 }   
                                 
+                                focusedChartId = newChart.id;
                                 dispatch(dfActions.addAndFocusChart(newChart));
+                            }
+
+                            // Auto-generate chart insight after rendering
+                            if (focusedChartId) {
+                                const insightChartId = focusedChartId;
+                                setTimeout(() => {
+                                    dispatch(fetchChartInsight({ chartId: insightChartId, tableId: candidateTable.id }) as any);
+                                }, 1500);
                             }
 
                             // PART 4: clean up

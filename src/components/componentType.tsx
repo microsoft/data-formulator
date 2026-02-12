@@ -5,13 +5,6 @@ import { Type } from '../data/types';
 import { CHANNEL_LIST } from "./ChartTemplates"
 import { inferTypeFromValueArray } from '../data/utils';
 
-
-export interface ConceptTransformation {
-    parentIDs: string[],
-    description: string,
-    code: string
-}
-
 export type FieldSource = "custom" | "original";
 
 export interface FieldItem {
@@ -19,7 +12,7 @@ export interface FieldItem {
     name: string;
 
     source: FieldSource;
-    tableRef: string; // which table it belongs to, it matters when it's an original field or a derived field
+    tableRef: string; // which table it belongs to
 }
 
 export const duplicateField = (field: FieldItem) => {
@@ -186,6 +179,12 @@ export function createDictTable(
     }
 }
 
+export interface ChartInsight {
+    title: string;
+    takeaways: string[];
+    key: string;  // "chartType|sortedFieldIds" — used to detect staleness
+}
+
 export type Chart = { 
     id: string, 
     chartType: string, 
@@ -195,6 +194,16 @@ export type Chart = {
     source: "user" | "trigger",
     config?: Record<string, any>,  // additional chart config properties defined by the chart template's configProperties
     thumbnail?: string,  // PNG data URL for thumbnail display (managed by ChartRenderService, not persisted)
+    insight?: ChartInsight,  // AI-generated insight about the visualization
+}
+
+/** Compute a string key for insight invalidation: chartType|sortedFieldIds */
+export function computeInsightKey(chart: Chart): string {
+    const fieldIds = Object.values(chart.encodingMap)
+        .map(enc => enc.fieldID)
+        .filter((id): id is string => !!id)
+        .sort();
+    return `${chart.chartType}|${fieldIds.join(',')}`;
 }
 
 export let duplicateChart = (chart: Chart) : Chart => {
@@ -254,6 +263,9 @@ export const AGGR_OP_LIST = ["count", "sum", "average"] as const
 export type AggrOp = typeof AGGR_OP_LIST[number];
 export type Channel = typeof CHANNEL_LIST[number];
 
+export interface EncodingDropResult {
+    channel: Channel
+}
 
 // export const markToChannels = (mark: string) => {
 //     let channels = [];

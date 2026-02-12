@@ -42,9 +42,9 @@ import ButtonGroup from '@mui/material/ButtonGroup';
 
 import '../scss/VisualizationView.scss';
 import { useDispatch, useSelector } from 'react-redux';
-import { DataFormulatorState, dfActions } from '../app/dfSlice';
+import { DataFormulatorState, dfActions, fetchChartInsight } from '../app/dfSlice';
 import { assembleVegaChart, extractFieldsFromEncodingMap, getUrls, prepVisTable, fetchWithIdentity } from '../app/utils';
-import { Chart, EncodingItem, EncodingMap, FieldItem } from '../components/ComponentType';
+import { Chart, EncodingItem, EncodingMap, FieldItem, computeInsightKey } from '../components/ComponentType';
 import { DictTable } from "../components/ComponentType";
 
 import AddchartIcon from '@mui/icons-material/Addchart';
@@ -57,7 +57,6 @@ import CloseIcon from '@mui/icons-material/Close';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import ZoomInIcon from '@mui/icons-material/ZoomIn';
 import ZoomOutIcon from '@mui/icons-material/ZoomOut';
-import TextSnippetIcon from '@mui/icons-material/TextSnippet';
 import InfoIcon from '@mui/icons-material/Info';
 import CasinoIcon from '@mui/icons-material/Casino';
 import SaveAltIcon from '@mui/icons-material/SaveAlt';
@@ -76,8 +75,6 @@ import { ChatDialog } from './ChatDialog';
 import { EncodingShelfThread } from './EncodingShelfThread';
 import { CustomReactTable } from './ReactTable';
 import { InsightIcon } from '../icons';
-
-import { MuiMarkdown, getOverrides } from 'mui-markdown';
 
 import { dfSelectors } from '../app/dfSlice';
 import { ChartRecBox } from './ChartRecBox';
@@ -298,7 +295,8 @@ const VegaChartRenderer: FC<{
     chartHeight: number;
     scaleFactor: number;
     chartUnavailable: boolean;
-}> = React.memo(({ chart, conceptShelfItems, visTableRows, tableMetadata, chartWidth, chartHeight, scaleFactor, chartUnavailable }) => {
+    onSpecReady?: (spec: any | null) => void;
+}> = React.memo(({ chart, conceptShelfItems, visTableRows, tableMetadata, chartWidth, chartHeight, scaleFactor, chartUnavailable, onSpecReady }) => {
     
     // Initialize from display SVG cache for instant display on chart switch
     const svgCached = displaySvgCache.get(chart.id);
@@ -336,6 +334,7 @@ const VegaChartRenderer: FC<{
         if (!spec || spec === "Table") {
             setSvgContent(null);
             setAssembledSpec(null);
+            onSpecReady?.(null);
             return;
         }
 
@@ -351,6 +350,7 @@ const VegaChartRenderer: FC<{
         }
 
         setAssembledSpec(spec);
+        onSpecReady?.(spec);
 
         // Headless render via Vega: compile VL → parse → View → toSVG()
         let cancelled = false;
@@ -474,20 +474,7 @@ const VegaChartRenderer: FC<{
                     {generateChartSkeleton(chartTemplate?.icon, 48, 48, 0.3)}
                 </Box>
             )}
-            {svgContent && (
-                <Box sx={{ display: 'flex', gap: 0.5, mt: 0.5 }}>
-                    <Tooltip title="Save as PNG">
-                        <IconButton size="small" onClick={handleSavePng} sx={{ fontSize: 12, padding: '2px' }}>
-                            <SaveAltIcon sx={{ fontSize: 16 }} />
-                        </IconButton>
-                    </Tooltip>
-                    <Tooltip title="Open in Vega Editor">
-                        <IconButton size="small" onClick={handleOpenInVegaEditor} sx={{ fontSize: 12, padding: '2px' }}>
-                            <OpenInNewIcon sx={{ fontSize: 16 }} />
-                        </IconButton>
-                    </Tooltip>
-                </Box>
-            )}
+
         </Box>
     );
 });
@@ -511,6 +498,35 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
     let synthesisRunning = focusedChartId ? chartSynthesisInProgress.includes(focusedChartId) : false;
     let handleDeleteChart = () => { focusedChartId && dispatch(dfActions.deleteChartById(focusedChartId)) }
 
+    // Track the assembled Vega-Lite spec from the renderer so we can open it in the Vega Editor
+    const [renderedSpec, setRenderedSpec] = useState<any | null>(null);
+    const handleSpecReady = useCallback((spec: any | null) => { setRenderedSpec(spec); }, []);
+
+    const handleOpenInVegaEditor = useCallback(() => {
+        if (!renderedSpec) return;
+        const editorUrl = 'https://vega.github.io/editor/';
+        const editor = window.open(editorUrl);
+        if (!editor) return;
+        const wait = 10_000;
+        const step = 250;
+        const { origin } = new URL(editorUrl);
+        let count = Math.floor(wait / step);
+        function listen(evt: MessageEvent) {
+            if (evt.source === editor) {
+                count = 0;
+                window.removeEventListener('message', listen, false);
+            }
+        }
+        window.addEventListener('message', listen, false);
+        function send() {
+            if (count <= 0) return;
+            editor!.postMessage({ spec: JSON.stringify(renderedSpec, null, 2), mode: 'vega-lite' }, origin);
+            setTimeout(send, step);
+            count -= 1;
+        }
+        setTimeout(send, step);
+    }, [renderedSpec]);
+
     let focusedChart = charts.find(c => c.id == focusedChartId) as Chart;
     let trigger = focusedChart.source == "trigger" ? tables.find(t => t.derive?.trigger?.chart?.id == focusedChartId)?.derive?.trigger : undefined;
 
@@ -519,8 +535,8 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
 
     const [codeViewOpen, setCodeViewOpen] = useState<boolean>(false);
-    const [codeExplViewOpen, setCodeExplViewOpen] = useState<boolean>(false);
     const [conceptExplanationsOpen, setConceptExplanationsOpen] = useState<boolean>(false);
+    const [insightViewOpen, setInsightViewOpen] = useState<boolean>(false);
     
     const [chatDialogOpen, setChatDialogOpen] = useState<boolean>(false);
     const [localScaleFactor, setLocalScaleFactor] = useState<number>(1);
@@ -528,15 +544,15 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
     // Reset local UI state when focused chart changes
     useEffect(() => {
         setCodeViewOpen(false);
-        setCodeExplViewOpen(false);
         setConceptExplanationsOpen(false);
+        setInsightViewOpen(false);
         setChatDialogOpen(false);
         setLocalScaleFactor(1);
     }, [focusedChartId]);
 
     // Combined useEffect to scroll to exploration components when any of them open
     useEffect(() => {
-        if ((conceptExplanationsOpen || codeViewOpen || codeExplViewOpen) && explanationComponentsRef.current) {
+        if ((conceptExplanationsOpen || codeViewOpen || insightViewOpen) && explanationComponentsRef.current) {
             setTimeout(() => {
                 explanationComponentsRef.current?.scrollIntoView({ 
                     behavior: 'smooth', 
@@ -544,7 +560,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                 });
             }, 200); // Small delay to ensure the component is rendered
         }
-    }, [conceptExplanationsOpen, codeViewOpen, codeExplViewOpen]);
+    }, [conceptExplanationsOpen, codeViewOpen, insightViewOpen]);
 
     let table = getDataTable(focusedChart, tables, charts, conceptShelfItems);
 
@@ -728,42 +744,62 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
 
     let resultTable = tables.find(t => t.id == trigger?.resultTableId);
 
-    let codeExpl = table.derive?.explanation?.code || "";
+    // Chart insight
+    const chartInsightInProgress = useSelector((state: DataFormulatorState) => state.chartInsightInProgress);
+    const insightLoading = chartInsightInProgress.includes(focusedChart.id);
+    const currentInsightKey = computeInsightKey(focusedChart);
+    const insightFresh = focusedChart.insight?.key === currentInsightKey;
     
+    const actionBtnSx = {
+        padding: '4px',
+        borderRadius: '6px',
+        color: 'text.secondary',
+        transition: 'all 0.15s ease',
+        '&:hover': {
+            backgroundColor: 'rgba(25, 118, 210, 0.08)',
+            color: 'primary.main',
+        },
+        '&.Mui-disabled': {
+            color: 'action.disabled',
+        },
+    };
+
     let saveButton = (
-        <Tooltip key="save-copy-tooltip" title="save a copy">
+        <Tooltip key="save-copy-tooltip" title={focusedChart.saved ? "Not anymore" : "I like it!"}>
             <span>
-                <IconButton color="primary" key="unsave-btn" size="small" sx={{ textTransform: "none" }}
+                <IconButton key="unsave-btn" size="small" sx={actionBtnSx}
                     onClick={() => {
                         if (!chartUnavailable) {
                             dispatch(dfActions.saveUnsaveChart(focusedChart.id));
                         }
                     }}>
-                    {focusedChart.saved ? <StarIcon sx={{ color: "gold" }} /> : <StarBorderIcon  />}
+                    {focusedChart.saved ? <StarIcon sx={{ fontSize: 18, color: "goldenrod" }} /> : <StarBorderIcon sx={{ fontSize: 18 }} />}
                 </IconButton>
             </span>
         </Tooltip>
     );
 
-    let duplicateButton = <Tooltip key="duplicate-btn-tooltip" title="duplicate the chart">
-        <span>
-            <IconButton color="primary" key="duplicate-btn" size="small" sx={{ textTransform: "none" }}
-                disabled={trigger != undefined}
-                onClick={() => {
-                    dispatch(dfActions.duplicateChart(focusedChart.id));
-                }}>
-                <ContentCopyIcon  />
-            </IconButton>
-        </span>
-    </Tooltip>
-
+    let duplicateButton = (
+        <Tooltip key="duplicate-btn-tooltip" title="Duplicate chart">
+            <span>
+                <IconButton key="duplicate-btn" size="small" sx={actionBtnSx}
+                    disabled={trigger != undefined}
+                    onClick={() => {
+                        dispatch(dfActions.duplicateChart(focusedChart.id));
+                    }}>
+                    <ContentCopyIcon sx={{ fontSize: 18 }} />
+                </IconButton>
+            </span>
+        </Tooltip>
+    );
 
     let deleteButton = (
-        <Tooltip title="delete" key="delete-btn-tooltip">
+        <Tooltip title="Delete" key="delete-btn-tooltip">
             <span>
-                <IconButton color="warning" size="small" sx={{ textTransform: "none" }}  disabled={trigger != undefined}
-                            onClick={() => { handleDeleteChart() }}>
-                    <DeleteIcon />
+                <IconButton size="small" disabled={trigger != undefined}
+                    sx={{ ...actionBtnSx, color: 'error.main', '&:hover': { backgroundColor: 'rgba(211, 47, 47, 0.08)', color: 'error.main' } }}
+                    onClick={() => { handleDeleteChart() }}>
+                    <DeleteIcon sx={{ fontSize: 18 }} />
                 </IconButton>
             </span>
         </Tooltip>
@@ -829,8 +865,8 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                             setCodeViewOpen(false);
                         } else {
                             setCodeViewOpen(true);
-                            setCodeExplViewOpen(false);
                             setConceptExplanationsOpen(false);
+                            setInsightViewOpen(false);
                         }
                     }}
                     sx={{
@@ -845,29 +881,6 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                     <TerminalIcon sx={{ fontSize: '14px', mr: 0.5 }} />
                     code
                 </Button>
-                {codeExpl != "" && <Button 
-                    key="explanation-btn"
-                    onClick={() => {
-                        if (codeExplViewOpen) {
-                            setCodeExplViewOpen(false);
-                        } else {
-                            setCodeExplViewOpen(true);
-                            setCodeViewOpen(false);
-                            setConceptExplanationsOpen(false);
-                        }
-                    }}
-                    sx={{
-                        backgroundColor: codeExplViewOpen ? 'rgba(25, 118, 210, 0.2)' : 'transparent',
-                        color: codeExplViewOpen ? 'primary.main' : 'text.secondary',
-                        fontWeight: codeExplViewOpen ? 600 : 500,
-                        '&:hover': {
-                            backgroundColor: codeExplViewOpen ? 'rgba(25, 118, 210, 0.25)' : 'rgba(25, 118, 210, 0.08)',
-                        }
-                    }}
-                >
-                    <TextSnippetIcon sx={{ fontSize: '14px', mr: 0.5 }} />
-                    explain
-                </Button>}
                 {hasConcepts && (
                     <Button 
                         key="concepts-btn"
@@ -877,7 +890,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                             } else {
                                 setConceptExplanationsOpen(true);
                                 setCodeViewOpen(false);
-                                setCodeExplViewOpen(false);
+                                setInsightViewOpen(false);
                             }
                         }}
                         sx={{
@@ -893,6 +906,35 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                         concepts
                     </Button>
                 )}
+                {!chartUnavailable && focusedChart.chartType !== "Table" && (
+                    <Button 
+                        key="insight-btn"
+                        onClick={() => {
+                            if (insightViewOpen) {
+                                setInsightViewOpen(false);
+                            } else {
+                                setInsightViewOpen(true);
+                                setCodeViewOpen(false);
+                                setConceptExplanationsOpen(false);
+                                // Auto-fetch if no fresh insight and not already loading
+                                if (!insightFresh && !insightLoading) {
+                                    dispatch(fetchChartInsight({ chartId: focusedChart.id, tableId: table.id }) as any);
+                                }
+                            }
+                        }}
+                        sx={{
+                            backgroundColor: insightViewOpen ? 'rgba(25, 118, 210, 0.2)' : 'transparent',
+                            color: insightViewOpen ? 'primary.main' : 'text.secondary',
+                            fontWeight: insightViewOpen ? 600 : 500,
+                            '&:hover': {
+                                backgroundColor: insightViewOpen ? 'rgba(25, 118, 210, 0.25)' : 'rgba(25, 118, 210, 0.08)',
+                            }
+                        }}
+                    >
+                        <InsightIcon sx={{ fontSize: '14px', mr: 0.5 }} />
+                        {insightLoading ? <CircularProgress size={10} sx={{ ml: 0.5 }} /> : 'insight'}
+                    </Button>
+                )}
             </ButtonGroup>
         </Box>,
         <ChatDialog key="chat-dialog-button" open={chatDialogOpen} 
@@ -901,9 +943,22 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                     dialog={resultTable?.derive?.dialog || table.derive?.dialog as any[]} />
     ] : [];
     
+    let vegaEditorButton = (
+        <Tooltip key="vega-editor-tooltip" title="Open in Vega Editor">
+            <span>
+                <IconButton key="vega-editor-btn" size="small" sx={actionBtnSx}
+                    disabled={!renderedSpec || focusedChart.chartType === "Table" || focusedChart.chartType === "Auto"}
+                    onClick={handleOpenInVegaEditor}>
+                    <OpenInNewIcon sx={{ fontSize: 18 }} />
+                </IconButton>
+            </span>
+        </Tooltip>
+    );
+
     let chartActionButtons = [
         ...derivedTableItems,
         saveButton,
+        vegaEditorButton,
         duplicateButton,
         deleteButton,
     ]
@@ -957,55 +1012,16 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
         </Box>
     )
     
-    let codeExplComp = <MuiMarkdown
-            overrides={{
-                ...getOverrides(), // This will keep the other default overrides.
-                code: {
-                  props: {
-                    style: {
-                        padding: "2px 4px",
-                        color: 'darkblue'
-                    }
-                  }
-                },
-                p: {
-                    props: {
-                        style: { 
-                            fontFamily: "Arial, Roboto, Helvetica Neue, sans-serif",
-                            fontWeight: 400,
-                            fontSize: 12,
-                            lineHeight: 2,
-                            margin: 0
-                        },
-                    } as React.HTMLProps<HTMLParagraphElement>,
-                },
-                ol: {
-                    props: {
-                        style: { 
-                            margin: 0
-                        },
-                    } as React.HTMLProps<HTMLParagraphElement>,
-                },
-                li: {
-                    props: {
-                        style: { 
-                            fontFamily: "Arial, Roboto, Helvetica Neue, sans-serif",
-                            fontWeight: 400,
-                            fontSize: 12,
-                            lineHeight: 2
-                        },
-                } as React.HTMLProps<HTMLParagraphElement>,
-                },
-            }}>{codeExpl}</MuiMarkdown>
-
     let focusedComponent = [];
-
-    let transformationIndicatorText = table.derive?.source ? 
-        `${table.derive.source.map(s => tables.find(t => t.id === s)?.displayId || s).join(", ")} → ${table.displayId || table.id}` : "";
 
     let focusedElement = <Fade key={`fade-${focusedChart.id}-${dataVersion}-${focusedChart.chartType}-${JSON.stringify(focusedChart.encodingMap)}`} 
                             in={!isDataStale} timeout={600}>    
                             <Box sx={{display: "flex", flexDirection: "column", flexShrink: 0, justifyContent: 'center', justifyItems: 'center', maxWidth: '100%'}} className="chart-box">
+                                {insightFresh && focusedChart.insight?.title && (
+                                    <Typography fontSize="small" sx={{ fontWeight: 600, textAlign: 'center', mb: 0.5, color: 'text.secondary' }}>
+                                        {focusedChart.insight.title}
+                                    </Typography>
+                                )}
                                 <Box sx={{m: 'auto', minHeight: 240, maxWidth: '100%', overflow: 'hidden'}}>
                                     <VegaChartRenderer
                                         key={focusedChart.id}
@@ -1017,6 +1033,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                                         chartHeight={config.defaultChartHeight}
                                         scaleFactor={localScaleFactor}
                                         chartUnavailable={chartUnavailable}
+                                        onSpecReady={handleSpecReady}
                                     />
                                 </Box>
                                 {chartActionItems}
@@ -1049,7 +1066,6 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                         <CodeExplanationCard
                             title="Data transformation code"
                             icon={<CodeIcon sx={{ fontSize: 16, color: 'primary.main' }} />}
-                            transformationIndicatorText={transformationIndicatorText}
                         >
                             <Box sx={{
                                     maxHeight: '400px', 
@@ -1063,34 +1079,68 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                         </CodeExplanationCard>
                     </Box>
                 </Collapse>
-                <Collapse in={codeExplViewOpen}>
+                <Collapse in={insightViewOpen}>
                     <Box sx={{minWidth: 440, maxWidth: 800, padding: "0px 8px", position: 'relative', margin: '8px auto'}}>
                         <ButtonGroup sx={{position: 'absolute', right: 8, top: 0}}>
                             <IconButton onClick={() => {
-                                setCodeExplViewOpen(false);
-                            }}  color='primary' aria-label="delete">
+                                setInsightViewOpen(false);
+                            }}  color='primary' aria-label="close">
                                 <CloseIcon />
                             </IconButton>
                         </ButtonGroup>
                         <CodeExplanationCard
-                            title="Data transformation explanation"
-                            icon={<TerminalIcon sx={{ fontSize: 16, color: 'primary.main' }} />}
-                            transformationIndicatorText={transformationIndicatorText}
+                            title="Chart insight"
+                            icon={<InsightIcon sx={{ fontSize: 16, color: 'primary.main' }} />}
                         >
-                            <Box 
-                                sx={{
-                                    width: 'fit-content',  
-                                    display: 'flex',
-                                    flex: 1
-                                }}
-                            >
-                                {codeExplComp}
-                            </Box>
+                            {insightLoading ? (
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, p: 1 }}>
+                                    <CircularProgress size={16} />
+                                    <Typography fontSize="small" color="text.secondary">Analyzing chart...</Typography>
+                                </Box>
+                            ) : insightFresh && focusedChart.insight ? (
+                                <Box sx={{ p: 0.5 }}>
+                                    <Typography fontSize="small" sx={{ fontWeight: 600, mb: 0.5 }}>
+                                        {focusedChart.insight.title}
+                                    </Typography>
+                                    {(focusedChart.insight.takeaways || []).map((t, i) => (
+                                        <Typography key={i} fontSize="small" color="text.secondary" sx={{ mb: 0.25, display: 'flex', alignItems: 'baseline' }}>
+                                            <span style={{ marginRight: 4, flexShrink: 0 }}>•</span>{t}
+                                        </Typography>
+                                    ))}
+                                    <Button 
+                                        size="small" 
+                                        sx={{ mt: 1, textTransform: 'none', fontSize: '0.7rem' }}
+                                        onClick={() => {
+                                            dispatch(fetchChartInsight({ chartId: focusedChart.id, tableId: table.id }) as any);
+                                        }}
+                                    >
+                                        regenerate
+                                    </Button>
+                                </Box>
+                            ) : (
+                                <Box sx={{ p: 0.5 }}>
+                                    <Typography fontSize="small" color="text.secondary">
+                                        No insight available.
+                                    </Typography>
+                                    <Button 
+                                        size="small" 
+                                        sx={{ mt: 0.5, textTransform: 'none', fontSize: '0.7rem' }}
+                                        onClick={() => {
+                                            dispatch(fetchChartInsight({ chartId: focusedChart.id, tableId: table.id }) as any);
+                                        }}
+                                    >
+                                        generate insight
+                                    </Button>
+                                </Box>
+                            )}
                         </CodeExplanationCard>
                     </Box>
                 </Collapse>
             </Box>
-            <Box key='chart-action-buttons' sx={{ display: 'flex', flexShrink: 0, flexDirection: "row", mx: "auto", py: 1 }}>
+            <Box key='chart-action-buttons' sx={{ 
+                display: 'flex', flexShrink: 0, flexDirection: "row", alignItems: 'center',
+                mx: "auto", py: 0.5, gap: 0.25,
+            }}>
                 {chartActionButtons}
             </Box>
         </Box>

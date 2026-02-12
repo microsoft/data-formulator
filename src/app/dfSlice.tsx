@@ -2,7 +2,7 @@
 // Licensed under the MIT License.
 
 import { createAsyncThunk, createSlice, PayloadAction, createSelector } from '@reduxjs/toolkit'
-import { Channel, Chart, ChartTemplate, DataCleanBlock, DataSourceConfig, EncodingItem, EncodingMap, FieldItem, Trigger } from '../components/ComponentType'
+import { Channel, Chart, ChartTemplate, DataCleanBlock, DataSourceConfig, EncodingItem, EncodingMap, FieldItem, Trigger, computeInsightKey, ChartInsight } from '../components/ComponentType'
 import { enableMapSet } from 'immer';
 import { DictTable } from "../components/ComponentType";
 import { Message } from '../views/MessageSnackbar';
@@ -10,6 +10,7 @@ import { getChartTemplate, getChartChannels } from "../components/ChartTemplates
 import { recommendEncodings } from '../components/chartUtils';
 import { getDataTable } from '../views/VisualizationView';
 import { adaptChart, getTriggers, getUrls, computeContentHash, fetchWithIdentity } from './utils';
+import { getChartPngDataUrl } from './chartCache';
 import { Type } from '../data/types';
 import { createTableFromFromObjectArray, inferTypeFromValueArray } from '../data/utils';
 import { Identity, IdentityType, getBrowserId } from './identity';
@@ -103,6 +104,7 @@ export interface DataFormulatorState {
     viewMode: 'editor' | 'report';
 
     chartSynthesisInProgress: string[];
+    chartInsightInProgress: string[];
 
     serverConfig: ServerConfig;
 
@@ -156,20 +158,21 @@ const initialState: DataFormulatorState = {
     viewMode: 'editor',
 
     chartSynthesisInProgress: [],
+    chartInsightInProgress: [],
 
     serverConfig: {
         DISABLE_DISPLAY_KEYS: false,
         DISABLE_DATABASE: true, // disable database by default
         DISABLE_FILE_UPLOAD: false,
         PROJECT_FRONT_PAGE: false,
-        MAX_DISPLAY_ROWS: 5000,
+        MAX_DISPLAY_ROWS: 10000,
     },
 
     config: {
         formulateTimeoutSeconds: 60,
         defaultChartWidth: 300,
         defaultChartHeight: 300,
-        frontendRowLimit: 10000,
+        frontendRowLimit: 50000,
         paletteKey: 'fluent',
     },
 
@@ -296,6 +299,70 @@ export const fetchCodeExpl = createAsyncThunk(
         let response = await fetchWithIdentity(getUrls().CODE_EXPL_URL, {...message, signal: controller.signal })
 
         return response.json();
+    }
+);
+
+export const fetchChartInsight = createAsyncThunk(
+    "dataFormulatorSlice/fetchChartInsight",
+    async (args: { chartId: string; tableId: string }, { getState }) => {
+        console.log(">>> call agent to generate chart insight <<<");
+
+        let state = getState() as DataFormulatorState;
+        let chart = dfSelectors.getAllCharts(state).find(c => c.id === args.chartId);
+        if (!chart) throw new Error(`Chart not found: ${args.chartId}`);
+
+        // Get high-res PNG from the rendered chart
+        let chartImage = await getChartPngDataUrl(args.chartId);
+        if (!chartImage) throw new Error(`No rendered chart image for: ${args.chartId}`);
+
+        // Strip the data:image/png;base64, prefix for the backend
+        const base64Prefix = 'data:image/png;base64,';
+        if (chartImage.startsWith(base64Prefix)) {
+            chartImage = chartImage.substring(base64Prefix.length);
+        }
+
+        // Collect field names from the encoding map
+        let fieldNames = Object.values(chart.encodingMap)
+            .map(enc => enc.fieldID)
+            .filter((id): id is string => !!id)
+            .map(id => {
+                let field = state.conceptShelfItems.find(f => f.id === id);
+                return field?.name || id;
+            });
+
+        // Collect input table info (include source tables for derived tables)
+        let table = state.tables.find(t => t.id === args.tableId);
+        let tableIds = table?.derive?.source ? [...table.derive.source, table.id] : [table?.id].filter(Boolean);
+        let inputTables = [...new Set(tableIds)]
+            .map(tId => state.tables.find(t => t.id === tId))
+            .filter((t): t is DictTable => !!t)
+            .map(t => ({
+                name: t.id,
+                rows: t.rows,
+                attached_metadata: t.attachedMetadata,
+            }));
+
+        let message = {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                token: Date.now(),
+                chart_image: chartImage,
+                chart_type: chart.chartType,
+                field_names: fieldNames,
+                input_tables: inputTables,
+                model: dfSelectors.getActiveModel(state),
+            }),
+        };
+
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+        let response = await fetchWithIdentity(getUrls().CHART_INSIGHT_URL, { ...message, signal: controller.signal });
+        clearTimeout(timeoutId);
+
+        let result = await response.json();
+        return { ...result, chartId: args.chartId, insightKey: computeInsightKey(chart) };
     }
 );
 
@@ -779,6 +846,12 @@ export const dataFormulatorSlice = createSlice({
                 chart.thumbnail = action.payload.thumbnail;
             }
         },
+        updateChartInsight: (state, action: PayloadAction<{chartId: string, insight: ChartInsight}>) => {
+            let chart = dfSelectors.getAllCharts(state).find(c => c.id == action.payload.chartId);
+            if (chart) {
+                chart.insight = action.payload.insight;
+            }
+        },
         updateChartEncoding: (state, action: PayloadAction<{chartId: string, channel: Channel, encoding: EncodingItem}>) => {
             let chartId = action.payload.chartId;
             let channel = action.payload.channel;
@@ -1096,6 +1169,26 @@ export const dataFormulatorSlice = createSlice({
             console.log("fetched codeExpl");
             console.log(action.payload);
         })
+        .addCase(fetchChartInsight.pending, (state, action) => {
+            let chartId = action.meta.arg.chartId;
+            if (!state.chartInsightInProgress.includes(chartId)) {
+                state.chartInsightInProgress.push(chartId);
+            }
+        })
+        .addCase(fetchChartInsight.fulfilled, (state, action) => {
+            let { chartId, insightKey, title, takeaways } = action.payload;
+            let chart = dfSelectors.getAllCharts(state).find(c => c.id === chartId);
+            if (chart && (title || (takeaways && takeaways.length > 0))) {
+                chart.insight = { title, takeaways: takeaways || [], key: insightKey };
+            }
+            state.chartInsightInProgress = state.chartInsightInProgress.filter(id => id !== chartId);
+            console.log("fetched chart insight", action.payload);
+        })
+        .addCase(fetchChartInsight.rejected, (state, action) => {
+            let chartId = action.meta.arg.chartId;
+            state.chartInsightInProgress = state.chartInsightInProgress.filter(id => id !== chartId);
+            console.error("chart insight failed", action.error);
+        })
     },
 })
 
@@ -1222,12 +1315,9 @@ export const dfSelectors = {
 // derived field: extra all field items from the table
 export const getDataFieldItems = (baseTable: DictTable): FieldItem[] => {
 
-    let dataFieldItems = baseTable.names.map((name, index) => {
+    let dataFieldItems = baseTable.names.map((name) => {
         const id = `original--${baseTable.id}--${name}`;
-        const columnValues = baseTable.rows.map((r) => r[name]);
-        const type = baseTable.metadata[name].type;
-        const uniqueValues = Array.from(new Set(columnValues));
-        return { id, name, type, source: "original", description: "", tableRef: baseTable.id } as FieldItem;
+        return { id, name, source: "original", tableRef: baseTable.id } as FieldItem;
     }) || [];
 
     return dataFieldItems;

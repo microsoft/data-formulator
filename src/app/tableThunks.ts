@@ -68,7 +68,7 @@ export const loadTable = createAsyncThunk<
     async (payload, { dispatch, getState }) => {
         const { table, storeOnServer, file, dataLoaderType, dataLoaderParams, sourceTableName, importOptions } = payload;
         const state = getState();
-        const frontendRowLimit = state.config?.frontendRowLimit ?? 10000;
+        const frontendRowLimit = state.config?.frontendRowLimit ?? 50000;
         const existingTables = state.tables;
 
         // === DUPLICATE CHECK ===

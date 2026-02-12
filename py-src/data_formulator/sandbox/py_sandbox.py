@@ -113,6 +113,12 @@ def run_in_main_process(code, allowed_objects):
     return {'status': 'ok', 'allowed_objects': {key: restricted_globals[key] for key in allowed_objects}}
 
 
+# Lock to serialize os.chdir in the main-process path.
+# os.chdir is process-global, so concurrent threads would race on it.
+import threading
+_chdir_lock = threading.Lock()
+
+
 def run_unified_transform_in_sandbox(
     code: str,
     workspace_path: str,
@@ -134,22 +140,32 @@ def run_unified_transform_in_sandbox(
     """
     import os
 
-    # Save current directory
-    original_cwd = os.getcwd()
+    # Prepend an os.chdir() call into the executed code itself so that:
+    #   - In subprocess mode, the child process changes its own cwd (no race).
+    #   - In main-process mode, we still rely on os.chdir but protect it with
+    #     a lock so concurrent requests don't stomp on each other's cwd.
+    workspace_path_escaped = str(workspace_path).replace("\\", "\\\\").replace("'", "\\'")
+    chdir_preamble = f"import os as _sandbox_os; _sandbox_os.chdir('{workspace_path_escaped}')\n"
+    code_with_chdir = chdir_preamble + code
 
     try:
-        # Change to workspace directory so script can access files directly
-        os.chdir(workspace_path)
-
         allowed_objects = {
             output_variable: None  # Will be populated by script
         }
 
-        # Execute the script directly (no function wrapper)
         if exec_python_in_subprocess:
-            result = run_in_subprocess(code, allowed_objects)
+            # Subprocess: the child gets its own process-global cwd — no race.
+            result = run_in_subprocess(code_with_chdir, allowed_objects)
         else:
-            result = run_in_main_process(code, allowed_objects)
+            # Main-process: serialise the chdir+exec to avoid cwd races
+            # between concurrent Flask threads.
+            original_cwd = os.getcwd()
+            with _chdir_lock:
+                try:
+                    os.chdir(workspace_path)
+                    result = run_in_main_process(code, allowed_objects)
+                finally:
+                    os.chdir(original_cwd)
 
         if result['status'] == 'ok':
             output_df = result['allowed_objects'][output_variable]
@@ -173,6 +189,3 @@ def run_unified_transform_in_sandbox(
             'status': 'error',
             'content': f"Error during execution setup: {type(e).__name__} - {str(e)}"
         }
-    finally:
-        # Always restore original directory
-        os.chdir(original_cwd)

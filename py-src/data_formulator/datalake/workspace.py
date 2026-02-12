@@ -649,18 +649,18 @@ class WorkspaceWithTempData(Workspace):
         for item in self._temp_data:
             base_name = item.get("name", "table")
             safe_name = sanitize_table_name(base_name)
-            filename = f"{safe_name}.parquet"
+            filename = f"{safe_name}.csv"
             file_path = self._path / filename
 
             rows = item.get("rows", [])
             df = pd.DataFrame(rows) if rows else pd.DataFrame()
-            df.to_parquet(file_path)
+            df.to_csv(file_path, index=False)
 
             self._overlay[safe_name] = TableMetadata(
                 name=safe_name,
                 source_type="upload",
                 filename=filename,
-                file_type="parquet",
+                file_type="csv",
                 created_at=datetime.now(),
                 row_count=len(df),
             )

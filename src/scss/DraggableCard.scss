@@ -1,0 +1,77 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT License.
+
+.draggable-card {
+
+    .draggable-card-header {
+        display: flex;
+        flex-direction: row;
+        justify-content: space-between;
+        height: auto;
+        padding: 1px 8px 1px 0px;
+        margin-left: 8px;
+        position: relative;
+
+        .draggable-card-title {
+            margin: auto;
+            margin-left: 3px;
+            display: flex;
+            align-items: center;
+        }
+    }
+
+    .draggable-card-header.uninstantiated {
+        font-style: italic;
+        color: rgab(80, 80, 80);
+    }
+
+    .draggable-card-header.uninstantiated.custom {
+        border: 0.5px dashed lightsalmon;
+        border-left: none;
+    }
+
+    .draggable-card-header.uninstantiated.derived {
+        border: 0.5px dashed gold;
+        border-left: none;
+    }
+
+    & .draggable-card-action-button {
+        visibility: hidden;
+        opacity: 0;
+        transition: visibility 0s, opacity 0.3s linear;
+    }
+
+    &:hover .draggable-card-action-button {
+        visibility: visible;
+        opacity: 1;
+    }
+
+    .draggable-card-body {
+        padding: 0px 8px 8px 4px !important;
+        margin-left: 8px;
+        background-color: rgba(255, 255, 255, 0.93);
+    }
+
+    .draggable-card-body-edit-mode {
+        background-color: rgba(255, 255, 255, 0.98);
+        padding: 8px 8px 8px 4px !important;
+        margin-left: 8px;
+    }
+
+    .draggable-card-example-values {
+        display: block;
+        text-overflow: ellipsis;
+        margin-left: 8px;
+        max-width: calc(100% - 96px);
+        font-size: smaller;
+        font-style: italic;
+        color: rebeccapurple;
+
+        .draggable-card-example-values-chip {
+            height: auto;
+            max-width: 120px;
+            margin: 3px;
+            border-radius: 0px;
+        }
+    }
+}

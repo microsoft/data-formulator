@@ -29,6 +29,7 @@ from data_formulator.agents.agent_data_load import DataLoadAgent
 from data_formulator.agents.agent_data_clean import DataCleanAgent
 from data_formulator.agents.agent_data_clean_stream import DataCleanAgentStream
 from data_formulator.agents.agent_code_explanation import CodeExplanationAgent
+from data_formulator.agents.agent_chart_insight import ChartInsightAgent
 from data_formulator.agents.agent_interactive_explore import InteractiveExploreAgent
 from data_formulator.agents.agent_report_gen import ReportGenAgent
 from data_formulator.agents.client_utils import Client
@@ -446,7 +447,7 @@ def explore_data_streaming():
                     model_config=model_config,
                     input_tables=input_tables,
                     initial_plan=initial_plan,
-                    session_id=identity_id,
+                    identity_id=identity_id,
                     exec_python_in_subprocess=exec_python_in_subprocess,
                     max_iterations=max_iterations,
                     max_repair_attempts=max_repair_attempts,
@@ -591,6 +592,38 @@ def request_code_expl():
                     return jsonify(result), 400
             else:
                 return jsonify({'error': 'No explanation generated'}), 400
+    else:
+        return jsonify({'error': 'Invalid request format'}), 400
+
+@agent_bp.route('/chart-insight', methods=['GET', 'POST'])
+def request_chart_insight():
+    if request.is_json:
+        logger.info("# chart insight request")
+        content = request.get_json()
+        client = get_client(content['model'])
+
+        chart_image = content.get("chart_image", "")
+        chart_type = content.get("chart_type", "")
+        field_names = content.get("field_names", [])
+        input_tables = content.get("input_tables", [])
+
+        # Get workspace
+        identity_id = get_identity_id()
+        workspace = Workspace(identity_id)
+        temp_data = get_temp_tables(workspace, input_tables)
+
+        with WorkspaceWithTempData(workspace, temp_data) as workspace:
+            agent = ChartInsightAgent(client=client, workspace=workspace)
+            candidates = agent.run(chart_image, chart_type, field_names, input_tables)
+
+            if candidates and len(candidates) > 0:
+                result = candidates[0]
+                if result['status'] == 'ok':
+                    return jsonify(result)
+                else:
+                    return jsonify(result), 400
+            else:
+                return jsonify({'error': 'No insight generated'}), 400
     else:
         return jsonify({'error': 'Invalid request format'}), 400
 

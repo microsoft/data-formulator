@@ -307,3 +307,127 @@ LEGACY_SEMANTIC_TYPES = [
     "Date", "Time", "DateTime", "TimeRange", "Range", "Duration", 
     "Name", "Percentage", "String", "Number"
 ]
+
+
+# ---------------------------------------------------------------------------
+# Semantic Type → Vega-Lite Encoding Type
+# ---------------------------------------------------------------------------
+
+VL_TYPE_MAP: Dict[str, str] = {
+    # Temporal → temporal
+    "DateTime": "temporal", "Date": "temporal", "Time": "temporal",
+    "YearMonth": "temporal", "YearQuarter": "temporal", "YearWeek": "temporal",
+
+    # Temporal granules → ordinal
+    "Year": "ordinal", "Quarter": "ordinal", "Month": "ordinal",
+    "Week": "ordinal", "Day": "ordinal", "Hour": "ordinal", "Decade": "ordinal",
+    "TimeRange": "ordinal",
+
+    # Duration → quantitative
+    "Duration": "quantitative",
+
+    # Measures → quantitative
+    "Quantity": "quantitative", "Count": "quantitative",
+    "Amount": "quantitative", "Price": "quantitative", "Revenue": "quantitative", "Cost": "quantitative",
+    "Percentage": "quantitative", "Rate": "quantitative", "Ratio": "quantitative",
+    "Distance": "quantitative", "Area": "quantitative", "Volume": "quantitative",
+    "Weight": "quantitative", "Temperature": "quantitative", "Speed": "quantitative",
+
+    # Discrete numerics → ordinal (except ID/Score/Rating which differ)
+    "Rank": "ordinal", "Index": "ordinal", "Score": "quantitative",
+    "Rating": "quantitative", "Level": "ordinal",
+    "ID": "nominal",
+
+    # Geographic coordinates → quantitative (for lat/lon encoding)
+    "Latitude": "quantitative", "Longitude": "quantitative", "Coordinates": "quantitative",
+
+    # Geographic locations → nominal
+    "Location": "nominal", "Country": "nominal", "State": "nominal", "City": "nominal",
+    "Region": "nominal", "Address": "nominal", "ZipCode": "nominal",
+
+    # Entity names → nominal
+    "Name": "nominal", "PersonName": "nominal", "Username": "nominal", "Email": "nominal",
+    "Company": "nominal", "Brand": "nominal", "Department": "nominal",
+    "Product": "nominal", "SKU": "nominal", "Category": "nominal",
+
+    # Coded → nominal
+    "Status": "nominal", "Type": "nominal", "Boolean": "nominal", "Binary": "nominal", "Code": "nominal",
+
+    # Ranges → ordinal
+    "Range": "ordinal", "AgeGroup": "ordinal", "Bucket": "ordinal",
+
+    # Fallbacks
+    "String": "nominal", "Number": "quantitative", "Unknown": "nominal",
+}
+
+
+def get_vl_type(semantic_type: str) -> Optional[str]:
+    """
+    Get the Vega-Lite encoding type for a semantic type.
+    Returns 'quantitative', 'ordinal', 'nominal', or 'temporal', or None if unknown.
+    """
+    return VL_TYPE_MAP.get(semantic_type)
+
+
+# ---------------------------------------------------------------------------
+# Name-based Heuristic Inference
+# ---------------------------------------------------------------------------
+#
+# For derived columns (from agent code) that lack frontend semantic type
+# metadata, infer a likely VL type from the column name.
+#
+# Pattern matching is intentionally conservative — only triggers when
+# the column name strongly suggests a specific meaning.
+# ---------------------------------------------------------------------------
+
+import re as _re
+
+# Patterns that strongly indicate quantitative (measures)
+_QUANT_PATTERNS: list[_re.Pattern] = [
+    _re.compile(r'(?:^|_)(avg|mean|average|sum|total|count|num|min|max|median|std|stdev|var|variance)(?:_|$)', _re.I),
+    _re.compile(r'(?:^|_)(revenue|sales|profit|income|cost|expense|price|amount|quantity|volume|weight|distance|speed|temperature|rate|ratio|pct|percent|percentage|growth|change|diff|delta)(?:_|$)', _re.I),
+    _re.compile(r'(?:^|_)(lat|lon|latitude|longitude)(?:_|$)', _re.I),
+]
+
+# Patterns that indicate temporal
+_TEMPORAL_PATTERNS: list[_re.Pattern] = [
+    _re.compile(r'(?:^|_)(date|datetime|timestamp|time|created_at|updated_at|started_at|ended_at)(?:_|$)', _re.I),
+]
+
+# Patterns that indicate ordinal (time granules)
+_ORDINAL_PATTERNS: list[_re.Pattern] = [
+    _re.compile(r'^(year|month|quarter|week|day|hour|decade|year_month|year_quarter)$', _re.I),
+    _re.compile(r'(?:^|_)(rank|ranking|level|tier|grade|priority)(?:_|$)', _re.I),
+]
+
+# Patterns that indicate nominal (categorical)
+_NOMINAL_PATTERNS: list[_re.Pattern] = [
+    _re.compile(r'(?:^|_)(name|label|category|type|status|group|class|kind|tag|code|id|key)(?:_|$)', _re.I),
+    _re.compile(r'(?:^|_)(country|state|city|region|location|department|brand|company|product)(?:_|$)', _re.I),
+]
+
+
+def infer_vl_type_from_name(column_name: str) -> Optional[str]:
+    """
+    Infer a likely Vega-Lite type from a column name using pattern matching.
+    Returns 'quantitative', 'ordinal', 'nominal', 'temporal', or None if
+    no strong signal is found.
+    """
+    # Check patterns in priority order
+    for pattern in _TEMPORAL_PATTERNS:
+        if pattern.search(column_name):
+            return 'temporal'
+    
+    for pattern in _ORDINAL_PATTERNS:
+        if pattern.search(column_name):
+            return 'ordinal'
+    
+    for pattern in _QUANT_PATTERNS:
+        if pattern.search(column_name):
+            return 'quantitative'
+    
+    for pattern in _NOMINAL_PATTERNS:
+        if pattern.search(column_name):
+            return 'nominal'
+    
+    return None

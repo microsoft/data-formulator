@@ -21,6 +21,7 @@ import { getIconFromType } from './ViewUtils';
 import { IconButton, TableSortLabel, Typography } from '@mui/material';
 
 import _ from 'lodash';
+import * as d3 from 'd3-dsv';
 import { FieldSource, FieldItem } from '../components/ComponentType';
 
 import FileDownloadIcon from '@mui/icons-material/FileDownload';
@@ -83,8 +84,6 @@ function getColorForFieldSource(source: string | undefined, theme: any): string 
     }
     
     switch (source) {
-        case "derived":
-            return theme.palette.derived.main; // Yellow/gold for derived fields
         case "custom":
             return theme.palette.custom.main; // Orange for custom fields
         case "original":
@@ -283,6 +282,41 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({
         )),
     }
 
+    const handleDownload = async (format: 'csv' | 'tsv') => {
+        const delimiter = format === 'tsv' ? '\t' : ',';
+        const ext = format === 'tsv' ? 'tsv' : 'csv';
+        const mime = format === 'tsv' ? 'text/tab-separated-values' : 'text/csv';
+
+        if (virtual) {
+            // Virtual table: fetch full data from server
+            try {
+                const response = await fetchWithIdentity(getUrls().EXPORT_TABLE_CSV, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ table_name: tableId, delimiter }),
+                });
+                if (!response.ok) throw new Error('Export failed');
+                const blob = await response.blob();
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                a.download = `${tableName}.${ext}`;
+                a.click();
+                URL.revokeObjectURL(a.href);
+            } catch (error) {
+                console.error('Error downloading table:', error);
+            }
+        } else {
+            // Local table: export from in-memory rows
+            const csvContent = d3.dsvFormat(delimiter).format(rows);
+            const blob = new Blob([csvContent], { type: mime });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = `${tableName}.${ext}`;
+            a.click();
+            URL.revokeObjectURL(a.href);
+        }
+    };
+
     const fetchVirtualData = (sortByColumnIds: string[], sortOrder: 'asc' | 'desc') => {
         // Set loading to true when starting the fetch
         setIsLoading(true);
@@ -454,6 +488,15 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({
                             </IconButton>
                         </Tooltip>
                     )}
+                    <Tooltip title="Download as CSV">
+                        <IconButton 
+                            size="small" 
+                            color="primary" 
+                            onClick={() => handleDownload('csv')}
+                        >
+                            <FileDownloadIcon sx={{ fontSize: 18 }} />
+                        </IconButton>
+                    </Tooltip>
                 </Box>
             </Paper>
         </Box >

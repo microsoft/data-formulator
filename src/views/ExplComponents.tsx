@@ -271,8 +271,7 @@ export const CodeExplanationCard: FC<{
     title: string;
     icon: React.ReactNode;
     children: React.ReactNode;
-    transformationIndicatorText: string;
-}> = ({ title, icon, children, transformationIndicatorText }) => (
+}> = ({ title, icon, children }) => (
     <Card 
         variant="outlined"
         sx={{
@@ -315,7 +314,7 @@ export const CodeExplanationCard: FC<{
                 gutterBottom
             >
                 {icon}
-                {title} ({transformationIndicatorText})
+                {title}
             </Typography>
             <Box 
                 sx={{

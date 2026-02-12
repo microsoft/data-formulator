@@ -1567,8 +1567,9 @@ const ChartThumbnail: FC<{
     </Box>
 
     const pendingOverlay = status == 'pending' ? <Box sx={{
-        position: "absolute", height: "100%", width: "100%", zIndex: 20,
-        backgroundColor: "rgba(243, 243, 243, 0.8)", display: "flex", alignItems: "center", cursor: "pointer"
+        position: "absolute", top: 0, left: -8, right: -8, bottom: 0, zIndex: 20,
+        backgroundColor: "rgba(243, 243, 243, 0.8)", cursor: "pointer",
+        borderRadius: '6px', display: 'flex', flexDirection: 'column',
     }}>
         <LinearProgress sx={{ width: "100%", height: "100%", opacity: 0.05 }} />
     </Box> : null;

@@ -23,8 +23,14 @@ The users' instruction includes "chart_type" and "chart_encodings" that describe
 
 **About the execution environment:**
 - You can use BOTH DuckDB SQL and pandas operations in the same script
-- The script will run in the workspace data directory
-- Use the file path shown in the [CONTEXT] section (under "**file path:**") to load data (e.g., `read_parquet('student_exam.parquet')` or `pd.read_parquet('data/sales.parquet')`)
+- The script will run in the workspace data directory (all data files are in the current directory)
+- Each table in [CONTEXT] has a **file path** (e.g., `student_exam.parquet`, `sales.csv`, `report.xlsx`). Use EXACTLY that path to load data:
+    - `.parquet` files: `pd.read_parquet('file.parquet')` or DuckDB `read_parquet('file.parquet')`
+    - `.csv` files: `pd.read_csv('file.csv')` or DuckDB `read_csv_auto('file.csv')`
+    - `.json` files: `pd.read_json('file.json')`
+    - `.xlsx`/`.xls` files: `pd.read_excel('file.xlsx')`
+    - `.txt` files: `pd.read_csv('file.txt', sep='\t')` (or appropriate delimiter)
+- **IMPORTANT:** Use the exact filename from the context — do NOT change the file extension or assume all files are parquet.
 - **Allowed libraries:** pandas, numpy, duckdb, math, datetime, json, statistics, collections, re, sklearn, scipy, random, itertools, functools, operator, time
 - **Not allowed:** matplotlib, plotly, seaborn, requests, subprocess, os, sys, io, or any other library not listed above. Do NOT import them — the sandbox will reject the import.
 - File system access (open, write) and network access are also forbidden.
@@ -125,27 +131,47 @@ The script should be as simple as possible and easily readable. If there is no d
 
 **Example data loading patterns:**
 
-Use the **file path** shown in the [CONTEXT] section to load data:
+Always use the exact **file path** from [CONTEXT] to load data. Choose the reader based on the file extension:
 
 ```python
-# Option 1: Load with DuckDB SQL (use file path from context)
+# Parquet files (most common for workspace-generated tables)
 import pandas as pd
 import duckdb
 
-# If context shows: - **file path:** `sales_data.parquet`
+# pandas
+df = pd.read_parquet('sales_data.parquet')
+
+# DuckDB (preferred for large datasets)
 df = duckdb.sql("""
-    SELECT
-        date,
-        SUM(sales) as total_sales
+    SELECT date, SUM(sales) as total_sales
     FROM read_parquet('sales_data.parquet')
     GROUP BY date
 """).df()
+```
 
-# Option 2: Load with pandas (use file path from context)
+```python
+# CSV files
 import pandas as pd
-df = pd.read_parquet('sales_data.parquet')
+import duckdb
 
-# Option 3: Hybrid - DuckDB for aggregation, pandas for time series
+# pandas
+df = pd.read_csv('sales.csv')
+
+# DuckDB
+df = duckdb.sql("SELECT * FROM read_csv_auto('sales.csv')").df()
+```
+
+```python
+# Excel / JSON / TXT files (use pandas)
+import pandas as pd
+
+df = pd.read_excel('report.xlsx')    # .xlsx or .xls
+df = pd.read_json('data.json')       # .json
+df = pd.read_csv('log.txt', sep='\t') # .txt (tab-delimited)
+```
+
+```python
+# Hybrid example: DuckDB for aggregation, pandas for time series
 import pandas as pd
 import duckdb
 
@@ -241,7 +267,7 @@ city_temp_comparison = duckdb.sql("""
 
 class DataTransformationAgent(object):
 
-    def __init__(self, client, workspace, system_prompt=None, agent_coding_rules="", max_display_rows=5000):
+    def __init__(self, client, workspace, system_prompt=None, agent_coding_rules="", max_display_rows=10000):
         self.client = client
         self.workspace = workspace
         self.max_display_rows = max_display_rows

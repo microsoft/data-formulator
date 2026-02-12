@@ -41,9 +41,7 @@ import CategoryIcon from '@mui/icons-material/Category';
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
 import QuestionMarkIcon from '@mui/icons-material/QuestionMark';
 
-import { FieldItem, Channel, EncodingItem, AggrOp, AGGR_OP_LIST, 
-        ConceptTransformation, Chart, duplicateField } from "../components/ComponentType";
-import { EncodingDropResult } from "../views/ConceptShelf";
+import { FieldItem, Channel, EncodingItem, AggrOp, Chart, EncodingDropResult } from "../components/ComponentType";
 
 import _ from 'lodash';
 
@@ -94,14 +92,9 @@ export const LittleConceptCard: FC<LittleConceptCardProps> = function LittleConc
     let backgroundColor = alpha(theme.palette.primary.main, 0.05);
 
     if (field.source == "original") {
-        //fieldClass += "encoding-active-item-original"
         backgroundColor = alpha(theme.palette.primary.main, 0.05);
     } else if (field.source == "custom") {
-        //fieldClass += "encoding-active-item-custom"
         backgroundColor = alpha(theme.palette.custom.main, 0.05);
-    } else if (field.source == "derived") {
-        //fieldClass += "encoding-active-item-derived";
-        backgroundColor = alpha(theme.palette.derived.main, 0.05);
     }
 
     return (
@@ -554,8 +547,8 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
                 console.log("nothing happens")
             } else {
                 let newConept = {
-                    id: `concept-${Date.now()}`, name: option, type: "auto" as Type, 
-                    description: "", source: "custom", tableRef: "custom",
+                    id: `concept-${Date.now()}`, name: option,
+                    source: "custom", tableRef: "custom",
                 } as FieldItem;
                 dispatch(dfActions.updateConceptItems(newConept));
                 updateEncProp("fieldID", newConept.id);
@@ -689,8 +682,6 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
                     backgroundColor = theme.palette.primary.light;
                 } else if (fieldItem.source == "custom") {
                     backgroundColor = theme.palette.custom.main;
-                } else if (fieldItem.source == "derived") {
-                    backgroundColor = theme.palette.derived.main;
                 }
 
                 // Add overlay logic similar to ConceptCard - make fields not in focused table more transparent
