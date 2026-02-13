@@ -39,12 +39,12 @@ import {
 
 import React from 'react';
 import { ThinkingBufferEffect } from '../components/FunComponents';
-import { Channel, Chart, FieldItem, Trigger, duplicateChart } from "../components/ComponentType";
+import { Channel, Chart, FieldItem, Trigger, duplicateChart } from "../components/componentType";
 
 import _ from 'lodash';
 
 import '../scss/EncodingShelf.scss';
-import { createDictTable, DictTable } from "../components/ComponentType";
+import { createDictTable, DictTable } from "../components/componentType";
 
 import { getUrls, resolveChartFields, getTriggers, assembleVegaChart, resolveRecommendedChart, fetchWithIdentity } from '../app/utils';
 import { EncodingBox } from './EncodingBox';

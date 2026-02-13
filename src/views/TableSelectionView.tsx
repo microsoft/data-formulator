@@ -11,7 +11,7 @@ import { borderColor } from '../app/tokens';
 import { StreamIcon } from '../icons';
 import { createTableFromFromObjectArray } from '../data/utils';
 import { MultiTablePreview } from './MultiTablePreview';
-import { DictTable } from '../components/ComponentType';
+import { DictTable } from '../components/componentType';
 
 // Update the interface to support multiple tables per dataset
 export interface DatasetMetadata {

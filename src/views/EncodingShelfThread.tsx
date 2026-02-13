@@ -16,11 +16,11 @@ import {
 
 import React from 'react';
 
-import { Chart, Trigger } from "../components/ComponentType";
+import { Chart, Trigger } from "../components/componentType";
 
 
 import '../scss/EncodingShelf.scss';
-import { DictTable } from "../components/ComponentType";
+import { DictTable } from "../components/componentType";
 import { Type } from '../data/types';
 
 import { getTriggers } from '../app/utils';

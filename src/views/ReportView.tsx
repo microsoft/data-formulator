@@ -45,7 +45,7 @@ import { getUrls, assembleVegaChart, getTriggers, prepVisTable, fetchWithIdentit
 import { MuiMarkdown, getOverrides } from 'mui-markdown';
 import embed from 'vega-embed';
 import { getDataTable } from './VisualizationView';
-import { DictTable } from '../components/ComponentType';
+import { DictTable } from '../components/componentType';
 import { AppDispatch } from '../app/store';
 import { Collapse } from '@mui/material';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';

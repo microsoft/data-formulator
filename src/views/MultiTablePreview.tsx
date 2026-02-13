@@ -14,7 +14,7 @@ import {
     Card,
 } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
-import { DictTable } from '../components/ComponentType';
+import { DictTable } from '../components/componentType';
 import { CustomReactTable } from './ReactTable';
 
 export interface MultiTablePreviewProps {

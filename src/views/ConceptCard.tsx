@@ -30,7 +30,7 @@ import HideSourceIcon from '@mui/icons-material/HideSource';
 import ArrowRightIcon from '@mui/icons-material/ArrowRight';
 import AnimateHeight from 'react-animate-height';
 
-import { FieldItem, ConceptTransformation, duplicateField, FieldSource } from '../components/ComponentType';
+import { FieldItem, ConceptTransformation, duplicateField, FieldSource } from '../components/componentType';
 
 import {  testType, Type, TypeList } from "../data/types";
 import React from 'react';
@@ -41,7 +41,7 @@ import { getIconFromType } from './ViewUtils';
 
 
 import _ from 'lodash';
-import { DictTable } from '../components/ComponentType';
+import { DictTable } from '../components/componentType';
 import { CodeBox } from './VisualizationView';
 import { CustomReactTable } from './ReactTable';
 import { alpha } from '@mui/material/styles';

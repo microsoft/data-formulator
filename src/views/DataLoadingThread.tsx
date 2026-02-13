@@ -29,7 +29,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { AppDispatch } from '../app/store';
 import { DataFormulatorState, dfActions, dfSelectors, fetchFieldSemanticType } from '../app/dfSlice';
 import { borderColor, shadow, transition, radius } from '../app/tokens';
-import { DataCleanBlock, DataCleanTableOutput } from '../components/ComponentType';
+import { DataCleanBlock, DataCleanTableOutput } from '../components/componentType';
 import { getUrls, fetchWithIdentity } from '../app/utils';
 import { CustomReactTable } from './ReactTable';
 import { createTableFromText } from '../data/utils';

@@ -5,7 +5,7 @@ import * as d3 from 'd3';
 import Column from './column';
 import * as ExcelJS from 'exceljs';
 
-import { DictTable } from '../components/ComponentType';
+import { DictTable } from '../components/componentType';
 import { CoerceType, TestType, Type } from './types';
 import { ColumnTable } from './table';
 

@@ -42,7 +42,7 @@ import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
 import QuestionMarkIcon from '@mui/icons-material/QuestionMark';
 
 import { FieldItem, Channel, EncodingItem, AggrOp, AGGR_OP_LIST, 
-        ConceptTransformation, Chart, duplicateField } from "../components/ComponentType";
+        ConceptTransformation, Chart, duplicateField } from "../components/componentType";
 import { EncodingDropResult } from "../views/ConceptShelf";
 
 import _ from 'lodash';

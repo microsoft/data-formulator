@@ -10,7 +10,7 @@ import { alpha } from '@mui/material/styles';
 
 import '../scss/DataView.scss';
 
-import { DictTable } from '../components/ComponentType';
+import { DictTable } from '../components/componentType';
 import { DataFormulatorState, dfActions, dfSelectors } from '../app/dfSlice';
 import { useDispatch, useSelector } from 'react-redux';
 import { Type } from '../data/types';

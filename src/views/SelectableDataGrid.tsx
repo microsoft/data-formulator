@@ -21,7 +21,7 @@ import { getIconFromType } from './ViewUtils';
 import { IconButton, TableSortLabel, Typography } from '@mui/material';
 
 import _ from 'lodash';
-import { FieldSource, FieldItem } from '../components/ComponentType';
+import { FieldSource, FieldItem } from '../components/componentType';
 
 import FileDownloadIcon from '@mui/icons-material/FileDownload';
 import { TableIcon } from '../icons';

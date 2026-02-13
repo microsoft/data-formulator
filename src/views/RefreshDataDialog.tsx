@@ -25,7 +25,7 @@ import CloseIcon from '@mui/icons-material/Close';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 import { useSelector } from 'react-redux';
 import { DataFormulatorState } from '../app/dfSlice';
-import { DictTable } from '../components/ComponentType';
+import { DictTable } from '../components/componentType';
 import { createTableFromText, loadTextDataWrapper, loadBinaryDataWrapper } from '../data/utils';
 
 interface TabPanelProps {

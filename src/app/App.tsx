@@ -66,7 +66,7 @@ import {
 import { About } from '../views/About';
 import { MessageSnackbar } from '../views/MessageSnackbar';
 import { ChartRenderService } from '../views/ChartRenderService';
-import { DictTable } from '../components/ComponentType';
+import { DictTable } from '../components/componentType';
 import { AppDispatch } from './store';
 import dfLogo from '../assets/df-logo.png';
 import { ModelSelectionButton } from '../views/ModelSelectionDialog';

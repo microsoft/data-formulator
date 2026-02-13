@@ -37,12 +37,12 @@ import {
 
 import React from 'react';
 
-import { Chart, FieldItem } from "../components/ComponentType";
+import { Chart, FieldItem } from "../components/componentType";
 
 import _ from 'lodash';
 
 import '../scss/EncodingShelf.scss';
-import { createDictTable, DictTable } from "../components/ComponentType";
+import { createDictTable, DictTable } from "../components/componentType";
 
 import { getUrls, getTriggers, resolveRecommendedChart, fetchWithIdentity } from '../app/utils';
 
