@@ -28,53 +28,30 @@ function applyInterpolate(vgSpec: any, config?: Record<string, any>): any {
     return vgSpec;
 }
 
-export const areaCharts: ChartTemplateDef[] = [
-    {
-        chart: "Area Chart",
+export const lineChartDef: ChartTemplateDef = {
+        chart: "Line Chart",
         template: {
-            mark: "area",
+            mark: "line",
             encoding: {},
         },
         channels: ["x", "y", "color", "opacity", "column", "row"],
         buildEncodings: defaultBuildEncodings,
-        properties: [
-            interpolateConfigProperty,
-            { key: "opacity", label: "Opacity", type: "continuous", min: 0.1, max: 1, step: 0.05, defaultValue: 0.7 },
-        ] as ChartPropertyDef[],
+        properties: [interpolateConfigProperty],
         postProcessor: (vgSpec: any, _table: any[], config?: Record<string, any>) => {
-            vgSpec = applyInterpolate(vgSpec, config);
-            if (config) {
-                const opacity = config.opacity;
-                if (opacity !== undefined && opacity < 1) {
-                    if (typeof vgSpec.mark === 'string') {
-                        vgSpec.mark = { type: vgSpec.mark, opacity };
-                    } else {
-                        vgSpec.mark = { ...vgSpec.mark, opacity };
-                    }
-                }
-            }
-            return vgSpec;
+            return applyInterpolate(vgSpec, config);
         },
-    },
-    {
-        chart: "Streamgraph",
+};
+
+export const dottedLineChartDef: ChartTemplateDef = {
+        chart: "Dotted Line Chart",
         template: {
-            mark: "area",
+            mark: { type: "line", point: true },
             encoding: {},
         },
         channels: ["x", "y", "color", "column", "row"],
         buildEncodings: defaultBuildEncodings,
-        properties: [interpolateConfigProperty] as ChartPropertyDef[],
+        properties: [interpolateConfigProperty],
         postProcessor: (vgSpec: any, _table: any[], config?: Record<string, any>) => {
-            // Force center stacking on the measure axis
-            if (vgSpec.encoding?.y && !vgSpec.encoding.y.stack) {
-                vgSpec.encoding.y.stack = "center";
-                vgSpec.encoding.y.axis = null;
-            } else if (vgSpec.encoding?.x && !vgSpec.encoding.x.stack) {
-                vgSpec.encoding.x.stack = "center";
-                vgSpec.encoding.x.axis = null;
-            }
             return applyInterpolate(vgSpec, config);
         },
-    },
-];
+};

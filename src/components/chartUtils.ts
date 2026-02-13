@@ -6,13 +6,13 @@
  *
  * Heuristic-based logic that, given a chart type and table data,
  * recommends which fields best fit each encoding channel.
- * This is app-level logic — not part of the reusable agents-chart-lib library.
+ * This is app-level logic — not part of the reusable agents-chart library.
  */
 
 import { DictTable, EncodingItem, FieldItem } from './ComponentType';
 import {
     getTemplateChannels,
-} from '../lib/agents-chart-lib';
+} from '../lib/agents-chart';
 import {
     inferVisCategory,
     getVisCategory,
@@ -23,7 +23,7 @@ import {
     isGeoType,
     isGeoCoordinateType,
     isNonMeasureNumeric,
-} from '../lib/agents-chart-lib/semantic-types';
+} from '../lib/agents-chart/semantic-types';
 
 // ---------------------------------------------------------------------------
 // Internal Table View (built from data + semanticTypes)
@@ -415,11 +415,11 @@ function getRecommendation(chartType: string, tv: InternalTableView): Record<str
         case 'Pyramid Chart': {
             const yField = pickDiscrete(tv, used);
             const xField = pickQuantitative(tv, used);
-            const colorField = pickLowCardDiscrete(tv, used, 10);
-            if (!xField || !yField || !colorField) return {};
+            const x2Field = pickQuantitative(tv, used);
+            if (!xField || !yField || !x2Field) return {};
             assign('y', yField);
             assign('x', xField);
-            assign('color', colorField);
+            assign('x2', x2Field);
             break;
         }
 

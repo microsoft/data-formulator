@@ -3,8 +3,7 @@
 
 import { ChartTemplateDef, ChartPropertyDef } from '../types';
 
-export const lollipopCharts: ChartTemplateDef[] = [
-    {
+export const lollipopChartDef: ChartTemplateDef = {
         chart: "Lollipop Chart",
         template: {
             encoding: {},
@@ -81,5 +80,4 @@ export const lollipopCharts: ChartTemplateDef[] = [
 
             return vgSpec;
         },
-    },
-];
+};

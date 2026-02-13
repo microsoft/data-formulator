@@ -4,8 +4,7 @@
 import { ChartTemplateDef, ChartPropertyDef } from '../types';
 import { defaultBuildEncodings } from './utils';
 
-export const jitterCharts: ChartTemplateDef[] = [
-    {
+export const stripPlotDef: ChartTemplateDef = {
         chart: "Strip Plot",
         template: {
             mark: { type: "circle", opacity: 0.7 },
@@ -116,5 +115,4 @@ export const jitterCharts: ChartTemplateDef[] = [
 
             return vgSpec;
         },
-    },
-];
+};

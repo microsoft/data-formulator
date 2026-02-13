@@ -4,8 +4,7 @@
 import { ChartTemplateDef, ChartPropertyDef } from '../types';
 import { applyDynamicMarkResizing, ensureNominalAxis, defaultBuildEncodings } from './utils';
 
-export const barCharts: ChartTemplateDef[] = [
-    {
+export const barChartDef: ChartTemplateDef = {
         chart: "Bar Chart",
         template: {
             mark: "bar",
@@ -30,8 +29,9 @@ export const barCharts: ChartTemplateDef[] = [
             }
             return vgSpec;
         },
-    },
-    {
+};
+
+export const pyramidChartDef: ChartTemplateDef = {
         chart: "Pyramid Chart",
         template: {
             spacing: 0,
@@ -42,8 +42,8 @@ export const barCharts: ChartTemplateDef[] = [
                     encoding: {
                         y: {},
                         x: { scale: { reverse: true }, stack: null },
-                        color: { legend: null },
                         opacity: { value: 0.9 },
+                        color: { value: "#4e79a7" },
                     },
                 },
                 {
@@ -51,8 +51,8 @@ export const barCharts: ChartTemplateDef[] = [
                     encoding: {
                         y: { axis: null },
                         x: { stack: null },
-                        color: { legend: null },
                         opacity: { value: 0.9 },
+                        color: { value: "#e15759" },
                     },
                 },
             ],
@@ -61,42 +61,100 @@ export const barCharts: ChartTemplateDef[] = [
                 axis: { grid: false },
             },
         },
-        channels: ["x", "y", "color"],
+        channels: ["y", "x", "x2"],
         buildEncodings: (spec, encodings) => {
-            // Inject each channel into both hconcat panels
-            for (const [ch, enc] of Object.entries(encodings)) {
-                for (const panel of spec.hconcat) {
-                    if (!panel.encoding) panel.encoding = {};
-                    panel.encoding[ch] = { ...(panel.encoding[ch] || {}), ...enc };
-                }
+            const { y, x, x2 } = encodings;
+            // y → both panels (shared category axis, always nominal)
+            if (y) {
+                const yEnc = { ...y };
+                if (yEnc.type === 'temporal') yEnc.type = 'nominal';
+                spec.hconcat[0].encoding.y = { ...spec.hconcat[0].encoding.y, ...yEnc };
+                spec.hconcat[1].encoding.y = { ...spec.hconcat[1].encoding.y, ...yEnc };
+            }
+            // x → left panel metric (reversed)
+            if (x) {
+                spec.hconcat[0].encoding.x = { ...spec.hconcat[0].encoding.x, ...x };
+            }
+            // x2 → right panel metric
+            if (x2) {
+                spec.hconcat[1].encoding.x = { ...spec.hconcat[1].encoding.x, ...x2 };
             }
         },
-        postProcessor: (vgSpec: any, table: any[]) => {
+        postProcessor: (vgSpec: any, table: any[], _config?: Record<string, any>, canvasSize?: { width: number; height: number }) => {
             try {
                 if (table) {
-                    const colorField = vgSpec.hconcat[0].encoding.color.field;
-                    const colorValues = [...new Set(table.map(r => r[colorField]))];
-                    vgSpec.hconcat[0].transform = [{ filter: `datum["${colorField}"] == "${colorValues[0]}"` }];
-                    vgSpec.hconcat[0].title = colorValues[0];
-                    vgSpec.hconcat[1].transform = [{ filter: `datum["${colorField}"] == "${colorValues[1]}"` }];
-                    vgSpec.hconcat[1].title = colorValues[1];
-                    const xField = vgSpec.hconcat[0].encoding.x.field;
-                    const xValues = [...new Set(
-                        table
-                            .filter(r => r[colorField] === colorValues[0] || r[colorField] === colorValues[1])
-                            .map(r => r[xField])
-                    )];
-                    const domain = [Math.min(...xValues, 0), Math.max(...xValues)];
-                    vgSpec.hconcat[0].encoding.x.scale.domain = domain;
-                    vgSpec.hconcat[1].encoding.x.scale = { domain };
+                    const leftField = vgSpec.hconcat[0].encoding.x?.field;
+                    const rightField = vgSpec.hconcat[1].encoding.x?.field;
+                    if (leftField) vgSpec.hconcat[0].title = leftField;
+                    if (rightField) vgSpec.hconcat[1].title = rightField;
+                    // Compute shared x domain across both metrics
+                    if (leftField && rightField) {
+                        const leftVals = table.map(r => r[leftField]).filter(v => typeof v === 'number');
+                        const rightVals = table.map(r => r[rightField]).filter(v => typeof v === 'number');
+                        const allVals = [...leftVals, ...rightVals];
+                        if (allVals.length > 0) {
+                            const domain = [Math.min(0, ...allVals), Math.max(...allVals)];
+                            vgSpec.hconcat[0].encoding.x.scale = { ...vgSpec.hconcat[0].encoding.x.scale, domain };
+                            vgSpec.hconcat[1].encoding.x.scale = { domain };
+                        }
+                        // Warn about negative values in pyramid metrics
+                        const negFields: string[] = [];
+                        if (leftVals.some(v => v < 0)) negFields.push(leftField);
+                        if (rightVals.some(v => v < 0)) negFields.push(rightField);
+                        if (negFields.length > 0) {
+                            if (!vgSpec._warnings) vgSpec._warnings = [];
+                            vgSpec._warnings.push({
+                                severity: 'warning',
+                                code: 'negative-values-pyramid',
+                                message: `Negative values detected in ${negFields.map(f => `'${f}'`).join(' and ')}. Pyramid charts work best with non-negative values.`,
+                                channel: 'x',
+                                field: negFields.join(', '),
+                            });
+                        }
+                    }
+
+                    // --- Elastic sizing ---
+                    // Pyramid is a 2-panel hconcat, so squeeze x (each panel = half width)
+                    // and stretch y based on discrete category cardinality.
+                    const baseWidth = canvasSize?.width ?? 400;
+                    const baseHeight = canvasSize?.height ?? 320;
+
+                    // Facet squeeze: 2 columns → each panel gets ~half the width
+                    // Apply facet elasticity (power 0.3, max 1.5× stretch)
+                    const facetCols = 2;
+                    const facetStretch = Math.min(1.5, Math.pow(facetCols, 0.3));
+                    const panelWidth = Math.round(Math.max(40, baseWidth * facetStretch / facetCols));
+
+                    // Y-axis elastic stretch for discrete categories
+                    const yField = vgSpec.hconcat[0].encoding.y?.field;
+                    let panelHeight = baseHeight;
+                    if (yField) {
+                        const yCardinality = new Set(table.map(r => r[yField])).size;
+                        const baseRefSize = 300;
+                        const sizeRatio = Math.max(baseWidth, baseHeight) / baseRefSize;
+                        const defaultStep = Math.round(20 * Math.max(1, sizeRatio));
+                        if (yCardinality > 0) {
+                            const pressure = (yCardinality * defaultStep) / baseHeight;
+                            if (pressure > 1) {
+                                const stretch = Math.min(2, Math.pow(pressure, 0.5));
+                                panelHeight = Math.round(baseHeight * stretch);
+                            }
+                        }
+                    }
+
+                    for (const panel of vgSpec.hconcat) {
+                        panel.width = panelWidth;
+                        panel.height = panelHeight;
+                    }
                 }
             } catch {
                 // ignore errors
             }
             return vgSpec;
         },
-    },
-    {
+};
+
+export const groupedBarChartDef: ChartTemplateDef = {
         chart: "Grouped Bar Chart",
         template: {
             mark: "bar",
@@ -124,8 +182,9 @@ export const barCharts: ChartTemplateDef[] = [
             applyDynamicMarkResizing(vgSpec, table, { x: 'size', y: 'size' });
             return vgSpec;
         },
-    },
-    {
+};
+
+export const stackedBarChartDef: ChartTemplateDef = {
         chart: "Stacked Bar Chart",
         template: {
             mark: "bar",
@@ -137,8 +196,9 @@ export const barCharts: ChartTemplateDef[] = [
             applyDynamicMarkResizing(vgSpec, table, { x: 'size', y: 'size' });
             return vgSpec;
         },
-    },
-    {
+};
+
+export const histogramDef: ChartTemplateDef = {
         chart: "Histogram",
         template: {
             mark: "bar",
@@ -160,8 +220,9 @@ export const barCharts: ChartTemplateDef[] = [
             }
             return vgSpec;
         },
-    },
-    {
+};
+
+export const heatmapDef: ChartTemplateDef = {
         chart: "Heatmap",
         template: {
             mark: "rect",
@@ -197,5 +258,4 @@ export const barCharts: ChartTemplateDef[] = [
             }
             return vgSpec;
         },
-    },
-];
+};

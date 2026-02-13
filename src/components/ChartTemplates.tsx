@@ -4,10 +4,10 @@
 /**
  * Chart Templates with UI icons.
  *
- * This module wraps the reusable agents-chart-lib template definitions
+ * This module wraps the reusable agents-chart template definitions
  * with React icon components for display in the Data Formulator UI.
  * The pure template logic (mark, encoding paths, post-processors) lives
- * in src/lib/agents-chart-lib/templates/.
+ * in src/lib/agents-chart/templates/.
  */
 
 import { ChartTemplate } from "./ComponentType";
@@ -15,14 +15,11 @@ import {
     chartTemplateDefs,
     getTemplateDef,
     getTemplateChannels,
-} from "../lib/agents-chart-lib";
+} from "../lib/agents-chart";
 import InsightsIcon from '@mui/icons-material/Insights';
-import PublicIcon from '@mui/icons-material/Public';
-import PieChartOutlineIcon from '@mui/icons-material/PieChartOutline';
 import React from "react";
 
 // Import all chart icons statically so they are included in the build
-import chartIconTable from '../assets/chart-icon-table-min.png';
 import chartIconScatter from '../assets/chart-icon-scatter-min.png';
 import chartIconLinearRegression from '../assets/chart-icon-linear-regression-min.png';
 import chartIconDotPlotHorizontal from '../assets/chart-icon-dot-plot-horizontal-min.png';
@@ -120,7 +117,7 @@ export const CHART_TEMPLATES: { [key: string]: ChartTemplate[] } = Object.fromEn
 export {
     channels,
     channelGroups,
-} from '../lib/agents-chart-lib';
+} from '../lib/agents-chart';
 
 export function getChartTemplate(chartType: string): ChartTemplate | undefined {
     return Object.values(CHART_TEMPLATES).flat().find(t => t.chart === chartType);

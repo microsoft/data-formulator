@@ -15,8 +15,7 @@ import { ChartTemplateDef, ChartPropertyDef } from '../types';
  * Uses a layered spec: bars + connector rules between steps.
  * Colors: warm beige for totals, muted green for increases, coral for decreases.
  */
-export const waterfallCharts: ChartTemplateDef[] = [
-    {
+export const waterfallChartDef: ChartTemplateDef = {
         chart: "Waterfall Chart",
         template: {
             mark: "bar",
@@ -147,5 +146,4 @@ export const waterfallCharts: ChartTemplateDef[] = [
 
             return vgSpec;
         },
-    },
-];
+};

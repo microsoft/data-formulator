@@ -24,7 +24,7 @@ import { Type } from '../data/types';
 import { assembleVegaChart } from '../app/utils';
 import { Channel, EncodingItem, FieldItem } from '../components/ComponentType';
 import { channels } from '../components/ChartTemplates';
-import { AssembleOptions } from '../lib/agents-chart-lib';
+import { AssembleOptions, ChartWarning } from '../lib/agents-chart';
 
 // ============================================================================
 // Synthetic Data Generators
@@ -3713,6 +3713,211 @@ function genRadarTests(): TestCase[] {
     return tests;
 }
 
+// ------ Pyramid Chart ------
+function genPyramidTests(): TestCase[] {
+    const tests: TestCase[] = [];
+    const rand = seededRandom(777);
+
+    // 1. Classic population pyramid — Age Group × Male / Female counts (small)
+    {
+        const ageGroups = ['0-9', '10-19', '20-29', '30-39', '40-49', '50-59', '60-69', '70-79', '80+'];
+        const data = ageGroups.map(ag => ({
+            'Age Group': ag,
+            Male: Math.round(500 + rand() * 4500),
+            Female: Math.round(500 + rand() * 4500),
+        }));
+        tests.push({
+            title: 'Population pyramid (9 age groups)',
+            description: 'Classic population pyramid — Age Group on y, Male on x, Female on x2',
+            tags: ['nominal', 'quantitative', 'small'],
+            chartType: 'Pyramid Chart',
+            data,
+            fields: [makeField('Age Group'), makeField('Male'), makeField('Female')],
+            metadata: {
+                'Age Group': { type: Type.String, semanticType: 'Category', levels: ageGroups },
+                Male: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                Female: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+            },
+            encodingMap: { y: makeEncodingItem('Age Group'), x: makeEncodingItem('Male'), x2: makeEncodingItem('Female') },
+        });
+    }
+
+    // 2. Workforce pyramid — Grade × Full-Time / Part-Time headcount
+    {
+        const grades = ['Junior', 'Mid-level', 'Senior', 'Lead', 'Manager', 'Director'];
+        const data = grades.map(g => ({
+            Grade: g,
+            'Full-Time': Math.round(20 + rand() * 200),
+            'Part-Time': Math.round(10 + rand() * 80),
+        }));
+        tests.push({
+            title: 'Workforce pyramid (6 grades)',
+            description: 'Grade levels on y, Full-Time on x, Part-Time on x2',
+            tags: ['nominal', 'quantitative', 'small'],
+            chartType: 'Pyramid Chart',
+            data,
+            fields: [makeField('Grade'), makeField('Full-Time'), makeField('Part-Time')],
+            metadata: {
+                Grade: { type: Type.String, semanticType: 'Category', levels: grades },
+                'Full-Time': { type: Type.Number, semanticType: 'Count', levels: [] },
+                'Part-Time': { type: Type.Number, semanticType: 'Count', levels: [] },
+            },
+            encodingMap: { y: makeEncodingItem('Grade'), x: makeEncodingItem('Full-Time'), x2: makeEncodingItem('Part-Time') },
+        });
+    }
+
+    // 3. Survey responses — Satisfaction Level × Agree / Disagree
+    {
+        const levels = ['Very Low', 'Low', 'Medium', 'High', 'Very High'];
+        const data = levels.map(lv => ({
+            'Satisfaction Level': lv,
+            Agree: Math.round(50 + rand() * 300),
+            Disagree: Math.round(30 + rand() * 250),
+        }));
+        tests.push({
+            title: 'Survey pyramid (5 levels)',
+            description: 'Satisfaction levels on y, Agree on x, Disagree on x2',
+            tags: ['ordinal', 'quantitative', 'small'],
+            chartType: 'Pyramid Chart',
+            data,
+            fields: [makeField('Satisfaction Level'), makeField('Agree'), makeField('Disagree')],
+            metadata: {
+                'Satisfaction Level': { type: Type.String, semanticType: 'Category', levels: levels },
+                Agree: { type: Type.Number, semanticType: 'Count', levels: [] },
+                Disagree: { type: Type.Number, semanticType: 'Count', levels: [] },
+            },
+            encodingMap: { y: makeEncodingItem('Satisfaction Level'), x: makeEncodingItem('Agree'), x2: makeEncodingItem('Disagree') },
+        });
+    }
+
+    // 4. Income bracket pyramid — many bands (medium)
+    {
+        const brackets = ['<$20K', '$20-30K', '$30-40K', '$40-50K', '$50-60K', '$60-70K',
+            '$70-80K', '$80-90K', '$90-100K', '$100-120K', '$120-150K', '$150K+'];
+        const data = brackets.map(b => ({
+            'Income Bracket': b,
+            Urban: Math.round(100 + rand() * 3000),
+            Rural: Math.round(80 + rand() * 2000),
+        }));
+        tests.push({
+            title: 'Income pyramid (12 brackets)',
+            description: '12 income bands — tests y-axis label handling with many discrete values',
+            tags: ['ordinal', 'quantitative', 'medium'],
+            chartType: 'Pyramid Chart',
+            data,
+            fields: [makeField('Income Bracket'), makeField('Urban'), makeField('Rural')],
+            metadata: {
+                'Income Bracket': { type: Type.String, semanticType: 'Category', levels: brackets },
+                Urban: { type: Type.Number, semanticType: 'Count', levels: [] },
+                Rural: { type: Type.Number, semanticType: 'Count', levels: [] },
+            },
+            encodingMap: { y: makeEncodingItem('Income Bracket'), x: makeEncodingItem('Urban'), x2: makeEncodingItem('Rural') },
+        });
+    }
+
+    // 5. Education pyramid — Degree Level × Admitted / Rejected
+    {
+        const degrees = ['High School', 'Associate', 'Bachelor', 'Master', 'Doctorate'];
+        const data = degrees.map(d => ({
+            'Degree Level': d,
+            Admitted: Math.round(200 + rand() * 5000),
+            Rejected: Math.round(100 + rand() * 3000),
+        }));
+        tests.push({
+            title: 'Education pyramid (5 degrees)',
+            description: 'Degree levels — Admitted vs Rejected applicants',
+            tags: ['ordinal', 'quantitative', 'small'],
+            chartType: 'Pyramid Chart',
+            data,
+            fields: [makeField('Degree Level'), makeField('Admitted'), makeField('Rejected')],
+            metadata: {
+                'Degree Level': { type: Type.String, semanticType: 'Category', levels: degrees },
+                Admitted: { type: Type.Number, semanticType: 'Count', levels: [] },
+                Rejected: { type: Type.Number, semanticType: 'Count', levels: [] },
+            },
+            encodingMap: { y: makeEncodingItem('Degree Level'), x: makeEncodingItem('Admitted'), x2: makeEncodingItem('Rejected') },
+        });
+    }
+
+    // 6. Country comparison — Country × Import / Export value
+    {
+        const countries = genCategories('Country', 10);
+        const data = countries.map(c => ({
+            Country: c,
+            Import: Math.round(1000 + rand() * 50000),
+            Export: Math.round(1000 + rand() * 50000),
+        }));
+        tests.push({
+            title: 'Trade pyramid (10 countries)',
+            description: '10 countries — Import vs Export trade values',
+            tags: ['nominal', 'quantitative', 'medium'],
+            chartType: 'Pyramid Chart',
+            data,
+            fields: [makeField('Country'), makeField('Import'), makeField('Export')],
+            metadata: {
+                Country: { type: Type.String, semanticType: 'Country', levels: countries },
+                Import: { type: Type.Number, semanticType: 'Amount', levels: [] },
+                Export: { type: Type.Number, semanticType: 'Amount', levels: [] },
+            },
+            encodingMap: { y: makeEncodingItem('Country'), x: makeEncodingItem('Import'), x2: makeEncodingItem('Export') },
+        });
+    }
+
+    // 7. Large cardinality — 20 age bands (overstretch test)
+    {
+        const ageBands = Array.from({ length: 20 }, (_, i) => {
+            const lo = i * 5;
+            const hi = lo + 4;
+            return `${lo}-${hi}`;
+        });
+        const data = ageBands.map(ag => ({
+            'Age Band': ag,
+            Male: Math.round(200 + rand() * 8000),
+            Female: Math.round(200 + rand() * 8000),
+        }));
+        tests.push({
+            title: 'Overstretch pyramid (20 age bands)',
+            description: '20 fine-grained age bands — tests y-axis elastic overstretch',
+            tags: ['nominal', 'quantitative', 'large', 'overstretch'],
+            chartType: 'Pyramid Chart',
+            data,
+            fields: [makeField('Age Band'), makeField('Male'), makeField('Female')],
+            metadata: {
+                'Age Band': { type: Type.String, semanticType: 'Category', levels: ageBands },
+                Male: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                Female: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+            },
+            encodingMap: { y: makeEncodingItem('Age Band'), x: makeEncodingItem('Male'), x2: makeEncodingItem('Female') },
+        });
+    }
+
+    // 8. Negative values — should trigger warning
+    {
+        const ageGroups = ['0-14', '15-29', '30-44', '45-59', '60-74', '75+'];
+        const data = ageGroups.map(ag => ({
+            'Age Group': ag,
+            Male: Math.round(-500 + rand() * 4000),   // some will be negative
+            Female: Math.round(-300 + rand() * 3500),
+        }));
+        tests.push({
+            title: 'Negative values warning (6 groups)',
+            description: 'Some values are negative — should trigger negative-value warnings',
+            tags: ['nominal', 'quantitative', 'small', 'warning', 'negative'],
+            chartType: 'Pyramid Chart',
+            data,
+            fields: [makeField('Age Group'), makeField('Male'), makeField('Female')],
+            metadata: {
+                'Age Group': { type: Type.String, semanticType: 'Category', levels: ageGroups },
+                Male: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                Female: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+            },
+            encodingMap: { y: makeEncodingItem('Age Group'), x: makeEncodingItem('Male'), x2: makeEncodingItem('Female') },
+        });
+    }
+
+    return tests;
+}
+
 // ============================================================================
 // All test generators mapped by chart group
 // ============================================================================
@@ -3738,6 +3943,7 @@ const TEST_GENERATORS: Record<string, () => TestCase[]> = {
     'Waterfall Chart': genWaterfallTests,
     'Strip Plot': genStripPlotTests,
     'Radar Chart': genRadarTests,
+    'Pyramid Chart': genPyramidTests,
     'Custom Charts': genCustomTests,
     'Facet: Columns': genFacetColumnTests,
     'Facet: Rows': genFacetRowTests,
@@ -3754,6 +3960,8 @@ const VegaChart: React.FC<{ testCase: TestCase }> = React.memo(({ testCase }) =>
     const containerRef = useRef<HTMLDivElement>(null);
     const [error, setError] = useState<string | null>(null);
     const [specJson, setSpecJson] = useState<string>('');
+    const [warnings, setWarnings] = useState<ChartWarning[]>([]);
+    const [specOptions, setSpecOptions] = useState<string>('');
 
     useEffect(() => {
         if (!containerRef.current) return;
@@ -3784,11 +3992,42 @@ const VegaChart: React.FC<{ testCase: TestCase }> = React.memo(({ testCase }) =>
                 return;
             }
 
+            // Extract warnings
+            const specAny = vlSpec as any;
+            setWarnings(specAny._warnings || []);
+
+            // Build compact spec-options JSON (no data, only non-default settings)
+            const opts: Record<string, any> = {};
+            // Encodings used
+            const enc: Record<string, any> = {};
+            for (const [ch, ei] of Object.entries(testCase.encodingMap)) {
+                if (ei && ei.fieldID) {
+                    const entry: Record<string, any> = { field: ei.fieldID };
+                    if (ei.dtype) entry.type = ei.dtype;
+                    if (ei.aggregate) entry.aggregate = ei.aggregate;
+                    if (ei.stack) entry.stack = ei.stack;
+                    if (ei.sortOrder) entry.sortOrder = ei.sortOrder;
+                    if (ei.sortBy) entry.sortBy = ei.sortBy;
+                    if (ei.scheme) entry.scheme = ei.scheme;
+                    enc[ch] = entry;
+                }
+            }
+            opts.chartType = testCase.chartType;
+            opts.encodings = enc;
+            if (testCase.chartProperties && Object.keys(testCase.chartProperties).length > 0) {
+                opts.chartProperties = testCase.chartProperties;
+            }
+            if (testCase.assembleOptions && Object.keys(testCase.assembleOptions).length > 0) {
+                opts.assembleOptions = testCase.assembleOptions;
+            }
+            setSpecOptions(JSON.stringify(opts, null, 2));
+
             setSpecJson(JSON.stringify(vlSpec, null, 2));
 
             const spec = {
                 ...vlSpec as any,
             } as any;
+            delete spec._warnings;
 
             // Don't set explicit width/height — let config.view.step handle
             // discrete axes (step × count) and config.view.continuousWidth/Height
@@ -3832,8 +4071,23 @@ const VegaChart: React.FC<{ testCase: TestCase }> = React.memo(({ testCase }) =>
             ) : (
                 <Box ref={containerRef} sx={{ minHeight: 200 }} />
             )}
-            {specJson && (
+            {warnings.length > 0 && (
+                <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block', fontSize: 10 }}>
+                    Warning: {warnings.map(w => w.message).join(' | ')}
+                </Typography>
+            )}
+            {specOptions && (
                 <details style={{ marginTop: 8 }}>
+                    <summary style={{ cursor: 'pointer', fontSize: 11, color: '#888' }}>
+                        Spec
+                    </summary>
+                    <pre style={{ fontSize: 10, maxHeight: 200, overflow: 'auto', background: '#f0f4ff', padding: 8, borderRadius: 4 }}>
+                        {specOptions}
+                    </pre>
+                </details>
+            )}
+            {/* {specJson && (
+                <details style={{ marginTop: 4 }}>
                     <summary style={{ cursor: 'pointer', fontSize: 11, color: '#888' }}>
                         Vega-Lite Spec
                     </summary>
@@ -3841,7 +4095,7 @@ const VegaChart: React.FC<{ testCase: TestCase }> = React.memo(({ testCase }) =>
                         {specJson}
                     </pre>
                 </details>
-            )}
+            )} */}
         </Paper>
     );
 });

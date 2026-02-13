@@ -274,8 +274,7 @@ function buildRadarLayers(
 // ---------------------------------------------------------------------------
 // Template definition
 // ---------------------------------------------------------------------------
-export const radarCharts: ChartTemplateDef[] = [
-    {
+export const radarChartDef: ChartTemplateDef = {
         chart: "Radar Chart",
         template: {
             description: "Radar / Spider chart",
@@ -400,5 +399,4 @@ export const radarCharts: ChartTemplateDef[] = [
             Object.assign(vgSpec, finalSpec);
             return vgSpec;
         },
-    },
-];
+};

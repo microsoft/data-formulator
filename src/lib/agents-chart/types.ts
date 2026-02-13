@@ -86,6 +86,23 @@ export interface ChartTemplateDef {
 }
 
 // ---------------------------------------------------------------------------
+// Warnings
+// ---------------------------------------------------------------------------
+
+/** A warning produced during chart assembly */
+export interface ChartWarning {
+    /** Warning severity */
+    severity: 'info' | 'warning' | 'error';
+    /** Short machine-readable warning code */
+    code: string;
+    /** Human-readable description */
+    message: string;
+    /** Optional: which channel(s) or field(s) triggered the warning */
+    channel?: string;
+    field?: string;
+}
+
+// ---------------------------------------------------------------------------
 // Assembly Options
 // ---------------------------------------------------------------------------
 

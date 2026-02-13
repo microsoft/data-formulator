@@ -4,8 +4,7 @@
 import { ChartTemplateDef } from '../types';
 import { defaultBuildEncodings } from './utils';
 
-export const customCharts: ChartTemplateDef[] = [
-    {
+export const customPointDef: ChartTemplateDef = {
         chart: "Custom Point",
         template: {
             mark: "point",
@@ -13,8 +12,9 @@ export const customCharts: ChartTemplateDef[] = [
         },
         channels: ["x", "y", "color", "opacity", "size", "shape", "column", "row"],
         buildEncodings: defaultBuildEncodings,
-    },
-    {
+};
+
+export const customLineDef: ChartTemplateDef = {
         chart: "Custom Line",
         template: {
             mark: "line",
@@ -22,8 +22,9 @@ export const customCharts: ChartTemplateDef[] = [
         },
         channels: ["x", "y", "color", "opacity", "detail", "column", "row"],
         buildEncodings: defaultBuildEncodings,
-    },
-    {
+};
+
+export const customBarDef: ChartTemplateDef = {
         chart: "Custom Bar",
         template: {
             mark: "bar",
@@ -31,8 +32,9 @@ export const customCharts: ChartTemplateDef[] = [
         },
         channels: ["x", "y", "color", "opacity", "size", "shape", "column", "row"],
         buildEncodings: defaultBuildEncodings,
-    },
-    {
+};
+
+export const customRectDef: ChartTemplateDef = {
         chart: "Custom Rect",
         template: {
             mark: "rect",
@@ -40,8 +42,9 @@ export const customCharts: ChartTemplateDef[] = [
         },
         channels: ["x", "y", "x2", "y2", "color", "opacity", "column", "row"],
         buildEncodings: defaultBuildEncodings,
-    },
-    {
+};
+
+export const customAreaDef: ChartTemplateDef = {
         chart: "Custom Area",
         template: {
             mark: "area",
@@ -49,5 +52,4 @@ export const customCharts: ChartTemplateDef[] = [
         },
         channels: ["x", "y", "x2", "y2", "color", "column", "row"],
         buildEncodings: defaultBuildEncodings,
-    },
-];
+};

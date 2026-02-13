@@ -2,7 +2,7 @@
 // Licensed under the MIT License.
 
 /**
- * @module agents-chart-lib
+ * @module agents-chart
  *
  * Reusable chart assembly library.
  *
@@ -11,7 +11,7 @@
  *
  * Usage:
  * ```ts
- * import { assembleChart } from './lib/agents-chart-lib';
+ * import { assembleChart } from './lib/agents-chart';
  *
  * const spec = assembleChart(
  *   'Scatter Plot',
@@ -33,6 +33,7 @@ export {
     type ChartEncoding,
     type AssembleOptions,
     type ChartTemplateDef,
+    type ChartWarning,
 } from './types';
 
 // Template registry

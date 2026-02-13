@@ -3,8 +3,7 @@
 
 import { ChartTemplateDef } from '../types';
 
-export const candlestickCharts: ChartTemplateDef[] = [
-    {
+export const candlestickChartDef: ChartTemplateDef = {
         chart: "Candlestick Chart",
         template: {
             encoding: {},
@@ -85,5 +84,4 @@ export const candlestickCharts: ChartTemplateDef[] = [
 
             return vgSpec;
         },
-    },
-];
+};

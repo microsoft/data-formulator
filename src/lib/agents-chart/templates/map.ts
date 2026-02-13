@@ -37,8 +37,7 @@ const projectionCenterPresets: { label: string; center: [number, number] }[] = [
     { label: "Korea", center: [128, 36] },
 ];
 
-export const mapCharts: ChartTemplateDef[] = [
-    {
+export const usMapDef: ChartTemplateDef = {
         chart: "US Map",
         template: {
             width: 500,
@@ -68,8 +67,9 @@ export const mapCharts: ChartTemplateDef[] = [
         },
         properties: [] as ChartPropertyDef[],
         postProcessor: (vgSpec: any) => vgSpec,
-    },
-    {
+};
+
+export const worldMapDef: ChartTemplateDef = {
         chart: "World Map",
         template: {
             width: 600,
@@ -142,5 +142,4 @@ export const mapCharts: ChartTemplateDef[] = [
             applyProjection(vgSpec);
             return vgSpec;
         },
-    },
-];
+};

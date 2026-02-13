@@ -4,8 +4,7 @@
 import { ChartTemplateDef, ChartPropertyDef } from '../types';
 import { defaultBuildEncodings } from './utils';
 
-export const pieCharts: ChartTemplateDef[] = [
-    {
+export const pieChartDef: ChartTemplateDef = {
         chart: "Pie Chart",
         template: {
             mark: "arc",
@@ -28,5 +27,4 @@ export const pieCharts: ChartTemplateDef[] = [
             }
             return vgSpec;
         },
-    },
-];
+};

@@ -3,8 +3,7 @@
 
 import { ChartTemplateDef, ChartPropertyDef } from '../types';
 
-export const densityCharts: ChartTemplateDef[] = [
-    {
+export const densityPlotDef: ChartTemplateDef = {
         chart: "Density Plot",
         template: {
             mark: "area",
@@ -40,5 +39,4 @@ export const densityCharts: ChartTemplateDef[] = [
             }
             return vgSpec;
         },
-    },
-];
+};

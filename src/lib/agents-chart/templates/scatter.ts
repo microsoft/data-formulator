@@ -4,8 +4,7 @@
 import { ChartTemplateDef, ChartPropertyDef } from '../types';
 import { ensureNominalAxis, applyPointSizeScaling, defaultBuildEncodings } from './utils';
 
-export const scatterPlots: ChartTemplateDef[] = [
-    {
+export const scatterPlotDef: ChartTemplateDef = {
         chart: "Scatter Plot",
         template: {
             mark: "circle",
@@ -29,8 +28,9 @@ export const scatterPlots: ChartTemplateDef[] = [
             }
             return vgSpec;
         },
-    },
-    {
+};
+
+export const linearRegressionDef: ChartTemplateDef = {
         chart: "Linear Regression",
         template: {
             layer: [
@@ -67,8 +67,9 @@ export const scatterPlots: ChartTemplateDef[] = [
             if (column) spec.encoding.column = column;
             if (row) spec.encoding.row = row;
         },
-    },
-    {
+};
+
+export const rangedDotPlotDef: ChartTemplateDef = {
         chart: "Ranged Dot Plot",
         template: {
             encoding: {},
@@ -98,8 +99,9 @@ export const scatterPlots: ChartTemplateDef[] = [
             }
             return vgSpec;
         },
-    },
-    {
+};
+
+export const boxplotDef: ChartTemplateDef = {
         chart: "Boxplot",
         template: {
             mark: "boxplot",
@@ -115,5 +117,4 @@ export const scatterPlots: ChartTemplateDef[] = [
             }
             return vgSpec;
         },
-    },
-];
+};

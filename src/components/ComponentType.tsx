@@ -2,7 +2,7 @@
 // Licensed under the MIT License.
 
 import { Type } from '../data/types';
-import { channels, type ChartTemplateDef } from '../lib/agents-chart-lib';
+import { channels, type ChartTemplateDef } from '../lib/agents-chart';
 import { inferTypeFromValueArray } from '../data/utils';
 
 export type FieldSource = "custom" | "original";

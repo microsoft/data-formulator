@@ -66,7 +66,7 @@ function resolveEncodingType(
     const visCategory: VisCategory = mappedCategory ?? inferVisCategory(fieldValues);
 
     // Step 2: Map to VL type with channel/chart-specific overrides
-    const isBarChart = ['Bar Chart', 'Stacked Bar Chart', 'Grouped Bar Chart', 'Heatmap'].includes(chartType);
+    const isBarChart = ['Bar Chart', 'Stacked Bar Chart', 'Grouped Bar Chart', 'Heatmap', 'Pyramid Chart'].includes(chartType);
 
     switch (visCategory) {
         case 'temporal':
@@ -155,6 +155,9 @@ export function assembleChart(
     }
 
     const vgObj = structuredClone(chartTemplate.template);
+
+    // --- Warnings collector ---
+    const warnings: import('./types').ChartWarning[] = [];
 
     // --- Resolve encodings ---
     const resolvedEncodings: Record<string, any> = {};
@@ -372,6 +375,12 @@ export function assembleChart(
         if (processed) Object.assign(vgObj, processed === vgObj ? {} : {}, processed !== vgObj ? processed : {});
     }
 
+    // Merge any warnings emitted by the postProcessor
+    if (vgObj._warnings && Array.isArray(vgObj._warnings)) {
+        warnings.push(...vgObj._warnings);
+        delete vgObj._warnings;
+    }
+
     // --- Temporal data conversion ---
     let values = structuredClone(data);
     if (values.length > 0) {
@@ -539,6 +548,13 @@ export function assembleChart(
                 }
 
                 const omittedCount = uniqueValues.length - valuesToKeep.length;
+                warnings.push({
+                    severity: 'warning',
+                    code: 'overflow',
+                    message: `${omittedCount} of ${uniqueValues.length} values in '${fieldName}' were omitted (showing top ${valuesToKeep.length}).`,
+                    channel,
+                    field: fieldName,
+                });
                 const placeholder = `...${omittedCount} items omitted`;
                 if (channel !== 'color') {
                     values = values.filter((row: any) => valuesToKeep.includes(row[fieldName]));
@@ -1026,5 +1042,10 @@ export function assembleChart(
         }
     }
 
-    return { ...vgObj, data: { values } };
+    // --- Attach warnings ---
+    const result: any = { ...vgObj, data: { values } };
+    if (warnings.length > 0) {
+        result._warnings = warnings;
+    }
+    return result;
 }

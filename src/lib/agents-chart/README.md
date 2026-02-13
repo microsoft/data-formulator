@@ -1,4 +1,4 @@
-# agents-chart-lib
+# agents-chart
 
 Pure-TypeScript chart assembly library. Given data, semantic types, encoding
 definitions, and a canvas size, produces a Vega-Lite specification.
@@ -7,7 +7,7 @@ No React / Redux / UI framework dependencies.
 ## Quick start
 
 ```ts
-import { assembleChart } from './lib/agents-chart-lib';
+import { assembleChart } from './lib/agents-chart';
 
 const spec = assembleChart(
   'Scatter Plot',
@@ -150,7 +150,7 @@ type ChartPropertyDef = { key: string; label: string } & (
 The full semantic type lattice is in `semantic-types.ts` — import directly:
 
 ```ts
-import { isMeasureType, getVisCategory } from './lib/agents-chart-lib/semantic-types';
+import { isMeasureType, getVisCategory } from './lib/agents-chart/semantic-types';
 ```
 
 ~70 types organized into groups:
@@ -168,7 +168,7 @@ import { isMeasureType, getVisCategory } from './lib/agents-chart-lib/semantic-t
 Post-processor utilities in `helpers.ts` — import directly:
 
 ```ts
-import { applyPointSizeScaling } from './lib/agents-chart-lib/helpers';
+import { applyPointSizeScaling } from './lib/agents-chart/helpers';
 ```
 
 ### Channels
