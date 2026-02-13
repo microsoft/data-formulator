@@ -904,35 +904,6 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                         concepts
                     </Button>
                 )}
-                {!chartUnavailable && focusedChart.chartType !== "Table" && (
-                    <Button 
-                        key="insight-btn"
-                        onClick={() => {
-                            if (insightViewOpen) {
-                                setInsightViewOpen(false);
-                            } else {
-                                setInsightViewOpen(true);
-                                setCodeViewOpen(false);
-                                setConceptExplanationsOpen(false);
-                                // Auto-fetch if no fresh insight and not already loading
-                                if (!insightFresh && !insightLoading) {
-                                    dispatch(fetchChartInsight({ chartId: focusedChart.id, tableId: table.id }) as any);
-                                }
-                            }
-                        }}
-                        sx={{
-                            backgroundColor: insightViewOpen ? 'rgba(25, 118, 210, 0.2)' : 'transparent',
-                            color: insightViewOpen ? 'primary.main' : 'text.secondary',
-                            fontWeight: insightViewOpen ? 600 : 500,
-                            '&:hover': {
-                                backgroundColor: insightViewOpen ? 'rgba(25, 118, 210, 0.25)' : 'rgba(25, 118, 210, 0.08)',
-                            }
-                        }}
-                    >
-                        <InsightIcon sx={{ fontSize: '14px', mr: 0.5 }} />
-                        {insightLoading ? <CircularProgress size={10} sx={{ ml: 0.5 }} /> : 'insight'}
-                    </Button>
-                )}
             </ButtonGroup>
         </Box>,
         <ChatDialog key="chat-dialog-button" open={chatDialogOpen} 
@@ -940,6 +911,51 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                     code={transformCode}
                     dialog={resultTable?.derive?.dialog || table.derive?.dialog as any[]} />
     ] : [];
+
+    let insightButton = !chartUnavailable && focusedChart.chartType !== "Table" ? (
+        <Box key="insight-toggle-group" sx={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            mx: 0.5,
+            backgroundColor: 'rgba(0, 0, 0, 0.02)',
+            borderRadius: 1,
+            padding: '2px',
+            border: `1px solid ${borderColor.component}`
+        }}>
+            <Button 
+                key="insight-btn"
+                size="small"
+                onClick={() => {
+                    if (insightViewOpen) {
+                        setInsightViewOpen(false);
+                    } else {
+                        setInsightViewOpen(true);
+                        setCodeViewOpen(false);
+                        setConceptExplanationsOpen(false);
+                        if (!insightFresh && !insightLoading) {
+                            dispatch(fetchChartInsight({ chartId: focusedChart.id, tableId: table.id }) as any);
+                        }
+                    }
+                }}
+                sx={{
+                    textTransform: 'none',
+                    fontSize: '0.7rem',
+                    fontWeight: insightViewOpen ? 600 : 500,
+                    minWidth: 'auto',
+                    padding: '2px 6px',
+                    borderRadius: '3px',
+                    backgroundColor: insightViewOpen ? 'rgba(25, 118, 210, 0.2)' : 'transparent',
+                    color: insightViewOpen ? 'primary.main' : 'text.secondary',
+                    '&:hover': {
+                        backgroundColor: insightViewOpen ? 'rgba(25, 118, 210, 0.25)' : 'rgba(25, 118, 210, 0.08)',
+                    }
+                }}
+            >
+                <InsightIcon sx={{ fontSize: '14px', mr: 0.5 }} />
+                {insightLoading ? <CircularProgress size={10} sx={{ ml: 0.5 }} /> : 'insight'}
+            </Button>
+        </Box>
+    ) : null;
     
     let vegaEditorButton = (
         <Tooltip key="vega-editor-tooltip" title="Open in Vega Editor">
@@ -955,6 +971,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
 
     let chartActionButtons = [
         ...derivedTableItems,
+        insightButton,
         saveButton,
         vegaEditorButton,
         duplicateButton,

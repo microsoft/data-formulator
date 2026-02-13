@@ -3635,6 +3635,81 @@ function genRadarTests(): TestCase[] {
         });
     }
 
+    // 5. Long labels — test that labels don't overlap the chart
+    {
+        const data = [
+            { Category: 'Customer Satisfaction Score', Assessment: 'Product A', Score: 82 },
+            { Category: 'Annual Revenue Growth Rate', Assessment: 'Product A', Score: 91 },
+            { Category: 'Employee Retention', Assessment: 'Product A', Score: 74 },
+            { Category: 'Market Share Percentage', Assessment: 'Product A', Score: 68 },
+            { Category: 'Net Promoter Score', Assessment: 'Product A', Score: 88 },
+            { Category: 'Customer Satisfaction Score', Assessment: 'Product B', Score: 70 },
+            { Category: 'Annual Revenue Growth Rate', Assessment: 'Product B', Score: 65 },
+            { Category: 'Employee Retention', Assessment: 'Product B', Score: 85 },
+            { Category: 'Market Share Percentage', Assessment: 'Product B', Score: 78 },
+            { Category: 'Net Promoter Score', Assessment: 'Product B', Score: 60 },
+        ];
+        tests.push({
+            title: 'Long Labels (5 axes)',
+            description: 'Labels with long text should not overlap the radar',
+            tags: ['radar', 'labels'],
+            chartType: 'Radar Chart',
+            data,
+            fields: [makeField('Category'), makeField('Assessment'), makeField('Score')],
+            metadata: buildMetadata(data),
+            encodingMap: { x: makeEncodingItem('Category'), y: makeEncodingItem('Score'), color: makeEncodingItem('Assessment') },
+        });
+    }
+
+    // 6. Many axes with long labels (8)
+    {
+        const metrics = [
+            'Overall User Experience', 'First Contentful Paint',
+            'Time to Interactive', 'Cumulative Layout Shift',
+            'Server Response Time', 'Error Rate per Minute',
+            'Database Query Latency', 'API Throughput',
+        ];
+        const data = metrics.flatMap(m => [
+            { App: 'Frontend', KPI: m, Rating: Math.round(50 + Math.random() * 50) },
+            { App: 'Backend', KPI: m, Rating: Math.round(40 + Math.random() * 60) },
+        ]);
+        tests.push({
+            title: 'Many Axes + Long Labels (8 axes)',
+            description: '8 axes with verbose labels, two groups',
+            tags: ['radar', 'labels', 'many-axes'],
+            chartType: 'Radar Chart',
+            data,
+            fields: [makeField('App'), makeField('KPI'), makeField('Rating')],
+            metadata: buildMetadata(data),
+            encodingMap: { x: makeEncodingItem('KPI'), y: makeEncodingItem('Rating'), color: makeEncodingItem('App') },
+        });
+    }
+
+    // 7. Many many metrics (12 axes)
+    {
+        const metrics = [
+            'Revenue', 'Profit Margin', 'Customer Retention',
+            'Brand Awareness', 'Market Penetration', 'Product Quality',
+            'Employee Engagement', 'Innovation Index', 'Supply Chain Efficiency',
+            'Digital Transformation', 'Sustainability Rating', 'Compliance Score',
+        ];
+        const data = metrics.flatMap(m => [
+            { Division: 'Americas', Factor: m, Score: Math.round(30 + Math.random() * 70) },
+            { Division: 'EMEA', Factor: m, Score: Math.round(30 + Math.random() * 70) },
+            { Division: 'APAC', Factor: m, Score: Math.round(30 + Math.random() * 70) },
+        ]);
+        tests.push({
+            title: 'Many Metrics (12 axes)',
+            description: '12 axes with 3 groups — tests label crowding',
+            tags: ['radar', 'labels', 'crowded'],
+            chartType: 'Radar Chart',
+            data,
+            fields: [makeField('Division'), makeField('Factor'), makeField('Score')],
+            metadata: buildMetadata(data),
+            encodingMap: { x: makeEncodingItem('Factor'), y: makeEncodingItem('Score'), color: makeEncodingItem('Division') },
+        });
+    }
+
     return tests;
 }
 

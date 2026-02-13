@@ -1061,7 +1061,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                     const configProps = template?.properties;
                     if (!configProps || configProps.length === 0) return null;
                     return (
-                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
                             {configProps.map((propDef) => {
                                 // App-level visibility: hide certain properties unless relevant channels are assigned
                                 if (propDef.key === 'independentYAxis') {
@@ -1075,11 +1075,11 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                                         <Box key={`config-${propDef.key}`} sx={{
                                             display: 'flex', alignItems: 'center', 
                                             borderRadius: '12px',
-                                            minHeight: '22px',
+                                            minHeight: '18px',
                                             overflow: 'hidden', padding: '0px 10px 0px 0px',
                                         }}>
                                             <Typography variant="caption" sx={{
-                                                padding: '0px 8px', color: 'text.secondary', fontSize: 10,
+                                                padding: '0px 6px', color: 'text.secondary', fontSize: 10,
                                                 whiteSpace: 'nowrap', fontWeight: 500, minWidth: '40px', userSelect: 'none',
                                             }}>
                                                 {propDef.label}
@@ -1095,8 +1095,8 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                                                 }}
                                                 valueLabelDisplay="auto"
                                                 sx={{
-                                                    flex: 1, height: 4, mx: 0.5,
-                                                    '& .MuiSlider-thumb': { width: 12, height: 12 },
+                                                    flex: 1, height: 3, mx: 0.5,
+                                                    '& .MuiSlider-thumb': { width: 10, height: 10 },
                                                     '& .MuiSlider-valueLabel': { fontSize: 10, padding: '2px 4px', lineHeight: 1.2 },
                                                 }}
                                             />
@@ -1112,7 +1112,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                                         <Box key={`config-${propDef.key}`} sx={{
                                             display: 'flex', alignItems: 'center',
                                             borderRadius: '12px',
-                                            minHeight: '22px',
+                                            minHeight: '18px',
                                             overflow: 'hidden', padding: '0px 8px',
                                             cursor: 'pointer',
                                             '&:hover': { backgroundColor: 'rgba(0,0,0,0.04)' },

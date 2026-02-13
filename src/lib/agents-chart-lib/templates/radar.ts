@@ -137,13 +137,45 @@ function buildRadarLayers(
         }
     }
 
-    // --- Axis labels ---
+    // --- Axis labels with angle-aware positioning ---
     const labelData = axes.map((axis, i) => {
-        const ang = (i * angleStep * Math.PI) / 180;
-        const r = 1.12;
+        const angDeg = i * angleStep;
+        const ang = (angDeg * Math.PI) / 180;
+        const r = 1.15;
         const mx = axisMax[axis];
         const maxStr = mx % 1 === 0 ? String(mx) : mx.toFixed(1);
-        return { __label: `${axis} (${maxStr})`, __x: r * Math.sin(ang), __y: -r * Math.cos(ang) };
+
+        // Determine text alignment based on angular position
+        // Right half → left-align, left half → right-align, top/bottom → center
+        const sinA = Math.sin(ang);
+        const cosA = -Math.cos(ang);
+        let align: string;
+        let baseline: string;
+        let dx = 0;
+        let dy = 0;
+
+        if (Math.abs(sinA) < 0.15) {
+            // Near top or bottom
+            align = 'center';
+            baseline = cosA < 0 ? 'bottom' : 'top';
+            dy = cosA < 0 ? -4 : 4;
+        } else if (sinA > 0) {
+            // Right half
+            align = 'left';
+            baseline = Math.abs(cosA) < 0.3 ? 'middle' : (cosA < 0 ? 'bottom' : 'top');
+            dx = 4;
+        } else {
+            // Left half
+            align = 'right';
+            baseline = Math.abs(cosA) < 0.3 ? 'middle' : (cosA < 0 ? 'bottom' : 'top');
+            dx = -4;
+        }
+
+        return {
+            __label: [axis, `(${maxStr})`],
+            __x: r * Math.sin(ang), __y: -r * Math.cos(ang),
+            __align: align, __baseline: baseline, __dx: dx, __dy: dy,
+        };
     });
 
     const { filled, fillOpacity, strokeWidth, domainPad } = opts;
@@ -171,16 +203,24 @@ function buildRadarLayers(
         },
     });
 
-    // Labels
-    layers.push({
-        data: { values: labelData },
-        mark: { type: "text", fontSize: 10, fill: "#555" },
-        encoding: {
-            x: { field: "__x", type: "quantitative", axis: null },
-            y: { field: "__y", type: "quantitative", axis: null },
-            text: { field: "__label", type: "nominal" },
-        },
-    });
+    // Labels — name on first line, max value on second line
+    for (const lbl of labelData) {
+        const lines: string[] = lbl.__label;
+        layers.push({
+            data: { values: [lbl] },
+            mark: {
+                type: "text", fontSize: 10, fill: "#555",
+                align: lbl.__align, baseline: lbl.__baseline,
+                dx: lbl.__dx, dy: lbl.__dy,
+                limit: 120, lineHeight: 13,
+            },
+            encoding: {
+                x: { field: "__x", type: "quantitative", axis: null },
+                y: { field: "__y", type: "quantitative", axis: null },
+                text: { value: lines },
+            },
+        });
+    }
 
     // Data polygon
     const lineLayer: any = {

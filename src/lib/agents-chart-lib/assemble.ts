@@ -723,9 +723,21 @@ export function assembleChart(
     // the number of bins (maxbins or default 10), not the raw data cardinality.
     // VL sizes binned bars automatically, so we just need the count for stretch.
     const markType = typeof vgObj.mark === 'string' ? vgObj.mark : vgObj.mark?.type;
+
+    // Collect all mark types — for layered specs, check each layer's mark too.
+    const allMarkTypes = new Set<string>();
+    if (markType) allMarkTypes.add(markType);
+    if (Array.isArray(vgObj.layer)) {
+        for (const layer of vgObj.layer) {
+            const lm = typeof layer.mark === 'string' ? layer.mark : layer.mark?.type;
+            if (lm) allMarkTypes.add(lm);
+        }
+    }
+    const hasBarLikeMark = allMarkTypes.has('bar') || allMarkTypes.has('rect');
+
     let xContinuousAsDiscrete = 0;
     let yContinuousAsDiscrete = 0;
-    if (markType === 'bar' || markType === 'rect') {
+    if (hasBarLikeMark) {
         for (const axis of ['x', 'y'] as const) {
             const enc = vgObj.encoding?.[axis];
             if (!enc?.field) continue;
@@ -854,14 +866,29 @@ export function assembleChart(
         const enc = vgObj.encoding?.[axis];
         if (enc?.bin) continue;
 
-        const sizeKey = markType === 'rect'
+        const sizeKey = allMarkTypes.has('rect')
             ? (axis === 'x' ? 'width' : 'height')
             : 'size';
         const cellSize = Math.max(2, Math.round(clampedStep * 0.8));
-        if (typeof vgObj.mark === 'string') {
-            vgObj.mark = { type: vgObj.mark, [sizeKey]: cellSize };
-        } else {
-            vgObj.mark = { ...vgObj.mark, [sizeKey]: cellSize };
+
+        // Apply mark sizing — for layered specs, update each layer's mark
+        if (Array.isArray(vgObj.layer)) {
+            for (const layer of vgObj.layer) {
+                const lm = typeof layer.mark === 'string' ? layer.mark : layer.mark?.type;
+                if (lm === 'bar' || lm === 'rect') {
+                    if (typeof layer.mark === 'string') {
+                        layer.mark = { type: layer.mark, [sizeKey]: cellSize };
+                    } else {
+                        layer.mark = { ...layer.mark, [sizeKey]: cellSize };
+                    }
+                }
+            }
+        } else if (vgObj.mark) {
+            if (typeof vgObj.mark === 'string') {
+                vgObj.mark = { type: vgObj.mark, [sizeKey]: cellSize };
+            } else {
+                vgObj.mark = { ...vgObj.mark, [sizeKey]: cellSize };
+            }
         }
     }
 

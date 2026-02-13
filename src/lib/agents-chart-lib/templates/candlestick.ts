@@ -29,8 +29,11 @@ export const candlestickCharts: ChartTemplateDef[] = [
             spec.encoding.y = {
                 type: "quantitative",
                 scale: { zero: false },
-                axis: { title: "Price" },
+                axis: { title: null },
             };
+
+            // Add "Price" as the overall chart title (sits above facets)
+            spec.title = { text: "Price", anchor: "start", fontSize: 11, fontWeight: "normal", color: "#666" };
 
             // Rule layer (wick): low → y, high → y2
             if (low) spec.layer[0].encoding.y = { field: low.field };
