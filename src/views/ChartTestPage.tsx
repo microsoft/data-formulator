@@ -3526,58 +3526,112 @@ function genStripPlotTests(): TestCase[] {
 function genRadarTests(): TestCase[] {
     const tests: TestCase[] = [];
 
-    // 1. Single entity, 5 axes
+    // 1. Single entity, 5 axes (long format)
     {
         const data = [
-            { Player: 'Player A', Speed: 85, Shooting: 70, Passing: 90, Dribbling: 80, Defense: 60 },
+            { Player: 'Player A', Metric: 'Speed', Value: 85 },
+            { Player: 'Player A', Metric: 'Shooting', Value: 70 },
+            { Player: 'Player A', Metric: 'Passing', Value: 90 },
+            { Player: 'Player A', Metric: 'Dribbling', Value: 80 },
+            { Player: 'Player A', Metric: 'Defense', Value: 60 },
         ];
         tests.push({
             title: 'Single Player Stats (5 axes)',
-            description: 'One polygon, 5 numeric dimensions',
+            description: 'One polygon, 5 numeric dimensions, long format',
             tags: ['radar', 'single'],
             chartType: 'Radar Chart',
             data,
-            fields: [makeField('Player'), makeField('Speed'), makeField('Shooting'), makeField('Passing'), makeField('Dribbling'), makeField('Defense')],
+            fields: [makeField('Player'), makeField('Metric'), makeField('Value')],
             metadata: buildMetadata(data),
-            encodingMap: { x: makeEncodingItem('Player'), y: makeEncodingItem('Speed') },
+            encodingMap: { x: makeEncodingItem('Metric'), y: makeEncodingItem('Value'), color: makeEncodingItem('Player') },
         });
     }
 
     // 2. Two entities comparison
     {
         const data = [
-            { Team: 'Team A', Attack: 85, Defense: 70, Midfield: 78, Speed: 90, Stamina: 65, Tactics: 80 },
-            { Team: 'Team B', Attack: 72, Defense: 88, Midfield: 82, Speed: 68, Stamina: 85, Tactics: 75 },
+            { Team: 'Team A', Metric: 'Attack', Value: 85 },
+            { Team: 'Team A', Metric: 'Defense', Value: 70 },
+            { Team: 'Team A', Metric: 'Midfield', Value: 78 },
+            { Team: 'Team A', Metric: 'Speed', Value: 90 },
+            { Team: 'Team A', Metric: 'Stamina', Value: 65 },
+            { Team: 'Team A', Metric: 'Tactics', Value: 80 },
+            { Team: 'Team B', Metric: 'Attack', Value: 72 },
+            { Team: 'Team B', Metric: 'Defense', Value: 88 },
+            { Team: 'Team B', Metric: 'Midfield', Value: 82 },
+            { Team: 'Team B', Metric: 'Speed', Value: 68 },
+            { Team: 'Team B', Metric: 'Stamina', Value: 85 },
+            { Team: 'Team B', Metric: 'Tactics', Value: 75 },
         ];
         tests.push({
             title: 'Two Teams Comparison (6 axes)',
-            description: 'Two overlapping polygons',
+            description: 'Two overlapping polygons, long format',
             tags: ['radar', 'comparison'],
             chartType: 'Radar Chart',
             data,
-            fields: [makeField('Team'), makeField('Attack'), makeField('Defense'), makeField('Midfield'), makeField('Speed'), makeField('Stamina'), makeField('Tactics')],
+            fields: [makeField('Team'), makeField('Metric'), makeField('Value')],
             metadata: buildMetadata(data),
-            encodingMap: { x: makeEncodingItem('Team'), y: makeEncodingItem('Attack') },
+            encodingMap: { x: makeEncodingItem('Metric'), y: makeEncodingItem('Value'), color: makeEncodingItem('Team') },
         });
     }
 
     // 3. Three entities, no fill
     {
         const data = [
-            { Product: 'Widget', Quality: 90, Price: 60, Durability: 80, Design: 75, Support: 85 },
-            { Product: 'Gadget', Quality: 70, Price: 85, Durability: 65, Design: 90, Support: 50 },
-            { Product: 'Doohickey', Quality: 80, Price: 70, Durability: 90, Design: 60, Support: 70 },
+            { Product: 'Widget', Metric: 'Quality', Value: 90 },
+            { Product: 'Widget', Metric: 'Price', Value: 60 },
+            { Product: 'Widget', Metric: 'Durability', Value: 80 },
+            { Product: 'Widget', Metric: 'Design', Value: 75 },
+            { Product: 'Widget', Metric: 'Support', Value: 85 },
+            { Product: 'Gadget', Metric: 'Quality', Value: 70 },
+            { Product: 'Gadget', Metric: 'Price', Value: 85 },
+            { Product: 'Gadget', Metric: 'Durability', Value: 65 },
+            { Product: 'Gadget', Metric: 'Design', Value: 90 },
+            { Product: 'Gadget', Metric: 'Support', Value: 50 },
+            { Product: 'Doohickey', Metric: 'Quality', Value: 80 },
+            { Product: 'Doohickey', Metric: 'Price', Value: 70 },
+            { Product: 'Doohickey', Metric: 'Durability', Value: 90 },
+            { Product: 'Doohickey', Metric: 'Design', Value: 60 },
+            { Product: 'Doohickey', Metric: 'Support', Value: 70 },
         ];
         tests.push({
             title: 'Product Comparison (unfilled)',
-            description: 'Three polygons, filled=false',
+            description: 'Three polygons, filled=false, long format',
             tags: ['radar', 'multi', 'config'],
             chartType: 'Radar Chart',
             data,
-            fields: [makeField('Product'), makeField('Quality'), makeField('Price'), makeField('Durability'), makeField('Design'), makeField('Support')],
+            fields: [makeField('Product'), makeField('Metric'), makeField('Value')],
             metadata: buildMetadata(data),
-            encodingMap: { x: makeEncodingItem('Product'), y: makeEncodingItem('Quality') },
+            encodingMap: { x: makeEncodingItem('Metric'), y: makeEncodingItem('Value'), color: makeEncodingItem('Product') },
             chartProperties: { filled: false },
+        });
+    }
+
+    // 4. Faceted radar — one radar per region
+    {
+        const data = [
+            { Region: 'North', Metric: 'Sales', Value: 80 },
+            { Region: 'North', Metric: 'Profit', Value: 65 },
+            { Region: 'North', Metric: 'Growth', Value: 90 },
+            { Region: 'North', Metric: 'Retention', Value: 70 },
+            { Region: 'South', Metric: 'Sales', Value: 60 },
+            { Region: 'South', Metric: 'Profit', Value: 85 },
+            { Region: 'South', Metric: 'Growth', Value: 50 },
+            { Region: 'South', Metric: 'Retention', Value: 75 },
+            { Region: 'East', Metric: 'Sales', Value: 70 },
+            { Region: 'East', Metric: 'Profit', Value: 72 },
+            { Region: 'East', Metric: 'Growth', Value: 68 },
+            { Region: 'East', Metric: 'Retention', Value: 88 },
+        ];
+        tests.push({
+            title: 'Faceted Radar by Region',
+            description: 'One radar per region via column facet',
+            tags: ['radar', 'facet'],
+            chartType: 'Radar Chart',
+            data,
+            fields: [makeField('Region'), makeField('Metric'), makeField('Value')],
+            metadata: buildMetadata(data),
+            encodingMap: { x: makeEncodingItem('Metric'), y: makeEncodingItem('Value'), column: makeEncodingItem('Region') },
         });
     }
 

@@ -14,12 +14,12 @@ export const jitterCharts: ChartTemplateDef[] = [
         channels: ["x", "y", "color", "size", "column", "row"],
         buildEncodings: defaultBuildEncodings,
         properties: [
-            { key: "jitterWidth", label: "Jitter", type: "continuous", min: 0, max: 50, step: 1, defaultValue: 20 },
+            { key: "stepWidth", label: "Jitter", type: "continuous", min: 10, max: 100, step: 5, defaultValue: 20 },
             { key: "pointSize", label: "Size", type: "continuous", min: 5, max: 150, step: 5, defaultValue: 30 },
             { key: "opacity", label: "Opacity", type: "continuous", min: 0.05, max: 1, step: 0.05, defaultValue: 0.6 },
         ] as ChartPropertyDef[],
         postProcessor: (vgSpec: any, table: any[], config?: Record<string, any>) => {
-            const jitterWidth = config?.jitterWidth ?? 20;
+            const stepWidth = config?.stepWidth ?? 20;
             const pointSize = config?.pointSize ?? 30;
             const opacity = config?.opacity ?? 0.6;
 
@@ -34,38 +34,34 @@ export const jitterCharts: ChartTemplateDef[] = [
             const xType = vgSpec.encoding?.x?.type;
             const yType = vgSpec.encoding?.y?.type;
 
+            // Set step width and derive jitter from it (80% of step)
+            const jitterWidth = stepWidth * 0.8;
+            if (xType === 'nominal' || xType === 'ordinal') {
+                vgSpec.width = { step: stepWidth };
+            } else if (yType === 'nominal' || yType === 'ordinal') {
+                vgSpec.height = { step: stepWidth };
+            }
+
             if (jitterWidth > 0) {
-                // Add a jitter transform: calculate a random offset
                 if (!vgSpec.transform) vgSpec.transform = [];
                 vgSpec.transform.push({
                     calculate: `${-jitterWidth / 2} + random() * ${jitterWidth}`,
                     as: "__jitter",
                 });
 
+                const offsetEnc = {
+                    field: "__jitter",
+                    type: "quantitative",
+                    axis: null,
+                    scale: { domain: [-stepWidth / 2, stepWidth / 2] },
+                };
+
                 if (xType === 'nominal' || xType === 'ordinal') {
-                    // Categorical on x → jitter along x via xOffset
-                    vgSpec.encoding.xOffset = {
-                        field: "__jitter",
-                        type: "quantitative",
-                        axis: null,
-                        scale: { domain: [-jitterWidth, jitterWidth] },
-                    };
+                    vgSpec.encoding.xOffset = offsetEnc;
                 } else if (yType === 'nominal' || yType === 'ordinal') {
-                    // Categorical on y → jitter along y via yOffset
-                    vgSpec.encoding.yOffset = {
-                        field: "__jitter",
-                        type: "quantitative",
-                        axis: null,
-                        scale: { domain: [-jitterWidth, jitterWidth] },
-                    };
+                    vgSpec.encoding.yOffset = offsetEnc;
                 } else {
-                    // Both quantitative: jitter on x by default
-                    vgSpec.encoding.xOffset = {
-                        field: "__jitter",
-                        type: "quantitative",
-                        axis: null,
-                        scale: { domain: [-jitterWidth, jitterWidth] },
-                    };
+                    vgSpec.encoding.xOffset = offsetEnc;
                 }
             }
 

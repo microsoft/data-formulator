@@ -597,12 +597,13 @@ function getRecommendation(chartType: string, tv: InternalTableView): Record<str
 
         // ---- Radar Chart ----
         case 'Radar Chart': {
-            // x → any discrete (entity/group), y → first quantitative (the rest auto-detected)
-            const xField = pickLowCardDiscrete(tv, used, 20) ?? pickDiscrete(tv, used);
+            // Long format: x → metric name (nominal), y → value (quantitative), color → group
+            const xField = pickDiscrete(tv, used) ?? pickLowCardDiscrete(tv, used, 20);
             const yField = pickQuantitative(tv, used);
-            if (!yField) return {};
+            if (!xField || !yField) return {};
+            assign('x', xField);
             assign('y', yField);
-            if (xField) assign('x', xField);
+            assign('color', pickLowCardDiscrete(tv, used, 20));
             break;
         }
 

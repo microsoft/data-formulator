@@ -909,6 +909,8 @@ export function assembleChart(
             continuousWidth: subplotWidth,
             continuousHeight: subplotHeight,
             step: stepSize,
+            // Hide view border for postProcessor-owned specs (e.g. radar)
+            ...(!vgObj.encoding && { stroke: null }),
         },
         axisX: axisXConfig,
         axisY: axisYConfig,
