@@ -396,7 +396,9 @@ def get_table_data():
 def create_table():
     """Create a new table from uploaded file or raw data in the workspace."""
     try:
-        if 'file' not in request.files and 'raw_data' not in request.form:
+        has_file = 'file' in request.files
+        has_raw_data = 'raw_data' in request.files or 'raw_data' in request.form
+        if not has_file and not has_raw_data:
             return jsonify({"status": "error", "message": "No file or raw data provided"}), 400
 
         table_name = request.form.get('table_name')
@@ -411,7 +413,7 @@ def create_table():
             sanitized_table_name = f"{base_name}_{counter}"
             counter += 1
 
-        if 'file' in request.files:
+        if has_file:
             file = request.files['file']
             if not file.filename or not is_supported_file(file.filename):
                 return jsonify({"status": "error", "message": "Unsupported file format"}), 400
@@ -430,7 +432,11 @@ def create_table():
                 row_count = len(df)
                 columns = list(df.columns)
         else:
-            raw_data = request.form.get('raw_data')
+            # raw_data can come as a file upload (Blob) or as a form field
+            if 'raw_data' in request.files:
+                raw_data = request.files['raw_data'].read().decode('utf-8')
+            else:
+                raw_data = request.form.get('raw_data')
             try:
                 df = pd.DataFrame(json.loads(raw_data))
             except Exception as e:

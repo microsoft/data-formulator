@@ -5,7 +5,7 @@ import _, {  } from "lodash";
 import { useEffect, useRef } from "react";
 import ts from "typescript";
 import { channelGroups, getChartChannels, getChartTemplate } from "../components/ChartTemplates";
-import { Channel, Chart, ChartTemplate, ConceptTransformation, EncodingItem, EncodingMap, FieldItem, Trigger } from "../components/ComponentType";
+import { Channel, Chart, ChartTemplate, EncodingItem, EncodingMap, FieldItem, Trigger } from "../components/ComponentType";
 import { DictTable } from "../components/ComponentType";
 import { Type } from "../data/types";
 import * as d3 from 'd3';

@@ -1063,6 +1063,12 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                     return (
                         <Box sx={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                             {configProps.map((propDef) => {
+                                // App-level visibility: hide certain properties unless relevant channels are assigned
+                                if (propDef.key === 'independentYAxis') {
+                                    const hasFacet = chart.encodingMap['column' as Channel]?.fieldID != null
+                                        || chart.encodingMap['row' as Channel]?.fieldID != null;
+                                    if (!hasFacet) return null;
+                                }
                                 if (propDef.type === 'continuous') {
                                     const currentValue = chart.config?.[propDef.key] ?? propDef.defaultValue ?? propDef.min ?? 0;
                                     return (
@@ -1097,6 +1103,43 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                                             <Typography variant="caption" sx={{ fontSize: 10, color: 'text.secondary', minWidth: '20px', textAlign: 'right' }}>
                                                 {currentValue}
                                             </Typography>
+                                        </Box>
+                                    );
+                                }
+                                if (propDef.type === 'binary') {
+                                    const currentValue = chart.config?.[propDef.key] ?? propDef.defaultValue ?? false;
+                                    return (
+                                        <Box key={`config-${propDef.key}`} sx={{
+                                            display: 'flex', alignItems: 'center',
+                                            borderRadius: '12px',
+                                            minHeight: '22px',
+                                            overflow: 'hidden', padding: '0px 8px',
+                                            cursor: 'pointer',
+                                            '&:hover': { backgroundColor: 'rgba(0,0,0,0.04)' },
+                                        }}
+                                        onClick={() => {
+                                            dispatch(dfActions.updateChartConfig({chartId, key: propDef.key, value: !currentValue}));
+                                        }}>
+                                            <Typography variant="caption" sx={{
+                                                flex: 1, color: 'text.secondary', fontSize: 10,
+                                                whiteSpace: 'nowrap', fontWeight: 500, userSelect: 'none',
+                                            }}>
+                                                {propDef.label}
+                                            </Typography>
+                                            <Box sx={{
+                                                width: 28, height: 14, borderRadius: '7px',
+                                                backgroundColor: currentValue ? theme.palette.primary.main : 'rgba(0,0,0,0.2)',
+                                                position: 'relative', transition: 'background-color 0.2s',
+                                                flexShrink: 0,
+                                            }}>
+                                                <Box sx={{
+                                                    width: 10, height: 10, borderRadius: '50%',
+                                                    backgroundColor: 'white',
+                                                    position: 'absolute', top: 2,
+                                                    left: currentValue ? 16 : 2,
+                                                    transition: 'left 0.2s',
+                                                }} />
+                                            </Box>
                                         </Box>
                                     );
                                 }

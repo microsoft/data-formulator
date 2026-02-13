@@ -306,10 +306,7 @@ export function assembleChart(
                     const colorField = encodings.color?.field;
                     let colorFieldType: string | undefined;
                     if (colorField) {
-                        // Use semantic type if available; fall back to data-driven inference
-                        const colorSemType = colorField ? (semanticTypes[colorField] || '') : '';
-                        const mappedCat = colorSemType ? getVisCategory(colorSemType) : null;
-                        colorFieldType = mappedCat ?? inferVisCategory(data.map(r => r[colorField]));
+                        colorFieldType = inferVisCategory(data.map(r => r[colorField]));
                     }
 
                     if (colorField && colorFieldType === 'quantitative') {
@@ -716,6 +713,56 @@ export function assembleChart(
         yTotalNominalCount = nominalCount.y * nominalCount.yOffset;
     }
 
+    // --- Count continuous axes used as discrete positions (bar/rect) ---
+    // Temporal or quantitative positional axes without aggregate act like
+    // discrete positions.  Track their cardinality separately — they use
+    // continuousWidth/Height + mark dimensions, NOT the step-based layout
+    // that nominal axes use.  Don't fold into xTotalNominalCount/yTotalNominalCount.
+    //
+    // Binned axes are a special case: the number of discrete positions is
+    // the number of bins (maxbins or default 10), not the raw data cardinality.
+    // VL sizes binned bars automatically, so we just need the count for stretch.
+    const markType = typeof vgObj.mark === 'string' ? vgObj.mark : vgObj.mark?.type;
+    let xContinuousAsDiscrete = 0;
+    let yContinuousAsDiscrete = 0;
+    if (markType === 'bar' || markType === 'rect') {
+        for (const axis of ['x', 'y'] as const) {
+            const enc = vgObj.encoding?.[axis];
+            if (!enc?.field) continue;
+            if (isDiscreteType(enc.type)) continue;
+            if (enc.aggregate) continue;
+
+            // Binned axis — discrete count is the number of bins.
+            // Default to 6 (VL's typical nice-rounded result) unless maxbins is specified.
+            if (enc.bin) {
+                const binCount = typeof enc.bin === 'object' && enc.bin.maxbins
+                    ? enc.bin.maxbins : 6;
+                if (axis === 'x') {
+                    xContinuousAsDiscrete = binCount;
+                } else {
+                    yContinuousAsDiscrete = binCount;
+                }
+                continue;
+            }
+
+            // Only treat as discrete: temporal axes, or quantitative axes
+            // where the opposite side is clearly a measure (has aggregate).
+            if (enc.type !== 'temporal') {
+                const otherEnc = vgObj.encoding?.[axis === 'x' ? 'y' : 'x'];
+                if (!otherEnc?.aggregate) continue;
+            }
+
+            const cardinality = new Set(values.map((r: any) => r[enc.field])).size;
+            if (cardinality <= 1) continue;
+
+            if (axis === 'x') {
+                xContinuousAsDiscrete = cardinality;
+            } else {
+                yContinuousAsDiscrete = cardinality;
+            }
+        }
+    }
+
     // Independent y-axis scaling for faceted charts with vastly different ranges
     // For layered specs, encodings may be on vgObj.spec.encoding or vgObj.encoding
     const effectiveEncoding = vgObj.spec?.encoding || vgObj.encoding;
@@ -758,41 +805,93 @@ export function assembleChart(
         return defaultBudget * stretch;
     }
 
-    const xBudget = computeElasticBudget(xTotalNominalCount, subplotWidth);
-    const yBudget = computeElasticBudget(yTotalNominalCount, subplotHeight);
+    // Compute effective step size per axis, covering both discrete and
+    // continuous-as-discrete cases.  Continuous axes get their own budget
+    // so they don't interfere with discrete step sizing on the other axis.
+    function computeAxisStep(nominalCount: number, continuousCount: number, baseDim: number): { step: number; budget: number; count: number } {
+        if (nominalCount > 0) {
+            const budget = computeElasticBudget(nominalCount, baseDim);
+            return { step: Math.floor(budget / nominalCount), budget, count: nominalCount };
+        }
+        if (continuousCount > 0) {
+            const budget = computeElasticBudget(continuousCount, baseDim);
+            return { step: Math.floor(budget / continuousCount), budget, count: continuousCount };
+        }
+        return { step: defaultStepSize, budget: baseDim, count: 0 };
+    }
 
-    // Step size computation
+    const xAxis = computeAxisStep(xTotalNominalCount, xContinuousAsDiscrete, subplotWidth);
+    const yAxis = computeAxisStep(yTotalNominalCount, yContinuousAsDiscrete, subplotHeight);
+
+    // Step size for VL step-based layout (discrete axes only)
     let stepSize: number;
     if (xTotalNominalCount > 0 && yTotalNominalCount > 0) {
-        stepSize = Math.min(
-            Math.floor(xBudget / xTotalNominalCount),
-            Math.floor(yBudget / yTotalNominalCount),
-        );
+        stepSize = Math.min(xAxis.step, yAxis.step);
     } else if (xTotalNominalCount > 0) {
-        stepSize = Math.floor(xBudget / xTotalNominalCount);
+        stepSize = xAxis.step;
     } else if (yTotalNominalCount > 0) {
-        stepSize = Math.floor(yBudget / yTotalNominalCount);
+        stepSize = yAxis.step;
     } else {
         stepSize = defaultStepSize;
     }
     stepSize = Math.max(minStepVal, Math.min(defaultStepSize, stepSize));
 
+    // For continuous-as-discrete, stretch continuousWidth/Height and set mark dimensions.
+    // Use the per-axis effective step (not the shared discrete stepSize).
+    // For continuous-as-discrete, stretch continuousWidth/Height and set mark
+    // dimensions.  Skip binned axes — VL computes bar width from bin boundaries.
+    for (const axis of ['x', 'y'] as const) {
+        const count = axis === 'x' ? xContinuousAsDiscrete : yContinuousAsDiscrete;
+        if (count <= 0) continue;
+        const { budget, step: effStep } = axis === 'x' ? xAxis : yAxis;
+        const clampedStep = Math.max(minStepVal, Math.min(defaultStepSize, effStep));
+        if (axis === 'x') {
+            subplotWidth = Math.round(budget);
+        } else {
+            subplotHeight = Math.round(budget);
+        }
+        // Binned axes: VL auto-sizes bars from bin boundaries — skip mark sizing.
+        const enc = vgObj.encoding?.[axis];
+        if (enc?.bin) continue;
+
+        const sizeKey = markType === 'rect'
+            ? (axis === 'x' ? 'width' : 'height')
+            : 'size';
+        const cellSize = Math.max(2, Math.round(clampedStep * 0.8));
+        if (typeof vgObj.mark === 'string') {
+            vgObj.mark = { type: vgObj.mark, [sizeKey]: cellSize };
+        } else {
+            vgObj.mark = { ...vgObj.mark, [sizeKey]: cellSize };
+        }
+    }
+
+    // Effective step per axis for label sizing (covers both discrete and continuous-as-discrete)
+    const xEffStep = xTotalNominalCount > 0 ? stepSize
+        : xContinuousAsDiscrete > 0 ? Math.max(minStepVal, Math.min(defaultStepSize, xAxis.step))
+        : defaultStepSize;
+    const yEffStep = yTotalNominalCount > 0 ? stepSize
+        : yContinuousAsDiscrete > 0 ? Math.max(minStepVal, Math.min(defaultStepSize, yAxis.step))
+        : defaultStepSize;
+
     // Dynamic label sizing
     const defaultLabelFontSize = 10;
     const defaultLabelLimit = 100;
 
-    let xLabelFontSize = xTotalNominalCount > 0 ? Math.max(6, Math.min(10, stepSize - 1)) : defaultLabelFontSize;
-    let yLabelFontSize = yTotalNominalCount > 0 ? Math.max(6, Math.min(10, stepSize - 1)) : defaultLabelFontSize;
-    let xLabelLimit = xTotalNominalCount > 0 ? Math.max(30, Math.min(100, stepSize * 8)) : defaultLabelLimit;
+    const xHasDiscreteItems = xTotalNominalCount > 0 || xContinuousAsDiscrete > 0;
+    const yHasDiscreteItems = yTotalNominalCount > 0 || yContinuousAsDiscrete > 0;
+
+    let xLabelFontSize = xHasDiscreteItems ? Math.max(6, Math.min(10, xEffStep - 1)) : defaultLabelFontSize;
+    let yLabelFontSize = yHasDiscreteItems ? Math.max(6, Math.min(10, yEffStep - 1)) : defaultLabelFontSize;
+    let xLabelLimit = xHasDiscreteItems ? Math.max(30, Math.min(100, xEffStep * 8)) : defaultLabelLimit;
     let xLabelAngle: number | undefined = undefined;
-    if (xTotalNominalCount > 0) {
-        if (stepSize < 10) {
+    if (xHasDiscreteItems) {
+        if (xEffStep < 10) {
             xLabelAngle = -90;
-            xLabelFontSize = Math.max(6, Math.min(8, stepSize));
+            xLabelFontSize = Math.max(6, Math.min(8, xEffStep));
             xLabelLimit = 40;
-        } else if (stepSize < 16) {
+        } else if (xEffStep < 16) {
             xLabelAngle = -45;
-            xLabelFontSize = Math.max(7, Math.min(9, stepSize));
+            xLabelFontSize = Math.max(7, Math.min(9, xEffStep));
             xLabelLimit = 60;
         }
     }
@@ -853,7 +952,7 @@ export function assembleChart(
     }
 
     // --- Rect mark edge-to-edge tiling ---
-    const markType = typeof vgObj.mark === 'string' ? vgObj.mark : vgObj.mark?.type;
+    // (markType already declared above for bar/rect stretch)
     if (markType === 'rect') {
         const contWidth = vgObj.config?.view?.continuousWidth || defaultChartWidth;
         const contHeight = vgObj.config?.view?.continuousHeight || defaultChartHeight;

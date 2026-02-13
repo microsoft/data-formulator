@@ -53,8 +53,8 @@ export const candlestickCharts: ChartTemplateDef[] = [
         },
         properties: [
             {
-                key: "barWidth", label: "Bar Width", type: "continuous",
-                min: 4, max: 40, step: 2, defaultValue: 0,
+                key: "independentYAxis", label: "Independent Y-Axis", type: "binary",
+                defaultValue: false,
             },
         ],
         postProcessor: (vgSpec: any, table: any[], config?: Record<string, any>, canvasSize?: { width: number; height: number }) => {
@@ -63,10 +63,7 @@ export const candlestickCharts: ChartTemplateDef[] = [
             const plotWidth = canvasSize?.width || 400;
             let barSize: number;
 
-            if (config?.barWidth && config.barWidth > 0) {
-                // Manual override from property slider
-                barSize = config.barWidth;
-            } else if (xField && table?.length > 0) {
+            if (xField && table?.length > 0) {
                 // Auto-size: use plot width / cardinality, capped to look good
                 const cardinality = new Set(table.map((r: any) => r[xField])).size;
                 barSize = Math.max(2, Math.min(20, Math.round(plotWidth * 0.6 / cardinality)));
@@ -75,6 +72,14 @@ export const candlestickCharts: ChartTemplateDef[] = [
             }
 
             vgSpec.layer[1].mark = { ...vgSpec.layer[1].mark, size: barSize };
+
+            // Independent Y-axis for faceted candlestick charts
+            if (config?.independentYAxis) {
+                if (!vgSpec.resolve) vgSpec.resolve = {};
+                if (!vgSpec.resolve.scale) vgSpec.resolve.scale = {};
+                vgSpec.resolve.scale.y = "independent";
+            }
+
             return vgSpec;
         },
     },

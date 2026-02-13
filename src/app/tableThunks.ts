@@ -182,7 +182,8 @@ export const loadTable = createAsyncThunk<
                 // Other sources (paste/url/example/extract): upload raw data to workspace
                 try {
                     const formData = new FormData();
-                    formData.append('raw_data', JSON.stringify(table.rows));
+                    const jsonBlob = new Blob([JSON.stringify(table.rows)], { type: 'application/json' });
+                    formData.append('raw_data', jsonBlob, 'data.json');
                     formData.append('table_name', table.id);
                     
                     const response = await fetchWithIdentity(getUrls().CREATE_TABLE, {

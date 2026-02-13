@@ -543,6 +543,7 @@ function getRecommendation(chartType: string, tv: InternalTableView): Record<str
         case 'Candlestick Chart': {
             // x → temporal (date) preferred, but any discrete axis works
             const xField = pickTemporal(tv, used)
+                ?? pick(tv, used, (name, _ty, _st) => nameMatches(name, ['date', 'time', 'day', 'datetime', 'timestamp', 'period']))
                 ?? pickQuantitativeByName(tv, used, ['date', 'time', 'day'])
                 ?? pickDiscrete(tv, used);
             if (!xField) return {};

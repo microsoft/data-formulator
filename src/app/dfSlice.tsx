@@ -398,7 +398,7 @@ export const dataFormulatorSlice = createSlice({
     name: 'dataFormulatorSlice',
     initialState: initialState,
     reducers: {
-        resetState: (state, action: PayloadAction<undefined>) => {
+        resetState: (state) => {
             //state.table = undefined;
             
             // state.modelSlots = {};
@@ -468,6 +468,7 @@ export const dataFormulatorSlice = createSlice({
                 displayedMessageIdx: -1,
                 viewMode: saved.viewMode || 'editor',
                 chartSynthesisInProgress: [],
+                chartInsightInProgress: [],
                 cleanInProgress: false,
             };
         },

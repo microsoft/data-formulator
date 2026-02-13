@@ -744,7 +744,7 @@ const ConfigDialog: React.FC = () => {
                             || isNaN(defaultChartHeight) || defaultChartHeight <= 0 || defaultChartHeight > 1000
                             || isNaN(frontendRowLimit) || frontendRowLimit < 100 || frontendRowLimit > 1000000}
                         onClick={() => {
-                            dispatch(dfActions.setConfig({formulateTimeoutSeconds, defaultChartWidth, defaultChartHeight, frontendRowLimit, paletteKey, sendChartImage: config.sendChartImage}));
+                            dispatch(dfActions.setConfig({formulateTimeoutSeconds, defaultChartWidth, defaultChartHeight, frontendRowLimit, paletteKey}));
                             setOpen(false);
                         }}
                     >

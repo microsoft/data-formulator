@@ -10,7 +10,7 @@
  * Dynamic mark resizing for bar, rect, and similar marks.
  * For each non-discrete (temporal/quantitative) axis without an aggregate:
  *   - If cardinality ≤ nominalThreshold → convert to nominal (clean discrete layout)
- *   - Otherwise → resize mark using the specified size property
+ *   - Otherwise → leave to assembler (elastic stretch + proportional sizing)
  * Discrete (nominal/ordinal) axes are skipped — step-based layout handles them.
  * Aggregate axes are skipped — they are measure axes, not positional.
  *
@@ -33,30 +33,18 @@ export const applyDynamicMarkResizing = (
         if (!enc || !enc.field || isDiscrete(enc.type)) continue;
         // Skip aggregate/measure axes — they don't determine mark positioning
         if (enc.aggregate) continue;
-
-        // For shared size props (e.g. bar mark.size), if the other axis is already discrete,
-        // step-based layout handles bar width — only temporal still needs explicit sizing.
-        if (enc.type !== 'temporal' && sizeProps.x === sizeProps.y) {
-            const otherAxis = axis === 'x' ? 'y' : 'x';
-            const otherEnc = vgSpec.encoding?.[otherAxis];
-            if (otherEnc && isDiscrete(otherEnc.type)) continue;
-        }
+        // Skip binned axes — VL handles bin bar sizing natively
+        if (enc.bin) continue;
 
         const cardinality = new Set(table.map((r: any) => r[enc.field])).size;
 
         if (nominalThreshold > 0 && cardinality <= nominalThreshold) {
             // Small cardinality → convert to nominal for clean discrete layout
             enc.type = "nominal";
-        } else if (cardinality > 0) {
-            // Large cardinality → keep type, resize mark
-            const markSize = Math.max(2, Math.min(20, Math.round(200 / cardinality)));
-            const sizeKey = sizeProps[axis];
-            if (typeof vgSpec.mark === 'string') {
-                vgSpec.mark = { type: vgSpec.mark, [sizeKey]: markSize };
-            } else {
-                vgSpec.mark = { ...vgSpec.mark, [sizeKey]: markSize };
-            }
         }
+        // Mark sizing for continuous-as-discrete axes is handled by the
+        // assembler's elastic stretch logic, just like step-based layout
+        // handles discrete axes.  No mark.size override needed here.
     }
     return vgSpec;
 };

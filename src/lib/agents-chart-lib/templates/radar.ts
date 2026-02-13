@@ -56,16 +56,18 @@ export const radarCharts: ChartTemplateDef[] = [
             if (!table || table.length === 0) return vgSpec;
 
             // --- Discover numeric axes ---
-            // All numeric columns except the group field are radar axes
+            // All numeric columns except the group field are radar axes.
+            // Values may arrive as strings after type conversion, so coerce
+            // with Number() and check isFinite rather than typeof === 'number'.
             const sampleRow = table[0];
             const allKeys = Object.keys(sampleRow);
             const numericAxes: string[] = [];
 
             for (const key of allKeys) {
                 if (key === groupField) continue;
-                // Check if this column is numeric
-                const vals = table.map(r => r[key]).filter(v => v != null);
-                if (vals.length > 0 && vals.every(v => typeof v === 'number')) {
+                // Check if this column is numeric (allow string-encoded numbers)
+                const vals = table.map(r => r[key]).filter(v => v != null && v !== '');
+                if (vals.length > 0 && vals.every(v => isFinite(Number(v)))) {
                     numericAxes.push(key);
                 }
             }
@@ -98,7 +100,7 @@ export const radarCharts: ChartTemplateDef[] = [
             };
             const axisMax: Record<string, number> = {};
             for (const axis of numericAxes) {
-                const vals = table.map(r => r[axis]).filter(v => typeof v === 'number');
+                const vals = table.map(r => Number(r[axis])).filter(v => isFinite(v));
                 const mx = Math.max(...vals);
                 axisMax[axis] = niceMax(mx);
             }
@@ -112,7 +114,7 @@ export const radarCharts: ChartTemplateDef[] = [
             for (const row of table) {
                 const grp = groupField ? row[groupField] : "_all";
                 for (const axis of numericAxes) {
-                    const raw = row[axis] ?? 0;
+                    const raw = Number(row[axis]) || 0;
                     const mx = axisMax[axis];
                     const norm = raw / mx;
                     foldedData.push({

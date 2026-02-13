@@ -3086,7 +3086,6 @@ function genOverflowTests(): TestCase[] {
             encodingMap: {
                 x: makeEncodingItem('Product'),
                 y: makeEncodingItem('Sales'),
-                xOffset: makeEncodingItem('Region'),
                 color: makeEncodingItem('Region'),
             },
         });
