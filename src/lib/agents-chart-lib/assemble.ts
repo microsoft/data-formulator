@@ -164,24 +164,6 @@ export function assembleChart(
             encodingObj.scale = { type: "sqrt", zero: true };
         }
 
-        // Size channel: set a data-aware pixel range so bubbles are
-        // visible but don't overwhelm the plot.
-        // We cap the max bubble area based on both canvas size and point
-        // count so dense charts stay readable.
-        if (channel === "size") {
-            const plotArea = canvasSize.width * canvasSize.height;
-            const n = Math.max(data.length, 1);
-            // Target: largest bubble should cover at most targetPct of the
-            // per-point fair-share area, capped at an absolute max.
-            const fairShare = plotArea / n;             // px² each point "owns"
-            const targetPct = 0.6;                      // largest bubble ≤ 60% of fair share
-            const absoluteMax = 900;                    // hard cap for sparse plots
-            const absoluteMin = 16;                     // min max-size so it's still visible
-            const maxSize = Math.round(Math.max(absoluteMin, Math.min(absoluteMax, fairShare * targetPct)));
-            const minSize = 9;                          // ≈ 3 px radius
-            encodingObj.scale = { type: "sqrt", zero: true, range: [minSize, maxSize] };
-        }
-
         const fieldName = encoding.field;
 
         // Handle count aggregate without a field
@@ -242,6 +224,32 @@ export function assembleChart(
                     encodingObj.legend.symbolSize = 12;
                     encodingObj.legend.labelFontSize = 8;
                 }
+            }
+        }
+
+        // Size channel: set scale based on resolved encoding type.
+        // For quantitative: sqrt scale with zero=true, density-aware max (≤ VL default 361).
+        // For categorical (nominal/ordinal): no zero, balanced min:max ratio (~1:4)
+        //   so all levels are visually distinguishable.
+        if (channel === "size") {
+            const vlDefaultMax = 361;                   // VL's default size scale max (19²)
+            const plotArea = canvasSize.width * canvasSize.height;
+            const n = Math.max(data.length, 1);
+            const fairShare = plotArea / n;
+            const targetPct = 0.6;
+            const absoluteMin = 16;
+
+            const isQuantitative = encodingObj.type === 'quantitative' || encodingObj.type === 'temporal';
+            if (isQuantitative) {
+                // Sqrt scale, zero-based — small values get small dots proportionally
+                const maxSize = Math.round(Math.max(absoluteMin, Math.min(vlDefaultMax, fairShare * targetPct)));
+                const minSize = 9;
+                encodingObj.scale = { type: "sqrt", zero: true, range: [minSize, maxSize] };
+            } else {
+                // Categorical size: balanced ratio so smallest level is still readable
+                const maxSize = Math.round(Math.max(absoluteMin, Math.min(vlDefaultMax, fairShare * targetPct)));
+                const minSize = Math.round(maxSize / 4);  // 1:4 ratio
+                encodingObj.scale = { range: [minSize, maxSize] };
             }
         }
 

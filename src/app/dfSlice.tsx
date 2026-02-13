@@ -45,6 +45,7 @@ export interface ServerConfig {
     PROJECT_FRONT_PAGE: boolean;
     MAX_DISPLAY_ROWS: number;
     DATA_FORMULATOR_HOME?: string;
+    DEV_MODE: boolean;
 }
 
 export interface ModelConfig {
@@ -166,11 +167,12 @@ const initialState: DataFormulatorState = {
         DISABLE_FILE_UPLOAD: false,
         PROJECT_FRONT_PAGE: false,
         MAX_DISPLAY_ROWS: 10000,
+        DEV_MODE: false,
     },
 
     config: {
         formulateTimeoutSeconds: 60,
-        defaultChartWidth: 300,
+        defaultChartWidth: 400,
         defaultChartHeight: 300,
         frontendRowLimit: 50000,
         paletteKey: 'fluent',

@@ -1623,6 +1623,8 @@ const ChartThumbnail: FC<{
                             backgroundColor: chart.saved ? "rgba(255,215,0,0.05)" : "white",
                             justifyContent: 'center',
                             alignItems: 'center',
+                            minHeight: 48,
+                            minWidth: 60,
                         }}
                     >
                         <img 

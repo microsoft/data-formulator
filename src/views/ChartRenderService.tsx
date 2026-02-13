@@ -30,7 +30,7 @@ import _ from 'lodash';
 
 /** Thumbnail rendering dimensions (matches DataThread's 100×80 spec assembly) */
 const THUMB_WIDTH = 120;
-const THUMB_HEIGHT = 100;
+const THUMB_HEIGHT = 90;
 
 /** Full-size base rendering dimensions */
 const FULL_WIDTH = 300;
@@ -126,11 +126,14 @@ export const ChartRenderService: FC = () => {
 
             if (!thumbSpec || thumbSpec === "Table") return;
 
-            // Set compact axis labels — merge with existing config to preserve
-            // step-based sizing (config.view.step/continuousWidth/continuousHeight)
+            // Thumbnail config: mimic old approach — keep everything but shrink it
+            // proportionally so the thumbnail looks like a miniature of the full chart.
             thumbSpec['config'] = {
                 ...thumbSpec['config'],
                 "axis": { ...thumbSpec['config']?.axis, "labelLimit": 30 },
+                "axisX": { labelLimit: 20, title: null },
+                "header": { title: null },
+                "legend": { ...thumbSpec['config']?.legend, "symbolLimit": 5, "labelLimit": 30 },
             };
             thumbSpec['background'] = 'white';
 

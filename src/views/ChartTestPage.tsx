@@ -392,6 +392,210 @@ function genScatterTests(): TestCase[] {
         });
     }
 
+    // ---- Bubble chart size evaluation suite ----
+    // Vary cardinality to help decide the max size cap
+
+    // 9. Bubble — 5 points (very sparse, max size should be generous)
+    {
+        const countries = genCategories('Country', 5);
+        const data = countries.map(c => ({
+            X: rand() * 100,
+            Y: rand() * 100,
+            Population: Math.round(1e6 + rand() * 1.4e9),
+            Country: c,
+        }));
+        tests.push({
+            title: 'Bubble 5 pts (quant size)',
+            description: '5 countries — sparse, max size should be at VL default 361',
+            tags: ['quantitative', 'size', 'bubble', 'small'],
+            chartType: 'Scatter Plot',
+            data,
+            fields: [makeField('X'), makeField('Y'), makeField('Population'), makeField('Country')],
+            metadata: {
+                X: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                Y: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                Population: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                Country: { type: Type.String, semanticType: 'Country', levels: countries },
+            },
+            encodingMap: { x: makeEncodingItem('X'), y: makeEncodingItem('Y'), size: makeEncodingItem('Population'), color: makeEncodingItem('Country') },
+        });
+    }
+
+    // 10. Bubble — 15 points
+    {
+        const countries = genCategories('Country', 15);
+        const data = countries.map(c => ({
+            GDP: 500 + rand() * 20000,
+            LifeExp: 55 + rand() * 30,
+            Population: Math.round(1e6 + rand() * 1.4e9),
+            Country: c,
+        }));
+        tests.push({
+            title: 'Bubble 15 pts (quant size)',
+            description: '15 countries — moderate, should still be near VL default',
+            tags: ['quantitative', 'size', 'bubble', 'medium'],
+            chartType: 'Scatter Plot',
+            data,
+            fields: [makeField('GDP'), makeField('LifeExp'), makeField('Population'), makeField('Country')],
+            metadata: {
+                GDP: { type: Type.Number, semanticType: 'Amount', levels: [] },
+                LifeExp: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                Population: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                Country: { type: Type.String, semanticType: 'Country', levels: countries },
+            },
+            encodingMap: { x: makeEncodingItem('GDP'), y: makeEncodingItem('LifeExp'), size: makeEncodingItem('Population'), color: makeEncodingItem('Country') },
+        });
+    }
+
+    // 11. Bubble — 50 points
+    {
+        const n = 50;
+        const data = Array.from({ length: n }, (_, i) => ({
+            X: rand() * 100,
+            Y: rand() * 100,
+            Size: Math.round(10 + rand() * 990),
+            Group: ['A', 'B', 'C', 'D', 'E'][i % 5],
+        }));
+        tests.push({
+            title: 'Bubble 50 pts (quant size)',
+            description: '50 points with 5 color groups — density starts to matter',
+            tags: ['quantitative', 'size', 'bubble', 'medium'],
+            chartType: 'Scatter Plot',
+            data,
+            fields: [makeField('X'), makeField('Y'), makeField('Size'), makeField('Group')],
+            metadata: {
+                X: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                Y: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                Size: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                Group: { type: Type.String, semanticType: 'Category', levels: ['A', 'B', 'C', 'D', 'E'] },
+            },
+            encodingMap: { x: makeEncodingItem('X'), y: makeEncodingItem('Y'), size: makeEncodingItem('Size'), color: makeEncodingItem('Group') },
+        });
+    }
+
+    // 12. Bubble — 100 points
+    {
+        const n = 100;
+        const data = Array.from({ length: n }, () => ({
+            X: rand() * 100,
+            Y: rand() * 100,
+            Revenue: Math.round(100 + rand() * 9900),
+        }));
+        tests.push({
+            title: 'Bubble 100 pts (quant size)',
+            description: '100 points — fair-share starts shrinking max size',
+            tags: ['quantitative', 'size', 'bubble', 'large'],
+            chartType: 'Scatter Plot',
+            data,
+            fields: [makeField('X'), makeField('Y'), makeField('Revenue')],
+            metadata: {
+                X: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                Y: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                Revenue: { type: Type.Number, semanticType: 'Amount', levels: [] },
+            },
+            encodingMap: { x: makeEncodingItem('X'), y: makeEncodingItem('Y'), size: makeEncodingItem('Revenue') },
+        });
+    }
+
+    // 13. Bubble — 500 points (very dense)
+    {
+        const n = 500;
+        const data = Array.from({ length: n }, () => ({
+            X: rand() * 100,
+            Y: rand() * 100,
+            Weight: Math.round(1 + rand() * 100),
+        }));
+        tests.push({
+            title: 'Bubble 500 pts (quant size)',
+            description: '500 points — should shrink significantly',
+            tags: ['quantitative', 'size', 'bubble', 'large'],
+            chartType: 'Scatter Plot',
+            data,
+            fields: [makeField('X'), makeField('Y'), makeField('Weight')],
+            metadata: {
+                X: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                Y: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                Weight: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+            },
+            encodingMap: { x: makeEncodingItem('X'), y: makeEncodingItem('Y'), size: makeEncodingItem('Weight') },
+        });
+    }
+
+    // 14. Bubble — ordinal size (few ordered levels)
+    {
+        const priorities = ['Low', 'Medium', 'High', 'Critical'];
+        const n = 30;
+        const data = Array.from({ length: n }, () => ({
+            X: rand() * 100,
+            Y: rand() * 100,
+            Priority: priorities[Math.floor(rand() * priorities.length)],
+        }));
+        tests.push({
+            title: 'Bubble 30 pts (ordinal size)',
+            description: '30 points sized by ordinal Priority — 4 distinct size levels',
+            tags: ['ordinal', 'size', 'bubble', 'medium'],
+            chartType: 'Scatter Plot',
+            data,
+            fields: [makeField('X'), makeField('Y'), makeField('Priority')],
+            metadata: {
+                X: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                Y: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                Priority: { type: Type.String, semanticType: 'Rank', levels: priorities },
+            },
+            encodingMap: { x: makeEncodingItem('X'), y: makeEncodingItem('Y'), size: makeEncodingItem('Priority') },
+        });
+    }
+
+    // 15. Bubble — size with large numeric range (e.g. population 1K to 1B)
+    {
+        const countries = genCategories('Country', 20);
+        const data = countries.map(c => ({
+            X: rand() * 100,
+            Y: rand() * 100,
+            Pop: Math.round(1e3 + rand() * 1e9),
+            Country: c,
+        }));
+        tests.push({
+            title: 'Bubble 20 pts (huge value range)',
+            description: '20 countries, Pop ranges 1K-1B — tests sqrt scale discrimination',
+            tags: ['quantitative', 'size', 'bubble', 'medium', 'skewed'],
+            chartType: 'Scatter Plot',
+            data,
+            fields: [makeField('X'), makeField('Y'), makeField('Pop'), makeField('Country')],
+            metadata: {
+                X: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                Y: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                Pop: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                Country: { type: Type.String, semanticType: 'Country', levels: countries },
+            },
+            encodingMap: { x: makeEncodingItem('X'), y: makeEncodingItem('Y'), size: makeEncodingItem('Pop'), color: makeEncodingItem('Country') },
+        });
+    }
+
+    // 16. Bubble — size with narrow numeric range (e.g. 90-100)
+    {
+        const n = 20;
+        const data = Array.from({ length: n }, () => ({
+            X: rand() * 100,
+            Y: rand() * 100,
+            Score: 90 + rand() * 10,
+        }));
+        tests.push({
+            title: 'Bubble 20 pts (narrow value range)',
+            description: '20 points, Score 90-100 — tests size discrimination for tight data',
+            tags: ['quantitative', 'size', 'bubble', 'medium', 'narrow'],
+            chartType: 'Scatter Plot',
+            data,
+            fields: [makeField('X'), makeField('Y'), makeField('Score')],
+            metadata: {
+                X: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                Y: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                Score: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+            },
+            encodingMap: { x: makeEncodingItem('X'), y: makeEncodingItem('Y'), size: makeEncodingItem('Score') },
+        });
+    }
+
     return tests;
 }
 
@@ -2641,11 +2845,14 @@ const ChartTestPage: React.FC = () => {
                 <Tabs
                     value={activeTab}
                     onChange={(_, v) => setActiveTab(v)}
-                    variant="scrollable"
-                    scrollButtons="auto"
+                    variant="standard"
                     sx={{
                         minHeight: 36,
+                        flexWrap: 'wrap',
+                        '& .MuiTabs-flexContainer': { flexWrap: 'wrap' },
                         '& .MuiTab-root': { minHeight: 36, py: 0.5, textTransform: 'none', fontSize: 13 },
+                        '& .MuiTabs-indicator': { display: 'none' },
+                        '& .Mui-selected': { backgroundColor: 'rgba(0,0,0,0.08)', borderRadius: 1 },
                     }}
                 >
                     {chartGroups.map((g, i) => (

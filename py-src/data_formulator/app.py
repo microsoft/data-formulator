@@ -57,6 +57,7 @@ app.config['CLI_ARGS'] = {
     'project_front_page': os.environ.get('PROJECT_FRONT_PAGE', 'false').lower() == 'true',
     'max_display_rows': int(os.environ.get('MAX_DISPLAY_ROWS', '10000')),
     'data_dir': os.environ.get('DATA_FORMULATOR_HOME', None),
+    'dev': os.environ.get('DEV_MODE', 'false').lower() == 'true',
 }
 
 # Get logger for this module (logging config moved to run_app function)
@@ -139,6 +140,7 @@ def get_app_config():
         "DISABLE_FILE_UPLOAD": args['disable_file_upload'],
         "PROJECT_FRONT_PAGE": args['project_front_page'],
         "MAX_DISPLAY_ROWS": args['max_display_rows'],
+        "DEV_MODE": args.get('dev', False),
     }
 
     if not args['disable_database']:
@@ -187,6 +189,7 @@ def run_app():
         'project_front_page': args.project_front_page,
         'max_display_rows': args.max_display_rows,
         'data_dir': args.data_dir,
+        'dev': args.dev,
     }
     
     # Register blueprints (this is where heavy imports happen)

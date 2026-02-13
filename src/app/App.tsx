@@ -985,6 +985,7 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
                                 color: 'text.primary',
                                 backgroundColor: isChartTestPage ? 'rgba(0, 0, 0, 0.08)' : 'rgba(0, 0, 0, 0.04)',
                             },
+                            display: serverConfig.DEV_MODE ? undefined : 'none',
                         }}
                     >
                         Chart Test
@@ -1143,10 +1144,12 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
         {
             path: "/about",
             element: <About />,
-        }, {
+        },
+        ...(serverConfig.DEV_MODE ? [{
             path: "/chart-test",
             element: <ChartTestPage />,
-        }, {
+        }] : []),
+        {
             path: "/",
             element: serverConfig.PROJECT_FRONT_PAGE ? <About /> : <DataFormulatorFC />,
         }, {
