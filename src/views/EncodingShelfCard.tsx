@@ -51,7 +51,7 @@ import { createDictTable, DictTable } from "../components/ComponentType";
 import { getUrls, resolveChartFields, getTriggers, assembleVegaChart, resolveRecommendedChart, fetchWithIdentity } from '../app/utils';
 import { EncodingBox } from './EncodingBox';
 
-import { ChannelGroups, CHART_TEMPLATES, getChartChannels, getChartTemplate } from '../components/ChartTemplates';
+import { channelGroups, CHART_TEMPLATES, getChartChannels, getChartTemplate } from '../components/ChartTemplates';
 import { checkChartAvailability, getDataTable } from './VisualizationView';
 import { TableIcon, AgentIcon as PrecisionManufacturing } from '../icons';
 import ChangeCircleOutlinedIcon from '@mui/icons-material/ChangeCircleOutlined';
@@ -317,7 +317,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
         }));
     };
     
-    let encodingBoxGroups = Object.entries(ChannelGroups)
+    let encodingBoxGroups = Object.entries(channelGroups)
         .filter(([group, channelList]) => channelList.some(ch => Object.keys(encodingMap).includes(ch)))
         .map(([group, channelList]) => {
 
@@ -379,7 +379,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
             }
 
             let chartAvailable = checkChartAvailability(chart, conceptShelfItems, currentTable.rows);
-            let currentChartPng = chartAvailable ? await vegaLiteSpecToPng(assembleVegaChart(chart.chartType, chart.encodingMap, activeFields, currentTable.rows, currentTable.metadata, 20, false, 100, 80, false, chart.config)) : undefined;
+            let currentChartPng = chartAvailable ? await vegaLiteSpecToPng(assembleVegaChart(chart.chartType, chart.encodingMap, activeFields, currentTable.rows, currentTable.metadata, 100, 80, false, chart.config)) : undefined;
 
             let actionTables = actionTableIds.map(id => tables.find(t => t.id == id) as DictTable);
 
@@ -546,7 +546,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
         if (chartComplete && chartSpec) {
             currentChartImage = await vegaLiteSpecToPng(assembleVegaChart(
                 chart.chartType, chart.encodingMap, activeFields, currentTable.rows,
-                currentTable.metadata, 20, false, 100, 80, false, chart.config
+                currentTable.metadata, 100, 80, false, chart.config
             ));
         }
 
@@ -1058,12 +1058,12 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
             {/* Template-driven config property selectors */}
             {(() => {
                     const template = getChartTemplate(chart.chartType);
-                    const configProps = template?.configProperties;
+                    const configProps = template?.properties;
                     if (!configProps || configProps.length === 0) return null;
                     return (
                         <Box sx={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                             {configProps.map((propDef) => {
-                                if (propDef.type === 'slider') {
+                                if (propDef.type === 'continuous') {
                                     const currentValue = chart.config?.[propDef.key] ?? propDef.defaultValue ?? propDef.min ?? 0;
                                     return (
                                         <Box key={`config-${propDef.key}`} sx={{
@@ -1100,7 +1100,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                                         </Box>
                                     );
                                 }
-                                if (propDef.type !== 'select' || !propDef.options) return null;
+                                if (propDef.type !== 'discrete' || !propDef.options) return null;
                                 const currentValue = chart.config?.[propDef.key] ?? propDef.defaultValue;
                                 const options = propDef.options;
                                 // Find the index of the current value in options (deep compare via JSON)

@@ -549,8 +549,6 @@ export const ReportView: FC = () => {
                 conceptShelfItems,
                 processedRows,
                 chartTable.metadata,
-                30,
-                true,
                 config.defaultChartWidth,
                 config.defaultChartHeight,
                 true,

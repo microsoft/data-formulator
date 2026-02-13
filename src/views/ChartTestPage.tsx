@@ -23,7 +23,8 @@ import { getChartTemplate, CHART_TEMPLATES } from '../components/ChartTemplates'
 import { Type } from '../data/types';
 import { assembleVegaChart } from '../app/utils';
 import { Channel, EncodingItem, FieldItem } from '../components/ComponentType';
-import { CHANNEL_LIST } from '../components/ChartTemplates';
+import { channels } from '../components/ChartTemplates';
+import { AssembleOptions } from '../lib/agents-chart-lib';
 
 // ============================================================================
 // Synthetic Data Generators
@@ -147,7 +148,8 @@ interface TestCase {
     fields: FieldItem[];
     metadata: Record<string, { type: Type; semanticType: string; levels: any[] }>;
     encodingMap: Partial<Record<Channel, EncodingItem>>;
-    chartConfig?: Record<string, any>;
+    chartProperties?: Record<string, any>;
+    assembleOptions?: AssembleOptions;
 }
 
 // ============================================================================
@@ -294,6 +296,99 @@ function genScatterTests(): TestCase[] {
                 x: makeEncodingItem('GDP'), y: makeEncodingItem('LifeExpectancy'), 
                 size: makeEncodingItem('Population'), color: makeEncodingItem('Country'),
             },
+        });
+    }
+
+    // 5. Dense scatter — coverage-based point sizing (200 points, should have some shrinkage)
+    {
+        const n = 200;
+        const data = Array.from({ length: n }, () => ({
+            X: rand() * 100,
+            Y: rand() * 100,
+        }));
+        tests.push({
+            title: 'Dense scatter (200 pts)',
+            description: '200 random points — tests coverage-based point sizing (moderate density)',
+            tags: ['quantitative', 'density', 'medium'],
+            chartType: 'Scatter Plot',
+            data,
+            fields: [makeField('X'), makeField('Y')],
+            metadata: {
+                X: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                Y: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+            },
+            encodingMap: { x: makeEncodingItem('X'), y: makeEncodingItem('Y') },
+        });
+    }
+
+    // 6. Very dense scatter — 2000 points, should shrink significantly
+    {
+        const n = 2000;
+        const data = Array.from({ length: n }, () => ({
+            X: rand() * 100,
+            Y: rand() * 100,
+        }));
+        tests.push({
+            title: 'Very dense scatter (2000 pts)',
+            description: '2000 random points — should shrink to small dots',
+            tags: ['quantitative', 'density', 'large'],
+            chartType: 'Scatter Plot',
+            data,
+            fields: [makeField('X'), makeField('Y')],
+            metadata: {
+                X: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                Y: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+            },
+            encodingMap: { x: makeEncodingItem('X'), y: makeEncodingItem('Y') },
+        });
+    }
+
+    // 7. Dense scatter with color — 500 points, 4 groups
+    {
+        const groups = ['A', 'B', 'C', 'D'];
+        const n = 500;
+        const data = Array.from({ length: n }, (_, i) => ({
+            X: rand() * 100,
+            Y: rand() * 100,
+            Group: groups[i % groups.length],
+        }));
+        tests.push({
+            title: 'Dense + Color (500 pts, 4 groups)',
+            description: '500 points with 4 color groups — tests sizing with color channel',
+            tags: ['quantitative', 'nominal', 'color', 'density', 'large'],
+            chartType: 'Scatter Plot',
+            data,
+            fields: [makeField('X'), makeField('Y'), makeField('Group')],
+            metadata: {
+                X: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                Y: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                Group: { type: Type.String, semanticType: 'Category', levels: groups },
+            },
+            encodingMap: { x: makeEncodingItem('X'), y: makeEncodingItem('Y'), color: makeEncodingItem('Group') },
+        });
+    }
+
+    // 8. Bubble chart with many points — size encoding should prevent point shrinking
+    {
+        const n = 300;
+        const data = Array.from({ length: n }, () => ({
+            X: rand() * 100,
+            Y: rand() * 100,
+            Z: rand() * 1000,
+        }));
+        tests.push({
+            title: 'Dense bubble (300 pts, size mapped)',
+            description: '300 points with size encoding — applyPointSizeScaling should be skipped',
+            tags: ['quantitative', 'size', 'density', 'medium'],
+            chartType: 'Scatter Plot',
+            data,
+            fields: [makeField('X'), makeField('Y'), makeField('Z')],
+            metadata: {
+                X: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                Y: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                Z: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+            },
+            encodingMap: { x: makeEncodingItem('X'), y: makeEncodingItem('Y'), size: makeEncodingItem('Z') },
         });
     }
 
@@ -2179,6 +2274,199 @@ function genOverflowTests(): TestCase[] {
     return tests;
 }
 
+// ------ Elasticity & Stretch Comparison ------
+function genElasticityTests(): TestCase[] {
+    const tests: TestCase[] = [];
+    const rand = seededRandom(999);
+
+    // ========== Helper to build a bar-chart test case with given layout ==========
+    function makeBarTest(
+        title: string,
+        description: string,
+        tags: string[],
+        xCategories: string[],
+        assembleOptions: AssembleOptions,
+        facetCategories?: string[],
+    ): TestCase {
+        const data: Record<string, any>[] = [];
+        if (facetCategories) {
+            for (const f of facetCategories) {
+                for (const x of xCategories) {
+                    data.push({ Panel: f, Category: x, Value: Math.round(10 + rand() * 500) });
+                }
+            }
+        } else {
+            for (const x of xCategories) {
+                data.push({ Category: x, Value: Math.round(10 + rand() * 500) });
+            }
+        }
+
+        const fields = facetCategories
+            ? [makeField('Panel'), makeField('Category'), makeField('Value')]
+            : [makeField('Category'), makeField('Value')];
+
+        const encodingMap: Partial<Record<Channel, EncodingItem>> = {
+            x: makeEncodingItem('Category'),
+            y: makeEncodingItem('Value'),
+        };
+        if (facetCategories) {
+            encodingMap.column = makeEncodingItem('Panel');
+        }
+
+        return {
+            title,
+            description,
+            tags,
+            chartType: 'Bar Chart',
+            data,
+            fields,
+            metadata: buildMetadata(data),
+            encodingMap,
+            assembleOptions,
+        };
+    }
+
+    // =========================================================================
+    // Group A: Axis-only (no facets) — compare elasticity / maxStretch
+    // =========================================================================
+    const mediumCategories = genCategories('Country', 15);
+    const largeCategories = genCategories('Name', 30);
+
+    // A1: 15 x-categories — default
+    tests.push(makeBarTest(
+        '15 bars — default (e=0.5, s=2)',
+        '15 x-categories, default axis elasticity & stretch',
+        ['axis-only', 'medium', 'default'],
+        mediumCategories,
+        { elasticity: 0.5, maxStretch: 2 },
+    ));
+
+    // A2: 15 x-categories — low elasticity
+    tests.push(makeBarTest(
+        '15 bars — low axis (e=0.2, s=1.2)',
+        '15 x-categories, conservative axis stretch',
+        ['axis-only', 'medium', 'low'],
+        mediumCategories,
+        { elasticity: 0.2, maxStretch: 1.2 },
+    ));
+
+    // A3: 15 x-categories — high elasticity
+    tests.push(makeBarTest(
+        '15 bars — high axis (e=0.8, s=3)',
+        '15 x-categories, aggressive axis stretch',
+        ['axis-only', 'medium', 'high'],
+        mediumCategories,
+        { elasticity: 0.8, maxStretch: 3 },
+    ));
+
+    // A4: 30 x-categories — default
+    tests.push(makeBarTest(
+        '30 bars — default (e=0.5, s=2)',
+        '30 x-categories, default axis elasticity & stretch',
+        ['axis-only', 'large', 'default'],
+        largeCategories,
+        { elasticity: 0.5, maxStretch: 2 },
+    ));
+
+    // A5: 30 x-categories — low
+    tests.push(makeBarTest(
+        '30 bars — low axis (e=0.2, s=1.2)',
+        '30 x-categories, conservative axis stretch',
+        ['axis-only', 'large', 'low'],
+        largeCategories,
+        { elasticity: 0.2, maxStretch: 1.2 },
+    ));
+
+    // A6: 30 x-categories — high
+    tests.push(makeBarTest(
+        '30 bars — high axis (e=0.8, s=3)',
+        '30 x-categories, aggressive axis stretch',
+        ['axis-only', 'large', 'high'],
+        largeCategories,
+        { elasticity: 0.8, maxStretch: 3 },
+    ));
+
+    // =========================================================================
+    // Group B: Facet + axis — compare facet vs axis params independently
+    // =========================================================================
+    const facets8 = genCategories('Department', 8);
+    const bars5 = genCategories('Category', 5);
+    const facets12 = genCategories('Company', 12);
+    const bars8 = genCategories('Category', 8);
+
+    // B1: 8 facets × 5 bars — all defaults
+    tests.push(makeBarTest(
+        '8F × 5B — all default',
+        '8 column facets, 5 bars each, default axis & facet settings',
+        ['facet+axis', 'default'],
+        bars5,
+        { elasticity: 0.5, maxStretch: 2, facetElasticity: 0.3, facetMaxStretch: 1.5 },
+        facets8,
+    ));
+
+    // B2: 8 facets × 5 bars — conservative facet, default axis
+    tests.push(makeBarTest(
+        '8F × 5B — conservative facet (fe=0.15, fs=1.2)',
+        '8 column facets, 5 bars, conservative facet stretch, default axis',
+        ['facet+axis', 'conservative-facet'],
+        bars5,
+        { elasticity: 0.5, maxStretch: 2, facetElasticity: 0.15, facetMaxStretch: 1.2 },
+        facets8,
+    ));
+
+    // B3: 8 facets × 5 bars — aggressive facet, default axis
+    tests.push(makeBarTest(
+        '8F × 5B — aggressive facet (fe=0.6, fs=2.5)',
+        '8 column facets, 5 bars, aggressive facet stretch, default axis',
+        ['facet+axis', 'aggressive-facet'],
+        bars5,
+        { elasticity: 0.5, maxStretch: 2, facetElasticity: 0.6, facetMaxStretch: 2.5 },
+        facets8,
+    ));
+
+    // B4: 12 facets × 8 bars — all defaults
+    tests.push(makeBarTest(
+        '12F × 8B — all default',
+        '12 column facets, 8 bars each, default settings',
+        ['facet+axis', 'large', 'default'],
+        bars8,
+        { elasticity: 0.5, maxStretch: 2, facetElasticity: 0.3, facetMaxStretch: 1.5 },
+        facets12,
+    ));
+
+    // B5: 12 facets × 8 bars — conservative facet, aggressive axis
+    tests.push(makeBarTest(
+        '12F × 8B — tight facet (fe=0.15, fs=1.2), wide axis (e=0.8, s=3)',
+        '12 facets, 8 bars, conservative facet + aggressive axis',
+        ['facet+axis', 'large', 'mixed-tight-facet'],
+        bars8,
+        { elasticity: 0.8, maxStretch: 3, facetElasticity: 0.15, facetMaxStretch: 1.2 },
+        facets12,
+    ));
+
+    // B6: 12 facets × 8 bars — aggressive facet, conservative axis
+    tests.push(makeBarTest(
+        '12F × 8B — wide facet (fe=0.6, fs=2.5), tight axis (e=0.2, s=1.2)',
+        '12 facets, 8 bars, aggressive facet + conservative axis',
+        ['facet+axis', 'large', 'mixed-wide-facet'],
+        bars8,
+        { elasticity: 0.2, maxStretch: 1.2, facetElasticity: 0.6, facetMaxStretch: 2.5 },
+        facets12,
+    ));
+
+    // B7: 8 facets × 5 bars — no stretch at all
+    tests.push(makeBarTest(
+        '8F × 5B — no stretch (all 1.0)',
+        '8 column facets, 5 bars, stretch disabled',
+        ['facet+axis', 'no-stretch'],
+        bars5,
+        { elasticity: 0, maxStretch: 1, facetElasticity: 0, facetMaxStretch: 1 },
+        facets8,
+    ));
+
+    return tests;
+}
+
 // ============================================================================
 // All test generators mapped by chart group
 // ============================================================================
@@ -2200,6 +2488,7 @@ const TEST_GENERATORS: Record<string, () => TestCase[]> = {
     'Facet: Rows': genFacetRowTests,
     'Facet: Cols+Rows': genFacetColRowTests,
     'Overflow': genOverflowTests,
+    'Elasticity & Stretch': genElasticityTests,
 };
 
 // ============================================================================
@@ -2217,7 +2506,7 @@ const VegaChart: React.FC<{ testCase: TestCase }> = React.memo(({ testCase }) =>
         try {
             // Build encoding map with all channels defaulting to empty
             const fullEncodingMap: Record<string, EncodingItem> = {};
-            for (const ch of CHANNEL_LIST) {
+            for (const ch of channels) {
                 fullEncodingMap[ch as string] = testCase.encodingMap[ch as Channel] || {};
             }
 
@@ -2227,13 +2516,12 @@ const VegaChart: React.FC<{ testCase: TestCase }> = React.memo(({ testCase }) =>
                 testCase.fields,
                 testCase.data,
                 testCase.metadata,
-                30,    // maxFacetNominalValues
-                false, // aggrPreprocessed
                 400,   // baseChartWidth
                 300,   // baseChartHeight
                 true,  // addTooltips
-                testCase.chartConfig,
+                testCase.chartProperties,
                 1,     // scaleFactor
+                testCase.assembleOptions,
             );
 
             if (!vlSpec) {

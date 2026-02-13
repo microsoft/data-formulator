@@ -118,8 +118,6 @@ export const ChartRenderService: FC = () => {
                 items,
                 visTableRows,
                 table.metadata,
-                20,     // maxFacetNominalValues (same as DataThread)
-                true,   // aggrPreprocessed
                 THUMB_WIDTH,
                 THUMB_HEIGHT,
                 false,  // no tooltips
@@ -143,8 +141,6 @@ export const ChartRenderService: FC = () => {
                 items,
                 visTableRows,
                 table.metadata,
-                24,     // maxFacetNominalValues
-                true,   // aggrPreprocessed
                 FULL_WIDTH,
                 FULL_HEIGHT,
                 true,   // add tooltips

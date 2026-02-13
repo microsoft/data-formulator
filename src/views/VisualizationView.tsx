@@ -322,8 +322,6 @@ const VegaChartRenderer: FC<{
             conceptShelfItems, 
             visTableRows, 
             tableMetadata, 
-            24, 
-            true, 
             chartWidth, 
             chartHeight,
             true,

@@ -2,7 +2,7 @@
 // Licensed under the MIT License.
 
 import { Type } from '../data/types';
-import { CHANNEL_LIST } from "./ChartTemplates"
+import { channels, type ChartTemplateDef } from '../lib/agents-chart-lib';
 import { inferTypeFromValueArray } from '../data/utils';
 
 export type FieldSource = "custom" | "original";
@@ -192,7 +192,7 @@ export type Chart = {
     tableRef: string, 
     saved: boolean,
     source: "user" | "trigger",
-    config?: Record<string, any>,  // additional chart config properties defined by the chart template's configProperties
+    config?: Record<string, any>,  // additional chart properties defined by the chart template
     thumbnail?: string,  // PNG data URL for thumbnail display (managed by ChartRenderService, not persisted)
     insight?: ChartInsight,  // AI-generated insight about the visualization
 }
@@ -233,52 +233,22 @@ export interface EncodingItem {
     scheme?: string
 }
 
-// Defines a configurable property for a chart template
-// These are surfaced in the chart UI for user customization
-export interface ConfigPropertyDef {
-    key: string;                // the property key stored in chart.config
-    label: string;              // display label in the UI
-    type: 'select' | 'slider';  // input type
-    options?: { value: any; label: string }[];  // for 'select': list of options; value can be any type
-    min?: number;               // for 'slider': minimum value
-    max?: number;               // for 'slider': maximum value
-    step?: number;              // for 'slider': step increment
-    defaultValue?: any;         // default value (undefined means "use template default")
-}
 
-export type ChartTemplate = {
-    chart: string,
-    icon: any,
-    template: any,
-    channels: string[],
-    paths: { [key: string]: (string | number)[] | (string | number)[][]; },
-    postProcessor?: (vgSpec: any, table: any[], config?: Record<string, any>) => any,
-    configProperties?: ConfigPropertyDef[],  // additional configurable properties for this chart type
+
+/**
+ * ChartTemplate extends the library's ChartTemplateDef with a UI icon.
+ * The library definition is icon-free for reusability; this type adds
+ * the React element used in the Data Formulator UI.
+ */
+export type ChartTemplate = ChartTemplateDef & {
+    icon: any;
 }
 
 export const AGGR_OP_LIST = ["count", "sum", "average"] as const
-//export const MARK_TYPE_LIST = ['circle', 'bar', 'line', 'area', 'point', 'arc'] as const; //'text', 
-// export const MARK_TYPE_LIST = ['circle', 'bar', 'line', 'area', 'point', 'rect', 'rule', 'square', 'tick', 'arc', 'geo-us-states', 'geo-point'] as const; //'text', 
 
 export type AggrOp = typeof AGGR_OP_LIST[number];
-export type Channel = typeof CHANNEL_LIST[number];
+export type Channel = typeof channels[number];
 
 export interface EncodingDropResult {
     channel: Channel
 }
-
-// export const markToChannels = (mark: string) => {
-//     let channels = [];
-//     if (mark == "rect" || mark == "area") {
-//         channels = ["x", "y", "x2", "y2", "color", "column", "row"];
-//     } else if ( mark == "geo-point" ) {
-//         channels = ["latitude", "longitude", "color",  "opacity", "size", "column", "row"];
-//     } else if ( mark == "geo-us-states") {
-//         channels = ["id", "color", "opacity", "row", "column"];
-//     } else if (mark == "arc") {
-//         channels = ["theta", "radius", "color", "column", "row"];
-//     } else {
-//         channels = ["x", "y", "color", "opacity", "size", "shape", "column", "row"];
-//     } 
-//     return channels;
-// }

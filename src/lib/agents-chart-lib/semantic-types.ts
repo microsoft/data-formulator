@@ -172,21 +172,21 @@ export type SemanticType = typeof SemanticTypes[keyof typeof SemanticTypes];
 // Visualization Categories
 // ---------------------------------------------------------------------------
 
-export type VizCategory = 'quantitative' | 'ordinal' | 'nominal' | 'temporal' | 'geographic';
+export type VisCategory = 'quantitative' | 'ordinal' | 'nominal' | 'temporal' | 'geographic';
 
 // ---------------------------------------------------------------------------
 // Type Sets for Classification
 // ---------------------------------------------------------------------------
 
 /** Types suitable for time-series X axis (have inherent temporal ordering) */
-export const TIMESERIES_X_TYPES = new Set<string>([
+export const timeseriesXTypes = new Set<string>([
     'DateTime', 'Date', 'Time',
     'YearMonth', 'YearQuarter', 'YearWeek',
     'Year', 'Quarter', 'Month', 'Week', 'Day', 'Hour', 'Decade',
 ]);
 
 /** Types suitable for quantitative encoding (true continuous measures) */
-export const MEASURE_TYPES = new Set<string>([
+export const measureTypes = new Set<string>([
     'Quantity', 'Count',
     'Amount', 'Price', 'Revenue', 'Cost',
     'Percentage', 'Rate', 'Ratio',
@@ -196,14 +196,14 @@ export const MEASURE_TYPES = new Set<string>([
 ]);
 
 /** Numeric types that should NOT be used as measures (don't aggregate) */
-export const NON_MEASURE_NUMERIC_TYPES = new Set<string>([
+export const nonMeasureNumericTypes = new Set<string>([
     'Rank', 'Index', 'ID', 'Score', 'Rating', 'Level',
     'Year', 'Month', 'Day', 'Hour',
     'Latitude', 'Longitude',
 ]);
 
 /** Types suitable for categorical color/grouping encoding */
-export const CATEGORICAL_TYPES = new Set<string>([
+export const categoricalTypes = new Set<string>([
     // Entities
     'Name', 'PersonName', 'Username', 'Email',
     'Company', 'Brand', 'Department', 'Product', 'Category',
@@ -218,7 +218,7 @@ export const CATEGORICAL_TYPES = new Set<string>([
 ]);
 
 /** Types suitable for ordinal encoding (have inherent order) */
-export const ORDINAL_TYPES = new Set<string>([
+export const ordinalTypes = new Set<string>([
     // Temporal granules
     'Year', 'Quarter', 'Month', 'Week', 'Day', 'Hour', 'Decade',
     // Discrete numerics
@@ -228,18 +228,18 @@ export const ORDINAL_TYPES = new Set<string>([
 ]);
 
 /** Types suitable for geographic/map visualizations */
-export const GEO_TYPES = new Set<string>([
+export const geoTypes = new Set<string>([
     'Latitude', 'Longitude', 'Coordinates',
     'Location', 'Country', 'State', 'City', 'Region', 'Address', 'ZipCode',
 ]);
 
 /** Geographic coordinate types (for lat/lon matching) */
-export const GEO_COORDINATE_TYPES = new Set<string>([
+export const geoCoordinateTypes = new Set<string>([
     'Latitude', 'Longitude', 'Coordinates',
 ]);
 
 /** Geographic named location types (can be geocoded) */
-export const GEO_LOCATION_TYPES = new Set<string>([
+export const geoLocationTypes = new Set<string>([
     'Location', 'Country', 'State', 'City', 'Region', 'Address', 'ZipCode',
 ]);
 
@@ -251,7 +251,7 @@ export const GEO_LOCATION_TYPES = new Set<string>([
  * Parent type for each semantic type in the lattice.
  * null means this is a root type.
  */
-const TYPE_HIERARCHY: Record<string, string | null> = {
+const typeHierarchy: Record<string, string | null> = {
     // Temporal point-in-time
     DateTime: null,
     Date: 'DateTime',
@@ -345,7 +345,7 @@ const TYPE_HIERARCHY: Record<string, string | null> = {
 /**
  * Mapping from semantic type to preferred Vega-Lite encoding type.
  */
-const VIZ_CATEGORY_MAP: Record<string, VizCategory> = {
+const visCategoryMap: Record<string, VisCategory> = {
     // Temporal → temporal
     DateTime: 'temporal', Date: 'temporal', Time: 'temporal',
     YearMonth: 'temporal', YearQuarter: 'temporal', YearWeek: 'temporal',
@@ -398,81 +398,93 @@ const VIZ_CATEGORY_MAP: Record<string, VizCategory> = {
 
 /**
  * Get the Vega-Lite visualization category for a semantic type.
+ * Returns null for unrecognised types so callers can fall back
+ * to data-driven inference.
  */
-export function getVizCategory(semanticType: string): VizCategory {
-    return VIZ_CATEGORY_MAP[semanticType] ?? 'nominal';
+export function getVisCategory(semanticType: string): VisCategory | null {
+    return visCategoryMap[semanticType] ?? null;
 }
 
+
 /**
- * Check if a semantic type has an explicit mapping in the viz category map.
- * Unknown/generic types (e.g. 'Value') return false, meaning callers should
- * fall back to JS-type-based inference instead of using the nominal default.
+ * Infer a VisCategory from raw data values when no semantic type is available.
+ * Mirrors the DataType → VL encoding type mapping:
+ *   number/integer → quantitative, boolean → nominal, date → temporal, string → nominal.
  */
-export function hasVizCategory(semanticType: string): boolean {
-    return semanticType in VIZ_CATEGORY_MAP;
+export function inferVisCategory(values: any[]): VisCategory {
+    if (values.length === 0) return 'nominal';
+    const isBoolean = (v: any) => v === true || v === false || Object.prototype.toString.call(v) === '[object Boolean]';
+    const isNumber = (v: any) => !isNaN(+v) && !(Object.prototype.toString.call(v) === '[object Date]');
+    const isDate = (v: any) => !isNaN(Date.parse(v));
+    const nonNull = values.filter(v => v != null);
+    if (nonNull.length === 0) return 'nominal';
+    if (nonNull.every(isBoolean)) return 'nominal';
+    if (nonNull.every(isNumber)) return 'quantitative';
+    if (nonNull.every(isDate)) return 'temporal';
+    return 'nominal';
 }
 
 /**
  * Check if a semantic type is a true measure (suitable for quantitative encoding).
  */
 export function isMeasureType(semanticType: string): boolean {
-    return MEASURE_TYPES.has(semanticType);
+    return measureTypes.has(semanticType);
 }
 
 /**
  * Check if a semantic type is suitable for time-series X axis.
  */
 export function isTimeSeriesType(semanticType: string): boolean {
-    return TIMESERIES_X_TYPES.has(semanticType);
+    return timeseriesXTypes.has(semanticType);
 }
 
 /**
  * Check if a semantic type is categorical (suitable for color/grouping).
  */
 export function isCategoricalType(semanticType: string): boolean {
-    return CATEGORICAL_TYPES.has(semanticType);
+    return categoricalTypes.has(semanticType);
 }
 
 /**
  * Check if a semantic type is ordinal (has inherent order).
  */
 export function isOrdinalType(semanticType: string): boolean {
-    return ORDINAL_TYPES.has(semanticType);
+    return ordinalTypes.has(semanticType);
 }
 
 /**
  * Check if a semantic type is geographic.
  */
 export function isGeoType(semanticType: string): boolean {
-    return GEO_TYPES.has(semanticType);
+    return geoTypes.has(semanticType);
 }
 
 /**
  * Check if a semantic type is a geographic coordinate (lat/lon).
  */
 export function isGeoCoordinateType(semanticType: string): boolean {
-    return GEO_COORDINATE_TYPES.has(semanticType);
+    return geoCoordinateTypes.has(semanticType);
 }
 
 /**
  * Check if a semantic type is a named geographic location.
  */
 export function isGeoLocationString(semanticType: string): boolean {
-    return GEO_LOCATION_TYPES.has(semanticType);
+    return geoLocationTypes.has(semanticType);
 }
 
 /**
  * Get the parent type in the hierarchy (for generalization).
  */
 export function getParentType(semanticType: string): string | null {
-    return TYPE_HIERARCHY[semanticType] ?? null;
+    return typeHierarchy[semanticType] ?? null;
 }
 
 /**
  * Check if a semantic type is numeric but should not be aggregated.
  */
 export function isNonMeasureNumeric(semanticType: string): boolean {
-    return NON_MEASURE_NUMERIC_TYPES.has(semanticType);
+    return nonMeasureNumericTypes.has(semanticType);
 }
 
 /**
@@ -581,7 +593,7 @@ export function getDivergingMidpoint(
  * Vega-Lite color schemes organized by use case
  * See: https://vega.github.io/vega/docs/schemes/
  */
-const COLOR_SCHEMES = {
+const colorSchemes = {
     // Categorical (nominal) - good for distinct categories
     categorical: {
         default: 'category10',
@@ -727,12 +739,12 @@ export function getRecommendedColorScheme(
     }
 
     // Temporal granules (Year, Month, Quarter, etc.) - sequential for continuity
-    if (ORDINAL_TYPES.has(semanticType) && ['Year', 'Quarter', 'Month', 'Week', 'Day', 'Hour', 'Decade'].includes(semanticType)) {
+    if (ordinalTypes.has(semanticType) && ['Year', 'Quarter', 'Month', 'Week', 'Day', 'Hour', 'Decade'].includes(semanticType)) {
         return { scheme: 'viridis', type: 'sequential', reason: 'temporal granules use perceptually uniform' };
     }
 
     // Geographic locations - use geographic-friendly palettes
-    if (GEO_LOCATION_TYPES.has(semanticType)) {
+    if (geoLocationTypes.has(semanticType)) {
         if (uniqueValueCount <= 10) {
             return { scheme: 'set2', type: 'categorical', reason: 'geographic regions use distinct pastels' };
         }
@@ -777,7 +789,7 @@ export function getRecommendedColorScheme(
     }
 
     // Quantity/Count/Distance/etc. - general measures
-    if (MEASURE_TYPES.has(semanticType)) {
+    if (measureTypes.has(semanticType)) {
         const sequentialSchemes = ['viridis', 'blues', 'greens', 'reds', 'yelloworangebrown', 'goldgreen'];
         return { 
             scheme: pickScheme(sequentialSchemes, fieldName), 
@@ -787,7 +799,7 @@ export function getRecommendedColorScheme(
     }
 
     // Ordinal types not already handled
-    if (ORDINAL_TYPES.has(semanticType) || encodingType === 'ordinal') {
+    if (ordinalTypes.has(semanticType) || encodingType === 'ordinal') {
         const ordinalSchemes = ['blues', 'greens', 'purples', 'oranges'];
         return { 
             scheme: pickScheme(ordinalSchemes, fieldName), 
