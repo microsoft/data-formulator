@@ -317,9 +317,10 @@ VL_TYPE_MAP: Dict[str, str] = {
     # Temporal → temporal
     "DateTime": "temporal", "Date": "temporal", "Time": "temporal",
     "YearMonth": "temporal", "YearQuarter": "temporal", "YearWeek": "temporal",
+    "Year": "temporal",
 
     # Temporal granules → ordinal
-    "Year": "ordinal", "Quarter": "ordinal", "Month": "ordinal",
+    "Quarter": "ordinal", "Month": "ordinal",
     "Week": "ordinal", "Day": "ordinal", "Hour": "ordinal", "Decade": "ordinal",
     "TimeRange": "ordinal",
 
@@ -392,11 +393,12 @@ _QUANT_PATTERNS: list[_re.Pattern] = [
 # Patterns that indicate temporal
 _TEMPORAL_PATTERNS: list[_re.Pattern] = [
     _re.compile(r'(?:^|_)(date|datetime|timestamp|time|created_at|updated_at|started_at|ended_at)(?:_|$)', _re.I),
+    _re.compile(r'^year$', _re.I),
 ]
 
 # Patterns that indicate ordinal (time granules)
 _ORDINAL_PATTERNS: list[_re.Pattern] = [
-    _re.compile(r'^(year|month|quarter|week|day|hour|decade|year_month|year_quarter)$', _re.I),
+    _re.compile(r'^(month|quarter|week|day|hour|decade|year_month|year_quarter)$', _re.I),
     _re.compile(r'(?:^|_)(rank|ranking|level|tier|grade|priority)(?:_|$)', _re.I),
 ]
 

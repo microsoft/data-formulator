@@ -349,9 +349,10 @@ const VIZ_CATEGORY_MAP: Record<string, VizCategory> = {
     // Temporal → temporal
     DateTime: 'temporal', Date: 'temporal', Time: 'temporal',
     YearMonth: 'temporal', YearQuarter: 'temporal', YearWeek: 'temporal',
+    Year: 'temporal',
     
     // Temporal granules → ordinal
-    Year: 'ordinal', Quarter: 'ordinal', Month: 'ordinal',
+    Quarter: 'ordinal', Month: 'ordinal',
     Week: 'ordinal', Day: 'ordinal', Hour: 'ordinal', Decade: 'ordinal',
     TimeRange: 'ordinal',
     
@@ -400,6 +401,15 @@ const VIZ_CATEGORY_MAP: Record<string, VizCategory> = {
  */
 export function getVizCategory(semanticType: string): VizCategory {
     return VIZ_CATEGORY_MAP[semanticType] ?? 'nominal';
+}
+
+/**
+ * Check if a semantic type has an explicit mapping in the viz category map.
+ * Unknown/generic types (e.g. 'Value') return false, meaning callers should
+ * fall back to JS-type-based inference instead of using the nominal default.
+ */
+export function hasVizCategory(semanticType: string): boolean {
+    return semanticType in VIZ_CATEGORY_MAP;
 }
 
 /**
@@ -530,7 +540,6 @@ export function getDivergingMidpoint(
             // But check if data is likely Fahrenheit (spans around 32)
             if (spansBothSides(0)) return 0;
             if (spansBothSides(32) && max > 50) return 32; // Likely Fahrenheit
-            // If all positive or all negative, use median
             return (min + max) / 2;
             
         case 'Percentage':
@@ -627,12 +636,14 @@ const COLOR_SCHEMES = {
  * @param encodingType - The Vega-Lite encoding type ('nominal', 'ordinal', 'quantitative')
  * @param uniqueValueCount - Number of unique values (for categorical sizing)
  * @param fieldName - Field name (for consistent hashing)
+ * @param values - Optional actual data values (for inspecting data range)
  */
 export function getRecommendedColorScheme(
     semanticType: string | undefined,
     encodingType: 'nominal' | 'ordinal' | 'quantitative' | 'temporal',
     uniqueValueCount: number = 10,
-    fieldName: string = ''
+    fieldName: string = '',
+    values: any[] = []
 ): ColorSchemeRecommendation {
     
     // Helper for consistent scheme selection from array
@@ -653,29 +664,50 @@ export function getRecommendedColorScheme(
         if (encodingType === 'ordinal') {
             return { scheme: 'blues', type: 'sequential', reason: 'default for ordinal' };
         }
-        // nominal/temporal default to categorical
+        // nominal/temporal default to categorical — use saturated schemes for readability
         return { 
-            scheme: uniqueValueCount > 10 ? 'category20' : 'category10', 
+            scheme: uniqueValueCount > 10 ? 'tableau20' : 'tableau10', 
             type: 'categorical', 
             reason: 'default for categorical' 
         };
     }
 
-    // Temperature - use intuitive hot-cold scheme
+    // Temperature - use diverging only when data actually spans both hot and cold (crosses 0)
     if (semanticType === 'Temperature') {
-        return { scheme: 'redblue', type: 'diverging', reason: 'temperature uses hot-cold diverging' };
+        if (encodingType === 'quantitative') {
+            const nums = values.filter((v: any) => typeof v === 'number' && !isNaN(v));
+            const min = nums.length > 0 ? Math.min(...nums) : 0;
+            const max = nums.length > 0 ? Math.max(...nums) : 0;
+            if (min < 0 && max > 0) {
+                return { scheme: 'redblue', type: 'diverging', reason: 'temperature spans hot-cold around 0' };
+            }
+        }
+        return { scheme: 'reds', type: 'sequential', reason: 'temperature single-direction uses sequential' };
     }
 
-    // Percentage/Rate/Ratio - diverging if could be positive/negative, otherwise sequential
+    // Percentage/Rate/Ratio - diverging ONLY when data has both positive and negative values
     if (['Percentage', 'Rate', 'Ratio'].includes(semanticType)) {
         if (encodingType === 'quantitative') {
-            return { scheme: 'redblue', type: 'diverging', reason: 'percentage/rate may have positive/negative' };
+            const nums = values.filter((v: any) => typeof v === 'number' && !isNaN(v));
+            const min = nums.length > 0 ? Math.min(...nums) : 0;
+            const max = nums.length > 0 ? Math.max(...nums) : 0;
+            if (min < 0 && max > 0) {
+                return { scheme: 'redblue', type: 'diverging', reason: 'percentage/rate spans positive and negative' };
+            }
         }
-        return { scheme: 'oranges', type: 'sequential', reason: 'percentage as ordinal categories' };
+        return { scheme: 'oranges', type: 'sequential', reason: 'percentage/rate all same sign uses sequential' };
     }
 
-    // Revenue/Price/Cost/Amount - money-related, use gold/green tones
+    // Revenue/Price/Cost/Amount - diverging only when data spans negative
     if (['Revenue', 'Price', 'Cost', 'Amount'].includes(semanticType)) {
+        if (encodingType === 'quantitative') {
+            const nums = values.filter((v: any) => typeof v === 'number' && !isNaN(v));
+            const min = nums.length > 0 ? Math.min(...nums) : 0;
+            const max = nums.length > 0 ? Math.max(...nums) : 0;
+            if (min < 0 && max > 0) {
+                return { scheme: 'redblue', type: 'diverging', reason: 'financial data spans positive and negative' };
+            }
+        }
         return { scheme: 'goldgreen', type: 'sequential', reason: 'financial data uses gold-green' };
     }
 
@@ -721,14 +753,22 @@ export function getRecommendedColorScheme(
         };
     }
 
-    // Companies/Brands/Products - use paired for potential comparisons
+    // Companies/Brands/Products - use paired for small sets, tableau for large
     if (['Company', 'Brand', 'Product', 'Department'].includes(semanticType)) {
-        return { scheme: 'paired', type: 'categorical', reason: 'entities use paired for comparison' };
+        return { 
+            scheme: uniqueValueCount > 10 ? 'tableau20' : 'paired', 
+            type: 'categorical', 
+            reason: 'entities use distinct categorical' 
+        };
     }
 
-    // Person names - use pastel for softer look
+    // Person names - use saturated schemes for readability; only pastel for very small sets
     if (['Name', 'PersonName', 'Username'].includes(semanticType)) {
-        return { scheme: 'pastel1', type: 'categorical', reason: 'names use soft pastels' };
+        return { 
+            scheme: uniqueValueCount > 8 ? 'tableau20' : 'set2', 
+            type: 'categorical', 
+            reason: 'names use readable categorical' 
+        };
     }
 
     // Duration - use sequential (longer = more intense)
@@ -738,7 +778,7 @@ export function getRecommendedColorScheme(
 
     // Quantity/Count/Distance/etc. - general measures
     if (MEASURE_TYPES.has(semanticType)) {
-        const sequentialSchemes = ['viridis', 'blues', 'greens', 'plasma'];
+        const sequentialSchemes = ['viridis', 'blues', 'greens', 'reds', 'yelloworangebrown', 'goldgreen'];
         return { 
             scheme: pickScheme(sequentialSchemes, fieldName), 
             type: 'sequential', 
@@ -759,7 +799,7 @@ export function getRecommendedColorScheme(
     // Default categorical for nominal
     if (encodingType === 'nominal' || encodingType === 'temporal') {
         return { 
-            scheme: uniqueValueCount > 10 ? 'category20' : 'category10', 
+            scheme: uniqueValueCount > 10 ? 'tableau20' : 'tableau10', 
             type: 'categorical', 
             reason: 'default categorical palette' 
         };
@@ -789,7 +829,8 @@ export function getRecommendedColorSchemeWithMidpoint(
         semanticType,
         encodingType,
         uniqueValues.length,
-        fieldName
+        fieldName,
+        values
     );
     
     // For diverging schemes, calculate the midpoint

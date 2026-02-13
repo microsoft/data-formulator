@@ -11,6 +11,7 @@ import { getDType, Type } from "../data/types";
 import * as d3 from 'd3';
 import {
     getVizCategory,
+    hasVizCategory,
     isTimeSeriesType,
     isMeasureType,
     isOrdinalType,
@@ -467,49 +468,68 @@ export const assembleVegaChart = (
                 const fieldValues = workingTable.map(r => r[field.name]);
                 
                 // Use semantic type system to determine Vega-Lite encoding type
-                if (semanticType) {
+                // Only use semantic mapping when the type is recognized; generic/unknown
+                // types (e.g. 'Value') fall through to JS-type inference via getDType.
+                if (semanticType && hasVizCategory(semanticType)) {
                     const vizCategory = getVizCategory(semanticType);
                     
+                    // Detect bar-like charts where temporal fields on x/y should be ordinal (discrete bars)
+                    const isBarChart = ['Bar Chart', 'Stacked Bar Chart', 'Grouped Bar Chart', 'Heatmap'].includes(chartType);
+
                     // Map semantic viz category to Vega-Lite type
                     switch (vizCategory) {
                         case 'temporal':
-                            // For temporal types in color/size/facet channels, use nominal
-                            if (['color', 'size', 'column', 'row'].includes(channel)) {
-                                encodingObj["type"] = "nominal";
+                            // For temporal types in size/facet channels, use ordinal
+                            if (['size', 'column', 'row'].includes(channel)) {
+                                encodingObj["type"] = "ordinal";
+                            } else if (channel === 'color') {
+                                // Year-like fields in color: use temporal (continuous gradient) when
+                                // many unique values, ordinal (distinct colors) when few.
+                                const uniqueColorValues = new Set(workingTable.map(r => r[field.name])).size;
+                                encodingObj["type"] = uniqueColorValues > 12 ? "temporal" : "ordinal";
                             } else {
-                                // Check if values are actually parseable as temporal (date strings or Date objects)
-                                // We want to ensure the data is in a format Vega-Lite can parse as temporal
+                                // Check if values are actually parseable as temporal
+                                // Use Date.parse() to match Vega-Lite's own date detection (vega-loader)
                                 const sampleValues = workingTable.map(r => r[field.name]).slice(0, 15).filter(v => v != null);
                                 const isValidTemporal = sampleValues.length > 0 && sampleValues.some(val => {
-                                    // Accept Date objects directly
                                     if (val instanceof Date) return true;
-                                    // Accept strings that look like dates (not just plain numbers)
+                                    if (typeof val === 'number') {
+                                        // Accept year-like numbers (e.g., 1960, 2024)
+                                        if (val >= 1000 && val <= 3000) return true;
+                                        // Unix timestamps in milliseconds
+                                        if (val > 86400000 && val < 4200000000000) return true;
+                                        return false;
+                                    }
                                     if (typeof val === 'string') {
                                         const trimmed = val.trim();
-                                        // Must contain date separators (-, /, :, T) to be a date string
-                                        const hasDateSeparators = /[-/:T]/.test(trimmed);
-                                        if (!hasDateSeparators) return false;
-                                        const date = new Date(trimmed);
-                                        return !isNaN(date.getTime());
-                                    }
-                                    // Numbers could be Unix timestamps (milliseconds) - check if reasonable range
-                                    // Unix timestamps from 1970 to 2100: 0 to ~4102444800000
-                                    if (typeof val === 'number' && val > 86400000 && val < 4200000000000) {
-                                        return true;  // Likely a Unix timestamp in milliseconds
+                                        if (!trimmed) return false;
+                                        // Accept year-like strings (e.g., "1960", "2024")
+                                        if (/^\d{4}$/.test(trimmed)) return true;
+                                        // Use Date.parse — same as Vega-Lite's vega-loader isDate check
+                                        return !Number.isNaN(Date.parse(trimmed));
                                     }
                                     return false;
                                 });
-                                encodingObj["type"] = isValidTemporal ? "temporal" : "ordinal";
+
+                                if (!isValidTemporal) {
+                                    // Not parseable as temporal — fall back to ordinal
+                                    encodingObj["type"] = "ordinal";
+                                } else if (isBarChart) {
+                                    // Bar-like charts: use ordinal for discrete bars only when
+                                    // cardinality is low enough to be readable; otherwise keep
+                                    // temporal so VL shows a continuous axis with nice ticks.
+                                    const uniqueCount = new Set(workingTable.map(r => r[field.name])).size;
+                                    encodingObj["type"] = uniqueCount <= 32 ? "ordinal" : "temporal";
+                                } else {
+                                    encodingObj["type"] = "temporal";
+                                }
                             }
                             break;
                         case 'ordinal':
-                            // For ordinal types (Year, Month, Rank, Score, etc.)
-                            // Use ordinal for x/y axes, nominal for color/facet
-                            if (['color', 'size', 'column', 'row'].includes(channel)) {
-                                encodingObj["type"] = "nominal";
-                            } else {
-                                encodingObj["type"] = "ordinal";
-                            }
+                            // Ordinal types (Month, Rank, Score, etc.) stay ordinal on all channels.
+                            // Vega-Lite ordinal gives sequential color scales, ordered sizes,
+                            // and sorted facets — all appropriate for inherently ordered data.
+                            encodingObj["type"] = "ordinal";
                             break;
                         case 'quantitative':
                             encodingObj["type"] = "quantitative";
@@ -537,8 +557,11 @@ export const assembleVegaChart = (
                 // if the dtype is specified, use it
                 encodingObj["type"] = encoding.dtype;
             } else if (channel == 'column' || channel == 'row') {
-                // if the column or row channel and no dtype is specified, use nominal
-                encodingObj["type"] = 'nominal';
+                // Facet channels need a discrete type. If already nominal or ordinal, keep it;
+                // otherwise (e.g. quantitative, temporal) default to nominal.
+                if (encodingObj["type"] !== 'nominal' && encodingObj["type"] !== 'ordinal') {
+                    encodingObj["type"] = 'nominal';
+                }
             }
 
             if (field && encodingObj["type"] == "quantitative") {
@@ -647,8 +670,8 @@ export const assembleVegaChart = (
 
 
 
-                if (chartType.includes("Line") || chartType.includes("Area")) {
-                    // do nothing
+                if (chartType.includes("Line") || chartType.includes("Area") || chartType === "Heatmap") {
+                    // do nothing — lines/areas need temporal order, heatmaps need natural matrix order
                 } else {
                     let colorField = encodingMap.color?.fieldID ? _.find(conceptShelfItems, (f) => f.id === encodingMap.color.fieldID) : undefined;
                     let colorFieldType = undefined;
@@ -794,25 +817,46 @@ export const assembleVegaChart = (
         column: 0,
         row: 0,
         xOffset: 0,
+        yOffset: 0,
     }
 
     // Apply scale factor to base dimensions
     let defaultChartWidth = Math.round(baseChartWidth * scaleFactor);
     let defaultChartHeight = Math.round(baseChartHeight * scaleFactor);
 
-    // by default, we allow strech width twice and fit as many bars as possible with minStepSize
+    // Dynamic bar/label sizing: allow stretching to 2x chart width, pack bars as densely as needed.
     // Scale step size proportionally when chart is resized (base reference: 300px)
     let baseRefSize = 300;
     let sizeRatio = Math.max(defaultChartWidth, defaultChartHeight) / baseRefSize;
     let defaultStepSize = Math.round(20 * Math.max(1, sizeRatio));
-    let maxXYToKeep = Math.min(defaultChartWidth * 2 / defaultStepSize, 48);
 
-    // Decide what are top values to keep for each channel
-    for (const channel of ['x', 'y', 'column', 'row', 'xOffset', "color"]) {
+    // Nominal labels take per-item space; temporal labels auto-tick (no per-bar overhead).
+    // Use a smaller effective min step for cap computation to allow more values before filtering.
+    // minNominalStep = 2px bar + 4px label padding = 6px minimum per discrete value.
+    // Allow discrete axes to stretch up to 2× the default dimension, so compute cap from 2× budget.
+    const MIN_NOMINAL_STEP = 6;
+
+    // For grouped bars, each x (or y) value takes xOffset (or yOffset) sub-bars.
+    // So step is per sub-bar, and total width ≈ step × xCount × xOffsetCount.
+    // Account for this when computing the max values to keep on x/y.
+    const isDiscreteType = (t: string | undefined) => t === 'nominal' || t === 'ordinal';
+    const xOffsetEnc = vgObj.encoding?.xOffset;
+    const yOffsetEnc = vgObj.encoding?.yOffset;
+    const xOffsetMultiplier = (xOffsetEnc?.field && isDiscreteType(xOffsetEnc.type))
+        ? new Set(values.map((r: any) => r[xOffsetEnc.field])).size : 1;
+    const yOffsetMultiplier = (yOffsetEnc?.field && isDiscreteType(yOffsetEnc.type))
+        ? new Set(values.map((r: any) => r[yOffsetEnc.field])).size : 1;
+
+    let maxXToKeep = Math.floor(defaultChartWidth * 2 / (MIN_NOMINAL_STEP * xOffsetMultiplier));
+    let maxYToKeep = Math.floor(defaultChartHeight * 2 / (MIN_NOMINAL_STEP * yOffsetMultiplier));
+
+    // Decide what are top values to keep for each channel.
+    // Count all discrete types (nominal, ordinal) — these use step-based layout.
+    for (const channel of ['x', 'y', 'column', 'row', 'xOffset', 'yOffset', "color"]) {
         const encoding = vgObj.encoding?.[channel];
-        if (encoding?.type === 'nominal') {
+        if (encoding?.field && isDiscreteType(encoding.type)) {
 
-            let maxNominalValuesToKeep = channel == 'x' || channel == 'y' ?  maxXYToKeep : maxFacetNominalValues;
+            let maxNominalValuesToKeep = channel == 'x' ? maxXToKeep : channel == 'y' ? maxYToKeep : maxFacetNominalValues;
 
             const fieldName = encoding.field;
             const uniqueValues = [...new Set(values.map((r: any) => r[fieldName]))];
@@ -863,7 +907,8 @@ export const assembleVegaChart = (
                     } else {
                         // No explicit sort configuration, use the existing inference logic
                         // Check if color field exists and is quantitative
-                        if (colorEncoding?.field && colorEncoding.type === 'quantitative') {
+                        // (Skip heatmaps — they display a matrix where natural order matters)
+                        if (chartType !== 'Heatmap' && colorEncoding?.field && colorEncoding.type === 'quantitative') {
                             // Sort by color field descending and take top maxNominalValues
                             sortChannel = 'color';
                             sortField = colorEncoding.field;
@@ -979,19 +1024,38 @@ export const assembleVegaChart = (
 
         vgObj['encoding']['facet'] = vgObj['encoding']['column'];
 
-        let expectedXNominalCount = nominalCount.x;
+        // --- Compute facet column count methodologically ---
+        // 1. Estimate minimum subplot width from its x-axis content.
+        // 2. Fit as many columns as possible into the total width budget (up to 2× default).
+        // 3. Cap at the number of facet values (no empty columns).
+
+        let xDiscreteCount = nominalCount.x;
         if (nominalCount.xOffset > 0) {
-            expectedXNominalCount = nominalCount.x * nominalCount.xOffset;
+            xDiscreteCount = nominalCount.x * nominalCount.xOffset;
         }
 
-        vgObj['encoding']['facet']['columns'] = 6;
-        if (expectedXNominalCount > 40) {
-            vgObj['encoding']['facet']['columns'] = 1;
-        } else if (expectedXNominalCount > 20) {
-            vgObj['encoding']['facet']['columns'] = 3;
-        }
+        // Minimum subplot width: discrete axes need step × count, continuous axes need MIN_CONTINUOUS_SIZE.
+        const MIN_SUBPLOT_WIDTH = 60;   // absolute minimum for any subplot
+        const minSubplotWidth = xDiscreteCount > 0
+            ? Math.max(MIN_SUBPLOT_WIDTH, xDiscreteCount * MIN_NOMINAL_STEP)
+            : MIN_SUBPLOT_WIDTH;
 
-        if (Math.floor(nominalCount.column / vgObj['encoding']['facet']['columns']) >= 3) {
+        // Total width budget: allow stretching up to 2× default chart width.
+        const maxTotalWidth = 2 * defaultChartWidth;
+
+        // How many columns fit within the budget?
+        const maxColsByWidth = Math.max(1, Math.floor(maxTotalWidth / minSubplotWidth));
+
+        // Also cap at the actual facet count (no empty columns).
+        const facetCount = nominalCount.column || 1;
+        const numCols = Math.min(maxColsByWidth, facetCount);
+
+        vgObj['encoding']['facet']['columns'] = numCols;
+
+        // Independent x-axes only when there are multiple columns AND enough rows
+        // to benefit from per-subplot labels (avoids double-label clutter in single-column layout).
+        const numRows = Math.ceil(facetCount / numCols);
+        if (numCols > 1 && numRows >= 3) {
             vgObj['resolve'] = {
                 "axis": {
                     "x": "independent",
@@ -1002,18 +1066,50 @@ export const assembleVegaChart = (
         delete vgObj['encoding']['column'];
     }
 
-    // total facets is the product of the number of columns and rows
-    let totalFacets = nominalCount.column > 0 ? nominalCount.column : 1;
-    totalFacets *= nominalCount.row > 0 ? nominalCount.row : 1;
-    totalFacets *= nominalCount.xOffset > 0 ? Math.min(nominalCount.xOffset, nominalCount.x) : 1;
+    // --- Compute facet grid dimensions ---
+    // Determine how many subplots are laid out in each direction.
+    let facetCols = 1;
+    let facetRows = 1;
 
-    let facetRescaleFactor = 1;
-    if (totalFacets > 6) {
-        facetRescaleFactor = 0.4;
-    } else if (totalFacets > 4) {
-        facetRescaleFactor = 0.5;
-    } else if (totalFacets > 1) {
-        facetRescaleFactor = 0.75;
+    if (vgObj.encoding?.facet) {
+        // Column-only case: was converted from column to facet with columns=N
+        const layoutCols = vgObj.encoding.facet.columns || 1;
+        const totalFacetValues = nominalCount.column || 1;
+        facetCols = Math.min(layoutCols, totalFacetValues);
+        facetRows = Math.ceil(totalFacetValues / layoutCols);
+    }
+    if (vgObj.encoding?.column) {
+        // column+row case (column was NOT converted to facet)
+        facetCols = nominalCount.column || 1;
+    }
+    if (vgObj.encoding?.row) {
+        facetRows = nominalCount.row || 1;
+    }
+
+    let totalFacets = facetCols * facetRows;
+
+    // --- Dynamic per-subplot sizing with elastic stretch ---
+    // Use the same power-law elasticity as discrete axes:
+    // pressure = facetCount (how many subplots share the dimension)
+    // stretch = min(2, pressure^γ), so total width = defaultWidth × stretch
+    // subplotSize = defaultWidth × stretch / facetCount
+    const FACET_ELASTICITY = 0.5;
+    const MIN_CONTINUOUS_SIZE = 10;
+
+    let subplotWidth: number;
+    if (facetCols > 1) {
+        const stretch = Math.min(2, Math.pow(facetCols, FACET_ELASTICITY));
+        subplotWidth = Math.round(Math.max(MIN_CONTINUOUS_SIZE, defaultChartWidth * stretch / facetCols));
+    } else {
+        subplotWidth = defaultChartWidth;
+    }
+
+    let subplotHeight: number;
+    if (facetRows > 1) {
+        const stretch = Math.min(2, Math.pow(facetRows, FACET_ELASTICITY));
+        subplotHeight = Math.round(Math.max(MIN_CONTINUOUS_SIZE, defaultChartHeight * stretch / facetRows));
+    } else {
+        subplotHeight = defaultChartHeight;
     }
 
     for (const channel of ['facet', 'column', 'row']) {
@@ -1027,11 +1123,18 @@ export const assembleVegaChart = (
         }
     }
     
+    // Total discrete items along each axis.
+    // In Vega-Lite, config.view.step is the width of each individual sub-bar.
+    // For grouped bars with xOffset, total chart width ≈ step × x × xOffset.
+    // So the total discrete item count = outer axis count × offset count.
     let xTotalNominalCount = nominalCount.x;
     if (nominalCount.xOffset > 0) {
         xTotalNominalCount = nominalCount.x * nominalCount.xOffset;
     }
     let yTotalNominalCount = nominalCount.y;
+    if (nominalCount.yOffset > 0) {
+        yTotalNominalCount = nominalCount.y * nominalCount.yOffset;
+    }
 
     // Check if y-axis should have independent scaling when columns have vastly different value ranges
     if (vgObj.encoding?.facet != undefined && vgObj.encoding?.y?.type === 'quantitative') {
@@ -1073,22 +1176,84 @@ export const assembleVegaChart = (
         }
     }
 
-    // Apply 0.75 scale factor for faceted charts
-    const widthScale = facetRescaleFactor;
-    const heightScale = facetRescaleFactor;
+    // --- Elastic stretch for discrete axes ---
+    // "Pressure" = how much space bars want relative to what's available at default step.
+    // When pressure > 1, we distribute the excess between chart stretching and bar shrinkage
+    // using a power-law elasticity coefficient γ (0.5 = square root = balanced tradeoff).
+    //
+    //   stretch = min(2, pressure^γ)
+    //   resulting step = defaultStep × stretch / pressure = defaultStep / pressure^(1-γ)
+    //
+    // γ=0: no stretch, only shrink bars. γ=1: stretch fully, no bar shrinkage. γ=0.5: balanced.
+    const ELASTICITY = 0.5;
 
-    let stepSize = Math.max(8, Math.min(defaultStepSize, 
-        Math.floor(facetRescaleFactor * defaultChartHeight * 2 / Math.max(xTotalNominalCount, yTotalNominalCount))));
+    function computeElasticBudget(totalCount: number, defaultBudget: number): number {
+        if (totalCount <= 0) return defaultBudget;
+        const pressure = (totalCount * defaultStepSize) / defaultBudget;
+        if (pressure <= 1) return defaultBudget;  // fits at default step
+        const stretch = Math.min(2, Math.pow(pressure, ELASTICITY));
+        return defaultBudget * stretch;
+    }
+
+    const xBudget = computeElasticBudget(xTotalNominalCount, subplotWidth);
+    const yBudget = computeElasticBudget(yTotalNominalCount, subplotHeight);
+
+    // Step size: budget / totalNominalCount (per sub-bar).
+    // Pick the tighter constraint if both axes are discrete.
+    let stepSize: number;
+    if (xTotalNominalCount > 0 && yTotalNominalCount > 0) {
+        stepSize = Math.min(
+            Math.floor(xBudget / xTotalNominalCount),
+            Math.floor(yBudget / yTotalNominalCount),
+        );
+    } else if (xTotalNominalCount > 0) {
+        stepSize = Math.floor(xBudget / xTotalNominalCount);
+    } else if (yTotalNominalCount > 0) {
+        stepSize = Math.floor(yBudget / yTotalNominalCount);
+    } else {
+        stepSize = defaultStepSize;
+    }
+    stepSize = Math.max(MIN_NOMINAL_STEP, Math.min(defaultStepSize, stepSize));
+
+    // Dynamic label sizing: only shrink labels on discrete axes that need smaller step sizes.
+    // Continuous (temporal/quantitative) axes auto-tick, so they keep default font sizes.
+    const defaultLabelFontSize = 10;
+    const defaultLabelLimit = 100;
+
+    let xLabelFontSize = xTotalNominalCount > 0 ? Math.max(6, Math.min(10, stepSize - 1)) : defaultLabelFontSize;
+    let yLabelFontSize = yTotalNominalCount > 0 ? Math.max(6, Math.min(10, stepSize - 1)) : defaultLabelFontSize;
+    let xLabelLimit = xTotalNominalCount > 0 ? Math.max(30, Math.min(100, stepSize * 8)) : defaultLabelLimit;
+    let xLabelAngle: number | undefined = undefined;
+    if (xTotalNominalCount > 0) {
+        // Rotate x-axis labels when bars are dense (non-temporal)
+        if (stepSize < 10) {
+            xLabelAngle = -90;
+            xLabelFontSize = Math.max(6, Math.min(8, stepSize));
+            xLabelLimit = 40;
+        } else if (stepSize < 16) {
+            xLabelAngle = -45;
+            xLabelFontSize = Math.max(7, Math.min(9, stepSize));
+            xLabelLimit = 60;
+        }
+    }
+
+    let axisXConfig: Record<string, any> = { "labelLimit": xLabelLimit, "labelFontSize": xLabelFontSize };
+    if (xLabelAngle !== undefined) {
+        axisXConfig["labelAngle"] = xLabelAngle;
+        axisXConfig["labelAlign"] = xLabelAngle === -90 ? "right" : "right";
+        axisXConfig["labelBaseline"] = xLabelAngle === -90 ? "middle" : "top";
+    }
+    let axisYConfig: Record<string, any> = { "labelFontSize": yLabelFontSize };
 
     vgObj['config'] = {
         "view": {
-            "continuousWidth": defaultChartWidth * widthScale,
-            "continuousHeight": defaultChartHeight * heightScale,
+            "continuousWidth": subplotWidth,
+            "continuousHeight": subplotHeight,
             "step": stepSize,
 
         },
-        "axisX": {"labelLimit": 100, "labelFontSize": stepSize <= 10 ? stepSize : 10},
-        "axisY": {"labelFontSize": stepSize <= 10 ? stepSize : 10},
+        "axisX": axisXConfig,
+        "axisY": axisYConfig,
     }
 
     // For specs with hardcoded width/height (e.g. map charts), apply scaleFactor and sync continuousWidth/Height
@@ -1105,12 +1270,82 @@ export const assembleVegaChart = (
         vgObj['config']['header'] = { labelLimit: 120, labelFontSize: 9 };
     }
 
+    // --- Reduce clutter in faceted charts ---
+    // Row facets: each subplot repeats the y-axis title (e.g. "Value") next to the
+    // facet header label — suppress the per-subplot y title to avoid the double label.
+    // Column facets / wrapped facets: same for x-axis title.
+    if (facetRows > 1) {
+        // Suppress repeated y-axis title on every subplot; one header column is enough.
+        if (!vgObj.encoding?.y?.axis) {
+            if (vgObj.encoding?.y) vgObj.encoding.y.axis = {};
+        }
+        if (vgObj.encoding?.y?.axis !== undefined) {
+            vgObj.encoding.y.axis.title = null;
+        }
+    }
+    if (facetCols > 1) {
+        // Suppress repeated x-axis title on every subplot.
+        if (!vgObj.encoding?.x?.axis) {
+            if (vgObj.encoding?.x) vgObj.encoding.x.axis = {};
+        }
+        if (vgObj.encoding?.x?.axis !== undefined) {
+            vgObj.encoding.x.axis.title = null;
+        }
+    }
+
     if (addTooltips) {
         // Add tooltip via config - works for all spec types including compound specs
         if (!vgObj.config) {
             vgObj.config = {};
         }
         vgObj.config.mark = { ...vgObj.config.mark, tooltip: true };
+    }
+
+    // For rect marks (heatmaps) with quantitative/temporal axes, compute mark width/height
+    // so rects tile edge-to-edge based on the actual chart dimensions and data cardinality.
+    const markType = typeof vgObj.mark === 'string' ? vgObj.mark : vgObj.mark?.type;
+    if (markType === 'rect') {
+        const contWidth = vgObj['config']?.['view']?.['continuousWidth'] || defaultChartWidth;
+        const contHeight = vgObj['config']?.['view']?.['continuousHeight'] || defaultChartHeight;
+
+        for (const axis of ['x', 'y'] as const) {
+            const enc = vgObj.encoding?.[axis];
+            if (!enc?.field) continue;
+            const t = enc.type;
+            // Only adjust continuous axes — discrete axes use step-based layout
+            if (t === 'nominal' || t === 'ordinal') continue;
+            if (enc.aggregate) continue;
+
+            const uniqueVals = [...new Set(values.map((r: any) => r[enc.field]))];
+            const cardinality = uniqueVals.length;
+            if (cardinality <= 1) continue;
+
+            const dim = axis === 'x' ? contWidth : contHeight;
+            // Compute pixel size per cell so rects tile the full chart dimension.
+            // For quantitative: size = chartDim / cardinality (evenly spaced values)
+            // For temporal: size based on uniform spacing assumption
+            const cellSize = Math.max(1, Math.round(dim / cardinality));
+
+            const sizeKey = axis === 'x' ? 'width' : 'height';
+            if (typeof vgObj.mark === 'string') {
+                vgObj.mark = { type: vgObj.mark, [sizeKey]: cellSize };
+            } else {
+                vgObj.mark = { ...vgObj.mark, [sizeKey]: cellSize };
+            }
+        }
+    }
+
+    // For boxplot marks, set the box size proportional to step so boxes fill available space.
+    // Boxplot mark.size controls the box width in pixels.
+    if (markType === 'boxplot' && (xTotalNominalCount > 0 || yTotalNominalCount > 0)) {
+        // The discrete axis determines the box spacing via step.
+        // Use ~70% of the step for the box width to leave some gap between boxes.
+        const boxSize = Math.max(4, Math.round(stepSize * 0.7));
+        if (typeof vgObj.mark === 'string') {
+            vgObj.mark = { type: vgObj.mark, size: boxSize };
+        } else {
+            vgObj.mark = { ...vgObj.mark, size: boxSize };
+        }
     }
 
     return {...vgObj, data: {values: values}}
@@ -1141,8 +1376,9 @@ export const adaptChart = (chart: Chart, targetTemplate: ChartTemplate) => {
 
 export const resolveRecommendedChart = (refinedGoal: any, allFields: FieldItem[], table: DictTable) => {
     
-    let rawChartType = refinedGoal['chart_type'];
-    let chartEncodings = refinedGoal['chart_encodings'];
+    let chartObj = refinedGoal['chart'] || {};
+    let rawChartType = chartObj['chart_type'];
+    let chartEncodings = chartObj['encodings'];
 
     if (chartEncodings == undefined || rawChartType == undefined) {
         let newChart = generateFreshChart(table.id, 'Scatter Plot') as Chart;
@@ -1169,8 +1405,8 @@ export const resolveRecommendedChart = (refinedGoal: any, allFields: FieldItem[]
     newChart = resolveChartFields(newChart, allFields, chartEncodings, table);
 
     // Apply chart config properties from agent recommendation
-    if (refinedGoal['config'] && typeof refinedGoal['config'] === 'object') {
-        newChart.config = { ...refinedGoal['config'] };
+    if (chartObj['config'] && typeof chartObj['config'] === 'object') {
+        newChart.config = { ...chartObj['config'] };
     }
     return newChart;
 }

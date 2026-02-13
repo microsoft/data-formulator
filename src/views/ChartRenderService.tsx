@@ -128,9 +128,11 @@ export const ChartRenderService: FC = () => {
 
             if (!thumbSpec || thumbSpec === "Table") return;
 
-            // Set compact axis labels (same as DataThread)
+            // Set compact axis labels — merge with existing config to preserve
+            // step-based sizing (config.view.step/continuousWidth/continuousHeight)
             thumbSpec['config'] = {
-                "axis": { "labelLimit": 30 },
+                ...thumbSpec['config'],
+                "axis": { ...thumbSpec['config']?.axis, "labelLimit": 30 },
             };
             thumbSpec['background'] = 'white';
 

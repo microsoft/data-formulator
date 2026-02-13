@@ -5,7 +5,6 @@ import json
 
 from data_formulator.agents.agent_utils import extract_json_objects, generate_data_summary
 from data_formulator.agents.semantic_types import (
-    SEMANTIC_TYPE_CATEGORIES,
     generate_semantic_types_prompt,
 )
 

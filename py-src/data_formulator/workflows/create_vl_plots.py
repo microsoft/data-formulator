@@ -124,14 +124,17 @@ CHART_TEMPLATES = [
 # the value here wins.  None means "keep detected".
 _CHANNEL_TYPE_OVERRIDES: dict[str, dict[str, str]] = {
     "histogram":  {"x": "quantitative"},
-    "bar":        {"x": "nominal"},
-    "group_bar":  {"x": "nominal"},
     "heatmap":    {"x": "nominal", "y": "nominal"},
     "boxplot":    {"x": "nominal", "y": "quantitative"},
     "pie":        {"theta": "quantitative", "color": "nominal"},
     "worldmap":   {"longitude": "quantitative", "latitude": "quantitative"},
     "usmap":      {"longitude": "quantitative", "latitude": "quantitative"},
 }
+
+# Chart types where temporal fields on position channels should be ordinal
+# (discrete bars/cells rather than a continuous time axis).
+# For these charts, coerce_field_type downgrades "temporal" → "ordinal" on x/y.
+_BAR_LIKE_CHARTS = {"bar", "group_bar", "stacked_bar"}
 
 
 def coerce_field_type(chart_type: str, channel: str, detected_type: str) -> str:
@@ -144,6 +147,11 @@ def coerce_field_type(chart_type: str, channel: str, detected_type: str) -> str:
     forced = overrides.get(channel)
     if forced:
         return forced
+
+    # Bar-like charts: temporal on x/y should become ordinal (discrete bars)
+    if chart_type in _BAR_LIKE_CHARTS and channel in ("x", "y") and detected_type == "temporal":
+        return "ordinal"
+
     return detected_type
 
 

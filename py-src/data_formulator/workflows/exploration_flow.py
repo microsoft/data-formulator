@@ -216,9 +216,10 @@ def run_exploration_flow_streaming(
             }
             
             # Step 2: Create visualization to help generate followup question
-            chart_type = refined_goal.get('chart_type', 'bar')
-            chart_encodings = refined_goal.get('chart_encodings', {})
-            chart_config = refined_goal.get('config', {})
+            chart_obj = refined_goal.get('chart', {})
+            chart_type = chart_obj.get('chart_type', 'bar')
+            chart_encodings = chart_obj.get('encodings', {})
+            chart_config = chart_obj.get('config', {})
             
             chart_spec = create_chart_spec_from_data(
                 transformed_data,

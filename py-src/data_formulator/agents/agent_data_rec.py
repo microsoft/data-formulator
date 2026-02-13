@@ -2,6 +2,7 @@
 # Licensed under the MIT License.
 
 import json
+import time
 
 from data_formulator.agents.agent_utils import extract_json_objects, extract_code_from_gpt_response, generate_data_summary
 
@@ -17,11 +18,6 @@ SYSTEM_PROMPT = '''You are a data scientist to help user to recommend data that 
 The user will provide you information about what visualization they would like to create, and your job is to recommend a transformed data that can be used to create the visualization and write a Python script to transform the data.
 The recommendation and transformation function should be based on the [CONTEXT] and [GOAL] provided by the user.
 The [CONTEXT] shows what the current dataset is, and the [GOAL] describes what the user wants the data for.
-
-**Important:**
-- NEVER make assumptions or judgments about a person's gender, biological sex, sexuality, religion, race, nationality, ethnicity, political stance, socioeconomic status, mental health, invisible disabilities, medical conditions, personality type, social impressions, emotional state, and cognitive state.
-- NEVER create formulas that could be used to discriminate based on age. Ageism of any form (explicit and implicit) is strictly prohibited.
-- If above issue occurs, generate columns with NULL or np.nan.
 
 **About the execution environment:**
 - You can use BOTH DuckDB SQL and pandas operations in the same script
@@ -62,9 +58,11 @@ Concretely, you should infer the appropriate data and create a Python script bas
     "recommendation": "..." // string, explain why this recommendation is made
     "input_tables": [...] // string[], names of input tables from [CONTEXT] that will be used.
     "output_fields": [...] // string[], desired output fields for the transformed data; include intermediate fields too.
-    "chart_type": "" // string, one of the chart types defined in [CHART TYPE REFERENCE] below.
-    "chart_encodings": {} // object, map visual channels to output field names. Available channels depend on chart_type (see reference below).
-    "config": {} // object (optional), chart styling options. Available options depend on chart_type (see reference below). Only include when there's a clear reason.
+    "chart": { // object, chart specification for the recommended visualization.
+        "chart_type": "" // string, one of the chart types defined in [CHART TYPE REFERENCE] below.
+        "encodings": {} // object, map visual channels to output field names. Available channels depend on chart_type (see reference below).
+        "config": {} // object (optional), chart styling options. Available options depend on chart_type (see reference below). Only include when there's a clear reason.
+    }
     "output_variable": "" // string, descriptive snake_case Python variable name for the final DataFrame.
 }
 ```
@@ -153,12 +151,12 @@ Each chart type specifies: encodings (visual channels → field types), when to 
 **General encoding rules:**
 - facet: available for all chart types; use a categorical field with small cardinality.
 - opacity: available as an additional legend channel (Quantitative or Categorical).
-- All fields in "chart_encodings" must also appear in "output_fields".
+- All fields in "encodings" must also appear in "output_fields".
 - Typically use 2-3 encoding channels (x, y, color/size); add facet only when needed.
 
 Concretely:
     - recap what the user's goal is in a short summary in "recap".
-    - If the user's [GOAL] is clear already, simply infer what the user mean. Set "mode" as "infer" and create "output_fields" and "chart_encodings" based off user description.
+    - If the user's [GOAL] is clear already, simply infer what the user mean. Set "mode" as "infer" and create "output_fields" and "chart" based off user description.
     - If the user's [GOAL] is not clear, make recommendations to the user:
         - choose one of "distribution", "overview", "summary", "forecast" in "mode":
             * if it is "overview" and the data is in wide format, reshape it into long format.
@@ -207,7 +205,7 @@ Concretely:
 The script should be as simple as possible and easily readable. If there is no data transformation needed based on "output_fields", the script can simply load and assign the data.
 
 3. The output must only contain two items:
-    - a json object (wrapped in ```json```) representing the refined goal (including "mode", "recommendation", "output_fields", "chart_type", "chart_encodings", "output_variable")
+    - a json object (wrapped in ```json```) representing the refined goal (including "mode", "recommendation", "output_fields", "chart", "output_variable")
     - a python code block (wrapped in ```python```) representing the transformation script, do not add any extra text explanation.
 
 **Example data loading patterns:**
@@ -311,8 +309,10 @@ Here are our datasets, here are their field summaries and samples:
     "mode": "infer",
     "recommendation": "To rank students based on their average scores, we need to calculate the average score for each student, then sort the data, and finally assign a rank to each student based on their average score.",
     "output_fields": ["student", "major", "average_score", "rank"],
-    "chart_type": "bar",
-    "chart_encodings": {"x": "student", "y": "average_score"},
+    "chart": {
+        "chart_type": "bar",
+        "encodings": {"x": "student", "y": "average_score"}
+    },
     "output_variable": "student_rankings"
 }
 ```
@@ -370,7 +370,7 @@ class DataRecAgent(object):
                 refined_goal = json_blocks[0]
                 output_variable = refined_goal.get('output_variable', 'result_df')
             else:
-                refined_goal = {'mode': "", 'recommendation': "", 'output_fields': [], 'chart_encodings': {}, 'chart_type': "", 'output_variable': 'result_df'}
+                refined_goal = {'mode': "", 'recommendation': "", 'output_fields': [], 'chart': {'chart_type': "", 'encodings': {}, 'config': {}}, 'output_variable': 'result_df'}
                 output_variable = 'result_df'
 
             code_blocks = extract_code_from_gpt_response(choice.message.content + "\n", "python")
@@ -390,12 +390,14 @@ class DataRecAgent(object):
                         exec_python_in_subprocess = False
 
                     # Execute the Python script in sandbox
+                    t_sandbox_start = time.time()
                     execution_result = run_unified_transform_in_sandbox(
                         code=code,
                         workspace_path=self.workspace._path,
                         output_variable=output_variable,
                         exec_python_in_subprocess=exec_python_in_subprocess
                     )
+                    logger.info(f"[TIMING] Sandbox execution: {time.time() - t_sandbox_start:.3f}s")
 
                     if execution_result['status'] == 'ok':
                         full_df = execution_result['content']
@@ -405,7 +407,9 @@ class DataRecAgent(object):
                         output_table_name = self.workspace.get_fresh_name(f"d-{output_variable}")
 
                         # Write full result to workspace as parquet
+                        t_parquet_start = time.time()
                         self.workspace.write_parquet(full_df, output_table_name)
+                        logger.info(f"[TIMING] Parquet write ({row_count} rows): {time.time() - t_parquet_start:.3f}s")
 
                         # Limit rows for response payload
                         if row_count > self.max_display_rows:
@@ -416,11 +420,15 @@ class DataRecAgent(object):
                         # Remove duplicate columns to avoid orient='records' error
                         query_output = query_output.loc[:, ~query_output.columns.duplicated()]
 
+                        t_json_start = time.time()
+                        rows_json = json.loads(query_output.to_json(orient='records'))
+                        logger.info(f"[TIMING] DataFrame to JSON ({len(query_output)} rows): {time.time() - t_json_start:.3f}s")
+
                         result = {
                             "status": "ok",
                             "code": code,
                             "content": {
-                                'rows': json.loads(query_output.to_json(orient='records')),
+                                'rows': rows_json,
                                 'virtual': {
                                     'table_name': output_table_name,
                                     'row_count': row_count
@@ -469,7 +477,9 @@ class DataRecAgent(object):
             prev_messages: list[dict], the previous messages
         """
         # Generate data summary with file references
+        t_summary_start = time.time()
         data_summary = generate_data_summary(input_tables, workspace=self.workspace)
+        logger.info(f"[TIMING] generate_data_summary: {time.time() - t_summary_start:.3f}s")
 
         user_query = f"[CONTEXT]\n\n{data_summary}\n\n[GOAL]\n\n{description}"
         if len(prev_messages) > 0:
@@ -484,9 +494,20 @@ class DataRecAgent(object):
                     *filtered_prev_messages,
                     {"role":"user","content": user_query}]
 
+        t_llm_start = time.time()
         response = self.client.get_completion(messages = messages)
+        t_llm_elapsed = time.time() - t_llm_start
+        # Log token usage to compare with evaluation runs
+        usage = getattr(response, 'usage', None)
+        if usage:
+            logger.info(f"[TIMING] LLM API call: {t_llm_elapsed:.3f}s | prompt_tokens={usage.prompt_tokens}, completion_tokens={usage.completion_tokens}, total_tokens={usage.total_tokens}")
+        else:
+            logger.info(f"[TIMING] LLM API call: {t_llm_elapsed:.3f}s | (no usage info)")
 
-        return self.process_gpt_response(input_tables, messages, response)
+        t_process_start = time.time()
+        result = self.process_gpt_response(input_tables, messages, response)
+        logger.info(f"[TIMING] process_gpt_response: {time.time() - t_process_start:.3f}s")
+        return result
 
 
     def followup(self, input_tables, dialog, latest_data_sample, new_instruction: str, n=1):
@@ -509,6 +530,11 @@ class DataRecAgent(object):
                     {"role":"user",
                     "content": f"This is the result from the latest transformation:\n\n{sample_data_str}\n\nUpdate the Python script above based on the following instruction:\n\n{new_instruction}"}]
 
+        t_llm_start = time.time()
         response = self.client.get_completion(messages = messages)
+        logger.info(f"[TIMING] LLM API call (followup): {time.time() - t_llm_start:.3f}s")
 
-        return self.process_gpt_response(input_tables, messages, response)
+        t_process_start = time.time()
+        result = self.process_gpt_response(input_tables, messages, response)
+        logger.info(f"[TIMING] process_gpt_response (followup): {time.time() - t_process_start:.3f}s")
+        return result

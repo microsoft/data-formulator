@@ -62,6 +62,7 @@ import {
     RouterProvider,
 } from "react-router-dom";
 import { About } from '../views/About';
+import ChartTestPage from '../views/ChartTestPage';
 import { MessageSnackbar } from '../views/MessageSnackbar';
 import { ChartRenderService } from '../views/ChartRenderService';
 import { DictTable } from '../components/ComponentType';
@@ -892,6 +893,8 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
     // Check if we're on the about page
     const isAboutPage = (window.location.pathname === '/about' 
             || (window.location.pathname === '/' && serverConfig.PROJECT_FRONT_PAGE));
+    const isChartTestPage = window.location.pathname === '/chart-test';
+    const isAppPage = !isAboutPage && !isChartTestPage;
 
     let appBar =  [
         <AppBar position="static" key="app-bar-main" >
@@ -953,18 +956,41 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
                             px: 1.5,
                             py: 0.5,
                             minWidth: 'auto',
-                            color: !isAboutPage ? 'text.primary' : 'text.secondary',
-                            backgroundColor: !isAboutPage ? 'rgba(0, 0, 0, 0.08)' : 'transparent',
+                            color: isAppPage ? 'text.primary' : 'text.secondary',
+                            backgroundColor: isAppPage ? 'rgba(0, 0, 0, 0.08)' : 'transparent',
                             '&:hover': {
                                 color: 'text.primary',
-                                backgroundColor: !isAboutPage ? 'rgba(0, 0, 0, 0.08)' : 'rgba(0, 0, 0, 0.04)',
+                                backgroundColor: isAppPage ? 'rgba(0, 0, 0, 0.08)' : 'rgba(0, 0, 0, 0.04)',
                             },
                         }}
                     >
                         App
                     </Button>
+                    <Button 
+                        component="a" 
+                        href="/chart-test"
+                        sx={{ 
+                            textDecoration: 'none',
+                            textTransform: 'none',
+                            fontSize: '13px',
+                            fontWeight: 400,
+                            border: 'none',
+                            borderRadius: 0,
+                            px: 1.5,
+                            py: 0.5,
+                            minWidth: 'auto',
+                            color: isChartTestPage ? 'text.primary' : 'text.secondary',
+                            backgroundColor: isChartTestPage ? 'rgba(0, 0, 0, 0.08)' : 'transparent',
+                            '&:hover': {
+                                color: 'text.primary',
+                                backgroundColor: isChartTestPage ? 'rgba(0, 0, 0, 0.08)' : 'rgba(0, 0, 0, 0.04)',
+                            },
+                        }}
+                    >
+                        Chart Test
+                    </Button>
                 </Box>
-                {!isAboutPage && (
+                {isAppPage && (
                     <Box sx={{ display: 'flex', ml: 'auto', fontSize: 14 }}>
                         {focusedTableId !== undefined && <React.Fragment><ToggleButtonGroup
                             value={viewMode}
@@ -1090,7 +1116,7 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
                         </Tooltip>
                     </Box>
                 )}
-                {!isAboutPage && (
+                {isAppPage && (
                     <Tooltip title="View on GitHub">
                         <Button
                             component="a"
@@ -1117,6 +1143,9 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
         {
             path: "/about",
             element: <About />,
+        }, {
+            path: "/chart-test",
+            element: <ChartTestPage />,
         }, {
             path: "/",
             element: serverConfig.PROJECT_FRONT_PAGE ? <About /> : <DataFormulatorFC />,

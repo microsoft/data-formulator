@@ -100,14 +100,71 @@ export const isMapChart = (chartType: string) => {
 }
 
 /**
- * Ensures one axis (x or y) is nominal based on the spec and data cardinality.
- * If neither axis is nominal, converts the one with lower cardinality to nominal.
- * Returns "x" or "y" indicating which channel is nominal, or null if undetermined.
+ * Ensures one axis (x or y) is discrete (nominal or ordinal) based on the spec and data cardinality.
+ * If neither axis is discrete, converts the one with lower cardinality to nominal.
+ * Returns "x" or "y" indicating which channel is discrete, or null if undetermined.
  */
+/**
+ * Dynamic mark resizing for bar, rect, and similar marks.
+ * For each non-discrete (temporal/quantitative) axis without an aggregate:
+ *   - If cardinality ≤ nominalThreshold → convert to nominal (clean discrete layout)
+ *   - Otherwise → resize mark using the specified size property
+ * Discrete (nominal/ordinal) axes are skipped — step-based layout handles them.
+ * Aggregate axes are skipped — they are measure axes, not positional.
+ *
+ * @param sizeProps  Maps axis → mark property to set.
+ *                   Bar: {x:'size', y:'size'},  Rect: {x:'width', y:'height'}
+ * @param nominalThreshold  Convert to nominal if cardinality ≤ this (0 = never convert)
+ */
+const applyDynamicMarkResizing = (
+    vgSpec: any,
+    table: any[],
+    sizeProps: { x: string; y: string },
+    nominalThreshold: number = 0
+): any => {
+    if (!table || table.length === 0) return vgSpec;
+
+    const isDiscrete = (type: string | undefined) => type === "nominal" || type === "ordinal";
+
+    for (const axis of ['x', 'y'] as const) {
+        const enc = vgSpec.encoding?.[axis];
+        if (!enc || !enc.field || isDiscrete(enc.type)) continue;
+        // Skip aggregate/measure axes — they don't determine mark positioning
+        if (enc.aggregate) continue;
+
+        // For shared size props (e.g. bar mark.size), if the other axis is already discrete,
+        // step-based layout handles bar width — only temporal still needs explicit sizing.
+        if (enc.type !== 'temporal' && sizeProps.x === sizeProps.y) {
+            const otherAxis = axis === 'x' ? 'y' : 'x';
+            const otherEnc = vgSpec.encoding?.[otherAxis];
+            if (otherEnc && isDiscrete(otherEnc.type)) continue;
+        }
+
+        const cardinality = new Set(table.map((r: any) => r[enc.field])).size;
+
+        if (nominalThreshold > 0 && cardinality <= nominalThreshold) {
+            // Small cardinality → convert to nominal for clean discrete layout
+            enc.type = "nominal";
+        } else if (cardinality > 0) {
+            // Large cardinality → keep type, resize mark
+            const markSize = Math.max(2, Math.min(20, Math.round(200 / cardinality)));
+            const sizeKey = sizeProps[axis];
+            if (typeof vgSpec.mark === 'string') {
+                vgSpec.mark = { type: vgSpec.mark, [sizeKey]: markSize };
+            } else {
+                vgSpec.mark = { ...vgSpec.mark, [sizeKey]: markSize };
+            }
+        }
+    }
+    return vgSpec;
+};
+
 const ensureNominalAxis = (vgSpec: any, table: any[], defaultToX: boolean = true): "x" | "y" | null => {
-    if (vgSpec.encoding.x?.type === "nominal") {
+    const isDiscrete = (type: string | undefined) => type === "nominal" || type === "ordinal";
+
+    if (isDiscrete(vgSpec.encoding.x?.type)) {
         return "x";
-    } else if (vgSpec.encoding.y?.type === "nominal") {
+    } else if (isDiscrete(vgSpec.encoding.y?.type)) {
         return "y";
     } else if (vgSpec.encoding.x && vgSpec.encoding.y) {
         // Neither are nominal, determine based on cardinality
@@ -341,13 +398,17 @@ const barCharts: ChartTemplate[] = [
             { key: "cornerRadius", label: "Corners", type: "slider", min: 0, max: 15, step: 1, defaultValue: 0 },
         ] as ConfigPropertyDef[],
         "postProcessor": (vgSpec: any, _table: any[], config?: Record<string, any>) => {
-            if (!config) return vgSpec;
-            const cr = config.cornerRadius;
-            if (cr !== undefined && cr > 0) {
-                if (typeof vgSpec.mark === 'string') {
-                    vgSpec.mark = { type: vgSpec.mark, cornerRadiusEnd: cr };
-                } else {
-                    vgSpec.mark = { ...vgSpec.mark, cornerRadiusEnd: cr };
+            // Dynamic bar sizing for temporal/quantitative axes
+            applyDynamicMarkResizing(vgSpec, _table, { x: 'size', y: 'size' });
+
+            if (config) {
+                const cr = config.cornerRadius;
+                if (cr !== undefined && cr > 0) {
+                    if (typeof vgSpec.mark === 'string') {
+                        vgSpec.mark = { type: vgSpec.mark, cornerRadiusEnd: cr };
+                    } else {
+                        vgSpec.mark = { ...vgSpec.mark, cornerRadiusEnd: cr };
+                    }
                 }
             }
             return vgSpec;
@@ -425,7 +486,11 @@ const barCharts: ChartTemplate[] = [
             "row": ["encoding", "row"]
         },
         "postProcessor": (vgSpec: any, table: any[]) => {
-            if (!vgSpec.encoding.color?.field) return vgSpec;
+            if (!vgSpec.encoding.color?.field) {
+                // No color field: treat as simple bar chart
+                applyDynamicMarkResizing(vgSpec, table, { x: 'size', y: 'size' });
+                return vgSpec;
+            }
             
             const nominalChannel = ensureNominalAxis(vgSpec, table, true);
             const offsetChannel = nominalChannel === "x" ? "xOffset" : nominalChannel === "y" ? "yOffset" : null;
@@ -437,6 +502,10 @@ const barCharts: ChartTemplate[] = [
                 vgSpec.encoding[offsetChannel].field = vgSpec.encoding.color.field;
                 vgSpec.encoding[offsetChannel].type = "nominal";
             }
+
+            // Apply dynamic bar sizing (handles temporal/quantitative-converted axes only)
+            applyDynamicMarkResizing(vgSpec, table, { x: 'size', y: 'size' });
+
             return vgSpec;
         }
     },
@@ -454,6 +523,11 @@ const barCharts: ChartTemplate[] = [
             "color": ["encoding", "color"],
             "column": ["encoding", "column"],
             "row": ["encoding", "row"]
+        },
+        "postProcessor": (vgSpec: any, table: any[]) => {
+            // Dynamic bar sizing for temporal/quantitative axes
+            applyDynamicMarkResizing(vgSpec, table, { x: 'size', y: 'size' });
+            return vgSpec;
         }
     },
     {
@@ -513,12 +587,9 @@ const barCharts: ChartTemplate[] = [
             ]},
         ] as ConfigPropertyDef[],
         "postProcessor": (vgSpec: any, table: any[], config?: Record<string, any>) => {
-            if (vgSpec.encoding.y && vgSpec.encoding.y.type != "nominal") {
-                vgSpec.encoding.y.type = "nominal";
-            } 
-            if (vgSpec.encoding.x && vgSpec.encoding.x.type != "nominal") {
-                vgSpec.encoding.x.type = "nominal";
-            }
+            // Dynamic rect sizing: nominal if small cardinality, resize width/height if large
+            applyDynamicMarkResizing(vgSpec, table, { x: 'width', y: 'height' }, 20);
+
             if (config?.colorScheme && vgSpec.encoding.color) {
                 if (!vgSpec.encoding.color.scale) vgSpec.encoding.color.scale = {};
                 vgSpec.encoding.color.scale.scheme = config.colorScheme;

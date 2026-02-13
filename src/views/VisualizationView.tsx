@@ -493,7 +493,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
     
     let charts = useSelector(dfSelectors.getAllCharts);
     let focusedChartId = useSelector((state: DataFormulatorState) => state.focusedChartId);
-    let chartSynthesisInProgress = useSelector((state: DataFormulatorState) => state.chartSynthesisInProgress);
+    let chartSynthesisInProgress = useSelector((state: DataFormulatorState) => state.chartSynthesisInProgress) || [];
 
     let synthesisRunning = focusedChartId ? chartSynthesisInProgress.includes(focusedChartId) : false;
     let handleDeleteChart = () => { focusedChartId && dispatch(dfActions.deleteChartById(focusedChartId)) }
@@ -745,7 +745,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
     let resultTable = tables.find(t => t.id == trigger?.resultTableId);
 
     // Chart insight
-    const chartInsightInProgress = useSelector((state: DataFormulatorState) => state.chartInsightInProgress);
+    const chartInsightInProgress = useSelector((state: DataFormulatorState) => state.chartInsightInProgress) || [];
     const insightLoading = chartInsightInProgress.includes(focusedChart.id);
     const currentInsightKey = computeInsightKey(focusedChart);
     const insightFresh = focusedChart.insight?.key === currentInsightKey;
@@ -1202,7 +1202,7 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
     let allCharts = useSelector(dfSelectors.getAllCharts);
     let focusedChartId = useSelector((state: DataFormulatorState) => state.focusedChartId);
     let focusedTableId = useSelector((state: DataFormulatorState) => state.focusedTableId);
-    let chartSynthesisInProgress = useSelector((state: DataFormulatorState) => state.chartSynthesisInProgress);
+    let chartSynthesisInProgress = useSelector((state: DataFormulatorState) => state.chartSynthesisInProgress) || [];
 
     const dispatch = useDispatch();
 
