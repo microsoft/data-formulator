@@ -20,7 +20,7 @@
 import { FC, useEffect, useRef, useCallback } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { DataFormulatorState, dfActions, dfSelectors } from '../app/dfSlice';
-import { Chart, DictTable, FieldItem } from '../components/ComponentType';
+import { Chart, DictTable, FieldItem } from '../components/componentType';
 import { assembleVegaChart, prepVisTable } from '../app/utils';
 import { getDataTable, checkChartAvailability } from './VisualizationView';
 import { getCachedChart, setCachedChart, computeCacheKey, invalidateChart, ChartCacheEntry } from '../app/chartCache';

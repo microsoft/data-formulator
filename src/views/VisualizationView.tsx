@@ -44,8 +44,8 @@ import '../scss/VisualizationView.scss';
 import { useDispatch, useSelector } from 'react-redux';
 import { DataFormulatorState, dfActions } from '../app/dfSlice';
 import { assembleVegaChart, extractFieldsFromEncodingMap, getUrls, prepVisTable, fetchWithIdentity } from '../app/utils';
-import { Chart, EncodingItem, EncodingMap, FieldItem } from '../components/ComponentType';
-import { DictTable } from "../components/ComponentType";
+import { Chart, EncodingItem, EncodingMap, FieldItem } from '../components/componentType';
+import { DictTable } from "../components/componentType";
 
 import AddchartIcon from '@mui/icons-material/Addchart';
 import DeleteIcon from '@mui/icons-material/Delete';

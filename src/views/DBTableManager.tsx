@@ -50,7 +50,7 @@ type TableImportConfig =
 import { getUrls, fetchWithIdentity } from '../app/utils';
 import { borderColor } from '../app/tokens';
 import { CustomReactTable } from './ReactTable';
-import { DataSourceConfig, DictTable } from '../components/ComponentType';
+import { DataSourceConfig, DictTable } from '../components/componentType';
 import { Type } from '../data/types';
 import { useDispatch, useSelector } from 'react-redux';
 import { dfActions, dfSelectors } from '../app/dfSlice';

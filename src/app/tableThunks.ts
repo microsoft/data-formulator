@@ -13,7 +13,7 @@
  */
 
 import { createAsyncThunk } from '@reduxjs/toolkit';
-import { DataSourceConfig, DictTable } from '../components/ComponentType';
+import { DataSourceConfig, DictTable } from '../components/componentType';
 import { Type } from '../data/types';
 import { inferTypeFromValueArray } from '../data/utils';
 import { fetchWithIdentity, getUrls, computeContentHash } from './utils';

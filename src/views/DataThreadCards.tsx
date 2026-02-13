@@ -16,7 +16,7 @@ import {
 } from '@mui/material';
 
 import { dfActions } from '../app/dfSlice';
-import { Chart, DictTable, Trigger } from "../components/ComponentType";
+import { Chart, DictTable, Trigger } from "../components/componentType";
 
 import DeleteIcon from '@mui/icons-material/Delete';
 import AddchartIcon from '@mui/icons-material/Addchart';

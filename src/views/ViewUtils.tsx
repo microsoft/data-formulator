@@ -4,7 +4,7 @@
 import React from "react";
 import ts from "typescript";
 import { runCodeOnInputListsInVM } from "../app/utils";
-import { ConceptTransformation, FieldItem } from "../components/ComponentType";
+import { ConceptTransformation, FieldItem } from "../components/componentType";
 import { Type } from "../data/types";
 import { BooleanIcon, NumericalIcon, StringIcon, DateIcon, UnknownIcon } from '../icons';
 
@@ -12,7 +12,7 @@ import AutoFixHighIcon from '@mui/icons-material/AutoFixHigh';
 import BarChartIcon from '@mui/icons-material/BarChart';
 import CommitIcon from '@mui/icons-material/Commit';
 
-import { DictTable } from '../components/ComponentType';
+import { DictTable } from '../components/componentType';
 
 export const groupConceptItems = (conceptShelfItems: FieldItem[], tables: DictTable[])  => {
     // group concepts based on which source table they belongs to

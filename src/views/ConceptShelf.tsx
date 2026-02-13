@@ -19,7 +19,7 @@ import {
 
 import CleaningServicesIcon from '@mui/icons-material/CleaningServices';
 
-import { FieldItem, Channel } from '../components/ComponentType';
+import { FieldItem, Channel } from '../components/componentType';
 
 import React from 'react';
 import { DataFormulatorState, dfActions, dfSelectors } from '../app/dfSlice';

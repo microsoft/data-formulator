@@ -32,7 +32,7 @@ import '../scss/VisualizationView.scss';
 import { batch, useDispatch, useSelector } from 'react-redux';
 import { DataFormulatorState, dfActions, SSEMessage } from '../app/dfSlice';
 import { getTriggers } from '../app/utils';
-import { Chart, DictTable, Trigger } from "../components/ComponentType";
+import { Chart, DictTable, Trigger } from "../components/componentType";
 
 import DeleteIcon from '@mui/icons-material/Delete';
 import StarIcon from '@mui/icons-material/Star';

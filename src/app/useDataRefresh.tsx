@@ -5,7 +5,7 @@ import { useEffect, useRef, useCallback } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { DataFormulatorState, dfActions, selectRefreshConfigs } from './dfSlice';
 import { AppDispatch } from './store';
-import { DictTable } from '../components/ComponentType';
+import { DictTable } from '../components/componentType';
 import { createTableFromText } from '../data/utils';
 import { fetchWithIdentity, getUrls, computeContentHash } from './utils';
 
