@@ -62,7 +62,7 @@ import {
     RouterProvider,
 } from "react-router-dom";
 import { About } from '../views/About';
-import ChartTestPage from '../views/ChartTestPage';
+import ChartGallery from '../views/ChartGallery';
 import { MessageSnackbar } from '../views/MessageSnackbar';
 import { ChartRenderService } from '../views/ChartRenderService';
 import { DictTable } from '../components/ComponentType';
@@ -893,8 +893,8 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
     // Check if we're on the about page
     const isAboutPage = (window.location.pathname === '/about' 
             || (window.location.pathname === '/' && serverConfig.PROJECT_FRONT_PAGE));
-    const isChartTestPage = window.location.pathname === '/chart-test';
-    const isAppPage = !isAboutPage && !isChartTestPage;
+    const isGalleryPage = window.location.pathname === '/gallery';
+    const isAppPage = !isAboutPage && !isGalleryPage;
 
     let appBar =  [
         <AppBar position="static" key="app-bar-main" >
@@ -968,7 +968,7 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
                     </Button>
                     <Button 
                         component="a" 
-                        href="/chart-test"
+                        href="/gallery"
                         sx={{ 
                             textDecoration: 'none',
                             textTransform: 'none',
@@ -979,16 +979,15 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
                             px: 1.5,
                             py: 0.5,
                             minWidth: 'auto',
-                            color: isChartTestPage ? 'text.primary' : 'text.secondary',
-                            backgroundColor: isChartTestPage ? 'rgba(0, 0, 0, 0.08)' : 'transparent',
+                            color: isGalleryPage ? 'text.primary' : 'text.secondary',
+                            backgroundColor: isGalleryPage ? 'rgba(0, 0, 0, 0.08)' : 'transparent',
                             '&:hover': {
                                 color: 'text.primary',
-                                backgroundColor: isChartTestPage ? 'rgba(0, 0, 0, 0.08)' : 'rgba(0, 0, 0, 0.04)',
+                                backgroundColor: isGalleryPage ? 'rgba(0, 0, 0, 0.08)' : 'rgba(0, 0, 0, 0.04)',
                             },
-                            display: serverConfig.DEV_MODE ? undefined : 'none',
                         }}
                     >
-                        Chart Test
+                        Gallery
                     </Button>
                 </Box>
                 {isAppPage && (
@@ -1145,10 +1144,10 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
             path: "/about",
             element: <About />,
         },
-        ...(serverConfig.DEV_MODE ? [{
-            path: "/chart-test",
-            element: <ChartTestPage />,
-        }] : []),
+        {
+            path: "/gallery",
+            element: <ChartGallery />,
+        },
         {
             path: "/",
             element: serverConfig.PROJECT_FRONT_PAGE ? <About /> : <DataFormulatorFC />,

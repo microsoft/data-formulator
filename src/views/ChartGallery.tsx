@@ -2,15 +2,19 @@
 // Licensed under the MIT License.
 
 /**
- * ChartTestPage — Exhaustive visual test page for Vega-Lite chart assembly.
+ * ChartGallery — Visual gallery for Vega-Lite chart assembly.
  *
- * For each chart type, generates synthetic datasets that:
- *   1. Test different x, y, color, column combinations
- *   2. Exhaust temporal, quantitative, ordinal, nominal encoding types
- *   3. Cover small (3-5), medium (10-20), large (50-100+) cardinality
- *   4. Include diverse semantic types (dates, categories, measures, etc.)
+ * Organised into three sections:
+ *   1. **Chart Types** — demos for every supported chart type
+ *   2. **Features & Facets** — faceting modes (column, row, column+row)
+ *   3. **Stress Tests** — overflow / discrete-value capping, elasticity & stretch
  *
- * Each chart type has its own sub-page, navigable via tabs.
+ * For each entry, generates synthetic datasets that:
+ *   - Test different x, y, color, column combinations
+ *   - Exhaust temporal, quantitative, ordinal, nominal encoding types
+ *   - Cover small (3-5), medium (10-20), large (50-100+) cardinality
+ *   - Include diverse semantic types (dates, categories, measures, etc.)
+ *
  * Charts are rendered directly with vega-embed (bypassing Redux state).
  */
 
@@ -19,7 +23,6 @@ import {
     Box, Tabs, Tab, Typography, Paper, Chip, Divider,
 } from '@mui/material';
 import embed from 'vega-embed';
-import { getChartTemplate, CHART_TEMPLATES } from '../components/ChartTemplates';
 import { Type } from '../data/types';
 import { assembleVegaChart } from '../app/utils';
 import { Channel, EncodingItem, FieldItem } from '../components/ComponentType';
@@ -3922,6 +3925,7 @@ function genPyramidTests(): TestCase[] {
 // All test generators mapped by chart group
 // ============================================================================
 
+/** All test generators mapped by chart group */
 const TEST_GENERATORS: Record<string, () => TestCase[]> = {
     'Scatter Plot': genScatterTests,
     'Linear Regression': genLinearRegressionTests,
@@ -3951,6 +3955,37 @@ const TEST_GENERATORS: Record<string, () => TestCase[]> = {
     'Overflow': genOverflowTests,
     'Elasticity & Stretch': genElasticityTests,
 };
+
+/** Gallery organised into three sections */
+interface GallerySection {
+    label: string;
+    description: string;
+    entries: string[];   // keys into TEST_GENERATORS
+}
+
+const GALLERY_SECTIONS: GallerySection[] = [
+    {
+        label: 'Chart Types',
+        description: 'Demos for every supported chart type',
+        entries: [
+            'Scatter Plot', 'Linear Regression', 'Bar Chart', 'Stacked Bar Chart',
+            'Grouped Bar Chart', 'Histogram', 'Heatmap', 'Line Chart', 'Dotted Line Chart',
+            'Boxplot', 'Pie Chart', 'Ranged Dot Plot', 'Area Chart', 'Streamgraph',
+            'Lollipop Chart', 'Density Plot', 'Candlestick Chart', 'Waterfall Chart',
+            'Strip Plot', 'Radar Chart', 'Pyramid Chart', 'Custom Charts',
+        ],
+    },
+    {
+        label: 'Features & Facets',
+        description: 'Faceting modes and feature combinations',
+        entries: ['Facet: Columns', 'Facet: Rows', 'Facet: Cols+Rows'],
+    },
+    {
+        label: 'Stress Tests',
+        description: 'Overflow / discrete-value capping, elasticity & stretch',
+        entries: ['Overflow', 'Elasticity & Stretch'],
+    },
+];
 
 // ============================================================================
 // Chart Rendering Component
@@ -4131,46 +4166,65 @@ const ChartTypeTestPanel: React.FC<{ chartGroup: string }> = ({ chartGroup }) =>
 // Main Page
 // ============================================================================
 
-const ChartTestPage: React.FC = () => {
-    const chartGroups = Object.keys(TEST_GENERATORS);
-    const [activeTab, setActiveTab] = useState(0);
+const ChartGallery: React.FC = () => {
+    const [activeSection, setActiveSection] = useState(0);
+    const [activeCategory, setActiveCategory] = useState(0);
+
+    const section = GALLERY_SECTIONS[activeSection];
+    const activeCategoryName = section.entries[activeCategory] ?? section.entries[0];
 
     return (
         <Box sx={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
+            {/* Header */}
             <Box sx={{ px: 3, pt: 2, pb: 1 }}>
                 <Typography variant="h5" fontWeight={600}>
-                    Chart Assembly Test Page
+                    Chart Gallery
                 </Typography>
-                <Typography variant="body2" color="text.secondary" mb={1}>
-                    Exhaustive visual tests for Vega-Lite chart assembly, encoding type conversion, dynamic sizing, and color schemes.
+                <Typography variant="body2" color="text.secondary" mb={0.5}>
+                    Visual gallery for Vega-Lite chart assembly, encoding type conversion, dynamic sizing, and color schemes.
                 </Typography>
             </Box>
 
+            {/* Section tabs (top level) */}
             <Box sx={{ borderBottom: 1, borderColor: 'divider', px: 2 }}>
                 <Tabs
-                    value={activeTab}
-                    onChange={(_, v) => setActiveTab(v)}
-                    variant="standard"
+                    value={activeSection}
+                    onChange={(_, v) => { setActiveSection(v); setActiveCategory(0); }}
                     sx={{
                         minHeight: 36,
-                        flexWrap: 'wrap',
-                        '& .MuiTabs-flexContainer': { flexWrap: 'wrap' },
-                        '& .MuiTab-root': { minHeight: 36, py: 0.5, textTransform: 'none', fontSize: 13 },
-                        '& .MuiTabs-indicator': { display: 'none' },
-                        '& .Mui-selected': { backgroundColor: 'rgba(0,0,0,0.08)', borderRadius: 1 },
+                        '& .MuiTab-root': { minHeight: 36, py: 0.5, textTransform: 'none', fontWeight: 600, fontSize: 14 },
                     }}
                 >
-                    {chartGroups.map((g, i) => (
-                        <Tab key={g} label={g} value={i} />
+                    {GALLERY_SECTIONS.map((s, i) => (
+                        <Tab key={s.label} label={s.label} value={i} />
                     ))}
                 </Tabs>
             </Box>
 
+            {/* Category chips within the active section */}
+            <Box sx={{ px: 2, py: 1, display: 'flex', gap: 0.5, flexWrap: 'wrap', bgcolor: '#f5f5f5', borderBottom: 1, borderColor: 'divider' }}>
+                <Typography variant="caption" color="text.secondary" sx={{ mr: 1, lineHeight: '28px' }}>
+                    {section.description}:
+                </Typography>
+                {section.entries.map((entry, ei) => (
+                    <Chip
+                        key={entry}
+                        label={entry}
+                        size="small"
+                        onClick={() => setActiveCategory(ei)}
+                        variant={ei === activeCategory ? 'filled' : 'outlined'}
+                        color={ei === activeCategory ? 'primary' : 'default'}
+                        sx={{ fontSize: 12, height: 26, cursor: 'pointer' }}
+                    />
+                ))}
+            </Box>
+
+            {/* Chart content */}
             <Box sx={{ flex: 1, overflow: 'auto', bgcolor: '#fafafa' }}>
-                <ChartTypeTestPanel chartGroup={chartGroups[activeTab]} />
+                <ChartTypeTestPanel chartGroup={activeCategoryName} />
             </Box>
         </Box>
     );
 };
 
-export default ChartTestPage;
+export default ChartGallery;
