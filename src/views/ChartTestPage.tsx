@@ -599,6 +599,143 @@ function genScatterTests(): TestCase[] {
     return tests;
 }
 
+// ------ Linear Regression ------
+function genLinearRegressionTests(): TestCase[] {
+    const tests: TestCase[] = [];
+    const rand = seededRandom(55);
+
+    // 1. Basic regression (quant × quant)
+    {
+        const n = 40;
+        const data = Array.from({ length: n }, () => {
+            const x = 10 + rand() * 80;
+            return { Hours: Math.round(x * 10) / 10, Score: Math.round(20 + x * 0.8 + (rand() - 0.5) * 30) };
+        });
+        tests.push({
+            title: 'Basic regression (40 pts)',
+            description: 'Hours vs Score — simple linear trend',
+            tags: ['quantitative', 'small'],
+            chartType: 'Linear Regression',
+            data,
+            fields: [makeField('Hours'), makeField('Score')],
+            metadata: {
+                Hours: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                Score: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+            },
+            encodingMap: { x: makeEncodingItem('Hours'), y: makeEncodingItem('Score') },
+        });
+    }
+
+    // 2. Regression with color (grouped lines)
+    {
+        const groups = ['Male', 'Female'];
+        const data: any[] = [];
+        for (const g of groups) {
+            const offset = g === 'Male' ? 5 : -5;
+            for (let i = 0; i < 30; i++) {
+                const x = 10 + rand() * 80;
+                data.push({
+                    Experience: Math.round(x * 10) / 10,
+                    Salary: Math.round(30 + x * 0.6 + offset + (rand() - 0.5) * 20),
+                    Gender: g,
+                });
+            }
+        }
+        tests.push({
+            title: 'Regression + Color (2 groups)',
+            description: '60 points — separate regression per gender',
+            tags: ['quantitative', 'color', 'medium'],
+            chartType: 'Linear Regression',
+            data,
+            fields: [makeField('Experience'), makeField('Salary'), makeField('Gender')],
+            metadata: {
+                Experience: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                Salary: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                Gender: { type: Type.String, semanticType: 'Category', levels: groups },
+            },
+            encodingMap: { x: makeEncodingItem('Experience'), y: makeEncodingItem('Salary'), color: makeEncodingItem('Gender') },
+        });
+    }
+
+    // 3. Regression with column facet
+    {
+        const regions = ['East', 'West', 'Central'];
+        const data: any[] = [];
+        for (const r of regions) {
+            const slope = r === 'East' ? 0.9 : r === 'West' ? 0.5 : 0.7;
+            for (let i = 0; i < 25; i++) {
+                const x = 5 + rand() * 90;
+                data.push({
+                    Spend: Math.round(x * 10) / 10,
+                    Revenue: Math.round(10 + x * slope + (rand() - 0.5) * 25),
+                    Region: r,
+                });
+            }
+        }
+        tests.push({
+            title: 'Regression + Column Facet (3 regions)',
+            description: '75 points — separate subplot per region',
+            tags: ['quantitative', 'facet', 'medium'],
+            chartType: 'Linear Regression',
+            data,
+            fields: [makeField('Spend'), makeField('Revenue'), makeField('Region')],
+            metadata: {
+                Spend: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                Revenue: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                Region: { type: Type.String, semanticType: 'Category', levels: regions },
+            },
+            encodingMap: {
+                x: makeEncodingItem('Spend'),
+                y: makeEncodingItem('Revenue'),
+                column: makeEncodingItem('Region'),
+            },
+        });
+    }
+
+    // 4. Regression with color + facet
+    {
+        const depts = ['Sales', 'Engineering'];
+        const levels = ['Junior', 'Senior'];
+        const data: any[] = [];
+        for (const d of depts) {
+            for (const l of levels) {
+                const base = l === 'Senior' ? 20 : 0;
+                for (let i = 0; i < 15; i++) {
+                    const x = 1 + rand() * 20;
+                    data.push({
+                        Years: Math.round(x * 10) / 10,
+                        Performance: Math.round(40 + base + x * 2.5 + (rand() - 0.5) * 15),
+                        Level: l,
+                        Department: d,
+                    });
+                }
+            }
+        }
+        tests.push({
+            title: 'Color + Facet (2×2)',
+            description: '60 pts — color by level, facet by department',
+            tags: ['quantitative', 'color', 'facet', 'medium'],
+            chartType: 'Linear Regression',
+            data,
+            fields: [makeField('Years'), makeField('Performance'), makeField('Level'), makeField('Department')],
+            metadata: {
+                Years: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                Performance: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                Level: { type: Type.String, semanticType: 'Category', levels: levels },
+                Department: { type: Type.String, semanticType: 'Category', levels: depts },
+            },
+            encodingMap: {
+                x: makeEncodingItem('Years'),
+                y: makeEncodingItem('Performance'),
+                color: makeEncodingItem('Level'),
+                column: makeEncodingItem('Department'),
+            },
+        });
+    }
+
+    return tests;
+}
+
 // ------ Bar Chart ------
 function genBarTests(): TestCase[] {
     const tests: TestCase[] = [];
@@ -2064,6 +2201,636 @@ function genCustomTests(): TestCase[] {
     return tests;
 }
 
+// ------ Area Chart ------
+function genAreaTests(): TestCase[] {
+    const tests: TestCase[] = [];
+    const rand = seededRandom(910);
+
+    // 1. Simple temporal area
+    {
+        const dates = genDates(30, 2022);
+        const data = dates.map((d, i) => ({ Date: d, Revenue: Math.round(100 + rand() * 300 + i * 5) }));
+        tests.push({
+            title: 'Temporal × Quant (simple area)',
+            description: '30 dates — basic time series area',
+            tags: ['temporal', 'quantitative', 'small'],
+            chartType: 'Area Chart',
+            data,
+            fields: [makeField('Date'), makeField('Revenue')],
+            metadata: {
+                Date: { type: Type.Date, semanticType: 'Date', levels: [] },
+                Revenue: { type: Type.Number, semanticType: 'Revenue', levels: [] },
+            },
+            encodingMap: { x: makeEncodingItem('Date'), y: makeEncodingItem('Revenue') },
+        });
+    }
+
+    // 2. Stacked area with color
+    {
+        const dates = genDates(24, 2021);
+        const types = ['Solar', 'Wind', 'Hydro', 'Nuclear'];
+        const data: any[] = [];
+        for (const d of dates) for (const t of types) {
+            data.push({ Date: d, Source: t, GWh: Math.round(20 + rand() * 150) });
+        }
+        tests.push({
+            title: 'Temporal × Quant + Color (stacked area)',
+            description: '24 dates × 4 energy sources — stacked by default',
+            tags: ['temporal', 'quantitative', 'color', 'medium'],
+            chartType: 'Area Chart',
+            data,
+            fields: [makeField('Date'), makeField('GWh'), makeField('Source')],
+            metadata: {
+                Date: { type: Type.Date, semanticType: 'Date', levels: [] },
+                GWh: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                Source: { type: Type.String, semanticType: 'Category', levels: types },
+            },
+            encodingMap: { x: makeEncodingItem('Date'), y: makeEncodingItem('GWh'), color: makeEncodingItem('Source') },
+        });
+    }
+
+    // 3. Large stacked area (many series)
+    {
+        const dates = genDates(60, 2018);
+        const categories = genCategories('Sector', 8);
+        const data: any[] = [];
+        for (const d of dates) for (const c of categories) {
+            data.push({ Date: d, Sector: c, Output: Math.round(rand() * 500) });
+        }
+        tests.push({
+            title: 'Temporal × Quant + Color (large, 480 pts)',
+            description: '60 dates × 8 sectors',
+            tags: ['temporal', 'quantitative', 'color', 'large'],
+            chartType: 'Area Chart',
+            data,
+            fields: [makeField('Date'), makeField('Output'), makeField('Sector')],
+            metadata: {
+                Date: { type: Type.Date, semanticType: 'Date', levels: [] },
+                Output: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                Sector: { type: Type.String, semanticType: 'Category', levels: categories },
+            },
+            encodingMap: { x: makeEncodingItem('Date'), y: makeEncodingItem('Output'), color: makeEncodingItem('Sector') },
+        });
+    }
+
+    return tests;
+}
+
+// ------ Streamgraph ------
+function genStreamgraphTests(): TestCase[] {
+    const tests: TestCase[] = [];
+    const rand = seededRandom(920);
+
+    // 1. Basic streamgraph
+    {
+        const dates = genDates(40, 2020);
+        const genres = ['Rock', 'Pop', 'Jazz', 'Electronic', 'Classical'];
+        const data: any[] = [];
+        for (const d of dates) for (const g of genres) {
+            data.push({ Date: d, Genre: g, Listeners: Math.round(50 + rand() * 400) });
+        }
+        tests.push({
+            title: 'Streamgraph (5 series, 200 pts)',
+            description: '40 dates × 5 genres — center-stacked area',
+            tags: ['temporal', 'quantitative', 'color', 'medium'],
+            chartType: 'Streamgraph',
+            data,
+            fields: [makeField('Date'), makeField('Listeners'), makeField('Genre')],
+            metadata: {
+                Date: { type: Type.Date, semanticType: 'Date', levels: [] },
+                Listeners: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                Genre: { type: Type.String, semanticType: 'Category', levels: genres },
+            },
+            encodingMap: { x: makeEncodingItem('Date'), y: makeEncodingItem('Listeners'), color: makeEncodingItem('Genre') },
+        });
+    }
+
+    // 2. Large streamgraph (many series)
+    {
+        const dates = genDates(80, 2015);
+        const industries = genCategories('Industry', 10);
+        const data: any[] = [];
+        for (const d of dates) for (const ind of industries) {
+            data.push({ Date: d, Industry: ind, Workers: Math.round(100 + rand() * 1000) });
+        }
+        tests.push({
+            title: 'Streamgraph (10 series, 800 pts)',
+            description: '80 dates × 10 industries — dense center-stacked',
+            tags: ['temporal', 'quantitative', 'color', 'large'],
+            chartType: 'Streamgraph',
+            data,
+            fields: [makeField('Date'), makeField('Workers'), makeField('Industry')],
+            metadata: {
+                Date: { type: Type.Date, semanticType: 'Date', levels: [] },
+                Workers: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                Industry: { type: Type.String, semanticType: 'Category', levels: industries },
+            },
+            encodingMap: { x: makeEncodingItem('Date'), y: makeEncodingItem('Workers'), color: makeEncodingItem('Industry') },
+        });
+    }
+
+    return tests;
+}
+
+// ------ Lollipop Chart ------
+function genLollipopTests(): TestCase[] {
+    const tests: TestCase[] = [];
+    const rand = seededRandom(930);
+
+    // 1. Nominal × Quant (vertical lollipop)
+    {
+        const countries = ['USA', 'China', 'Japan', 'Germany', 'UK', 'France', 'India', 'Brazil'];
+        const data = countries.map(c => ({ Country: c, GDP: Math.round(500 + rand() * 20000) }));
+        tests.push({
+            title: 'Nominal × Quant (vertical lollipop)',
+            description: '8 countries — rule from 0 to value + dot',
+            tags: ['nominal', 'quantitative', 'small'],
+            chartType: 'Lollipop Chart',
+            data,
+            fields: [makeField('Country'), makeField('GDP')],
+            metadata: {
+                Country: { type: Type.String, semanticType: 'Country', levels: countries },
+                GDP: { type: Type.Number, semanticType: 'GDP', levels: [] },
+            },
+            encodingMap: { x: makeEncodingItem('Country'), y: makeEncodingItem('GDP') },
+        });
+    }
+
+    // 2. Nominal × Quant + Color
+    {
+        const items = genCategories('Product', 10);
+        const data = items.map(p => ({
+            Product: p,
+            Sales: Math.round(100 + rand() * 900),
+            Region: rand() > 0.5 ? 'East' : 'West',
+        }));
+        tests.push({
+            title: 'Nominal × Quant + Color (10 items)',
+            description: 'Products with color-coded region',
+            tags: ['nominal', 'quantitative', 'color', 'medium'],
+            chartType: 'Lollipop Chart',
+            data,
+            fields: [makeField('Product'), makeField('Sales'), makeField('Region')],
+            metadata: {
+                Product: { type: Type.String, semanticType: 'Category', levels: items },
+                Sales: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                Region: { type: Type.String, semanticType: 'Category', levels: ['East', 'West'] },
+            },
+            encodingMap: { x: makeEncodingItem('Product'), y: makeEncodingItem('Sales'), color: makeEncodingItem('Region') },
+        });
+    }
+
+    // 3. Horizontal lollipop (quant on x, nominal on y)
+    {
+        const departments = ['Engineering', 'Marketing', 'Sales', 'Support', 'HR', 'Finance'];
+        const data = departments.map(d => ({ Department: d, Score: Math.round(40 + rand() * 60) }));
+        tests.push({
+            title: 'Quant × Nominal (horizontal lollipop)',
+            description: '6 departments — horizontal layout',
+            tags: ['nominal', 'quantitative', 'small'],
+            chartType: 'Lollipop Chart',
+            data,
+            fields: [makeField('Score'), makeField('Department')],
+            metadata: {
+                Score: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                Department: { type: Type.String, semanticType: 'Category', levels: departments },
+            },
+            encodingMap: { x: makeEncodingItem('Score'), y: makeEncodingItem('Department') },
+        });
+    }
+
+    // 4. Color + Column facet
+    {
+        const regions = ['North', 'South'];
+        const categories = genCategories('Item', 6);
+        const data: any[] = [];
+        for (const r of regions) {
+            for (const c of categories) {
+                data.push({
+                    Item: c,
+                    Revenue: Math.round(200 + rand() * 800),
+                    Region: r,
+                    Tier: rand() > 0.5 ? 'Premium' : 'Standard',
+                });
+            }
+        }
+        tests.push({
+            title: 'Color + Column Facet',
+            description: '6 items × 2 regions faceted, color by tier',
+            tags: ['nominal', 'quantitative', 'color', 'facet', 'medium'],
+            chartType: 'Lollipop Chart',
+            data,
+            fields: [makeField('Item'), makeField('Revenue'), makeField('Region'), makeField('Tier')],
+            metadata: {
+                Item: { type: Type.String, semanticType: 'Category', levels: categories },
+                Revenue: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                Region: { type: Type.String, semanticType: 'Category', levels: regions },
+                Tier: { type: Type.String, semanticType: 'Category', levels: ['Premium', 'Standard'] },
+            },
+            encodingMap: {
+                x: makeEncodingItem('Item'),
+                y: makeEncodingItem('Revenue'),
+                color: makeEncodingItem('Tier'),
+                column: makeEncodingItem('Region'),
+            },
+        });
+    }
+
+    return tests;
+}
+
+// ------ Density Plot ------
+function genDensityTests(): TestCase[] {
+    const tests: TestCase[] = [];
+    const rand = seededRandom(940);
+
+    // 1. Simple density (one distribution)
+    {
+        const data = Array.from({ length: 200 }, () => ({
+            Score: Math.round(50 + (rand() + rand() + rand() - 1.5) * 30),  // roughly normal
+        }));
+        tests.push({
+            title: 'Single Distribution (200 pts)',
+            description: 'Approximately normal distribution of scores',
+            tags: ['quantitative', 'small'],
+            chartType: 'Density Plot',
+            data,
+            fields: [makeField('Score')],
+            metadata: {
+                Score: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+            },
+            encodingMap: { x: makeEncodingItem('Score') },
+        });
+    }
+
+    // 2. Grouped density with color
+    {
+        const groups = ['Control', 'Treatment A', 'Treatment B'];
+        const data: any[] = [];
+        for (const g of groups) {
+            const offset = g === 'Control' ? 0 : g === 'Treatment A' ? 10 : 20;
+            for (let i = 0; i < 150; i++) {
+                data.push({
+                    Value: Math.round(50 + offset + (rand() + rand() + rand() - 1.5) * 20),
+                    Group: g,
+                });
+            }
+        }
+        tests.push({
+            title: 'Grouped Density (3 groups, 450 pts)',
+            description: 'Three overlapping distributions colored by group',
+            tags: ['quantitative', 'color', 'medium'],
+            chartType: 'Density Plot',
+            data,
+            fields: [makeField('Value'), makeField('Group')],
+            metadata: {
+                Value: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                Group: { type: Type.String, semanticType: 'Category', levels: groups },
+            },
+            encodingMap: { x: makeEncodingItem('Value'), color: makeEncodingItem('Group') },
+        });
+    }
+
+    // 3. Bimodal distribution
+    {
+        const data: any[] = [];
+        for (let i = 0; i < 300; i++) {
+            const peak = rand() > 0.4 ? 30 : 70;
+            data.push({ Measurement: Math.round(peak + (rand() - 0.5) * 20) });
+        }
+        tests.push({
+            title: 'Bimodal Distribution (300 pts)',
+            description: 'Two peaks — tests bandwidth sensitivity',
+            tags: ['quantitative', 'medium'],
+            chartType: 'Density Plot',
+            data,
+            fields: [makeField('Measurement')],
+            metadata: {
+                Measurement: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+            },
+            encodingMap: { x: makeEncodingItem('Measurement') },
+        });
+    }
+
+    // 4. Color + Column facet
+    {
+        const sites = ['Lab A', 'Lab B'];
+        const data: any[] = [];
+        for (const site of sites) {
+            const offset = site === 'Lab A' ? 0 : 15;
+            for (let i = 0; i < 200; i++) {
+                data.push({
+                    Reading: Math.round(40 + offset + (rand() + rand() + rand() - 1.5) * 25),
+                    Batch: rand() > 0.5 ? 'Morning' : 'Evening',
+                    Site: site,
+                });
+            }
+        }
+        tests.push({
+            title: 'Color + Column Facet (2 sites)',
+            description: 'Density by batch, faceted by site',
+            tags: ['quantitative', 'color', 'facet', 'medium'],
+            chartType: 'Density Plot',
+            data,
+            fields: [makeField('Reading'), makeField('Batch'), makeField('Site')],
+            metadata: {
+                Reading: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                Batch: { type: Type.String, semanticType: 'Category', levels: ['Morning', 'Evening'] },
+                Site: { type: Type.String, semanticType: 'Category', levels: sites },
+            },
+            encodingMap: {
+                x: makeEncodingItem('Reading'),
+                color: makeEncodingItem('Batch'),
+                column: makeEncodingItem('Site'),
+            },
+        });
+    }
+
+    return tests;
+}
+
+// ============================================================================
+// Waterfall Chart Test Generators
+// ============================================================================
+
+function genWaterfallTests(): TestCase[] {
+    const tests: TestCase[] = [];
+
+    // 1. Simple P&L waterfall — no explicit type column (auto-inferred)
+    {
+        const data = [
+            { Category: 'Revenue',       Amount: 1000 },
+            { Category: 'COGS',          Amount: -400 },
+            { Category: 'Gross Profit',  Amount: -150 },
+            { Category: 'Operating Exp', Amount: -200 },
+            { Category: 'Tax',           Amount: -80 },
+            { Category: 'Net Income',    Amount: 170 },
+        ];
+        tests.push({
+            title: 'Simple P&L (6 steps, auto type)',
+            description: 'Auto-detects first=start, last=end, rest=delta',
+            tags: ['nominal', 'small'],
+            chartType: 'Waterfall Chart',
+            data,
+            fields: [makeField('Category'), makeField('Amount')],
+            metadata: {
+                Category: { type: Type.String, semanticType: 'Category', levels: data.map(d => d.Category) },
+                Amount: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+            },
+            encodingMap: { x: makeEncodingItem('Category'), y: makeEncodingItem('Amount') },
+        });
+    }
+
+    // 2. With explicit Type column (start/delta/end)
+    {
+        const data = [
+            { Step: 'Starting Balance', Value:  5000, Type: 'start' },
+            { Step: 'Sales',            Value:  2200, Type: 'delta' },
+            { Step: 'Returns',          Value:  -350, Type: 'delta' },
+            { Step: 'Payroll',          Value: -1800, Type: 'delta' },
+            { Step: 'Rent',             Value:  -600, Type: 'delta' },
+            { Step: 'Marketing',        Value:  -400, Type: 'delta' },
+            { Step: 'Ending Balance',   Value:  4050, Type: 'end' },
+        ];
+        tests.push({
+            title: 'Explicit Type Column (7 steps)',
+            description: 'User-provided start/delta/end type field',
+            tags: ['nominal', 'color', 'small'],
+            chartType: 'Waterfall Chart',
+            data,
+            fields: [makeField('Step'), makeField('Value'), makeField('Type')],
+            metadata: {
+                Step: { type: Type.String, semanticType: 'Category', levels: data.map(d => d.Step) },
+                Value: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                Type: { type: Type.String, semanticType: 'Category', levels: ['start', 'delta', 'end'] },
+            },
+            encodingMap: {
+                x: makeEncodingItem('Step'),
+                y: makeEncodingItem('Value'),
+                color: makeEncodingItem('Type'),
+            },
+        });
+    }
+
+    // 3. Budget variance (all deltas — no start/end)
+    {
+        const data = [
+            { Department: 'Engineering',  Variance: 120 },
+            { Department: 'Sales',        Variance: -45 },
+            { Department: 'Marketing',    Variance: -80 },
+            { Department: 'Operations',   Variance: 35 },
+            { Department: 'HR',           Variance: -20 },
+            { Department: 'Finance',      Variance: 15 },
+            { Department: 'Support',      Variance: -30 },
+            { Department: 'Total',        Variance: -5 },
+        ];
+        tests.push({
+            title: 'Budget Variance (8 depts)',
+            description: 'Mixed positive/negative deltas with auto start/end',
+            tags: ['nominal', 'medium'],
+            chartType: 'Waterfall Chart',
+            data,
+            fields: [makeField('Department'), makeField('Variance')],
+            metadata: {
+                Department: { type: Type.String, semanticType: 'Category', levels: data.map(d => d.Department) },
+                Variance: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+            },
+            encodingMap: { x: makeEncodingItem('Department'), y: makeEncodingItem('Variance') },
+        });
+    }
+
+    // 4. Larger waterfall — monthly cash flow
+    {
+        const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        const amounts = [500, 200, -150, 300, -100, -250, 400, 150, -300, 200, -50, 100];
+        const data = [
+            { Month: 'Opening', Amount: 10000, Type: 'start' },
+            ...months.map((m, i) => ({ Month: m, Amount: amounts[i], Type: 'delta' })),
+            { Month: 'Closing', Amount: 11000, Type: 'end' },
+        ];
+        tests.push({
+            title: 'Monthly Cash Flow (14 steps)',
+            description: '12 months with opening & closing balances',
+            tags: ['nominal', 'color', 'medium'],
+            chartType: 'Waterfall Chart',
+            data,
+            fields: [makeField('Month'), makeField('Amount'), makeField('Type')],
+            metadata: {
+                Month: { type: Type.String, semanticType: 'Category', levels: data.map(d => d.Month) },
+                Amount: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                Type: { type: Type.String, semanticType: 'Category', levels: ['start', 'delta', 'end'] },
+            },
+            encodingMap: {
+                x: makeEncodingItem('Month'),
+                y: makeEncodingItem('Amount'),
+                color: makeEncodingItem('Type'),
+            },
+        });
+    }
+
+    return tests;
+}
+
+// ============================================================================
+// Candlestick Test Generators
+// ============================================================================
+
+function genCandlestickTests(): TestCase[] {
+    const tests: TestCase[] = [];
+    const rand = seededRandom(950);
+
+    // Helper: generate OHLC data
+    function genOHLC(days: number, startPrice: number) {
+        const data: any[] = [];
+        let price = startPrice;
+        const baseDate = new Date('2024-01-02');
+        for (let i = 0; i < days; i++) {
+            const date = new Date(baseDate);
+            date.setDate(baseDate.getDate() + i);
+            const change = (rand() - 0.48) * 4;  // slight upward bias
+            const open = Math.round(price * 100) / 100;
+            const close = Math.round((price + change) * 100) / 100;
+            const high = Math.round((Math.max(open, close) + rand() * 2) * 100) / 100;
+            const low = Math.round((Math.min(open, close) - rand() * 2) * 100) / 100;
+            data.push({
+                Date: date.toISOString().slice(0, 10),
+                Open: open, High: high, Low: low, Close: close,
+            });
+            price = close;
+        }
+        return data;
+    }
+
+    // 1. 30-day stock price
+    {
+        const data = genOHLC(30, 150);
+        tests.push({
+            title: '30-day OHLC',
+            description: 'One month of stock data — classic candlestick',
+            tags: ['temporal', 'quantitative', 'small'],
+            chartType: 'Candlestick Chart',
+            data,
+            fields: [makeField('Date'), makeField('Open'), makeField('High'), makeField('Low'), makeField('Close')],
+            metadata: {
+                Date: { type: Type.String, semanticType: 'Date', levels: [] },
+                Open: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                High: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                Low: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                Close: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+            },
+            encodingMap: {
+                x: makeEncodingItem('Date'),
+                open: makeEncodingItem('Open'),
+                high: makeEncodingItem('High'),
+                low: makeEncodingItem('Low'),
+                close: makeEncodingItem('Close'),
+            },
+        });
+    }
+
+    // 2. 90-day (denser candles)
+    {
+        const data = genOHLC(90, 50);
+        tests.push({
+            title: '90-day OHLC (dense)',
+            description: 'Three months — tests bar width auto-sizing',
+            tags: ['temporal', 'quantitative', 'medium'],
+            chartType: 'Candlestick Chart',
+            data,
+            fields: [makeField('Date'), makeField('Open'), makeField('High'), makeField('Low'), makeField('Close')],
+            metadata: {
+                Date: { type: Type.String, semanticType: 'Date', levels: [] },
+                Open: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                High: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                Low: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                Close: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+            },
+            encodingMap: {
+                x: makeEncodingItem('Date'),
+                open: makeEncodingItem('Open'),
+                high: makeEncodingItem('High'),
+                low: makeEncodingItem('Low'),
+                close: makeEncodingItem('Close'),
+            },
+        });
+    }
+
+    // 3. Penny stock (low prices, high volatility)
+    {
+        const data = genOHLC(20, 3);
+        tests.push({
+            title: 'Penny stock (20 days)',
+            description: 'Low prices near zero — tests scale: {zero: false}',
+            tags: ['temporal', 'quantitative', 'small'],
+            chartType: 'Candlestick Chart',
+            data,
+            fields: [makeField('Date'), makeField('Open'), makeField('High'), makeField('Low'), makeField('Close')],
+            metadata: {
+                Date: { type: Type.String, semanticType: 'Date', levels: [] },
+                Open: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                High: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                Low: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                Close: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+            },
+            encodingMap: {
+                x: makeEncodingItem('Date'),
+                open: makeEncodingItem('Open'),
+                high: makeEncodingItem('High'),
+                low: makeEncodingItem('Low'),
+                close: makeEncodingItem('Close'),
+            },
+        });
+    }
+
+    // 4. Multi-stock column facet
+    {
+        const tickers = ['AAPL', 'GOOG', 'MSFT'];
+        const data: any[] = [];
+        for (const ticker of tickers) {
+            const startPrice = ticker === 'AAPL' ? 180 : ticker === 'GOOG' ? 140 : 350;
+            let price = startPrice;
+            const baseDate = new Date('2024-03-01');
+            for (let i = 0; i < 20; i++) {
+                const date = new Date(baseDate);
+                date.setDate(baseDate.getDate() + i);
+                const change = (rand() - 0.48) * 4;
+                const open = Math.round(price * 100) / 100;
+                const close = Math.round((price + change) * 100) / 100;
+                const high = Math.round((Math.max(open, close) + rand() * 2) * 100) / 100;
+                const low = Math.round((Math.min(open, close) - rand() * 2) * 100) / 100;
+                data.push({ Date: date.toISOString().slice(0, 10), Ticker: ticker, Open: open, High: high, Low: low, Close: close });
+                price = close;
+            }
+        }
+        tests.push({
+            title: 'Multi-stock facet (3 tickers)',
+            description: '3 stocks side-by-side — faceted by ticker',
+            tags: ['temporal', 'quantitative', 'facet', 'medium'],
+            chartType: 'Candlestick Chart',
+            data,
+            fields: [makeField('Date'), makeField('Ticker'), makeField('Open'), makeField('High'), makeField('Low'), makeField('Close')],
+            metadata: {
+                Date: { type: Type.String, semanticType: 'Date', levels: [] },
+                Ticker: { type: Type.String, semanticType: 'Category', levels: tickers },
+                Open: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                High: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                Low: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                Close: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+            },
+            encodingMap: {
+                x: makeEncodingItem('Date'),
+                open: makeEncodingItem('Open'),
+                high: makeEncodingItem('High'),
+                low: makeEncodingItem('Low'),
+                close: makeEncodingItem('Close'),
+                column: makeEncodingItem('Ticker'),
+            },
+        });
+    }
+
+    return tests;
+}
+
 // ============================================================================
 // Facet Test Generators
 // ============================================================================
@@ -2671,12 +3438,160 @@ function genElasticityTests(): TestCase[] {
     return tests;
 }
 
+// ------ Strip Plot (Jitter) ------
+function genStripPlotTests(): TestCase[] {
+    const tests: TestCase[] = [];
+
+    // 1. Basic categorical x, numeric y
+    {
+        const species = ['Setosa', 'Versicolor', 'Virginica'];
+        const rand = seededRandom(77);
+        const data: any[] = [];
+        for (const sp of species) {
+            const base = sp === 'Setosa' ? 1.5 : sp === 'Versicolor' ? 4.3 : 5.5;
+            for (let i = 0; i < 20; i++) {
+                data.push({ Species: sp, PetalLength: Math.round((base + (rand() - 0.5) * 2) * 10) / 10 });
+            }
+        }
+        tests.push({
+            title: 'Iris Petal Length (3 species, 60 pts)',
+            description: 'Categorical x, quantitative y with jitter',
+            tags: ['jitter', 'nominal', 'small'],
+            chartType: 'Strip Plot',
+            data,
+            fields: [makeField('Species'), makeField('PetalLength')],
+            metadata: buildMetadata(data),
+            encodingMap: { x: makeEncodingItem('Species'), y: makeEncodingItem('PetalLength') },
+        });
+    }
+
+    // 2. With color encoding
+    {
+        const groups = ['Control', 'Treatment A', 'Treatment B'];
+        const genders = ['M', 'F'];
+        const rand = seededRandom(88);
+        const data: any[] = [];
+        for (const g of groups) {
+            const base = g === 'Control' ? 50 : g === 'Treatment A' ? 65 : 80;
+            for (const sex of genders) {
+                for (let i = 0; i < 10; i++) {
+                    data.push({
+                        Group: g,
+                        Gender: sex,
+                        Score: Math.round(base + (rand() - 0.4) * 30),
+                    });
+                }
+            }
+        }
+        tests.push({
+            title: 'Clinical Trial Scores (color = Gender)',
+            description: 'Strip plot with color grouping',
+            tags: ['jitter', 'nominal', 'color'],
+            chartType: 'Strip Plot',
+            data,
+            fields: [makeField('Group'), makeField('Score'), makeField('Gender')],
+            metadata: buildMetadata(data),
+            encodingMap: {
+                x: makeEncodingItem('Group'),
+                y: makeEncodingItem('Score'),
+                color: makeEncodingItem('Gender'),
+            },
+        });
+    }
+
+    // 3. No jitter (jitterWidth = 0)
+    {
+        const data = [
+            { Category: 'A', Value: 10 }, { Category: 'A', Value: 15 },
+            { Category: 'A', Value: 12 }, { Category: 'A', Value: 18 },
+            { Category: 'B', Value: 25 }, { Category: 'B', Value: 30 },
+            { Category: 'B', Value: 22 }, { Category: 'B', Value: 28 },
+        ];
+        tests.push({
+            title: 'No Jitter (aligned strip)',
+            description: 'jitterWidth=0 produces a clean strip',
+            tags: ['jitter', 'config'],
+            chartType: 'Strip Plot',
+            data,
+            fields: [makeField('Category'), makeField('Value')],
+            metadata: buildMetadata(data),
+            encodingMap: { x: makeEncodingItem('Category'), y: makeEncodingItem('Value') },
+            chartProperties: { jitterWidth: 0 },
+        });
+    }
+
+    return tests;
+}
+
+// ------ Radar Chart ------
+function genRadarTests(): TestCase[] {
+    const tests: TestCase[] = [];
+
+    // 1. Single entity, 5 axes
+    {
+        const data = [
+            { Player: 'Player A', Speed: 85, Shooting: 70, Passing: 90, Dribbling: 80, Defense: 60 },
+        ];
+        tests.push({
+            title: 'Single Player Stats (5 axes)',
+            description: 'One polygon, 5 numeric dimensions',
+            tags: ['radar', 'single'],
+            chartType: 'Radar Chart',
+            data,
+            fields: [makeField('Player'), makeField('Speed'), makeField('Shooting'), makeField('Passing'), makeField('Dribbling'), makeField('Defense')],
+            metadata: buildMetadata(data),
+            encodingMap: { x: makeEncodingItem('Player'), y: makeEncodingItem('Speed') },
+        });
+    }
+
+    // 2. Two entities comparison
+    {
+        const data = [
+            { Team: 'Team A', Attack: 85, Defense: 70, Midfield: 78, Speed: 90, Stamina: 65, Tactics: 80 },
+            { Team: 'Team B', Attack: 72, Defense: 88, Midfield: 82, Speed: 68, Stamina: 85, Tactics: 75 },
+        ];
+        tests.push({
+            title: 'Two Teams Comparison (6 axes)',
+            description: 'Two overlapping polygons',
+            tags: ['radar', 'comparison'],
+            chartType: 'Radar Chart',
+            data,
+            fields: [makeField('Team'), makeField('Attack'), makeField('Defense'), makeField('Midfield'), makeField('Speed'), makeField('Stamina'), makeField('Tactics')],
+            metadata: buildMetadata(data),
+            encodingMap: { x: makeEncodingItem('Team'), y: makeEncodingItem('Attack') },
+        });
+    }
+
+    // 3. Three entities, no fill
+    {
+        const data = [
+            { Product: 'Widget', Quality: 90, Price: 60, Durability: 80, Design: 75, Support: 85 },
+            { Product: 'Gadget', Quality: 70, Price: 85, Durability: 65, Design: 90, Support: 50 },
+            { Product: 'Doohickey', Quality: 80, Price: 70, Durability: 90, Design: 60, Support: 70 },
+        ];
+        tests.push({
+            title: 'Product Comparison (unfilled)',
+            description: 'Three polygons, filled=false',
+            tags: ['radar', 'multi', 'config'],
+            chartType: 'Radar Chart',
+            data,
+            fields: [makeField('Product'), makeField('Quality'), makeField('Price'), makeField('Durability'), makeField('Design'), makeField('Support')],
+            metadata: buildMetadata(data),
+            encodingMap: { x: makeEncodingItem('Product'), y: makeEncodingItem('Quality') },
+            chartProperties: { filled: false },
+        });
+    }
+
+    return tests;
+}
+
 // ============================================================================
 // All test generators mapped by chart group
 // ============================================================================
 
 const TEST_GENERATORS: Record<string, () => TestCase[]> = {
     'Scatter Plot': genScatterTests,
+    'Linear Regression': genLinearRegressionTests,
     'Bar Chart': genBarTests,
     'Stacked Bar Chart': genStackedBarTests,
     'Grouped Bar Chart': genGroupedBarTests,
@@ -2687,6 +3602,14 @@ const TEST_GENERATORS: Record<string, () => TestCase[]> = {
     'Boxplot': genBoxplotTests,
     'Pie Chart': genPieTests,
     'Ranged Dot Plot': genRangedDotPlotTests,
+    'Area Chart': genAreaTests,
+    'Streamgraph': genStreamgraphTests,
+    'Lollipop Chart': genLollipopTests,
+    'Density Plot': genDensityTests,
+    'Candlestick Chart': genCandlestickTests,
+    'Waterfall Chart': genWaterfallTests,
+    'Strip Plot': genStripPlotTests,
+    'Radar Chart': genRadarTests,
     'Custom Charts': genCustomTests,
     'Facet: Columns': genFacetColumnTests,
     'Facet: Rows': genFacetRowTests,

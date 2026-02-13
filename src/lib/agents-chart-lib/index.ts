@@ -42,7 +42,3 @@ export {
     getTemplateDef,
     getTemplateChannels,
 } from './templates';
-
-// Specialized sub-modules — import directly:
-//   import { ... } from './lib/agents-chart-lib/semantic-types'
-//   import { ... } from './lib/agents-chart-lib/helpers'

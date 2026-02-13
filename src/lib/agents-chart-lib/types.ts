@@ -17,12 +17,14 @@
 export const channels = [
     "x", "y", "x2", "y2", "id", "color", "opacity", "size", "shape", "column",
     "row", "latitude", "longitude", "theta", "radius", "detail", "group",
+    "open", "high", "low", "close",
 ] as const;
 
 export const channelGroups: Record<string, string[]> = {
     "": ["x", "y", "x2", "y2", "latitude", "longitude", "id", "radius", "theta", "detail"],
     "legends": ["color", "group", "size", "shape", "text", "opacity"],
     "facets": ["column", "row"],
+    "price": ["open", "high", "low", "close"],
 };
 
 /**
@@ -58,8 +60,8 @@ export type ChartPropertyDef = {
 
 /**
  * Chart template definition — pure data, no UI/icon dependencies.
- * This is the reusable core that defines chart structure, encoding paths,
- * and post-processing logic.
+ * This is the reusable core that defines chart structure, encoding channels,
+ * and processing logic.
  */
 export interface ChartTemplateDef {
     /** Display name of the chart type, e.g. "Scatter Plot" */
@@ -68,8 +70,15 @@ export interface ChartTemplateDef {
     template: any;
     /** Which encoding channels are available for this chart */
     channels: string[];
-    /** JSON paths into the template for each channel */
-    paths: { [key: string]: (string | number)[] | (string | number)[][] };
+    /**
+     * Build the encoding section of the spec from resolved encoding objects.
+     * This is the primary extension point for chart-specific encoding logic
+     * (e.g. multi-layer specs, grouped bar offsets, pyramid splits).
+     *
+     * Simple templates use defaultBuildEncodings which maps each channel
+     * directly to spec.encoding[channel].
+     */
+    buildEncodings: (spec: any, encodings: Record<string, any>) => void;
     /** Optional post-processor to finalize the spec */
     postProcessor?: (vgSpec: any, table: any[], config?: Record<string, any>, canvasSize?: { width: number; height: number }) => any;
     /** Optional configurable properties for the chart type */

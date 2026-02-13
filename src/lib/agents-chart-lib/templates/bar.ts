@@ -2,7 +2,7 @@
 // Licensed under the MIT License.
 
 import { ChartTemplateDef, ChartPropertyDef } from '../types';
-import { applyDynamicMarkResizing, ensureNominalAxis } from '../helpers';
+import { applyDynamicMarkResizing, ensureNominalAxis, defaultBuildEncodings } from './utils';
 
 export const barCharts: ChartTemplateDef[] = [
     {
@@ -12,14 +12,7 @@ export const barCharts: ChartTemplateDef[] = [
             encoding: {},
         },
         channels: ["x", "y", "color", "opacity", "column", "row"],
-        paths: {
-            x: ["encoding", "x"],
-            y: ["encoding", "y"],
-            color: ["encoding", "color"],
-            opacity: ["encoding", "opacity"],
-            column: ["encoding", "column"],
-            row: ["encoding", "row"],
-        },
+        buildEncodings: defaultBuildEncodings,
         properties: [
             { key: "cornerRadius", label: "Corners", type: "continuous", min: 0, max: 15, step: 1, defaultValue: 0 },
         ] as ChartPropertyDef[],
@@ -69,10 +62,14 @@ export const barCharts: ChartTemplateDef[] = [
             },
         },
         channels: ["x", "y", "color"],
-        paths: {
-            x: [["hconcat", 0, "encoding", "x"], ["hconcat", 1, "encoding", "x"]],
-            y: [["hconcat", 0, "encoding", "y"], ["hconcat", 1, "encoding", "y"]],
-            color: [["hconcat", 0, "encoding", "color"], ["hconcat", 1, "encoding", "color"]],
+        buildEncodings: (spec, encodings) => {
+            // Inject each channel into both hconcat panels
+            for (const [ch, enc] of Object.entries(encodings)) {
+                for (const panel of spec.hconcat) {
+                    if (!panel.encoding) panel.encoding = {};
+                    panel.encoding[ch] = { ...(panel.encoding[ch] || {}), ...enc };
+                }
+            }
         },
         postProcessor: (vgSpec: any, table: any[]) => {
             try {
@@ -106,13 +103,7 @@ export const barCharts: ChartTemplateDef[] = [
             encoding: {},
         },
         channels: ["x", "y", "color", "column", "row"],
-        paths: {
-            x: ["encoding", "x"],
-            y: ["encoding", "y"],
-            color: [["encoding", "color"]],
-            column: ["encoding", "column"],
-            row: ["encoding", "row"],
-        },
+        buildEncodings: defaultBuildEncodings,
         postProcessor: (vgSpec: any, table: any[]) => {
             if (!vgSpec.encoding.color?.field) {
                 applyDynamicMarkResizing(vgSpec, table, { x: 'size', y: 'size' });
@@ -141,13 +132,7 @@ export const barCharts: ChartTemplateDef[] = [
             encoding: {},
         },
         channels: ["x", "y", "color", "column", "row"],
-        paths: {
-            x: ["encoding", "x"],
-            y: ["encoding", "y"],
-            color: ["encoding", "color"],
-            column: ["encoding", "column"],
-            row: ["encoding", "row"],
-        },
+        buildEncodings: defaultBuildEncodings,
         postProcessor: (vgSpec: any, table: any[]) => {
             applyDynamicMarkResizing(vgSpec, table, { x: 'size', y: 'size' });
             return vgSpec;
@@ -163,12 +148,7 @@ export const barCharts: ChartTemplateDef[] = [
             },
         },
         channels: ["x", "color", "column", "row"],
-        paths: {
-            x: ["encoding", "x"],
-            color: ["encoding", "color"],
-            column: ["encoding", "column"],
-            row: ["encoding", "row"],
-        },
+        buildEncodings: defaultBuildEncodings,
         properties: [
             { key: "binCount", label: "Bins", type: "continuous", min: 5, max: 50, step: 1, defaultValue: 10 },
         ] as ChartPropertyDef[],
@@ -188,9 +168,7 @@ export const barCharts: ChartTemplateDef[] = [
             encoding: {},
         },
         channels: ["x", "y", "color", "column", "row"],
-        paths: Object.fromEntries(
-            ["x", "y", "color", "column", "row"].map(ch => [ch, ["encoding", ch]])
-        ),
+        buildEncodings: defaultBuildEncodings,
         properties: [
             {
                 key: "colorScheme", label: "Scheme", type: "discrete", options: [

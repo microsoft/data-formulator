@@ -2,6 +2,7 @@
 // Licensed under the MIT License.
 
 import { ChartTemplateDef, ChartPropertyDef } from '../types';
+import { defaultBuildEncodings } from './utils';
 
 export const pieCharts: ChartTemplateDef[] = [
     {
@@ -11,12 +12,7 @@ export const pieCharts: ChartTemplateDef[] = [
             encoding: {},
         },
         channels: ["theta", "color", "column", "row"],
-        paths: {
-            theta: ["encoding", "theta"],
-            color: ["encoding", "color"],
-            column: ["encoding", "column"],
-            row: ["encoding", "row"],
-        },
+        buildEncodings: defaultBuildEncodings,
         properties: [
             { key: "innerRadius", label: "Donut", type: "continuous", min: 0, max: 100, step: 5, defaultValue: 0 },
         ] as ChartPropertyDef[],

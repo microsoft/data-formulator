@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <!-- Waterfall chart icon: blue totals, gray deltas -->
+  <!-- Start bar (total — blue) -->
+  <rect x="60" y="60" width="28" height="156" rx="2" fill="#76c6ff"/>
+  <!-- Connector line from top of start bar -->
+  <line x1="88" y1="60" x2="97" y2="60" stroke="#999" stroke-width="1.5" stroke-dasharray="4,3"/>
+  <!-- Delta bar (gray, floating — top aligns with start bar top) -->
+  <rect x="97" y="60" width="28" height="60" rx="2" fill="#b0b0b0"/>
+  <!-- Connector line from bottom of first delta -->
+  <line x1="125" y1="120" x2="134" y2="120" stroke="#999" stroke-width="1.5" stroke-dasharray="4,3"/>
+  <!-- Delta bar (gray, floating down) -->
+  <rect x="134" y="120" width="28" height="50" rx="2" fill="#b0b0b0"/>
+  <!-- Connector line -->
+  <line x1="162" y1="170" x2="171" y2="170" stroke="#999" stroke-width="1.5" stroke-dasharray="4,3"/>
+  <!-- Delta bar (gray) -->
+  <rect x="171" y="170" width="28" height="30" rx="2" fill="#b0b0b0"/>
+  <!-- Connector line -->
+  <line x1="199" y1="200" x2="208" y2="200" stroke="#999" stroke-width="1.5" stroke-dasharray="4,3"/>
+  <!-- End bar (total — blue) -->
+  <rect x="208" y="200" width="28" height="16" rx="2" fill="#76c6ff"/>
+  <!-- Y-axis -->
+  <line x1="48" y1="28" x2="48" y2="220" stroke="#363636" stroke-width="4" stroke-linecap="round"/>
+  <!-- X-axis -->
+  <line x1="44" y1="216" x2="240" y2="216" stroke="#363636" stroke-width="4" stroke-linecap="round"/>
+</svg>

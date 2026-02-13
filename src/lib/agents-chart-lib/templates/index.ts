@@ -12,10 +12,14 @@ import { barCharts } from './bar';
 import { mapCharts } from './map';
 import { pieCharts } from './pie';
 import { lineCharts } from './line';
+import { areaCharts } from './area';
+import { lollipopCharts } from './lollipop';
+import { densityCharts } from './density';
+import { candlestickCharts } from './candlestick';
+import { waterfallCharts } from './waterfall';
+import { jitterCharts } from './jitter';
+import { radarCharts } from './radar';
 import { customCharts } from './custom';
-
-// Re-export helpers for consumers who need them
-export { applyDynamicMarkResizing, ensureNominalAxis, applyPointSizeScaling } from '../helpers';
 
 /**
  * All chart template definitions, grouped by category.
@@ -27,6 +31,13 @@ export const chartTemplateDefs: { [key: string]: ChartTemplateDef[] } = {
     map: mapCharts,
     pie: pieCharts,
     line: lineCharts,
+    area: areaCharts,
+    lollipop: lollipopCharts,
+    density: densityCharts,
+    candlestick: candlestickCharts,
+    waterfall: waterfallCharts,
+    jitter: jitterCharts,
+    radar: radarCharts,
     custom: customCharts,
 };
 

@@ -2,7 +2,7 @@
 // Licensed under the MIT License.
 
 import { ChartTemplateDef, ChartPropertyDef } from '../types';
-import { ensureNominalAxis, applyPointSizeScaling } from '../helpers';
+import { ensureNominalAxis, applyPointSizeScaling, defaultBuildEncodings } from './utils';
 
 export const scatterPlots: ChartTemplateDef[] = [
     {
@@ -12,15 +12,7 @@ export const scatterPlots: ChartTemplateDef[] = [
             encoding: {},
         },
         channels: ["x", "y", "color", "size", "opacity", "column", "row"],
-        paths: {
-            x: ["encoding", "x"],
-            y: ["encoding", "y"],
-            color: ["encoding", "color"],
-            size: ["encoding", "size"],
-            opacity: ["encoding", "opacity"],
-            column: ["encoding", "column"],
-            row: ["encoding", "row"],
-        },
+        buildEncodings: defaultBuildEncodings,
         properties: [
             { key: "opacity", label: "Opacity", type: "continuous", min: 0.1, max: 1, step: 0.05, defaultValue: 1 },
         ] as ChartPropertyDef[],
@@ -53,12 +45,27 @@ export const scatterPlots: ChartTemplateDef[] = [
                 },
             ],
         },
-        channels: ["x", "y", "size", "color", "column"],
-        paths: {
-            x: [["layer", 0, "encoding", "x"], ["layer", 1, "encoding", "x"], ["layer", 1, "transform", 0, "on"]],
-            y: [["layer", 0, "encoding", "y"], ["layer", 1, "encoding", "y"], ["layer", 1, "transform", 0, "regression"]],
-            color: ["layer", 0, "encoding", "color"],
-            size: ["layer", 0, "encoding", "size"],
+        channels: ["x", "y", "size", "color", "column", "row"],
+        buildEncodings: (spec, encodings) => {
+            const { x, y, color, size, column, row, ...rest } = encodings;
+            // x & y → both layers + transform field names
+            if (x) {
+                spec.layer[0].encoding.x = { ...spec.layer[0].encoding.x, ...x };
+                spec.layer[1].encoding.x = { ...spec.layer[1].encoding.x, ...x };
+                if (x.field) spec.layer[1].transform[0].on = x.field;
+            }
+            if (y) {
+                spec.layer[0].encoding.y = { ...spec.layer[0].encoding.y, ...y };
+                spec.layer[1].encoding.y = { ...spec.layer[1].encoding.y, ...y };
+                if (y.field) spec.layer[1].transform[0].regression = y.field;
+            }
+            // color, size → scatter layer only
+            if (color) spec.layer[0].encoding.color = { ...spec.layer[0].encoding.color, ...color };
+            if (size) spec.layer[0].encoding.size = { ...spec.layer[0].encoding.size, ...size };
+            // facets → top-level encoding
+            if (!spec.encoding) spec.encoding = {};
+            if (column) spec.encoding.column = column;
+            if (row) spec.encoding.row = row;
         },
     },
     {
@@ -71,10 +78,17 @@ export const scatterPlots: ChartTemplateDef[] = [
             ],
         },
         channels: ["x", "y", "color"],
-        paths: {
-            x: ["encoding", "x"],
-            y: ["encoding", "y"],
-            color: ["layer", 1, "encoding", "color"],
+        buildEncodings: (spec, encodings) => {
+            const { color, ...rest } = encodings;
+            // x, y → top-level encoding
+            if (!spec.encoding) spec.encoding = {};
+            for (const [ch, enc] of Object.entries(rest)) {
+                spec.encoding[ch] = { ...(spec.encoding[ch] || {}), ...enc };
+            }
+            // color → layer[1] only
+            if (color) {
+                spec.layer[1].encoding.color = { ...(spec.layer[1].encoding.color || {}), ...color };
+            }
         },
         postProcessor: (vgSpec: any, _table: any[]) => {
             if (vgSpec.encoding.y?.type === "nominal") {
@@ -92,9 +106,7 @@ export const scatterPlots: ChartTemplateDef[] = [
             encoding: {},
         },
         channels: ["x", "y", "color", "opacity", "column", "row"],
-        paths: Object.fromEntries(
-            ["x", "y", "color", "opacity", "column", "row"].map(ch => [ch, ["encoding", ch]])
-        ),
+        buildEncodings: defaultBuildEncodings,
         postProcessor: (vgSpec: any, table: any[]) => {
             const hasX = vgSpec.encoding.x?.field;
             const hasY = vgSpec.encoding.y?.field;

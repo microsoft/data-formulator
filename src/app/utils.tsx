@@ -476,12 +476,13 @@ export const resolveRecommendedChart = (refinedGoal: any, allFields: FieldItem[]
         "bar": "Bar Chart",
         "point": "Scatter Plot",
         "boxplot": "Boxplot",
-        "area": "Custom Area",
+        "area": "Area Chart",
         "heatmap": "Heatmap",
         "group_bar": "Grouped Bar Chart",
         "pie": "Pie Chart",
         "worldmap": "World Map",
-        "usmap": "US Map"
+        "usmap": "US Map",
+        "candlestick": "Candlestick Chart",
     }
     let chartType = chartTypeMap[rawChartType] || 'Scatter Plot';
     let newChart = generateFreshChart(table.id, chartType) as Chart;

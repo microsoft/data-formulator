@@ -184,3 +184,22 @@ export const ensureNominalAxis = (
     }
     return null;
 };
+
+/**
+ * Default buildEncodings implementation for simple templates.
+ * Maps each channel directly to spec.encoding[channel].
+ * Use this when all channels map to the top-level encoding object.
+ */
+export const defaultBuildEncodings = (spec: any, encodings: Record<string, any>): void => {
+    if (!spec.encoding) spec.encoding = {};
+    for (const [channel, encodingObj] of Object.entries(encodings)) {
+        if (Object.keys(encodingObj).length > 0) {
+            const existing = spec.encoding[channel];
+            if (existing && typeof existing === 'object') {
+                spec.encoding[channel] = { ...existing, ...encodingObj };
+            } else {
+                spec.encoding[channel] = encodingObj;
+            }
+        }
+    }
+};

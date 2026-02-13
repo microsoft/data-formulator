@@ -25,7 +25,7 @@ import {
 } from './semantic-types';
 
 // ---------------------------------------------------------------------------
-// Helpers (internal)
+// Internal helpers
 // ---------------------------------------------------------------------------
 
 /**
@@ -157,6 +157,7 @@ export function assembleChart(
     const vgObj = structuredClone(chartTemplate.template);
 
     // --- Resolve encodings ---
+    const resolvedEncodings: Record<string, any> = {};
     for (const [channel, encoding] of Object.entries(encodings)) {
         const encodingObj: any = {};
 
@@ -305,7 +306,10 @@ export function assembleChart(
                     const colorField = encodings.color?.field;
                     let colorFieldType: string | undefined;
                     if (colorField) {
-                        colorFieldType = inferVisCategory(data.map(r => r[colorField]));
+                        // Use semantic type if available; fall back to data-driven inference
+                        const colorSemType = colorField ? (semanticTypes[colorField] || '') : '';
+                        const mappedCat = colorSemType ? getVisCategory(colorSemType) : null;
+                        colorFieldType = mappedCat ?? inferVisCategory(data.map(r => r[colorField]));
                     }
 
                     if (colorField && colorFieldType === 'quantitative') {
@@ -356,32 +360,14 @@ export function assembleChart(
             }
         }
 
-        // --- Inject encoding into template ---
-        if (Object.keys(encodingObj).length !== 0 && chartTemplate.paths[channel]) {
-            const pathObj = chartTemplate.paths[channel];
-            let paths: (string | number)[][] = [];
-            if (pathObj.length > 0 && Array.isArray(pathObj[0])) {
-                paths = pathObj as (string | number)[][];
-            } else {
-                paths = [pathObj as (string | number)[]];
-            }
-
-            for (const path of paths) {
-                let ref = vgObj;
-                for (const key of path.slice(0, path.length - 1)) {
-                    ref = ref[key];
-                }
-
-                if (typeof ref[path[path.length - 1]] === 'string' || ref[path[path.length - 1]] instanceof String) {
-                    ref[path[path.length - 1]] = encodingObj.field;
-                } else {
-                    const prebuiltEntries = ref[path[path.length - 1]] != undefined
-                        ? Object.entries(ref[path[path.length - 1]]) : [];
-                    ref[path[path.length - 1]] = Object.fromEntries([...prebuiltEntries, ...Object.entries(encodingObj)]);
-                }
-            }
+        // --- Collect resolved encoding ---
+        if (Object.keys(encodingObj).length !== 0) {
+            resolvedEncodings[channel] = encodingObj;
         }
     }
+
+    // --- Build encodings into spec ---
+    chartTemplate.buildEncodings(vgObj, resolvedEncodings);
 
     // --- Post-processor ---
     if (chartTemplate.postProcessor) {
@@ -582,6 +568,25 @@ export function assembleChart(
     }
 
     // --- Facet layout ---
+    // --- Detect x/y discrete counts inside layer encodings for layered specs ---
+    // The nominalCount loop above only checks vgObj.encoding, but layered specs
+    // put x/y in layer[*].encoding. Scan layers so facet subplot sizing is correct.
+    if (vgObj.layer && Array.isArray(vgObj.layer)) {
+        for (const axis of ['x', 'y'] as const) {
+            if (nominalCount[axis] === 0) {
+                // Check first layer that has this axis
+                for (const layer of vgObj.layer) {
+                    const enc = layer.encoding?.[axis];
+                    if (enc?.field && isDiscreteType(enc.type)) {
+                        const uniqueValues = [...new Set(values.map((r: any) => r[enc.field]))];
+                        nominalCount[axis] = uniqueValues.length;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
     if (vgObj.encoding?.column != undefined && vgObj.encoding?.row == undefined) {
         vgObj.encoding.facet = vgObj.encoding.column;
 
@@ -607,22 +612,64 @@ export function assembleChart(
         }
 
         delete vgObj.encoding.column;
+
+        // For layered specs, VL doesn't support encoding.facet inline —
+        // restructure to top-level facet + spec pattern.
+        if (vgObj.layer && Array.isArray(vgObj.layer)) {
+            const facetDef = { ...vgObj.encoding.facet };
+            delete vgObj.encoding.facet;
+
+            // Move layer + encoding into a nested spec
+            vgObj.facet = facetDef;
+            vgObj.spec = {
+                layer: vgObj.layer,
+                encoding: vgObj.encoding,
+            };
+            delete vgObj.layer;
+            delete vgObj.encoding;
+        }
+    }
+
+    // For layered specs with row-only or column+row facets, VL needs the
+    // outer facet + spec structure. encoding.column/row don't work inline
+    // on specs with a layer property.
+    if (vgObj.layer && Array.isArray(vgObj.layer) &&
+        (vgObj.encoding?.column || vgObj.encoding?.row)) {
+        const facetDef: any = {};
+        if (vgObj.encoding.column) {
+            facetDef.column = vgObj.encoding.column;
+            delete vgObj.encoding.column;
+        }
+        if (vgObj.encoding.row) {
+            facetDef.row = vgObj.encoding.row;
+            delete vgObj.encoding.row;
+        }
+        vgObj.facet = facetDef;
+        vgObj.spec = {
+            layer: vgObj.layer,
+            encoding: vgObj.encoding,
+        };
+        delete vgObj.layer;
+        delete vgObj.encoding;
     }
 
     // --- Compute facet grid dimensions ---
     let facetCols = 1;
     let facetRows = 1;
 
-    if (vgObj.encoding?.facet) {
-        const layoutCols = vgObj.encoding.facet.columns || 1;
+    // Check both inline encoding.facet (non-layered) and top-level facet (layered wrapped)
+    const wrappedFacet = vgObj.encoding?.facet || (vgObj.facet && !vgObj.facet.column && !vgObj.facet.row ? vgObj.facet : null);
+    if (wrappedFacet) {
+        const layoutCols = wrappedFacet.columns || 1;
         const totalFacetValues = nominalCount.column || 1;
         facetCols = Math.min(layoutCols, totalFacetValues);
         facetRows = Math.ceil(totalFacetValues / layoutCols);
     }
-    if (vgObj.encoding?.column) {
+    // Non-layered inline column/row or layered column+row via vgObj.facet.column/row
+    if (vgObj.encoding?.column || vgObj.facet?.column) {
         facetCols = nominalCount.column || 1;
     }
-    if (vgObj.encoding?.row) {
+    if (vgObj.encoding?.row || vgObj.facet?.row) {
         facetRows = nominalCount.row || 1;
     }
 
@@ -670,9 +717,12 @@ export function assembleChart(
     }
 
     // Independent y-axis scaling for faceted charts with vastly different ranges
-    if (vgObj.encoding?.facet != undefined && vgObj.encoding?.y?.type === 'quantitative') {
-        const yField = vgObj.encoding.y.field;
-        const columnField = vgObj.encoding.facet.field;
+    // For layered specs, encodings may be on vgObj.spec.encoding or vgObj.encoding
+    const effectiveEncoding = vgObj.spec?.encoding || vgObj.encoding;
+    const effectiveFacet = vgObj.facet || vgObj.encoding?.facet;
+    if (effectiveFacet != undefined && effectiveEncoding?.y?.type === 'quantitative') {
+        const yField = effectiveEncoding.y.field;
+        const columnField = effectiveFacet.field;
 
         if (yField && columnField) {
             const columnGroups = new Map<any, number>();
@@ -778,20 +828,22 @@ export function assembleChart(
     }
 
     // Reduce clutter in faceted charts
-    if (facetRows > 1) {
-        if (!vgObj.encoding?.y?.axis) {
-            if (vgObj.encoding?.y) vgObj.encoding.y.axis = {};
+    // For layered specs, encoding may be nested under vgObj.spec.encoding
+    const encTarget = vgObj.spec?.encoding || vgObj.encoding;
+    if (facetRows > 1 && encTarget) {
+        if (!encTarget.y?.axis) {
+            if (encTarget.y) encTarget.y.axis = {};
         }
-        if (vgObj.encoding?.y?.axis !== undefined) {
-            vgObj.encoding.y.axis.title = null;
+        if (encTarget.y?.axis !== undefined) {
+            encTarget.y.axis.title = null;
         }
     }
-    if (facetCols > 1) {
-        if (!vgObj.encoding?.x?.axis) {
-            if (vgObj.encoding?.x) vgObj.encoding.x.axis = {};
+    if (facetCols > 1 && encTarget) {
+        if (!encTarget.x?.axis) {
+            if (encTarget.x) encTarget.x.axis = {};
         }
-        if (vgObj.encoding?.x?.axis !== undefined) {
-            vgObj.encoding.x.axis.title = null;
+        if (encTarget.x?.axis !== undefined) {
+            encTarget.x.axis.title = null;
         }
     }
 

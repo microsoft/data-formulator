@@ -2,6 +2,7 @@
 // Licensed under the MIT License.
 
 import { ChartTemplateDef } from '../types';
+import { defaultBuildEncodings } from './utils';
 
 export const customCharts: ChartTemplateDef[] = [
     {
@@ -11,9 +12,7 @@ export const customCharts: ChartTemplateDef[] = [
             encoding: {},
         },
         channels: ["x", "y", "color", "opacity", "size", "shape", "column", "row"],
-        paths: Object.fromEntries(
-            ["x", "y", "color", "opacity", "size", "shape", "column", "row"].map(ch => [ch, ["encoding", ch]])
-        ),
+        buildEncodings: defaultBuildEncodings,
     },
     {
         chart: "Custom Line",
@@ -22,10 +21,7 @@ export const customCharts: ChartTemplateDef[] = [
             encoding: {},
         },
         channels: ["x", "y", "color", "opacity", "detail", "column", "row"],
-        paths: Object.fromEntries([
-            ...["x", "y", "color", "opacity", "column", "row"].map(ch => [ch, ["encoding", ch]]),
-            ["detail", ["encoding", "detail"]],
-        ]),
+        buildEncodings: defaultBuildEncodings,
     },
     {
         chart: "Custom Bar",
@@ -34,9 +30,7 @@ export const customCharts: ChartTemplateDef[] = [
             encoding: {},
         },
         channels: ["x", "y", "color", "opacity", "size", "shape", "column", "row"],
-        paths: Object.fromEntries(
-            ["x", "y", "color", "opacity", "size", "shape", "column", "row"].map(ch => [ch, ["encoding", ch]])
-        ),
+        buildEncodings: defaultBuildEncodings,
     },
     {
         chart: "Custom Rect",
@@ -45,9 +39,7 @@ export const customCharts: ChartTemplateDef[] = [
             encoding: {},
         },
         channels: ["x", "y", "x2", "y2", "color", "opacity", "column", "row"],
-        paths: Object.fromEntries(
-            ["x", "y", "x2", "y2", "color", "opacity", "column", "row"].map(ch => [ch, ["encoding", ch]])
-        ),
+        buildEncodings: defaultBuildEncodings,
     },
     {
         chart: "Custom Area",
@@ -56,8 +48,6 @@ export const customCharts: ChartTemplateDef[] = [
             encoding: {},
         },
         channels: ["x", "y", "x2", "y2", "color", "column", "row"],
-        paths: Object.fromEntries(
-            ["x", "y", "x2", "y2", "color", "column", "row"].map(ch => [ch, ["encoding", ch]])
-        ),
+        buildEncodings: defaultBuildEncodings,
     },
 ];

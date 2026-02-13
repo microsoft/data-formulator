@@ -60,11 +60,11 @@ export const mapCharts: ChartTemplateDef[] = [
             ],
         },
         channels: ["longitude", "latitude", "color", "size"],
-        paths: {
-            longitude: ["layer", 1, "encoding", "longitude"],
-            latitude: ["layer", 1, "encoding", "latitude"],
-            color: ["layer", 1, "encoding", "color"],
-            size: ["layer", 1, "encoding", "size"],
+        buildEncodings: (spec, encodings) => {
+            if (!spec.layer[1].encoding) spec.layer[1].encoding = {};
+            for (const [ch, enc] of Object.entries(encodings)) {
+                spec.layer[1].encoding[ch] = { ...(spec.layer[1].encoding[ch] || {}), ...enc };
+            }
         },
         properties: [] as ChartPropertyDef[],
         postProcessor: (vgSpec: any) => vgSpec,
@@ -91,12 +91,11 @@ export const mapCharts: ChartTemplateDef[] = [
             ],
         },
         channels: ["longitude", "latitude", "color", "size", "opacity"],
-        paths: {
-            longitude: ["layer", 1, "encoding", "longitude"],
-            latitude: ["layer", 1, "encoding", "latitude"],
-            color: ["layer", 1, "encoding", "color"],
-            size: ["layer", 1, "encoding", "size"],
-            opacity: ["layer", 1, "encoding", "opacity"],
+        buildEncodings: (spec, encodings) => {
+            if (!spec.layer[1].encoding) spec.layer[1].encoding = {};
+            for (const [ch, enc] of Object.entries(encodings)) {
+                spec.layer[1].encoding[ch] = { ...(spec.layer[1].encoding[ch] || {}), ...enc };
+            }
         },
         properties: [
             {
