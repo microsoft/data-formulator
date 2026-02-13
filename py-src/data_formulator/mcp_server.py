@@ -154,6 +154,7 @@ load_dotenv(os.path.join(Path(__file__).parent.parent.parent, 'api-keys.env'))
 load_dotenv(os.path.join(Path(__file__).parent, 'api-keys.env'))
 
 from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 
 from data_formulator.agents.client_utils import Client
 from data_formulator.agents.agent_data_rec import DataRecAgent
@@ -326,6 +327,11 @@ mcp = FastMCP(
         "Use list_demo_data to browse available demo datasets, then pass their "
         "URLs to visualize_data, explore_data, or create_chart."
     ),
+    stateless_http=True,  # each HTTP request is independent; no session affinity needed
+    json_response=True,  # all responses are JSON-serializable dicts
+    transport_security=TransportSecuritySettings(
+        enable_dns_rebinding_protection=False, #  https://github.com/modelcontextprotocol/python-sdk/issues/1798
+    )
 )
 
 
@@ -797,3 +803,25 @@ def main():
 
 if __name__ == "__main__":
     main()
+else:
+
+    # See https://github.com/modelcontextprotocol/python-sdk?tab=readme-ov-file#streamablehttp-servers
+   
+    from starlette.applications import Starlette
+    from starlette.routing import Mount
+    import contextlib
+
+    # Create a lifespan context manager to run the session manager
+    @contextlib.asynccontextmanager
+    async def lifespan(app: Starlette):
+        async with mcp.session_manager.run():
+            yield
+
+
+    # Mount the StreamableHTTP server to the existing ASGI server
+    app = Starlette(
+        routes=[
+            Mount("/", app=mcp.streamable_http_app()),
+        ],
+        lifespan=lifespan,
+    )
