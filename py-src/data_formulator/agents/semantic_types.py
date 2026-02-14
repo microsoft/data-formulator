@@ -28,6 +28,7 @@ from typing import Dict, List, Optional, Set
 DATETIME = "DateTime"       # Full date and time: "2024-01-15T14:30:00"
 DATE = "Date"               # Date only: "2024-01-15"
 TIME = "Time"               # Time only: "14:30:00"
+TIMESTAMP = "Timestamp"     # Unix timestamp (seconds or milliseconds since epoch)
 
 YEAR = "Year"               # "2024" (as a time unit, not a measure)
 QUARTER = "Quarter"         # "Q1", "Q2", "2024-Q1"
@@ -117,7 +118,7 @@ UNKNOWN = "Unknown"         # Cannot determine type
 
 ALL_SEMANTIC_TYPES: List[str] = [
     # Temporal
-    DATETIME, DATE, TIME,
+    DATETIME, DATE, TIME, TIMESTAMP,
     YEAR, QUARTER, MONTH, WEEK, DAY, HOUR,
     YEAR_MONTH, YEAR_QUARTER, YEAR_WEEK, DECADE,
     DURATION, TIME_RANGE,
@@ -147,7 +148,7 @@ ALL_SEMANTIC_TYPES: List[str] = [
 # ---------------------------------------------------------------------------
 
 TIMESERIES_X_TYPES: Set[str] = {
-    DATETIME, DATE, TIME,
+    DATETIME, DATE, TIME, TIMESTAMP,
     YEAR_MONTH, YEAR_QUARTER, YEAR_WEEK,
     YEAR, QUARTER, MONTH, WEEK, DAY, HOUR, DECADE,
 }
@@ -191,7 +192,7 @@ GEO_TYPES: Set[str] = {
 # ---------------------------------------------------------------------------
 
 SEMANTIC_TYPE_CATEGORIES: Dict[str, List[str]] = {
-    "Temporal (point-in-time)": [DATETIME, DATE, TIME],
+    "Temporal (point-in-time)": [DATETIME, DATE, TIME, TIMESTAMP],
     "Temporal (granules)": [YEAR, QUARTER, MONTH, WEEK, DAY, HOUR],
     "Temporal (combined)": [YEAR_MONTH, YEAR_QUARTER, YEAR_WEEK, DECADE],
     "Temporal (duration)": [DURATION, TIME_RANGE],
@@ -263,6 +264,7 @@ def generate_semantic_types_prompt() -> str:
     lines.append("")
     lines.append("1. TEMPORAL types:")
     lines.append("   - Use DateTime/Date/Time for full timestamps or dates")
+    lines.append("   - Use Timestamp for Unix timestamps (seconds or milliseconds since epoch)")
     lines.append("   - Use YearMonth, YearQuarter for combined temporal like '2024-01' or '2024-Q1'")
     lines.append("   - Use Year, Month, Day for discrete time units (even if stored as numbers)")
     lines.append("   - Use Duration for time spans (e.g., '2 hours', milliseconds)")
@@ -315,7 +317,7 @@ LEGACY_SEMANTIC_TYPES = [
 
 VL_TYPE_MAP: Dict[str, str] = {
     # Temporal → temporal
-    "DateTime": "temporal", "Date": "temporal", "Time": "temporal",
+    "DateTime": "temporal", "Date": "temporal", "Time": "temporal", "Timestamp": "temporal",
     "YearMonth": "temporal", "YearQuarter": "temporal", "YearWeek": "temporal",
     "Year": "temporal",
 

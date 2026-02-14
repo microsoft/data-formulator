@@ -58,6 +58,7 @@ export const SemanticTypes = {
     DateTime: 'DateTime',       // Full date and time: "2024-01-15T14:30:00"
     Date: 'Date',               // Date only: "2024-01-15"
     Time: 'Time',               // Time only: "14:30:00"
+    Timestamp: 'Timestamp',     // Unix timestamp (seconds or milliseconds since epoch)
     
     // Temporal granules (discrete time units, inherently ordered)
     Year: 'Year',               // "2024" (as a time unit, not a measure)
@@ -180,7 +181,7 @@ export type VisCategory = 'quantitative' | 'ordinal' | 'nominal' | 'temporal' | 
 
 /** Types suitable for time-series X axis (have inherent temporal ordering) */
 export const timeseriesXTypes = new Set<string>([
-    'DateTime', 'Date', 'Time',
+    'DateTime', 'Date', 'Time', 'Timestamp',
     'YearMonth', 'YearQuarter', 'YearWeek',
     'Year', 'Quarter', 'Month', 'Week', 'Day', 'Hour', 'Decade',
 ]);
@@ -256,6 +257,7 @@ const typeHierarchy: Record<string, string | null> = {
     DateTime: null,
     Date: 'DateTime',
     Time: 'DateTime',
+    Timestamp: 'DateTime',
     
     // Temporal granules
     Year: null,
@@ -347,7 +349,7 @@ const typeHierarchy: Record<string, string | null> = {
  */
 const visCategoryMap: Record<string, VisCategory> = {
     // Temporal → temporal
-    DateTime: 'temporal', Date: 'temporal', Time: 'temporal',
+    DateTime: 'temporal', Date: 'temporal', Time: 'temporal', Timestamp: 'temporal',
     YearMonth: 'temporal', YearQuarter: 'temporal', YearWeek: 'temporal',
     Year: 'temporal',
     
@@ -415,7 +417,14 @@ export function inferVisCategory(values: any[]): VisCategory {
     if (values.length === 0) return 'nominal';
     const isBoolean = (v: any) => v === true || v === false || Object.prototype.toString.call(v) === '[object Boolean]';
     const isNumber = (v: any) => !isNaN(+v) && !(Object.prototype.toString.call(v) === '[object Date]');
-    const isDate = (v: any) => !isNaN(Date.parse(v));
+    // Date.parse is too permissive in V8 — "FY 2018", "hello world 2018" all parse.
+    // Require the string to start with a digit or a known month-name prefix.
+    const looksLikeDate = (s: string) => /^\d|^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/i.test(s.trim());
+    const isDate = (v: any) => {
+        if (v instanceof Date) return !isNaN(v.getTime());
+        if (typeof v === 'string') return looksLikeDate(v) && !isNaN(Date.parse(v));
+        return !isNaN(Date.parse(v));
+    };
     const nonNull = values.filter(v => v != null);
     if (nonNull.length === 0) return 'nominal';
     if (nonNull.every(isBoolean)) return 'nominal';

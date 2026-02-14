@@ -29,14 +29,192 @@ import {
 // ---------------------------------------------------------------------------
 
 /**
+ * Upper bounds for plausible timestamps (~2099-12-31).
+ */
+const MAX_TIMESTAMP_SEC = 4102444800;
+const MAX_TIMESTAMP_MS = 4102444800000;
+
+/**
  * Check if a numeric value is likely a Unix timestamp (seconds or milliseconds).
+ *
+ * Seconds range:  1e9  .. MAX_TIMESTAMP_SEC  (~2001 .. ~2099)
+ * Milliseconds:   anything above MAX_TIMESTAMP_SEC up to MAX_TIMESTAMP_MS
+ *                 (covers ms timestamps from ~1970 onward)
  */
 function isLikelyTimestamp(val: number): boolean {
-    const maxTimestampMs = 4102444800000;
-    const maxTimestampSec = 4102444800;
-    if (val >= 1e12 && val <= maxTimestampMs) return true;
-    if (val >= 1e9 && val <= maxTimestampSec) return true;
+    if (val >= 1e9 && val <= MAX_TIMESTAMP_SEC) return true;   // seconds
+    if (val > MAX_TIMESTAMP_SEC && val <= MAX_TIMESTAMP_MS) return true;  // milliseconds
     return false;
+}
+
+/**
+ * Convert a numeric timestamp to milliseconds.
+ * Values in the seconds range are multiplied by 1000.
+ */
+function timestampToMs(val: number): number {
+    return val <= MAX_TIMESTAMP_SEC ? val * 1000 : val;
+}
+
+/**
+ * Determine the d3-time-format string for a temporal encoding based on
+ * the semantic type and actual (converted) field values.
+ *
+ * - Known granularity types (Year, Month, …) → explicit format.
+ * - Generic temporal (Timestamp, DateTime, unknown) → auto-detect from data.
+ *
+ * Returns `null` when VL's default auto-formatting is adequate.
+ */
+/**
+ * Check if a string plausibly looks like a date.
+ * Date.parse() is far too permissive — e.g. "FY 2018", "hello world 2018"
+ * all parse as Jan 1, 2018 in V8.  We require the string to start with
+ * a digit or a recognisable month-name prefix.
+ */
+function looksLikeDateString(s: string): boolean {
+    const t = s.trim();
+    return /^\d|^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/i.test(t);
+}
+
+// ---------------------------------------------------------------------------
+// Temporal field analysis
+// ---------------------------------------------------------------------------
+
+/** Raw uniformity analysis returned by analyzeTemporalField. */
+interface TemporalAnalysis {
+    dates: Date[];
+    /** Per-component uniformity flags. */
+    same: {
+        month: boolean;
+        day: boolean;
+        hour: boolean;   // ±1 hr tolerance for DST
+        minute: boolean;
+        second: boolean;
+    };
+    /** Higher-level compound uniformity. */
+    sameYear: boolean;
+    sameMonth: boolean;  // sameYear && same.month
+    sameDay: boolean;    // sameMonth && same.day
+}
+
+/**
+ * Parse dates from field values and analyse UTC component uniformity.
+ * Returns `null` when fewer than 2 values or < 50% parse as dates.
+ */
+function analyzeTemporalField(fieldValues: any[]): TemporalAnalysis | null {
+    const dates: Date[] = [];
+    let nonNull = 0;
+    for (const v of fieldValues.slice(0, 100)) {
+        if (v == null) continue;
+        nonNull++;
+        const d = v instanceof Date ? v : new Date(v);
+        if (!isNaN(d.getTime())) dates.push(d);
+    }
+    if (dates.length < 2 || dates.length < nonNull * 0.5) return null;
+
+    const monthSet  = new Set(dates.map(d => d.getUTCMonth()));
+    const daySet    = new Set(dates.map(d => d.getUTCDate()));
+    const hourSet   = new Set(dates.map(d => d.getUTCHours()));
+    const minuteSet = new Set(dates.map(d => d.getUTCMinutes()));
+    const secondSet = new Set(dates.map(d => d.getUTCSeconds()));
+    const yearSet   = new Set(dates.map(d => d.getUTCFullYear()));
+
+    const isSmallSpread = (s: Set<number>, maxSpread: number = 1) => {
+        if (s.size <= 1) return true;
+        const arr = [...s];
+        return Math.max(...arr) - Math.min(...arr) <= maxSpread;
+    };
+
+    const same = {
+        month:  monthSet.size  === 1,
+        day:    daySet.size    === 1,
+        hour:   isSmallSpread(hourSet, 1),   // ±1 hr for DST
+        minute: minuteSet.size === 1,
+        second: secondSet.size === 1,
+    };
+
+    const sameYear  = yearSet.size === 1;
+    const sameMonth = sameYear && same.month;
+    const sameDay   = sameMonth && same.day;
+
+    return { dates, same, sameYear, sameMonth, sameDay };
+}
+
+/**
+ * Compute data-driven votes per granularity level from component uniformity.
+ * Levels: 5=year, 4=month, 3=day, 2=hour, 1=minute, 0=second.
+ */
+function computeDataVotes(same: TemporalAnalysis['same']): number[] {
+    const votes = [0, 0, 0, 0, 0, 0];
+
+    if (same.second)                                                           votes[5] += 1;
+    if (same.minute && same.second)                                            votes[5] += 1;
+    if (same.hour   && same.minute && same.second)                             votes[5] += 1;
+    if (same.day    && same.hour   && same.minute && same.second)              votes[5] += 2;
+    if (same.month  && same.day    && same.hour   && same.minute && same.second) votes[5] += 3;
+
+    if (same.second)                                                           votes[4] += 1;
+    if (same.minute && same.second)                                            votes[4] += 1;
+    if (same.hour   && same.minute && same.second)                             votes[4] += 1;
+    if (same.day    && same.hour   && same.minute && same.second)              votes[4] += 2;
+    if (!same.month && same.day && same.hour && same.minute && same.second)    votes[4] += 3;
+
+    if (same.second)                                                           votes[3] += 1;
+    if (same.minute && same.second)                                            votes[3] += 1;
+    if (same.hour   && same.minute && same.second)                             votes[3] += 1;
+    if (!same.day && same.hour && same.minute && same.second)                  votes[3] += 3;
+
+    if (same.second)                               votes[2] += 1;
+    if (same.minute && same.second)                votes[2] += 1;
+    if (!same.hour && same.minute && same.second)  votes[2] += 3;
+
+    if (same.second)                    votes[1] += 1;
+    if (!same.minute && same.second)    votes[1] += 3;
+
+    if (!same.second) votes[0] += 4;
+
+    return votes;
+}
+
+/** Semantic type → granularity level for voting. */
+const SEMANTIC_LEVEL: Record<string, number> = {
+    Year:        5, Decade:      5,
+    YearMonth:   4, Month:       4, YearQuarter: 4, Quarter: 4,
+    Date:        3, Day:         3,
+    Hour:        2,
+    DateTime:    1,
+    Timestamp:   0,
+};
+
+/**
+ * Pick the best granularity level from a votes array.
+ * Ties go to the coarser (higher-numbered) level.
+ */
+function pickBestLevel(votes: number[]): { level: number; score: number } {
+    let bestLevel = 0;
+    let bestScore = votes[0];
+    for (let i = 1; i <= 5; i++) {
+        if (votes[i] >= bestScore) {
+            bestScore = votes[i];
+            bestLevel = i;
+        }
+    }
+    return { level: bestLevel, score: bestScore };
+}
+
+/**
+ * Map a granularity level + uniformity analysis to a compact d3-time-format string.
+ * Drops redundant higher-level prefixes when all values share the same year/month/day.
+ */
+function levelToFormat(level: number, analysis: TemporalAnalysis): string | null {
+    switch (level) {
+        case 5: return '%Y';
+        case 4: return analysis.sameYear ? '%b' : '%b %Y';
+        case 3: return analysis.sameYear ? '%b %d' : '%b %d, %Y';
+        case 2: return analysis.sameDay  ? '%H:00' : '%b %d %H:00';
+        case 1: return analysis.sameDay  ? '%H:%M' : '%b %d %H:%M';
+        case 0: return analysis.sameDay  ? '%H:%M:%S' : '%b %d %H:%M:%S';
+        default: return null;
+    }
 }
 
 /**
@@ -98,6 +276,15 @@ function resolveEncodingType(
 
                 if (!isValidTemporal) return 'ordinal';
                 if (isBarChart) {
+                    // Timestamps are continuous time points — keep temporal so
+                    // Vega-Lite auto-formats labels ("Jan 2020", "2001", etc.)
+                    // rather than showing raw values or ugly ISO strings.
+                    const sampleValues2 = data.map(r => r[fieldName]).filter(v => v != null).slice(0, 10);
+                    const isTimestampLike = sampleValues2.some(v =>
+                        typeof v === 'number' && isLikelyTimestamp(v)
+                    );
+                    if (isTimestampLike) return 'temporal';
+
                     const uniqueCount = new Set(data.map(r => r[fieldName])).size;
                     return uniqueCount <= 32 ? 'ordinal' : 'temporal';
                 }
@@ -388,7 +575,8 @@ export function assembleChart(
         const temporalKeys = keys.filter((k: string) => {
             const st = semanticTypes[k] || '';
             const vc = inferVisCategory(data.map(r => r[k]));
-            return vc === 'temporal' || st === "Year" || st === "Decade";
+            const stCategory = st ? getVisCategory(st) : null;
+            return vc === 'temporal' || stCategory === 'temporal' || st === 'Decade';
         });
         if (temporalKeys.length > 0) {
             values = values.map((r: any) => {
@@ -400,8 +588,7 @@ export function assembleChart(
                         if (st === 'Year' || st === 'Decade') {
                             r[temporalKey] = `${Math.floor(val)}`;
                         } else if (isLikelyTimestamp(val)) {
-                            const timestamp = val < 1e12 ? val * 1000 : val;
-                            r[temporalKey] = new Date(timestamp).toISOString();
+                            r[temporalKey] = new Date(timestampToMs(val)).toISOString();
                         } else {
                             r[temporalKey] = String(val);
                         }
@@ -413,6 +600,92 @@ export function assembleChart(
                 }
                 return r;
             });
+        }
+    }
+
+    // --- Temporal axis formatting ---
+
+    // 1. Temporal encodings (line/area/scatter): use axis.format (d3-time-format)
+    //    to pick a compact label like "%Y" or "%H:%M" instead of VL's default.
+    const applyTemporalFormat = (enc: any, channel: string) => {
+        if (!enc || !enc.field || enc.type !== 'temporal') return;
+        const st = semanticTypes[enc.field] || '';
+        const fieldVals = values.map((r: any) => r[enc.field]);
+        const analysis = analyzeTemporalField(fieldVals);
+        if (!analysis) return;
+
+        const votes = computeDataVotes(analysis.same);
+        const semLevel = SEMANTIC_LEVEL[st];
+        if (semLevel !== undefined) votes[semLevel] += 3;
+        const { level } = pickBestLevel(votes);
+        const fmt = levelToFormat(level, analysis);
+        if (!fmt) return;
+
+        if (channel === 'x' || channel === 'y') {
+            if (!enc.axis) enc.axis = {};
+            enc.axis.format = fmt;
+        } else if (channel === 'color') {
+            if (!enc.legend) enc.legend = {};
+            enc.legend.format = fmt;
+        }
+    };
+
+    // 2. Ordinal/nominal encodings of temporal data (e.g. bar charts):
+    //    use axis.labelExpr with Vega's timeFormat(toDate(...), fmt).
+    //    More conservative — requires looksLikeDateString + high vote score.
+    const applyOrdinalTemporalFormat = (enc: any, channel: string) => {
+        if (!enc || !enc.field) return;
+        if (enc.type !== 'ordinal' && enc.type !== 'nominal') return;
+        const st = semanticTypes[enc.field] || '';
+        const stCategory = st ? getVisCategory(st) : null;
+        if (stCategory !== 'temporal') return;
+
+        // Check that the raw values actually look like date strings
+        // so V8's over-permissive Date.parse doesn't silently mangle
+        // labels like "FY 2018" → "2018".
+        const fieldVals = values.map((r: any) => r[enc.field]).filter((v: any) => v != null);
+        const datelikeCnt = fieldVals.filter((v: any) =>
+            typeof v !== 'string' || looksLikeDateString(String(v))
+        ).length;
+        if (datelikeCnt < fieldVals.length * 0.5) return;
+
+        const analysis = analyzeTemporalField(fieldVals);
+        if (!analysis) return;
+
+        // Require both data and semantic agreement (minScore ≥ 5).
+        const votes = computeDataVotes(analysis.same);
+        const semLevel = SEMANTIC_LEVEL[st];
+        if (semLevel !== undefined) votes[semLevel] += 3;
+        const { level, score } = pickBestLevel(votes);
+        if (score < 5) return;
+
+        const fmt = levelToFormat(level, analysis);
+        if (!fmt) return;
+
+        // Guard with isValid so unparseable values fall back to the original label.
+        const expr = `isValid(toDate(datum.label)) ? timeFormat(toDate(datum.label), '${fmt}') : datum.label`;
+        if (channel === 'x' || channel === 'y') {
+            if (!enc.axis) enc.axis = {};
+            enc.axis.labelExpr = expr;
+        } else if (channel === 'color') {
+            if (!enc.legend) enc.legend = {};
+            enc.legend.labelExpr = expr;
+        }
+    };
+    if (vgObj.encoding) {
+        for (const [ch, enc] of Object.entries(vgObj.encoding)) {
+            applyTemporalFormat(enc, ch);
+            applyOrdinalTemporalFormat(enc, ch);
+        }
+    }
+    if (vgObj.layer && Array.isArray(vgObj.layer)) {
+        for (const layer of vgObj.layer) {
+            if (layer.encoding) {
+                for (const [ch, enc] of Object.entries(layer.encoding)) {
+                    applyTemporalFormat(enc, ch);
+                    applyOrdinalTemporalFormat(enc, ch);
+                }
+            }
         }
     }
 
@@ -917,11 +1190,15 @@ export function assembleChart(
         : defaultStepSize;
 
     // Dynamic label sizing
+    // Only truly discrete (nominal/ordinal) axes need label resizing — their text
+    // labels can be long and overlap at small step sizes.  Continuous-as-discrete
+    // axes (temporal/quantitative converted for bar sizing) have short numeric or
+    // date labels that don't struggle with overlapping, so skip them.
     const defaultLabelFontSize = 10;
     const defaultLabelLimit = 100;
 
-    const xHasDiscreteItems = xTotalNominalCount > 0 || xContinuousAsDiscrete > 0;
-    const yHasDiscreteItems = yTotalNominalCount > 0 || yContinuousAsDiscrete > 0;
+    const xHasDiscreteItems = xTotalNominalCount > 0;
+    const yHasDiscreteItems = yTotalNominalCount > 0;
 
     let xLabelFontSize = xHasDiscreteItems ? Math.max(6, Math.min(10, xEffStep - 1)) : defaultLabelFontSize;
     let yLabelFontSize = yHasDiscreteItems ? Math.max(6, Math.min(10, yEffStep - 1)) : defaultLabelFontSize;

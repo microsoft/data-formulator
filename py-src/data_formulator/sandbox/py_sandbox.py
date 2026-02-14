@@ -21,7 +21,7 @@ def subprocess_execute(code, allowed_objects, conn):
         # (through catching error and reading sys.exc_info()[2].tb_frame.f_back.f_globals). This should not enable modifying 
         # variables outside the multiprocessing sandbox, but could give access to some internal sandbox variables. This function
         # thus should not refer to any 'lock variables'. It is safer to check the results in the main thread.
-        if event=='open' and type(arg[1])==str and arg[1]!='r': 
+        if event=='open' and type(arg[1])==str and arg[1] not in ('r', 'rb'): 
             print('\taudit:', event, arg)
             raise IOError('file write forbidden')
         if event.split('.')[0] in ['subprocess', 'shutil', 'winreg']: 

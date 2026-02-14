@@ -385,6 +385,7 @@ def derive_data():
             repair_attempts = 0
             while results[0]['status'] == 'error' and repair_attempts < max_repair_attempts:
                 error_message = results[0]['content']
+                logger.info(f"[derive-data] Code generation failed (attempt {repair_attempts + 1}/{max_repair_attempts}), mode={mode}. Error: {error_message}")
                 new_instruction = f"We run into the following problem executing the code, please fix it:\n\n{error_message}\n\nPlease think step by step, reflect why the error happens and fix the code so that no more errors would occur."
 
                 prev_dialog = results[0]['dialog']
@@ -395,6 +396,10 @@ def derive_data():
                     results = agent.followup(input_tables, prev_dialog, [], new_instruction, n=1)
 
                 repair_attempts += 1
+                logger.info(f"[derive-data] Repair attempt {repair_attempts}/{max_repair_attempts} result: {results[0]['status']}")
+
+            if repair_attempts > 0:
+                logger.info(f"[derive-data] Finished repair loop after {repair_attempts} attempt(s). Final status: {results[0]['status']}")
 
         response = flask.jsonify({ "token": token, "status": "ok", "results": results })
     else:
@@ -550,11 +555,16 @@ def refine_data():
             repair_attempts = 0
             while results[0]['status'] == 'error' and repair_attempts < max_repair_attempts:
                 error_message = results[0]['content']
+                logger.info(f"[refine-data] Code generation failed (attempt {repair_attempts + 1}/{max_repair_attempts}). Error: {error_message}")
                 new_instruction = f"We run into the following problem executing the code, please fix it:\n\n{error_message}\n\nPlease think step by step, reflect why the error happens and fix the code so that no more errors would occur."
                 prev_dialog = results[0]['dialog']
 
                 results = agent.followup(input_tables, prev_dialog, [], new_instruction, n=1)
                 repair_attempts += 1
+                logger.info(f"[refine-data] Repair attempt {repair_attempts}/{max_repair_attempts} result: {results[0]['status']}")
+
+            if repair_attempts > 0:
+                logger.info(f"[refine-data] Finished repair loop after {repair_attempts} attempt(s). Final status: {results[0]['status']}")
 
         response = flask.jsonify({ "token": token, "status": "ok", "results": results})
     else:

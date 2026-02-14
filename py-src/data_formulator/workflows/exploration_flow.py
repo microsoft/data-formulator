@@ -164,6 +164,7 @@ def run_exploration_flow_streaming(
             while (not transformation_results or transformation_results[0]['status'] != 'ok'):
 
                 if attempt >= max_repair_attempts or not transformation_results:
+                    logger.info(f"[exploration] Giving up repair after {attempt} attempt(s) for question: {current_question}")
                     yield {
                         "iteration": iteration,
                         "type": "data_transformation",
@@ -176,6 +177,7 @@ def run_exploration_flow_streaming(
                 attempt += 1
                 error_msg = transformation_results[0]['content'] 
                 dialog = transformation_results[0]['dialog']
+                logger.info(f"[exploration] Iteration {iteration}: code gen failed (repair attempt {attempt}/{max_repair_attempts}). Error: {error_msg}")
 
                 new_instruction = f"We run into the following problem executing the code, please fix it:\n\n{error_msg}\n\nPlease think step by step, reflect why the error happens and fix the code so that no more errors would occur."
                 transformation_results = rec_agent.followup(
@@ -184,6 +186,7 @@ def run_exploration_flow_streaming(
                     latest_data_sample=[],
                     dialog=dialog
                 )
+                logger.info(f"[exploration] Iteration {iteration}: repair attempt {attempt} result: {transformation_results[0]['status'] if transformation_results else 'no results'}")
 
             # if the transformation results is not ok, yield an error and break
             if transformation_results[0]['status'] != 'ok':
