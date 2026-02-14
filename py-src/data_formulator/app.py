@@ -51,7 +51,7 @@ load_dotenv(os.path.join(APP_ROOT, '.env'))
 
 # Default config from env (can be overridden by CLI args)
 app.config['CLI_ARGS'] = {
-    'exec_python_in_subprocess': os.environ.get('EXEC_PYTHON_IN_SUBPROCESS', 'false').lower() == 'true',
+    'sandbox': os.environ.get('SANDBOX', 'local'),
     'disable_display_keys': os.environ.get('DISABLE_DISPLAY_KEYS', 'false').lower() == 'true',
     'disable_database': os.environ.get('DISABLE_DATABASE', 'false').lower() == 'true',
     'disable_file_upload': os.environ.get('DISABLE_FILE_UPLOAD', 'false').lower() == 'true',
@@ -135,7 +135,7 @@ def get_app_config():
     args = app.config['CLI_ARGS']
     
     config = {
-        "EXEC_PYTHON_IN_SUBPROCESS": args['exec_python_in_subprocess'],
+        "SANDBOX": args['sandbox'],
         "DISABLE_DISPLAY_KEYS": args['disable_display_keys'],
         "DISABLE_DATABASE": args['disable_database'],
         "DISABLE_FILE_UPLOAD": args['disable_file_upload'],
@@ -154,8 +154,10 @@ def get_app_config():
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Data Formulator")
     parser.add_argument("-p", "--port", type=int, default=5000, help="The port number you want to use")
-    parser.add_argument("--exec-python-in-subprocess", action='store_true', default=False,
-        help="Whether to execute python in subprocess, it makes the app more secure (reducing the chance for the model to access the local machine), but increases the time of response")
+    parser.add_argument("--sandbox", type=str, default=os.environ.get('SANDBOX', 'local'),
+        choices=['local', 'docker'],
+        help="Python code execution backend: 'local' (default, isolated subprocess with audit hooks), "
+             "'docker' (maximum isolation, requires Docker)")
     parser.add_argument("--disable-display-keys", action='store_true', default=False,
         help="Whether disable displaying keys in the frontend UI, recommended to turn on if you host the app not just for yourself.")
     parser.add_argument("--disable-database", action='store_true', default=False,
@@ -183,7 +185,7 @@ def run_app():
     
     # Override config from CLI args
     app.config['CLI_ARGS'] = {
-        'exec_python_in_subprocess': args.exec_python_in_subprocess,
+        'sandbox': args.sandbox,
         'disable_display_keys': args.disable_display_keys,
         'disable_database': args.disable_database,
         'disable_file_upload': args.disable_file_upload,

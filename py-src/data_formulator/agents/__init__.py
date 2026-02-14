@@ -6,7 +6,6 @@ from data_formulator.agents.agent_data_rec import DataRecAgent
 
 from data_formulator.agents.agent_data_load import DataLoadAgent
 from data_formulator.agents.agent_sort_data import SortDataAgent
-from data_formulator.agents.agent_data_clean import DataCleanAgent
 from data_formulator.agents.agent_interactive_explore import InteractiveExploreAgent
 from data_formulator.agents.agent_chart_insight import ChartInsightAgent
 
@@ -15,7 +14,6 @@ __all__ = [
     "DataRecAgent",
     "DataLoadAgent",
     "SortDataAgent",
-    "DataCleanAgent",
     "InteractiveExploreAgent",
     "ChartInsightAgent",
 ]

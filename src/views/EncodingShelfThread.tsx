@@ -209,7 +209,7 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
     let postInstruction : any = "";
     if (chartTrigger) {
         
-        let resultTable = tables.find(t => t.id == chartTrigger.resultTableId) as DictTable;
+        let resultTable = tables.find(t => t.id == chartTrigger!.resultTableId) as DictTable;
         let leafUserCharts = allCharts.filter(c => c.tableRef == resultTable.id).filter(c => c.source == "user");
 
         let endChartCards = leafUserCharts.map((c) => {

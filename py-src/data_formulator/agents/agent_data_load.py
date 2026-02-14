@@ -46,7 +46,7 @@ output should be in the format of:
         "field2": {"type": ..., "semantic_type": ...}, // no need to provide sort_order if there is no inherent order of the field values
         ...
     },
-    "data summary": ... // a short summary of the data
+    "data_summary": ... // a short summary of the data (50-100 words), should capture the key characteristics of the data
 }
 ```
 '''
@@ -89,7 +89,7 @@ table_0 (table_0) sample:
         "total": {"type": "number", "semantic_type": "Count", "sort_order": null},
         "group": {"type": "string", "semantic_type": "Range", "sort_order": ["<10000", "10000 to 14999", "15000 to 24999", "25000 to 34999", "35000 to 49999", "50000 to 74999", "75000 to 99999", "100000 to 149999", "150000 to 199999", "200000+"]}
     },
-    "data summary": "Income distribution across US states, with percentage and count by income bracket."
+    "data_summary": "Income distribution across US states, with percentage and count by income bracket."
 }
 ```
 
@@ -135,7 +135,7 @@ table_0 (weather_seattle_atlanta) sample:
             "sort_order": null  
         }  
     },  
-    "data_summary": "Daily temperature readings for Seattle and Atlanta in 2020."
+    "data_summary": "Daily temperature data comparing Seattle and Atlanta throughout 2020, recording daily temperature measurements for each city from January to September."
 }
 ```'''
 

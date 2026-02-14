@@ -39,6 +39,12 @@ export const areaChartDef: ChartTemplateDef = {
         properties: [
             interpolateConfigProperty,
             { key: "opacity", label: "Opacity", type: "continuous", min: 0.1, max: 1, step: 0.05, defaultValue: 0.7 },
+            { key: "stackMode", label: "Stack", type: "discrete", options: [
+                { value: undefined, label: "Stacked (default)" },
+                { value: "normalize", label: "Normalize (100%)" },
+                { value: "center", label: "Center" },
+                { value: "layered", label: "Layered (overlap)" },
+            ] },
         ] as ChartPropertyDef[],
         postProcessor: (vgSpec: any, _table: any[], config?: Record<string, any>) => {
             vgSpec = applyInterpolate(vgSpec, config);
@@ -49,6 +55,15 @@ export const areaChartDef: ChartTemplateDef = {
                         vgSpec.mark = { type: vgSpec.mark, opacity };
                     } else {
                         vgSpec.mark = { ...vgSpec.mark, opacity };
+                    }
+                }
+                if (config.stackMode) {
+                    for (const axis of ['x', 'y'] as const) {
+                        if (vgSpec.encoding?.[axis]?.type === 'quantitative' ||
+                            vgSpec.encoding?.[axis]?.aggregate) {
+                            vgSpec.encoding[axis].stack = config.stackMode === 'layered' ? null : config.stackMode;
+                            break;
+                        }
                     }
                 }
             }

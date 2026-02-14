@@ -2,7 +2,6 @@
 # Licensed under the MIT License.
 
 import json
-import time
 
 from data_formulator.agents.agent_utils import extract_json_objects, extract_code_from_gpt_response, generate_data_summary
 
@@ -379,25 +378,22 @@ class DataRecAgent(object):
                 code = code_blocks[-1]
 
                 try:
-                    # Import the sandbox execution function
-                    from data_formulator.sandbox.py_sandbox import run_unified_transform_in_sandbox
+                    from data_formulator.sandbox import create_sandbox
 
-                    # Get exec_python_in_subprocess setting (with fallback for non-Flask contexts like MCP server)
+                    # Get sandbox setting (with fallback for non-Flask contexts like MCP server)
                     try:
                         from flask import current_app
-                        exec_python_in_subprocess = current_app.config.get('CLI_ARGS', {}).get('exec_python_in_subprocess', False)
+                        sandbox_mode = current_app.config.get('CLI_ARGS', {}).get('sandbox', 'local')
                     except (ImportError, RuntimeError):
-                        exec_python_in_subprocess = False
+                        sandbox_mode = 'local'
 
-                    # Execute the Python script in sandbox
-                    t_sandbox_start = time.time()
-                    execution_result = run_unified_transform_in_sandbox(
+                    # Execute the Python script in the appropriate sandbox
+                    sandbox = create_sandbox(sandbox_mode)
+                    execution_result = sandbox.run_python_code(
                         code=code,
-                        workspace_path=self.workspace._path,
+                        workspace=self.workspace,
                         output_variable=output_variable,
-                        exec_python_in_subprocess=exec_python_in_subprocess
                     )
-                    logger.info(f"[TIMING] Sandbox execution: {time.time() - t_sandbox_start:.3f}s")
 
                     if execution_result['status'] == 'ok':
                         full_df = execution_result['content']
@@ -407,9 +403,7 @@ class DataRecAgent(object):
                         output_table_name = self.workspace.get_fresh_name(f"d-{output_variable}")
 
                         # Write full result to workspace as parquet
-                        t_parquet_start = time.time()
                         self.workspace.write_parquet(full_df, output_table_name)
-                        logger.info(f"[TIMING] Parquet write ({row_count} rows): {time.time() - t_parquet_start:.3f}s")
 
                         # Limit rows for response payload
                         if row_count > self.max_display_rows:
@@ -420,15 +414,11 @@ class DataRecAgent(object):
                         # Remove duplicate columns to avoid orient='records' error
                         query_output = query_output.loc[:, ~query_output.columns.duplicated()]
 
-                        t_json_start = time.time()
-                        rows_json = json.loads(query_output.to_json(orient='records'))
-                        logger.info(f"[TIMING] DataFrame to JSON ({len(query_output)} rows): {time.time() - t_json_start:.3f}s")
-
                         result = {
                             "status": "ok",
                             "code": code,
                             "content": {
-                                'rows': rows_json,
+                                'rows': json.loads(query_output.to_json(orient='records')),
                                 'virtual': {
                                     'table_name': output_table_name,
                                     'row_count': row_count
@@ -477,9 +467,7 @@ class DataRecAgent(object):
             prev_messages: list[dict], the previous messages
         """
         # Generate data summary with file references
-        t_summary_start = time.time()
         data_summary = generate_data_summary(input_tables, workspace=self.workspace)
-        logger.info(f"[TIMING] generate_data_summary: {time.time() - t_summary_start:.3f}s")
 
         user_query = f"[CONTEXT]\n\n{data_summary}\n\n[GOAL]\n\n{description}"
         if len(prev_messages) > 0:
@@ -494,20 +482,9 @@ class DataRecAgent(object):
                     *filtered_prev_messages,
                     {"role":"user","content": user_query}]
 
-        t_llm_start = time.time()
         response = self.client.get_completion(messages = messages)
-        t_llm_elapsed = time.time() - t_llm_start
-        # Log token usage to compare with evaluation runs
-        usage = getattr(response, 'usage', None)
-        if usage:
-            logger.info(f"[TIMING] LLM API call: {t_llm_elapsed:.3f}s | prompt_tokens={usage.prompt_tokens}, completion_tokens={usage.completion_tokens}, total_tokens={usage.total_tokens}")
-        else:
-            logger.info(f"[TIMING] LLM API call: {t_llm_elapsed:.3f}s | (no usage info)")
 
-        t_process_start = time.time()
-        result = self.process_gpt_response(input_tables, messages, response)
-        logger.info(f"[TIMING] process_gpt_response: {time.time() - t_process_start:.3f}s")
-        return result
+        return self.process_gpt_response(input_tables, messages, response)
 
 
     def followup(self, input_tables, dialog, latest_data_sample, new_instruction: str, n=1):
@@ -530,11 +507,6 @@ class DataRecAgent(object):
                     {"role":"user",
                     "content": f"This is the result from the latest transformation:\n\n{sample_data_str}\n\nUpdate the Python script above based on the following instruction:\n\n{new_instruction}"}]
 
-        t_llm_start = time.time()
         response = self.client.get_completion(messages = messages)
-        logger.info(f"[TIMING] LLM API call (followup): {time.time() - t_llm_start:.3f}s")
 
-        t_process_start = time.time()
-        result = self.process_gpt_response(input_tables, messages, response)
-        logger.info(f"[TIMING] process_gpt_response (followup): {time.time() - t_process_start:.3f}s")
-        return result
+        return self.process_gpt_response(input_tables, messages, response)

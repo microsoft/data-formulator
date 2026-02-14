@@ -107,7 +107,6 @@ interface ChartEncoding {
   field?: string;
   type?: 'quantitative' | 'nominal' | 'ordinal' | 'temporal';
   aggregate?: 'count' | 'sum' | 'average';
-  stack?: 'layered' | 'zero' | 'center' | 'normalize';
   sortOrder?: 'ascending' | 'descending';
   sortBy?: string;
   scheme?: string;

@@ -21,10 +21,10 @@ export const channels = [
 ] as const;
 
 export const channelGroups: Record<string, string[]> = {
-    "": ["x", "y", "x2", "y2", "latitude", "longitude", "id", "radius", "theta", "detail"],
+    "": ["x", "x2", "y", "y2", "latitude", "longitude", "id", "radius", "theta", "detail"],
     "legends": ["color", "group", "size", "shape", "text", "opacity"],
-    "facets": ["column", "row"],
     "price": ["open", "high", "low", "close"],
+    "facets": ["column", "row"],
 };
 
 /**
@@ -35,7 +35,6 @@ export interface ChartEncoding {
     field?: string;
     type?: "quantitative" | "nominal" | "ordinal" | "temporal";
     aggregate?: 'count' | 'sum' | 'average';
-    stack?: "layered" | "zero" | "center" | "normalize";
     sortOrder?: "ascending" | "descending";
     sortBy?: string;
     scheme?: string;

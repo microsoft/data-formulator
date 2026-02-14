@@ -226,7 +226,6 @@ export interface EncodingItem {
     fieldID?: string, // the fieldID
     dtype?: "quantitative" | "nominal" | "ordinal" | "temporal",
     aggregate?: AggrOp,
-    stack?: "layered" | "zero" | "center" | "normalize",
     //sort?: "ascending" | "descending" | string,
     sortOrder?: "ascending" | "descending", // 
     sortBy?: undefined | string, // what values are used to sort the encoding

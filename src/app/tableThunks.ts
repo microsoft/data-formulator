@@ -109,7 +109,7 @@ export const loadTable = createAsyncThunk<
         
         let finalTable: DictTable = { ...table };
         let truncated = false;
-        let originalRowCount: number | undefined;
+        let originalRowCount = 0;
 
         const sourceType = table.source?.type;
 
@@ -231,8 +231,9 @@ export const loadTable = createAsyncThunk<
                     if (data.status === 'success') {
                         const rows = data.rows;
                         const names = rows.length > 0 ? Object.keys(rows[0]) : [];
-                        originalRowCount = data.total_row_count;
-                        truncated = rows.length < originalRowCount;
+                        const totalCount: number = data.total_row_count ?? rows.length;
+                        originalRowCount = totalCount;
+                        truncated = rows.length < totalCount;
                         
                         finalTable = {
                             ...table,

@@ -305,11 +305,9 @@ class Workspace:
         """
         Get the filename for a table, suitable for use in generated code.
 
-        Since files are stored flat in the workspace directory and code runs
-        with the workspace as cwd, this returns just the filename
-        (e.g. "sales_data.parquet", "report.csv").
-
-        Falls back to sanitized table name if the original is not found.
+        Returns just the filename (e.g. "sales_data.parquet").  The sandbox
+        ensures the script runs with the workspace as its working directory,
+        so ``pd.read_parquet("sales_data.parquet")`` works directly.
 
         Args:
             table_name: Name of the table in the workspace

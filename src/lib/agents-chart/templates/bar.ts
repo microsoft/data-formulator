@@ -61,7 +61,7 @@ export const pyramidChartDef: ChartTemplateDef = {
                 axis: { grid: false },
             },
         },
-        channels: ["y", "x", "x2"],
+        channels: ["x", "x2", "y"],
         buildEncodings: (spec, encodings) => {
             const { y, x, x2 } = encodings;
             // y → both panels (shared category axis, always nominal)
@@ -192,8 +192,26 @@ export const stackedBarChartDef: ChartTemplateDef = {
         },
         channels: ["x", "y", "color", "column", "row"],
         buildEncodings: defaultBuildEncodings,
-        postProcessor: (vgSpec: any, table: any[]) => {
+        properties: [
+            { key: "stackMode", label: "Stack", type: "discrete", options: [
+                { value: undefined, label: "Stacked (default)" },
+                { value: "normalize", label: "Normalize (100%)" },
+                { value: "center", label: "Center" },
+                { value: "layered", label: "Layered (overlap)" },
+            ] },
+        ] as ChartPropertyDef[],
+        postProcessor: (vgSpec: any, table: any[], config?: Record<string, any>) => {
             applyDynamicMarkResizing(vgSpec, table, { x: 'size', y: 'size' });
+            if (config?.stackMode) {
+                // Find the quantitative axis and apply stack mode
+                for (const axis of ['x', 'y'] as const) {
+                    if (vgSpec.encoding?.[axis]?.type === 'quantitative' ||
+                        vgSpec.encoding?.[axis]?.aggregate) {
+                        vgSpec.encoding[axis].stack = config.stackMode === 'layered' ? null : config.stackMode;
+                        break;
+                    }
+                }
+            }
             return vgSpec;
         },
 };

@@ -159,6 +159,7 @@ export const DataFormulatorFC = ({ }) => {
 
             // Then test unassigned models sequentially until one works
             for (let model of modelsToTest) {
+                if (!model) continue;
                 let testResult = await testModel(model);
                 dispatch(dfActions.updateModelStatus({
                     id: model.id, 

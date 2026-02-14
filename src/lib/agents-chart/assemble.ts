@@ -514,11 +514,6 @@ export function assembleChart(
             }
         }
 
-        // Stack
-        if (encoding.stack) {
-            encodingObj.stack = encoding.stack === "layered" ? null : encoding.stack;
-        }
-
         // Color scheme
         if (channel === "color") {
             if (encoding.scheme && encoding.scheme !== "default") {

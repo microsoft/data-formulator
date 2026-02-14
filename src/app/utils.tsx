@@ -405,7 +405,6 @@ export const assembleVegaChart = (
             field: field?.name,
             type: encoding.dtype,
             aggregate: encoding.aggregate,
-            stack: encoding.stack,
             sortOrder: encoding.sortOrder,
             sortBy: encoding.sortBy,
             scheme: encoding.scheme,

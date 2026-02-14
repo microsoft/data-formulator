@@ -192,7 +192,7 @@ export let checkChartAvailabilityOnPreparedData = (chart: Chart, conceptShelfIte
                     }
                 }
                 return undefined;
-            }).filter(f => f != undefined);
+            }).filter((f): f is string => f != undefined);
     return visFieldsFinalNames.length > 0 && visTableRows.length > 0 && visFieldsFinalNames.every(name => Object.keys(visTableRows[0]).includes(name));
 }
 

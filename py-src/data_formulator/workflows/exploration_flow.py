@@ -62,7 +62,6 @@ def run_exploration_flow_streaming(
     input_tables: list[dict[str, Any]],
     initial_plan: list[str],
     identity_id: str | None = None,
-    exec_python_in_subprocess: bool = False,
     max_iterations: int = 5,
     max_repair_attempts: int = 1,
     agent_exploration_rules: str = "",
@@ -76,7 +75,6 @@ def run_exploration_flow_streaming(
         input_tables: List of input table dictionaries with 'name' 'rows' and 'attached_metadata'
         plan: List of steps to continue exploring
         identity_id: Identity ID for workspace access
-        exec_python_in_subprocess: Whether to execute Python in subprocess
         max_iterations: Maximum number of exploration iterations
         max_repair_attempts: Maximum number of code repair attempts
         agent_exploration_rules: Custom exploration rules for the agent

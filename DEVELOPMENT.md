@@ -46,7 +46,7 @@ uv run data_formulator --dev   # Run backend only (for frontend development)
         - copy `.env.template` to `.env`
         - configure settings as needed:
             - DISABLE_DISPLAY_KEYS: if true, API keys will not be shown in the frontend
-            - EXEC_PYTHON_IN_SUBPROCESS: if true, Python code runs in a subprocess (safer but slower), you may consider setting it true when you are hosting Data Formulator for others
+            - SANDBOX: code execution backend — `local` (default) or `docker` (see [Sandbox](#sandbox) section below)
             - External database settings (when USE_EXTERNAL_DB=true):
                 - DB_NAME: name to refer to this database connection
                 - DB_TYPE: mysql or postgresql (currently only these two are supported)
@@ -132,6 +132,32 @@ uv run data_formulator --dev   # Run backend only (for frontend development)
     ```
 
     Open [http://localhost:5000](http://localhost:5000) to view it in the browser.
+
+
+## Sandbox
+
+AI-generated Python code runs inside a **sandbox** to isolate it from the main server process. Two backends are available:
+
+| Backend | Flag | How it works | Overhead |
+|---------|------|--------------|----------|
+| **local** (default) | `--sandbox local` | Persistent warm subprocess with pre-imported pandas/numpy/duckdb. Audit hooks block file writes and dangerous operations (subprocess, shutil, etc.). | ~1 ms |
+| **docker** | `--sandbox docker` | Each execution runs in a disposable `docker run --rm` container. Workspace is mounted read-only; output is returned via a bind-mounted parquet file. Memory/CPU/PID limits enforced. | ~700 ms |
+
+```bash
+# Use the default local sandbox
+python -m data_formulator
+
+# Use Docker sandbox (requires Docker daemon)
+python -m data_formulator --sandbox docker
+```
+
+The Docker sandbox image is built from `py-src/data_formulator/sandbox/Dockerfile.sandbox`:
+
+```bash
+docker build -t data-formulator-sandbox -f py-src/data_formulator/sandbox/Dockerfile.sandbox .
+```
+
+Source: [`py-src/data_formulator/sandbox/`](py-src/data_formulator/sandbox/)
 
 
 ## Security Considerations for Production Deployment

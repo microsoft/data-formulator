@@ -26,7 +26,6 @@ from data_formulator.agents.agent_sort_data import SortDataAgent
 from data_formulator.auth import get_identity_id
 from data_formulator.datalake.workspace import Workspace, WorkspaceWithTempData
 from data_formulator.agents.agent_data_load import DataLoadAgent
-from data_formulator.agents.agent_data_clean import DataCleanAgent
 from data_formulator.agents.agent_data_clean_stream import DataCleanAgentStream
 from data_formulator.agents.agent_code_explanation import CodeExplanationAgent
 from data_formulator.agents.agent_chart_insight import ChartInsightAgent
@@ -211,40 +210,6 @@ def process_data_on_load_request():
         except Exception as e:
             logger.exception(e)
             response = flask.jsonify({ "token": token, "status": "error", "result": [] })
-    else:
-        response = flask.jsonify({ "token": -1, "status": "error", "result": [] })
-
-    response.headers.add('Access-Control-Allow-Origin', '*')
-    return response
-
-
-@agent_bp.route('/clean-data', methods=['GET', 'POST'])
-def clean_data_request():
-
-    if request.is_json:
-        logger.info("# data clean request")
-        content = request.get_json()
-        token = content["token"]
-
-        client = get_client(content['model'])
-
-        logger.info(f" model: {content['model']}")
-        
-        agent = DataCleanAgent(client=client)
-
-        try:
-            candidates = agent.run(content.get('prompt', ''), content.get('artifacts', []), content.get('dialog', []))
-        except Exception as e:
-            logger.error(e)
-            if 'unable to download html from url' in str(e):
-                return flask.jsonify({ "token": token, "status": "error", "result":  'this website doesn\'t allow us to download html from url :(' })
-            else:
-                return flask.jsonify({ "token": token, "status": "error", "result": 'unable to process data clean request' })
-
-        
-        candidates = [c for c in candidates if c['status'] == 'ok']
-
-        response = flask.jsonify({ "status": "ok", "token": token, "result": candidates })
     else:
         response = flask.jsonify({ "token": -1, "status": "error", "result": [] })
 
@@ -445,7 +410,6 @@ def explore_data_streaming():
 
             # Get identity for workspace (used for both SQL and Python with WorkspaceWithTempData)
             identity_id = get_identity_id()
-            exec_python_in_subprocess = current_app.config['CLI_ARGS']['exec_python_in_subprocess']
 
             try:
                 for result in run_exploration_flow_streaming(
@@ -453,7 +417,6 @@ def explore_data_streaming():
                     input_tables=input_tables,
                     initial_plan=initial_plan,
                     identity_id=identity_id,
-                    exec_python_in_subprocess=exec_python_in_subprocess,
                     max_iterations=max_iterations,
                     max_repair_attempts=max_repair_attempts,
                     agent_exploration_rules=agent_exploration_rules,
@@ -755,7 +718,7 @@ def refresh_derived_data():
     - message: error message if failed
     """
     try:
-        from data_formulator.sandbox.py_sandbox import run_unified_transform_in_sandbox
+        from data_formulator.sandbox import create_sandbox
         from flask import current_app
         
         data = request.get_json()
@@ -795,16 +758,17 @@ def refresh_derived_data():
         temp_data = get_temp_tables(workspace, input_tables)
         
         # Get settings from app config
-        exec_python_in_subprocess = current_app.config.get('CLI_ARGS', {}).get('exec_python_in_subprocess', False)
-        max_display_rows = current_app.config.get('CLI_ARGS', {}).get('max_display_rows', 5000)
+        cli_args = current_app.config.get('CLI_ARGS', {})
+        max_display_rows = cli_args.get('max_display_rows', 5000)
+        
+        sandbox = create_sandbox(cli_args.get('sandbox', 'local'))
         
         with WorkspaceWithTempData(workspace, temp_data) as workspace:
-            # Run the transformation code in workspace context
-            result = run_unified_transform_in_sandbox(
+            # Run the transformation code in the sandbox
+            result = sandbox.run_python_code(
                 code=code,
-                workspace_path=workspace._path,
+                workspace=workspace,
                 output_variable=output_variable,
-                exec_python_in_subprocess=exec_python_in_subprocess
             )
             
             if result['status'] == 'ok':

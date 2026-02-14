@@ -78,7 +78,7 @@ export interface EncodingShelfCardProps {
 
 let selectBaseTables = (activeFields: FieldItem[], currentTable: DictTable, tables: DictTable[]) : DictTable[] => {
     
-    let baseTables = [];
+    let baseTables: DictTable[] = [];
 
     // if the current table is derived from other tables, then we need to add those tables to the base tables
     if (currentTable.derive && !currentTable.anchored) {
@@ -259,6 +259,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
 
     useEffect(() => {
         setPrompt(trigger?.instruction || "");
+        setIdeateMode(false);
     }, [chartId]);
 
     let encodingMap = chart?.encodingMap;
@@ -771,7 +772,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                                 let chartsWithSameEncoding = chartsFromOverrideTable.filter(c => {
                                     let getSimpliedChartEnc = (chart: Chart) => {
                                         return chart.chartType + ":" + Object.entries(chart.encodingMap).filter(([channel, enc]) => enc.fieldID != undefined).map(([channel, enc]) => {
-                                            return `${channel}:${enc.fieldID}:${enc.aggregate}:${enc.stack}:${enc.sortOrder}:${enc.sortBy}:${enc.scheme}`;
+                                            return `${channel}:${enc.fieldID}:${enc.aggregate}:${enc.sortOrder}:${enc.sortBy}:${enc.scheme}`;
                                         }).join(";");
                                     }
                                     return getSimpliedChartEnc(c) == getSimpliedChartEnc(triggerChartSpec);
@@ -904,7 +905,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                     <span>
                         <IconButton sx={{ marginLeft: "0"}} size="small"
                              color={"warning"} onClick={() => { 
-                                deriveNewData(trigger.instruction, 'formulate', trigger.resultTableId); 
+                                deriveNewData(trigger!.instruction, 'formulate', trigger!.resultTableId); 
                             }}>
                             <ChangeCircleOutlinedIcon fontSize="small" />
                         </IconButton>

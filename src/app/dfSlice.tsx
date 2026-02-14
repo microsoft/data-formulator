@@ -885,8 +885,6 @@ export const dataFormulatorSlice = createSlice({
                     }
                 } else if (prop == 'aggregate') {
                     encoding.aggregate = value;
-                } else if (prop == 'stack') {
-                    encoding.stack = value;
                 } else if (prop == "sortOrder") {
                     encoding.sortOrder = value == "auto" ? undefined : value;
                 } else if (prop == "sortBy") {
@@ -1135,6 +1133,12 @@ export const dataFormulatorSlice = createSlice({
                         suffix = `-${suffixId}`;
                     }
                     table.displayId = displayId;
+                }
+
+                // Store data summary as attached metadata if not already set (e.g., from extraction context)
+                let dataSummary = data["result"][0]["data_summary"] || data["result"][0]["data summary"];
+                if (dataSummary && !table.attachedMetadata) {
+                    table.attachedMetadata = dataSummary;
                 }
             }
         })

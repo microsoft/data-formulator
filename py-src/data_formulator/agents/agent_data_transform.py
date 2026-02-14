@@ -304,22 +304,21 @@ class DataTransformationAgent(object):
                 code = code_blocks[-1]
 
                 try:
-                    # Import the sandbox execution function
-                    from data_formulator.sandbox.py_sandbox import run_unified_transform_in_sandbox
+                    from data_formulator.sandbox import create_sandbox
 
-                    # Get exec_python_in_subprocess setting (with fallback for non-Flask contexts like MCP server)
+                    # Get sandbox setting (with fallback for non-Flask contexts like MCP server)
                     try:
                         from flask import current_app
-                        exec_python_in_subprocess = current_app.config.get('CLI_ARGS', {}).get('exec_python_in_subprocess', False)
+                        sandbox_mode = current_app.config.get('CLI_ARGS', {}).get('sandbox', 'local')
                     except (ImportError, RuntimeError):
-                        exec_python_in_subprocess = False
+                        sandbox_mode = 'local'
 
-                    # Execute the Python script in sandbox
-                    execution_result = run_unified_transform_in_sandbox(
+                    # Execute the Python script in the appropriate sandbox
+                    sandbox = create_sandbox(sandbox_mode)
+                    execution_result = sandbox.run_python_code(
                         code=code,
-                        workspace_path=self.workspace._path,
+                        workspace=self.workspace,
                         output_variable=output_variable,
-                        exec_python_in_subprocess=exec_python_in_subprocess
                     )
 
                     if execution_result['status'] == 'ok':

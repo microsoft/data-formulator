@@ -277,31 +277,9 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
         </FormControl>
     ];
 
-    let stackOpt = (chart.chartType == "bar" || chart.chartType == "area") && (channel == "x" || channel == "y") ? [
-        <FormLabel key={`enc-box-${channel}-stack-label`} sx={{ fontSize: "inherit" }} id="normalized-option-radio-buttons-group" >Stack</FormLabel>,
-        <FormControl
-            key={`enc-box-${channel}-stack-form-control`}
-            sx={{
-                paddingBottom: "2px", '& .MuiTypography-root': { fontSize: "inherit" }, flexDirection: "row",
-                '& .MuiFormLabel-root': { fontSize: "inherit" }
-            }}>
-            <RadioGroup
-                row
-                aria-labelledby="normalized-option-radio-buttons-group"
-                name="normalized-option-radio-buttons-group"
-                value={encoding.stack || "default"}
-                sx={{ width: 160 }}
-                onChange={(event) => { updateEncProp("stack", event.target.value == "default" ? undefined : event.target.value); }}
-            >
-                {radioLabel("default", "default", `stack-default`)}
-                {radioLabel("layered", "layered", `stack-layered`)}
-                {radioLabel("center", "center", `stack-center`)}
-                {radioLabel("normalize", "normalize", `stack-normalize`)}
-            </RadioGroup>
-        </FormControl>
-    ] : [];
+    let stackOpt: any[] = [];
 
-    let domainItems = field ? activeTable?.rows.map(row => row[field?.name]) : [];
+    let domainItems = (field && activeTable) ? activeTable.rows.map(row => row[field!.name]) : [];
     domainItems = [...new Set(domainItems)];
 
     let autoSortEnabled = field && fieldMetadata?.type == Type.String && domainItems.length < 200;
@@ -534,9 +512,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
         sx={{  backgroundColor: optBackgroundColor, width: field == undefined ? "100%" : "auto" }}
         onDelete={() => updateEncProp("aggregate", undefined)} color="default" //deleteIcon={<RemoveIcon />}
         label={encoding.aggregate == "average" ? "avg" : encoding.aggregate} size="small" />) : "";
-    let normalizedDisplay = encoding.stack ? (<Chip key="normalized-display" className="encoding-prop-chip" //deleteIcon={<RemoveIcon />} 
-        color="default" sx={{  backgroundColor: optBackgroundColor }}
-        label={"⌸"} size="small" onDelete={() => updateEncProp("stack", undefined)} />) : "";
+    let normalizedDisplay = "";
     
     let handleSelectOption = (option: string) => {
         if (conceptShelfItems.map(f => f.name).includes(option)) {
