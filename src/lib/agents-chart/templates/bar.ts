@@ -61,9 +61,17 @@ export const pyramidChartDef: ChartTemplateDef = {
                 axis: { grid: false },
             },
         },
-        channels: ["x", "x2", "y"],
+        channels: ["x", "y", "color"],
         buildEncodings: (spec, encodings) => {
-            const { y, x, x2 } = encodings;
+            let { y, x, color } = encodings;
+
+            // Auto-detect flipped axes: if x is discrete and y is quantitative, swap them
+            const isDiscrete = (enc: any) => enc && (enc.type === 'nominal' || enc.type === 'ordinal');
+            const isQuant = (enc: any) => enc && (enc.type === 'quantitative' || enc.type === 'temporal');
+            if (isDiscrete(x) && isQuant(y)) {
+                [x, y] = [y, x];
+            }
+
             // y → both panels (shared category axis, always nominal)
             if (y) {
                 const yEnc = { ...y };
@@ -71,61 +79,81 @@ export const pyramidChartDef: ChartTemplateDef = {
                 spec.hconcat[0].encoding.y = { ...spec.hconcat[0].encoding.y, ...yEnc };
                 spec.hconcat[1].encoding.y = { ...spec.hconcat[1].encoding.y, ...yEnc };
             }
-            // x → left panel metric (reversed)
+            // x → both panels (same value field)
             if (x) {
                 spec.hconcat[0].encoding.x = { ...spec.hconcat[0].encoding.x, ...x };
+                spec.hconcat[1].encoding.x = { ...spec.hconcat[1].encoding.x, ...x };
             }
-            // x2 → right panel metric
-            if (x2) {
-                spec.hconcat[1].encoding.x = { ...spec.hconcat[1].encoding.x, ...x2 };
+            // color → store the field name for postProcessor to create filters
+            if (color && color.field) {
+                spec._pyramidColorField = color.field;
             }
         },
         postProcessor: (vgSpec: any, table: any[], _config?: Record<string, any>, canvasSize?: { width: number; height: number }) => {
             try {
+                const colorField = vgSpec._pyramidColorField;
+                delete vgSpec._pyramidColorField;
+
+                if (table && colorField) {
+                    // Get unique group values from the color field
+                    const groups = [...new Set(table.map(r => r[colorField]))] as string[];
+
+                    // Pick first two groups (pyramid is inherently binary)
+                    const leftGroup = groups[0];
+                    const rightGroup = groups.length > 1 ? groups[1] : groups[0];
+
+                    // Add filter transforms to split data into panels
+                    vgSpec.hconcat[0].transform = [{ filter: { field: colorField, equal: leftGroup } }];
+                    vgSpec.hconcat[1].transform = [{ filter: { field: colorField, equal: rightGroup } }];
+
+                    // Set panel titles from group values
+                    vgSpec.hconcat[0].title = String(leftGroup);
+                    vgSpec.hconcat[1].title = String(rightGroup);
+
+                    // Warn if more than 2 groups
+                    if (groups.length > 2) {
+                        if (!vgSpec._warnings) vgSpec._warnings = [];
+                        vgSpec._warnings.push({
+                            severity: 'warning',
+                            code: 'too-many-groups-pyramid',
+                            message: `Pyramid chart works best with exactly 2 groups, but found ${groups.length} (${groups.map(g => `'${g}'`).join(', ')}). Only the first two are shown.`,
+                            channel: 'color',
+                            field: colorField,
+                        });
+                    }
+                }
+
+                // Compute shared x domain across both panels
                 if (table) {
-                    const leftField = vgSpec.hconcat[0].encoding.x?.field;
-                    const rightField = vgSpec.hconcat[1].encoding.x?.field;
-                    if (leftField) vgSpec.hconcat[0].title = leftField;
-                    if (rightField) vgSpec.hconcat[1].title = rightField;
-                    // Compute shared x domain across both metrics
-                    if (leftField && rightField) {
-                        const leftVals = table.map(r => r[leftField]).filter(v => typeof v === 'number');
-                        const rightVals = table.map(r => r[rightField]).filter(v => typeof v === 'number');
-                        const allVals = [...leftVals, ...rightVals];
+                    const xField = vgSpec.hconcat[0].encoding.x?.field;
+                    if (xField) {
+                        const allVals = table.map(r => r[xField]).filter(v => typeof v === 'number');
                         if (allVals.length > 0) {
                             const domain = [Math.min(0, ...allVals), Math.max(...allVals)];
                             vgSpec.hconcat[0].encoding.x.scale = { ...vgSpec.hconcat[0].encoding.x.scale, domain };
-                            vgSpec.hconcat[1].encoding.x.scale = { domain };
+                            vgSpec.hconcat[1].encoding.x.scale = { ...vgSpec.hconcat[1].encoding.x.scale, domain };
                         }
-                        // Warn about negative values in pyramid metrics
-                        const negFields: string[] = [];
-                        if (leftVals.some(v => v < 0)) negFields.push(leftField);
-                        if (rightVals.some(v => v < 0)) negFields.push(rightField);
-                        if (negFields.length > 0) {
+                        // Warn about negative values
+                        if (allVals.some(v => v < 0)) {
                             if (!vgSpec._warnings) vgSpec._warnings = [];
                             vgSpec._warnings.push({
                                 severity: 'warning',
                                 code: 'negative-values-pyramid',
-                                message: `Negative values detected in ${negFields.map(f => `'${f}'`).join(' and ')}. Pyramid charts work best with non-negative values.`,
+                                message: `Negative values detected in '${xField}'. Pyramid charts work best with non-negative values.`,
                                 channel: 'x',
-                                field: negFields.join(', '),
+                                field: xField,
                             });
                         }
                     }
 
                     // --- Elastic sizing ---
-                    // Pyramid is a 2-panel hconcat, so squeeze x (each panel = half width)
-                    // and stretch y based on discrete category cardinality.
                     const baseWidth = canvasSize?.width ?? 400;
                     const baseHeight = canvasSize?.height ?? 320;
 
-                    // Facet squeeze: 2 columns → each panel gets ~half the width
-                    // Apply facet elasticity (power 0.3, max 1.5× stretch)
                     const facetCols = 2;
                     const facetStretch = Math.min(1.5, Math.pow(facetCols, 0.3));
                     const panelWidth = Math.round(Math.max(40, baseWidth * facetStretch / facetCols));
 
-                    // Y-axis elastic stretch for discrete categories
                     const yField = vgSpec.hconcat[0].encoding.y?.field;
                     let panelHeight = baseHeight;
                     if (yField) {

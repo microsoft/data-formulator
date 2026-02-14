@@ -503,7 +503,7 @@ export function assembleChart(
             if ((channel === 'x' && encodingObj.type === 'nominal' && encodings.y?.field) ||
                 (channel === 'y' && encodingObj.type === 'nominal' && encodings.x?.field)) {
 
-                if (chartType.includes("Line") || chartType.includes("Area") || chartType === "Heatmap") {
+                if (chartType.includes("Line") || chartType.includes("Area") || chartType === "Heatmap" || chartType === "Pyramid Chart") {
                     // do nothing — lines/areas need temporal order, heatmaps need natural order
                 } else {
                     const colorField = encodings.color?.field;

@@ -415,11 +415,11 @@ function getRecommendation(chartType: string, tv: InternalTableView): Record<str
         case 'Pyramid Chart': {
             const yField = pickDiscrete(tv, used);
             const xField = pickQuantitative(tv, used);
-            const x2Field = pickQuantitative(tv, used);
-            if (!xField || !yField || !x2Field) return {};
+            const colorField = pickDiscrete(tv, used);
+            if (!xField || !yField || !colorField) return {};
             assign('y', yField);
             assign('x', xField);
-            assign('x2', x2Field);
+            assign('color', colorField);
             break;
         }
 

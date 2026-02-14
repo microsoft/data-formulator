@@ -19,13 +19,14 @@ export { seededRandom, genDates, genMonths, genYears, genNaturalDates, genCatego
 export { genScatterTests, genLinearRegressionTests } from './scatter-tests';
 export { genBarTests, genStackedBarTests, genGroupedBarTests } from './bar-tests';
 export { genHistogramTests, genBoxplotTests, genDensityTests, genStripPlotTests } from './distribution-tests';
-export { genLineTests, genDottedLineTests, genAreaTests, genStreamgraphTests } from './line-area-tests';
+export { genLineTests, genDottedLineTests, genBumpChartTests, genAreaTests, genStreamgraphTests } from './line-area-tests';
 export {
     genHeatmapTests, genPieTests, genRangedDotPlotTests, genLollipopTests,
     genCustomTests, genWaterfallTests, genCandlestickTests, genRadarTests, genPyramidTests,
 } from './specialized-tests';
 export { FACET_SIZES, DISCRETE_SIZES, genFacetColumnTests, genFacetRowTests, genFacetColRowTests } from './facet-tests';
 export { genOverflowTests, genElasticityTests } from './stress-tests';
+export { genUnintendedScatterTests, genUnintendedBarTests, genUnintendedLineAreaTests, genUnintendedPartToWholeTests, genUnintendedStatisticalTests } from './unintended-tests';
 export { genDateTests, genDateYearTests, genDateMonthTests, genDateYearMonthTests, genDateDecadeTests, genDateDateTimeTests, genDateHoursTests } from './date-tests';
 
 // ---------------------------------------------------------------------------
@@ -36,13 +37,14 @@ import { TestCase, GallerySection } from './types';
 import { genScatterTests, genLinearRegressionTests } from './scatter-tests';
 import { genBarTests, genStackedBarTests, genGroupedBarTests } from './bar-tests';
 import { genHistogramTests, genBoxplotTests, genDensityTests, genStripPlotTests } from './distribution-tests';
-import { genLineTests, genDottedLineTests, genAreaTests, genStreamgraphTests } from './line-area-tests';
+import { genLineTests, genDottedLineTests, genBumpChartTests, genAreaTests, genStreamgraphTests } from './line-area-tests';
 import {
     genHeatmapTests, genPieTests, genRangedDotPlotTests, genLollipopTests,
     genCustomTests, genWaterfallTests, genCandlestickTests, genRadarTests, genPyramidTests,
 } from './specialized-tests';
 import { genFacetColumnTests, genFacetRowTests, genFacetColRowTests } from './facet-tests';
 import { genOverflowTests, genElasticityTests } from './stress-tests';
+import { genUnintendedScatterTests, genUnintendedBarTests, genUnintendedLineAreaTests, genUnintendedPartToWholeTests, genUnintendedStatisticalTests } from './unintended-tests';
 import { genDateYearTests, genDateMonthTests, genDateYearMonthTests, genDateDecadeTests, genDateDateTimeTests, genDateHoursTests } from './date-tests';
 
 /** All test generators mapped by chart group */
@@ -56,6 +58,7 @@ export const TEST_GENERATORS: Record<string, () => TestCase[]> = {
     'Heatmap': genHeatmapTests,
     'Line Chart': genLineTests,
     'Dotted Line Chart': genDottedLineTests,
+    'Bump Chart': genBumpChartTests,
     'Boxplot': genBoxplotTests,
     'Pie Chart': genPieTests,
     'Ranged Dot Plot': genRangedDotPlotTests,
@@ -80,6 +83,11 @@ export const TEST_GENERATORS: Record<string, () => TestCase[]> = {
     'Dates: Decade': genDateDecadeTests,
     'Dates: Date/DateTime': genDateDateTimeTests,
     'Dates: Hours': genDateHoursTests,
+    'Unintended: Scatter & Point': genUnintendedScatterTests,
+    'Unintended: Bar': genUnintendedBarTests,
+    'Unintended: Line & Area': genUnintendedLineAreaTests,
+    'Unintended: Part-to-Whole': genUnintendedPartToWholeTests,
+    'Unintended: Statistical': genUnintendedStatisticalTests,
 };
 
 /** Gallery organised into three sections */
@@ -91,7 +99,7 @@ export const GALLERY_SECTIONS: GallerySection[] = [
             'Scatter Plot', 'Linear Regression', 'Bar Chart', 'Stacked Bar Chart',
             'Grouped Bar Chart', 'Histogram', 'Heatmap', 'Line Chart', 'Dotted Line Chart',
             'Boxplot', 'Pie Chart', 'Ranged Dot Plot', 'Area Chart', 'Streamgraph',
-            'Lollipop Chart', 'Density Plot', 'Candlestick Chart', 'Waterfall Chart',
+            'Lollipop Chart', 'Density Plot', 'Bump Chart', 'Candlestick Chart', 'Waterfall Chart',
             'Strip Plot', 'Radar Chart', 'Pyramid Chart', 'Custom Charts',
         ],
     },
@@ -107,6 +115,17 @@ export const GALLERY_SECTIONS: GallerySection[] = [
             'Overflow', 'Elasticity & Stretch',
             'Dates: Year', 'Dates: Month', 'Dates: Year-Month',
             'Dates: Decade', 'Dates: Date/DateTime', 'Dates: Hours',
+        ],
+    },
+    {
+        label: 'Unintended Use',
+        description: 'Wrong field types, degenerate data, and missing encodings — graceful failure tests',
+        entries: [
+            'Unintended: Scatter & Point',
+            'Unintended: Bar',
+            'Unintended: Line & Area',
+            'Unintended: Part-to-Whole',
+            'Unintended: Statistical',
         ],
     },
 ];

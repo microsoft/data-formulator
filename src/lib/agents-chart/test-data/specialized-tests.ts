@@ -905,75 +905,85 @@ export function genPyramidTests(): TestCase[] {
     const tests: TestCase[] = [];
     const rand = seededRandom(777);
 
-    // 1. Classic population pyramid — Age Group × Male / Female counts (small)
+    // Helper to generate long-format pyramid data from two groups
+    const makeLongData = (categories: string[], groupA: string, groupB: string, valField: string, minA: number, rangeA: number, minB: number, rangeB: number) => {
+        const data: any[] = [];
+        for (const cat of categories) {
+            data.push({ [valField]: Math.round(minA + rand() * rangeA), Group: groupA, Category: cat });
+            data.push({ [valField]: Math.round(minB + rand() * rangeB), Group: groupB, Category: cat });
+        }
+        return data;
+    };
+
+    // 1. Classic population pyramid — Age Group × Gender × Population
     {
         const ageGroups = ['0-9', '10-19', '20-29', '30-39', '40-49', '50-59', '60-69', '70-79', '80+'];
-        const data = ageGroups.map(ag => ({
-            'Age Group': ag,
-            Male: Math.round(500 + rand() * 4500),
-            Female: Math.round(500 + rand() * 4500),
-        }));
+        const data: any[] = [];
+        for (const ag of ageGroups) {
+            data.push({ 'Age Group': ag, Gender: 'Male', Population: Math.round(500 + rand() * 4500) });
+            data.push({ 'Age Group': ag, Gender: 'Female', Population: Math.round(500 + rand() * 4500) });
+        }
         tests.push({
             title: 'Population pyramid (9 age groups)',
-            description: 'Classic population pyramid — Age Group on y, Male on x, Female on x2',
-            tags: ['nominal', 'quantitative', 'small'],
+            description: 'Classic population pyramid — long format with Gender as color',
+            tags: ['nominal', 'quantitative', 'color', 'small'],
             chartType: 'Pyramid Chart',
             data,
-            fields: [makeField('Age Group'), makeField('Male'), makeField('Female')],
+            fields: [makeField('Age Group'), makeField('Population'), makeField('Gender')],
             metadata: {
                 'Age Group': { type: Type.String, semanticType: 'Category', levels: ageGroups },
-                Male: { type: Type.Number, semanticType: 'Quantity', levels: [] },
-                Female: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                Population: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                Gender: { type: Type.String, semanticType: 'Category', levels: ['Male', 'Female'] },
             },
-            encodingMap: { y: makeEncodingItem('Age Group'), x: makeEncodingItem('Male'), x2: makeEncodingItem('Female') },
+            encodingMap: { y: makeEncodingItem('Age Group'), x: makeEncodingItem('Population'), color: makeEncodingItem('Gender') },
         });
     }
 
     // 2. Workforce pyramid
     {
         const grades = ['Junior', 'Mid-level', 'Senior', 'Lead', 'Manager', 'Director'];
-        const data = grades.map(g => ({
-            Grade: g,
-            'Full-Time': Math.round(20 + rand() * 200),
-            'Part-Time': Math.round(10 + rand() * 80),
-        }));
+        const data: any[] = [];
+        for (const g of grades) {
+            data.push({ Grade: g, Type: 'Full-Time', Count: Math.round(20 + rand() * 200) });
+            data.push({ Grade: g, Type: 'Part-Time', Count: Math.round(10 + rand() * 80) });
+        }
         tests.push({
             title: 'Workforce pyramid (6 grades)',
-            description: 'Grade levels on y, Full-Time on x, Part-Time on x2',
-            tags: ['nominal', 'quantitative', 'small'],
+            description: 'Grade levels on y, Count on x, Full-Time vs Part-Time as color',
+            tags: ['nominal', 'quantitative', 'color', 'small'],
             chartType: 'Pyramid Chart',
             data,
-            fields: [makeField('Grade'), makeField('Full-Time'), makeField('Part-Time')],
+            fields: [makeField('Grade'), makeField('Count'), makeField('Type')],
             metadata: {
                 Grade: { type: Type.String, semanticType: 'Category', levels: grades },
-                'Full-Time': { type: Type.Number, semanticType: 'Count', levels: [] },
-                'Part-Time': { type: Type.Number, semanticType: 'Count', levels: [] },
+                Count: { type: Type.Number, semanticType: 'Count', levels: [] },
+                Type: { type: Type.String, semanticType: 'Category', levels: ['Full-Time', 'Part-Time'] },
             },
-            encodingMap: { y: makeEncodingItem('Grade'), x: makeEncodingItem('Full-Time'), x2: makeEncodingItem('Part-Time') },
+            encodingMap: { y: makeEncodingItem('Grade'), x: makeEncodingItem('Count'), color: makeEncodingItem('Type') },
         });
     }
 
     // 3. Survey responses
     {
         const levels = ['Very Low', 'Low', 'Medium', 'High', 'Very High'];
-        const data = levels.map(lv => ({
-            'Satisfaction Level': lv,
-            Agree: Math.round(50 + rand() * 300),
-            Disagree: Math.round(30 + rand() * 250),
-        }));
+        const data: any[] = [];
+        for (const lv of levels) {
+            data.push({ 'Satisfaction Level': lv, Response: 'Agree', Count: Math.round(50 + rand() * 300) });
+            data.push({ 'Satisfaction Level': lv, Response: 'Disagree', Count: Math.round(30 + rand() * 250) });
+        }
         tests.push({
             title: 'Survey pyramid (5 levels)',
-            description: 'Satisfaction levels on y, Agree on x, Disagree on x2',
-            tags: ['ordinal', 'quantitative', 'small'],
+            description: 'Satisfaction levels — Agree vs Disagree',
+            tags: ['ordinal', 'quantitative', 'color', 'small'],
             chartType: 'Pyramid Chart',
             data,
-            fields: [makeField('Satisfaction Level'), makeField('Agree'), makeField('Disagree')],
+            fields: [makeField('Satisfaction Level'), makeField('Count'), makeField('Response')],
             metadata: {
                 'Satisfaction Level': { type: Type.String, semanticType: 'Category', levels: levels },
-                Agree: { type: Type.Number, semanticType: 'Count', levels: [] },
-                Disagree: { type: Type.Number, semanticType: 'Count', levels: [] },
+                Count: { type: Type.Number, semanticType: 'Count', levels: [] },
+                Response: { type: Type.String, semanticType: 'Category', levels: ['Agree', 'Disagree'] },
             },
-            encodingMap: { y: makeEncodingItem('Satisfaction Level'), x: makeEncodingItem('Agree'), x2: makeEncodingItem('Disagree') },
+            encodingMap: { y: makeEncodingItem('Satisfaction Level'), x: makeEncodingItem('Count'), color: makeEncodingItem('Response') },
         });
     }
 
@@ -981,72 +991,72 @@ export function genPyramidTests(): TestCase[] {
     {
         const brackets = ['<$20K', '$20-30K', '$30-40K', '$40-50K', '$50-60K', '$60-70K',
             '$70-80K', '$80-90K', '$90-100K', '$100-120K', '$120-150K', '$150K+'];
-        const data = brackets.map(b => ({
-            'Income Bracket': b,
-            Urban: Math.round(100 + rand() * 3000),
-            Rural: Math.round(80 + rand() * 2000),
-        }));
+        const data: any[] = [];
+        for (const b of brackets) {
+            data.push({ 'Income Bracket': b, Area: 'Urban', Count: Math.round(100 + rand() * 3000) });
+            data.push({ 'Income Bracket': b, Area: 'Rural', Count: Math.round(80 + rand() * 2000) });
+        }
         tests.push({
             title: 'Income pyramid (12 brackets)',
-            description: '12 income bands — tests y-axis label handling with many discrete values',
-            tags: ['ordinal', 'quantitative', 'medium'],
+            description: '12 income bands — Urban vs Rural',
+            tags: ['ordinal', 'quantitative', 'color', 'medium'],
             chartType: 'Pyramid Chart',
             data,
-            fields: [makeField('Income Bracket'), makeField('Urban'), makeField('Rural')],
+            fields: [makeField('Income Bracket'), makeField('Count'), makeField('Area')],
             metadata: {
                 'Income Bracket': { type: Type.String, semanticType: 'Category', levels: brackets },
-                Urban: { type: Type.Number, semanticType: 'Count', levels: [] },
-                Rural: { type: Type.Number, semanticType: 'Count', levels: [] },
+                Count: { type: Type.Number, semanticType: 'Count', levels: [] },
+                Area: { type: Type.String, semanticType: 'Category', levels: ['Urban', 'Rural'] },
             },
-            encodingMap: { y: makeEncodingItem('Income Bracket'), x: makeEncodingItem('Urban'), x2: makeEncodingItem('Rural') },
+            encodingMap: { y: makeEncodingItem('Income Bracket'), x: makeEncodingItem('Count'), color: makeEncodingItem('Area') },
         });
     }
 
     // 5. Education pyramid
     {
         const degrees = ['High School', 'Associate', 'Bachelor', 'Master', 'Doctorate'];
-        const data = degrees.map(d => ({
-            'Degree Level': d,
-            Admitted: Math.round(200 + rand() * 5000),
-            Rejected: Math.round(100 + rand() * 3000),
-        }));
+        const data: any[] = [];
+        for (const d of degrees) {
+            data.push({ 'Degree Level': d, Outcome: 'Admitted', Count: Math.round(200 + rand() * 5000) });
+            data.push({ 'Degree Level': d, Outcome: 'Rejected', Count: Math.round(100 + rand() * 3000) });
+        }
         tests.push({
             title: 'Education pyramid (5 degrees)',
             description: 'Degree levels — Admitted vs Rejected applicants',
-            tags: ['ordinal', 'quantitative', 'small'],
+            tags: ['ordinal', 'quantitative', 'color', 'small'],
             chartType: 'Pyramid Chart',
             data,
-            fields: [makeField('Degree Level'), makeField('Admitted'), makeField('Rejected')],
+            fields: [makeField('Degree Level'), makeField('Count'), makeField('Outcome')],
             metadata: {
                 'Degree Level': { type: Type.String, semanticType: 'Category', levels: degrees },
-                Admitted: { type: Type.Number, semanticType: 'Count', levels: [] },
-                Rejected: { type: Type.Number, semanticType: 'Count', levels: [] },
+                Count: { type: Type.Number, semanticType: 'Count', levels: [] },
+                Outcome: { type: Type.String, semanticType: 'Category', levels: ['Admitted', 'Rejected'] },
             },
-            encodingMap: { y: makeEncodingItem('Degree Level'), x: makeEncodingItem('Admitted'), x2: makeEncodingItem('Rejected') },
+            encodingMap: { y: makeEncodingItem('Degree Level'), x: makeEncodingItem('Count'), color: makeEncodingItem('Outcome') },
         });
     }
 
     // 6. Country comparison
     {
         const countries = genCategories('Country', 10);
-        const data = countries.map(c => ({
-            Country: c,
-            Import: Math.round(1000 + rand() * 50000),
-            Export: Math.round(1000 + rand() * 50000),
-        }));
+        const data: any[] = [];
+        for (const c of countries) {
+            data.push({ Country: c, Direction: 'Import', Value: Math.round(1000 + rand() * 50000) });
+            data.push({ Country: c, Direction: 'Export', Value: Math.round(1000 + rand() * 50000) });
+        }
         tests.push({
             title: 'Trade pyramid (10 countries)',
             description: '10 countries — Import vs Export trade values',
-            tags: ['nominal', 'quantitative', 'medium'],
+            tags: ['nominal', 'quantitative', 'color', 'medium'],
             chartType: 'Pyramid Chart',
             data,
-            fields: [makeField('Country'), makeField('Import'), makeField('Export')],
+            fields: [makeField('Country'), makeField('Value'), makeField('Direction')],
             metadata: {
                 Country: { type: Type.String, semanticType: 'Country', levels: countries },
-                Import: { type: Type.Number, semanticType: 'Amount', levels: [] },
-                Export: { type: Type.Number, semanticType: 'Amount', levels: [] },
+                Value: { type: Type.Number, semanticType: 'Amount', levels: [] },
+                Direction: { type: Type.String, semanticType: 'Category', levels: ['Import', 'Export'] },
             },
-            encodingMap: { y: makeEncodingItem('Country'), x: makeEncodingItem('Import'), x2: makeEncodingItem('Export') },
+            encodingMap: { y: makeEncodingItem('Country'), x: makeEncodingItem('Value'), color: makeEncodingItem('Direction') },
         });
     }
 
@@ -1057,48 +1067,48 @@ export function genPyramidTests(): TestCase[] {
             const hi = lo + 4;
             return `${lo}-${hi}`;
         });
-        const data = ageBands.map(ag => ({
-            'Age Band': ag,
-            Male: Math.round(200 + rand() * 8000),
-            Female: Math.round(200 + rand() * 8000),
-        }));
+        const data: any[] = [];
+        for (const ag of ageBands) {
+            data.push({ 'Age Band': ag, Gender: 'Male', Population: Math.round(200 + rand() * 8000) });
+            data.push({ 'Age Band': ag, Gender: 'Female', Population: Math.round(200 + rand() * 8000) });
+        }
         tests.push({
             title: 'Overstretch pyramid (20 age bands)',
             description: '20 fine-grained age bands — tests y-axis elastic overstretch',
-            tags: ['nominal', 'quantitative', 'large', 'overstretch'],
+            tags: ['nominal', 'quantitative', 'color', 'large', 'overstretch'],
             chartType: 'Pyramid Chart',
             data,
-            fields: [makeField('Age Band'), makeField('Male'), makeField('Female')],
+            fields: [makeField('Age Band'), makeField('Population'), makeField('Gender')],
             metadata: {
                 'Age Band': { type: Type.String, semanticType: 'Category', levels: ageBands },
-                Male: { type: Type.Number, semanticType: 'Quantity', levels: [] },
-                Female: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                Population: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                Gender: { type: Type.String, semanticType: 'Category', levels: ['Male', 'Female'] },
             },
-            encodingMap: { y: makeEncodingItem('Age Band'), x: makeEncodingItem('Male'), x2: makeEncodingItem('Female') },
+            encodingMap: { y: makeEncodingItem('Age Band'), x: makeEncodingItem('Population'), color: makeEncodingItem('Gender') },
         });
     }
 
     // 8. Negative values — should trigger warning
     {
         const ageGroups = ['0-14', '15-29', '30-44', '45-59', '60-74', '75+'];
-        const data = ageGroups.map(ag => ({
-            'Age Group': ag,
-            Male: Math.round(-500 + rand() * 4000),   // some will be negative
-            Female: Math.round(-300 + rand() * 3500),
-        }));
+        const data: any[] = [];
+        for (const ag of ageGroups) {
+            data.push({ 'Age Group': ag, Gender: 'Male', Population: Math.round(-500 + rand() * 4000) });
+            data.push({ 'Age Group': ag, Gender: 'Female', Population: Math.round(-300 + rand() * 3500) });
+        }
         tests.push({
             title: 'Negative values warning (6 groups)',
             description: 'Some values are negative — should trigger negative-value warnings',
-            tags: ['nominal', 'quantitative', 'small', 'warning', 'negative'],
+            tags: ['nominal', 'quantitative', 'color', 'small', 'warning', 'negative'],
             chartType: 'Pyramid Chart',
             data,
-            fields: [makeField('Age Group'), makeField('Male'), makeField('Female')],
+            fields: [makeField('Age Group'), makeField('Population'), makeField('Gender')],
             metadata: {
                 'Age Group': { type: Type.String, semanticType: 'Category', levels: ageGroups },
-                Male: { type: Type.Number, semanticType: 'Quantity', levels: [] },
-                Female: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                Population: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                Gender: { type: Type.String, semanticType: 'Category', levels: ['Male', 'Female'] },
             },
-            encodingMap: { y: makeEncodingItem('Age Group'), x: makeEncodingItem('Male'), x2: makeEncodingItem('Female') },
+            encodingMap: { y: makeEncodingItem('Age Group'), x: makeEncodingItem('Population'), color: makeEncodingItem('Gender') },
         });
     }
 
