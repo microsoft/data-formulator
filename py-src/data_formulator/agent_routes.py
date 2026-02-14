@@ -302,8 +302,6 @@ def derive_data():
 
         # each table is a dict with {"name": xxx, "rows": [...]}
         input_tables = content["input_tables"]
-        chart_type = content.get("chart_type", "")
-        chart_encodings = content.get("chart_encodings", {})
 
         instruction = content["extra_prompt"]
         
@@ -323,13 +321,10 @@ def derive_data():
             logger.info(table['rows'][:5])
 
         logger.info("== user spec ===")
-        logger.info(chart_type)
-        logger.info(chart_encodings)
         logger.info(instruction)
 
-        mode = "transform"
-        if chart_encodings == {}:
-            mode = "recommendation"
+        # If user provided chart encodings (via visualization context), use transform mode; otherwise recommendation
+        mode = "transform" if current_visualization or expected_visualization else "recommendation"
 
         identity_id = get_identity_id()
         workspace = Workspace(identity_id)
@@ -484,9 +479,6 @@ def refine_data():
         input_tables = content["input_tables"]
         dialog = content["dialog"]
 
-        chart_type = content.get("chart_type", "")
-        chart_encodings = content.get("chart_encodings", {})
-
         new_instruction = content["new_instruction"]
         latest_data_sample = content["latest_data_sample"]
         max_repair_attempts = content.get("max_repair_attempts", 1)
@@ -500,8 +492,6 @@ def refine_data():
             logger.info(table['rows'][:5])
         
         logger.info("== user spec ===>")
-        logger.info(chart_type)
-        logger.info(chart_encodings)
         logger.info(new_instruction)
 
         identity_id = get_identity_id()

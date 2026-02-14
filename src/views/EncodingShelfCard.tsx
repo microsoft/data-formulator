@@ -539,8 +539,8 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
         let chartComplete = checkChartAvailability(chart, conceptShelfItems, currentTable.rows);
         let chartSpec = (mode == 'formulate' && Object.keys(activeSimpleEncodings).length > 0) ? {
             chart_type: chartType,
-            chart_encodings: activeSimpleEncodings,
-            ...(chart.config ? { chart_options: chart.config } : {})
+            encodings: activeSimpleEncodings,
+            ...(chart.config ? { config: chart.config } : {})
         } : undefined;
 
         let currentChartImage: string | null | undefined = undefined;
@@ -569,8 +569,6 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                     rows: t.rows, 
                     attached_metadata: t.attachedMetadata,
                 }}),
-            chart_type: chartType,
-            chart_encodings: mode == 'formulate' ? activeSimpleEncodings : {},
             extra_prompt: instruction,
             model: activeModel,
             agent_coding_rules: agentRules.coding,
@@ -603,8 +601,6 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                             rows: t.rows, 
                             attached_metadata: t.attachedMetadata,
                         }}),
-                    chart_type: chartType,
-                    chart_encodings: mode == 'formulate' ? activeSimpleEncodings : {},
                     extra_prompt: instruction,
                     model: activeModel,
                     additional_messages: additionalMessages,
@@ -623,8 +619,6 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                             rows: t.rows, 
                             attached_metadata: t.attachedMetadata,
                         }}),
-                    chart_type: chartType,
-                    chart_encodings: mode == 'formulate' ? activeSimpleEncodings : {},
                     dialog: currentTable.derive?.dialog,
                     latest_data_sample: currentTable.rows.slice(0, 10),
                     new_instruction: instruction,
@@ -798,7 +792,8 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                                     newChart.id = `chart-${Date.now()- Math.floor(Math.random() * 10000)}`;
                                     newChart.saved = false;
                                     newChart.tableRef = candidateTable.id;
-                                    newChart = resolveChartFields(newChart, currentConcepts, refinedGoal['chart_encodings'], candidateTable);
+                                    let chartEncodings = refinedGoal['chart']?.['encodings'] || refinedGoal['chart_encodings'] || {};
+                                    newChart = resolveChartFields(newChart, currentConcepts, chartEncodings, candidateTable);
                                 }   
                                 
                                 focusedChartId = newChart.id;
@@ -1249,7 +1244,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                 )}
             </Box>
             {/* Buttons below card */}
-            {ideateMode ? (
+            {!trigger && (ideateMode ? (
                 <Box sx={{ 
                     display: 'flex', 
                     width: 'fit-content',
@@ -1299,7 +1294,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                         {currentChartIdeas.length > 0 ? "View ideas" : "Some ideas?"}
                     </Button>
                 </Box>
-            )}
+            ))}
         </>
     );
 

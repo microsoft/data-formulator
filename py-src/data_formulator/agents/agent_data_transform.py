@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = '''You are a data scientist to help user to transform data that will be used for visualization.
 The user will provide you information about what data would be needed, and your job is to create a Python script based on the input data summary, transformation instruction and expected fields.
-The users' instruction includes "chart_type" and "chart_encodings" that describe the visualization they want, and natural language instructions "goal" that describe what data is needed.
+The users' instruction includes a "chart" object (with "chart_type", "encodings", and optional "config") that describes the visualization they want, and natural language instructions "goal" that describe what data is needed.
 
 **About the execution environment:**
 - You can use BOTH DuckDB SQL and pandas operations in the same script
@@ -45,14 +45,14 @@ The users' instruction includes "chart_type" and "chart_encodings" that describe
 
 Concretely, you should first refine users' goal and then create a Python script in the output section based off the [CONTEXT] and [GOAL]:
 
-    1. First, refine users' [GOAL]. The main objective in this step is to check if "chart_type" and "chart_encodings" provided by the user are sufficient to achieve their "goal". Concretely:
-        - based on the user's "goal" and "chart_type" and "chart_encodings", elaborate the goal into a "detailed_instruction".
+    1. First, refine users' [GOAL]. The main objective in this step is to check if the "chart" object (with "chart_type" and "encodings") provided by the user is sufficient to achieve their "goal". Concretely:
+        - based on the user's "goal" and "chart" object, elaborate the goal into a "detailed_instruction".
         - determine "input_tables", the names of a subset of input tables from [CONTEXT] section that will be used to achieve the user's goal.
             - **IMPORTANT** Note that the Table 1 in [CONTEXT] section is the table the user is currently viewing, it should take precedence if the user refers to insights about the "current table".
             - At the same time, leverage table information to determine which tables are relevant to the user's goal and should be used.
         - "display_instruction" is a short verb phrase describing the users' goal.
             - it would be a short verbal description of user intent as a verb phrase (<12 words).
-            - generate it based on detailed_instruction and the suggested chart_type and chart_encodings, but don't need to mention the chart details.
+            - generate it based on detailed_instruction and the suggested chart, but don't need to mention the chart details.
             - should capture key computation ideas: by reading the display, the user can understand the purpose and what's derived from the data.
             - if the user specification follows up the previous instruction, the 'display_instruction' should only describe how it builds up the previous instruction without repeating information from previous steps.
             - the phrase can be presented in different styles, e.g., question (what's xxx), instruction (show xxx), description, etc.
@@ -60,18 +60,20 @@ Concretely, you should first refine users' goal and then create a Python script 
                 * the column can either be a column in the input data, or a new column that will be computed in the output data.
                 * the mention don't have to be exact match, it can be semantically matching, e.g., if you mentioned "average score" in the text while the column to be computed is "Avg_Score", you should still highlight "**average score**" in the text.
         - determine "output_fields", the desired fields that the output data should have to achieve the user's goal, it's a good idea to include intermediate fields here.
-        - then decide "chart_encodings", which maps visualization channels (x, y, color, size, opacity, facet, etc.) to a subset of "output_fields" that will be visualized,
-            - the "chart_encodings" should be created to support the user's "chart_type".
-            - first, determine whether the user has provided sufficient fields in "chart_encodings" that are needed to achieve their goal:
-                - if the user's "chart_encodings" are sufficient, simply copy it.
-                - if the user didn't provide sufficient fields in "chart_encodings", add missing fields in "chart_encodings" (ordered them based on whether the field will be used in x,y axes or legends);
-                    - "chart_encodings" should only include fields that will be visualized (do not include other intermediate fields from "output_fields")
-                    - when adding new fields to "chart_encodings", be efficient and add only a minimal number of fields that are needed to achive the user's goal.
-                    - generally, the total number of fields in "chart_encodings" should be no more than 3 for x,y,legend.
-                - if the user's "chart_encodings" is sufficient but can be optimized, you can reorder encodings to visualize the data more effectively.
-            - sometimes, user may provide instruction to update visualizations fields they provided. You should leverage the user's goal to resolve the conflict and decide the final "chart_encodings"
-                - e.g., they may mention "use B metric instead" while A metric is in provided fields, in this case, you should update "chart_encodings" to update A metric with B metric.
-            - if the user provides latitude and longitude as visual channels, use "latitude" and "longitude" as visual channels in "chart_encodings" as opposed to "x" and "y".
+        - then decide "chart", which contains "chart_type", "encodings" (mapping visualization channels to output fields), and optional "config" (styling options).
+            - the "encodings" should map visualization channels (x, y, color, size, opacity, facet, etc.) to a subset of "output_fields" that will be visualized.
+            - the "encodings" should be created to support the "chart_type". Available channels depend on chart_type (see [CHART TYPE REFERENCE] below).
+            - first, determine whether the user has provided sufficient fields in "encodings" that are needed to achieve their goal:
+                - if the user's "encodings" are sufficient, simply copy them.
+                - if the user didn't provide sufficient fields in "encodings", add missing fields (ordered them based on whether the field will be used in x,y axes or legends);
+                    - "encodings" should only include fields that will be visualized (do not include other intermediate fields from "output_fields")
+                    - when adding new fields to "encodings", be efficient and add only a minimal number of fields that are needed to achieve the user's goal.
+                    - generally, the total number of fields in "encodings" should be no more than 3 for x,y,legend.
+                - if the user's "encodings" is sufficient but can be optimized, you can reorder encodings to visualize the data more effectively.
+            - sometimes, user may provide instruction to update visualizations fields they provided. You should leverage the user's goal to resolve the conflict and decide the final "encodings"
+                - e.g., they may mention "use B metric instead" while A metric is in provided fields, in this case, you should update "encodings" to update A metric with B metric.
+            - if the user provides latitude and longitude as visual channels, use "latitude" and "longitude" as visual channels in "encodings" as opposed to "x" and "y".
+            - "config" is optional — only include when there's a clear reason for styling options.
         - guide on statistical analysis:
             - when the user asks for forecasting or regression analysis, you should consider the following:
                 - the output should be a long format table where actual x, y pairs and predicted x, y pairs are included in the X, Y columns, they are differentiated with a third column "is_predicted".
@@ -96,15 +98,11 @@ Concretely, you should first refine users' goal and then create a Python script 
     "detailed_instruction": "...", // string, elaborate user instruction with details
     "display_instruction": "...", // string, the short verb phrase describing the users' goal
     "output_fields": [...], // string[], describe the desired output fields that the output data should have based on the user's goal
-    "chart_encodings": {
-        "x": "",
-        "y": "",
-        "color": "",
-        "size": "",
-        "opacity": "",
-        "facet": "",
-        ... // other visualization channels user used
-    }, // object: map visualization channels (x, y, color, size, opacity, facet, etc.) to a subset of "output_fields" that will be visualized
+    "chart": { // object, chart specification for the visualization.
+        "chart_type": "", // string, one of the chart types defined in [CHART TYPE REFERENCE] below.
+        "encodings": {}, // object, map visual channels to output field names. Available channels depend on chart_type (see reference below).
+        "config": {} // object (optional), chart styling options. Available options depend on chart_type (see reference below). Only include when there's a clear reason.
+    },
     "output_variable": "...", // string, the name of the Python variable containing the final result.
                         // Should be descriptive and informative (e.g., "sales_by_region", "monthly_revenue", "top_10_products"),
                         // not generic names like "result_df" or "output". Use snake_case.
@@ -112,11 +110,29 @@ Concretely, you should first refine users' goal and then create a Python script 
 }
 ```
 
+**[CHART TYPE REFERENCE]**
+
+Each chart type specifies: encodings (visual channels → field types), when to use it, data expectations, and optional config.
+
+| chart_type | encodings | config |
+|---|---|---|
+| point | x, y, color, size, opacity, facet | opacity (0.1–1.0) |
+| bar | x, y, color, opacity, facet | cornerRadius (0–15) |
+| group_bar | x, y, color, facet | cornerRadius (0–15) |
+| histogram | x, color, facet | binCount (5–50) |
+| line | x, y, color, opacity, facet | interpolate |
+| area | x, y, color, facet | — |
+| heatmap | x, y, color, facet | colorScheme |
+| boxplot | x, y, color, facet | — |
+| pie | theta, color, facet | innerRadius (0–100) |
+| worldmap | longitude, latitude, color, size | projection, projectionCenter |
+| usmap | longitude, latitude, color, size | — |
+
     2. Then, write a Python script based on the refined goal. The script should transform input data into the desired output table containing all "output_fields" from the refined goal.
 The script should be as simple as possible and easily readable. If there is no data transformation needed based on "output_fields", the script can simply load and assign the data.
 
     3. The output must only contain two items:
-        - a json object (wrapped in ```json```) representing the refined goal (including "detailed_instruction", "output_fields", "chart_encodings", "output_variable" and "reason")
+        - a json object (wrapped in ```json```) representing the refined goal (including "detailed_instruction", "output_fields", "chart", "output_variable" and "reason")
         - a python code block (wrapped in ```python```) representing the transformation script, do not add any extra text explanation.
 
 **Datetime handling notes:**
@@ -217,8 +233,10 @@ Here are 1 dataset with their summaries:
 
 {
     "instruction": "create a scatter plot with seattle and atlanta temperatures on x,y axes, color points by which city is warmer",
-    "chart_type": "scatter",
-    "chart_encodings": {"x": "Seattle Temperature", "y": "Atlanta Temperature", "color": "Warmer City"}
+    "chart": {
+        "chart_type": "point",
+        "encodings": {"x": "Seattle Temperature", "y": "Atlanta Temperature", "color": "Warmer City"}
+    }
 }
 
 [OUTPUT]
@@ -229,7 +247,10 @@ Here are 1 dataset with their summaries:
     "detailed_instruction": "Create a scatter plot to compare Seattle and Atlanta temperatures with Seattle temperatures on the x-axis and Atlanta temperatures on the y-axis. Color the points by which city is warmer.",
     "display_instruction": "Compare **Seattle** and **Atlanta** temperatures",
     "output_fields": ["Date", "Seattle Temperature", "Atlanta Temperature", "Warmer City"],
-    "chart_encodings": {"x": "Seattle Temperature", "y": "Atlanta Temperature", "color": "Warmer City"},
+    "chart": {
+        "chart_type": "point",
+        "encodings": {"x": "Seattle Temperature", "y": "Atlanta Temperature", "color": "Warmer City"}
+    },
     "output_variable": "city_temp_comparison",
     "reason": "To compare Seattle and Atlanta temperatures, we need to pivot the data to have separate temperature columns for each city, then compute which city is warmer."
 }
@@ -295,7 +316,7 @@ class DataTransformationAgent(object):
                 refined_goal = json_blocks[0]
                 output_variable = refined_goal.get('output_variable', 'result_df')
             else:
-                refined_goal = {'chart_encodings': {}, 'instruction': '', 'reason': '', 'output_variable': 'result_df'}
+                refined_goal = {'chart': {'chart_type': '', 'encodings': {}, 'config': {}}, 'instruction': '', 'reason': '', 'output_variable': 'result_df'}
                 output_variable = 'result_df'
 
             code_blocks = extract_code_from_gpt_response(choice.message.content + "\n", "python")

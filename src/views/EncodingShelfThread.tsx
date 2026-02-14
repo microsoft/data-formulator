@@ -108,7 +108,7 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
 
     const theme = useTheme();
     const TIMELINE_WIDTH = 16;
-    const dashedColor = 'rgba(0,0,0,0.15)';
+    const dashedColor = 'rgba(0,0,0,0.4)';
     const dashedWidth = '1px';
     const dashedStyle = 'dashed';
 
@@ -208,33 +208,14 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
 
     let postInstruction : any = "";
     if (chartTrigger) {
-        
         let resultTable = tables.find(t => t.id == chartTrigger!.resultTableId) as DictTable;
-        let leafUserCharts = allCharts.filter(c => c.tableRef == resultTable.id).filter(c => c.source == "user");
-
-        let endChartCards = leafUserCharts.map((c) => {
-            return <Card key={`end-chart-${c.id}`} variant="outlined" className={"hover-card"} 
-                            onClick={() => { 
-                                dispatch(dfActions.setFocusedChart(c.id));
-                                dispatch(dfActions.setFocusedTable(c.tableRef));
-                            }}
-                sx={{padding: '2px 0 2px 0', display: 'flex', alignItems: "left", width: 'fit-content', "& canvas": {'margin': 1}}}>
-                <ChartElementFC chart={c} tableRows={resultTable.rows.slice(0, 100)} tableMetadata={resultTable.metadata} boxWidth={200} boxHeight={160}/>
-            </Card>
-        })
-
         postInstruction = <Collapse orientation="vertical" in={true} sx={{width: "100%"}}>
-            {buildTimelineTableRow(resultTable.id, false, endChartCards.length === 0)}
-            {endChartCards.length > 0 && (
-                <Box sx={{ display: 'flex', flexDirection: 'row' }}>
-                    <Box sx={{ width: TIMELINE_WIDTH, flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                        <Box sx={{ width: 0, flex: '1 1 0', minHeight: 4, borderLeft: `${dashedWidth} ${dashedStyle} ${dashedColor}` }} />
-                    </Box>
-                    <Box sx={{ flex: 1, minWidth: 0, pl: 0.5, py: 0.5, display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                        {endChartCards}
-                    </Box>
+            <Box sx={{ display: 'flex', flexDirection: 'row' }}>
+                <Box sx={{ width: TIMELINE_WIDTH, flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                    <Box sx={{ width: 0, flex: '1 1 0', minHeight: 8, borderLeft: `${dashedWidth} ${dashedStyle} ${dashedColor}` }} />
                 </Box>
-            )}
+            </Box>
+            {buildTimelineTableRow(resultTable.id, false, true)}
         </Collapse>
     }
 

@@ -14,11 +14,7 @@ import { DictTable } from '../components/ComponentType';
 import { DataFormulatorState, dfActions, dfSelectors } from '../app/dfSlice';
 import { useDispatch, useSelector } from 'react-redux';
 import { Type } from '../data/types';
-import { createTableFromFromObjectArray } from '../data/utils';
 import { SelectableDataGrid } from './SelectableDataGrid';
-
-import ParkIcon from '@mui/icons-material/Park';
-import { AnchorIcon } from '../icons';
 
 export interface FreeDataViewProps {
 }
@@ -27,12 +23,9 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView() {
 
     const dispatch = useDispatch();
     const tables = useSelector((state: DataFormulatorState) => state.tables);
-    const theme = useTheme();
     
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
     const focusedTableId = useSelector((state: DataFormulatorState) => state.focusedTableId);
-    const focusedChartId = useSelector((state: DataFormulatorState) => state.focusedChartId);
-    const allCharts = useSelector(dfSelectors.getAllCharts);
 
     useEffect(() => {
         if(focusedTableId == undefined && tables.length > 0) {
@@ -105,7 +98,7 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView() {
         }
 
         return  <Fade in={true} timeout={600} key={targetTable?.id}>
-            <Box sx={{height: 'calc(100% - 28px)'}}>
+            <Box sx={{height: '100%'}}>
                 <SelectableDataGrid
                     tableId={targetTable?.id || ""}
                     tableName={targetTable?.displayId || targetTable?.id || "table"} 
@@ -118,55 +111,8 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView() {
         </Fade>
     }
 
-
-    // Get all predecessors of the focused table (including the focused table itself)
-    const getPredecessors = (tableId: string | undefined): DictTable[] => {
-        if (!tableId) return [];
-        const table = tables.find(t => t.id === tableId);
-        if (!table) return [];
-        
-        const predecessors: DictTable[] = [];
-        const visited = new Set<string>();
-        
-        const traverse = (id: string) => {
-            if (visited.has(id)) return;
-            visited.add(id);
-            
-            const t = tables.find(tbl => tbl.id === id);
-            if (!t) return;
-            
-            // First traverse sources (to get them in order)
-            if (t.derive?.source) {
-                t.derive.source.forEach(sourceId => traverse(sourceId));
-            }
-            
-            predecessors.push(t);
-        };
-        
-        traverse(tableId);
-        return predecessors;
-    };
-
-    // Get the table ID from the focused chart
-    const focusedChart = allCharts.find(c => c.id === focusedChartId);
-    const chartTableId = focusedChart?.tableRef || focusedTableId;
-    
-    const predecessorTables = getPredecessors(chartTableId);
-
-    let genTableLink =  (t: DictTable) => 
-        <Link underline="hover" key={t.id} sx={{cursor: "pointer"}} 
-            color={theme.palette.primary.textColor || theme.palette.primary.main} onClick={()=>{ dispatch(dfActions.setFocusedTable(t.id)) }}>
-            <Typography sx={{fontWeight: t.id === focusedTableId ? "bold" : "inherit", fontSize: 'inherit'}} component='span'>{t.displayId || t.id}</Typography>
-        </Link>;
-
     return (
         <Box sx={{height: "100%", display: "flex", flexDirection: "column", background: "rgba(0,0,0,0.02)"}}>
-
-            <Box sx={{display: 'flex', alignItems: 'center'}}>
-                <Breadcrumbs sx={{fontSize: "12px", margin: "4px 12px"}} separator="›" aria-label="breadcrumb">
-                    {predecessorTables.map(t => genTableLink(t))}
-                </Breadcrumbs>
-            </Box>
             {renderTableBody(tables.find(t => t.id == focusedTableId))}
         </Box>
     );

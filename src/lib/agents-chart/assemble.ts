@@ -290,8 +290,21 @@ function resolveEncodingType(
                 }
                 return 'temporal';
             }
-        case 'ordinal':
+        case 'ordinal': {
+            // Guard against mis-classified continuous measures (e.g. "Index"
+            // assigned to a field like `normalized_fertility_index` whose values
+            // are dense floats).  If the non-null numeric values are mostly
+            // fractional and high-cardinality, treat them as quantitative.
+            const numericVals = fieldValues.filter(v => v != null && !isNaN(+v)).map(Number);
+            if (numericVals.length > 0) {
+                const uniqueCount = new Set(numericVals).size;
+                const hasFractions = numericVals.some(v => v % 1 !== 0);
+                if (hasFractions && uniqueCount > 20) {
+                    return 'quantitative';
+                }
+            }
             return 'ordinal';
+        }
         case 'quantitative':
             return 'quantitative';
         case 'geographic':

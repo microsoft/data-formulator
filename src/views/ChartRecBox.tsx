@@ -494,9 +494,6 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                 rows: t.rows,
                 attached_metadata: t.attachedMetadata
             })),
-            
-            chart_type: "",
-            chart_encodings: {},
 
             extra_prompt: instruction,
             model: activeModel,
@@ -525,8 +522,6 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                             rows: t.rows, 
                             attached_metadata: t.attachedMetadata 
                         }}),
-                    chart_type: "",
-                    chart_encodings: {},
 
                     extra_prompt: instruction,
                     model: activeModel,
@@ -544,9 +539,6 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                             rows: t.rows, 
                             attached_metadata: t.attachedMetadata 
                         }}),
-                        
-                    chart_type: "",
-                    chart_encodings: {},
                     
                     dialog: currentTable.derive?.dialog,
                     latest_data_sample: currentTable.rows.slice(0, 10),

@@ -106,6 +106,11 @@ const DraggableHeader: React.FC<DraggableHeaderProps> = ({
 }) => {
     const theme = useTheme();
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
+    const tables = useSelector((state: DataFormulatorState) => state.tables);
+    
+    // Get semantic type from table metadata
+    const table = tables.find(t => t.id === tableId);
+    const semanticType = table?.metadata?.[columnDef.id]?.semanticType;
     
     // Find the corresponding FieldItem for this column
     // Try to find by name first, then by constructing the ID for original fields
@@ -159,14 +164,13 @@ const DraggableHeader: React.FC<DraggableHeaderProps> = ({
     return (
         <Box 
             className="data-view-header-container" 
-            ref={field ? dragSource : dragPreview}
+            ref={dragPreview}
             sx={{ 
                 backgroundColor: backgroundColor, 
                 borderBottomColor, 
                 borderBottomWidth: '2px', 
                 borderBottomStyle: 'solid',
                 opacity,
-                cursor: cursorStyle,
                 display: 'flex',
                 alignItems: 'center',
                 position: 'relative',
@@ -185,6 +189,7 @@ const DraggableHeader: React.FC<DraggableHeaderProps> = ({
         >
             {/* Main content area - draggable for concepts, using original TableSortLabel structure */}
             <TableSortLabel
+                ref={field ? dragSource : undefined}
                 className="data-view-header-title"
                 sx={{ 
                     display: "flex", 
@@ -209,9 +214,19 @@ const DraggableHeader: React.FC<DraggableHeaderProps> = ({
                 <span role="img" style={{ fontSize: "inherit", padding: "2px", display: "inline-flex", alignItems: "center" }}>
                     {getIconFromType(columnDef.dataType)}
                 </span>
-                <Typography sx={{fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'}}>
-                    {columnDef.label}
-                </Typography>
+                <Tooltip 
+                    title={semanticType ? (
+                        <Typography sx={{ fontSize: 11 }}>
+                            <b>{columnDef.label}</b>: <i>{semanticType}</i>
+                        </Typography>
+                    ) : ''}
+                    arrow
+                    placement="top"
+                >
+                    <Typography sx={{fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'}}>
+                        {columnDef.label}
+                    </Typography>
+                </Tooltip>
             </TableSortLabel>
             {/* Separate sort handler button */}
             <Tooltip title={<Typography sx={{fontSize: 10}}>Sort by <b>{columnDef.label}</b></Typography>}>
