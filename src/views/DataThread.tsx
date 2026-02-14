@@ -438,9 +438,16 @@ const WorkspacePanel: FC<{
 }> = function ({ tables, chartElements, suppressScrollRef, sx }) {
     const theme = useTheme();
     const dispatch = useDispatch();
-    const focusedTableId = useSelector((state: DataFormulatorState) => state.focusedTableId);
-    const focusedChartId = useSelector((state: DataFormulatorState) => state.focusedChartId);
     const charts = useSelector(dfSelectors.getAllCharts);
+    const focusedId = useSelector((state: DataFormulatorState) => state.focusedId);
+    const focusedTableId = React.useMemo(() => {
+        if (!focusedId) return undefined;
+        if (focusedId.type === 'table') return focusedId.tableId;
+        const chartId = focusedId.chartId;
+        const chart = charts.find(c => c.id === chartId);
+        return chart?.tableRef;
+    }, [focusedId, charts]);
+    const focusedChartId = focusedId?.type === 'chart' ? focusedId.chartId : undefined;
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
     const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
     const [agentRulesOpen, setAgentRulesOpen] = useState(false);
@@ -572,15 +579,7 @@ const WorkspacePanel: FC<{
 
                         const handleTableClick = () => {
                             if (suppressScrollRef) suppressScrollRef.current = true;
-                            dispatch(dfActions.setFocusedTable(table.id));
-                            if (tableCharts.length === 0) {
-                                dispatch(dfActions.setFocusedChart(undefined));
-                            } else {
-                                const alreadyFocused = tableCharts.some(ce => ce.chartId === focusedChartId);
-                                if (!alreadyFocused) {
-                                    dispatch(dfActions.setFocusedChart(tableCharts[0].chartId));
-                                }
-                            }
+                            dispatch(dfActions.setFocused({ type: 'table', tableId: table.id }));
                         };
 
                         return (
@@ -656,8 +655,7 @@ const WorkspacePanel: FC<{
 
                                             const handleChartClick = () => {
                                                 if (suppressScrollRef) suppressScrollRef.current = true;
-                                                dispatch(dfActions.setFocusedTable(table.id));
-                                                dispatch(dfActions.setFocusedChart(chart.id));
+                                                dispatch(dfActions.setFocused({ type: 'chart', chartId: chart.id }));
                                             };
 
                                             return (
@@ -777,8 +775,15 @@ let SingleThreadGroupView: FC<{
     let parentTable = (parentTableId ? tableById.get(parentTableId) : undefined) as DictTable;
 
     let charts = useSelector(dfSelectors.getAllCharts);
-    let focusedChartId = useSelector((state: DataFormulatorState) => state.focusedChartId);
-    let focusedTableId = useSelector((state: DataFormulatorState) => state.focusedTableId);
+    let focusedId = useSelector((state: DataFormulatorState) => state.focusedId);
+    let focusedChartId = focusedId?.type === 'chart' ? focusedId.chartId : undefined;
+    let focusedTableId = useMemo(() => {
+        if (!focusedId) return undefined;
+        if (focusedId.type === 'table') return focusedId.tableId;
+        const chartId = focusedId.chartId;
+        const chart = charts.find(c => c.id === chartId);
+        return chart?.tableRef;
+    }, [focusedId, charts]);
     let agentActions = useSelector((state: DataFormulatorState) => state.agentActions);
 
     // Pre-index running agent table IDs for O(1) lookup
@@ -1089,7 +1094,7 @@ let SingleThreadGroupView: FC<{
                             backgroundColor: alpha(theme.palette.primary.light, 0.1),
                         },
                     }} 
-                    onClick={() => { dispatch(dfActions.setFocusedTable(tableId)) }}>
+                    onClick={() => { dispatch(dfActions.setFocused({ type: 'table', tableId })) }}>
                     {table.displayId || tableId}
                 </Typography>
             ),
@@ -1846,8 +1851,17 @@ function chooseBestColumnLayout(
 export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
 
     let tables = useSelector((state: DataFormulatorState) => state.tables);
-    let focusedTableId = useSelector((state: DataFormulatorState) => state.focusedTableId);
+    let focusedId = useSelector((state: DataFormulatorState) => state.focusedId);
     let charts = useSelector(dfSelectors.getAllCharts);
+
+    // Derive focusedTableId from focusedId for scroll/highlight logic
+    let focusedTableId = useMemo(() => {
+        if (!focusedId) return undefined;
+        if (focusedId.type === 'table') return focusedId.tableId;
+        const chartId = focusedId.chartId;
+        const chart = charts.find(c => c.id === chartId);
+        return chart?.tableRef;
+    }, [focusedId, charts]);
 
     let chartSynthesisInProgress = useSelector((state: DataFormulatorState) => state.chartSynthesisInProgress);
 
@@ -1906,8 +1920,7 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
                 table={table}
                 status={status}
                 onChartClick={() => {
-                    dispatch(dfActions.setFocusedChart(chart.id));
-                    dispatch(dfActions.setFocusedTable(table.id));
+                    dispatch(dfActions.setFocused({ type: 'chart', chartId: chart.id }));
                 }}
                 onDelete={() => {dispatch(dfActions.deleteChartById(chart.id))}}
             />;

@@ -79,7 +79,7 @@ export interface ChartTemplateDef {
      */
     buildEncodings: (spec: any, encodings: Record<string, any>) => void;
     /** Optional post-processor to finalize the spec */
-    postProcessor?: (vgSpec: any, table: any[], config?: Record<string, any>, canvasSize?: { width: number; height: number }) => any;
+    postProcessor?: (vgSpec: any, table: any[], config?: Record<string, any>, canvasSize?: { width: number; height: number }, semanticTypes?: Record<string, string>) => any;
     /** Optional configurable properties for the chart type */
     properties?: ChartPropertyDef[];
 }

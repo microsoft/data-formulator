@@ -42,13 +42,14 @@ import chartIconDensity from '../assets/chart-icon-density.svg';
 import chartIconLollipop from '../assets/chart-icon-lollipop.svg';
 import chartIconPie from '../assets/chart-icon-pie-min.png';
 import chartIconUSMap from '../assets/chart-icon-us-map-min.png';
-import chartIconPyramid from '../assets/chart-icon-pyramid-min.png';
+import chartIconPyramid from '../assets/chart-icon-pyramid.svg';
 import chartIconWorldMap from '../assets/chart-icon-world-map-min.png';
 import chartIconDotPlotVertical from '../assets/chart-icon-dot-plot-vertical-min.png';
 import chartIconCandlestick from '../assets/chart-icon-candlestick.svg';
 import chartIconWaterfall from '../assets/chart-icon-waterfall.svg';
 import chartIconStripPlot from '../assets/chart-icon-strip-plot.svg';
 import chartIconRadar from '../assets/chart-icon-radar.svg';
+import chartIconBump from '../assets/chart-icon-bump.svg';
 
 // Chart Icon Component using static imports
 const ChartIcon: React.FC<{ src: string; alt?: string }> = ({ src, alt = "" }) => {
@@ -76,6 +77,7 @@ const CHART_ICONS: Record<string, any> = {
     "Pie Chart": <ChartIcon src={chartIconPie} />,
     "Line Chart": <ChartIcon src={chartIconLine} />,
     "Dotted Line Chart": <ChartIcon src={chartIconDottedLine} />,
+    "Bump Chart": <ChartIcon src={chartIconBump} />,
     "Area Chart": <ChartIcon src={chartIconArea} />,
     "Streamgraph": <ChartIcon src={chartIconStreamgraph} />,
     "Lollipop Chart": <ChartIcon src={chartIconLollipop} />,

@@ -58,6 +58,11 @@ export interface ModelConfig {
 }
 
 
+export type FocusedId = 
+    | { type: 'table'; tableId: string }
+    | { type: 'chart'; chartId: string }
+    | undefined;
+
 export interface ClientConfig {
     formulateTimeoutSeconds: number;
     defaultChartWidth: number;
@@ -99,8 +104,7 @@ export interface DataFormulatorState {
 
     focusedDataCleanBlockId: {blockId: string, itemId: number} | undefined;
 
-    focusedTableId: string | undefined;
-    focusedChartId: string | undefined;
+    focusedId: FocusedId;
 
     viewMode: 'editor' | 'report';
 
@@ -153,8 +157,7 @@ const initialState: DataFormulatorState = {
     displayedMessageIdx: -1,
 
     focusedDataCleanBlockId: undefined,
-    focusedTableId: undefined,
-    focusedChartId: undefined,
+    focusedId: undefined,
 
     viewMode: 'editor',
 
@@ -219,19 +222,20 @@ export function cleanupVirtualTablesFromWorkspace(tables: DictTable[]) {
 // Helper function to auto-populate latitude/longitude encodings for map charts
 let deleteChartsRoutine = (state: DataFormulatorState, chartIds: string[]) => {
     let charts = state.charts.filter(c => !chartIds.includes(c.id));
-    let focusedChartId = state.focusedChartId;
+    let currentFocusedChartId = state.focusedId?.type === 'chart' ? state.focusedId.chartId : undefined;
 
-    if (focusedChartId && chartIds.includes(focusedChartId)) {
+    if (currentFocusedChartId && chartIds.includes(currentFocusedChartId)) {
         let leafCharts = charts;
-        focusedChartId = leafCharts.length > 0 ? leafCharts[0].id : undefined;
-
-        state.focusedTableId = charts.find(c => c.id == focusedChartId)?.tableRef;
+        if (leafCharts.length > 0) {
+            state.focusedId = { type: 'chart', chartId: leafCharts[0].id };
+        } else {
+            state.focusedId = undefined;
+        }
     }
     state.chartSynthesisInProgress = state.chartSynthesisInProgress.filter(s => !chartIds.includes(s));
 
     // update focusedChart and activeThreadChart
     state.charts = charts;
-    state.focusedChartId = focusedChartId;
 
     let unrefedDerivedTableIds = getUnrefedDerivedTableIds(state);
     let tableIdsToDelete = state.tables.filter(t => !t.anchored && unrefedDerivedTableIds.includes(t.id)).map(t => t.id);
@@ -418,8 +422,7 @@ export const dataFormulatorSlice = createSlice({
 
             state.focusedDataCleanBlockId = undefined;
 
-            state.focusedTableId = undefined;
-            state.focusedChartId = undefined;
+            state.focusedId = undefined;
 
             state.viewMode = 'editor';
 
@@ -456,8 +459,12 @@ export const dataFormulatorSlice = createSlice({
                 charts: saved.charts || [],
                 conceptShelfItems: saved.conceptShelfItems || [],
                 focusedDataCleanBlockId: saved.focusedDataCleanBlockId || undefined,
-                focusedTableId: saved.focusedTableId || undefined,
-                focusedChartId: saved.focusedChartId || undefined,
+                // Migrate from old focusedTableId/focusedChartId to new focusedId
+                focusedId: saved.focusedId || (
+                    saved.focusedChartId ? { type: 'chart' as const, chartId: saved.focusedChartId } :
+                    saved.focusedTableId ? { type: 'table' as const, tableId: saved.focusedTableId } :
+                    undefined
+                ),
                 config: { ...initialState.config, ...(saved.config || {}) },
                 dataCleanBlocks: saved.dataCleanBlocks || [],
                 agentActions: saved.agentActions || [],
@@ -527,8 +534,7 @@ export const dataFormulatorSlice = createSlice({
             state.charts = [...state.charts];
             state.conceptShelfItems = [...state.conceptShelfItems, ...getDataFieldItems(table)];
 
-            state.focusedTableId = table.id;
-            state.focusedChartId = undefined;
+            state.focusedId = { type: 'table', tableId: table.id };
         },
         deleteTable: (state, action: PayloadAction<string>) => {
             let tableId = action.payload;
@@ -579,6 +585,11 @@ export const dataFormulatorSlice = createSlice({
             // Delete charts that refer to this table
             let chartIdsToDelete = state.charts.filter(c => c.tableRef == tableId).map(c => c.id);
             deleteChartsRoutine(state, chartIdsToDelete);
+
+            // If the deleted table was focused, reset focus
+            if (state.focusedId?.type === 'table' && state.focusedId.tableId === tableId) {
+                state.focusedId = state.tables.length > 0 ? { type: 'table', tableId: state.tables[0].id } : undefined;
+            }
         },
         updateTableAnchored: (state, action: PayloadAction<{tableId: string, anchored: boolean}>) => {
             let tableId = action.payload.tableId;
@@ -756,8 +767,7 @@ export const dataFormulatorSlice = createSlice({
             }
             
             state.charts = [ freshChart , ...state.charts];
-            state.focusedTableId = tableId;
-            state.focusedChartId = freshChart.id;
+            state.focusedId = { type: 'chart', chartId: freshChart.id };
         },
         addChart: (state, action: PayloadAction<Chart>) => {
             let chart = action.payload;
@@ -766,7 +776,7 @@ export const dataFormulatorSlice = createSlice({
         addAndFocusChart: (state, action: PayloadAction<Chart>) => {
             let chart = action.payload;
             state.charts = [chart, ...state.charts];
-            state.focusedChartId = chart.id;
+            state.focusedId = { type: 'chart', chartId: chart.id };
         },
         duplicateChart: (state, action: PayloadAction<string>) => {
             let chartId = action.payload;
@@ -775,7 +785,7 @@ export const dataFormulatorSlice = createSlice({
             chartCopy = { ...chartCopy, saved: false }
             chartCopy.id = `chart-${Date.now()- Math.floor(Math.random() * 10000)}`;
             state.charts.push(chartCopy);
-            state.focusedChartId = chartCopy.id;
+            state.focusedId = { type: 'chart', chartId: chartCopy.id };
         },
         saveUnsaveChart: (state, action: PayloadAction<string>) => {
             let chartId = action.payload;
@@ -1014,19 +1024,15 @@ export const dataFormulatorSlice = createSlice({
         setDisplayedMessageIndex: (state, action: PayloadAction<number>) => {
             state.displayedMessageIdx = action.payload
         },
-        setFocusedTable: (state, action: PayloadAction<string | undefined>) => {
-            state.focusedTableId = action.payload;
+        setFocused: (state, action: PayloadAction<FocusedId>) => {
+            state.focusedId = action.payload;
+
+            if (action.payload?.type === 'chart' && state.viewMode == 'report') {
+                state.viewMode = 'editor';
+            }
         },
         setFocusedDataCleanBlockId: (state, action: PayloadAction<{blockId: string, itemId: number} | undefined>) => {
             state.focusedDataCleanBlockId = action.payload;
-        },
-        setFocusedChart: (state, action: PayloadAction<string | undefined>) => {
-            let chartId = action.payload;
-            state.focusedChartId = chartId;
-
-            if (state.viewMode == 'report') {
-                state.viewMode = 'editor';
-            }
         },
         changeChartRunningStatus: (state, action: PayloadAction<{chartId: string, status: boolean}>) => {
             if (action.payload.status) {
@@ -1283,10 +1289,21 @@ export const dfSelectors = {
     getActiveModel: (state: DataFormulatorState) : ModelConfig => {
         return state.models.find(m => m.id == state.selectedModelId) || state.models[0];
     },
+    getEffectiveTableId: (state: DataFormulatorState): string | undefined => {
+        if (!state.focusedId) return undefined;
+        if (state.focusedId.type === 'table') return state.focusedId.tableId;
+        // type === 'chart': derive table from the chart's tableRef
+        let allCharts = dfSelectors.getAllCharts(state);
+        let chart = allCharts.find(c => c.id === (state.focusedId as { type: 'chart'; chartId: string }).chartId);
+        return chart?.tableRef;
+    },
+    getFocusedChartId: (state: DataFormulatorState): string | undefined => {
+        return state.focusedId?.type === 'chart' ? state.focusedId.chartId : undefined;
+    },
     getActiveBaseTableIds: (state: DataFormulatorState) => {
-        let focusedTableId = state.focusedTableId;
+        let effectiveTableId = dfSelectors.getEffectiveTableId(state);
         let tables = state.tables;
-        let focusedTable = tables.find(t => t.id == focusedTableId);
+        let focusedTable = tables.find(t => t.id == effectiveTableId);
         let sourceTables = focusedTable?.derive?.source || [focusedTable?.id];
         return sourceTables;
     },

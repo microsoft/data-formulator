@@ -566,7 +566,7 @@ export function assembleChart(
 
     // --- Post-processor ---
     if (chartTemplate.postProcessor) {
-        const processed = chartTemplate.postProcessor(vgObj, data, chartProperties, canvasSize);
+        const processed = chartTemplate.postProcessor(vgObj, data, chartProperties, canvasSize, semanticTypes);
         if (processed) Object.assign(vgObj, processed === vgObj ? {} : {}, processed !== vgObj ? processed : {});
     }
 

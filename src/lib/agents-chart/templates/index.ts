@@ -15,6 +15,7 @@ import { ChartTemplateDef } from '../types';
 import { scatterPlotDef, linearRegressionDef, rangedDotPlotDef, boxplotDef } from './scatter';
 import { barChartDef, pyramidChartDef, groupedBarChartDef, stackedBarChartDef, histogramDef, heatmapDef } from './bar';
 import { lineChartDef, dottedLineChartDef } from './line';
+import { bumpChartDef } from './bump';
 import { areaChartDef, streamgraphDef } from './area';
 import { pieChartDef } from './pie';
 import { lollipopChartDef } from './lollipop';
@@ -33,7 +34,7 @@ import { customPointDef, customLineDef, customBarDef, customRectDef, customAreaD
 export const chartTemplateDefs: { [key: string]: ChartTemplateDef[] } = {
     "Scatter & Point":  [scatterPlotDef, linearRegressionDef, boxplotDef, stripPlotDef],
     "Bar":              [barChartDef, groupedBarChartDef, stackedBarChartDef, histogramDef, lollipopChartDef, pyramidChartDef],
-    "Line & Area":      [lineChartDef, dottedLineChartDef, areaChartDef, streamgraphDef],
+    "Line & Area":      [lineChartDef, dottedLineChartDef, bumpChartDef, areaChartDef, streamgraphDef],
     "Part-to-Whole":    [pieChartDef, heatmapDef, waterfallChartDef],
     "Statistical":      [densityPlotDef, rangedDotPlotDef, radarChartDef, candlestickChartDef],
     "Map":              [usMapDef, worldMapDef],

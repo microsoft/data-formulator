@@ -251,11 +251,15 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
     // Use the provided tableId and find additional available tables for multi-table operations
     const currentTable = tables.find(t => t.id === tableId);
 
-    const availableTables = tables.filter(t => t.derive === undefined || t.anchored);
-  
-    // Combine the main tableId with additional selected tables
-    let selectedTableIds = currentTable?.derive ? [...currentTable.derive.source] : [tableId];
-    selectedTableIds = [...selectedTableIds, ...availableTables.map(t => t.id).filter(id => !selectedTableIds.includes(id))];
+    // All root/anchored tables, with current source tables ordered first for context priority
+    const rootTables = tables.filter(t => t.derive === undefined || t.anchored);
+    const priorityIds = (currentTable?.derive && !currentTable.anchored)
+        ? currentTable.derive.source
+        : [tableId];
+    let selectedTableIds = [
+        ...priorityIds.filter(id => rootTables.some(t => t.id === id)),
+        ...rootTables.map(t => t.id).filter(id => !priorityIds.includes(id))
+    ];
     
     // Function to get a question from the list with cycling
     const getQuestion = (): string => {
@@ -655,8 +659,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                         // Create and focus the new chart directly
                         if (focusNextChartRef.current || AUTO_FOCUS_NEW_CHART) {
                             focusNextChartRef.current = false;  // Immediate, synchronous update
-                            dispatch(dfActions.setFocusedChart(newChart.id));
-                            dispatch(dfActions.setFocusedTable(candidateTable.id));
+                            dispatch(dfActions.setFocused({ type: 'chart', chartId: newChart.id }));
                         }
 
                         // Auto-generate chart insight after rendering
@@ -869,8 +872,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                     dispatch(dfActions.addChart(newChart));
                     if (focusNextChartRef.current || AUTO_FOCUS_NEW_CHART) {
                         focusNextChartRef.current = false;  // Immediate, synchronous update
-                        dispatch(dfActions.setFocusedChart(newChart.id));
-                        dispatch(dfActions.setFocusedTable(candidateTable.id));
+                        dispatch(dfActions.setFocused({ type: 'chart', chartId: newChart.id }));
                     }
                 }
                 
@@ -1050,9 +1052,6 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
         });
     };
 
-    const showTableSelector = availableTables.length > 1 && currentTable;
-
-    
     return (
         <Box sx={{ maxWidth: "600px", display: 'flex', flexDirection: 'column', ...sx }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>

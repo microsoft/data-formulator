@@ -490,7 +490,8 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
     let tables = useSelector((state: DataFormulatorState) => state.tables);
     
     let charts = useSelector(dfSelectors.getAllCharts);
-    let focusedChartId = useSelector((state: DataFormulatorState) => state.focusedChartId);
+    let focusedId = useSelector((state: DataFormulatorState) => state.focusedId);
+    let focusedChartId = focusedId?.type === 'chart' ? focusedId.chartId : undefined;
     let chartSynthesisInProgress = useSelector((state: DataFormulatorState) => state.chartSynthesisInProgress) || [];
 
     let synthesisRunning = focusedChartId ? chartSynthesisInProgress.includes(focusedChartId) : false;
@@ -1215,8 +1216,15 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
 export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView({ }) {
 
     let allCharts = useSelector(dfSelectors.getAllCharts);
-    let focusedChartId = useSelector((state: DataFormulatorState) => state.focusedChartId);
-    let focusedTableId = useSelector((state: DataFormulatorState) => state.focusedTableId);
+    let focusedId = useSelector((state: DataFormulatorState) => state.focusedId);
+    let focusedChartId = focusedId?.type === 'chart' ? focusedId.chartId : undefined;
+    let focusedTableId = React.useMemo(() => {
+        if (!focusedId) return undefined;
+        if (focusedId.type === 'table') return focusedId.tableId;
+        const chartId = focusedId.chartId;
+        const chart = allCharts.find(c => c.id === chartId);
+        return chart?.tableRef;
+    }, [focusedId, allCharts]);
     let chartSynthesisInProgress = useSelector((state: DataFormulatorState) => state.chartSynthesisInProgress) || [];
 
     const dispatch = useDispatch();
@@ -1226,34 +1234,39 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
 
     // when there is no result and synthesis is running, just show the waiting panel
     if (!focusedChart || focusedChart?.chartType == "?") {
-        let chartSelectionBox = <Box sx={{display: "flex", flexDirection: "row", width: '666px', flexWrap: "wrap"}}> 
+        let chartSelectionBox = <Box sx={{ display: "flex", flexDirection: "row", flexWrap: "wrap", gap: 2 }}>
             {Object.entries(CHART_TEMPLATES)
-                .flatMap(([cls, templates]) => templates.map((t, index) => ({ ...t, group: cls, index })))
-                .filter(t => t.chart != "Auto")
-                .map((t, globalIndex) =>
-                {
-                    return <Button 
-                        disabled={synthesisRunning}
-                        key={`${t.group}-${t.index}-${t.chart}-btn`}
-                        sx={{margin: '2px', padding:'2px', display:'flex', flexDirection: 'column', 
-                                textTransform: 'none', justifyContent: 'flex-start'}}
-                        onClick={() => { 
-                            let focusedChart = allCharts.find(c => c.id == focusedChartId);
-                            if (focusedChart?.chartType == "?") { 
-                                dispatch(dfActions.updateChartType({chartType: t.chart, chartId: focusedChartId as string}));
-                            } else {
-                                dispatch(dfActions.createNewChart({chartType: t.chart, tableId: focusedTableId as string}));
-                            }
-                        }}
-                    >
-                        <Box sx={{opacity: synthesisRunning ? 0.5 : 1, width: 48, height: 48, display: 'flex', alignItems: 'center', justifyContent: 'center'}} >
-                            {typeof t?.icon == 'string' ? <img height="48px" width="48px" src={t?.icon} alt="" role="presentation" /> : t.icon}
-                        </Box>
-                        <Typography sx={{marginLeft: "2px", whiteSpace: "initial", fontSize: '10px', width: '64px'}} >{t?.chart}</Typography>
-                    </Button>
-                }
-            )}
-            </Box>
+                .filter(([category, templates]) => category !== "Custom" && templates.some(t => t.chart !== "Auto"))
+                .map(([category, templates]) => (
+                    <Box key={category} sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                        {templates
+                            .filter(t => t.chart !== "Auto")
+                            .map((t, index) => (
+                                <Button
+                                    disabled={synthesisRunning}
+                                    key={`${category}-${index}-${t.chart}-btn`}
+                                    sx={{ margin: '1px', padding: '2px', display: 'flex', flexDirection: 'row',
+                                        textTransform: 'none', justifyContent: 'flex-start', minWidth: 0, width: '100%' }}
+                                    onClick={() => {
+                                        let focusedChart = allCharts.find(c => c.id == focusedChartId);
+                                        if (focusedChart?.chartType == "?") {
+                                            dispatch(dfActions.updateChartType({ chartType: t.chart, chartId: focusedChartId as string }));
+                                        } else {
+                                            dispatch(dfActions.createNewChart({ chartType: t.chart, tableId: focusedTableId as string }));
+                                        }
+                                    }}
+                                >
+                                    <Box sx={{ opacity: synthesisRunning ? 0.5 : 1, width: 40, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                        {typeof t?.icon == 'string' ? <img height="40px" width="40px" src={t?.icon} alt="" role="presentation" /> : t.icon}
+                                    </Box>
+                                    <Typography sx={{ ml: '4px', whiteSpace: "nowrap", fontSize: '10px', lineHeight: 1.2 }}>{t?.chart}</Typography>
+                                </Button>
+                            ))
+                        }
+                    </Box>
+                ))
+            }
+        </Box>
         return (
             <Box sx={{  margin: "auto" }}>
                 {focusedTableId ? <ChartRecBox sx={{margin: 'auto'}} tableId={focusedTableId as string} placeHolderChartId={focusedChartId as string} /> : null}

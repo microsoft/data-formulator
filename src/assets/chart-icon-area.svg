@@ -2,12 +2,12 @@
   <!-- Gray area (bottom series) -->
   <path d="M48,216 L48,180 L95,165 L135,178 L175,160 L210,170 L236,158
            L236,216 Z"
-        fill="#B8B8B8"/>
+        fill="#B8B8B8" stroke="#363636" stroke-width="2" stroke-linejoin="round"/>
 
   <!-- Blue area (top series) -->
   <path d="M48,180 L75,145 L105,115 L135,130 L165,105 L195,80 L220,60 L236,72
            L236,158 L210,170 L175,160 L135,178 L95,165 L48,180 Z"
-        fill="#76c6ff"/>
+        fill="#76c6ff" stroke="#363636" stroke-width="2" stroke-linejoin="round"/>
 
   <!-- Y-axis -->
   <line x1="48" y1="28" x2="48" y2="220" stroke="#363636" stroke-width="4" stroke-linecap="round"/>

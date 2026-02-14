@@ -49,7 +49,7 @@ import { useDataRefresh, useDerivedTableRefresh } from '../app/useDataRefresh';
 export const DataFormulatorFC = ({ }) => {
 
     const tables = useSelector((state: DataFormulatorState) => state.tables);
-    const focusedTableId = useSelector((state: DataFormulatorState) => state.focusedTableId);
+    const focusedId = useSelector((state: DataFormulatorState) => state.focusedId);
     const models = useSelector((state: DataFormulatorState) => state.models);
     const selectedModelId = useSelector((state: DataFormulatorState) => state.selectedModelId);
     const viewMode = useSelector((state: DataFormulatorState) => state.viewMode);
@@ -193,7 +193,7 @@ export const DataFormulatorFC = ({ }) => {
                 <Allotment.Pane minSize={200} >
                 {visPaneMain}
                 </Allotment.Pane>
-                <Allotment.Pane minSize={120} preferredSize={200}>
+                <Allotment.Pane minSize={0} preferredSize={180}>
                     <Box className="table-box">
                         <FreeDataViewFC />
                     </Box>
@@ -236,7 +236,7 @@ export const DataFormulatorFC = ({ }) => {
                         pointerEvents: 'none',
                     }}>
                         <ChartRecBox
-                            tableId={focusedTableId || tables[0]?.id || ''}
+                            tableId={(focusedId?.type === 'table' ? focusedId.tableId : undefined) || tables[0]?.id || ''}
                             sx={{
                                 pointerEvents: 'auto',
                                 maxWidth: '100%',

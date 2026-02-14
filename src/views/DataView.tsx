@@ -11,7 +11,7 @@ import { alpha } from '@mui/material/styles';
 import '../scss/DataView.scss';
 
 import { DictTable } from '../components/ComponentType';
-import { DataFormulatorState, dfActions, dfSelectors } from '../app/dfSlice';
+import { DataFormulatorState, dfActions, dfSelectors, FocusedId } from '../app/dfSlice';
 import { useDispatch, useSelector } from 'react-redux';
 import { Type } from '../data/types';
 import { SelectableDataGrid } from './SelectableDataGrid';
@@ -25,11 +25,22 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView() {
     const tables = useSelector((state: DataFormulatorState) => state.tables);
     
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
-    const focusedTableId = useSelector((state: DataFormulatorState) => state.focusedTableId);
+    const focusedId = useSelector((state: DataFormulatorState) => state.focusedId);
+    const allCharts = useSelector(dfSelectors.getAllCharts);
+
+    // Derive the table to display based on focusedId
+    const focusedTableId = React.useMemo(() => {
+        if (!focusedId) return undefined;
+        if (focusedId.type === 'table') return focusedId.tableId;
+        // Chart focused: show the chart's backing table
+        const chartId = focusedId.chartId;
+        const chart = allCharts.find(c => c.id === chartId);
+        return chart?.tableRef;
+    }, [focusedId, allCharts]);
 
     useEffect(() => {
-        if(focusedTableId == undefined && tables.length > 0) {
-            dispatch(dfActions.setFocusedTable(tables[0].id))
+        if(focusedId == undefined && tables.length > 0) {
+            dispatch(dfActions.setFocused({ type: 'table', tableId: tables[0].id }))
         }
     }, [tables])
 

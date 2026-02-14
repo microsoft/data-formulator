@@ -253,14 +253,7 @@ export let buildTableCard = (props: BuildTableCardProps) => {
                 }}
                 onClick={(event) => {
                     event.stopPropagation();
-                    dispatch(dfActions.setFocusedTable(tableId));
-                    
-                    // Find and set the first chart associated with this table
-                    let firstRelatedChart = charts.find((c: Chart) => c.tableRef == tableId && c.source != "trigger");
-                    
-                    if (firstRelatedChart) {
-                        dispatch(dfActions.setFocusedChart(firstRelatedChart.id));
-                    }
+                    dispatch(dfActions.setFocused({ type: 'table', tableId }));
                 }}
             >
                 <Stack direction="row" sx={{ marginLeft: 0.25, marginRight: 'auto', fontSize: 12 }} alignItems="center" gap={"2px"}>
@@ -307,13 +300,7 @@ export let buildTableCard = (props: BuildTableCardProps) => {
                 borderRadius: '6px',
                 }}
             onClick={() => {
-                dispatch(dfActions.setFocusedTable(tableId));
-                if (focusedChart?.tableRef != tableId) {
-                    let firstRelatedChart = charts.find((c: Chart) => c.tableRef == tableId && c.source != 'trigger');
-                    if (firstRelatedChart) {
-                        dispatch(dfActions.setFocusedChart(firstRelatedChart.id));
-                    }
-                }
+                dispatch(dfActions.setFocused({ type: 'table', tableId }));
             }}>
             <Box sx={{ margin: '0px', display: 'flex' }}>
                 <Stack direction="row" sx={{ marginLeft: 0.5, marginRight: 'auto', fontSize: 12 }} alignItems="center" gap={"2px"}>
@@ -349,8 +336,7 @@ export let buildTableCard = (props: BuildTableCardProps) => {
                             } }}
                             onClick={(event) => {
                                 event.stopPropagation();
-                                dispatch(dfActions.setFocusedTable(tableId));
-                                dispatch(dfActions.setFocusedChart(undefined));
+                                dispatch(dfActions.setFocused({ type: 'table', tableId }));
                             }}
                         >   
                             <AddchartIcon fontSize="small" sx={{ fontSize: 18 }} color='primary'/>

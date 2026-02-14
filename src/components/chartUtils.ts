@@ -442,7 +442,8 @@ function getRecommendation(chartType: string, tv: InternalTableView): Record<str
         }
 
         case 'Line Chart':
-        case 'Dotted Line Chart': {
+        case 'Dotted Line Chart':
+        case 'Bump Chart': {
             const xField = pickSeriesAxis(tv, used);
             const yField = pickQuantitative(tv, used);
             if (!xField || !yField) return {};

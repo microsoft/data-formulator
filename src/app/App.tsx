@@ -761,7 +761,7 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
     const dispatch = useDispatch<AppDispatch>();
     const viewMode = useSelector((state: DataFormulatorState) => state.viewMode);
     const generatedReports = useSelector((state: DataFormulatorState) => state.generatedReports);
-    const focusedTableId = useSelector((state: DataFormulatorState) => state.focusedTableId);
+    const focusedId = useSelector((state: DataFormulatorState) => state.focusedId);
     const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
     const rawPaletteKey = useSelector((state: DataFormulatorState) => state.config.paletteKey);
     const activePaletteKey = (rawPaletteKey && palettes[rawPaletteKey]) ? rawPaletteKey : defaultPaletteKey;
@@ -992,7 +992,7 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
                 </Box>
                 {isAppPage && (
                     <Box sx={{ display: 'flex', ml: 'auto', fontSize: 14 }}>
-                        {focusedTableId !== undefined && <React.Fragment><ToggleButtonGroup
+                        {focusedId !== undefined && <React.Fragment><ToggleButtonGroup
                             value={viewMode}
                             exclusive
                             onChange={(_, newMode) => {

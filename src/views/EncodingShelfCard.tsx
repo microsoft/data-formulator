@@ -76,31 +76,7 @@ export interface EncodingShelfCardProps {
     noBorder?: boolean;
 }
 
-let selectBaseTables = (activeFields: FieldItem[], currentTable: DictTable, tables: DictTable[]) : DictTable[] => {
-    
-    let baseTables: DictTable[] = [];
 
-    // if the current table is derived from other tables, then we need to add those tables to the base tables
-    if (currentTable.derive && !currentTable.anchored) {
-        baseTables = currentTable.derive.source.map(t => tables.find(t2 => t2.id == t) as DictTable);
-    } else {
-        baseTables.push(currentTable);
-    }
-
-    // if there is no active fields at all!!
-    if (activeFields.length == 0) {
-        return baseTables;
-    } else {
-        // find what are other tables that was used to derive the active fields
-        let relevantTableIds = [...new Set(activeFields.filter(t => t.source != "custom").map(t => t.tableRef))];
-        // find all tables that contains the active original fields
-        let tablesToAdd = tables.filter(t => relevantTableIds.includes(t.id));
-
-        baseTables.push(...tablesToAdd.filter(t => !baseTables.map(t2 => t2.id).includes(t.id)));
-    }
-
-    return baseTables;
-}
 
 // Add this utility function before the TriggerCard component
 export const renderTextWithEmphasis = (text: string, highlightChipSx?: SxProps<Theme>) => {
@@ -148,8 +124,7 @@ export const TriggerCard: FC<{
 
     let handleClick = () => {
         if (trigger.chart) {
-            dispatch(dfActions.setFocusedChart(trigger.chart.id));
-            dispatch(dfActions.setFocusedTable(trigger.chart.tableRef));
+            dispatch(dfActions.setFocused({ type: 'chart', chartId: trigger.chart.id }));
         }
     }
 
@@ -345,12 +320,14 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
     // check if the current table contains all fields already exists a table that fullfills the user's specification
     let existsWorkingTable = activeFields.length == 0 || activeFields.every(f => currentTable.names.includes(f.name));
     
-    // this is the base tables that will be used to derive the new data
-    // this is the bare minimum tables that are required to derive the new data, based fields that will be used
-    let requiredActionTables = selectBaseTables(activeFields, currentTable, tables);
+    // All root/anchored tables, with current source tables ordered first for context priority
+    let rootTables = tables.filter(t => t.derive === undefined || t.anchored);
+    let priorityIds = (currentTable.derive && !currentTable.anchored)
+        ? currentTable.derive.source
+        : [currentTable.id];
     let actionTableIds = [
-        ...requiredActionTables.map(t => t.id),
-        ...tables.filter(t => t.derive === undefined || t.anchored).map(t => t.id).filter(id => !requiredActionTables.map(t => t.id).includes(id))
+        ...priorityIds.filter(id => rootTables.some(t => t.id === id)),
+        ...rootTables.map(t => t.id).filter(id => !priorityIds.includes(id))
     ];
 
     let getIdeasForVisualization = async () => {
@@ -579,56 +556,44 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
         let engine = getUrls().DERIVE_DATA;
 
         if (currentTable.derive?.dialog && !currentTable.anchored) {
-            let sourceTableIds = currentTable.derive?.source;
-
-            let startNewDialog = (!sourceTableIds.every(id => actionTableIds.includes(id)) || 
-                !actionTableIds.every(id => sourceTableIds.includes(id))) || mode === 'ideate';
-
-            // Compare if source and base table IDs are different
-            if (startNewDialog) {
-
-                console.log("start new dialog", startNewDialog);
-                
-                let additionalMessages = currentTable.derive.dialog;
-
-                // in this case, because table ids has changed, we need to use the additional messages and reformulate
+            if (mode === 'ideate') {
+                // Ideate mode: start fresh with prior dialog as additional context
                 messageBody = JSON.stringify({
                     token: token,
                     mode,
-                    input_tables: actionTables.map(t => {
-                        return { 
-                            name: t.virtual?.tableId || t.id.replace(/\.[^/.]+$/ , ""), 
-                            rows: t.rows, 
-                            attached_metadata: t.attachedMetadata,
-                        }}),
+                    input_tables: actionTables.map(t => ({
+                        name: t.virtual?.tableId || t.id.replace(/\.[^/.]+$/ , ""),
+                        rows: t.rows,
+                        attached_metadata: t.attachedMetadata,
+                    })),
                     extra_prompt: instruction,
                     model: activeModel,
-                    additional_messages: additionalMessages,
+                    additional_messages: currentTable.derive.dialog,
                     agent_coding_rules: agentRules.coding,
                     current_visualization: currentVisualization,
                     expected_visualization: expectedVisualization,
                 });
                 engine = getUrls().DERIVE_DATA;
             } else {
+                // Refine mode: continue the existing dialog
                 messageBody = JSON.stringify({
                     token: token,
                     mode,
-                    input_tables: actionTables.map(t => {
-                        return { 
-                            name: t.virtual?.tableId || t.id.replace(/\.[^/.]+$/ , ""), 
-                            rows: t.rows, 
-                            attached_metadata: t.attachedMetadata,
-                        }}),
-                    dialog: currentTable.derive?.dialog,
+                    input_tables: actionTables.map(t => ({
+                        name: t.virtual?.tableId || t.id.replace(/\.[^/.]+$/ , ""),
+                        rows: t.rows,
+                        attached_metadata: t.attachedMetadata,
+                    })),
+                    dialog: currentTable.derive.dialog,
                     latest_data_sample: currentTable.rows.slice(0, 10),
                     new_instruction: instruction,
                     model: activeModel,
                     agent_coding_rules: agentRules.coding,
                     current_visualization: currentVisualization,
                     expected_visualization: expectedVisualization,
-                })
+                });
                 engine = getUrls().REFINE_DATA;
-            } 
+            }
         }
 
         let message = {
@@ -774,7 +739,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                                 if (chartsWithSameEncoding.length > 0) {
                                     // find the chart to set as focus
                                     focusedChartId = chartsWithSameEncoding[0].id;
-                                    dispatch(dfActions.setFocusedChart(focusedChartId));
+                                    dispatch(dfActions.setFocused({ type: 'chart', chartId: focusedChartId }));
                                     needToCreateNewChart = false;
                                 }
                             }
@@ -814,7 +779,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                             }
                             dispatch(dfActions.clearUnReferencedTables());
                             dispatch(dfActions.clearUnReferencedCustomConcepts());
-                            dispatch(dfActions.setFocusedTable(candidateTable.id));
+                            dispatch(dfActions.setFocused({ type: 'chart', chartId: focusedChartId as string }));
 
                             dispatch(dfActions.addMessages({
                                 "timestamp": Date.now(),

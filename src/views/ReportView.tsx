@@ -225,7 +225,8 @@ export const ReportView: FC = () => {
     const config = useSelector((state: DataFormulatorState) => state.config);
     const allGeneratedReports = useSelector(dfSelectors.getAllGeneratedReports);
     const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
-    const focusedChartId = useSelector((state: DataFormulatorState) => state.focusedChartId);
+    const focusedId = useSelector((state: DataFormulatorState) => state.focusedId);
+    const focusedChartId = focusedId?.type === 'chart' ? focusedId.chartId : undefined;
     const theme = useTheme();
 
     const [selectedChartIds, setSelectedChartIds] = useState<Set<string>>(new Set(focusedChartId ? [focusedChartId] : []));

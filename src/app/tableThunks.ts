@@ -76,7 +76,7 @@ export const loadTable = createAsyncThunk<
         const existingById = existingTables.find(t => t.id === table.id);
         if (existingById) {
             // Table with same id already loaded — just focus it
-            dispatch(dfActions.setFocusedTable(existingById.id));
+            dispatch(dfActions.setFocused({ type: 'table', tableId: existingById.id }));
             return { table: existingById, duplicate: true };
         }
 
@@ -87,7 +87,7 @@ export const loadTable = createAsyncThunk<
             return t.contentHash === incomingHash;
         });
         if (existingByContent) {
-            dispatch(dfActions.setFocusedTable(existingByContent.id));
+            dispatch(dfActions.setFocused({ type: 'table', tableId: existingByContent.id }));
             dispatch(dfActions.addMessages({
                 timestamp: Date.now(),
                 type: 'warning',
@@ -102,7 +102,7 @@ export const loadTable = createAsyncThunk<
         if (table.virtual) {
             const existingByVirtual = existingTables.find(t => t.virtual?.tableId === table.virtual?.tableId);
             if (existingByVirtual) {
-                dispatch(dfActions.setFocusedTable(existingByVirtual.id));
+                dispatch(dfActions.setFocused({ type: 'table', tableId: existingByVirtual.id }));
                 return { table: existingByVirtual, duplicate: true };
             }
         }
