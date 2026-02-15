@@ -2,7 +2,7 @@
 // Licensed under the MIT License.
 
 import { ChartTemplateDef, ChartPropertyDef } from '../types';
-import { ensureNominalAxis, applyPointSizeScaling, defaultBuildEncodings } from './utils';
+import { detectBandedAxis, resolveAsDiscrete, applyPointSizeScaling, defaultBuildEncodings, setMarkProp } from './utils';
 
 export const scatterPlotDef: ChartTemplateDef = {
         chart: "Scatter Plot",
@@ -11,23 +11,25 @@ export const scatterPlotDef: ChartTemplateDef = {
             encoding: {},
         },
         channels: ["x", "y", "color", "size", "opacity", "column", "row"],
-        buildEncodings: defaultBuildEncodings,
+        buildEncodings: (spec, encodings, context) => {
+            defaultBuildEncodings(spec, encodings, context);
+
+            applyPointSizeScaling(spec, context.table, context.canvasSize?.width, context.canvasSize?.height);
+            const config = context.chartProperties;
+            if (config) {
+                const opacity = config.opacity;
+                if (opacity !== undefined && opacity < 1) {
+                    if (typeof spec.mark === 'string') {
+                        spec.mark = { type: spec.mark, opacity };
+                    } else {
+                        spec.mark = { ...spec.mark, opacity };
+                    }
+                }
+            }
+        },
         properties: [
             { key: "opacity", label: "Opacity", type: "continuous", min: 0.1, max: 1, step: 0.05, defaultValue: 1 },
         ] as ChartPropertyDef[],
-        postProcessor: (vgSpec: any, table: any[], config?: Record<string, any>, canvasSize?: { width: number; height: number }) => {
-            applyPointSizeScaling(vgSpec, table, canvasSize?.width, canvasSize?.height);
-            if (!config) return vgSpec;
-            const opacity = config.opacity;
-            if (opacity !== undefined && opacity < 1) {
-                if (typeof vgSpec.mark === 'string') {
-                    vgSpec.mark = { type: vgSpec.mark, opacity };
-                } else {
-                    vgSpec.mark = { ...vgSpec.mark, opacity };
-                }
-            }
-            return vgSpec;
-        },
 };
 
 export const linearRegressionDef: ChartTemplateDef = {
@@ -46,7 +48,7 @@ export const linearRegressionDef: ChartTemplateDef = {
             ],
         },
         channels: ["x", "y", "size", "color", "column", "row"],
-        buildEncodings: (spec, encodings) => {
+        buildEncodings: (spec, encodings, _context) => {
             const { x, y, color, size, column, row, ...rest } = encodings;
             // x & y → both layers + transform field names
             if (x) {
@@ -79,25 +81,22 @@ export const rangedDotPlotDef: ChartTemplateDef = {
             ],
         },
         channels: ["x", "y", "color"],
-        buildEncodings: (spec, encodings) => {
+        buildEncodings: (spec, encodings, _context) => {
             const { color, ...rest } = encodings;
-            // x, y → top-level encoding
             if (!spec.encoding) spec.encoding = {};
             for (const [ch, enc] of Object.entries(rest)) {
                 spec.encoding[ch] = { ...(spec.encoding[ch] || {}), ...enc };
             }
-            // color → layer[1] only
             if (color) {
                 spec.layer[1].encoding.color = { ...(spec.layer[1].encoding.color || {}), ...color };
             }
-        },
-        postProcessor: (vgSpec: any, _table: any[]) => {
-            if (vgSpec.encoding.y?.type === "nominal") {
-                vgSpec.layer[0].encoding.detail = JSON.parse(JSON.stringify(vgSpec.encoding.y));
-            } else if (vgSpec.encoding.x?.type === "nominal") {
-                vgSpec.layer[0].encoding.detail = JSON.parse(JSON.stringify(vgSpec.encoding.x));
+
+            // Copy nominal axis into detail encoding for line layer
+            if (spec.encoding.y?.type === "nominal") {
+                spec.layer[0].encoding.detail = JSON.parse(JSON.stringify(spec.encoding.y));
+            } else if (spec.encoding.x?.type === "nominal") {
+                spec.layer[0].encoding.detail = JSON.parse(JSON.stringify(spec.encoding.x));
             }
-            return vgSpec;
         },
 };
 
@@ -108,13 +107,28 @@ export const boxplotDef: ChartTemplateDef = {
             encoding: {},
         },
         channels: ["x", "y", "color", "opacity", "column", "row"],
-        buildEncodings: defaultBuildEncodings,
-        postProcessor: (vgSpec: any, table: any[]) => {
-            const hasX = vgSpec.encoding.x?.field;
-            const hasY = vgSpec.encoding.y?.field;
-            if (hasX && hasY) {
-                ensureNominalAxis(vgSpec, table, true);
+        buildEncodings: (spec, encodings, context) => {
+            if (encodings.x?.field && encodings.y?.field) {
+                const result = detectBandedAxis(spec, encodings, context.table, { preferAxis: 'x' });
+                const axis = result?.axis || 'x';
+                context.axisFlags = { [axis]: { banded: true } };
+
+                // Boxplot requires a truly discrete axis for per-group box computation.
+                // If detectBandedAxis didn't convert (Q×Q, T×Q), force it.
+                if (result && !result.converted && encodings[axis]) {
+                    resolveAsDiscrete(encodings[axis], context.table);
+                }
             }
-            return vgSpec;
+            defaultBuildEncodings(spec, encodings, context);
+        },
+        postProcessing: (spec, context) => {
+            const ip = context.inferredProperties;
+            if (!ip) return;
+            // Scale box width to the step size of the discrete axis
+            if (ip.xNominalCount > 0 || ip.yNominalCount > 0) {
+                const boxStep = ip.xNominalCount > 0 ? ip.xStepSize : ip.yStepSize;
+                const boxSize = Math.max(4, Math.round(boxStep * 0.7));
+                spec.mark = setMarkProp(spec.mark, 'size', boxSize);
+            }
         },
 };

@@ -5,35 +5,36 @@ import { ChartTemplateDef, ChartPropertyDef } from '../types';
 import { defaultBuildEncodings } from './utils';
 
 export const stripPlotDef: ChartTemplateDef = {
+    overrideDefaultSettings: (opts) => ({ ...opts, defaultStepMultiplier: 2, minStep: 16 }),
         chart: "Strip Plot",
         template: {
             mark: { type: "circle", opacity: 0.7 },
             encoding: {},
         },
         channels: ["x", "y", "color", "size", "column", "row"],
-        buildEncodings: defaultBuildEncodings,
-        properties: [
-            { key: "stepWidth", label: "Jitter", type: "continuous", min: 10, max: 100, step: 5, defaultValue: 20 },
-            { key: "pointSize", label: "Size", type: "continuous", min: 0, max: 150, step: 5, defaultValue: 0 },
-            { key: "opacity", label: "Opacity", type: "continuous", min: 0, max: 1, step: 0.05, defaultValue: 0 },
-        ] as ChartPropertyDef[],
-        postProcessor: (vgSpec: any, table: any[], config?: Record<string, any>, canvasSize?: { width: number; height: number }) => {
+        buildEncodings: (spec, encodings, context) => {
+            defaultBuildEncodings(spec, encodings, context);
+
+            const table = context.table;
+            const canvasSize = context.canvasSize;
+            const config = context.chartProperties;
+
             const stepWidth = config?.stepWidth ?? 20;
             let pointSize = config?.pointSize ?? 0;
             let opacity = config?.opacity ?? 0;
 
-            // Determine which axis is categorical (the one to jitter along)
-            const xType = vgSpec.encoding?.x?.type;
-            const yType = vgSpec.encoding?.y?.type;
+            // Determine which axis is categorical
+            const xType = spec.encoding?.x?.type;
+            const yType = spec.encoding?.y?.type;
 
             const catAxis = (xType === 'nominal' || xType === 'ordinal') ? 'x'
                 : (yType === 'nominal' || yType === 'ordinal') ? 'y'
                 : null;
 
             // Count points in the largest categorical group
-            let maxGroupCount = table.length;
-            if (catAxis && vgSpec.encoding?.[catAxis]?.field) {
-                const catField = vgSpec.encoding[catAxis].field;
+            let maxGroupCount = table?.length ?? 0;
+            if (catAxis && spec.encoding?.[catAxis]?.field && table) {
+                const catField = spec.encoding[catAxis].field;
                 const groupCounts: Record<string, number> = {};
                 for (const row of table) {
                     const key = String(row[catField] ?? '');
@@ -42,26 +43,22 @@ export const stripPlotDef: ChartTemplateDef = {
                 maxGroupCount = Math.max(1, ...Object.values(groupCounts));
             }
 
-            // Continuous axis length (the non-jitter dimension)
+            // Continuous axis length
             const contLen = catAxis === 'x'
                 ? (canvasSize?.height || 400)
                 : (canvasSize?.width || 400);
 
-            // Area budget per group = stepWidth × contLen
-            // Each point is roughly a circle of area = pointSize (VL size = area in px²)
-            // Target coverage ≈ 30-50% of area
             const areaBudget = stepWidth * contLen;
             const targetCoverage = 0.35;
 
-            // Auto-compute size: solve for size such that N * size ≈ coverage * area
+            // Auto-compute size
             if (pointSize === 0) {
                 const idealSize = (targetCoverage * areaBudget) / maxGroupCount;
                 pointSize = Math.max(5, Math.min(100, Math.round(idealSize)));
             }
 
-            // Auto-compute opacity: more points → more transparent
+            // Auto-compute opacity
             if (opacity === 0) {
-                // density = fraction of area covered if fully opaque
                 const density = (maxGroupCount * pointSize) / areaBudget;
                 if (density < 0.2) {
                     opacity = 0.8;
@@ -72,27 +69,27 @@ export const stripPlotDef: ChartTemplateDef = {
                 } else {
                     opacity = Math.max(0.1, 0.3 / density);
                 }
-                opacity = Math.round(opacity * 20) / 20; // snap to 0.05
+                opacity = Math.round(opacity * 20) / 20;
             }
 
             // Apply mark properties
-            if (typeof vgSpec.mark === 'string') {
-                vgSpec.mark = { type: vgSpec.mark };
+            if (typeof spec.mark === 'string') {
+                spec.mark = { type: spec.mark };
             }
-            vgSpec.mark.size = pointSize;
-            vgSpec.mark.opacity = opacity;
+            spec.mark.size = pointSize;
+            spec.mark.opacity = opacity;
 
-            // Set step width and derive jitter from it (80% of step)
+            // Set step width and derive jitter
             const jitterWidth = stepWidth * 0.8;
             if (catAxis === 'x') {
-                vgSpec.width = { step: stepWidth };
+                spec.width = { step: stepWidth };
             } else if (catAxis === 'y') {
-                vgSpec.height = { step: stepWidth };
+                spec.height = { step: stepWidth };
             }
 
             if (jitterWidth > 0) {
-                if (!vgSpec.transform) vgSpec.transform = [];
-                vgSpec.transform.push({
+                if (!spec.transform) spec.transform = [];
+                spec.transform.push({
                     calculate: `${-jitterWidth / 2} + random() * ${jitterWidth}`,
                     as: "__jitter",
                 });
@@ -105,14 +102,17 @@ export const stripPlotDef: ChartTemplateDef = {
                 };
 
                 if (catAxis === 'x') {
-                    vgSpec.encoding.xOffset = offsetEnc;
+                    spec.encoding.xOffset = offsetEnc;
                 } else if (catAxis === 'y') {
-                    vgSpec.encoding.yOffset = offsetEnc;
+                    spec.encoding.yOffset = offsetEnc;
                 } else {
-                    vgSpec.encoding.xOffset = offsetEnc;
+                    spec.encoding.xOffset = offsetEnc;
                 }
             }
-
-            return vgSpec;
         },
+        properties: [
+            { key: "stepWidth", label: "Jitter", type: "continuous", min: 10, max: 100, step: 5, defaultValue: 20 },
+            { key: "pointSize", label: "Size", type: "continuous", min: 0, max: 150, step: 5, defaultValue: 0 },
+            { key: "opacity", label: "Opacity", type: "continuous", min: 0, max: 1, step: 0.05, defaultValue: 0 },
+        ] as ChartPropertyDef[],
 };

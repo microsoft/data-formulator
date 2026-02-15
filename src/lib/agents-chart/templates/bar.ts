@@ -1,8 +1,8 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-import { ChartTemplateDef, ChartPropertyDef } from '../types';
-import { applyDynamicMarkResizing, ensureNominalAxis, defaultBuildEncodings } from './utils';
+import { ChartTemplateDef, ChartPropertyDef, BuildEncodingContext } from '../types';
+import { detectBandedAxis, ensureDiscreteAxes, defaultBuildEncodings, resolveAsDiscrete, adjustBarMarks, adjustRectTiling } from './utils';
 
 export const barChartDef: ChartTemplateDef = {
         chart: "Bar Chart",
@@ -11,24 +11,29 @@ export const barChartDef: ChartTemplateDef = {
             encoding: {},
         },
         channels: ["x", "y", "color", "opacity", "column", "row"],
-        buildEncodings: defaultBuildEncodings,
-        properties: [
-            { key: "cornerRadius", label: "Corners", type: "continuous", min: 0, max: 15, step: 1, defaultValue: 0 },
-        ] as ChartPropertyDef[],
-        postProcessor: (vgSpec: any, _table: any[], config?: Record<string, any>) => {
-            applyDynamicMarkResizing(vgSpec, _table, { x: 'size', y: 'size' });
+        buildEncodings: (spec, encodings, context) => {
+            // Bar chart needs one discrete dimension
+            const result = detectBandedAxis(spec, encodings, context.table, { preferAxis: 'x' });
+            context.axisFlags = { [result?.axis || 'x']: { banded: true } };
+            defaultBuildEncodings(spec, encodings, context);
+
+            // Apply corner radius from chart properties
+            const config = context.chartProperties;
             if (config) {
                 const cr = config.cornerRadius;
                 if (cr !== undefined && cr > 0) {
-                    if (typeof vgSpec.mark === 'string') {
-                        vgSpec.mark = { type: vgSpec.mark, cornerRadiusEnd: cr };
+                    if (typeof spec.mark === 'string') {
+                        spec.mark = { type: spec.mark, cornerRadiusEnd: cr };
                     } else {
-                        vgSpec.mark = { ...vgSpec.mark, cornerRadiusEnd: cr };
+                        spec.mark = { ...spec.mark, cornerRadiusEnd: cr };
                     }
                 }
             }
-            return vgSpec;
         },
+        properties: [
+            { key: "cornerRadius", label: "Corners", type: "continuous", min: 0, max: 15, step: 1, defaultValue: 0 },
+        ] as ChartPropertyDef[],
+        postProcessing: adjustBarMarks,
 };
 
 export const pyramidChartDef: ChartTemplateDef = {
@@ -62,20 +67,21 @@ export const pyramidChartDef: ChartTemplateDef = {
             },
         },
         channels: ["x", "y", "color"],
-        buildEncodings: (spec, encodings) => {
+        buildEncodings: (spec, encodings, context) => {
             let { y, x, color } = encodings;
 
             // Auto-detect flipped axes: if x is discrete and y is quantitative, swap them
-            const isDiscrete = (enc: any) => enc && (enc.type === 'nominal' || enc.type === 'ordinal');
+            const isDiscreteType = (enc: any) => enc && (enc.type === 'nominal' || enc.type === 'ordinal');
             const isQuant = (enc: any) => enc && (enc.type === 'quantitative' || enc.type === 'temporal');
-            if (isDiscrete(x) && isQuant(y)) {
+            if (isDiscreteType(x) && isQuant(y)) {
                 [x, y] = [y, x];
             }
 
-            // y → both panels (shared category axis, always nominal)
+            // y → both panels (shared category axis, always discrete)
             if (y) {
                 const yEnc = { ...y };
-                if (yEnc.type === 'temporal') yEnc.type = 'nominal';
+                resolveAsDiscrete(yEnc, context.table);
+                context.axisFlags = { y: { banded: true } };
                 spec.hconcat[0].encoding.y = { ...spec.hconcat[0].encoding.y, ...yEnc };
                 spec.hconcat[1].encoding.y = { ...spec.hconcat[1].encoding.y, ...yEnc };
             }
@@ -84,36 +90,26 @@ export const pyramidChartDef: ChartTemplateDef = {
                 spec.hconcat[0].encoding.x = { ...spec.hconcat[0].encoding.x, ...x };
                 spec.hconcat[1].encoding.x = { ...spec.hconcat[1].encoding.x, ...x };
             }
-            // color → store the field name for postProcessor to create filters
-            if (color && color.field) {
-                spec._pyramidColorField = color.field;
-            }
-        },
-        postProcessor: (vgSpec: any, table: any[], _config?: Record<string, any>, canvasSize?: { width: number; height: number }) => {
+
+            // --- Pyramid-specific configuration ---
+            const colorField = color?.field;
+            const table = context.table;
+            const canvasSize = context.canvasSize;
+
             try {
-                const colorField = vgSpec._pyramidColorField;
-                delete vgSpec._pyramidColorField;
-
                 if (table && colorField) {
-                    // Get unique group values from the color field
                     const groups = [...new Set(table.map(r => r[colorField]))] as string[];
-
-                    // Pick first two groups (pyramid is inherently binary)
                     const leftGroup = groups[0];
                     const rightGroup = groups.length > 1 ? groups[1] : groups[0];
 
-                    // Add filter transforms to split data into panels
-                    vgSpec.hconcat[0].transform = [{ filter: { field: colorField, equal: leftGroup } }];
-                    vgSpec.hconcat[1].transform = [{ filter: { field: colorField, equal: rightGroup } }];
+                    spec.hconcat[0].transform = [{ filter: { field: colorField, equal: leftGroup } }];
+                    spec.hconcat[1].transform = [{ filter: { field: colorField, equal: rightGroup } }];
+                    spec.hconcat[0].title = String(leftGroup);
+                    spec.hconcat[1].title = String(rightGroup);
 
-                    // Set panel titles from group values
-                    vgSpec.hconcat[0].title = String(leftGroup);
-                    vgSpec.hconcat[1].title = String(rightGroup);
-
-                    // Warn if more than 2 groups
                     if (groups.length > 2) {
-                        if (!vgSpec._warnings) vgSpec._warnings = [];
-                        vgSpec._warnings.push({
+                        if (!spec._warnings) spec._warnings = [];
+                        spec._warnings.push({
                             severity: 'warning',
                             code: 'too-many-groups-pyramid',
                             message: `Pyramid chart works best with exactly 2 groups, but found ${groups.length} (${groups.map(g => `'${g}'`).join(', ')}). Only the first two are shown.`,
@@ -123,20 +119,18 @@ export const pyramidChartDef: ChartTemplateDef = {
                     }
                 }
 
-                // Compute shared x domain across both panels
                 if (table) {
-                    const xField = vgSpec.hconcat[0].encoding.x?.field;
+                    const xField = spec.hconcat[0].encoding.x?.field;
                     if (xField) {
                         const allVals = table.map(r => r[xField]).filter(v => typeof v === 'number');
                         if (allVals.length > 0) {
                             const domain = [Math.min(0, ...allVals), Math.max(...allVals)];
-                            vgSpec.hconcat[0].encoding.x.scale = { ...vgSpec.hconcat[0].encoding.x.scale, domain };
-                            vgSpec.hconcat[1].encoding.x.scale = { ...vgSpec.hconcat[1].encoding.x.scale, domain };
+                            spec.hconcat[0].encoding.x.scale = { ...spec.hconcat[0].encoding.x.scale, domain };
+                            spec.hconcat[1].encoding.x.scale = { ...spec.hconcat[1].encoding.x.scale, domain };
                         }
-                        // Warn about negative values
                         if (allVals.some(v => v < 0)) {
-                            if (!vgSpec._warnings) vgSpec._warnings = [];
-                            vgSpec._warnings.push({
+                            if (!spec._warnings) spec._warnings = [];
+                            spec._warnings.push({
                                 severity: 'warning',
                                 code: 'negative-values-pyramid',
                                 message: `Negative values detected in '${xField}'. Pyramid charts work best with non-negative values.`,
@@ -146,7 +140,6 @@ export const pyramidChartDef: ChartTemplateDef = {
                         }
                     }
 
-                    // --- Elastic sizing ---
                     const baseWidth = canvasSize?.width ?? 400;
                     const baseHeight = canvasSize?.height ?? 320;
 
@@ -154,7 +147,7 @@ export const pyramidChartDef: ChartTemplateDef = {
                     const facetStretch = Math.min(1.5, Math.pow(facetCols, 0.3));
                     const panelWidth = Math.round(Math.max(40, baseWidth * facetStretch / facetCols));
 
-                    const yField = vgSpec.hconcat[0].encoding.y?.field;
+                    const yField = spec.hconcat[0].encoding.y?.field;
                     let panelHeight = baseHeight;
                     if (yField) {
                         const yCardinality = new Set(table.map(r => r[yField])).size;
@@ -170,7 +163,7 @@ export const pyramidChartDef: ChartTemplateDef = {
                         }
                     }
 
-                    for (const panel of vgSpec.hconcat) {
+                    for (const panel of spec.hconcat) {
                         panel.width = panelWidth;
                         panel.height = panelHeight;
                     }
@@ -178,7 +171,6 @@ export const pyramidChartDef: ChartTemplateDef = {
             } catch {
                 // ignore errors
             }
-            return vgSpec;
         },
 };
 
@@ -189,27 +181,28 @@ export const groupedBarChartDef: ChartTemplateDef = {
             encoding: {},
         },
         channels: ["x", "y", "color", "column", "row"],
-        buildEncodings: defaultBuildEncodings,
-        postProcessor: (vgSpec: any, table: any[]) => {
-            if (!vgSpec.encoding.color?.field) {
-                applyDynamicMarkResizing(vgSpec, table, { x: 'size', y: 'size' });
-                return vgSpec;
+        buildEncodings: (spec, encodings, context) => {
+            const result = detectBandedAxis(spec, encodings, context.table, { preferAxis: 'x' });
+            const axis = result?.axis || 'x';
+            context.axisFlags = { [axis]: { banded: true } };
+
+            // Grouped bar requires a truly discrete axis for xOffset grouping.
+            // If detectBandedAxis didn't convert (Q×Q, T×Q), force it.
+            if (result && !result.converted && encodings[axis]) {
+                resolveAsDiscrete(encodings[axis], context.table);
             }
 
-            const nominalChannel = ensureNominalAxis(vgSpec, table, true);
-            const offsetChannel = nominalChannel === "x" ? "xOffset" : nominalChannel === "y" ? "yOffset" : null;
-
-            if (nominalChannel && offsetChannel) {
-                if (!vgSpec.encoding[offsetChannel]) {
-                    vgSpec.encoding[offsetChannel] = {};
-                }
-                vgSpec.encoding[offsetChannel].field = vgSpec.encoding.color.field;
-                vgSpec.encoding[offsetChannel].type = "nominal";
+            if (encodings.color?.field && result) {
+                const offsetChannel = result.axis === "x" ? "xOffset" : "yOffset";
+                encodings[offsetChannel] = {
+                    field: encodings.color.field,
+                    type: "nominal",
+                };
             }
 
-            applyDynamicMarkResizing(vgSpec, table, { x: 'size', y: 'size' });
-            return vgSpec;
+            defaultBuildEncodings(spec, encodings, context);
         },
+        postProcessing: adjustBarMarks,
 };
 
 export const stackedBarChartDef: ChartTemplateDef = {
@@ -219,7 +212,23 @@ export const stackedBarChartDef: ChartTemplateDef = {
             encoding: {},
         },
         channels: ["x", "y", "color", "column", "row"],
-        buildEncodings: defaultBuildEncodings,
+        buildEncodings: (spec, encodings, context) => {
+            const result = detectBandedAxis(spec, encodings, context.table, { preferAxis: 'x' });
+            context.axisFlags = { [result?.axis || 'x']: { banded: true } };
+            defaultBuildEncodings(spec, encodings, context);
+
+            // Apply stack mode from chart properties
+            const config = context.chartProperties;
+            if (config?.stackMode) {
+                for (const axis of ['x', 'y'] as const) {
+                    if (spec.encoding?.[axis]?.type === 'quantitative' ||
+                        spec.encoding?.[axis]?.aggregate) {
+                        spec.encoding[axis].stack = config.stackMode === 'layered' ? null : config.stackMode;
+                        break;
+                    }
+                }
+            }
+        },
         properties: [
             { key: "stackMode", label: "Stack", type: "discrete", options: [
                 { value: undefined, label: "Stacked (default)" },
@@ -228,20 +237,7 @@ export const stackedBarChartDef: ChartTemplateDef = {
                 { value: "layered", label: "Layered (overlap)" },
             ] },
         ] as ChartPropertyDef[],
-        postProcessor: (vgSpec: any, table: any[], config?: Record<string, any>) => {
-            applyDynamicMarkResizing(vgSpec, table, { x: 'size', y: 'size' });
-            if (config?.stackMode) {
-                // Find the quantitative axis and apply stack mode
-                for (const axis of ['x', 'y'] as const) {
-                    if (vgSpec.encoding?.[axis]?.type === 'quantitative' ||
-                        vgSpec.encoding?.[axis]?.aggregate) {
-                        vgSpec.encoding[axis].stack = config.stackMode === 'layered' ? null : config.stackMode;
-                        break;
-                    }
-                }
-            }
-            return vgSpec;
-        },
+        postProcessing: adjustBarMarks,
 };
 
 export const histogramDef: ChartTemplateDef = {
@@ -254,18 +250,22 @@ export const histogramDef: ChartTemplateDef = {
             },
         },
         channels: ["x", "color", "column", "row"],
-        buildEncodings: defaultBuildEncodings,
+        buildEncodings: (spec, encodings, context) => {
+            defaultBuildEncodings(spec, encodings, context);
+
+            // Apply bin count from chart properties
+            const config = context.chartProperties;
+            if (config) {
+                const binCount = config.binCount;
+                if (binCount !== undefined && spec.encoding?.x) {
+                    spec.encoding.x.bin = { maxbins: binCount };
+                }
+            }
+        },
         properties: [
             { key: "binCount", label: "Bins", type: "continuous", min: 5, max: 50, step: 1, defaultValue: 10 },
         ] as ChartPropertyDef[],
-        postProcessor: (vgSpec: any, _table: any[], config?: Record<string, any>) => {
-            if (!config) return vgSpec;
-            const binCount = config.binCount;
-            if (binCount !== undefined && vgSpec.encoding?.x) {
-                vgSpec.encoding.x.bin = { maxbins: binCount };
-            }
-            return vgSpec;
-        },
+        postProcessing: adjustBarMarks,
 };
 
 export const heatmapDef: ChartTemplateDef = {
@@ -275,7 +275,18 @@ export const heatmapDef: ChartTemplateDef = {
             encoding: {},
         },
         channels: ["x", "y", "color", "column", "row"],
-        buildEncodings: defaultBuildEncodings,
+        buildEncodings: (spec, encodings, context) => {
+            //ensureDiscreteAxes(encodings, context.table, 20);
+            context.axisFlags = { x: { banded: true }, y: { banded: true } };
+            defaultBuildEncodings(spec, encodings, context);
+
+            // Apply color scheme from chart properties
+            const config = context.chartProperties;
+            if (config?.colorScheme && spec.encoding.color) {
+                if (!spec.encoding.color.scale) spec.encoding.color.scale = {};
+                spec.encoding.color.scale.scheme = config.colorScheme;
+            }
+        },
         properties: [
             {
                 key: "colorScheme", label: "Scheme", type: "discrete", options: [
@@ -296,12 +307,8 @@ export const heatmapDef: ChartTemplateDef = {
                 ],
             },
         ] as ChartPropertyDef[],
-        postProcessor: (vgSpec: any, table: any[], config?: Record<string, any>) => {
-            applyDynamicMarkResizing(vgSpec, table, { x: 'width', y: 'height' }, 20);
-            if (config?.colorScheme && vgSpec.encoding.color) {
-                if (!vgSpec.encoding.color.scale) vgSpec.encoding.color.scale = {};
-                vgSpec.encoding.color.scale.scheme = config.colorScheme;
-            }
-            return vgSpec;
+        postProcessing: (spec: any, context: BuildEncodingContext) => {
+            adjustBarMarks(spec, context);
+            adjustRectTiling(spec, context);
         },
 };

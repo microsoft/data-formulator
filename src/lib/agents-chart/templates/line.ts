@@ -35,11 +35,11 @@ export const lineChartDef: ChartTemplateDef = {
             encoding: {},
         },
         channels: ["x", "y", "color", "opacity", "column", "row"],
-        buildEncodings: defaultBuildEncodings,
-        properties: [interpolateConfigProperty],
-        postProcessor: (vgSpec: any, _table: any[], config?: Record<string, any>) => {
-            return applyInterpolate(vgSpec, config);
+        buildEncodings: (spec, encodings, context) => {
+            defaultBuildEncodings(spec, encodings, context);
+            applyInterpolate(spec, context.chartProperties);
         },
+        properties: [interpolateConfigProperty],
 };
 
 export const dottedLineChartDef: ChartTemplateDef = {
@@ -49,9 +49,9 @@ export const dottedLineChartDef: ChartTemplateDef = {
             encoding: {},
         },
         channels: ["x", "y", "color", "column", "row"],
-        buildEncodings: defaultBuildEncodings,
-        properties: [interpolateConfigProperty],
-        postProcessor: (vgSpec: any, _table: any[], config?: Record<string, any>) => {
-            return applyInterpolate(vgSpec, config);
+        buildEncodings: (spec, encodings, context) => {
+            defaultBuildEncodings(spec, encodings, context);
+            applyInterpolate(spec, context.chartProperties);
         },
+        properties: [interpolateConfigProperty],
 };

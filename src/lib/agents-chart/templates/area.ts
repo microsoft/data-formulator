@@ -35,7 +35,30 @@ export const areaChartDef: ChartTemplateDef = {
             encoding: {},
         },
         channels: ["x", "y", "color", "opacity", "column", "row"],
-        buildEncodings: defaultBuildEncodings,
+        buildEncodings: (spec, encodings, context) => {
+            defaultBuildEncodings(spec, encodings, context);
+            const config = context.chartProperties;
+            applyInterpolate(spec, config);
+            if (config) {
+                const opacity = config.opacity;
+                if (opacity !== undefined && opacity < 1) {
+                    if (typeof spec.mark === 'string') {
+                        spec.mark = { type: spec.mark, opacity };
+                    } else {
+                        spec.mark = { ...spec.mark, opacity };
+                    }
+                }
+                if (config.stackMode) {
+                    for (const axis of ['x', 'y'] as const) {
+                        if (spec.encoding?.[axis]?.type === 'quantitative' ||
+                            spec.encoding?.[axis]?.aggregate) {
+                            spec.encoding[axis].stack = config.stackMode === 'layered' ? null : config.stackMode;
+                            break;
+                        }
+                    }
+                }
+            }
+        },
         properties: [
             interpolateConfigProperty,
             { key: "opacity", label: "Opacity", type: "continuous", min: 0.1, max: 1, step: 0.05, defaultValue: 0.7 },
@@ -46,29 +69,6 @@ export const areaChartDef: ChartTemplateDef = {
                 { value: "layered", label: "Layered (overlap)" },
             ] },
         ] as ChartPropertyDef[],
-        postProcessor: (vgSpec: any, _table: any[], config?: Record<string, any>) => {
-            vgSpec = applyInterpolate(vgSpec, config);
-            if (config) {
-                const opacity = config.opacity;
-                if (opacity !== undefined && opacity < 1) {
-                    if (typeof vgSpec.mark === 'string') {
-                        vgSpec.mark = { type: vgSpec.mark, opacity };
-                    } else {
-                        vgSpec.mark = { ...vgSpec.mark, opacity };
-                    }
-                }
-                if (config.stackMode) {
-                    for (const axis of ['x', 'y'] as const) {
-                        if (vgSpec.encoding?.[axis]?.type === 'quantitative' ||
-                            vgSpec.encoding?.[axis]?.aggregate) {
-                            vgSpec.encoding[axis].stack = config.stackMode === 'layered' ? null : config.stackMode;
-                            break;
-                        }
-                    }
-                }
-            }
-            return vgSpec;
-        },
 };
 
 export const streamgraphDef: ChartTemplateDef = {
@@ -78,17 +78,18 @@ export const streamgraphDef: ChartTemplateDef = {
             encoding: {},
         },
         channels: ["x", "y", "color", "column", "row"],
-        buildEncodings: defaultBuildEncodings,
-        properties: [interpolateConfigProperty] as ChartPropertyDef[],
-        postProcessor: (vgSpec: any, _table: any[], config?: Record<string, any>) => {
+        buildEncodings: (spec, encodings, context) => {
+            defaultBuildEncodings(spec, encodings, context);
+
             // Force center stacking on the measure axis
-            if (vgSpec.encoding?.y && !vgSpec.encoding.y.stack) {
-                vgSpec.encoding.y.stack = "center";
-                vgSpec.encoding.y.axis = null;
-            } else if (vgSpec.encoding?.x && !vgSpec.encoding.x.stack) {
-                vgSpec.encoding.x.stack = "center";
-                vgSpec.encoding.x.axis = null;
+            if (spec.encoding?.y && !spec.encoding.y.stack) {
+                spec.encoding.y.stack = "center";
+                spec.encoding.y.axis = null;
+            } else if (spec.encoding?.x && !spec.encoding.x.stack) {
+                spec.encoding.x.stack = "center";
+                spec.encoding.x.axis = null;
             }
-            return applyInterpolate(vgSpec, config);
+            applyInterpolate(spec, context.chartProperties);
         },
+        properties: [interpolateConfigProperty] as ChartPropertyDef[],
 };

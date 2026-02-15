@@ -26,6 +26,7 @@ export {
 } from './specialized-tests';
 export { FACET_SIZES, DISCRETE_SIZES, genFacetColumnTests, genFacetRowTests, genFacetColRowTests } from './facet-tests';
 export { genOverflowTests, genElasticityTests } from './stress-tests';
+export { genDiscreteAxisTests } from './discrete-axis-tests';
 export { genUnintendedScatterTests, genUnintendedBarTests, genUnintendedLineAreaTests, genUnintendedPartToWholeTests, genUnintendedStatisticalTests } from './unintended-tests';
 export { genDateTests, genDateYearTests, genDateMonthTests, genDateYearMonthTests, genDateDecadeTests, genDateDateTimeTests, genDateHoursTests } from './date-tests';
 
@@ -44,6 +45,7 @@ import {
 } from './specialized-tests';
 import { genFacetColumnTests, genFacetRowTests, genFacetColRowTests } from './facet-tests';
 import { genOverflowTests, genElasticityTests } from './stress-tests';
+import { genDiscreteAxisTests } from './discrete-axis-tests';
 import { genUnintendedScatterTests, genUnintendedBarTests, genUnintendedLineAreaTests, genUnintendedPartToWholeTests, genUnintendedStatisticalTests } from './unintended-tests';
 import { genDateYearTests, genDateMonthTests, genDateYearMonthTests, genDateDecadeTests, genDateDateTimeTests, genDateHoursTests } from './date-tests';
 
@@ -88,6 +90,7 @@ export const TEST_GENERATORS: Record<string, () => TestCase[]> = {
     'Unintended: Line & Area': genUnintendedLineAreaTests,
     'Unintended: Part-to-Whole': genUnintendedPartToWholeTests,
     'Unintended: Statistical': genUnintendedStatisticalTests,
+    'Discrete Axis Sizing': genDiscreteAxisTests,
 };
 
 /** Gallery organised into three sections */
@@ -112,7 +115,7 @@ export const GALLERY_SECTIONS: GallerySection[] = [
         label: 'Stress Tests',
         description: 'Overflow, elasticity, and temporal format stress tests',
         entries: [
-            'Overflow', 'Elasticity & Stretch',
+            'Overflow', 'Elasticity & Stretch', 'Discrete Axis Sizing',
             'Dates: Year', 'Dates: Month', 'Dates: Year-Month',
             'Dates: Decade', 'Dates: Date/DateTime', 'Dates: Hours',
         ],

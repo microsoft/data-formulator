@@ -15,6 +15,7 @@ import {
     ChartEncoding,
     ChartTemplateDef,
     AssembleOptions,
+    BuildEncodingContext,
 } from './types';
 import { getTemplateDef } from './templates';
 import {
@@ -232,7 +233,6 @@ function resolveEncodingType(
     semanticType: string,
     fieldValues: any[],
     channel: string,
-    chartType: string,
     data: any[],
     fieldName: string,
 ): string {
@@ -243,8 +243,9 @@ function resolveEncodingType(
     const mappedCategory = semanticType ? getVisCategory(semanticType) : null;
     const visCategory: VisCategory = mappedCategory ?? inferVisCategory(fieldValues);
 
-    // Step 2: Map to VL type with channel/chart-specific overrides
-    const isBarChart = ['Bar Chart', 'Stacked Bar Chart', 'Grouped Bar Chart', 'Heatmap', 'Pyramid Chart'].includes(chartType);
+    // Step 2: Map to VL type with channel-specific overrides.
+    // Chart-specific dtype decisions (e.g. "bar chart needs a discrete axis")
+    // are handled by each template's buildEncodings, NOT here.
 
     switch (visCategory) {
         case 'temporal':
@@ -275,19 +276,6 @@ function resolveEncodingType(
                 });
 
                 if (!isValidTemporal) return 'ordinal';
-                if (isBarChart) {
-                    // Timestamps are continuous time points — keep temporal so
-                    // Vega-Lite auto-formats labels ("Jan 2020", "2001", etc.)
-                    // rather than showing raw values or ugly ISO strings.
-                    const sampleValues2 = data.map(r => r[fieldName]).filter(v => v != null).slice(0, 10);
-                    const isTimestampLike = sampleValues2.some(v =>
-                        typeof v === 'number' && isLikelyTimestamp(v)
-                    );
-                    if (isTimestampLike) return 'temporal';
-
-                    const uniqueCount = new Set(data.map(r => r[fieldName])).size;
-                    return uniqueCount <= 32 ? 'ordinal' : 'temporal';
-                }
                 return 'temporal';
             }
         case 'ordinal': {
@@ -339,6 +327,16 @@ export function assembleChart(
     chartProperties?: Record<string, any>,
     options: AssembleOptions = {},
 ): any {
+    const chartTemplate = getTemplateDef(chartType) as ChartTemplateDef;
+    if (!chartTemplate) {
+        throw new Error(`Unknown chart type: ${chartType}`);
+    }
+
+    // Let the template override assembly defaults before destructuring.
+    const effectiveOptions = chartTemplate.overrideDefaultSettings
+        ? chartTemplate.overrideDefaultSettings({ ...options })
+        : options;
+
     const {
         addTooltips = false,
         elasticity: elasticityVal = 0.5,
@@ -347,12 +345,8 @@ export function assembleChart(
         facetMaxStretch: facetMaxStretchVal = 1.5,
         minStep: minStepVal = 6,
         minSubplotSize: minSubplotVal = 60,
-    } = options;
-
-    const chartTemplate = getTemplateDef(chartType) as ChartTemplateDef;
-    if (!chartTemplate) {
-        throw new Error(`Unknown chart type: ${chartType}`);
-    }
+        defaultStepMultiplier = 1,
+    } = effectiveOptions;
 
     const vgObj = structuredClone(chartTemplate.template);
 
@@ -382,8 +376,8 @@ export function assembleChart(
             const semanticType = semanticTypes[fieldName] || '';
             const fieldValues = data.map(r => r[fieldName]);
 
-            // Unified type resolution: semantic type + data inference + channel/chart rules
-            encodingObj.type = resolveEncodingType(semanticType, fieldValues, channel, chartType, data, fieldName);
+            // Unified type resolution: semantic type + data inference + channel rules
+            encodingObj.type = resolveEncodingType(semanticType, fieldValues, channel, data, fieldName);
 
             // Explicit type override
             if (encoding.type) {
@@ -415,9 +409,17 @@ export function assembleChart(
                 }
             }
 
-            // Scale tweaks
-            if (encodingObj.type === "quantitative" && chartType.includes("Line") && channel === "x") {
-                encodingObj.scale = { nice: false };
+            // Scale tweaks: quantitative X axes need tight domains to avoid
+            // extra whitespace at the edges.  We apply this for line-like and
+            // area-like templates (anything with a connected mark) but NOT for
+            // bar/rect charts where VL's nice axis ticks look better.
+            // At this point vgObj.mark is not yet set, so check the template.
+            if (encodingObj.type === "quantitative" && channel === "x") {
+                const tplMark = chartTemplate.template?.mark;
+                const tplMarkType = typeof tplMark === 'string' ? tplMark : tplMark?.type;
+                if (tplMarkType === 'line' || tplMarkType === 'area' || tplMarkType === 'trail' || tplMarkType === 'point') {
+                    encodingObj.scale = { nice: false };
+                }
             }
 
             // Legend sizing for high-cardinality nominal color
@@ -503,9 +505,11 @@ export function assembleChart(
             if ((channel === 'x' && encodingObj.type === 'nominal' && encodings.y?.field) ||
                 (channel === 'y' && encodingObj.type === 'nominal' && encodings.x?.field)) {
 
-                if (chartType.includes("Line") || chartType.includes("Area") || chartType === "Heatmap" || chartType === "Pyramid Chart") {
-                    // do nothing — lines/areas need temporal order, heatmaps need natural order
-                } else {
+                // Skip auto-sort when the field's original data is temporal
+                // (converted to nominal/ordinal by detectBandedAxis) — sorting
+                // by quantitative value would break chronological order.
+                const fieldOrigType = fieldName ? inferVisCategory(data.map(r => r[fieldName])) : undefined;
+                if (fieldOrigType !== 'temporal') {
                     const colorField = encodings.color?.field;
                     let colorFieldType: string | undefined;
                     if (colorField) {
@@ -562,15 +566,10 @@ export function assembleChart(
     }
 
     // --- Build encodings into spec ---
-    chartTemplate.buildEncodings(vgObj, resolvedEncodings);
+    const buildContext: BuildEncodingContext = { table: data, semanticTypes, canvasSize, chartType, chartProperties };
+    chartTemplate.buildEncodings(vgObj, resolvedEncodings, buildContext);
 
-    // --- Post-processor ---
-    if (chartTemplate.postProcessor) {
-        const processed = chartTemplate.postProcessor(vgObj, data, chartProperties, canvasSize, semanticTypes);
-        if (processed) Object.assign(vgObj, processed === vgObj ? {} : {}, processed !== vgObj ? processed : {});
-    }
-
-    // Merge any warnings emitted by the postProcessor
+    // Merge any warnings emitted by buildEncodings
     if (vgObj._warnings && Array.isArray(vgObj._warnings)) {
         warnings.push(...vgObj._warnings);
         delete vgObj._warnings;
@@ -709,7 +708,7 @@ export function assembleChart(
 
     const baseRefSize = 300;
     const sizeRatio = Math.max(defaultChartWidth, defaultChartHeight) / baseRefSize;
-    const defaultStepSize = Math.round(20 * Math.max(1, sizeRatio));
+    const defaultStepSize = Math.round(20 * Math.max(1, sizeRatio) * defaultStepMultiplier);
 
     const isDiscreteType = (t: string | undefined) => t === 'nominal' || t === 'ordinal';
     const xOffsetEnc = vgObj.encoding?.xOffset;
@@ -719,8 +718,25 @@ export function assembleChart(
     const yOffsetMultiplier = (yOffsetEnc?.field && isDiscreteType(yOffsetEnc.type))
         ? new Set(values.map((r: any) => r[yOffsetEnc.field])).size : 1;
 
-    let maxXToKeep = Math.floor(defaultChartWidth * maxStretchVal / (minStepVal * xOffsetMultiplier));
-    let maxYToKeep = Math.floor(defaultChartHeight * maxStretchVal / (minStepVal * yOffsetMultiplier));
+    // For grouped bars, compute overflow cutoff at the group level:
+    // each group needs at least 2 × itemsPerGroup pixels (min group step),
+    // and we allow up to maxStretch × canvas size.
+    const xMinGroupStep = xOffsetMultiplier > 1 ? 2 * xOffsetMultiplier : minStepVal;
+    const yMinGroupStep = yOffsetMultiplier > 1 ? 2 * yOffsetMultiplier : minStepVal;
+    let maxXToKeep = Math.floor(defaultChartWidth * maxStretchVal / xMinGroupStep);
+    let maxYToKeep = Math.floor(defaultChartHeight * maxStretchVal / yMinGroupStep);
+
+    // --- Mark type detection (needed for overflow sort strategy) ---
+    const markType = typeof vgObj.mark === 'string' ? vgObj.mark : vgObj.mark?.type;
+    const allMarkTypes = new Set<string>();
+    if (markType) allMarkTypes.add(markType);
+    if (Array.isArray(vgObj.layer)) {
+        for (const layer of vgObj.layer) {
+            const lm = typeof layer.mark === 'string' ? layer.mark : layer.mark?.type;
+            if (lm) allMarkTypes.add(lm);
+        }
+    }
+    const hasConnectedMark = allMarkTypes.has('line') || allMarkTypes.has('area') || allMarkTypes.has('trail');
 
     const nominalCount: Record<string, number> = {
         x: 0, y: 0, column: 0, row: 0, xOffset: 0, yOffset: 0,
@@ -730,7 +746,11 @@ export function assembleChart(
     for (const channel of ['x', 'y', 'column', 'row', 'xOffset', 'yOffset', 'color']) {
         const enc = vgObj.encoding?.[channel];
         if (enc?.field && isDiscreteType(enc.type)) {
-            const maxNominalValuesToKeep = channel === 'x' ? maxXToKeep : channel === 'y' ? maxYToKeep : maxFacetNominalValues;
+            const maxNominalValuesToKeep = channel === 'x' ? maxXToKeep
+                : channel === 'y' ? maxYToKeep
+                : channel === 'row' ? maxFacetRows
+                : channel === 'column' ? maxFacetColumns
+                : maxFacetNominalValues;
             const fieldName = enc.field;
             const uniqueValues = [...new Set(values.map((r: any) => r[fieldName]))];
 
@@ -771,7 +791,10 @@ export function assembleChart(
                             }
                         }
                     } else {
-                        if (chartType !== 'Heatmap' && colorEncoding?.field && colorEncoding.type === 'quantitative') {
+                        // For rect marks (heatmaps), color is the primary value channel —
+                        // don't auto-sort by it.  For other marks, sorting by a quantitative
+                        // color can help surface the most important items.
+                        if (markType !== 'rect' && colorEncoding?.field && colorEncoding.type === 'quantitative') {
                             sortChannel = 'color';
                             sortField = colorEncoding.field;
                             sortFieldType = colorEncoding.type;
@@ -784,12 +807,17 @@ export function assembleChart(
                         }
                     }
 
-                    if (!["Line Chart", "Custom Area Chart"].includes(chartType) &&
+                    // Connected marks (line/area/trail) need chronological/natural
+                    // order preserved — skip aggregate-based sorting for them.
+                    if (!hasConnectedMark &&
                         sortField != undefined && sortChannel != undefined && sortFieldType === 'quantitative') {
 
+                        // Bar marks typically stack values, so SUM gives the
+                        // true visual height for picking the top-N items.
+                        // Other marks use MAX.
                         let aggregateOp = Math.max;
                         let initialValue = -Infinity;
-                        if (chartType === "Bar" && sortChannel !== 'color') {
+                        if (allMarkTypes.has('bar') && sortChannel !== 'color') {
                             aggregateOp = (x: number, y: number) => x + y;
                             initialValue = 0;
                         }
@@ -1010,65 +1038,45 @@ export function assembleChart(
         yTotalNominalCount = nominalCount.y * nominalCount.yOffset;
     }
 
-    // --- Count continuous axes used as discrete positions (bar/rect) ---
-    // Temporal or quantitative positional axes without aggregate act like
-    // discrete positions.  Track their cardinality separately — they use
-    // continuousWidth/Height + mark dimensions, NOT the step-based layout
-    // that nominal axes use.  Don't fold into xTotalNominalCount/yTotalNominalCount.
+    // --- Count banded continuous axes ---
+    // Two sources of banded continuous axes:
+    // 1. Template-declared: axisFlags.banded (bars, rects, boxplots on
+    //    continuous scales).
+    // 2. Binned axes: enc.bin automatically implies banded — each bin
+    //    acts as a discrete band regardless of axisFlags.
     //
-    // Binned axes are a special case: the number of discrete positions is
-    // the number of bins (maxbins or default 10), not the raw data cardinality.
-    // VL sizes binned bars automatically, so we just need the count for stretch.
-    const markType = typeof vgObj.mark === 'string' ? vgObj.mark : vgObj.mark?.type;
-
-    // Collect all mark types — for layered specs, check each layer's mark too.
-    const allMarkTypes = new Set<string>();
-    if (markType) allMarkTypes.add(markType);
-    if (Array.isArray(vgObj.layer)) {
-        for (const layer of vgObj.layer) {
-            const lm = typeof layer.mark === 'string' ? layer.mark : layer.mark?.type;
-            if (lm) allMarkTypes.add(lm);
-        }
-    }
-    const hasBarLikeMark = allMarkTypes.has('bar') || allMarkTypes.has('rect');
+    // Banded continuous axes get elastic stretch via subplotWidth/Height
+    // but NOT VL's step-based layout (which only works for nominal/ordinal).
+    // Non-banded axes (scatter, line, area) don't need per-position sizing.
+    const xBanded = buildContext.axisFlags?.x?.banded ?? false;
+    const yBanded = buildContext.axisFlags?.y?.banded ?? false;
 
     let xContinuousAsDiscrete = 0;
     let yContinuousAsDiscrete = 0;
-    if (hasBarLikeMark) {
-        for (const axis of ['x', 'y'] as const) {
-            const enc = vgObj.encoding?.[axis];
-            if (!enc?.field) continue;
-            if (isDiscreteType(enc.type)) continue;
-            if (enc.aggregate) continue;
+    for (const axis of ['x', 'y'] as const) {
+        const enc = vgObj.encoding?.[axis];
+        if (!enc?.field) continue;
+        if (isDiscreteType(enc.type)) continue;   // already counted in nominalCount
+        if (enc.aggregate) continue;
 
+        const isBanded = (axis === 'x' ? xBanded : yBanded) || !!enc.bin;
+        if (!isBanded) continue;
+
+        let count: number;
+        if (enc.bin) {
             // Binned axis — discrete count is the number of bins.
-            // Default to 6 (VL's typical nice-rounded result) unless maxbins is specified.
-            if (enc.bin) {
-                const binCount = typeof enc.bin === 'object' && enc.bin.maxbins
-                    ? enc.bin.maxbins : 6;
-                if (axis === 'x') {
-                    xContinuousAsDiscrete = binCount;
-                } else {
-                    yContinuousAsDiscrete = binCount;
-                }
-                continue;
-            }
+            count = typeof enc.bin === 'object' && enc.bin.maxbins
+                ? enc.bin.maxbins : 6;
+        } else {
+            // Temporal or quantitative used as banded dimension
+            count = new Set(values.map((r: any) => r[enc.field])).size;
+        }
+        if (count <= 1) continue;
 
-            // Only treat as discrete: temporal axes, or quantitative axes
-            // where the opposite side is clearly a measure (has aggregate).
-            if (enc.type !== 'temporal') {
-                const otherEnc = vgObj.encoding?.[axis === 'x' ? 'y' : 'x'];
-                if (!otherEnc?.aggregate) continue;
-            }
-
-            const cardinality = new Set(values.map((r: any) => r[enc.field])).size;
-            if (cardinality <= 1) continue;
-
-            if (axis === 'x') {
-                xContinuousAsDiscrete = cardinality;
-            } else {
-                yContinuousAsDiscrete = cardinality;
-            }
+        if (axis === 'x') {
+            xContinuousAsDiscrete = count;
+        } else {
+            yContinuousAsDiscrete = count;
         }
     }
 
@@ -1132,76 +1140,127 @@ export function assembleChart(
     const xAxis = computeAxisStep(xTotalNominalCount, xContinuousAsDiscrete, subplotWidth);
     const yAxis = computeAxisStep(yTotalNominalCount, yContinuousAsDiscrete, subplotHeight);
 
-    // Step size for VL step-based layout (discrete axes only)
-    let stepSize: number;
-    if (xTotalNominalCount > 0 && yTotalNominalCount > 0) {
-        stepSize = Math.min(xAxis.step, yAxis.step);
-    } else if (xTotalNominalCount > 0) {
-        stepSize = xAxis.step;
-    } else if (yTotalNominalCount > 0) {
-        stepSize = yAxis.step;
-    } else {
-        stepSize = defaultStepSize;
-    }
-    stepSize = Math.max(minStepVal, Math.min(defaultStepSize, stepSize));
+    // Per-axis step sizes for VL step-based layout.
+    // Only nominal/ordinal axes use VL's {step: N} layout.
+    // Banded continuous axes (binned, temporal, quantitative) get elastic
+    // stretch via Phase 1 subplotWidth/Height and mark sizing via postProcessing,
+    // but NOT step-based layout — VL rejects {step: N} on continuous scales.
+    const xIsDiscrete = xTotalNominalCount > 0;
+    const yIsDiscrete = yTotalNominalCount > 0;
 
-    // For continuous-as-discrete, stretch continuousWidth/Height and set mark dimensions.
-    // Use the per-axis effective step (not the shared discrete stepSize).
-    // For continuous-as-discrete, stretch continuousWidth/Height and set mark
-    // dimensions.  Skip binned axes — VL computes bar width from bin boundaries.
+    // Grouped bar chart: compute step at the group level using
+    // "width"/"height": {"step": N, "for": "position"} so each group
+    // (not each sub-bar) is the unit of elastic squeeze.
+    const xHasOffset = nominalCount.xOffset > 0;
+    const yHasOffset = nominalCount.yOffset > 0;
+
+    let xStepSize: number;
+    let yStepSize: number;
+    let xStepFor: string | undefined;
+    let yStepFor: string | undefined;
+
+    if (xIsDiscrete && xHasOffset) {
+        // Grouped X: squeeze at group level (nominalCount.x groups)
+        const itemsPerGroup = nominalCount.xOffset;
+        const defaultGroupStep = itemsPerGroup * defaultStepSize;
+        const minGroupStep = 2 * itemsPerGroup;
+        const groupAxis = computeAxisStep(nominalCount.x, 0, subplotWidth);
+        // Apply elastic budget at group level, then clamp
+        const groupStep = Math.max(minGroupStep, Math.min(defaultGroupStep, groupAxis.step));
+        xStepSize = groupStep;
+        xStepFor = 'position';
+    } else if (xIsDiscrete) {
+        xStepSize = Math.max(minStepVal, Math.min(defaultStepSize, xAxis.step));
+    } else if (xContinuousAsDiscrete > 0) {
+        // Continuous + banded: compute step using discrete approach
+        // so effective step drives continuousWidth below.
+        xStepSize = Math.max(minStepVal, Math.min(defaultStepSize, xAxis.step));
+    } else {
+        xStepSize = defaultStepSize;
+    }
+
+    if (yIsDiscrete && yHasOffset) {
+        // Grouped Y: squeeze at group level (nominalCount.y groups)
+        const itemsPerGroup = nominalCount.yOffset;
+        const defaultGroupStep = itemsPerGroup * defaultStepSize;
+        const minGroupStep = 2 * itemsPerGroup;
+        const groupAxis = computeAxisStep(nominalCount.y, 0, subplotHeight);
+        const groupStep = Math.max(minGroupStep, Math.min(defaultGroupStep, groupAxis.step));
+        yStepSize = groupStep;
+        yStepFor = 'position';
+    } else if (yIsDiscrete) {
+        yStepSize = Math.max(minStepVal, Math.min(defaultStepSize, yAxis.step));
+    } else if (yContinuousAsDiscrete > 0) {
+        // Continuous + banded: compute step using discrete approach
+        // so effective step drives continuousHeight below.
+        yStepSize = Math.max(minStepVal, Math.min(defaultStepSize, yAxis.step));
+    } else {
+        yStepSize = defaultStepSize;
+    }
+
+    // --- Phase 1: Axis compression (universal, mark-agnostic) ---
+    // For continuous-as-discrete (banded) axes, compute the canvas size
+    // from the effective step × item count, mirroring how VL's {step: N}
+    // works for truly discrete axes.  An extra step is added (half on each
+    // side) so marks aren't flush against the axis edges.
+    // Mark-specific sizing happens in Phase 2 below.
     for (const axis of ['x', 'y'] as const) {
         const count = axis === 'x' ? xContinuousAsDiscrete : yContinuousAsDiscrete;
         if (count <= 0) continue;
-        const { budget, step: effStep } = axis === 'x' ? xAxis : yAxis;
-        const clampedStep = Math.max(minStepVal, Math.min(defaultStepSize, effStep));
+        const stepSize = axis === 'x' ? xStepSize : yStepSize;
+        // count steps for the items + 1 extra step for half-step padding on each side
+        const continuousSize = Math.round(stepSize * (count + 1));
         if (axis === 'x') {
-            subplotWidth = Math.round(budget);
+            subplotWidth = continuousSize;
         } else {
-            subplotHeight = Math.round(budget);
+            subplotHeight = continuousSize;
         }
-        // Binned axes: VL auto-sizes bars from bin boundaries — skip mark sizing.
+
+        // Set scale padding so VL extends the domain by half a step on
+        // each side, matching the extra canvas budget we just added.
         const enc = vgObj.encoding?.[axis];
-        if (enc?.bin) continue;
+        if (enc) {
+            if (!enc.scale) enc.scale = {};
+            enc.scale.nice = false;
 
-        const sizeKey = allMarkTypes.has('rect')
-            ? (axis === 'x' ? 'width' : 'height')
-            : 'size';
-        const cellSize = Math.max(2, Math.round(clampedStep * 0.8));
-
-        // Apply mark sizing — for layered specs, update each layer's mark
-        if (Array.isArray(vgObj.layer)) {
-            for (const layer of vgObj.layer) {
-                const lm = typeof layer.mark === 'string' ? layer.mark : layer.mark?.type;
-                if (lm === 'bar' || lm === 'rect') {
-                    if (typeof layer.mark === 'string') {
-                        layer.mark = { type: layer.mark, [sizeKey]: cellSize };
-                    } else {
-                        layer.mark = { ...layer.mark, [sizeKey]: cellSize };
-                    }
+            // Compute data-space extent and derive padding in data units.
+            // Handle both numeric and temporal (date string) values.
+            const isTemporal = enc.type === 'temporal';
+            const numericVals = values
+                .map((r: any) => {
+                    const raw = r[enc.field];
+                    if (raw == null) return NaN;
+                    if (isTemporal) return +new Date(raw);
+                    return +raw;
+                })
+                .filter((v: number) => !isNaN(v));
+            if (numericVals.length > 1) {
+                const minVal = Math.min(...numericVals);
+                const maxVal = Math.max(...numericVals);
+                const dataRange = maxVal - minVal;
+                // Actual spacing between consecutive items = dataRange / (count - 1)
+                const halfStep = dataRange / (count - 1) / 2;
+                if (isTemporal) {
+                    enc.scale.domain = [
+                        new Date(minVal - halfStep).toISOString(),
+                        new Date(maxVal + halfStep).toISOString(),
+                    ];
+                } else {
+                    enc.scale.domain = [minVal - halfStep, maxVal + halfStep];
                 }
-            }
-        } else if (vgObj.mark) {
-            if (typeof vgObj.mark === 'string') {
-                vgObj.mark = { type: vgObj.mark, [sizeKey]: cellSize };
-            } else {
-                vgObj.mark = { ...vgObj.mark, [sizeKey]: cellSize };
             }
         }
     }
 
-    // Effective step per axis for label sizing (covers both discrete and continuous-as-discrete)
-    const xEffStep = xTotalNominalCount > 0 ? stepSize
-        : xContinuousAsDiscrete > 0 ? Math.max(minStepVal, Math.min(defaultStepSize, xAxis.step))
-        : defaultStepSize;
-    const yEffStep = yTotalNominalCount > 0 ? stepSize
-        : yContinuousAsDiscrete > 0 ? Math.max(minStepVal, Math.min(defaultStepSize, yAxis.step))
-        : defaultStepSize;
+    // Effective step per axis (covers both nominal and continuous-as-discrete)
+    const xEffStep = xStepSize;
+    const yEffStep = yStepSize;
 
-    // Dynamic label sizing
-    // Only truly discrete (nominal/ordinal) axes need label resizing — their text
-    // labels can be long and overlap at small step sizes.  Continuous-as-discrete
-    // axes (temporal/quantitative converted for bar sizing) have short numeric or
-    // date labels that don't struggle with overlapping, so skip them.
+    // Dynamic label sizing — applies to truly discrete (nominal/ordinal) axes
+    // whose text labels can be long and overlap at small step sizes.
+    // Continuous-as-discrete axes (temporal/quantitative used as positions)
+    // keep VL's continuous axis with short numeric/date tick labels, so they
+    // only need elastic stretch, not label resizing.
     const defaultLabelFontSize = 10;
     const defaultLabelLimit = 100;
 
@@ -1236,20 +1295,38 @@ export function assembleChart(
         view: {
             continuousWidth: subplotWidth,
             continuousHeight: subplotHeight,
-            step: stepSize,
-            // Hide view border for postProcessor-owned specs (e.g. radar)
+            // Hide view border for buildEncodings-owned specs (e.g. radar)
             ...(!vgObj.encoding && { stroke: null }),
         },
         axisX: axisXConfig,
         axisY: axisYConfig,
     };
 
+    // Set per-axis step-based sizing for discrete axes.
+    // Use width: {step: N} / height: {step: N} directly on the spec
+    // so each axis gets its own step independently.
+    // For grouped bars, use {step: N, for: "position"} so the step
+    // controls the group width rather than individual sub-bars.
+    if (xIsDiscrete && typeof vgObj.width !== 'number') {
+        vgObj.width = xStepFor ? { step: xStepSize, for: xStepFor } : { step: xStepSize };
+    }
+    if (yIsDiscrete && typeof vgObj.height !== 'number') {
+        vgObj.height = yStepFor ? { step: yStepSize, for: yStepFor } : { step: yStepSize };
+    }
+
     // Sync hardcoded template width/height to config.view
     if (typeof vgObj.width === 'number') {
         vgObj.config.view.continuousWidth = vgObj.width;
+    } else if (vgObj.width && typeof vgObj.width === 'object' && 'step' in vgObj.width) {
+        // buildEncodings set a step-based width (e.g. strip plot jitter).
+        // Override the step with the assembler's computed step size so
+        // elastic stretch and overflow work correctly.
+        vgObj.width = xStepFor ? { step: xStepSize, for: xStepFor } : { step: xStepSize };
     }
     if (typeof vgObj.height === 'number') {
         vgObj.config.view.continuousHeight = vgObj.height;
+    } else if (vgObj.height && typeof vgObj.height === 'object' && 'step' in vgObj.height) {
+        vgObj.height = yStepFor ? { step: yStepSize, for: yStepFor } : { step: yStepSize };
     }
 
     if (totalFacets > 6) {
@@ -1281,50 +1358,19 @@ export function assembleChart(
         vgObj.config.mark = { ...vgObj.config.mark, tooltip: true };
     }
 
-    // --- Rect mark edge-to-edge tiling ---
-    // (markType already declared above for bar/rect stretch)
-    if (markType === 'rect') {
-        const contWidth = vgObj.config?.view?.continuousWidth || defaultChartWidth;
-        const contHeight = vgObj.config?.view?.continuousHeight || defaultChartHeight;
-
-        for (const axis of ['x', 'y'] as const) {
-            const enc = vgObj.encoding?.[axis];
-            if (!enc?.field) continue;
-            const t = enc.type;
-            if (t === 'nominal' || t === 'ordinal') continue;
-            if (enc.aggregate) continue;
-
-            const uniqueVals = [...new Set(values.map((r: any) => r[enc.field]))];
-            const cardinality = uniqueVals.length;
-            if (cardinality <= 1) continue;
-
-            const dim = axis === 'x' ? contWidth : contHeight;
-            const cellSize = Math.max(1, Math.round(dim / cardinality));
-            const sizeKey = axis === 'x' ? 'width' : 'height';
-            if (typeof vgObj.mark === 'string') {
-                vgObj.mark = { type: vgObj.mark, [sizeKey]: cellSize };
-            } else {
-                vgObj.mark = { ...vgObj.mark, [sizeKey]: cellSize };
-            }
-
-            // Prevent VL from expanding the domain beyond the data range.
-            // For temporal axes this avoids gaps; for quantitative it keeps
-            // cells aligned with tick marks. A small pixel padding (2px)
-            // prevents edge marks from colliding with the axis line.
-            if (!enc.scale) enc.scale = {};
-            enc.scale.nice = false;
-            enc.scale.padding = 2;
-        }
-    }
-
-    // --- Boxplot mark sizing ---
-    if (markType === 'boxplot' && (xTotalNominalCount > 0 || yTotalNominalCount > 0)) {
-        const boxSize = Math.max(4, Math.round(stepSize * 0.7));
-        if (typeof vgObj.mark === 'string') {
-            vgObj.mark = { type: vgObj.mark, size: boxSize };
-        } else {
-            vgObj.mark = { ...vgObj.mark, size: boxSize };
-        }
+    // --- Phase 2: Mark-specific sizing (delegated to templates) ---
+    if (chartTemplate.postProcessing) {
+        buildContext.inferredProperties = {
+            xStepSize,
+            yStepSize,
+            subplotWidth,
+            subplotHeight,
+            xContinuousAsDiscrete,
+            yContinuousAsDiscrete,
+            xNominalCount: xTotalNominalCount,
+            yNominalCount: yTotalNominalCount,
+        };
+        chartTemplate.postProcessing(vgObj, buildContext);
     }
 
     // --- Attach warnings ---

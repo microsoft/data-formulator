@@ -145,6 +145,48 @@ export function genBarTests(): TestCase[] {
         });
     }
 
+    // 7b. Large equally-spaced quantitative x (1..30) — stays continuous banded
+    {
+        const data = Array.from({ length: 30 }, (_, i) => ({
+            Position: i + 1,
+            Score: Math.round(50 + rand() * 500),
+        }));
+        tests.push({
+            title: 'Quant × Quant (equally spaced, 30 positions)',
+            description: 'Equally spaced integers 1..30 — too many for ordinal, stays continuous banded',
+            tags: ['quantitative', 'large', 'equally-spaced', 'continuous-banded'],
+            chartType: 'Bar Chart',
+            data,
+            fields: [makeField('Position'), makeField('Score')],
+            metadata: {
+                Position: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                Score: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+            },
+            encodingMap: { x: makeEncodingItem('Position'), y: makeEncodingItem('Score') },
+        });
+    }
+
+    // 7c. Large equally-spaced quantitative x (1..30), horizontal
+    {
+        const data = Array.from({ length: 30 }, (_, i) => ({
+            Position: i + 1,
+            Score: Math.round(50 + rand() * 500),
+        }));
+        tests.push({
+            title: 'Quant × Quant (equally spaced, 30 positions, horizontal)',
+            description: 'Equally spaced integers 1..30 on y-axis — horizontal continuous banded',
+            tags: ['quantitative', 'large', 'equally-spaced', 'continuous-banded', 'swap-axis'],
+            chartType: 'Bar Chart',
+            data,
+            fields: [makeField('Score'), makeField('Position')],
+            metadata: {
+                Score: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                Position: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+            },
+            encodingMap: { x: makeEncodingItem('Score'), y: makeEncodingItem('Position') },
+        });
+    }
+
     // 8. Nominal x + color (many colors)
     {
         const directors = genCategories('Director', 20);

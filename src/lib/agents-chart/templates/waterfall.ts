@@ -22,32 +22,19 @@ export const waterfallChartDef: ChartTemplateDef = {
             encoding: {},
         },
         channels: ["x", "y", "color", "column", "row"],
-        buildEncodings: (spec, encodings) => {
+        buildEncodings: (spec, encodings, context) => {
+            // Waterfall uses bars — x axis is banded
+            context.axisFlags = { x: { banded: true } };
             const { x, y, color, column, row } = encodings;
+            const config = context.chartProperties;
 
-            // Stash field names so postProcessor can build transforms + encodings.
-            spec._wf = {
-                xField: x?.field,
-                yField: y?.field,
-                colorField: color?.field,
-            };
+            const xField: string = x?.field || 'Category';
+            const yField: string = y?.field || 'Amount';
+            const colorField: string | undefined = color?.field;
 
             if (!spec.encoding) spec.encoding = {};
             if (column) spec.encoding.column = column;
             if (row) spec.encoding.row = row;
-        },
-        properties: [
-            {
-                key: "cornerRadius", label: "Corners", type: "continuous",
-                min: 0, max: 8, step: 1, defaultValue: 0,
-            },
-        ] as ChartPropertyDef[],
-        postProcessor: (vgSpec: any, table: any[], config?: Record<string, any>, canvasSize?: { width: number; height: number }) => {
-            const wf = vgSpec._wf || {};
-            const xField: string = wf.xField || 'Category';
-            const yField: string = wf.yField || 'Amount';
-            const colorField: string | undefined = wf.colorField;
-            delete vgSpec._wf;
 
             const hasTypeCol = !!colorField;
             const typeField = colorField || '__wf_type';
@@ -55,7 +42,6 @@ export const waterfallChartDef: ChartTemplateDef = {
             // ── Transforms ───────────────────────────────────────────────
             const transforms: any[] = [];
 
-            // Auto-infer type if no explicit type column
             if (!hasTypeCol) {
                 transforms.push(
                     { window: [{ op: "row_number", as: "__wf_row" }] },
@@ -67,31 +53,26 @@ export const waterfallChartDef: ChartTemplateDef = {
                 );
             }
 
-            // Running sum
             transforms.push({
                 window: [{ op: "sum", field: yField, as: "__wf_sum_raw" }],
             });
 
-            // For end rows, the Amount is the display total, not a delta —
-            // override sum to exclude it (use the running total before this row).
             transforms.push({
                 calculate: `datum['${typeField}'] === 'end' ? datum.__wf_sum_raw - datum['${yField}'] : datum.__wf_sum_raw`,
                 as: "__wf_sum",
             });
 
-            // previous_sum = bottom of floating bar
             transforms.push({
                 calculate: `datum['${typeField}'] === 'end' ? 0 : datum.__wf_sum - datum['${yField}']`,
                 as: "__wf_prev_sum",
             });
 
-            // Color category: total for start/end, increase/decrease by sign
             transforms.push({
                 calculate: `datum['${typeField}'] !== 'delta' ? 'total' : datum['${yField}'] >= 0 ? 'increase' : 'decrease'`,
                 as: "__wf_color",
             });
 
-            vgSpec.transform = transforms;
+            spec.transform = transforms;
 
             // ── Shared x encoding ────────────────────────────────────────
             const xEnc = {
@@ -101,21 +82,19 @@ export const waterfallChartDef: ChartTemplateDef = {
                 axis: { labelAngle: -45 },
             };
 
-            // ── Build layered spec ───────────────────────────────────────
-            // Preserve facet encodings from top level
+            // ── Preserve facet encodings ─────────────────────────────────
             const facetEncodings: any = {};
-            if (vgSpec.encoding?.column) facetEncodings.column = vgSpec.encoding.column;
-            if (vgSpec.encoding?.row) facetEncodings.row = vgSpec.encoding.row;
+            if (spec.encoding?.column) facetEncodings.column = spec.encoding.column;
+            if (spec.encoding?.row) facetEncodings.row = spec.encoding.row;
 
             const cornerRadius = (config?.cornerRadius && config.cornerRadius > 0) ? config.cornerRadius : 0;
 
-            vgSpec.encoding = {
+            spec.encoding = {
                 x: xEnc,
                 ...facetEncodings,
             };
 
-            vgSpec.layer = [
-                // Bar layer
+            spec.layer = [
                 {
                     mark: {
                         type: "bar",
@@ -141,9 +120,12 @@ export const waterfallChartDef: ChartTemplateDef = {
                 },
             ];
 
-            // Remove top-level mark (now using layer)
-            delete vgSpec.mark;
-
-            return vgSpec;
+            delete spec.mark;
         },
+        properties: [
+            {
+                key: "cornerRadius", label: "Corners", type: "continuous",
+                min: 0, max: 8, step: 1, defaultValue: 0,
+            },
+        ] as ChartPropertyDef[],
 };

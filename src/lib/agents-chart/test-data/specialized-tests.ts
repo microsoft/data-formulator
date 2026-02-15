@@ -177,6 +177,42 @@ export function genHeatmapTests(): TestCase[] {
         });
     }
 
+    // 8. Asymmetric discrete: 5 categories on Y × 80 categories on X (400 cells)
+    {
+        const xCats = Array.from({ length: 80 }, (_, i) => `C${String(i + 1).padStart(2, '0')}`);
+        const yCats = genCategories('Category', 5);
+        const data: any[] = [];
+        for (const x of xCats) for (const y of yCats) data.push({ Category: x, Group: y, Value: Math.round(rand() * 100) });
+        tests.push({
+            title: 'Nominal × Nominal (asymmetric wide, 80×5)',
+            description: '80 categories on X × 5 on Y (400 cells) — tests wide asymmetric discrete axes',
+            tags: ['nominal', 'color', 'asymmetric', 'very-large'],
+            chartType: 'Heatmap',
+            data,
+            fields: [makeField('Category'), makeField('Group'), makeField('Value')],
+            metadata: buildMetadata(data),
+            encodingMap: { x: makeEncodingItem('Category'), y: makeEncodingItem('Group'), color: makeEncodingItem('Value') },
+        });
+    }
+
+    // 9. Asymmetric discrete: 80 categories on Y × 5 categories on X (400 cells)
+    {
+        const xCats = genCategories('Category', 5);
+        const yCats = Array.from({ length: 80 }, (_, i) => `C${String(i + 1).padStart(2, '0')}`);
+        const data: any[] = [];
+        for (const x of xCats) for (const y of yCats) data.push({ Group: x, Category: y, Value: Math.round(rand() * 100) });
+        tests.push({
+            title: 'Nominal × Nominal (asymmetric tall, 5×80)',
+            description: '5 categories on X × 80 on Y (400 cells) — tests tall asymmetric discrete axes',
+            tags: ['nominal', 'color', 'asymmetric', 'very-large'],
+            chartType: 'Heatmap',
+            data,
+            fields: [makeField('Group'), makeField('Category'), makeField('Value')],
+            metadata: buildMetadata(data),
+            encodingMap: { x: makeEncodingItem('Group'), y: makeEncodingItem('Category'), color: makeEncodingItem('Value') },
+        });
+    }
+
     return tests;
 }
 

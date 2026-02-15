@@ -59,14 +59,13 @@ export const usMapDef: ChartTemplateDef = {
             ],
         },
         channels: ["longitude", "latitude", "color", "size"],
-        buildEncodings: (spec, encodings) => {
+        buildEncodings: (spec, encodings, _context) => {
             if (!spec.layer[1].encoding) spec.layer[1].encoding = {};
             for (const [ch, enc] of Object.entries(encodings)) {
                 spec.layer[1].encoding[ch] = { ...(spec.layer[1].encoding[ch] || {}), ...enc };
             }
         },
         properties: [] as ChartPropertyDef[],
-        postProcessor: (vgSpec: any) => vgSpec,
 };
 
 export const worldMapDef: ChartTemplateDef = {
@@ -91,10 +90,30 @@ export const worldMapDef: ChartTemplateDef = {
             ],
         },
         channels: ["longitude", "latitude", "color", "size", "opacity"],
-        buildEncodings: (spec, encodings) => {
+        buildEncodings: (spec, encodings, context) => {
             if (!spec.layer[1].encoding) spec.layer[1].encoding = {};
             for (const [ch, enc] of Object.entries(encodings)) {
                 spec.layer[1].encoding[ch] = { ...(spec.layer[1].encoding[ch] || {}), ...enc };
+            }
+
+            const config = context.chartProperties;
+            if (config) {
+                const projection = config.projection;
+                const projectionCenter = config.projectionCenter;
+                const applyProjection = (obj: any) => {
+                    if (obj?.projection) {
+                        if (projection && projection !== 'default') {
+                            obj.projection.type = projection;
+                        }
+                        if (projectionCenter && obj.projection.type !== 'albersUsa') {
+                            obj.projection.rotate = [-projectionCenter[0], -projectionCenter[1], 0];
+                        }
+                    }
+                };
+                if (spec.layer && Array.isArray(spec.layer)) {
+                    for (const layer of spec.layer) applyProjection(layer);
+                }
+                applyProjection(spec);
             }
         },
         properties: [
@@ -122,24 +141,4 @@ export const worldMapDef: ChartTemplateDef = {
                 defaultValue: undefined,
             },
         ] as ChartPropertyDef[],
-        postProcessor: (vgSpec: any, _table: any[], config?: Record<string, any>) => {
-            if (!config) return vgSpec;
-            const projection = config.projection;
-            const projectionCenter = config.projectionCenter;
-            const applyProjection = (obj: any) => {
-                if (obj?.projection) {
-                    if (projection && projection !== 'default') {
-                        obj.projection.type = projection;
-                    }
-                    if (projectionCenter && obj.projection.type !== 'albersUsa') {
-                        obj.projection.rotate = [-projectionCenter[0], -projectionCenter[1], 0];
-                    }
-                }
-            };
-            if (vgSpec.layer && Array.isArray(vgSpec.layer)) {
-                for (const layer of vgSpec.layer) applyProjection(layer);
-            }
-            applyProjection(vgSpec);
-            return vgSpec;
-        },
 };

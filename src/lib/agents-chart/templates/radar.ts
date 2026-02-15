@@ -14,7 +14,7 @@ import { ChartTemplateDef, ChartPropertyDef } from '../types';
  * Each row represents one (group, metric, value) triple.
  * Supports column/row faceting — one radar per facet group.
  *
- * The postProcessor normalises values per axis to 0-1, computes polar
+ * buildEncodings normalises values per axis to 0-1, computes polar
  * coordinates, and builds a layered VL spec with grid + polygon + points.
  */
 
@@ -282,37 +282,24 @@ export const radarChartDef: ChartTemplateDef = {
             encoding: {},
         },
         channels: ["x", "y", "color", "column", "row"],
-        buildEncodings: (spec, encodings) => {
-            spec._radar = {
-                axisField: encodings.x?.field,
-                valueField: encodings.y?.field,
-                groupField: encodings.color?.field,
-                columnField: encodings.column?.field,
-                rowField: encodings.row?.field,
-            };
-        },
-        properties: [
-            { key: "filled", label: "Filled", type: "binary", defaultValue: true },
-            { key: "fillOpacity", label: "Fill Opacity", type: "continuous", min: 0, max: 0.5, step: 0.05, defaultValue: 0.15 },
-            { key: "strokeWidth", label: "Line Width", type: "continuous", min: 0.5, max: 4, step: 0.5, defaultValue: 1.5 },
-        ] as ChartPropertyDef[],
-        postProcessor: (vgSpec: any, table: any[], config?: Record<string, any>, canvasSize?: { width: number; height: number }) => {
-            const radar = vgSpec._radar || {};
-            delete vgSpec._radar;
+        buildEncodings: (spec, encodings, context) => {
+            const axisField: string | undefined = encodings.x?.field;
+            const valueField: string | undefined = encodings.y?.field;
+            const groupField: string | undefined = encodings.color?.field;
+            const columnField: string | undefined = encodings.column?.field;
+            const rowField: string | undefined = encodings.row?.field;
 
-            const axisField: string | undefined = radar.axisField;
-            const valueField: string | undefined = radar.valueField;
-            const groupField: string | undefined = radar.groupField;
-            const columnField: string | undefined = radar.columnField;
-            const rowField: string | undefined = radar.rowField;
+            const table = context.table;
+            const canvasSize = context.canvasSize;
+            const config = context.chartProperties;
 
             const filled = config?.filled ?? true;
             const fillOpacity = config?.fillOpacity ?? 0.15;
             const strokeWidth = config?.strokeWidth ?? 1.5;
 
             if (!table || table.length === 0 || !axisField || !valueField) {
-                vgSpec.mark = "point";
-                return vgSpec;
+                spec.mark = "point";
+                return;
             }
 
             const size = Math.min(canvasSize?.width || 400, canvasSize?.height || 400);
@@ -321,19 +308,18 @@ export const radarChartDef: ChartTemplateDef = {
             // ---- No faceting: single radar ----
             if (!columnField && !rowField) {
                 const layers = buildRadarLayers(table, axisField, valueField, groupField, layerOpts);
-                if (layers.length === 0) { vgSpec.mark = "point"; return vgSpec; }
+                if (layers.length === 0) { spec.mark = "point"; return; }
 
                 const finalSpec: any = {
                     width: size, height: size, layer: layers,
                     config: { view: { stroke: null } },
                 };
-                for (const key of Object.keys(vgSpec)) delete vgSpec[key];
-                Object.assign(vgSpec, finalSpec);
-                return vgSpec;
+                for (const key of Object.keys(spec)) delete spec[key];
+                Object.assign(spec, finalSpec);
+                return;
             }
 
             // ---- Faceting: one radar per facet group ----
-            // Determine facet groups along column and row
             const colGroups: string[] = columnField
                 ? [...new Set(table.map(r => String(r[columnField])))] as string[]
                 : ["_all"];
@@ -341,12 +327,9 @@ export const radarChartDef: ChartTemplateDef = {
                 ? [...new Set(table.map(r => String(r[rowField])))] as string[]
                 : ["_all"];
 
-            // Fixed subplot size with a minimum floor — no elastic stretch,
-            // just wrap naturally and let total size grow.
             const minSubplot = 200;
             const subplotSize = Math.max(minSubplot, size);
 
-            // Build one subplot per (row, col) combination
             const buildSubplot = (rows: any[], title?: string) => {
                 const layers = buildRadarLayers(rows, axisField, valueField, groupField, layerOpts);
                 if (layers.length === 0) return null;
@@ -361,7 +344,6 @@ export const radarChartDef: ChartTemplateDef = {
             const concatSpacing = 5;
 
             if (rowField && columnField) {
-                // Grid layout: vconcat of hconcats
                 const vconcat: any[] = [];
                 for (const rg of rowGroups) {
                     const hconcat: any[] = [];
@@ -376,7 +358,6 @@ export const radarChartDef: ChartTemplateDef = {
                 }
                 finalSpec = { vconcat, spacing: concatSpacing, config: { view: { stroke: null } } };
             } else if (columnField) {
-                // Horizontal facet
                 const hconcat: any[] = [];
                 for (const cg of colGroups) {
                     const subset = table.filter(r => String(r[columnField]) === cg);
@@ -385,7 +366,6 @@ export const radarChartDef: ChartTemplateDef = {
                 }
                 finalSpec = { hconcat, spacing: concatSpacing, config: { view: { stroke: null } } };
             } else {
-                // Vertical facet (rowField)
                 const vconcat: any[] = [];
                 for (const rg of rowGroups) {
                     const subset = table.filter(r => String(r[rowField!]) === rg);
@@ -395,8 +375,12 @@ export const radarChartDef: ChartTemplateDef = {
                 finalSpec = { vconcat, spacing: concatSpacing, config: { view: { stroke: null } } };
             }
 
-            for (const key of Object.keys(vgSpec)) delete vgSpec[key];
-            Object.assign(vgSpec, finalSpec);
-            return vgSpec;
+            for (const key of Object.keys(spec)) delete spec[key];
+            Object.assign(spec, finalSpec);
         },
+        properties: [
+            { key: "filled", label: "Filled", type: "binary", defaultValue: true },
+            { key: "fillOpacity", label: "Fill Opacity", type: "continuous", min: 0, max: 0.5, step: 0.05, defaultValue: 0.15 },
+            { key: "strokeWidth", label: "Line Width", type: "continuous", min: 0.5, max: 4, step: 0.5, defaultValue: 1.5 },
+        ] as ChartPropertyDef[],
 };

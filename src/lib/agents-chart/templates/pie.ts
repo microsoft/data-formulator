@@ -11,20 +11,22 @@ export const pieChartDef: ChartTemplateDef = {
             encoding: {},
         },
         channels: ["theta", "color", "column", "row"],
-        buildEncodings: defaultBuildEncodings,
+        buildEncodings: (spec, encodings, context) => {
+            defaultBuildEncodings(spec, encodings, context);
+
+            const config = context.chartProperties;
+            if (config) {
+                const innerRadius = config.innerRadius;
+                if (innerRadius !== undefined && innerRadius > 0) {
+                    if (typeof spec.mark === 'string') {
+                        spec.mark = { type: spec.mark, innerRadius };
+                    } else {
+                        spec.mark = { ...spec.mark, innerRadius };
+                    }
+                }
+            }
+        },
         properties: [
             { key: "innerRadius", label: "Donut", type: "continuous", min: 0, max: 100, step: 5, defaultValue: 0 },
         ] as ChartPropertyDef[],
-        postProcessor: (vgSpec: any, _table: any[], config?: Record<string, any>) => {
-            if (!config) return vgSpec;
-            const innerRadius = config.innerRadius;
-            if (innerRadius !== undefined && innerRadius > 0) {
-                if (typeof vgSpec.mark === 'string') {
-                    vgSpec.mark = { type: vgSpec.mark, innerRadius };
-                } else {
-                    vgSpec.mark = { ...vgSpec.mark, innerRadius };
-                }
-            }
-            return vgSpec;
-        },
 };

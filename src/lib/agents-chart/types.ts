@@ -40,6 +40,63 @@ export interface ChartEncoding {
     scheme?: string;
 }
 
+/**
+ * Context passed to buildEncodings so templates can make dtype and
+ * orientation decisions based on the actual data.
+ *
+ * The assembler populates this once and hands it to every template;
+ * templates pick whatever they need.
+ */
+export interface BuildEncodingContext {
+    /** The data table (array of row objects) */
+    table: any[];
+    /** Field name → semantic type string (e.g. "Quantity", "Country") */
+    semanticTypes: Record<string, string>;
+    /** Target canvas dimensions */
+    canvasSize: { width: number; height: number };
+    /** Chart type name (e.g. "Bar Chart") — for edge cases */
+    chartType: string;
+    /** User-configured chart properties (corner radius, bin count, etc.) */
+    chartProperties?: Record<string, any>;
+
+    /**
+     * Axis flags set by templates during buildEncodings to communicate
+     * layout intent to the assembler's sizing logic.
+     *
+     * `banded`: whether marks on this axis occupy discrete bands of space
+     * (bars, rects, boxplots) and need per-position step sizing.
+     * Non-banded marks (points, lines) are freely placed and don't need
+     * step-based layout even on discrete axes.
+     *
+     * Templates set these; the assembler reads them for elastic stretch
+     * and mark sizing decisions.
+     */
+    axisFlags?: {
+        x?: { banded: boolean };
+        y?: { banded: boolean };
+    };
+
+    /** Layout sizing computed after elastic step computation (populated before postProcessing) */
+    inferredProperties?: {
+        /** Computed step size for the X axis (px per discrete position) */
+        xStepSize: number;
+        /** Computed step size for the Y axis (px per discrete position) */
+        yStepSize: number;
+        /** Final subplot width in px (after elastic stretch) */
+        subplotWidth: number;
+        /** Final subplot height in px (after elastic stretch) */
+        subplotHeight: number;
+        /** Number of continuous-as-discrete values on X */
+        xContinuousAsDiscrete: number;
+        /** Number of continuous-as-discrete values on Y */
+        yContinuousAsDiscrete: number;
+        /** Number of nominal/ordinal values on X */
+        xNominalCount: number;
+        /** Number of nominal/ordinal values on Y */
+        yNominalCount: number;
+    };
+}
+
 // ---------------------------------------------------------------------------
 // Chart Template
 // ---------------------------------------------------------------------------
@@ -74,14 +131,33 @@ export interface ChartTemplateDef {
      * This is the primary extension point for chart-specific encoding logic
      * (e.g. multi-layer specs, grouped bar offsets, pyramid splits).
      *
+     * Templates that need a discrete dimension (bar, grouped bar, boxplot, …)
+     * should call helpers like `detectBandedAxis()` / `resolveAsDiscrete()`
+     * here to finalize dtype decisions.
+     *
      * Simple templates use defaultBuildEncodings which maps each channel
      * directly to spec.encoding[channel].
+     *
+     * @param spec       The Vega-Lite spec skeleton (deep clone of template)
+     * @param encodings  Resolved encoding objects (field, type, sort, scale…)
+     * @param context    Data context for dtype/orientation decisions
      */
-    buildEncodings: (spec: any, encodings: Record<string, any>) => void;
-    /** Optional post-processor to finalize the spec */
-    postProcessor?: (vgSpec: any, table: any[], config?: Record<string, any>, canvasSize?: { width: number; height: number }, semanticTypes?: Record<string, string>) => any;
+    buildEncodings: (spec: any, encodings: Record<string, any>, context: BuildEncodingContext) => void;
     /** Optional configurable properties for the chart type */
     properties?: ChartPropertyDef[];
+    /**
+     * Optional hook to override default assembly settings before layout.
+     * Templates that need different layout tuning (e.g. larger step sizes
+     * for jittered plots) return a modified copy of the options here.
+     */
+    overrideDefaultSettings?: (options: AssembleOptions) => AssembleOptions;
+    /**
+     * Optional hook to adjust mark properties after layout computation.
+     * Called after elastic step sizing so templates can set mark width,
+     * height, size etc. based on final computed step sizes and subplot
+     * dimensions. Mutates `spec` in place.
+     */
+    postProcessing?: (spec: any, context: BuildEncodingContext) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -124,4 +200,6 @@ export interface AssembleOptions {
     minStep?: number;
     /** Minimum facet subplot size in px (default: 60) */
     minSubplotSize?: number;
+    /** Multiplier for the default step size (default: 1). Values >1 give more room per category. */
+    defaultStepMultiplier?: number;
 }

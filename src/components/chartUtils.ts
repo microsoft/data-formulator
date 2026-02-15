@@ -580,7 +580,7 @@ function getRecommendation(chartType: string, tv: InternalTableView): Record<str
             if (!xField || !yField) return {};
             assign('x', xField);
             assign('y', yField);
-            // Color is auto-computed by postProcessor (total/increase/decrease)
+            // Color is auto-computed by buildEncodings (total/increase/decrease)
             break;
         }
 
