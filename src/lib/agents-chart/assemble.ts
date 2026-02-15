@@ -1333,23 +1333,42 @@ export function assembleChart(
         vgObj.config.header = { labelLimit: 120, labelFontSize: 9 };
     }
 
-    // Reduce clutter in faceted charts
+    // Reduce clutter in faceted charts when subplots are compressed.
+    // Hide per-facet axis titles when the subplot dimension shrinks below
+    // a threshold — repeated titles waste space on small panels.
     // For layered specs, encoding may be nested under vgObj.spec.encoding
     const encTarget = vgObj.spec?.encoding || vgObj.encoding;
-    if (facetRows > 1 && encTarget) {
-        if (!encTarget.y?.axis) {
-            if (encTarget.y) encTarget.y.axis = {};
+    const yTitleThreshold = 100;   // hide Y title when subplot height < this
+    const xTitleThreshold = 100;   // hide X title when subplot width < this
+
+    if (facetRows > 1 && subplotHeight < yTitleThreshold) {
+        // Suppress via config (covers independent-scale facets)
+        if (vgObj.config?.axisY) {
+            vgObj.config.axisY.title = null;
         }
-        if (encTarget.y?.axis !== undefined) {
-            encTarget.y.axis.title = null;
+        // Also suppress via encoding (covers shared-scale facets)
+        if (encTarget) {
+            if (!encTarget.y?.axis) {
+                if (encTarget.y) encTarget.y.axis = {};
+            }
+            if (encTarget.y?.axis !== undefined) {
+                encTarget.y.axis.title = null;
+            }
         }
     }
-    if (facetCols > 1 && encTarget) {
-        if (!encTarget.x?.axis) {
-            if (encTarget.x) encTarget.x.axis = {};
+    // For column facets, X-axis title is shared (appears once at the bottom),
+    // so only suppress it when rows also facet and the title would repeat.
+    if (facetCols > 1 && facetRows > 1 && subplotWidth < xTitleThreshold) {
+        if (vgObj.config?.axisX) {
+            vgObj.config.axisX.title = null;
         }
-        if (encTarget.x?.axis !== undefined) {
-            encTarget.x.axis.title = null;
+        if (encTarget) {
+            if (!encTarget.x?.axis) {
+                if (encTarget.x) encTarget.x.axis = {};
+            }
+            if (encTarget.x?.axis !== undefined) {
+                encTarget.x.axis.title = null;
+            }
         }
     }
 
