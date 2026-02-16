@@ -15,6 +15,32 @@
  * This module reads abstract axis descriptors (AxisLayoutInput) and
  * produces abstract layout numbers (LayoutResult). The same layout
  * engine works regardless of output format.
+ *
+ * ── Backend Responsibility ──────────────────────────────────────────
+ * The LayoutResult is a target-agnostic description of "how big things
+ * should be".  Each rendering backend (Vega-Lite, ECharts, etc.) MUST:
+ *
+ *   1. Call computeLayout() once per chart (facet-aware — it already
+ *      divides subplot sizes for the facet grid).
+ *
+ *   2. Translate the LayoutResult into its own rendering format:
+ *      - subplotWidth / subplotHeight → plot area size (before margins)
+ *      - xStep / yStep → bar widths, band sizes, category spacing
+ *      - stepPadding → inter-category gap (barCategoryGap, paddingInner)
+ *      - label sizing → font size, rotation, truncation
+ *
+ *   3. Add its own margins, padding, and chrome (axis labels, titles,
+ *      legends, CANVAS_BUFFER) around the subplot area.
+ *
+ *   4. Handle facet-specific concerns itself:
+ *      - Column wrapping (when user specifies column-only, the backend
+ *        decides how many columns per visual row and restructures the
+ *        panel grid accordingly).
+ *      - Per-panel vs shared axis titles.
+ *      - Panel positioning and header labels.
+ *
+ * The layout engine does NOT know about VL encodings, ECharts grid
+ * objects, or any rendering-specific structure.
  * =============================================================================
  */
 

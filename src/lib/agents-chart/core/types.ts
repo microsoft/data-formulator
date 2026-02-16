@@ -228,6 +228,35 @@ export interface TruncationWarning {
 
 /**
  * Phase 1 output: all layout decisions.
+ *
+ * LayoutResult is **target-agnostic** — it describes abstract dimensions
+ * and step sizes that any rendering backend can consume.  It is the
+ * backend's responsibility to translate these values into its own
+ * coordinate system:
+ *
+ *   subplotWidth / subplotHeight
+ *     The intended data-area (plot area) size in pixels.  This does NOT
+ *     include axis labels, titles, legends, or margins.  Each backend
+ *     must add its own margins/padding around this area.
+ *
+ *   xStep / yStep
+ *     Pixel distance per discrete position on each axis.  A backend
+ *     rendering bars should derive bar width from step and stepPadding.
+ *     VL uses `width: {step: N}` natively; ECharts must compute
+ *     explicit barWidth / barCategoryGap.
+ *
+ *   stepPadding
+ *     Fraction of each step reserved for inter-category spacing (0–1).
+ *     Usable bar width = step × (1 − stepPadding).
+ *
+ *   facet (columns / rows / subplot sizes)
+ *     When faceting is active, the subplot dimensions are already
+ *     divided for the facet grid.  Each backend is responsible for
+ *     facet wrapping (e.g. column-only → wrapped rows), panel
+ *     positioning, header labels, and shared/per-panel axis titles.
+ *
+ * Backends should NOT modify LayoutResult.  They read it and translate
+ * to their native format (VL encoding props, ECharts grid/axis config, etc.).
  */
 export interface LayoutResult {
     /** Final subplot width in px (after stretch) */

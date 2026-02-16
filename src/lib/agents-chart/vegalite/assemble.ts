@@ -21,6 +21,26 @@
  *   applyLayoutToSpec
  *   post-layout adjustments (facet binning, independent scales, tooltips)
  *
+ * ── Backend Translation Responsibilities ────────────────────
+ * The LayoutResult from Phase 1 is target-agnostic.  This assembler
+ * translates it into Vega-Lite-specific structures:
+ *
+ *   subplotWidth / subplotHeight
+ *     → VL `width` / `height` on the spec (or `width: {step: N}` for
+ *       banded discrete axes).
+ *
+ *   xStep / yStep / stepPadding
+ *     → VL `width: {step: N}`, `encoding.x.scale.paddingInner`, etc.
+ *       VL handles bar sizing natively from the step declaration.
+ *
+ *   Facet wrapping
+ *     → `restructureFacets()` converts column-only to `facet` +
+ *       `columns: N`.  The wrapping decision uses the same parameters
+ *       (facetMaxStretch, minStep, minSubplotSize) as ECharts.
+ *
+ *   Axis titles, labels, legends
+ *     → VL handles these declaratively via encoding / config.
+ *
  * This module has NO React, Redux, or UI framework dependencies.
  */
 

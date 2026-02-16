@@ -29,6 +29,7 @@ export { genOverflowTests, genElasticityTests } from './stress-tests';
 export { genGasPressureTests } from './gas-pressure-tests';
 export { genLineAreaStretchTests } from './line-area-stretch-tests';
 export { genEChartsScatterTests, genEChartsLineTests, genEChartsBarTests, genEChartsStackedBarTests, genEChartsGroupedBarTests, genEChartsStressTests, genEChartsAreaTests, genEChartsPieTests, genEChartsHeatmapTests, genEChartsHistogramTests, genEChartsBoxplotTests, genEChartsRadarTests, genEChartsCandlestickTests, genEChartsStreamgraphTests, genEChartsFacetSmallTests, genEChartsFacetWrapTests, genEChartsFacetClipTests } from './echarts-tests';
+export { genChartJsScatterTests, genChartJsLineTests, genChartJsBarTests, genChartJsStackedBarTests, genChartJsGroupedBarTests, genChartJsAreaTests, genChartJsPieTests, genChartJsHistogramTests, genChartJsRadarTests, genChartJsStressTests } from './chartjs-tests';
 export { genDiscreteAxisTests } from './discrete-axis-tests';
 export { genUnintendedScatterTests, genUnintendedBarTests, genUnintendedLineAreaTests, genUnintendedPartToWholeTests, genUnintendedStatisticalTests } from './unintended-tests';
 export { genDateTests, genDateYearTests, genDateMonthTests, genDateYearMonthTests, genDateDecadeTests, genDateDateTimeTests, genDateHoursTests } from './date-tests';
@@ -54,6 +55,7 @@ import { genDiscreteAxisTests } from './discrete-axis-tests';
 import { genUnintendedScatterTests, genUnintendedBarTests, genUnintendedLineAreaTests, genUnintendedPartToWholeTests, genUnintendedStatisticalTests } from './unintended-tests';
 import { genDateYearTests, genDateMonthTests, genDateYearMonthTests, genDateDecadeTests, genDateDateTimeTests, genDateHoursTests } from './date-tests';
 import { genEChartsScatterTests, genEChartsLineTests, genEChartsBarTests, genEChartsStackedBarTests, genEChartsGroupedBarTests, genEChartsStressTests, genEChartsAreaTests, genEChartsPieTests, genEChartsHeatmapTests, genEChartsHistogramTests, genEChartsBoxplotTests, genEChartsRadarTests, genEChartsCandlestickTests, genEChartsStreamgraphTests, genEChartsFacetSmallTests, genEChartsFacetWrapTests, genEChartsFacetClipTests } from './echarts-tests';
+import { genChartJsScatterTests, genChartJsLineTests, genChartJsBarTests, genChartJsStackedBarTests, genChartJsGroupedBarTests, genChartJsAreaTests, genChartJsPieTests, genChartJsHistogramTests, genChartJsRadarTests, genChartJsStressTests } from './chartjs-tests';
 
 /** All test generators mapped by chart group */
 export const TEST_GENERATORS: Record<string, () => TestCase[]> = {
@@ -119,6 +121,16 @@ export const TEST_GENERATORS: Record<string, () => TestCase[]> = {
     'ECharts: Facet Wrap': genEChartsFacetWrapTests,
     'ECharts: Facet Clip': genEChartsFacetClipTests,
     'ECharts: Stress Tests': genEChartsStressTests,
+    'Chart.js: Scatter': genChartJsScatterTests,
+    'Chart.js: Line': genChartJsLineTests,
+    'Chart.js: Bar': genChartJsBarTests,
+    'Chart.js: Stacked Bar': genChartJsStackedBarTests,
+    'Chart.js: Grouped Bar': genChartJsGroupedBarTests,
+    'Chart.js: Area': genChartJsAreaTests,
+    'Chart.js: Pie': genChartJsPieTests,
+    'Chart.js: Histogram': genChartJsHistogramTests,
+    'Chart.js: Radar': genChartJsRadarTests,
+    'Chart.js: Stress Tests': genChartJsStressTests,
 };
 
 /** Gallery organised into three sections */
@@ -181,6 +193,22 @@ export const GALLERY_SECTIONS: GallerySection[] = [
             'ECharts: Facet Wrap',
             'ECharts: Facet Clip',
             'ECharts: Stress Tests',
+        ],
+    },
+    {
+        label: 'Chart.js Backend',
+        description: 'Same inputs through Chart.js backend — compare dataset-based output vs VL/EC output',
+        entries: [
+            'Chart.js: Scatter',
+            'Chart.js: Line',
+            'Chart.js: Bar',
+            'Chart.js: Stacked Bar',
+            'Chart.js: Grouped Bar',
+            'Chart.js: Area',
+            'Chart.js: Pie',
+            'Chart.js: Histogram',
+            'Chart.js: Radar',
+            'Chart.js: Stress Tests',
         ],
     },
 ];

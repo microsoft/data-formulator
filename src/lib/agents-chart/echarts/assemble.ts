@@ -15,6 +15,34 @@
  *   template.instantiate → builds ECharts option structure
  *   ecApplyLayoutToSpec  → applies layout decisions to option
  *
+ * ── Backend Translation Responsibilities ────────────────────────────
+ * The LayoutResult from Phase 1 is target-agnostic.  This assembler is
+ * responsible for translating it into ECharts-specific structures:
+ *
+ *   subplotWidth / subplotHeight
+ *     → ECharts `grid.width` / `grid.height` (the inner plot area).
+ *       The assembler adds ECharts-specific margins (CANVAS_BUFFER,
+ *       axis label space, legend width) to compute the outer canvas
+ *       `_width` / `_height`.
+ *
+ *   xStep / yStep / stepPadding
+ *     → ECharts `barWidth`, `barCategoryGap`, `barGap` on series.
+ *       VL handles this via `width: {step: N}` natively; ECharts has
+ *       no such declarative feature, so we compute explicit pixel
+ *       values from the layout numbers.
+ *
+ *   Facet wrapping
+ *     → When the user specifies column-only facets, this assembler
+ *       computes `maxColsPerRow` using the same parameters VL uses
+ *       (facetMaxStretch, minStep, minSubplotSize), restructures the
+ *       flat 1×N panels into a wrapped 2D grid, and passes the result
+ *       to ecCombineFacetPanels.  The combiner itself has NO wrapping
+ *       logic — it renders whatever grid it receives.
+ *
+ *   Per-panel vs shared axis titles
+ *     → The facet combiner keeps Y-axis titles on the left column only
+ *       and renders the X-axis title as a shared centered element.
+ *
  * Key structural differences from Vega-Lite output:
  *   VL: { mark, encoding, data: {values}, width, height }
  *   EC: { xAxis, yAxis, series: [{type, data}], tooltip, legend, grid }

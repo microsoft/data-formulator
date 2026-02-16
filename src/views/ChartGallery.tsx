@@ -15,11 +15,15 @@ import {
 } from '@mui/material';
 import embed from 'vega-embed';
 import * as echarts from 'echarts';
+import { Chart, registerables } from 'chart.js';
 import { assembleVegaChart } from '../app/utils';
 import { Channel, EncodingItem } from '../components/ComponentType';
 import { channels } from '../components/ChartTemplates';
-import { ChartWarning, ChartEncoding, ecAssembleChart } from '../lib/agents-chart';
+import { ChartWarning, ChartEncoding, ecAssembleChart, cjsAssembleChart } from '../lib/agents-chart';
 import { TestCase, TEST_GENERATORS, GALLERY_SECTIONS } from '../lib/agents-chart/test-data';
+
+// Register all Chart.js components
+Chart.register(...registerables);
 
 // ============================================================================
 // Chart Rendering Component
@@ -449,6 +453,195 @@ const VegaChartInline: React.FC<{ testCase: TestCase }> = React.memo(({ testCase
 });
 
 // ============================================================================
+// Chart.js Rendering Component
+// ============================================================================
+
+/**
+ * Convert a TestCase into the library-level inputs for cjsAssembleChart.
+ * (Same conversion as testCaseToEChartsInputs — shared data model.)
+ */
+function testCaseToChartJsInputs(testCase: TestCase) {
+    const encodings: Record<string, ChartEncoding> = {};
+    for (const [channel, encoding] of Object.entries(testCase.encodingMap)) {
+        if (encoding && encoding.fieldID) {
+            encodings[channel] = {
+                field: encoding.fieldID,
+                type: encoding.dtype,
+                aggregate: encoding.aggregate,
+                sortOrder: encoding.sortOrder,
+                sortBy: encoding.sortBy,
+                scheme: encoding.scheme,
+            };
+        }
+    }
+
+    const semanticTypes: Record<string, string> = {};
+    for (const [fieldName, meta] of Object.entries(testCase.metadata)) {
+        if (meta.semanticType) {
+            semanticTypes[fieldName] = meta.semanticType;
+        }
+    }
+
+    return { encodings, semanticTypes };
+}
+
+const ChartJsChart: React.FC<{ testCase: TestCase }> = React.memo(({ testCase }) => {
+    const canvasRef = useRef<HTMLCanvasElement>(null);
+    const chartRef = useRef<Chart | null>(null);
+    const [error, setError] = useState<string | null>(null);
+    const [warnings, setWarnings] = useState<ChartWarning[]>([]);
+    const [specJson, setSpecJson] = useState<string>('');
+    const [inferredSize, setInferredSize] = useState<string>('');
+
+    useEffect(() => {
+        if (!canvasRef.current) return;
+
+        try {
+            const { encodings, semanticTypes } = testCaseToChartJsInputs(testCase);
+
+            const cjsConfig = cjsAssembleChart(
+                testCase.chartType,
+                encodings,
+                testCase.data,
+                semanticTypes,
+                { width: 400, height: 300 },
+                testCase.chartProperties,
+                testCase.assembleOptions,
+            );
+
+            if (!cjsConfig) {
+                setError('cjsAssembleChart returned no config');
+                return;
+            }
+
+            // Extract warnings
+            setWarnings(cjsConfig._warnings || []);
+            setInferredSize(`${cjsConfig._width ?? '?'} × ${cjsConfig._height ?? '?'}`);
+
+            // Build displayable JSON
+            const displayConfig = { ...cjsConfig };
+            delete displayConfig._warnings;
+            delete displayConfig._dataLength;
+            delete displayConfig._width;
+            delete displayConfig._height;
+            setSpecJson(JSON.stringify(displayConfig, null, 2));
+
+            // Set canvas size
+            const w = cjsConfig._width || 400;
+            const h = cjsConfig._height || 300;
+            canvasRef.current.width = w;
+            canvasRef.current.height = h;
+            canvasRef.current.style.width = `${w}px`;
+            canvasRef.current.style.height = `${h}px`;
+
+            // Destroy previous chart
+            if (chartRef.current) {
+                chartRef.current.destroy();
+                chartRef.current = null;
+            }
+
+            // Clean config for Chart.js
+            const cleanConfig = { ...cjsConfig };
+            delete cleanConfig._warnings;
+            delete cleanConfig._dataLength;
+            delete cleanConfig._width;
+            delete cleanConfig._height;
+
+            // Ensure animation is disabled for gallery rendering
+            if (!cleanConfig.options) cleanConfig.options = {};
+            cleanConfig.options.animation = false;
+            cleanConfig.options.responsive = false;
+
+            chartRef.current = new Chart(canvasRef.current, cleanConfig);
+            setError(null);
+        } catch (err: any) {
+            setError(`Chart.js error: ${err.message}`);
+        }
+
+        return () => {
+            if (chartRef.current) {
+                chartRef.current.destroy();
+                chartRef.current = null;
+            }
+        };
+    }, [testCase]);
+
+    return (
+        <Box sx={{ flex: 1, minWidth: 400 }}>
+            <Typography variant="caption" fontWeight={600} color="#2e7d32"
+                sx={{ display: 'block', mb: 0.5, fontSize: 11, letterSpacing: 0.5 }}>
+                Chart.js
+            </Typography>
+            {inferredSize && (
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5, fontSize: 10 }}>
+                    Inferred size: {inferredSize}
+                </Typography>
+            )}
+            {error ? (
+                <Typography color="error" variant="body2" sx={{ whiteSpace: 'pre-wrap', fontSize: 11 }}>
+                    {error}
+                </Typography>
+            ) : (
+                <canvas ref={canvasRef} />
+            )}
+            {warnings.length > 0 && (
+                <Box sx={{ mt: 1, p: 1, bgcolor: '#fff3e0', borderLeft: '3px solid #ff9800' }}>
+                    {warnings.map((w, i) => (
+                        <Typography key={i} variant="body2" color="warning.dark" sx={{ fontSize: 11 }}>
+                            {w.message}
+                        </Typography>
+                    ))}
+                </Box>
+            )}
+            {specJson && (
+                <details style={{ marginTop: 8 }}>
+                    <summary style={{ cursor: 'pointer', fontSize: 11, color: '#888' }}>
+                        Chart.js Config
+                    </summary>
+                    <pre style={{ fontSize: 10, maxHeight: 200, overflow: 'auto', background: '#e8f5e9', padding: 8, borderRadius: 4 }}>
+                        {specJson}
+                    </pre>
+                </details>
+            )}
+        </Box>
+    );
+});
+
+// ============================================================================
+// Triple Render: VL + ECharts + Chart.js side-by-side
+// ============================================================================
+
+const TripleChart: React.FC<{ testCase: TestCase }> = React.memo(({ testCase }) => {
+    return (
+        <Paper
+            elevation={1}
+            sx={{
+                p: 2, mb: 2, width: 'fit-content', minWidth: 1250, maxWidth: '100%',
+                border: '1px solid #e0e0e0',
+            }}
+        >
+            <Typography variant="subtitle2" fontWeight={600} gutterBottom>
+                {testCase.title}
+            </Typography>
+            <Typography variant="caption" color="text.secondary" display="block" mb={1}>
+                {testCase.description}
+            </Typography>
+            <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', mb: 1 }}>
+                {testCase.tags.map(tag => (
+                    <Chip key={tag} label={tag} size="small" variant="outlined"
+                        sx={{ fontSize: 10, height: 20 }} />
+                ))}
+            </Box>
+            <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
+                <VegaChartInline testCase={testCase} />
+                <EChartsChart testCase={testCase} />
+                <ChartJsChart testCase={testCase} />
+            </Box>
+        </Paper>
+    );
+});
+
+// ============================================================================
 // Sub-page for a single chart type
 // ============================================================================
 
@@ -459,6 +652,7 @@ const ChartTypeTestPanel: React.FC<{ chartGroup: string }> = ({ chartGroup }) =>
     }, [chartGroup]);
 
     const isEChartsGroup = chartGroup.startsWith('ECharts:');
+    const isChartJsGroup = chartGroup.startsWith('Chart.js:');
 
     if (tests.length === 0) {
         return (
@@ -471,7 +665,9 @@ const ChartTypeTestPanel: React.FC<{ chartGroup: string }> = ({ chartGroup }) =>
     return (
         <Box sx={{ p: 2, display: 'flex', flexWrap: 'wrap', gap: 2, justifyContent: 'flex-start' }}>
             {tests.map((tc, i) =>
-                isEChartsGroup
+                isChartJsGroup
+                    ? <TripleChart key={`${chartGroup}-${i}`} testCase={tc} />
+                    : isEChartsGroup
                     ? <DualChart key={`${chartGroup}-${i}`} testCase={tc} />
                     : <VegaChart key={`${chartGroup}-${i}`} testCase={tc} />
             )}

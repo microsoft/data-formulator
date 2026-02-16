@@ -35,3 +35,6 @@ export * from './vegalite';
 
 // ECharts backend: ecAssembleChart, templates, spec instantiation
 export * from './echarts';
+
+// Chart.js backend: cjsAssembleChart, templates, spec instantiation
+export * from './chartjs';
