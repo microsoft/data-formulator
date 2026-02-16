@@ -6,6 +6,20 @@
 > [design-stretch-model.md](design-stretch-model.md) and
 > [design-semantic-types.md](design-semantic-types.md).
 
+## TL;DR
+
+LLMs generating raw Vega-Lite face a dilemma: simple specs are editable
+but look bad (wrong sizing, misleading encodings); polished specs look
+good but are brittle (hard-coded values break on every field swap).
+**Agents-chart** resolves this by introducing a semantic layer between the
+LLM and VL. The LLM outputs only chart type, field assignments, and a
+**semantic type** per field (e.g., `Revenue`, `Rank`, `CategoryCode`).
+From these, a deterministic compiler derives all low-level parameters —
+axis sizing (spring model for discrete axes, pressure model for continuous),
+zero-baseline behavior, formatting, color schemes, and bespoke mark
+templates — so the chart looks good *and* stays editable without calling
+the LLM again.
+
 ---
 
 ## Motivation
