@@ -112,21 +112,491 @@ transformation, not visualization configuration.
 
 Two systems make this possible:
 
-1. **Automatic axis sizing** (§1–§2) — physics-based models that compute
-   chart dimensions from data density, so the layout adapts to any data
-   without manual sizing.
-2. **Semantic type system** (§3) — a type hierarchy that encodes data
-   meaning, driving encoding-type decisions, zero-baseline behavior, and
-   domain configuration.
+1. **Semantic type system** — a type hierarchy that encodes data meaning,
+   driving encoding-type decisions, zero-baseline behavior, and domain
+   configuration.
+2. **Automatic axis sizing** — physics-based models that compute chart
+   dimensions from data density, so the layout adapts to any data without
+   manual sizing.
+
+The rest of this document is organized as:
+
+- **Side-by-side examples** — four progressively complex comparisons
+  (simple bar, lollipop, faceted overflow, temporal heatmap) showing where
+  agents-chart's abstractions pay off vs. raw Vega-Lite.
+- **Three questions** — what happens with VL defaults? With LLM-tuned VL?
+  And what does agents-chart bring?
+- **System overview** — how the compiler pipeline composes semantic types
+  with axis sizing to produce a final VL spec.
+- **Design details** — the spring model (discrete axes), per-axis stretch
+  model (continuous axes), and the semantic type hierarchy in full.
 
 ---
 
-## §1  Discrete Axis Sizing: Spring Model
+## Side-by-Side: Agents-Chart vs. Raw Vega-Lite
+
+Four examples that progressively demonstrate where agents-chart's
+abstractions pay off: templates for complex marks, dynamic layout for
+overflow, and semantic types for data-dependent encoding.
+
+In every case, *the agents-chart spec is the same shape*: chart type +
+field assignments + semantic types (~7–12 lines). What changes is how
+much VL config the compiler must derive — and that's where the gap grows.
+
+### Example 1: Simple bar chart — similar complexity
+
+**Task:** Bar chart of Revenue by 5 Regions.
+
+**Agents-chart:** Chart type, two field encodings, two semantic types.
+
+**Vega-Lite:** Mark type, two field encodings with explicit `type` annotations.
+
+The two are nearly identical in length and complexity. VL's defaults happen
+to work: 5 bars at the default step size (20 px) produce a ~100 px chart
+that fits comfortably, `zero: true` is correct for bars, and alphabetical
+sort is acceptable for a few regions. **No win here — and that's the
+point.** The library isn't designed to help with cases VL already handles
+well.
+
+The advantages emerge as the chart gets more complex.
+
+### Example 2: Lollipop chart — template + semantic types
+
+**Task:** Lollipop chart of Revenue by Product (top 10), colored by Group
+(values: 1, 2, 3, 4, 5 — categorical groups encoded as numbers).
+
+**Agents-chart:** Chart type = "Lollipop Chart", three field encodings
+(x, y, color), three semantic types (`Revenue`, `Product`,
+`CategoryCode`). Same ~10 lines as any chart.
+
+**Vega-Lite requires coordinating** all of the following:
+
+| VL parameter | What and why |
+|-------------|-------------|
+| Layered spec structure | Must use `layer: [...]` — a lollipop is two marks, not one |
+| Rule mark config | `mark.type: "rule"`, `strokeWidth`, `color` for the stem |
+| Circle mark config | `mark.type: "circle"`, `size`, `color` for the dot |
+| Duplicated encoding | Both layers need identical `x`, `y`, and `color` encodings — mismatch breaks alignment or coloring |
+| Sort | `sort: "-x"` on the Y axis to rank products by value |
+| Zero baseline | `scale.zero: true` on the X axis (Revenue is zero-meaningful) |
+| Step size | VL default step (20 px) works here for 10 items, but would need explicit `width` or `step` override if the list were longer. The spec is implicitly fragile — looks fine at 10 products, breaks if the data grows. |
+| Axis formatting | `axis.format: "~s"` for compact numbers |
+| Color encoding type | Group values are `1, 2, 3, 4, 5` — VL defaults to `quantitative`, producing a continuous blue gradient. Must manually set `"type": "nominal"` to get a categorical color scheme with distinct hues per group. |
+| Color scale scheme | With quantitative default, VL uses `"blues"` (sequential). Must override to a categorical palette (e.g., `"category10"`) — but only after fixing the type. |
+
+The color problem is especially insidious: VL sees numbers and defaults to
+`quantitative` with a sequential color scheme. Groups 1 and 2 get nearly
+identical shades of blue — visually indistinguishable. The chart *renders*
+without error but the color encoding is meaningless. With agents-chart,
+`CategoryCode` → nominal → categorical palette, and groups get distinct
+hues automatically.
+
+Other bespoke charts with similar complexity savings:
+
+| Chart type | VL complexity the template absorbs |
+|------------|-----------------------------------|
+| **Bump chart** | Layered line + circle, reversed Y, ordinal domain with padding |
+| **Streamgraph** | Stack offset (`"center"`), area interpolation, series ordering |
+| **Candlestick** | Layered rect + rule, open/close/high/low encoding, color by direction |
+| **Waterfall** | Running sum transform, positive/negative coloring, connector rules |
+| **Ridge plot** | Row-faceted density, overlapping layout, per-facet bandwidth |
+
+### Example 3: Faceted bar chart — dynamic layout handles overflow
+
+**Task:** Revenue by Product (80 products), faceted by Region (4 regions).
+
+**Agents-chart:** Chart type, three field encodings (x, y, column), three
+semantic types. Same ~12 lines.
+
+**Vega-Lite must solve three coordinated sizing problems:**
+
+| Problem | What VL requires | Why it's hard |
+|---------|-----------------|---------------|
+| **Canvas size** | Hard-code `width` per subplot + `columns` for facet wrap | VL's default step size (20 px) × 80 products = 1600 px per subplot → 4 facets = 6400 px total. Wildly overflows. Must override with explicit `width: 380` and `columns: 2`, but these numbers depend on each other. |
+| **Step / bar width** | Hard-code `step` or `width` to override VL's 20 px default | With `width: 380` for 80 bars, each bar is ~4.75 px — unreadable. Must also add `labelAngle: -90`, `labelLimit: 60`, `labelFontSize: 9`. If you use explicit `step` instead, you're back to choosing a step size that works for this cardinality but breaks for others. |
+| **Facet wrapping** | Hard-code `columns` | 4 columns → each subplot is 190 px (bars unreadable). 1 column → page is 4× taller. 2 columns fits but per-subplot width must coordinate with total. |
+| **Scale resolution** | `resolve.scale.x: "independent"` | Each facet may have different products — shared scale wastes space on absent categories. |
+
+These decisions are **interdependent**: the number of facet columns
+determines the available width per subplot, which determines the bar width,
+which determines whether labels fit, which determines if label rotation and
+truncation are needed. VL provides no mechanism to coordinate them — each
+is a separate hard-coded parameter.
+
+With agents-chart, the spring model handles all three automatically:
+- The facet stretch factor ($\beta_f$) determines the overall canvas growth.
+- Each subplot runs its own spring model: 80 products × $\ell_0 = 20$ px
+  overflows → items compress to $\ell = 8$ px, subplot stretches to fit.
+- Label rotation and truncation are derived from the count and string
+  lengths.
+- The result: each bar is readable (8 px, not 2 px), the total width is
+  controlled (not 6400 px), and facet columns are chosen to balance
+  readability with compactness. No manual coordination needed.
+
+### Example 4: Heatmap with temporal × category — semantic types drive encoding
+
+**Task:** Heatmap of event counts — UTC timestamps (hourly, 30 days) on X,
+Category (15 event types) on Y, count as color.
+
+**Agents-chart:** Chart type = "Heatmap", three encodings (x, y, color),
+three semantic types (`DateTime`, `Category`, `Count`). ~12 lines.
+
+**Vega-Lite requires 10+ manual decisions**, all stemming from needing to
+know what the data *means*:
+
+| Decision | What VL requires | What agents-chart derives |
+|----------|-----------------|--------------------------|
+| X encoding type | `"type": "temporal"` — must recognize timestamp is a date, not a number | `DateTime` → temporal |
+| Time formatting | `"format": "%m/%d %H:%M"` — must pick format for hourly granularity | `DateTime` + hourly range → appropriate format |
+| UTC scale | `"scale": { "type": "utc" }` — must know timestamps are UTC | `DateTime` → UTC handling |
+| Time unit | `"timeUnit": "yearmonthdatehoursminutes"` — verbose, error-prone | Derived from data range + granularity |
+| Label rotation | `"labelAngle": -45` — must guess from label width | Auto from label count + string length |
+| Y encoding type | `"type": "nominal"` — must decide Category isn't quantitative | `Category` → nominal |
+| Color zero baseline | `"scale.zero": true` — Count should start from 0 | `Count` → zero-meaningful → `zero: true` |
+| Color scheme | `"scheme": "blues"` — sequential scheme for counts | `Count` → quantitative sequential → blues |
+| Color format | `"format": "d"` — integer formatting for counts | `Count` → integer → `"d"` |
+| Cell step size | VL default step (20 px) → 720 × 20 = 14,400 px wide. Must override to smaller step or hard-code `width`. | Heatmap spring model: 720 cells × $\ell_0$ = 8 px per cell → elastic equilibrium at ~800 px |
+| Canvas width | Hard-code `"width": 800` after manually computing 720 cells | Spring model derives width automatically from cell count + step compression |
+
+That's **11 manual decisions** in VL, all of which agents-chart derives
+automatically from three semantic type annotations.
+
+If the timestamp column contained Unix epoch numbers (e.g., `1739600400`),
+VL would default to `quantitative` — showing a continuous axis from 0 to
+1.7 billion. The semantic type `DateTime` tells the compiler to treat it as
+temporal regardless of the raw data format.
+
+---
+
+## Three Questions
+
+### Q1: What if we just use Vega-Lite's defaults?
+
+**A: The chart spec is simple and editable, but it looks bad — and bespoke
+charts are impossible.**
+
+VL defaults produce a minimal spec: just field names, mark type, and data.
+That's great for editability — swap a field name and the chart re-renders.
+But the *quality* of what renders is poor, because VL's defaults are
+generic heuristics that ignore both data characteristics and semantic
+meaning.
+
+**Sizing failures** — the chart is the wrong size for the data:
+
+| Scenario | VL default | What's wrong |
+|----------|-----------|-------------|
+| **Bar chart, 80 products** | `step: 20` → 1600 px wide | Overflows any container. Forces horizontal scrolling; unusable without a giant monitor. |
+| **Grouped bar, 30 × 5** | 30 × 5 × 20 = 3000 px | Grouped bars multiply the problem: each product group has 5 sub-bars at 20 px each. |
+| **Bars on temporal X (daily)** | VL doesn't auto-band temporal | Bars overlap or collapse to 1 px. Temporal axes are continuous; VL has no step-based sizing for them. |
+| **Line chart, 15 series** | Fixed `height: 300` | 15 lines in 300 px → ~20 px per series. Unreadable spaghetti. |
+| **Scatter, 2000 points** | Fixed 400 × 300 | Total mark area (156K px²) exceeds canvas area (120K px²). A solid blob. |
+| **80 product labels** | No auto-rotation | Labels overlap into an unreadable smear. |
+
+**Composition makes it worse** — facets and `xOffset` multiply the
+single-view problems above:
+
+These are not separate issues — they compound *on top of* the basic layout
+failures. Every single-view sizing problem gets multiplied by the number of
+facets, and `xOffset` (grouped bars) adds another multiplicative factor
+within each subplot.
+
+| Scenario | VL default | What's wrong |
+|----------|-----------|-------------|
+| **80 products, 4 facets** | 4 × 1600 px subplots | 6400 px total — comparison between facets is impossible because they're screens apart. The single-view overflow (1600 px) is already bad; faceting quadruples it. |
+| **Grouped bar, 30 × 5, faceted × 4** | Facet × xOffset × step all multiply | 4 facets × 30 products × 5 groups × 20 px = 12,000 px. Facets and `xOffset` are independent VL mechanisms with no coordination — each blindly applies its own step/spacing, and there's no way to express "fit everything within 800 px." |
+| **Facet columns + subplot width** | Must hard-code both `columns` and `width` | These are interdependent: 4 columns → each subplot is 190 px (bars unreadable). 2 columns → wider subplots but taller page. The right choice depends on bar count, label length, and container size — VL has no coordination mechanism. |
+
+**Semantic failures** — the chart misrepresents the data:
+
+The same number can mean completely different things, and VL defaults
+can't tell the difference.
+
+`17329487239` could be a **Unix timestamp**, a **Customer ID**, **Revenue
+($)**, or a **sensor reading** — each requiring different encoding type
+(temporal / nominal / quantitative), different zero behavior, different
+formatting, different color scheme. VL sees a number and defaults to
+`quantitative`. If it's a customer ID, you get a continuous axis from 0
+to 17 billion with a single dot. If it's a timestamp, you get raw numbers
+instead of dates.
+
+`1, 2, 3, 4, 5` could be **Rank**, **Star rating**, **Quantity**,
+**Category code** (1=North, 2=South…), or a **Likert score** — each
+needing different zero behavior, scale direction, tick formatting, and
+chart compatibility. VL treats all as `quantitative, zero: true,
+ascending`. For Rank, this means rank 1 (best) at the bottom, zero
+wasted, ticks at "2.5" — absurd. For category codes, you get a
+continuous axis with interpolated ticks between codes that don't exist.
+
+Simple heuristics don't fix this: Rank, Rating, Quantity, Category code,
+and Likert are all integers with identical cardinality. Neither integer
+detection nor cardinality checking distinguishes them. The only way to
+know the correct encoding is to know what the data *means*.
+
+**Bespoke charts are out of reach.** VL defaults don't produce bump
+charts, candlestick charts, streamgraphs, waterfall charts, or radar
+plots. These require specific mark layering, custom transforms, precise
+scale configurations, and specialized encodings. A default approach can
+only produce basic bar / line / scatter / area charts.
+
+**Bottom line:** VL defaults give you editability and simplicity, but
+the charts are wrong-sized, semantically misleading, and limited to
+basic mark types.
+
+### Q2: What if we ask the LLM to generate a good-looking chart?
+
+**A: The chart looks great, but the spec is brittle and nearly impossible
+to edit.**
+
+When a good LLM invests tokens to produce a polished chart, it achieves
+quality precisely by **hard-coding values tuned to the current data**:
+
+| Hard-coded value | Breaks when… |
+|------------------|-------------|
+| `"width": 800` | User filters to 5 products (massive empty bars) or adds 200 (unreadable) |
+| `"labelAngle": -45` | User swaps X to Region (3-letter labels don't need rotation) |
+| `"domain": [0, 950000]` | User swaps Y to Temperature (wrong by 6 orders of magnitude) |
+| `"mark.size": 8` | User switches to scatter with 1000 points (dots overlap completely) |
+| `"scale.zero": true` | User swaps Y to Rank (zero-based rank wastes space, reads inverted) |
+| `"format": "$,.0f"` | User swaps Y to Percentage (shows "$48" instead of "48%") |
+
+The better the LLM's output, the *more* hard-coded constants it contains,
+and the *harder* the chart is to edit. This creates a vicious cycle:
+**high-quality generation → brittle spec → forced regeneration on every
+edit → high cost and latency → poor exploration experience.**
+
+**The parameters live at different levels and must coordinate.** A polished
+VL spec scatters its configuration across multiple layers that all couple
+to each other:
+
+| Level | Examples | Coordinates with |
+|-------|---------|-----------------|
+| **Global** | `width`, `height`, `autosize`, `padding` | Step size, facet columns, mark size |
+| **Per-axis** | `scale.zero`, `scale.domain`, `scale.type`, `axis.format`, `axis.labelAngle` | Global width (label overflow), mark type (zero behavior), encoding type |
+| **Per-mark** | `mark.size`, `mark.strokeWidth`, `mark.opacity` | Global dimensions (overlap), data cardinality |
+| **Composition** | `facet.columns`, `resolve.scale`, `xOffset.step` | Global width (subplot size), per-axis step (bar width), label config |
+
+Editing any one parameter without adjusting the others produces a
+broken chart. Change `width` from 800 to 400? The label angle, step
+size, and font size were tuned for 800 — now labels overlap. Add a
+facet column? The per-subplot width halves, so bars become unreadable
+unless you also shrink the step, rotate labels, and adjust font size.
+Switch from bar to scatter? `scale.zero`, `mark.size`, and `domain`
+all need updating, but `width` and `labelAngle` might also change
+because scatter points have different spatial needs than bars.
+
+This coordination is **complex and arbitrary enough that it can't be
+made editable without calling the LLM.** There's no simple rule like
+"halve width → halve step" — the correct adjustment depends on the data
+(cardinality, label lengths, value ranges), the mark type, the encoding
+types, and the composition structure, all simultaneously. A human editing
+by hand would need to understand VL's scale, axis, and layout APIs at
+expert level. A rule-based system would need to enumerate the full
+cross-product of parameter interactions. Neither is practical — which is
+why every edit becomes an LLM call.
+
+**Structural rewrites are the worst case.** When *both* axes change
+simultaneously, the parameter interactions multiply. Swapping Product→Year
+and Revenue→Rank transforms a bar chart into a bump chart: the mark
+changes from bar to line+circle (layered), X type changes from nominal to
+ordinal, Y gets reversed with `zero: false` and domain padding, a color
+channel appears, and width/height both change. No single-parameter edit
+path exists — it's a complete structural rewrite that touches every level
+of the spec simultaneously.
+
+**The alternative: call the LLM for every edit.** This works, but:
+
+- **Expensive.** ~500–1000 tokens per call × 10–15 edits in a session =
+  significant cost. Each call takes 2–5 seconds — an interruption to
+  analytical flow.
+- **Requires a strong model.** Basic bar/line/scatter might work with a
+  weaker model, but bespoke charts (bump, candlestick, waterfall) need
+  layered marks, internal data transforms, and complex scale
+  configurations. Only frontier models handle these reliably, and even
+  they struggle with the correct combination of reversed scale + domain
+  padding + tick count + layer composition.
+- **The $F \times C$ combinatorial problem.** With 15 fields and 5 chart
+  types, there are 75 possible configurations. Asking the LLM to handle
+  each one individually costs dozens of calls per exploration session.
+
+**Bottom line:** LLM-generated charts look good once, but the spec is
+too complex to edit by hand, and regeneration per edit is slow, expensive,
+and requires strong models — especially for non-basic chart types.
+
+### Q3: What does agents-chart bring?
+
+**A: Both. Good-looking *and* editable — by operating at a higher semantic
+level above Vega-Lite.**
+
+Agents-chart is a **semantic-level visualization language** that compiles
+down to Vega-Lite. The LLM generates a minimal spec — chart type, field
+assignments, and semantic types — and the compiler deterministically
+derives all the low-level parameters (sizing, zero baseline, scale
+direction, formatting, sort, color scheme) from semantic types + data
+characteristics. The result:
+
+| Property | VL defaults (Q1) | LLM-tuned VL (Q2) | Agents-chart |
+|----------|------------------|--------------------|-------------|
+| **Looks good** | ✗ | ✓ | ✓ |
+| **Editable** | ✓ (simple spec) | ✗ (brittle, hard-coded) | ✓ (semantic spec) |
+| **Bespoke charts** | ✗ | Sometimes (strong model) | ✓ (templates) |
+| **Cost per edit** | 0 (no LLM) | 1 LLM call ($, latency) | 0 (no LLM) |
+| **Generation difficulty** | Low (just fields + mark) | High (must coordinate 10–30 parameters across 4 levels) | Low (fields + semantic types) |
+| **Model requirement** | N/A | Frontier for bespoke | Any (classification only) |
+
+**How it works:**
+
+The LLM's only job is **semantic classification** — assigning a type like
+`"Revenue"`, `"Rank"`, `"Temperature"`, or `"Month"` to each data field.
+This is one of the simplest tasks LLMs do (classify a column by its meaning).
+From this single annotation per field, the compiler derives everything:
+
+```
+Semantic type
+    ↓
+    ├── Encoding type     (Revenue → quantitative, Rank → ordinal, Month → ordinal)
+    ├── Zero baseline     (Revenue → true, Temperature → false, Rank → false)
+    ├── Domain padding    (Rank → 8%, Temperature → 5%, Revenue → 0%)
+    ├── Scale direction   (Rank → reversed, others → normal)
+    ├── Axis formatting   (Revenue → "$,.0f", Percentage → ".0%", Year → "%Y")
+    ├── Sort order        (Month → calendar order, Product → by value)
+    ├── Color scheme      (Company → categorical, Revenue → sequential)
+    └── Sizing model      (nominal → spring, quantitative → per-axis stretch)
+```
+
+**Semantic types are stable across edits.** When the user swaps Y from
+Revenue to Temperature, the compiler re-derives all parameters from
+`"Temperature"` instead of `"Revenue"` and gets the right answer — no
+hard-coded constant becomes stale because there are no hard-coded
+constants. The chart always looks good because sizing, zero behavior, and
+formatting are computed fresh from the semantic types at compile time.
+
+**The $F \times C$ problem becomes $F + C$.** The LLM classifies each
+field once ($F$ decisions), the user picks a chart type ($C$ choices),
+and the compiler handles the cross-product. Instead of 75 configurations
+that each need an LLM call, the system needs 15 type assignments (done
+once) and handles all 75 deterministically.
+
+**Bespoke charts become as easy as basic charts.** Agents-chart's
+template system means bump charts, candlestick charts, streamgraphs,
+waterfall charts, and ridge plots all take the same ~7-line spec as a
+bar chart. The complexity (layered marks, custom transforms, reversed
+scales, specialized encodings) lives in the compiler, which is tested
+and deterministic. This expands expressive power without raising the
+spec complexity — the LLM doesn't need to understand layered VL marks
+or polar coordinates.
+
+**The VL output is still there for the 2% case.** Agents-chart compiles
+to standard Vega-Lite. If a user needs to fine-tune a very specific
+visual detail (custom annotation placement, unusual color breakpoints,
+bespoke interaction), they can edit the generated VL directly. Nothing
+is lost — the compiler handles the 98% of decisions that are derivable
+from semantics, and the user can override the remaining 2% in VL.
+
+**One spec, many targets.** Because agents-chart operates at a semantic
+level above any particular charting library, the same spec can in
+principle compile to different backends — Vega-Lite today, but also
+ECharts, Plotly, Observable Plot, or D3 templates tomorrow. The LLM
+generates one semantic description (chart type + field assignments +
+semantic types), and the compiler dispatches to whichever rendering
+ecosystem fits the deployment context. Build the semantic system once,
+target any chart library.
+
+### Failure modes
+
+Directly generating Vega-Lite means failures are either **catastrophic**
+(the chart crashes or renders at absurd dimensions like 2000 px × 80 px —
+the user sees nothing useful) or **silent** (the chart renders without
+error but misrepresents the data — arguably worse, because the user trusts
+a misleading visualization). VL provides only low-level errors
+(`"Invalid specification"`) that don't explain *why* the design is wrong
+for the given data.
+
+Because agents-chart operates at the semantic level, it includes a
+**semantic constraint system** that validates chart configurations *before*
+compilation and produces actionable, human-readable explanations when
+something is wrong. Failed charts fail elegantly — with a reason, not a
+crash.
+
+**Semantic validation — catching violations before rendering:**
+
+| Violation | What agents-chart detects | What raw VL does |
+|-----------|--------------------------|-----------------|
+| **Chart–data incompatibility** | Pyramid chart requires exactly 2 categories and non-negative values. If the field has 5 categories or contains negative values (not counts), the compiler rejects with: *"Pyramid chart requires exactly 2 categories; 'Region' has 5"* or *"Pyramid chart requires non-negative values; 'Profit' contains negative values"* | VL renders a broken or nonsensical layered bar chart. No error. |
+| **Redundant encoding** | Revenue mapped to both Y and color → *"Revenue is mapped to both Y and color — color adds no information"* | Renders silently with a gradient legend that duplicates the Y axis. User may not notice. |
+| **Field–channel mismatch** | Nominal field on a quantitative-only channel, or too many categories for a color palette → *"Product has 80 values — too many for a color encoding"*. Numeric categorical values (e.g., Group codes 1–5) on color → *"Group is a CategoryCode — use nominal, not quantitative"* (see [Example 2](design.md#example-2-lollipop-chart--template--semantic-types)) | Renders 80 nearly-indistinguishable colors, or maps numeric categories to a continuous gradient where groups 1 and 2 get identical shades. No warning either way. |
+| **Missing required encoding** | Candlestick without high/low fields → *"Candlestick chart requires Open, High, Low, Close fields"* | Crashes or renders partial marks with no explanation. |
+
+**Overflow detection — explaining *why* the chart was clipped:**
+
+| Scenario | Agents-chart response | Raw VL result |
+|----------|----------------------|---------------|
+| **80 products × 4 facets** | Spring model detects overflow. Report: *"X axis clipped: 80 products compressed from 20 px to 8 px per bar; canvas stretched from 400 px to 800 px (max). Consider filtering to top 20."* | 6400 px wide chart with horizontal scrolling, or a 400 px chart with 5 px bars — no explanation of why. |
+| **720 temporal cells on heatmap** | *"Heatmap X axis: 720 hourly cells compressed to 1.1 px each. Consider aggregating to daily (30 cells) for readability."* | 14,400 px wide, or hard-coded to 400 px with 0.5 px cells — a solid color band. |
+| **50 facets × 10 categories** | *"Facet overflow: 50 subplots cannot fit readable bars. Showing top 12 facets; 38 truncated."* — with each subplot still containing readable 6 px bars. | 400 px chart with 50 squished facets, each containing 10 unreadable 0.8 px bars. Technically renders but useless. |
+
+The key difference: **agents-chart failures are diagnostic and recoverable**
+— the message tells the user (or agent) what's wrong, why it's wrong, and
+what to do about it. Raw VL failures are either invisible (silent
+misrepresentation) or opaque (a crashed render or a 2000 px × 80 px
+rectangle with no explanation).
+
+---
+
+## System Overview
+
+The compiler pipeline composes semantic types with axis sizing:
+
+```
+Data fields
+  │
+  ├─── Semantic type inference
+  │       → VisCategory → VL encoding type
+  │       → ZeroDecision → scale.zero + domain padding
+  │
+  ├─── Axis classification
+  │       → Banded (discrete)?  → Spring model (§1): stretch + resize bands
+  │       → Non-banded?         → Pressure model (§2): stretch continuous axis
+  │
+  └─── Final VL spec
+          width/height, step sizes, scale domains
+```
+
+**Example: Multi-series line chart (5 companies × 100 months of Revenue)**
+
+1. **Semantic types.** Revenue → quantitative, zero-meaningful → `zero: true`.
+   Month → temporal.
+2. **Axis classification.** X = temporal non-banded, Y = quantitative
+   non-banded → both use per-axis stretch.
+3. **Per-axis stretch.**
+   - X (positional): 100 unique date positions, $\sigma_x = 100$ → $p = 100 \cdot 10 / 400 = 2.5$ → stretch 1.30.
+   - Y (series-count): 5 series, $\sigma_y = 20$ → $p = 5 \cdot 20 / 320 = 0.31$ → stretch 1.0 (no stretch).
+   - Positional ≥ Series: $1.30 \geq 1.0$ ✓, no adjustment.
+4. **Final size.** 400 × 1.30 = 520 px wide, 320 px tall. The chart is
+   wider to give the 100 dates room, but doesn't grow vertically because
+   5 series fit comfortably.
+
+**Example: Category bar chart (80 products)**
+
+1. **Semantic types.** Product → nominal. Revenue → quantitative,
+   zero-meaningful → `zero: true`.
+2. **Axis classification.** X = nominal → banded → spring model.
+3. **Spring model.** $N = 80$, $\ell_0 = 20$, $L_0 = 400$.
+   Ideal = 1600 > 400 → Regime 3.
+   With $\kappa = 1.0$: $\ell = (20 + 5) / 2 = 12.5$ px → $L = 1000$ px.
+   Clamped at $L_{\max} = 800$ → $\ell = 10$ px.
+4. **Final size.** 800 px wide, 320 px tall. Each bar gets 10 px — compressed
+   but readable.
+
+---
+
+## Design Details
+
+### §1  Discrete Axis Sizing: Spring Model
 
 **Applies to:** bar, histogram, heatmap, boxplot, grouped bar — any axis
 with banded items (one slot per category/bin).
 
-### Core idea
+#### Core idea
 
 Model the axis as a box containing $N$ springs. Each spring (item) wants its
 natural length $\ell_0$ (the ideal step size, ~20 px). The box (axis) resists
@@ -138,7 +608,7 @@ $$\ell = \frac{\kappa \cdot \ell_0 + L_0 / N}{1 + \kappa}$$
 where $\kappa = k_{\text{item}} / k_{\text{wall}}$ controls how the
 compression is split between shrinking items and stretching the axis.
 
-### Three regimes
+#### Three regimes
 
 | Regime | Condition | Behavior |
 |--------|-----------|----------|
@@ -146,7 +616,7 @@ compression is split between shrinking items and stretching the axis.
 | **Elastic** | Items overflow but can be accommodated | Items compress + axis stretches to equilibrium |
 | **Overflow** | $N \cdot \ell_{\min} > L_{\max}$ | Items at minimum size, axis at max; excess items truncated |
 
-### Key parameters
+#### Key parameters
 
 | Parameter | Meaning | Typical default |
 |-----------|---------|-----------------|
@@ -160,7 +630,7 @@ compression more than a histogram bin ($\kappa = 0.6$) because bar width
 directly encodes value. A heatmap cell ($\kappa = 2.0$) is even stiffer —
 color needs area to be perceivable.
 
-### Extensions
+#### Extensions
 
 - **Grouped bars**: the group (not the sub-bar) is the spring unit;
   $\ell_0 = m \cdot 20$ for $m$ sub-bars.
@@ -169,12 +639,12 @@ color needs area to be perceivable.
 
 ---
 
-## §2  Continuous Axis Sizing: Per-Axis Stretch
+### §2  Continuous Axis Sizing: Per-Axis Stretch
 
 **Applies to:** scatter, line, area, streamgraph, bump chart — any axis
 where marks float at data-determined positions rather than occupying fixed bands.
 
-### Core idea
+#### Core idea
 
 Springs don't apply because continuous marks don't own slots — 10 points
 and 1000 points can both exist in the same canvas. The problem is **density**,
@@ -187,7 +657,7 @@ $$s = \min\!\big(1 + \beta_c,\; p^{\,\alpha_c}\big)$$
 where $p$ is the pressure ratio (how much mark cross-section competes for
 pixels along that axis) and $\alpha_c$ is an elasticity exponent.
 
-### Two pressure modes
+#### Two pressure modes
 
 | Mode | Pressure formula | When used |
 |------|------------------|-----------|
@@ -200,7 +670,7 @@ counting would miss correlated series that map to the same Y pixels.
 Series-count captures the right signal: "how many lines compete for this
 vertical space?"
 
-### Per-chart-type cross-sections
+#### Per-chart-type cross-sections
 
 | Chart | $\sigma_x$ | $\sigma_y$ | Series axis |
 |-------|-----------|-----------|-------------|
@@ -213,7 +683,7 @@ The asymmetric cross-sections reflect real visual needs: on a line chart,
 each date tick needs ~10 px of X space ($\sqrt{100}$), while each series
 needs ~20 px of Y separation.
 
-### Positional ≥ Series constraint
+#### Positional ≥ Series constraint
 
 For multi-series line/area charts, stretching the positional axis (X)
 also reduces visual overlap between series. So the positional axis stretches
@@ -221,7 +691,7 @@ at least as much as the series axis:
 
 $$s_x = \max(s_x^{\text{positional}},\; s_y^{\text{series}})$$
 
-### Why different marks → different sizes
+#### Why different marks → different sizes
 
 Switching a line chart to a scatter plot changes the stretch because the
 marks have genuinely different spatial needs. Lines are 1D marks that share
@@ -231,14 +701,14 @@ difference in readability requirements — not a bug.
 
 ---
 
-## §3  Semantic Types
+### §3  Semantic Types
 
 **Problem:** Vega-Lite decides encoding type and zero-baseline from the mark,
 not the data. A scatter plot of Revenue defaults to `zero: false`, truncating
 bars of meaning. A bar chart of Temperature defaults to `zero: true`, wasting
 space for a metric with no meaningful zero.
 
-### Type hierarchy
+#### Type hierarchy
 
 Semantic types classify fields by what they *mean*, organized in a lattice:
 
@@ -266,7 +736,7 @@ Each type maps to a **VisCategory** → VL encoding type:
 | Entity | nominal | Person, Company, Product |
 | Coded | nominal | Status, Boolean |
 
-### Zero-baseline decision
+#### Zero-baseline decision
 
 The most consequential semantic decision: should a quantitative axis
 include zero?
@@ -294,7 +764,7 @@ $$\text{proximity} = \frac{\min(\text{data})}{\max(\text{data})}$$
 - proximity ≥ 0.3 + bar/area → include zero (bar length integrity)
 - proximity ≥ 0.3 + other marks → data-fit (zoom in on variation)
 
-### Domain padding
+#### Domain padding
 
 When `zero: false`, edge values sit on the axis frame. A small per-type
 padding fraction pushes the domain out:
@@ -306,475 +776,3 @@ padding fraction pushes the domain out:
 | Year | 0.03 | Tight framing, years are dense |
 | Lat / Lon | 0.02 | Maps need minimal padding |
 | Default | 0.05 | Safe general-purpose |
-
----
-
-## How They Work Together
-
-The three systems compose in a pipeline:
-
-```
-Data fields
-  │
-  ├─── Semantic type inference
-  │       → VisCategory → VL encoding type
-  │       → ZeroDecision → scale.zero + domain padding
-  │
-  ├─── Axis classification (§0)
-  │       → Banded (discrete)?  → Spring model (§1)
-  │       → Non-banded?         → Per-axis stretch (§2)
-  │
-  └─── Final VL spec
-          width/height, step sizes, scale domains
-```
-
-**Example: Multi-series line chart (5 companies × 100 months of Revenue)**
-
-1. **Semantic types.** Revenue → quantitative, zero-meaningful → `zero: true`.
-   Month → temporal.
-2. **Axis classification.** X = temporal non-banded, Y = quantitative
-   non-banded → both use §2 gas pressure.
-3. **Per-axis stretch.**
-   - X (positional): 100 unique date positions, $\sigma_x = 100$ → $p = 100 \cdot 10 / 400 = 2.5$ → stretch 1.30.
-   - Y (series-count): 5 series, $\sigma_y = 20$ → $p = 5 \cdot 20 / 320 = 0.31$ → stretch 1.0 (no stretch).
-   - Positional ≥ Series: $1.30 \geq 1.0$ ✓, no adjustment.
-4. **Final size.** 400 × 1.30 = 520 px wide, 320 px tall. The chart is
-   wider to give the 100 dates room, but doesn't grow vertically because
-   5 series fit comfortably.
-
-**Example: Category bar chart (80 products)**
-
-1. **Semantic types.** Product → nominal. Revenue → quantitative,
-   zero-meaningful → `zero: true`.
-2. **Axis classification.** X = nominal → banded → §1 spring model.
-3. **Spring model.** $N = 80$, $\ell_0 = 20$, $L_0 = 400$.
-   Ideal = 1600 > 400 → Regime 3.
-   With $\kappa = 1.0$: $\ell = (20 + 5) / 2 = 12.5$ px → $L = 1000$ px.
-   Clamped at $L_{\max} = 800$ → $\ell = 10$ px.
-4. **Final size.** 800 px wide, 320 px tall. Each bar gets 10 px — compressed
-   but readable.
-
----
-
-## Comparison: Agents-Chart vs. Raw Vega-Lite
-
-### 1. Basic charts that "just look good"
-
-**Task:** Bar chart of Revenue by Product (80 products).
-
-<table>
-<tr><th>Agents-Chart input</th><th>Equivalent Vega-Lite (what LLM must produce)</th></tr>
-<tr>
-<td>
-
-```json
-{
-  "chartType": "Bar Chart",
-  "encodings": {
-    "x": { "field": "Product" },
-    "y": { "field": "Revenue" }
-  },
-  "semanticTypes": {
-    "Product": "Company",
-    "Revenue": "Revenue"
-  }
-}
-```
-
-</td>
-<td>
-
-```json
-{
-  "width": 800,
-  "height": 320,
-  "data": { "values": "..." },
-  "mark": { "type": "bar" },
-  "encoding": {
-    "x": {
-      "field": "Product",
-      "type": "nominal",
-      "sort": "-y",
-      "axis": { "labelAngle": -45 }
-    },
-    "y": {
-      "field": "Revenue",
-      "type": "quantitative",
-      "scale": { "zero": true },
-      "axis": { "format": "~s" }
-    }
-  }
-}
-```
-
-</td>
-</tr>
-</table>
-
-With agents-chart, the LLM writes **7 lines of semantic intent**. The
-compiler derives everything else:
-
-| Decision | How the compiler decides | VL equivalent the LLM would have to guess |
-|----------|-------------------------|-------------------------------------------|
-| Width = 800 px | Spring model: 80 items × 20 px > 400 → elastic equilibrium | `"width": 800` (hard-coded, breaks if data changes) |
-| `zero: true` | Revenue → zero-meaningful | `"scale": { "zero": true }` |
-| `type: "nominal"` | Company → nominal | `"type": "nominal"` |
-| Sort descending | Default for nominal × quantitative | `"sort": "-y"` |
-| Label angle | Auto from label count + length | `"axis": { "labelAngle": -45 }` |
-
-If the LLM hard-codes `"width": 800` for 80 products, the chart breaks
-when the user filters to 5 products (huge empty bars) or expands to 200
-(unreadable). The spring model adapts automatically.
-
-### 2. Semantic exploration without the LLM
-
-#### Why editing Vega-Lite is hard — even for simple field swaps
-
-Consider what happens when a user takes a working bar chart of
-**Revenue by Product** (80 products, nominal X, quantitative Y) and wants
-to swap fields. This feels like it should be a one-click operation, but in
-Vega-Lite each swap silently invalidates multiple interdependent parameters:
-
-**Swapping the Y axis (metric):**
-
-| Swap Y to… | What must change in the VL spec | Why |
-|------------|-------------------------------|-----|
-| **Temperature** (quantitative, zero-arbitrary) | `scale.zero`: true→false; add `scale.domain` with 5% padding; update `axis.format` (drop currency format); possibly adjust `height` if range is narrow | 0°F is meaningless — the chart wastes 60% of vertical space on empty range if zero is kept |
-| **Rank** (ordinal, discrete, low cardinality) | `type`: quantitative→ordinal; `scale.zero`: true→false; add `scale.reverse`: true; add domain padding (8%); remove `axis.format`; change `sort` behavior | Rank 1 = best, so Y must be reversed; rank is ordinal, not quantitative; domain needs breathing room so rank 1 isn't crushed against the frame |
-| **Category** (nominal, high cardinality → 50 values) | `type`: quantitative→nominal; remove `scale.zero`; chart type should arguably change from bar to heatmap or grouped layout; `height` must grow to fit 50 bands; add `axis.labelLimit`; remove numeric formatting | You've turned the Y axis from continuous to discrete — the mark type, sizing, and axis config all change |
-| **Count** (quantitative, zero-meaningful) | Keep `scale.zero`: true (correct!); change `axis.format` (no currency); adjust `axis.title` | Semantically similar to Revenue but different formatting — the one case where nothing structural changes |
-| **Percentage** (quantitative, contextual zero) | `scale.zero`: depends on data range; may need `axis.format`: ".0%"; if data is 48–52%, should set `zero: false` + padding for visual discrimination | Whether to include zero depends on the data distribution — can't decide from the type alone |
-
-**Swapping the X axis (dimension):**
-
-| Swap X to… | What must change in the VL spec | Why |
-|------------|-------------------------------|-----|
-| **Region** (nominal, 5 values) | `width`: 800→100 or revert to default; remove `axis.labelAngle`; update `sort`; step size can increase (5 items fit easily at 80 px each) | 80→5 categories — the chart is now absurdly wide for 5 bars if width stays at 800 px |
-| **Year** (temporal, 30 values) | `type`: nominal→temporal; remove `sort: "-y"`; add `axis.format`: "%Y"; change mark from `bar` to `bar` with explicit `size` (VL doesn't auto-band on temporal); adjust `width` for 30 time points | Temporal axes need continuous scale + explicit bar sizing; VL's step-based layout doesn't work on temporal |
-| **Month** (ordinal, cyclic, 12 values) | `type`: nominal→ordinal; set `sort` to month order (not alphabetical!); adjust `width` for 12 items; keep step-based layout but change step size | Without explicit sort, VL alphabetizes months: Apr, Aug, Dec, Feb… — a classic LLM mistake |
-| **Country** (nominal, 200 values) | `width`: must grow dramatically; add `axis.labelAngle`: -90; add `axis.labelLimit`; consider truncation or top-N filter; step size must compress | 200 categories at 20 px = 4000 px wide — overflows any reasonable canvas |
-| **Date** (temporal, 1000 daily values) | `type`: nominal→temporal; completely restructure — bar chart of 1000 daily bars is wrong; should suggest aggregation (monthly) or chart type change (line) | The chart type itself is wrong for this cardinality — no VL parameter tweak saves it |
-
-**Swapping both axes (simultaneous re-encoding):**
-
-| Change | What must change | Why it's especially hard |
-|--------|-----------------|------------------------|
-| **X: Product→Year, Y: Revenue→Rank** (bar → bump chart) | Mark: bar→line+circle (layered); X `type`: nominal→temporal or ordinal; Y `type`: quantitative→quantitative with `reverse: true`; `zero: false`; domain padding; add `color` encoding for Product; `width`/`height` both change; sort removed | Two axes change simultaneously — the entire chart structure transforms. A bar chart becomes a bump chart, requiring layered marks, reversed scale, and a color channel. No single-parameter edit path exists. |
-| **X: Product→Date, Y: Revenue→Temperature** (bar → line chart) | Mark: bar→line; X `type`: nominal→temporal; Y `scale.zero`: true→false; remove bar sort; add temporal formatting; `width` depends on date range; remove step-based sizing | Both axes change semantic type. The bar's step-based sizing is wrong for a continuous temporal axis. The Y zero behavior flips. The mark type should change because bars on a dense temporal axis are unreadable. |
-| **X: Product→Product, Y: Revenue→Revenue, +color: Region** (bar → grouped bar) | Mark config: add `xOffset` encoding; `width` must grow (5 sub-bars per group = 5× wider steps); step size changes; legend appears; color scale needed | Adding a single encoding field (color) restructures the entire layout. VL's grouped bar requires `xOffset`, which changes step semantics — the step now controls the group, not individual bars. |
-| **X: Product→Region, Y: Revenue→Count(*)** (many bars → few bars, aggregated) | `width`: shrink dramatically; remove label angle; add aggregate: "count" on Y; encoding semantics change from raw value to computed aggregate | Cardinality drops from 80 to 5, so the sizing is wildly wrong. Plus the Y encoding changes from a data field to a computed aggregate — different VL syntax entirely. |
-
-That's **5–10 parameter changes** per field swap, and the right changes
-depend on the semantic type, the data range, and the cardinality of the
-new field. When both axes change at once, the parameter interactions
-multiply — the correct encoding type for X affects the valid mark type,
-which affects the valid scale type for Y, which affects sizing. Every
-combination is different.
-
-**From a UI (e.g., Data Formulator's drag-and-drop):** The UI can swap
-the field name easily, but it cannot know which of those 5–8 parameters
-to update. Should `zero` change? Should the scale reverse? Should the
-encoding type switch from quantitative to ordinal? A generic UI has no
-way to infer these — they depend on what the data *means*, not just its
-data type. So the user drags "Rank" to Y and gets a chart with rank
-values on a zero-based unreversed quantitative scale — technically
-rendered but visually wrong. They then have to either:
-
-- Manually find and fix each parameter through the UI (if exposed at all),
-  hoping they know the right combination, or
-- Ask the LLM to regenerate the whole spec.
-
-**From code:** Editing the VL JSON directly is even harder. The user must
-understand VL's scale, axis, and encoding APIs well enough to know that
-Rank needs `type: "ordinal"`, `scale.reverse: true`, `scale.domain` with
-padding, and `nice: false` to prevent VL from rounding the domain back to
-include 0. Most users — and most LLMs — miss at least one of these.
-
-**The irony of good-looking LLM output:** When an LLM *does* produce a
-polished chart, it achieves that quality precisely by hard-coding values
-tuned to the current data: `"width": 800` (for 80 products),
-`"axis": { "labelAngle": -45 }` (for long product names),
-`"scale": { "domain": [0, 950000] }` (for this revenue range),
-`"mark": { "size": 8 }` (for this point density). These hard-coded
-constants make the chart look good *right now* — but they become
-liabilities the moment anything changes:
-
-| Hard-coded value | Breaks when… |
-|------------------|-------------|
-| `"width": 800` | User filters to 5 products (massive empty bars) or adds 200 (unreadable 4 px bars) |
-| `"labelAngle": -45` | User swaps X to Region (3-letter labels that don't need rotation) |
-| `"domain": [0, 950000]` | User swaps Y to Temperature (axis domain is now wrong by 6 orders of magnitude) |
-| `"mark.size": 8` | User switches to scatter with 1000 points (dots overlap completely) |
-| `"scale.zero": true` | User swaps Y to Rank (zero-based rank axis wastes space) |
-| `"format": "$,.0f"` | User swaps Y to Percentage (values show as "$48" instead of "48%") |
-
-The better the LLM's initial output, the *more* hard-coded constants it
-contains, and the *harder* the chart is to edit. This creates a vicious
-cycle: high-quality generation → brittle spec → forced LLM regeneration
-on every edit → high cost and latency → poor exploration experience.
-
-A simpler LLM-generated spec (fewer hard-coded values) would be easier
-to edit, but it looks worse — VL's defaults are often wrong (e.g.,
-`width: 400` for any cardinality, alphabetical sort for categories).
-The user is trapped between *good but fragile* and *ugly but editable*.
-
-**The combinatorial problem:** With $F$ fields and $C$ chart types, there
-are $F \times C$ possible configurations, each potentially needing
-different zero behavior, encoding type, scale direction, domain padding,
-axis formatting, sizing, and sort order. For a dataset with 15 fields and
-5 chart types, that's 75 configurations. Asking the LLM to handle each
-one costs ~2–5 seconds and ~500–1000 tokens per call. Over a 30-minute
-exploration session, this adds up to dozens of LLM calls — each one an
-interruption to the user's analytical flow.
-
-#### Why semantic types are the secret sauce
-
-The root cause of all the problems above is a **missing abstraction**.
-Vega-Lite knows the data *type* (number, string, date) but not the data
-*meaning*. A number could be revenue, temperature, rank, or a zip code —
-and the correct visualization parameters are completely different for each.
-Without meaning, every parameter must be specified explicitly (by the LLM
-or the user), and every field swap invalidates those explicit choices.
-
-Semantic types fill exactly this gap. They are a thin layer of metadata —
-one string per field (e.g., `"Revenue"`, `"Rank"`, `"Temperature"`,
-`"Month"`) — that captures what the data *means*. From this single piece
-of information, the compiler can deterministically derive everything else:
-
-```
-Semantic type
-    ↓
-    ├── Encoding type     (Revenue → quantitative, Rank → ordinal, Month → ordinal)
-    ├── Zero baseline     (Revenue → true, Temperature → false, Rank → false)
-    ├── Domain padding    (Rank → 8%, Temperature → 5%, Revenue → 0%)
-    ├── Scale direction   (Rank → reversed, others → normal)
-    ├── Axis formatting   (Revenue → "$,.0f", Percentage → ".0%", Year → "%Y")
-    ├── Sort order        (Month → calendar order, Product → by value)
-    └── Sizing model      (nominal → spring, quantitative → per-axis stretch)
-```
-
-This is why the approach works: **semantic types are stable across edits**.
-When the user swaps Y from Revenue to Temperature, the *field* changes and
-every parameter derivation is different — but the *process* is identical.
-The compiler runs the same derivation pipeline with `"Temperature"` instead
-of `"Revenue"` and gets the right answer every time. No hard-coded constant
-becomes stale because there are no hard-coded constants.
-
-The key insight is that semantic types are the *right level of abstraction*
-for the LLM to communicate. They are:
-
-- **Easy to generate.** Assigning a semantic type to a field is a
-  classification task — one of the simplest things LLMs do. An LLM that
-  struggles to write correct VL scale configurations can still reliably
-  say "this column is Revenue" or "this column is Rank."
-
-- **Stable across the session.** Once assigned, semantic types don't change
-  when the user swaps fields or changes chart types. Revenue is still
-  Revenue whether it's on a bar chart or a scatter plot, on the Y axis or
-  the color channel.
-
-- **Compositional.** Each field's semantic type contributes independently
-  to the chart configuration. The compiler doesn't need to reason about
-  field *combinations* — it derives parameters per-field and per-channel,
-  then the sizing models (spring, per-axis stretch) compose the results.
-
-This turns the $F \times C$ combinatorial problem into an $F + C$ problem:
-the LLM classifies each field once ($F$ decisions), the user picks a chart
-type ($C$ choices), and the compiler handles the cross-product. Instead of
-75 unique configurations that each need an LLM call, the system needs 15
-type assignments (done once) and handles all 75 configurations
-deterministically.
-
-**Agents-chart breaks the vicious cycle.** There are no hard-coded
-constants to become stale — every parameter is derived at compile time
-from semantic types + data characteristics. When the user swaps a field,
-the compiler looks up its semantic type and re-derives all parameters
-automatically. The chart always looks good because the sizing, zero
-behavior, and formatting are computed fresh, not carried over from a
-previous configuration. No LLM call, no manual parameter editing, no
-broken charts.
-
-#### Walkthrough
-
-**Scenario:** An analyst starts with a Revenue bar chart, then wants to
-explore: *"What if I look at Temperature instead? What about Rank?"*
-
-<table>
-<tr><th></th><th>Agents-Chart</th><th>Raw Vega-Lite</th></tr>
-<tr>
-<td><b>Initial chart</b></td>
-<td>LLM generates spec + semantic types</td>
-<td>LLM generates full VL spec</td>
-</tr>
-<tr>
-<td><b>Swap Y to Temperature</b></td>
-<td>
-
-User drags Temperature to Y axis.
-Compiler sees `Temperature` → zero-arbitrary
-→ sets `zero: false`, pad = 5%.
-**No LLM call.**
-
-</td>
-<td>
-
-User must ask LLM: *"change Y to Temperature"*.
-LLM must know to set `zero: false`,
-adjust domain, update formatting.
-**1 LLM call** (+ latency + cost).
-
-</td>
-</tr>
-<tr>
-<td><b>Change to scatter plot</b></td>
-<td>
-
-User clicks "Scatter Plot".
-Compiler switches from spring model to
-per-axis stretch, re-derives sizing.
-**No LLM call.**
-
-</td>
-<td>
-
-User must ask LLM: *"make it a scatter"*.
-LLM must change mark, remove sort,
-adjust width/height, update scales.
-**1 LLM call.**
-
-</td>
-</tr>
-<tr>
-<td><b>Swap Y to Rank</b></td>
-<td>
-
-User drags Rank to Y.
-Compiler sees `Rank` → ordinal, zero-arbitrary
-→ `zero: false`, pad = 8%, reversed axis.
-**No LLM call.**
-
-</td>
-<td>
-
-User must ask LLM again.
-LLM must know Rank is ordinal,
-needs reversed scale, domain padding.
-**1 LLM call.**
-
-</td>
-</tr>
-<tr>
-<td><b>Total LLM calls</b></td>
-<td><b>1</b> (initial generation only)</td>
-<td><b>4</b> (initial + every edit)</td>
-</tr>
-</table>
-
-In a typical exploration session, a user might try 10–15 encoding
-variations. With raw VL, that's 10–15 LLM round-trips. With agents-chart,
-it's 1. The semantic types from the first generation carry the user through
-the entire exploration.
-
-### 3. Bespoke charts: complexity absorbed by the compiler
-
-**Task:** Bump chart — 8 companies ranked over 12 months.
-
-<table>
-<tr><th>Agents-Chart input</th><th>Vega-Lite (what LLM must produce)</th></tr>
-<tr>
-<td>
-
-```json
-{
-  "chartType": "Bump Chart",
-  "encodings": {
-    "x": { "field": "Month" },
-    "y": { "field": "Rank" },
-    "color": { "field": "Company" }
-  },
-  "semanticTypes": {
-    "Month": "Month",
-    "Rank": "Rank",
-    "Company": "Company"
-  }
-}
-```
-
-</td>
-<td>
-
-```json
-{
-  "width": 400, "height": 320,
-  "layer": [
-    {
-      "mark": { "type": "line",
-        "strokeWidth": 2.5,
-        "interpolate": "monotone" },
-      "encoding": {
-        "x": { "field": "Month",
-          "type": "ordinal" },
-        "y": { "field": "Rank",
-          "type": "quantitative",
-          "scale": { "reverse": true,
-            "domain": [-0.5, 8.5],
-            "zero": false, "nice": false },
-          "axis": { "tickCount": 8,
-            "grid": false } },
-        "color": { "field": "Company",
-          "type": "nominal" }
-      }
-    },
-    {
-      "mark": { "type": "circle",
-        "size": 80 },
-      "encoding": { "...same..." }
-    }
-  ]
-}
-```
-
-</td>
-</tr>
-</table>
-
-The VL spec for a bump chart requires **layered marks** (line + circle),
-a **reversed Y scale** with explicit domain, **padding** so rank 1 isn't
-crushed against the axis, and careful tick configuration. It's ~40 lines
-of interdependent config that most LLMs get wrong on the first try — the
-scale direction, the domain bounds, or the layer composition.
-
-With agents-chart, the bump chart template handles all of this. The LLM
-writes the same ~7 lines it would for any chart. The complexity lives in
-the compiler, which has been tested and is deterministic.
-
-Other bespoke charts with similar complexity savings:
-
-| Chart type | VL complexity the compiler absorbs |
-|------------|-----------------------------------|
-| **Streamgraph** | Stack offset (`"center"`), area interpolation, series ordering |
-| **Candlestick** | Layered rect + rule, open/close/high/low encoding, color by direction |
-| **Waterfall** | Running sum transform, positive/negative coloring, connector rules |
-| **Radar** | Polar coordinates via theta/radius, circular axis, layered grid lines |
-| **Ridge plot** | Row-faceted density, overlapping layout, per-facet bandwidth |
-
-### 4. Failure modes
-
-**Scenario:** LLM assigns Revenue (quantitative) to a color channel expecting
-a scatter plot, but also assigns it to Y — creating a redundant double-encoding.
-
-| | Agents-Chart | Raw Vega-Lite |
-|--|---|---|
-| **What happens** | Compiler detects the redundancy via semantic metadata and can flag: *"Revenue is mapped to both Y and color — color adds no information"* | VL renders the chart silently. User sees a scatter plot with a gradient legend that duplicates the Y axis. No error, no explanation. |
-| **Recovery** | Semantic explanation is actionable: user or agent can swap color to Company | User must notice the problem themselves and figure out why |
-
-**Scenario:** 500 categories on a faceted × discrete chart (50 facets × 10
-categories). Raw VL with default `width: 400` produces a 400 px chart with
-50 squished facets, each containing 10 unreadable 0.8 px bars. The chart
-technically renders but is useless.
-
-With agents-chart, the spring model detects the overflow: each facet subplot
-gets 60 px minimum, bars compress to 6 px (or truncate with a warning if
-even that doesn't fit). The chart is still wide, but each bar remains
-readable and the user gets a clear message about what was truncated.
-
