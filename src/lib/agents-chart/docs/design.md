@@ -112,7 +112,14 @@ continuous axes, both composable with facet and layer structures. This
 replaces the alternative of asking the LLM to set 10–30 sizing parameters
 per chart — which is costly (one call per edit) and visually inconsistent
 across runs (the same prompt produces different widths, step sizes, and
-label angles each time).
+label angles each time). 
+
+Both the semantic type decisions and the
+physics-based sizing are **library-agnostic** — they reason about data
+meaning and visual density, not about any particular charting API. This
+means the same compiler logic can target multiple rendering backends
+(Vega-Lite today, ECharts or Plotly tomorrow) without re-deriving the
+design rules.
 
 ### The workflow
 
