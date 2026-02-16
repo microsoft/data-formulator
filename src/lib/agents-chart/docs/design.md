@@ -81,7 +81,7 @@ Design a visualization library optimized for AI agents that balances:
 The core challenge is that in existing languages, the semantic contract
 between data and chart is scattered across low-level parameters. Consider
 a column containing `17234982372` — it could be a Unix timestamp, a
-monetary value, or a serial number. Today, the LLM must decide the VL
+monetary value, or a serial number, or a group id. Today, the LLM must decide the VL
 encoding type (`temporal`, `quantitative`, `nominal`), set axis formatting,
 configure zero-baseline behavior, choose sizing — and these become
 hard-coded constants that break when the user edits anything.
@@ -103,18 +103,29 @@ When the user changes a field or chart type, the compiler re-runs these
 derivations with the new inputs. No LLM call needed — the semantic types
 from the original generation carry the information forward.
 
+The main layout challenge is **coordinating sizing across axes, layers,
+mark types, and facets** — parameters that are deeply interdependent
+(e.g., facet count affects subplot width, which affects bar width, which
+affects label rotation). We address this with a unified physics-inspired
+model: a spring model for discrete axes and a pressure model for
+continuous axes, both composable with facet and layer structures. This
+replaces the alternative of asking the LLM to set 10–30 sizing parameters
+per chart — which is costly (one call per edit) and visually inconsistent
+across runs (the same prompt produces different widths, step sizes, and
+label angles each time).
+
 ### The workflow
 
 ```
 1. AI agent generates:  chart spec  +  semantic types for each field
                          (small JSON)    (e.g., Revenue, Year, Company)
 
-2. User edits chart:    swap field / change mark type / add facet
+2. User edits chart to explore new information:    swap field / change mark type / add facet (NO AI needed!)
    └─→ Compiler re-derives all config from semantic types
-   └─→ Chart looks good automatically  (90% of edits)
+   └─→ Chart looks good automatically  (98% of edits)
 
 3. (Optional) Fine-tune: user asks LLM to edit underlying Vega-Lite
-                          for detailed style customization  (10% of edits)
+                          for detailed style customization  (2% of edits)
 ```
 
 The chart spec is intentionally minimal — in Data Formulator, it's a small
