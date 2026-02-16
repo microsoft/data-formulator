@@ -9,7 +9,7 @@
  * Categories are defined here to group related charts in the UI.
  */
 
-import { ChartTemplateDef } from '../types';
+import { ChartTemplateDef } from '../../core/types';
 
 // --- Individual chart imports ---
 import { scatterPlotDef, linearRegressionDef, rangedDotPlotDef, boxplotDef } from './scatter';

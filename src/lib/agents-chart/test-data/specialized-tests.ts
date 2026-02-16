@@ -236,7 +236,7 @@ export function genPieTests(): TestCase[] {
                 Category: { type: Type.String, semanticType: 'Category', levels: cats },
                 Value: { type: Type.Number, semanticType: 'Quantity', levels: [] },
             },
-            encodingMap: { theta: makeEncodingItem('Value'), color: makeEncodingItem('Category') },
+            encodingMap: { size: makeEncodingItem('Value'), color: makeEncodingItem('Category') },
         });
     }
 
@@ -255,7 +255,7 @@ export function genPieTests(): TestCase[] {
                 Product: { type: Type.String, semanticType: 'Product', levels: cats },
                 Revenue: { type: Type.Number, semanticType: 'Revenue', levels: [] },
             },
-            encodingMap: { theta: makeEncodingItem('Revenue'), color: makeEncodingItem('Product') },
+            encodingMap: { size: makeEncodingItem('Revenue'), color: makeEncodingItem('Product') },
         });
     }
 

@@ -1,8 +1,62 @@
 # agents-chart
 
-Pure-TypeScript chart assembly library. Given data, semantic types, encoding
-definitions, and a canvas size, produces a Vega-Lite specification.
-No React / Redux / UI framework dependencies.
+A semantic-level visualization library that compiles to Vega-Lite.
+The LLM outputs only chart type, field assignments, and a **semantic type**
+per field (e.g. `Revenue`, `Rank`, `CategoryCode`). A deterministic compiler
+derives all low-level parameters — sizing, zero-baseline, formatting, color
+schemes, and mark templates — so charts look good *and* stay editable
+without calling the LLM again.
+
+Pure TypeScript · No UI framework dependencies · Data-in, spec-out
+
+> For full motivation & comparisons, see [docs/story.md](docs/story.md).
+> For architecture details, see [docs/design_v3.md](docs/design_v3.md).
+
+---
+
+## Why
+
+LLM-generated Vega-Lite faces a dilemma:
+
+| Approach | Looks good | Editable | Bespoke charts | Cost per edit |
+|----------|:---:|:---:|:---:|:---:|
+| VL defaults | ✗ | ✓ | ✗ | 0 |
+| LLM-tuned VL | ✓ | ✗ | Sometimes | 1 LLM call |
+| **agents-chart** | **✓** | **✓** | **✓** | **0** |
+
+**Simple specs** are editable but look bad (wrong sizing, misleading
+encodings). **Polished specs** look great but are brittle (hard-coded
+values break on every field swap). agents-chart resolves this by operating
+at a higher semantic level above VL.
+
+### Key insight: semantic types as the contract
+
+Instead of asking the LLM to set dozens of low-level VL parameters, we ask
+it one thing: **what does this data mean?** — expressed as a semantic type.
+
+```
+Semantic type (e.g. "Revenue")
+    ├── Encoding type:   quantitative
+    ├── Zero baseline:   true
+    ├── Domain padding:  0%
+    ├── Scale direction: normal
+    ├── Axis formatting: "$,.0f"
+    ├── Color scheme:    sequential
+    └── Sizing model:    per-axis stretch
+```
+
+When the user swaps a field, the compiler re-derives everything from the new
+semantic type. No hard-coded constants go stale. No LLM call needed.
+
+### The workflow
+
+```
+1. LLM generates:   chart type + semantic types   (~10-line JSON)
+2. User edits:      swap field / change mark / add facet → compiler handles it (no AI)
+3. Fine-tune (2%):  edit the generated VL directly for bespoke styling
+```
+
+---
 
 ## Quick start
 
@@ -12,95 +66,60 @@ import { assembleChart } from './lib/agents-chart';
 const spec = assembleChart(
   'Scatter Plot',
   { x: { field: 'weight' }, y: { field: 'mpg' }, color: { field: 'origin' } },
-  myData,                                     // any[]  – rows of objects
-  { weight: 'Quantity', mpg: 'Quantity', origin: 'Country' },  // semantic types
-  { width: 400, height: 300 },                // canvas size in px
+  myData,
+  { weight: 'Quantity', mpg: 'Quantity', origin: 'Country' },
+  { width: 400, height: 300 },
 );
 ```
+
+---
 
 ## Architecture
 
 ```
-index.ts            ← barrel file / public API
-types.ts            ← core type definitions (encoding, template, options)
-semantic-types.ts   ← semantic type lattice + VisCategory helpers
-assemble.ts         ← assembleChart() + resolveEncodingType()
-templates/          ← chart template definitions (bar, scatter, map, …)
+index.ts                ← public API (re-exports core/ + vegalite/)
+
+core/                   ← target-language-agnostic
+  types.ts              ← shared type definitions
+  semantic-types.ts     ← ~70 semantic types + VisCategory helpers
+  decisions.ts          ← pure decision functions (layout, encoding type)
+  resolve-semantics.ts  ← Phase 0: semantic resolution (VL-free)
+  compute-layout.ts     ← Phase 1: layout computation (VL-free)
+  filter-overflow.ts    ← overflow filtering (VL-free)
+
+vegalite/               ← Vega-Lite backend
+  assemble.ts           ← assembleChart() orchestrator
+  instantiate-spec.ts   ← Phase 2: VL spec instantiation
+  templates/            ← chart templates (bar, scatter, bump, …)
 ```
 
 ### Type resolution pipeline
 
-The library resolves every encoding channel's Vega-Lite type through a single,
-unified pipeline implemented in `resolveEncodingType()` (internal to
-`assemble.ts`):
-
 ```
-                    ┌─────────────────┐
-                    │  semantic type   │  (e.g. "Quantity", "Country", "Date")
-                    │  from caller     │
-                    └────────┬────────┘
-                             │
-             has mapping?  ──┤
-           ┌── yes ─────────┘└──── no ──────────┐
-           ▼                                     ▼
-  ┌─────────────────┐                   ┌────────────────────┐
-  │ getVisCategory()│                   │ inferVisCategory() │
-  │ (lookup table)  │                   │ (inspect raw data) │
-  └────────┬────────┘                   └────────┬───────────┘
-           │                                     │
-           └──────────────┬──────────────────────┘
-                          ▼
-                 ┌────────────────┐
-                 │  VisCategory   │   quantitative | ordinal | nominal
-                 │                │   temporal | geographic
-                 └────────┬───────┘
-                          │
-              channel / chart-type rules
-              (bar binning, facet override,
-               color cardinality, temporal
-               validation …)
-                          │
-                          ▼
-                 ┌────────────────┐
-                 │  VL enc type   │   "quantitative" | "ordinal" | "nominal"
-                 │  (string)      │   | "temporal"
-                 └────────────────┘
+  semantic type → getVisCategory() → VisCategory → channel/chart rules → VL encoding type
+                                      ↑
+            (fallback: inferVisCategory() inspects raw data)
 ```
 
-**Key functions:**
-
-| Function | Location | Exported? | Purpose |
-|---|---|---|---|
-| `resolveEncodingType()` | `assemble.ts` | No (internal) | Full pipeline: semantic type → VisCategory → VL encoding type, with channel/chart overrides |
-| `getVisCategory()` | `semantic-types.ts` | Yes | Lookup: semantic type string → `VisCategory` |
-| `inferVisCategory()` | `semantic-types.ts` | Yes | Infer `VisCategory` from raw data values (fallback when no semantic type) |
-
-`inferVisCategory()` replaces the old `getDType()` / `inferFieldType()` / `inferPrimitiveType()` helpers. It inspects actual data values and maps them to the same `VisCategory` vocabulary used by the semantic type system:
-
-| Data shape | VisCategory |
-|---|---|
-| All numbers | `quantitative` |
-| All booleans | `nominal` |
-| All date-parseable | `temporal` |
-| Mixed / strings | `nominal` |
+---
 
 ## Public API
 
 ### `assembleChart(chartType, encodings, data, semanticTypes, canvasSize, chartProperties?, options?)`
 
-Main entry point. Returns a Vega-Lite spec object.
+Returns a Vega-Lite spec object.
 
 | Param | Type | Description |
 |---|---|---|
 | `chartType` | `string` | Template name, e.g. `"Scatter Plot"` |
 | `encodings` | `Record<string, ChartEncoding>` | Channel → encoding map |
 | `data` | `any[]` | Array of row objects |
-| `semanticTypes` | `Record<string, string>` | Field name → semantic type string |
-| `canvasSize` | `{ width: number; height: number }` | Canvas dimensions (pre-scaled) |
-| `chartProperties?` | `Record<string, any>` | Chart property values (e.g. projection, inner radius) |
-| `options?` | `AssembleOptions` | Tooltips, layout tuning |
+| `semanticTypes` | `Record<string, string>` | Field name → semantic type |
+| `canvasSize` | `{ width, height }` | Canvas dimensions in px |
+| `chartProperties?` | `Record<string, any>` | Template-specific knobs |
+| `options?` | `AssembleOptions` | Layout tuning (elasticity, step sizes) |
 
-### Types
+### Key types
 
 ```ts
 interface ChartEncoding {
@@ -113,7 +132,7 @@ interface ChartEncoding {
 }
 
 interface AssembleOptions {
-  addTooltips?: boolean;       // add tooltips             (default false)
+  addTooltips?: boolean;       // default false
   elasticity?: number;         // axis stretch exponent    (default 0.5)
   maxStretch?: number;         // axis stretch cap         (default 2)
   facetElasticity?: number;    // facet stretch exponent   (default 0.3)
@@ -125,68 +144,50 @@ interface AssembleOptions {
 
 ### Template system
 
-```ts
-chartTemplateDefs   // Map<string, ChartTemplateDef>  — named templates
-allTemplateDefs     // ChartTemplateDef[]              — flat list
-getTemplateDef(name)  // look up by chart name
-getTemplateChannels(name)  // get available channels
-```
-
-Each `ChartTemplateDef` can declare `properties?: ChartPropertyDef[]` for
-configurable knobs (e.g. map projection, arc inner-radius). `ChartPropertyDef`
-is a discriminated union:
+Declarative templates for 20+ chart types — basic (bar, line, scatter) and
+bespoke (bump chart, candlestick, streamgraph, waterfall, ridge plot).
 
 ```ts
-type ChartPropertyDef = { key: string; label: string } & (
-  | { type: 'continuous'; min: number; max: number; step?: number; defaultValue?: number }
-  | { type: 'discrete';   options: { value: any; label: string }[]; defaultValue?: any }
-  | { type: 'binary';     defaultValue?: boolean }
-);
+chartTemplateDefs      // Map<string, ChartTemplateDef>
+getTemplateDef(name)   // look up by chart name
+getTemplateChannels(name)
 ```
 
-### Semantic type system (sub-module)
+### Semantic types (~70 types)
 
-The full semantic type lattice is in `semantic-types.ts` — import directly:
+| Group | Examples |
+|-------|---------|
+| Temporal | `DateTime`, `Date`, `Year`, `Month` |
+| Measures | `Quantity`, `Count`, `Price`, `Percentage` |
+| Discrete numerics | `Rank`, `Score`, `ID` |
+| Geographic | `Latitude`, `Longitude`, `Country`, `City` |
+| Categorical | `PersonName`, `Company`, `Status`, `Boolean` |
+| Ranges | `Range`, `AgeGroup`, `Bucket` |
+| Fallbacks | `String`, `Number`, `Unknown` |
 
-```ts
-import { isMeasureType, getVisCategory } from './lib/agents-chart/semantic-types';
-```
+---
 
-~70 types organized into groups:
+## What the compiler handles automatically
 
-- **Temporal** — `DateTime`, `Date`, `Year`, `Month`, …
-- **Measures** — `Quantity`, `Count`, `Price`, `Percentage`, …
-- **Discrete numerics** — `Rank`, `Score`, `ID`, …
-- **Geographic** — `Latitude`, `Longitude`, `Country`, `City`, …
-- **Categorical** — `PersonName`, `Company`, `Status`, `Boolean`, …
-- **Ranges** — `Range`, `AgeGroup`, `Bucket`
-- **Fallbacks** — `String`, `Number`, `Unknown`
-
-### Template helpers (sub-module)
-
-Post-processor utilities in `helpers.ts` — import directly:
-
-```ts
-import { applyPointSizeScaling } from './lib/agents-chart/helpers';
-```
-
-### Channels
-
-```ts
-channels       // readonly tuple of valid channel names
-channelGroups  // Record<string, string[]> — grouped channel names
-```
+- **Sizing** — spring model for discrete axes, pressure model for continuous;
+  composable with facets and layers. No more 6400 px charts from 80 × 4 facets.
+- **Zero baseline** — Revenue → include zero; Temperature → don't; Rank → don't.
+- **Scale direction** — Rank → reversed; others → normal.
+- **Formatting** — Revenue → `$,.0f`; Percentage → `.0%`; Year → `%Y`.
+- **Color schemes** — categorical codes → distinct hues; measures → sequential.
+- **Label overflow** — auto-rotation and truncation from count + string lengths.
+- **Bespoke marks** — lollipops, bump charts, candlesticks as single templates.
+- **Semantic validation** — actionable errors before rendering, not after crashing.
 
 ## Design principles
 
 1. **No UI dependencies** — pure data-in, spec-out.
-2. **Semantic types drive everything** — the caller provides semantic type
-   annotations; the library resolves them to VL encoding types via a single
-   pipeline. When semantic types are missing, `inferVisCategory()` inspects
-   the raw data as a fallback.
-3. **Callers own the data** — data is assumed pre-aggregated. The library
-   applies no aggregation transforms.
-4. **Layout is configurable** — elastic stretch, facet sizing, and step sizes
-   are exposed in `AssembleOptions` so the host app can tune them.
+2. **Semantic types drive everything** — the caller annotates fields; the
+   compiler derives all VL config. Fallback: `inferVisCategory()` inspects raw data.
+3. **Callers own the data** — no aggregation transforms applied.
+4. **Layout is configurable** — elastic stretch, facet sizing, step sizes
+   exposed in `AssembleOptions`.
 5. **Templates are declarative** — each chart type is a `ChartTemplateDef`
    with a VL skeleton, channel list, and optional post-processor.
+6. **Backend-agnostic semantics** — the same semantic reasoning can target
+   Vega-Lite today, ECharts or Plotly tomorrow.

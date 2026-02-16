@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-import { ChartTemplateDef } from '../types';
+import { ChartTemplateDef } from '../../core/types';
 import { defaultBuildEncodings } from './utils';
 
 /** Semantic types that indicate a rank-like field */
@@ -17,15 +17,18 @@ export const bumpChartDef: ChartTemplateDef = {
         encoding: {},
     },
     channels: ["x", "y", "color", "detail", "column", "row"],
-    overrideDefaultSettings: (opts) => ({ ...opts, continuousMarkCrossSection: { x: 80, y: 20, seriesCountAxis: 'auto' } }),
-    buildEncodings: (spec, encodings, context) => {
-        defaultBuildEncodings(spec, encodings, context);
+    markCognitiveChannel: 'position',
+    declareLayoutMode: () => ({
+        paramOverrides: { continuousMarkCrossSection: { x: 80, y: 20, seriesCountAxis: 'auto' } },
+    }),
+    instantiate: (spec, ctx) => {
+        defaultBuildEncodings(spec, ctx.resolvedEncodings);
 
         const xEnc = spec.encoding?.x;
         const yEnc = spec.encoding?.y;
         if (!xEnc || !yEnc) return;
 
-        const semanticTypes = context.semanticTypes;
+        const semanticTypes = ctx.semanticTypes;
 
         // --- Decide which axis is rank ---
         let rankAxis: 'x' | 'y';

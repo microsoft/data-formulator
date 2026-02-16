@@ -3,7 +3,7 @@
 
 import { Type } from '../../../data/types';
 import { Channel, EncodingItem } from '../../../components/ComponentType';
-import { AssembleOptions } from '../types';
+import { AssembleOptions } from '../core/types';
 import { TestCase, makeField, makeEncodingItem, buildMetadata } from './types';
 import { seededRandom, genCategories } from './generators';
 
@@ -71,7 +71,7 @@ export function genOverflowTests(): TestCase[] {
             encodingMap: {
                 x: makeEncodingItem('Product'),
                 y: makeEncodingItem('Sales'),
-                color: makeEncodingItem('Region'),
+                group: makeEncodingItem('Region'),
             },
         });
     }

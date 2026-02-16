@@ -8,7 +8,7 @@
 
 import { Type } from '../../../data/types';
 import { Channel, EncodingItem, FieldItem } from '../../../components/ComponentType';
-import { AssembleOptions } from '../types';
+import { AssembleOptions } from '../core/types';
 
 // ============================================================================
 // Test Case Definition

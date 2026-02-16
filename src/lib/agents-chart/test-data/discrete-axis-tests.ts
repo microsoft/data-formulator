@@ -144,7 +144,7 @@ function genGroupedBarSizing(): TestCase[] {
                 data,
                 fields: [makeField('Category'), makeField('Group'), makeField('Value')],
                 metadata: buildMetadata(data),
-                encodingMap: { x: makeEncodingItem('Category'), y: makeEncodingItem('Value'), color: makeEncodingItem('Group') },
+                encodingMap: { x: makeEncodingItem('Category'), y: makeEncodingItem('Value'), group: makeEncodingItem('Group') },
             });
         }
 
@@ -161,7 +161,7 @@ function genGroupedBarSizing(): TestCase[] {
                 data,
                 fields: [makeField('Region'), makeField('Group'), makeField('Sales')],
                 metadata: buildMetadata(data),
-                encodingMap: { y: makeEncodingItem('Region'), x: makeEncodingItem('Sales'), color: makeEncodingItem('Group') },
+                encodingMap: { y: makeEncodingItem('Region'), x: makeEncodingItem('Sales'), group: makeEncodingItem('Group') },
             });
         }
     }

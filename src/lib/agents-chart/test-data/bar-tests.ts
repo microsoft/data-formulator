@@ -614,7 +614,7 @@ export function genGroupedBarTests(): TestCase[] {
                 Revenue: { type: Type.Number, semanticType: 'Revenue', levels: [] },
                 Year: { type: Type.String, semanticType: 'Year', levels: years },
             },
-            encodingMap: { x: makeEncodingItem('Category'), y: makeEncodingItem('Revenue'), color: makeEncodingItem('Year') },
+            encodingMap: { x: makeEncodingItem('Category'), y: makeEncodingItem('Revenue'), group: makeEncodingItem('Year') },
         });
     }
 
@@ -637,7 +637,7 @@ export function genGroupedBarTests(): TestCase[] {
                 Grade: { type: Type.Number, semanticType: 'Rank', levels: [] },
                 Level: { type: Type.String, semanticType: 'Category', levels: ['A', 'B', 'C'] },
             },
-            encodingMap: { x: makeEncodingItem('Grade'), y: makeEncodingItem('Score'), color: makeEncodingItem('Level') },
+            encodingMap: { x: makeEncodingItem('Grade'), y: makeEncodingItem('Score'), group: makeEncodingItem('Level') },
         });
     }
 
@@ -680,7 +680,7 @@ export function genGroupedBarTests(): TestCase[] {
                 Amount: { type: Type.Number, semanticType: 'Amount', levels: [] },
                 Metric: { type: Type.String, semanticType: 'Category', levels: metrics },
             },
-            encodingMap: { x: makeEncodingItem('Date'), y: makeEncodingItem('Amount'), color: makeEncodingItem('Metric') },
+            encodingMap: { x: makeEncodingItem('Date'), y: makeEncodingItem('Amount'), group: makeEncodingItem('Metric') },
         });
     }
 
@@ -707,7 +707,7 @@ export function genGroupedBarTests(): TestCase[] {
                 Demand: { type: Type.Number, semanticType: 'Quantity', levels: [] },
                 Region: { type: Type.String, semanticType: 'Category', levels: regions },
             },
-            encodingMap: { x: makeEncodingItem('Price'), y: makeEncodingItem('Demand'), color: makeEncodingItem('Region') },
+            encodingMap: { x: makeEncodingItem('Price'), y: makeEncodingItem('Demand'), group: makeEncodingItem('Region') },
         });
     }
 
@@ -731,7 +731,7 @@ export function genGroupedBarTests(): TestCase[] {
                 Product: { type: Type.String, semanticType: 'Product', levels: products },
                 Quarter: { type: Type.String, semanticType: 'Category', levels: quarters },
             },
-            encodingMap: { x: makeEncodingItem('Sales'), y: makeEncodingItem('Product'), color: makeEncodingItem('Quarter') },
+            encodingMap: { x: makeEncodingItem('Sales'), y: makeEncodingItem('Product'), group: makeEncodingItem('Quarter') },
         });
     }
 
@@ -755,7 +755,7 @@ export function genGroupedBarTests(): TestCase[] {
                 Date: { type: Type.Date, semanticType: 'Date', levels: [] },
                 Channel: { type: Type.String, semanticType: 'Category', levels: channelsList },
             },
-            encodingMap: { x: makeEncodingItem('Sent'), y: makeEncodingItem('Date'), color: makeEncodingItem('Channel') },
+            encodingMap: { x: makeEncodingItem('Sent'), y: makeEncodingItem('Date'), group: makeEncodingItem('Channel') },
         });
     }
 
@@ -779,7 +779,7 @@ export function genGroupedBarTests(): TestCase[] {
                 Salary: { type: Type.Number, semanticType: 'Amount', levels: [] },
                 Level: { type: Type.String, semanticType: 'Category', levels: levels },
             },
-            encodingMap: { x: makeEncodingItem('Employee'), y: makeEncodingItem('Salary'), color: makeEncodingItem('Level') },
+            encodingMap: { x: makeEncodingItem('Employee'), y: makeEncodingItem('Salary'), group: makeEncodingItem('Level') },
         });
     }
 
@@ -802,7 +802,7 @@ export function genGroupedBarTests(): TestCase[] {
                 Sales: { type: Type.Number, semanticType: 'Revenue', levels: [] },
                 Rating: { type: Type.Number, semanticType: 'Rank', levels: [1, 2, 3, 4, 5] },
             },
-            encodingMap: { x: makeEncodingItem('Product'), y: makeEncodingItem('Sales'), color: makeEncodingItem('Rating') },
+            encodingMap: { x: makeEncodingItem('Product'), y: makeEncodingItem('Sales'), group: makeEncodingItem('Rating') },
         });
     }
 
@@ -825,7 +825,7 @@ export function genGroupedBarTests(): TestCase[] {
                 Count: { type: Type.Number, semanticType: 'Count', levels: [] },
                 Age: { type: Type.Number, semanticType: 'Quantity', levels: Array.from({ length: 50 }, (_, i) => 20 + i) },
             },
-            encodingMap: { x: makeEncodingItem('Country'), y: makeEncodingItem('Count'), color: makeEncodingItem('Age') },
+            encodingMap: { x: makeEncodingItem('Country'), y: makeEncodingItem('Count'), group: makeEncodingItem('Age') },
         });
     }
 
@@ -848,7 +848,7 @@ export function genGroupedBarTests(): TestCase[] {
                 Value: { type: Type.Number, semanticType: 'Quantity', levels: [] },
                 Temperature: { type: Type.Number, semanticType: 'Temperature', levels: [] },
             },
-            encodingMap: { x: makeEncodingItem('Category'), y: makeEncodingItem('Value'), color: makeEncodingItem('Temperature') },
+            encodingMap: { x: makeEncodingItem('Category'), y: makeEncodingItem('Value'), group: makeEncodingItem('Temperature') },
         });
     }
 

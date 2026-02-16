@@ -4,10 +4,14 @@
 /**
  * @module agents-chart
  *
- * Reusable chart assembly library.
+ * Semantic-level chart assembly library.
  *
  * Given data, semantic types, encoding definitions, and a canvas size,
  * generates a Vega-Lite specification. No React/Redux/UI dependencies.
+ *
+ * Architecture:
+ *   core/       — Target-agnostic: semantic types, layout, decisions, types
+ *   vegalite/   — Vega-Lite backend: assembly, templates, spec instantiation
  *
  * Usage:
  * ```ts
@@ -23,65 +27,8 @@
  * ```
  */
 
-// Core assembly function
-export { assembleChart } from './assemble';
+// Core: types, semantic types, decisions, layout, overflow
+export * from './core';
 
-// Types & constants
-export {
-    channels,
-    channelGroups,
-    type ChartEncoding,
-    type AssembleOptions,
-    type ChartTemplateDef,
-    type ChartWarning,
-} from './types';
-
-// Template registry
-export {
-    chartTemplateDefs,
-    allTemplateDefs,
-    getTemplateDef,
-    getTemplateChannels,
-} from './templates';
-
-// Semantic type system
-export {
-    SemanticTypes,
-    type SemanticType,
-    type VisCategory,
-    type ZeroClass,
-    type ZeroDecision,
-    getVisCategory,
-    inferVisCategory,
-    getZeroClass,
-    computeZeroDecision,
-    computePaddedDomain,
-    isMeasureType,
-    isTimeSeriesType,
-    isCategoricalType,
-    isOrdinalType,
-    isGeoType,
-    getRecommendedColorScheme,
-    getRecommendedColorSchemeWithMidpoint,
-} from './semantic-types';
-
-// Reusable decision functions
-export {
-    resolveEncodingType,
-    computeElasticBudget,
-    computeAxisStep,
-    computeFacetLayout,
-    computeLabelSizing,
-    computeOverflow,
-    computeGasPressure,
-    DEFAULT_GAS_PRESSURE_PARAMS,
-    type EncodingTypeDecision,
-    type ElasticStretchParams,
-    type ElasticBudget,
-    type AxisStepDecision,
-    type FacetLayoutDecision,
-    type LabelSizingDecision,
-    type OverflowDecision,
-    type GasPressureParams,
-    type GasPressureDecision,
-} from './decisions';
+// Vega-Lite backend: assembleChart, templates, spec instantiation
+export * from './vegalite';

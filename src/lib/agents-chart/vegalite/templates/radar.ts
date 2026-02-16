@@ -1,21 +1,17 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-import { ChartTemplateDef, ChartPropertyDef } from '../types';
+import { ChartTemplateDef, ChartPropertyDef } from '../../core/types';
 
 /**
  * Radar / Spider Chart
  *
  * Data model (long format):
- *   - x (nominal): the metric / axis name  (e.g. "Speed", "Defense", "Passing")
+ *   - x (nominal): the metric / axis name
  *   - y (quantitative): the value for that metric
- *   - color (nominal): the entity / group   (e.g. "Team A", "Team B")
+ *   - color (nominal): the entity / group
  *
- * Each row represents one (group, metric, value) triple.
- * Supports column/row faceting — one radar per facet group.
- *
- * buildEncodings normalises values per axis to 0-1, computes polar
- * coordinates, and builds a layered VL spec with grid + polygon + points.
+ * Supports column/row faceting.
  */
 
 // ---------------------------------------------------------------------------
@@ -43,7 +39,6 @@ function buildRadarLayers(
     groupField: string | undefined,
     opts: { filled: boolean; fillOpacity: number; strokeWidth: number; domainPad: number },
 ): any[] {
-    // --- Extract distinct axes and groups ---
     const axes: string[] = [];
     const axisSet = new Set<string>();
     for (const row of rows) {
@@ -63,7 +58,7 @@ function buildRadarLayers(
         groups.push("_all");
     }
 
-    // --- Normalise each axis to 0-1 ---
+    // Normalise each axis to 0-1
     const axisMax: Record<string, number> = {};
     for (const axis of axes) {
         const vals = rows
@@ -74,7 +69,7 @@ function buildRadarLayers(
         axisMax[axis] = niceMax(mx);
     }
 
-    // --- Aggregate: average per (group, axis) ---
+    // Aggregate: average per (group, axis)
     const keyMap = new Map<string, { sum: number; rawSum: number; count: number }>();
     for (const row of rows) {
         const grp = groupField ? String(row[groupField]) : "_all";
@@ -90,7 +85,7 @@ function buildRadarLayers(
         entry.count += 1;
     }
 
-    // --- Compute polar coordinates ---
+    // Compute polar coordinates
     const angleStep = 360 / axes.length;
     const finalData: any[] = [];
     for (const [k, v] of keyMap.entries()) {
@@ -111,7 +106,7 @@ function buildRadarLayers(
         });
     }
 
-    // --- Grid data (spokes + concentric rings) ---
+    // Grid data (spokes + concentric rings)
     const gridData: any[] = [];
     for (let idx = 0; idx < axes.length; idx++) {
         const ang = (idx * angleStep * Math.PI) / 180;
@@ -137,7 +132,7 @@ function buildRadarLayers(
         }
     }
 
-    // --- Axis labels with angle-aware positioning ---
+    // Axis labels
     const labelData = axes.map((axis, i) => {
         const angDeg = i * angleStep;
         const ang = (angDeg * Math.PI) / 180;
@@ -145,8 +140,6 @@ function buildRadarLayers(
         const mx = axisMax[axis];
         const maxStr = mx % 1 === 0 ? String(mx) : mx.toFixed(1);
 
-        // Determine text alignment based on angular position
-        // Right half → left-align, left half → right-align, top/bottom → center
         const sinA = Math.sin(ang);
         const cosA = -Math.cos(ang);
         let align: string;
@@ -155,17 +148,14 @@ function buildRadarLayers(
         let dy = 0;
 
         if (Math.abs(sinA) < 0.15) {
-            // Near top or bottom
             align = 'center';
             baseline = cosA < 0 ? 'bottom' : 'top';
             dy = cosA < 0 ? -4 : 4;
         } else if (sinA > 0) {
-            // Right half
             align = 'left';
             baseline = Math.abs(cosA) < 0.3 ? 'middle' : (cosA < 0 ? 'bottom' : 'top');
             dx = 4;
         } else {
-            // Left half
             align = 'right';
             baseline = Math.abs(cosA) < 0.3 ? 'middle' : (cosA < 0 ? 'bottom' : 'top');
             dx = -4;
@@ -203,7 +193,7 @@ function buildRadarLayers(
         },
     });
 
-    // Labels — name on first line, max value on second line
+    // Labels
     for (const lbl of labelData) {
         const lines: string[] = lbl.__label;
         layers.push({
@@ -275,112 +265,113 @@ function buildRadarLayers(
 // Template definition
 // ---------------------------------------------------------------------------
 export const radarChartDef: ChartTemplateDef = {
-        chart: "Radar Chart",
-        template: {
-            description: "Radar / Spider chart",
-            mark: "point",
-            encoding: {},
-        },
-        channels: ["x", "y", "color", "column", "row"],
-        buildEncodings: (spec, encodings, context) => {
-            const axisField: string | undefined = encodings.x?.field;
-            const valueField: string | undefined = encodings.y?.field;
-            const groupField: string | undefined = encodings.color?.field;
-            const columnField: string | undefined = encodings.column?.field;
-            const rowField: string | undefined = encodings.row?.field;
+    chart: "Radar Chart",
+    template: {
+        description: "Radar / Spider chart",
+        mark: "point",
+        encoding: {},
+    },
+    channels: ["x", "y", "color", "column", "row"],
+    markCognitiveChannel: 'position',
+    instantiate: (spec, ctx) => {
+        const axisField: string | undefined = ctx.resolvedEncodings.x?.field;
+        const valueField: string | undefined = ctx.resolvedEncodings.y?.field;
+        const groupField: string | undefined = ctx.resolvedEncodings.color?.field;
+        const columnField: string | undefined = ctx.resolvedEncodings.column?.field;
+        const rowField: string | undefined = ctx.resolvedEncodings.row?.field;
 
-            const table = context.table;
-            const canvasSize = context.canvasSize;
-            const config = context.chartProperties;
+        const table = ctx.table;
+        const canvasSize = ctx.canvasSize;
+        const config = ctx.chartProperties;
 
-            const filled = config?.filled ?? true;
-            const fillOpacity = config?.fillOpacity ?? 0.15;
-            const strokeWidth = config?.strokeWidth ?? 1.5;
+        const filled = config?.filled ?? true;
+        const fillOpacity = config?.fillOpacity ?? 0.15;
+        const strokeWidth = config?.strokeWidth ?? 1.5;
 
-            if (!table || table.length === 0 || !axisField || !valueField) {
-                spec.mark = "point";
-                return;
-            }
+        if (!table || table.length === 0 || !axisField || !valueField) {
+            spec.mark = "point";
+            return;
+        }
 
-            const size = Math.min(canvasSize?.width || 400, canvasSize?.height || 400);
-            const layerOpts = { filled, fillOpacity, strokeWidth, domainPad: 1.18 };
+        const size = Math.min(canvasSize?.width || 400, canvasSize?.height || 400);
+        const layerOpts = { filled, fillOpacity, strokeWidth, domainPad: 1.18 };
 
-            // ---- No faceting: single radar ----
-            if (!columnField && !rowField) {
-                const layers = buildRadarLayers(table, axisField, valueField, groupField, layerOpts);
-                if (layers.length === 0) { spec.mark = "point"; return; }
+        // ---- No faceting ----
+        if (!columnField && !rowField) {
+            const layers = buildRadarLayers(table, axisField, valueField, groupField, layerOpts);
+            if (layers.length === 0) { spec.mark = "point"; return; }
 
-                const finalSpec: any = {
-                    width: size, height: size, layer: layers,
-                    config: { view: { stroke: null } },
-                };
-                for (const key of Object.keys(spec)) delete spec[key];
-                Object.assign(spec, finalSpec);
-                return;
-            }
-
-            // ---- Faceting: one radar per facet group ----
-            const colGroups: string[] = columnField
-                ? [...new Set(table.map(r => String(r[columnField])))] as string[]
-                : ["_all"];
-            const rowGroups: string[] = rowField
-                ? [...new Set(table.map(r => String(r[rowField])))] as string[]
-                : ["_all"];
-
-            const minSubplot = 200;
-            const subplotSize = Math.max(minSubplot, size);
-
-            const buildSubplot = (rows: any[], title?: string) => {
-                const layers = buildRadarLayers(rows, axisField, valueField, groupField, layerOpts);
-                if (layers.length === 0) return null;
-                return {
-                    width: subplotSize, height: subplotSize,
-                    layer: layers,
-                    title: title || undefined,
-                };
+            const finalSpec: any = {
+                width: size, height: size, layer: layers,
+                config: { view: { stroke: null } },
             };
-
-            let finalSpec: any;
-            const concatSpacing = 5;
-
-            if (rowField && columnField) {
-                const vconcat: any[] = [];
-                for (const rg of rowGroups) {
-                    const hconcat: any[] = [];
-                    for (const cg of colGroups) {
-                        const subset = table.filter(r => String(r[rowField]) === rg && String(r[columnField]) === cg);
-                        const s = buildSubplot(subset, `${cg}`);
-                        if (s) hconcat.push(s);
-                    }
-                    if (hconcat.length > 0) {
-                        vconcat.push({ hconcat, spacing: concatSpacing, title: rg });
-                    }
-                }
-                finalSpec = { vconcat, spacing: concatSpacing, config: { view: { stroke: null } } };
-            } else if (columnField) {
-                const hconcat: any[] = [];
-                for (const cg of colGroups) {
-                    const subset = table.filter(r => String(r[columnField]) === cg);
-                    const s = buildSubplot(subset, cg);
-                    if (s) hconcat.push(s);
-                }
-                finalSpec = { hconcat, spacing: concatSpacing, config: { view: { stroke: null } } };
-            } else {
-                const vconcat: any[] = [];
-                for (const rg of rowGroups) {
-                    const subset = table.filter(r => String(r[rowField!]) === rg);
-                    const s = buildSubplot(subset, rg);
-                    if (s) vconcat.push(s);
-                }
-                finalSpec = { vconcat, spacing: concatSpacing, config: { view: { stroke: null } } };
-            }
-
             for (const key of Object.keys(spec)) delete spec[key];
             Object.assign(spec, finalSpec);
-        },
-        properties: [
-            { key: "filled", label: "Filled", type: "binary", defaultValue: true },
-            { key: "fillOpacity", label: "Fill Opacity", type: "continuous", min: 0, max: 0.5, step: 0.05, defaultValue: 0.15 },
-            { key: "strokeWidth", label: "Line Width", type: "continuous", min: 0.5, max: 4, step: 0.5, defaultValue: 1.5 },
-        ] as ChartPropertyDef[],
+            return;
+        }
+
+        // ---- Faceting ----
+        const colGroups: string[] = columnField
+            ? [...new Set(table.map(r => String(r[columnField])))] as string[]
+            : ["_all"];
+        const rowGroups: string[] = rowField
+            ? [...new Set(table.map(r => String(r[rowField])))] as string[]
+            : ["_all"];
+
+        const minSubplot = 200;
+        const subplotSize = Math.max(minSubplot, size);
+
+        const buildSubplot = (rows: any[], title?: string) => {
+            const layers = buildRadarLayers(rows, axisField, valueField, groupField, layerOpts);
+            if (layers.length === 0) return null;
+            return {
+                width: subplotSize, height: subplotSize,
+                layer: layers,
+                title: title || undefined,
+            };
+        };
+
+        let finalSpec: any;
+        const concatSpacing = 5;
+
+        if (rowField && columnField) {
+            const vconcat: any[] = [];
+            for (const rg of rowGroups) {
+                const hconcat: any[] = [];
+                for (const cg of colGroups) {
+                    const subset = table.filter(r => String(r[rowField]) === rg && String(r[columnField]) === cg);
+                    const s = buildSubplot(subset, `${cg}`);
+                    if (s) hconcat.push(s);
+                }
+                if (hconcat.length > 0) {
+                    vconcat.push({ hconcat, spacing: concatSpacing, title: rg });
+                }
+            }
+            finalSpec = { vconcat, spacing: concatSpacing, config: { view: { stroke: null } } };
+        } else if (columnField) {
+            const hconcat: any[] = [];
+            for (const cg of colGroups) {
+                const subset = table.filter(r => String(r[columnField]) === cg);
+                const s = buildSubplot(subset, cg);
+                if (s) hconcat.push(s);
+            }
+            finalSpec = { hconcat, spacing: concatSpacing, config: { view: { stroke: null } } };
+        } else {
+            const vconcat: any[] = [];
+            for (const rg of rowGroups) {
+                const subset = table.filter(r => String(r[rowField!]) === rg);
+                const s = buildSubplot(subset, rg);
+                if (s) vconcat.push(s);
+            }
+            finalSpec = { vconcat, spacing: concatSpacing, config: { view: { stroke: null } } };
+        }
+
+        for (const key of Object.keys(spec)) delete spec[key];
+        Object.assign(spec, finalSpec);
+    },
+    properties: [
+        { key: "filled", label: "Filled", type: "binary", defaultValue: true },
+        { key: "fillOpacity", label: "Fill Opacity", type: "continuous", min: 0, max: 0.5, step: 0.05, defaultValue: 0.15 },
+        { key: "strokeWidth", label: "Line Width", type: "continuous", min: 0.5, max: 4, step: 0.5, defaultValue: 1.5 },
+    ] as ChartPropertyDef[],
 };

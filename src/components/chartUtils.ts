@@ -23,7 +23,7 @@ import {
     isGeoType,
     isGeoCoordinateType,
     isNonMeasureNumeric,
-} from '../lib/agents-chart/semantic-types';
+} from '../lib/agents-chart/core/semantic-types';
 
 // ---------------------------------------------------------------------------
 // Internal Table View (built from data + semanticTypes)
@@ -470,10 +470,10 @@ function getRecommendation(chartType: string, tv: InternalTableView): Record<str
         }
 
         case 'Pie Chart': {
-            const thetaField = pickQuantitative(tv, used);
+            const sizeField = pickQuantitative(tv, used);
             const colorField = pickLowCardDiscrete(tv, used, 12);
-            if (!thetaField || !colorField) return {};
-            assign('theta', thetaField);
+            if (!sizeField || !colorField) return {};
+            assign('size', sizeField);
             assign('color', colorField);
             break;
         }

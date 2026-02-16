@@ -281,7 +281,7 @@ export function genUnintendedBarTests(): TestCase[] {
                 Y: { type: Type.Number, semanticType: 'Quantity', levels: [] },
                 C: { type: Type.Number, semanticType: 'Quantity', levels: [] },
             },
-            encodingMap: { x: makeEncodingItem('X'), y: makeEncodingItem('Y'), color: makeEncodingItem('C') },
+            encodingMap: { x: makeEncodingItem('X'), y: makeEncodingItem('Y'), group: makeEncodingItem('C') },
         });
     }
 
@@ -676,7 +676,7 @@ export function genUnintendedPartToWholeTests(): TestCase[] {
                 Slice: { type: Type.String, semanticType: 'Category', levels: cats },
                 Value: { type: Type.Number, semanticType: 'Quantity', levels: [] },
             },
-            encodingMap: { color: makeEncodingItem('Slice'), theta: makeEncodingItem('Value') },
+            encodingMap: { color: makeEncodingItem('Slice'), size: makeEncodingItem('Value') },
         });
     }
 
@@ -695,7 +695,7 @@ export function genUnintendedPartToWholeTests(): TestCase[] {
                 Label: { type: Type.String, semanticType: 'Category', levels: cats },
                 Amount: { type: Type.Number, semanticType: 'Quantity', levels: [] },
             },
-            encodingMap: { color: makeEncodingItem('Label'), theta: makeEncodingItem('Amount') },
+            encodingMap: { color: makeEncodingItem('Label'), size: makeEncodingItem('Amount') },
         });
     }
 
@@ -714,7 +714,7 @@ export function genUnintendedPartToWholeTests(): TestCase[] {
                 Cat: { type: Type.String, semanticType: 'Category', levels: cats },
                 Val: { type: Type.Number, semanticType: 'Quantity', levels: [] },
             },
-            encodingMap: { color: makeEncodingItem('Cat'), theta: makeEncodingItem('Val') },
+            encodingMap: { color: makeEncodingItem('Cat'), size: makeEncodingItem('Val') },
         });
     }
 
@@ -732,7 +732,7 @@ export function genUnintendedPartToWholeTests(): TestCase[] {
                 Cat: { type: Type.String, semanticType: 'Category', levels: ['Only'] },
                 Val: { type: Type.Number, semanticType: 'Quantity', levels: [] },
             },
-            encodingMap: { color: makeEncodingItem('Cat'), theta: makeEncodingItem('Val') },
+            encodingMap: { color: makeEncodingItem('Cat'), size: makeEncodingItem('Val') },
         });
     }
 
