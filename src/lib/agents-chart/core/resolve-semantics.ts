@@ -26,6 +26,7 @@ import {
     inferVisCategory,
     getRecommendedColorSchemeWithMidpoint,
     computeZeroDecision,
+    inferOrdinalSortOrder,
     type ZeroDecision,
 } from './semantic-types';
 import {
@@ -386,6 +387,16 @@ export function resolveSemantics(
             const convertedFieldValues = convertedData.map(r => r[fieldName]);
             const fmt = resolveTemporalFormat(convertedFieldValues, semanticType);
             if (fmt) cs.temporalFormat = fmt;
+        }
+
+        // Ordinal sort order (canonical ordering for months, days, quarters, etc.)
+        if (cs.type === 'ordinal' || cs.type === 'nominal') {
+            if (!encoding.sortOrder && !encoding.sortBy) {
+                const ordinalSort = inferOrdinalSortOrder(semanticType, fieldValues);
+                if (ordinalSort) {
+                    cs.ordinalSortOrder = ordinalSort;
+                }
+            }
         }
 
         result[channel] = cs;

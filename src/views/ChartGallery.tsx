@@ -9,15 +9,16 @@
  * React components that render the gallery UI.
  */
 
-import React, { useEffect, useRef, useState, useMemo } from 'react';
+import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import {
     Box, Tabs, Tab, Typography, Paper, Chip,
 } from '@mui/material';
 import embed from 'vega-embed';
+import * as echarts from 'echarts';
 import { assembleVegaChart } from '../app/utils';
 import { Channel, EncodingItem } from '../components/ComponentType';
 import { channels } from '../components/ChartTemplates';
-import { ChartWarning } from '../lib/agents-chart';
+import { ChartWarning, ChartEncoding, ecAssembleChart } from '../lib/agents-chart';
 import { TestCase, TEST_GENERATORS, GALLERY_SECTIONS } from '../lib/agents-chart/test-data';
 
 // ============================================================================
@@ -30,6 +31,7 @@ const VegaChart: React.FC<{ testCase: TestCase }> = React.memo(({ testCase }) =>
     const [specJson, setSpecJson] = useState<string>('');
     const [warnings, setWarnings] = useState<ChartWarning[]>([]);
     const [specOptions, setSpecOptions] = useState<string>('');
+    const [inferredSize, setInferredSize] = useState<string>('');
 
     useEffect(() => {
         if (!containerRef.current) return;
@@ -63,6 +65,7 @@ const VegaChart: React.FC<{ testCase: TestCase }> = React.memo(({ testCase }) =>
             // Extract warnings
             const specAny = vlSpec as any;
             setWarnings(specAny._warnings || []);
+            setInferredSize(`${specAny._width ?? '?'} × ${specAny._height ?? '?'}`);
 
             // Build compact spec-options JSON (no data, only non-default settings)
             const opts: Record<string, any> = {};
@@ -133,6 +136,11 @@ const VegaChart: React.FC<{ testCase: TestCase }> = React.memo(({ testCase }) =>
                         sx={{ fontSize: 10, height: 20 }} />
                 ))}
             </Box>
+            {inferredSize && (
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5, fontSize: 10 }}>
+                    Inferred size: {inferredSize}
+                </Typography>
+            )}
             {error ? (
                 <Typography color="error" variant="body2" sx={{ whiteSpace: 'pre-wrap', fontSize: 11 }}>
                     {error}
@@ -177,6 +185,270 @@ const VegaChart: React.FC<{ testCase: TestCase }> = React.memo(({ testCase }) =>
 });
 
 // ============================================================================
+// ECharts Rendering Component
+// ============================================================================
+
+/**
+ * Convert a TestCase into the library-level inputs for ecAssembleChart.
+ */
+function testCaseToEChartsInputs(testCase: TestCase) {
+    const encodings: Record<string, ChartEncoding> = {};
+    for (const [channel, encoding] of Object.entries(testCase.encodingMap)) {
+        if (encoding && encoding.fieldID) {
+            encodings[channel] = {
+                field: encoding.fieldID,
+                type: encoding.dtype,
+                aggregate: encoding.aggregate,
+                sortOrder: encoding.sortOrder,
+                sortBy: encoding.sortBy,
+                scheme: encoding.scheme,
+            };
+        }
+    }
+
+    const semanticTypes: Record<string, string> = {};
+    for (const [fieldName, meta] of Object.entries(testCase.metadata)) {
+        if (meta.semanticType) {
+            semanticTypes[fieldName] = meta.semanticType;
+        }
+    }
+
+    return { encodings, semanticTypes };
+}
+
+const EChartsChart: React.FC<{ testCase: TestCase }> = React.memo(({ testCase }) => {
+    const containerRef = useRef<HTMLDivElement>(null);
+    const chartRef = useRef<echarts.ECharts | null>(null);
+    const [error, setError] = useState<string | null>(null);
+    const [warnings, setWarnings] = useState<ChartWarning[]>([]);
+    const [specJson, setSpecJson] = useState<string>('');
+    const [inferredSize, setInferredSize] = useState<string>('');
+
+    useEffect(() => {
+        if (!containerRef.current) return;
+
+        try {
+            const { encodings, semanticTypes } = testCaseToEChartsInputs(testCase);
+
+            const ecOption = ecAssembleChart(
+                testCase.chartType,
+                encodings,
+                testCase.data,
+                semanticTypes,
+                { width: 400, height: 300 },
+                testCase.chartProperties,
+                testCase.assembleOptions,
+            );
+
+            if (!ecOption) {
+                setError('ecAssembleChart returned no option');
+                return;
+            }
+
+            // Extract warnings
+            setWarnings(ecOption._warnings || []);
+            setInferredSize(`${ecOption._width ?? '?'} × ${ecOption._height ?? '?'}`);
+
+            // Build displayable JSON (strip internal props and data for readability)
+            const displayOption = { ...ecOption };
+            delete displayOption._warnings;
+            delete displayOption._dataLength;
+            delete displayOption._width;
+            delete displayOption._height;
+            setSpecJson(JSON.stringify(displayOption, null, 2));
+
+            // Initialize or reuse ECharts instance
+            if (chartRef.current) {
+                chartRef.current.dispose();
+            }
+            const chart = echarts.init(containerRef.current, undefined, {
+                width: ecOption._width || 400,
+                height: ecOption._height || 300,
+            });
+            chartRef.current = chart;
+
+            // Clean the option for ECharts (remove internal props)
+            const cleanOption = { ...ecOption };
+            delete cleanOption._warnings;
+            delete cleanOption._dataLength;
+            delete cleanOption._width;
+            delete cleanOption._height;
+
+            chart.setOption(cleanOption);
+            setError(null);
+        } catch (err: any) {
+            setError(`ECharts error: ${err.message}`);
+        }
+
+        return () => {
+            if (chartRef.current) {
+                chartRef.current.dispose();
+                chartRef.current = null;
+            }
+        };
+    }, [testCase]);
+
+    return (
+        <Box sx={{ flex: 1, minWidth: 400 }}>
+            <Typography variant="caption" fontWeight={600} color="#e65100"
+                sx={{ display: 'block', mb: 0.5, fontSize: 11, letterSpacing: 0.5 }}>
+                ECharts
+            </Typography>
+            {inferredSize && (
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5, fontSize: 10 }}>
+                    Inferred size: {inferredSize}
+                </Typography>
+            )}
+            {error ? (
+                <Typography color="error" variant="body2" sx={{ whiteSpace: 'pre-wrap', fontSize: 11 }}>
+                    {error}
+                </Typography>
+            ) : (
+                <Box ref={containerRef} sx={{ minHeight: 200 }} />
+            )}
+            {warnings.length > 0 && (
+                <Box sx={{ mt: 1, p: 1, bgcolor: '#fff3e0', borderLeft: '3px solid #ff9800' }}>
+                    {warnings.map((w, i) => (
+                        <Typography key={i} variant="body2" color="warning.dark" sx={{ fontSize: 11 }}>
+                            {w.message}
+                        </Typography>
+                    ))}
+                </Box>
+            )}
+            {specJson && (
+                <details style={{ marginTop: 8 }}>
+                    <summary style={{ cursor: 'pointer', fontSize: 11, color: '#888' }}>
+                        ECharts Option
+                    </summary>
+                    <pre style={{ fontSize: 10, maxHeight: 200, overflow: 'auto', background: '#fff3e0', padding: 8, borderRadius: 4 }}>
+                        {specJson}
+                    </pre>
+                </details>
+            )}
+        </Box>
+    );
+});
+
+// ============================================================================
+// Dual Render: VL + ECharts side-by-side
+// ============================================================================
+
+const DualChart: React.FC<{ testCase: TestCase }> = React.memo(({ testCase }) => {
+    return (
+        <Paper
+            elevation={1}
+            sx={{
+                p: 2, mb: 2, width: 'fit-content', minWidth: 850, maxWidth: '100%',
+                border: '1px solid #e0e0e0',
+            }}
+        >
+            <Typography variant="subtitle2" fontWeight={600} gutterBottom>
+                {testCase.title}
+            </Typography>
+            <Typography variant="caption" color="text.secondary" display="block" mb={1}>
+                {testCase.description}
+            </Typography>
+            <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', mb: 1 }}>
+                {testCase.tags.map(tag => (
+                    <Chip key={tag} label={tag} size="small" variant="outlined"
+                        sx={{ fontSize: 10, height: 20 }} />
+                ))}
+            </Box>
+            <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
+                {/* Vega-Lite side */}
+                <VegaChartInline testCase={testCase} />
+                {/* ECharts side */}
+                <EChartsChart testCase={testCase} />
+            </Box>
+        </Paper>
+    );
+});
+
+/**
+ * Inline VL chart (no Paper wrapper — used inside DualChart).
+ */
+const VegaChartInline: React.FC<{ testCase: TestCase }> = React.memo(({ testCase }) => {
+    const containerRef = useRef<HTMLDivElement>(null);
+    const [error, setError] = useState<string | null>(null);
+    const [specJson, setSpecJson] = useState<string>('');
+    const [inferredSize, setInferredSize] = useState<string>('');
+
+    useEffect(() => {
+        if (!containerRef.current) return;
+        try {
+            const fullEncodingMap: Record<string, EncodingItem> = {};
+            for (const ch of channels) {
+                fullEncodingMap[ch as string] = testCase.encodingMap[ch as Channel] || {};
+            }
+            const vlSpec = assembleVegaChart(
+                testCase.chartType,
+                fullEncodingMap as any,
+                testCase.fields,
+                testCase.data,
+                testCase.metadata,
+                400, 300, true,
+                testCase.chartProperties,
+                1,
+                testCase.assembleOptions,
+            );
+            if (!vlSpec) { setError('No VL spec'); return; }
+
+            const specAny = vlSpec as any;
+            setInferredSize(`${specAny._width ?? '?'} × ${specAny._height ?? '?'}`);
+
+            const displaySpec = { ...specAny };
+            delete displaySpec._warnings;
+            delete displaySpec._width;
+            delete displaySpec._height;
+            setSpecJson(JSON.stringify(displaySpec, null, 2));
+
+            const spec = { ...specAny };
+            delete spec._warnings;
+            delete spec._width;
+            delete spec._height;
+
+            embed(containerRef.current, spec, {
+                actions: { export: true, source: true, compiled: true, editor: true },
+                renderer: 'svg',
+            }).catch(err => setError(`VL embed error: ${err.message}`));
+        } catch (err: any) {
+            setError(`VL error: ${err.message}`);
+        }
+    }, [testCase]);
+
+    return (
+        <Box sx={{ flex: 1, minWidth: 400 }}>
+            <Typography variant="caption" fontWeight={600} color="#1565c0"
+                sx={{ display: 'block', mb: 0.5, fontSize: 11, letterSpacing: 0.5 }}>
+                Vega-Lite
+            </Typography>
+            {inferredSize && (
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5, fontSize: 10 }}>
+                    Inferred size: {inferredSize}
+                </Typography>
+            )}
+            {error ? (
+                <Typography color="error" variant="body2" sx={{ whiteSpace: 'pre-wrap', fontSize: 11 }}>
+                    {error}
+                </Typography>
+            ) : (
+                <Box ref={containerRef} sx={{ minHeight: 200 }} />
+            )}
+            {specJson && (
+                <details style={{ marginTop: 8 }}>
+                    <summary style={{ cursor: 'pointer', fontSize: 11, color: '#888' }}>
+                        Vega-Lite Spec
+                    </summary>
+                    <pre style={{ fontSize: 10, maxHeight: 200, overflow: 'auto', background: '#f0f4ff', padding: 8, borderRadius: 4 }}>
+                        {specJson}
+                    </pre>
+                </details>
+            )}
+        </Box>
+    );
+});
+
+// ============================================================================
 // Sub-page for a single chart type
 // ============================================================================
 
@@ -185,6 +457,8 @@ const ChartTypeTestPanel: React.FC<{ chartGroup: string }> = ({ chartGroup }) =>
         const gen = TEST_GENERATORS[chartGroup];
         return gen ? gen() : [];
     }, [chartGroup]);
+
+    const isEChartsGroup = chartGroup.startsWith('ECharts:');
 
     if (tests.length === 0) {
         return (
@@ -196,9 +470,11 @@ const ChartTypeTestPanel: React.FC<{ chartGroup: string }> = ({ chartGroup }) =>
 
     return (
         <Box sx={{ p: 2, display: 'flex', flexWrap: 'wrap', gap: 2, justifyContent: 'flex-start' }}>
-            {tests.map((tc, i) => (
-                <VegaChart key={`${chartGroup}-${i}`} testCase={tc} />
-            ))}
+            {tests.map((tc, i) =>
+                isEChartsGroup
+                    ? <DualChart key={`${chartGroup}-${i}`} testCase={tc} />
+                    : <VegaChart key={`${chartGroup}-${i}`} testCase={tc} />
+            )}
         </Box>
     );
 };

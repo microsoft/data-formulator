@@ -1050,3 +1050,154 @@ export function getRecommendedColorSchemeWithMidpoint(
     return recommendation;
 }
 
+// ===========================================================================
+// Canonical Ordinal Sort Orders
+// ===========================================================================
+
+/**
+ * Well-known canonical ordinal sequences.
+ *
+ * Used to detect when data values belong to a known ordinal domain
+ * (months, days of the week, quarters, etc.) and sort them in their
+ * natural order instead of alphabetically or by a quantitative axis.
+ */
+
+/** Full and abbreviated English month names (case-insensitive lookup). */
+const MONTH_FULL = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+const MONTH_ABBR3 = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const MONTH_NUM = ['1','2','3','4','5','6','7','8','9','10','11','12'];
+
+/** Full and abbreviated English day-of-week names. */
+const DOW_FULL = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+const DOW_ABBR3 = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+const DOW_ABBR2 = ['Mo','Tu','We','Th','Fr','Sa','Su'];
+
+/** Sunday-first variant (US convention). */
+const DOW_FULL_SUN = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+const DOW_ABBR3_SUN = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+
+/** Quarter labels. */
+const QUARTER_LABELS = ['Q1','Q2','Q3','Q4'];
+
+interface OrdinalSequence {
+    /** Canonical labels in order */
+    labels: string[];
+    /** Case-insensitive matching */
+    caseInsensitive: boolean;
+}
+
+/** All known ordinal sequences, keyed by semantic type. */
+const ORDINAL_SEQUENCES: Record<string, OrdinalSequence[]> = {
+    Month: [
+        { labels: MONTH_FULL, caseInsensitive: true },
+        { labels: MONTH_ABBR3, caseInsensitive: true },
+        { labels: MONTH_NUM, caseInsensitive: false },
+    ],
+    Day: [
+        { labels: DOW_FULL, caseInsensitive: true },
+        { labels: DOW_ABBR3, caseInsensitive: true },
+        { labels: DOW_ABBR2, caseInsensitive: true },
+        { labels: DOW_FULL_SUN, caseInsensitive: true },
+        { labels: DOW_ABBR3_SUN, caseInsensitive: true },
+    ],
+    Quarter: [
+        { labels: QUARTER_LABELS, caseInsensitive: true },
+    ],
+};
+
+/**
+ * Build a case-insensitive lookup map from a sequence's labels.
+ * Returns map: lowercased label → index.
+ */
+function buildLookup(seq: OrdinalSequence): Map<string, number> {
+    const m = new Map<string, number>();
+    for (let i = 0; i < seq.labels.length; i++) {
+        const key = seq.caseInsensitive ? seq.labels[i].toLowerCase() : seq.labels[i];
+        m.set(key, i);
+    }
+    return m;
+}
+
+/**
+ * Try to match a set of data values against a well-known ordinal sequence.
+ *
+ * Returns the canonical sort order (subset of the sequence, in order) if
+ * enough values match, or `undefined` if no match.
+ *
+ * Matching rules:
+ * - At least 60% of unique data values must be found in the sequence
+ * - All matched values are returned in canonical order
+ * - Unmatched values are appended at the end (preserving data order)
+ *
+ * @param values     The data values (strings or numbers) on this channel
+ * @param sequences  The candidate sequences for the semantic type
+ */
+function matchSequence(values: any[], sequences: OrdinalSequence[]): string[] | undefined {
+    const uniqueValues = [...new Set(values.map(v => v != null ? String(v) : ''))].filter(v => v !== '');
+    if (uniqueValues.length === 0) return undefined;
+
+    for (const seq of sequences) {
+        const lookup = buildLookup(seq);
+        const matched: { value: string; index: number }[] = [];
+        const unmatched: string[] = [];
+
+        for (const val of uniqueValues) {
+            const key = seq.caseInsensitive ? val.toLowerCase() : val;
+            const idx = lookup.get(key);
+            if (idx !== undefined) {
+                matched.push({ value: val, index: idx });
+            } else {
+                unmatched.push(val);
+            }
+        }
+
+        // Require at least 60% match rate
+        if (matched.length >= uniqueValues.length * 0.6 && matched.length >= 2) {
+            // Sort matched values by canonical index
+            matched.sort((a, b) => a.index - b.index);
+            const result = matched.map(m => m.value);
+            // Append unmatched at the end
+            result.push(...unmatched);
+            return result;
+        }
+    }
+    return undefined;
+}
+
+/**
+ * Infer a canonical ordinal sort order for a field based on its semantic type
+ * and data values.
+ *
+ * Works for:
+ * - Month names (full/abbreviated/numeric): Jan, Feb, ... or January, February, ...
+ * - Day-of-week names (full/abbreviated): Mon, Tue, ... or Monday, Tuesday, ...
+ * - Quarter labels: Q1, Q2, Q3, Q4
+ *
+ * Falls back to `undefined` if no known sequence is detected, letting the
+ * caller use its own default sort logic.
+ *
+ * @param semanticType  The semantic type of the field (e.g. 'Month', 'Day')
+ * @param values        The data values on this channel
+ * @returns Sorted unique values in canonical order, or undefined
+ */
+export function inferOrdinalSortOrder(
+    semanticType: string,
+    values: any[],
+): string[] | undefined {
+    // 1. Check by explicit semantic type
+    const sequences = ORDINAL_SEQUENCES[semanticType];
+    if (sequences) {
+        return matchSequence(values, sequences);
+    }
+
+    // 2. Auto-detect: try all sequences if semantic type is generic
+    if (!semanticType || semanticType === 'Category' || semanticType === 'String' || semanticType === 'Unknown') {
+        for (const seqs of Object.values(ORDINAL_SEQUENCES)) {
+            const result = matchSequence(values, seqs);
+            if (result) return result;
+        }
+    }
+
+    return undefined;
+}
+

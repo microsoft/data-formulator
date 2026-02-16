@@ -89,6 +89,7 @@ export function computeLayout(
         minStep: minStepVal = 6,
         minSubplotSize: minSubplotVal = 60,
         defaultStepMultiplier = 1,
+        stepPadding: stepPaddingVal = 0.1,
         maintainContinuousAxisRatio = false,
         continuousMarkCrossSection,
     } = options;
@@ -446,6 +447,7 @@ export function computeLayout(
         yNominalCount: yTotalNominalCount,
         xLabel,
         yLabel,
+        stepPadding: stepPaddingVal,
         facet: (facetCols > 1 || facetRows > 1) ? {
             columns: facetCols,
             rows: facetRows,

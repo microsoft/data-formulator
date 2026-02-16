@@ -192,3 +192,271 @@ export function genFacetTests(
 export function genFacetColumnTests(): TestCase[] { return genFacetTests('column'); }
 export function genFacetRowTests(): TestCase[] { return genFacetTests('row'); }
 export function genFacetColRowTests(): TestCase[] { return genFacetTests('column+row'); }
+
+// ============================================================================
+// Targeted Facet Tests
+// ============================================================================
+
+/**
+ * Helper: build a facet test case from parameters.
+ */
+function buildFacetTest(opts: {
+    title: string;
+    description: string;
+    tags: string[];
+    chartType: string;
+    colCount?: number;
+    rowCount?: number;
+    xCategories: string[];
+    yIsContinuous: boolean;
+    seed: number;
+}): TestCase {
+    const { title, description, tags, chartType, colCount, rowCount, xCategories, yIsContinuous, seed } = opts;
+    const rand = seededRandom(seed);
+    const colVals = colCount ? genCategories('Region', colCount) : undefined;
+    const rowVals = rowCount ? genCategories('Zone', rowCount) : undefined;
+
+    const data: Record<string, any>[] = [];
+    const facets: { col?: string; row?: string }[] = [];
+
+    if (colVals && rowVals) {
+        for (const c of colVals) for (const r of rowVals) facets.push({ col: c, row: r });
+    } else if (colVals) {
+        for (const c of colVals) facets.push({ col: c });
+    } else if (rowVals) {
+        for (const r of rowVals) facets.push({ row: r });
+    }
+
+    for (const facet of facets) {
+        if (yIsContinuous) {
+            // Scatter: continuous × continuous
+            for (let i = 0; i < 15; i++) {
+                data.push({
+                    X: Math.round(10 + rand() * 90),
+                    Y: Math.round(10 + rand() * 90),
+                    ...(facet.col != null ? { Col: facet.col } : {}),
+                    ...(facet.row != null ? { Row: facet.row } : {}),
+                });
+            }
+        } else {
+            // Bar: discrete × continuous
+            for (const cat of xCategories) {
+                data.push({
+                    Category: cat,
+                    Value: Math.round(50 + rand() * 500),
+                    ...(facet.col != null ? { Col: facet.col } : {}),
+                    ...(facet.row != null ? { Row: facet.row } : {}),
+                });
+            }
+        }
+    }
+
+    const encodingMap: Partial<Record<Channel, EncodingItem>> = {};
+    const fields: ReturnType<typeof makeField>[] = [];
+    const metadata: Record<string, any> = {};
+
+    if (yIsContinuous) {
+        encodingMap.x = makeEncodingItem('X');
+        encodingMap.y = makeEncodingItem('Y');
+        fields.push(makeField('X'), makeField('Y'));
+        metadata['X'] = { type: Type.Number, semanticType: 'Value', levels: [] };
+        metadata['Y'] = { type: Type.Number, semanticType: 'Value', levels: [] };
+    } else {
+        encodingMap.x = makeEncodingItem('Category');
+        encodingMap.y = makeEncodingItem('Value');
+        fields.push(makeField('Category'), makeField('Value'));
+        metadata['Category'] = { type: Type.String, semanticType: 'Category', levels: xCategories };
+        metadata['Value'] = { type: Type.Number, semanticType: 'Revenue', levels: [] };
+    }
+
+    if (colVals) {
+        encodingMap.column = makeEncodingItem('Col');
+        fields.push(makeField('Col'));
+        metadata['Col'] = { type: Type.String, semanticType: 'Category', levels: colVals };
+    }
+    if (rowVals) {
+        encodingMap.row = makeEncodingItem('Row');
+        fields.push(makeField('Row'));
+        metadata['Row'] = { type: Type.String, semanticType: 'Category', levels: rowVals };
+    }
+
+    return { title, description, tags, chartType, data, fields, metadata, encodingMap };
+}
+
+/**
+ * 1. Small facet counts — columns only, rows only, and col×row.
+ *    Should render comfortably without wrapping or clipping.
+ */
+export function genFacetSmallTests(): TestCase[] {
+    const cats = ['A', 'B', 'C', 'D'];
+    return [
+        // 2 columns, bar
+        buildFacetTest({
+            title: '2 Columns — Bar',
+            description: '2 column facets, 4 bars each. Should fit side-by-side easily.',
+            tags: ['facet', 'column', 'small', 'bar'],
+            chartType: 'Bar Chart',
+            colCount: 2,
+            xCategories: cats,
+            yIsContinuous: false,
+            seed: 1200,
+        }),
+        // 3 columns, scatter
+        buildFacetTest({
+            title: '3 Columns — Scatter',
+            description: '3 column facets with scatter plots.',
+            tags: ['facet', 'column', 'small', 'scatter'],
+            chartType: 'Scatter Plot',
+            colCount: 3,
+            xCategories: [],
+            yIsContinuous: true,
+            seed: 1201,
+        }),
+        // 2 rows, bar
+        buildFacetTest({
+            title: '2 Rows — Bar',
+            description: '2 row facets, 4 bars each. Should stack vertically.',
+            tags: ['facet', 'row', 'small', 'bar'],
+            chartType: 'Bar Chart',
+            rowCount: 2,
+            xCategories: cats,
+            yIsContinuous: false,
+            seed: 1202,
+        }),
+        // 3 rows, scatter
+        buildFacetTest({
+            title: '3 Rows — Scatter',
+            description: '3 row facets with scatter plots.',
+            tags: ['facet', 'row', 'small', 'scatter'],
+            chartType: 'Scatter Plot',
+            rowCount: 3,
+            xCategories: [],
+            yIsContinuous: true,
+            seed: 1203,
+        }),
+        // 2×2 col×row, bar
+        buildFacetTest({
+            title: '2×2 Col×Row — Bar',
+            description: '2 columns × 2 rows = 4 facet panels (bar chart).',
+            tags: ['facet', 'colrow', 'small', 'bar'],
+            chartType: 'Bar Chart',
+            colCount: 2,
+            rowCount: 2,
+            xCategories: cats,
+            yIsContinuous: false,
+            seed: 1204,
+        }),
+        // 2×3 col×row, scatter
+        buildFacetTest({
+            title: '2×3 Col×Row — Scatter',
+            description: '2 columns × 3 rows = 6 facet panels (scatter).',
+            tags: ['facet', 'colrow', 'small', 'scatter'],
+            chartType: 'Scatter Plot',
+            colCount: 2,
+            rowCount: 3,
+            xCategories: [],
+            yIsContinuous: true,
+            seed: 1205,
+        }),
+    ];
+}
+
+/**
+ * 2. Larger column counts that require horizontal wrapping.
+ *    6-8 columns should exceed the default ~400px subplot width.
+ */
+export function genFacetWrapTests(): TestCase[] {
+    const cats = ['A', 'B', 'C'];
+    return [
+        // 6 columns, bar
+        buildFacetTest({
+            title: '6 Columns — Bar (needs wrap)',
+            description: '6 column facets × 3 bars. Should require horizontal wrapping or scrolling.',
+            tags: ['facet', 'column', 'wrap', 'bar'],
+            chartType: 'Bar Chart',
+            colCount: 6,
+            xCategories: cats,
+            yIsContinuous: false,
+            seed: 1210,
+        }),
+        // 8 columns, scatter
+        buildFacetTest({
+            title: '8 Columns — Scatter (needs wrap)',
+            description: '8 column facets with scatter plots. Tests horizontal overflow.',
+            tags: ['facet', 'column', 'wrap', 'scatter'],
+            chartType: 'Scatter Plot',
+            colCount: 8,
+            xCategories: [],
+            yIsContinuous: true,
+            seed: 1211,
+        }),
+        // 10 columns, bar with more categories
+        buildFacetTest({
+            title: '10 Columns — Bar (heavy wrap)',
+            description: '10 column facets × 3 bars each. Extreme horizontal wrap test.',
+            tags: ['facet', 'column', 'wrap', 'heavy', 'bar'],
+            chartType: 'Bar Chart',
+            colCount: 10,
+            xCategories: cats,
+            yIsContinuous: false,
+            seed: 1212,
+        }),
+    ];
+}
+
+/**
+ * 3. Large col×row grids that require clipping/scrolling.
+ *    Many panels stress the layout engine.
+ */
+export function genFacetClipTests(): TestCase[] {
+    const cats = ['A', 'B', 'C'];
+    return [
+        // 4×3 = 12 panels
+        buildFacetTest({
+            title: '4×3 Col×Row — Bar (12 panels)',
+            description: '4 columns × 3 rows = 12 facet panels. Tests dense grid layout.',
+            tags: ['facet', 'colrow', 'clip', 'bar'],
+            chartType: 'Bar Chart',
+            colCount: 4,
+            rowCount: 3,
+            xCategories: cats,
+            yIsContinuous: false,
+            seed: 1220,
+        }),
+        // 5×4 = 20 panels, scatter
+        buildFacetTest({
+            title: '5×4 Col×Row — Scatter (20 panels)',
+            description: '5 columns × 4 rows = 20 facet panels. Heavy grid requiring clip.',
+            tags: ['facet', 'colrow', 'clip', 'scatter'],
+            chartType: 'Scatter Plot',
+            colCount: 5,
+            rowCount: 4,
+            xCategories: [],
+            yIsContinuous: true,
+            seed: 1221,
+        }),
+        // 6×5 = 30 panels
+        buildFacetTest({
+            title: '6×5 Col×Row — Bar (30 panels)',
+            description: '6 columns × 5 rows = 30 facet panels. Extreme grid test.',
+            tags: ['facet', 'colrow', 'clip', 'heavy', 'bar'],
+            chartType: 'Bar Chart',
+            colCount: 6,
+            rowCount: 5,
+            xCategories: cats,
+            yIsContinuous: false,
+            seed: 1222,
+        }),
+        // 8 rows, scatter — vertical clip
+        buildFacetTest({
+            title: '8 Rows — Scatter (vertical clip)',
+            description: '8 row facets with scatter plots. Tests vertical overflow.',
+            tags: ['facet', 'row', 'clip', 'scatter'],
+            chartType: 'Scatter Plot',
+            rowCount: 8,
+            xCategories: [],
+            yIsContinuous: true,
+            seed: 1223,
+        }),
+    ];
+}

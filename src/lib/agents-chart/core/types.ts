@@ -92,6 +92,14 @@ export interface ChannelSemantics {
      * Present only when type is 'temporal' or field is ordinal-temporal.
      */
     temporalFormat?: string;
+
+    /**
+     * Canonical ordinal sort order for this field's values.
+     * Present when the field's values match a known ordinal sequence
+     * (e.g., month names, day-of-week, quarters).
+     * Contains the unique data values sorted in their natural order.
+     */
+    ordinalSortOrder?: string[];
 }
 
 /** Phase 0 output: one entry per channel. */
@@ -256,6 +264,13 @@ export interface LayoutResult {
         subplotHeight: number;
     };
 
+    /**
+     * Inter-category padding fraction (0–1) used by the layout engine.
+     * Renderers (especially ECharts) should use this to size bars:
+     *   barWidth = step × (1 − stepPadding)
+     */
+    stepPadding: number;
+
     /** Items truncated due to overflow */
     truncations: TruncationWarning[];
 }
@@ -380,6 +395,18 @@ export interface ChartTemplateDef {
 
     /** Optional configurable properties for the chart type */
     properties?: ChartPropertyDef[];
+
+    /**
+     * Optional post-processing hook.
+     * Called after instantiation and layout application, before the final
+     * result is returned.  Receives the assembled spec/option and the
+     * effective canvas size so the template can adjust visual parameters
+     * (e.g. symbol size, line width) proportionally.
+     */
+    postProcess?: (
+        spec: any,
+        context: InstantiateContext,
+    ) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -410,6 +437,16 @@ export interface ChartWarning {
 export interface AssembleOptions {
     /** Whether to add tooltips to the chart (default: false) */
     addTooltips?: boolean;
+    /**
+     * Fraction of each step reserved for inter-category padding (0–1).
+     * VL pads *inside* the step (band = step × (1 − padding)), so this
+     * value should match VL's paddingInner.  ECharts pads *outside* the
+     * band, so the layout engine passes this through so ECharts can
+     * compute barWidth = step × (1 − stepPadding) explicitly.
+     *
+     * Default: 0.1 (matching VL's default band paddingInner).
+     */
+    stepPadding?: number;
     /** Power-law exponent for discrete axis stretch (default: 0.5) */
     elasticity?: number;
     /** Maximum axis stretch multiplier cap (default: 2) */

@@ -32,3 +32,6 @@ export * from './core';
 
 // Vega-Lite backend: assembleChart, templates, spec instantiation
 export * from './vegalite';
+
+// ECharts backend: ecAssembleChart, templates, spec instantiation
+export * from './echarts';

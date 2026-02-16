@@ -24,10 +24,11 @@ export {
     genHeatmapTests, genPieTests, genRangedDotPlotTests, genLollipopTests,
     genCustomTests, genWaterfallTests, genCandlestickTests, genRadarTests, genPyramidTests,
 } from './specialized-tests';
-export { FACET_SIZES, DISCRETE_SIZES, genFacetColumnTests, genFacetRowTests, genFacetColRowTests } from './facet-tests';
+export { FACET_SIZES, DISCRETE_SIZES, genFacetColumnTests, genFacetRowTests, genFacetColRowTests, genFacetSmallTests, genFacetWrapTests, genFacetClipTests } from './facet-tests';
 export { genOverflowTests, genElasticityTests } from './stress-tests';
 export { genGasPressureTests } from './gas-pressure-tests';
 export { genLineAreaStretchTests } from './line-area-stretch-tests';
+export { genEChartsScatterTests, genEChartsLineTests, genEChartsBarTests, genEChartsStackedBarTests, genEChartsGroupedBarTests, genEChartsStressTests, genEChartsAreaTests, genEChartsPieTests, genEChartsHeatmapTests, genEChartsHistogramTests, genEChartsBoxplotTests, genEChartsRadarTests, genEChartsCandlestickTests, genEChartsStreamgraphTests, genEChartsFacetSmallTests, genEChartsFacetWrapTests, genEChartsFacetClipTests } from './echarts-tests';
 export { genDiscreteAxisTests } from './discrete-axis-tests';
 export { genUnintendedScatterTests, genUnintendedBarTests, genUnintendedLineAreaTests, genUnintendedPartToWholeTests, genUnintendedStatisticalTests } from './unintended-tests';
 export { genDateTests, genDateYearTests, genDateMonthTests, genDateYearMonthTests, genDateDecadeTests, genDateDateTimeTests, genDateHoursTests } from './date-tests';
@@ -45,13 +46,14 @@ import {
     genHeatmapTests, genPieTests, genRangedDotPlotTests, genLollipopTests,
     genCustomTests, genWaterfallTests, genCandlestickTests, genRadarTests, genPyramidTests,
 } from './specialized-tests';
-import { genFacetColumnTests, genFacetRowTests, genFacetColRowTests } from './facet-tests';
+import { genFacetColumnTests, genFacetRowTests, genFacetColRowTests, genFacetSmallTests, genFacetWrapTests, genFacetClipTests } from './facet-tests';
 import { genOverflowTests, genElasticityTests } from './stress-tests';
 import { genGasPressureTests } from './gas-pressure-tests';
 import { genLineAreaStretchTests } from './line-area-stretch-tests';
 import { genDiscreteAxisTests } from './discrete-axis-tests';
 import { genUnintendedScatterTests, genUnintendedBarTests, genUnintendedLineAreaTests, genUnintendedPartToWholeTests, genUnintendedStatisticalTests } from './unintended-tests';
 import { genDateYearTests, genDateMonthTests, genDateYearMonthTests, genDateDecadeTests, genDateDateTimeTests, genDateHoursTests } from './date-tests';
+import { genEChartsScatterTests, genEChartsLineTests, genEChartsBarTests, genEChartsStackedBarTests, genEChartsGroupedBarTests, genEChartsStressTests, genEChartsAreaTests, genEChartsPieTests, genEChartsHeatmapTests, genEChartsHistogramTests, genEChartsBoxplotTests, genEChartsRadarTests, genEChartsCandlestickTests, genEChartsStreamgraphTests, genEChartsFacetSmallTests, genEChartsFacetWrapTests, genEChartsFacetClipTests } from './echarts-tests';
 
 /** All test generators mapped by chart group */
 export const TEST_GENERATORS: Record<string, () => TestCase[]> = {
@@ -81,6 +83,9 @@ export const TEST_GENERATORS: Record<string, () => TestCase[]> = {
     'Facet: Columns': genFacetColumnTests,
     'Facet: Rows': genFacetRowTests,
     'Facet: Cols+Rows': genFacetColRowTests,
+    'Facet: Small': genFacetSmallTests,
+    'Facet: Wrap': genFacetWrapTests,
+    'Facet: Clip': genFacetClipTests,
     'Overflow': genOverflowTests,
     'Elasticity & Stretch': genElasticityTests,
     'Dates: Year': genDateYearTests,
@@ -97,6 +102,23 @@ export const TEST_GENERATORS: Record<string, () => TestCase[]> = {
     'Discrete Axis Sizing': genDiscreteAxisTests,
     'Gas Pressure (§2)': genGasPressureTests,
     'Line/Area Stretch': genLineAreaStretchTests,
+    'ECharts: Scatter': genEChartsScatterTests,
+    'ECharts: Line': genEChartsLineTests,
+    'ECharts: Bar': genEChartsBarTests,
+    'ECharts: Stacked Bar': genEChartsStackedBarTests,
+    'ECharts: Grouped Bar': genEChartsGroupedBarTests,
+    'ECharts: Area': genEChartsAreaTests,
+    'ECharts: Pie': genEChartsPieTests,
+    'ECharts: Heatmap': genEChartsHeatmapTests,
+    'ECharts: Histogram': genEChartsHistogramTests,
+    'ECharts: Boxplot': genEChartsBoxplotTests,
+    'ECharts: Radar': genEChartsRadarTests,
+    'ECharts: Candlestick': genEChartsCandlestickTests,
+    'ECharts: Streamgraph': genEChartsStreamgraphTests,
+    'ECharts: Facet Small': genEChartsFacetSmallTests,
+    'ECharts: Facet Wrap': genEChartsFacetWrapTests,
+    'ECharts: Facet Clip': genEChartsFacetClipTests,
+    'ECharts: Stress Tests': genEChartsStressTests,
 };
 
 /** Gallery organised into three sections */
@@ -115,7 +137,7 @@ export const GALLERY_SECTIONS: GallerySection[] = [
     {
         label: 'Features & Facets',
         description: 'Faceting modes and feature combinations',
-        entries: ['Facet: Columns', 'Facet: Rows', 'Facet: Cols+Rows'],
+        entries: ['Facet: Columns', 'Facet: Rows', 'Facet: Cols+Rows', 'Facet: Small', 'Facet: Wrap', 'Facet: Clip'],
     },
     {
         label: 'Stress Tests',
@@ -136,6 +158,29 @@ export const GALLERY_SECTIONS: GallerySection[] = [
             'Unintended: Line & Area',
             'Unintended: Part-to-Whole',
             'Unintended: Statistical',
+        ],
+    },
+    {
+        label: 'ECharts Backend',
+        description: 'Same inputs through ECharts backend — compare series-based output vs VL encoding-based output',
+        entries: [
+            'ECharts: Scatter',
+            'ECharts: Line',
+            'ECharts: Bar',
+            'ECharts: Stacked Bar',
+            'ECharts: Grouped Bar',
+            'ECharts: Area',
+            'ECharts: Pie',
+            'ECharts: Heatmap',
+            'ECharts: Histogram',
+            'ECharts: Boxplot',
+            'ECharts: Radar',
+            'ECharts: Candlestick',
+            'ECharts: Streamgraph',
+            'ECharts: Facet Small',
+            'ECharts: Facet Wrap',
+            'ECharts: Facet Clip',
+            'ECharts: Stress Tests',
         ],
     },
 ];

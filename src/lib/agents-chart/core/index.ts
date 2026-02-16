@@ -51,6 +51,7 @@ export {
     isGeoType,
     getRecommendedColorScheme,
     getRecommendedColorSchemeWithMidpoint,
+    inferOrdinalSortOrder,
 } from './semantic-types';
 
 // Reusable decision functions

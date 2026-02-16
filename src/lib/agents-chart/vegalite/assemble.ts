@@ -285,6 +285,8 @@ export function assembleChart(
     if (warnings.length > 0) {
         result._warnings = warnings;
     }
+    result._width = layoutResult.subplotWidth;
+    result._height = layoutResult.subplotHeight;
     return result;
 }
 
@@ -427,27 +429,46 @@ function buildVLEncodings(
                 }
             }
         } else {
-            // Auto-sort: nominal axis with quantitative opposite
-            if ((channel === 'x' && encodingObj.type === 'nominal' && encodings.y?.field) ||
-                (channel === 'y' && encodingObj.type === 'nominal' && encodings.x?.field)) {
+            // Auto-sort: discrete axis (nominal/ordinal) with quantitative opposite
+            const isDiscreteType = encodingObj.type === 'nominal' || encodingObj.type === 'ordinal';
+            if ((channel === 'x' && isDiscreteType && encodings.y?.field) ||
+                (channel === 'y' && isDiscreteType && encodings.x?.field)) {
 
-                const fieldOrigType = fieldName ? inferVisCategory(data.map(r => r[fieldName])) : undefined;
-                if (fieldOrigType !== 'temporal') {
-                    const colorField = encodings.color?.field;
-                    let colorFieldType: string | undefined;
-                    if (colorField) {
-                        colorFieldType = inferVisCategory(data.map(r => r[colorField]));
-                    }
+                // If Phase 0 detected a canonical ordinal sort (months, days, etc.),
+                // use that instead of sorting by the quantitative opposite.
+                if (cs?.ordinalSortOrder && cs.ordinalSortOrder.length > 0) {
+                    encodingObj.sort = cs.ordinalSortOrder;
+                } else {
+                    const fieldOrigType = fieldName ? inferVisCategory(data.map(r => r[fieldName])) : undefined;
+                    if (fieldOrigType !== 'temporal') {
+                        // Sort-by-measure only makes sense for bar-like charts where
+                        // reordering categories by their value is informative.
+                        // For line/area/streamgraph charts the x-axis sequence carries
+                        // meaning (trends, progression) — sorting by y destroys that.
+                        const sequentialMarks = new Set(['line', 'area', 'trail']);
+                        const isSequentialMark = templateMarkType && sequentialMarks.has(templateMarkType);
 
-                    if (colorField && colorFieldType === 'quantitative') {
-                        encodingObj.sort = "-color";
-                    } else {
-                        const oppositeChannel = channel === 'x' ? 'y' : 'x';
-                        const oppositeField = encodings[oppositeChannel]?.field;
-                        if (oppositeField) {
-                            if (inferVisCategory(data.map(r => r[oppositeField])) === 'quantitative') {
-                                encodingObj.sort = `-${oppositeChannel}`;
+                        if (!isSequentialMark) {
+                            const colorField = encodings.color?.field;
+                            let colorFieldType: string | undefined;
+                            if (colorField) {
+                                colorFieldType = inferVisCategory(data.map(r => r[colorField]));
                             }
+
+                            if (colorField && colorFieldType === 'quantitative') {
+                                encodingObj.sort = "-color";
+                            } else {
+                                const oppositeChannel = channel === 'x' ? 'y' : 'x';
+                                const oppositeField = encodings[oppositeChannel]?.field;
+                                if (oppositeField) {
+                                    if (inferVisCategory(data.map(r => r[oppositeField])) === 'quantitative') {
+                                        encodingObj.sort = `-${oppositeChannel}`;
+                                    }
+                                }
+                            }
+                        } else {
+                            // Sequential marks: preserve data order (VL default)
+                            encodingObj.sort = null;
                         }
                     }
                 }
