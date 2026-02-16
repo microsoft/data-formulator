@@ -26,6 +26,8 @@ export {
 } from './specialized-tests';
 export { FACET_SIZES, DISCRETE_SIZES, genFacetColumnTests, genFacetRowTests, genFacetColRowTests } from './facet-tests';
 export { genOverflowTests, genElasticityTests } from './stress-tests';
+export { genGasPressureTests } from './gas-pressure-tests';
+export { genLineAreaStretchTests } from './line-area-stretch-tests';
 export { genDiscreteAxisTests } from './discrete-axis-tests';
 export { genUnintendedScatterTests, genUnintendedBarTests, genUnintendedLineAreaTests, genUnintendedPartToWholeTests, genUnintendedStatisticalTests } from './unintended-tests';
 export { genDateTests, genDateYearTests, genDateMonthTests, genDateYearMonthTests, genDateDecadeTests, genDateDateTimeTests, genDateHoursTests } from './date-tests';
@@ -45,6 +47,8 @@ import {
 } from './specialized-tests';
 import { genFacetColumnTests, genFacetRowTests, genFacetColRowTests } from './facet-tests';
 import { genOverflowTests, genElasticityTests } from './stress-tests';
+import { genGasPressureTests } from './gas-pressure-tests';
+import { genLineAreaStretchTests } from './line-area-stretch-tests';
 import { genDiscreteAxisTests } from './discrete-axis-tests';
 import { genUnintendedScatterTests, genUnintendedBarTests, genUnintendedLineAreaTests, genUnintendedPartToWholeTests, genUnintendedStatisticalTests } from './unintended-tests';
 import { genDateYearTests, genDateMonthTests, genDateYearMonthTests, genDateDecadeTests, genDateDateTimeTests, genDateHoursTests } from './date-tests';
@@ -91,6 +95,8 @@ export const TEST_GENERATORS: Record<string, () => TestCase[]> = {
     'Unintended: Part-to-Whole': genUnintendedPartToWholeTests,
     'Unintended: Statistical': genUnintendedStatisticalTests,
     'Discrete Axis Sizing': genDiscreteAxisTests,
+    'Gas Pressure (§2)': genGasPressureTests,
+    'Line/Area Stretch': genLineAreaStretchTests,
 };
 
 /** Gallery organised into three sections */
@@ -115,7 +121,8 @@ export const GALLERY_SECTIONS: GallerySection[] = [
         label: 'Stress Tests',
         description: 'Overflow, elasticity, and temporal format stress tests',
         entries: [
-            'Overflow', 'Elasticity & Stretch', 'Discrete Axis Sizing',
+            'Overflow', 'Elasticity & Stretch', 'Discrete Axis Sizing', 'Gas Pressure (§2)',
+            'Line/Area Stretch',
             'Dates: Year', 'Dates: Month', 'Dates: Year-Month',
             'Dates: Decade', 'Dates: Date/DateTime', 'Dates: Hours',
         ],

@@ -518,6 +518,190 @@ export function isSubtypeOf(semanticType: string, parentType: string): boolean {
 }
 
 // ---------------------------------------------------------------------------
+// Zero-Baseline Classification
+// ---------------------------------------------------------------------------
+
+/**
+ * Classification of whether zero is a meaningful baseline for a semantic type.
+ *
+ * - `meaningful`: 0 has a real-world interpretation (absence of the measured thing).
+ *   Comparisons to zero and ratios between values are meaningful.
+ *   Examples: Count, Revenue, Distance, Weight.
+ *
+ * - `arbitrary`: 0 is either meaningless, doesn't exist, or is an arbitrary
+ *   reference point. The data's range is what matters.
+ *   Examples: Temperature (0°F is arbitrary), Year (year 0 doesn't exist),
+ *   Rank (0th place doesn't exist).
+ *
+ * - `contextual`: 0 is meaningful but data-fitting may be better when data
+ *   is concentrated far from zero and the mark is not bar/area.
+ *   Examples: Percentage (0–100% natural, but 48–52% benefits from zoom),
+ *   Score (1–5 scale, but 4.2–4.8 benefits from zoom).
+ */
+export type ZeroClass = 'meaningful' | 'arbitrary' | 'contextual';
+
+/**
+ * Result of the zero-baseline decision.
+ * Encapsulates both the boolean decision and domain padding for non-zero axes.
+ */
+export interface ZeroDecision {
+    /** Whether the axis should include zero */
+    zero: boolean;
+    /**
+     * For non-zero axes: fraction of data range to pad on each side
+     * so edge values aren't crushed against the axis boundary.
+     * e.g. 0.05 = 5% padding on each side.
+     */
+    domainPadFraction: number;
+    /** The zero class that drove this decision */
+    zeroClass: ZeroClass | 'unknown';
+}
+
+/** Semantic types where 0 = absence of the measured thing */
+export const zeroMeaningfulTypes = new Set<string>([
+    'Count', 'Amount', 'Revenue', 'Cost', 'Price',
+    'Quantity', 'Distance', 'Area', 'Volume', 'Weight',
+    'Duration', 'Speed',
+    'Number',  // fallback assumes measure
+]);
+
+/** Semantic types where 0 is arbitrary or nonexistent */
+export const zeroArbitraryTypes = new Set<string>([
+    'Temperature', 'Year',
+    'Rank', 'Index', 'Level',
+    'ID',
+    'Latitude', 'Longitude',
+    'Decade', 'Month', 'Day', 'Hour',
+]);
+
+/** Semantic types where zero is meaningful but data-fitting may be appropriate */
+export const zeroContextualTypes = new Set<string>([
+    'Percentage', 'Rate', 'Ratio',
+    'Score', 'Rating',
+]);
+
+/** Domain padding fractions by semantic type for non-zero axes */
+const zeroPadMap: Record<string, number> = {
+    Rank: 0.08, Index: 0.08, Level: 0.08,
+    Score: 0.05, Rating: 0.05,
+    Year: 0.03, Decade: 0.03,
+    Temperature: 0.05,
+    Latitude: 0.02, Longitude: 0.02,
+};
+
+/**
+ * Classify a semantic type's relationship to zero.
+ */
+export function getZeroClass(semanticType: string): ZeroClass | 'unknown' {
+    if (zeroMeaningfulTypes.has(semanticType)) return 'meaningful';
+    if (zeroArbitraryTypes.has(semanticType)) return 'arbitrary';
+    if (zeroContextualTypes.has(semanticType)) return 'contextual';
+    return 'unknown';
+}
+
+/**
+ * Compute whether a quantitative axis should start at zero, based on
+ * semantic type, mark type, channel, and data values.
+ *
+ * Priority: semantic type > mark type > data range > VL default.
+ *
+ * This is a pure decision function — it returns a ZeroDecision object
+ * without modifying any spec. The caller applies the decision to VL.
+ *
+ * @param semanticType  The semantic type of the field (e.g. 'Revenue', 'Temperature')
+ * @param channel       The VL channel ('x', 'y', 'size', etc.)
+ * @param markType      The mark type ('bar', 'line', 'point', etc.)
+ * @param values        Optional numeric data values for data-range analysis
+ */
+export function computeZeroDecision(
+    semanticType: string,
+    channel: string,
+    markType: string,
+    values?: number[],
+): ZeroDecision {
+    const isBarLike = ['bar', 'area', 'rect'].includes(markType);
+    const isPositional = ['x', 'y'].includes(channel);
+    const zeroClass = getZeroClass(semanticType);
+
+    // --- Zero-meaningful types: always zero ---
+    if (zeroClass === 'meaningful') {
+        return { zero: true, domainPadFraction: 0, zeroClass };
+    }
+
+    // --- Zero-arbitrary types: never zero, apply padding ---
+    if (zeroClass === 'arbitrary') {
+        // Exception: bar/area marks with data that touches/crosses zero
+        if (isBarLike && values && values.length > 0) {
+            const dataMin = Math.min(...values);
+            if (dataMin <= 0) {
+                return { zero: true, domainPadFraction: 0, zeroClass };
+            }
+        }
+        return {
+            zero: false,
+            domainPadFraction: zeroPadMap[semanticType] ?? 0.05,
+            zeroClass,
+        };
+    }
+
+    // --- Contextual types: use data range + mark to decide ---
+    if (zeroClass === 'contextual' && values && values.length > 0) {
+        const dataMin = Math.min(...values);
+        const dataMax = Math.max(...values);
+
+        // Data touches/crosses zero → include it
+        if (dataMin <= 0) {
+            return { zero: true, domainPadFraction: 0, zeroClass };
+        }
+
+        // How far is data from zero?
+        const proximity = dataMax > 0 ? dataMin / dataMax : 0;
+
+        // Close to zero → include it
+        if (proximity < 0.3) {
+            return { zero: true, domainPadFraction: 0, zeroClass };
+        }
+
+        // Far from zero + bar/area → still include (bar length integrity)
+        if (isBarLike) {
+            return { zero: true, domainPadFraction: 0, zeroClass };
+        }
+
+        // Far from zero + non-bar → data-fit with padding
+        return { zero: false, domainPadFraction: 0.05, zeroClass };
+    }
+
+    // --- No semantic type or unrecognized → no opinion, let VL decide ---
+    if (isBarLike && isPositional) {
+        return { zero: true, domainPadFraction: 0, zeroClass: 'unknown' };
+    }
+    return { zero: false, domainPadFraction: 0.05, zeroClass: 'unknown' };
+}
+
+/**
+ * Compute padded domain bounds for a non-zero axis.
+ * Pure computation — returns [paddedMin, paddedMax] without modifying any spec.
+ *
+ * @param values         Numeric data values
+ * @param padFraction    Fraction of data range to pad on each side
+ * @returns              [paddedMin, paddedMax] or null if padding is not applicable
+ */
+export function computePaddedDomain(
+    values: number[],
+    padFraction: number,
+): [number, number] | null {
+    if (padFraction <= 0 || values.length < 2) return null;
+
+    const dataMin = Math.min(...values);
+    const dataMax = Math.max(...values);
+    const span = dataMax - dataMin;
+    if (span <= 0) return null;
+
+    const padding = span * padFraction;
+    return [dataMin - padding, dataMax + padding];
+}
+
+// ---------------------------------------------------------------------------
 // Color Scheme Recommendations
 // ---------------------------------------------------------------------------
 

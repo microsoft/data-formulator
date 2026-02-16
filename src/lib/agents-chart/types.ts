@@ -1,6 +1,9 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
+import type { ZeroDecision } from './semantic-types';
+import type { EncodingTypeDecision } from './decisions';
+
 /**
  * Core types for the chart engine library.
  * No React or UI framework dependencies — pure TypeScript.
@@ -58,6 +61,27 @@ export interface BuildEncodingContext {
     chartType: string;
     /** User-configured chart properties (corner radius, bin count, etc.) */
     chartProperties?: Record<string, any>;
+
+    /**
+     * Semantic type metadata computed by the assembler.
+     * Templates can use this to make informed decisions about axis scaling,
+     * color schemes, and other encoding properties.
+     *
+     * Populated before buildEncodings is called.
+     */
+    semanticMetadata?: {
+        /**
+         * Per-field encoding type decisions.
+         * Maps field name → EncodingTypeDecision (resolved VL type + reasoning).
+         */
+        encodingTypeDecisions: Record<string, EncodingTypeDecision>;
+        /**
+         * Per-channel zero-baseline decisions.
+         * Maps channel ('x', 'y') → ZeroDecision.
+         * Only populated for quantitative positional channels.
+         */
+        zeroDecisions: Record<string, ZeroDecision>;
+    };
 
     /**
      * Axis flags set by templates during buildEncodings to communicate
@@ -202,4 +226,37 @@ export interface AssembleOptions {
     minSubplotSize?: number;
     /** Multiplier for the default step size (default: 1). Values >1 give more room per category. */
     defaultStepMultiplier?: number;
+    /**
+     * When true, continuous X and Y axes stretch together using the
+     * larger of the two per-axis stretch factors. This preserves the
+     * aspect ratio of the data space. (default: false — axes stretch
+     * independently based on their own density.)
+     */
+    maintainContinuousAxisRatio?: boolean;
+    /**
+     * Gas-pressure tuning for continuous axes (default: scatter-plot settings).
+     * - A single number overrides markCrossSection (σ) for both axes.
+     * - An object allows per-axis σ plus optional elasticity / maxStretch:
+     *   `{ x: 100, y: 0, elasticity: 0.7, maxStretch: 2 }`
+     *   x/y = 0 means "don't stretch this axis".
+     *   Useful for line/area charts where horizontal crowding matters
+     *   far more than vertical.
+     */
+    continuousMarkCrossSection?: number | {
+        x: number;
+        y: number;
+        /** Per-axis stretch elasticity (default: 0.3). Higher → more responsive. */
+        elasticity?: number;
+        /** Per-axis stretch cap (default: 1.5). */
+        maxStretch?: number;
+        /**
+         * Which axis uses series-count-based pressure instead of pixel counting.
+         * - 'x' or 'y': that axis uses nSeries × σ / dim for pressure.
+         * - 'auto': auto-detect — in 2D (both continuous), defaults to 'y';
+         *   in 1D (one continuous + one discrete), uses the continuous axis.
+         * The σ for the series axis is used directly (not sqrt'd) since series
+         * count is inherently 1D.
+         */
+        seriesCountAxis?: 'x' | 'y' | 'auto';
+    };
 }

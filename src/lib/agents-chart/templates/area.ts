@@ -69,6 +69,7 @@ export const areaChartDef: ChartTemplateDef = {
                 { value: "layered", label: "Layered (overlap)" },
             ] },
         ] as ChartPropertyDef[],
+        overrideDefaultSettings: (opts) => ({ ...opts, continuousMarkCrossSection: { x: 100, y: 20, seriesCountAxis: 'auto' } }),
 };
 
 export const streamgraphDef: ChartTemplateDef = {
@@ -92,4 +93,5 @@ export const streamgraphDef: ChartTemplateDef = {
             applyInterpolate(spec, context.chartProperties);
         },
         properties: [interpolateConfigProperty] as ChartPropertyDef[],
+        overrideDefaultSettings: (opts) => ({ ...opts, continuousMarkCrossSection: { x: 100, y: 20, seriesCountAxis: 'auto' } }),
 };

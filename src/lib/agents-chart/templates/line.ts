@@ -40,6 +40,7 @@ export const lineChartDef: ChartTemplateDef = {
             applyInterpolate(spec, context.chartProperties);
         },
         properties: [interpolateConfigProperty],
+        overrideDefaultSettings: (opts) => ({ ...opts, continuousMarkCrossSection: { x: 100, y: 20, seriesCountAxis: 'auto' } }),
 };
 
 export const dottedLineChartDef: ChartTemplateDef = {
@@ -54,4 +55,5 @@ export const dottedLineChartDef: ChartTemplateDef = {
             applyInterpolate(spec, context.chartProperties);
         },
         properties: [interpolateConfigProperty],
+        overrideDefaultSettings: (opts) => ({ ...opts, continuousMarkCrossSection: { x: 100, y: 20, seriesCountAxis: 'auto' } }),
 };

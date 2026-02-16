@@ -17,6 +17,7 @@ export const bumpChartDef: ChartTemplateDef = {
         encoding: {},
     },
     channels: ["x", "y", "color", "detail", "column", "row"],
+    overrideDefaultSettings: (opts) => ({ ...opts, continuousMarkCrossSection: { x: 80, y: 20, seriesCountAxis: 'auto' } }),
     buildEncodings: (spec, encodings, context) => {
         defaultBuildEncodings(spec, encodings, context);
 

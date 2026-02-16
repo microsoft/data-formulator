@@ -22,8 +22,23 @@ import {
     getVisCategory,
     inferVisCategory,
     getRecommendedColorSchemeWithMidpoint,
+    computeZeroDecision,
+    computePaddedDomain,
     type VisCategory,
+    type ZeroDecision,
 } from './semantic-types';
+import {
+    resolveEncodingType as resolveEncodingTypeDecision,
+    computeElasticBudget,
+    computeAxisStep,
+    computeFacetLayout,
+    computeLabelSizing,
+    computeGasPressure,
+    DEFAULT_GAS_PRESSURE_PARAMS,
+    type ElasticStretchParams,
+    type EncodingTypeDecision,
+    type GasPressureDecision,
+} from './decisions';
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -221,13 +236,8 @@ function levelToFormat(level: number, analysis: TemporalAnalysis): string | null
 /**
  * Resolve the Vega-Lite encoding type for a field.
  *
- * Unified pipeline:
- *   1. Determine a VisCategory — from semantic type if available, otherwise
- *      inferred from raw data values.
- *   2. Map VisCategory → VL encoding type, applying channel-specific and
- *      chart-specific rules (e.g. temporal → ordinal for facets, bar-chart
- *      date binning, etc.)
- *   3. Caller can still override with an explicit encoding.type afterward.
+ * Thin wrapper around the pure decision function in decisions.ts.
+ * Returns only the VL type string for backward compatibility.
  */
 function resolveEncodingType(
     semanticType: string,
@@ -236,71 +246,22 @@ function resolveEncodingType(
     data: any[],
     fieldName: string,
 ): string {
-    // Step 1: Determine vis category
-    // If the semantic type is recognised in the map, use it; otherwise
-    // fall back to data-driven inference so unknown types like "Value"
-    // get properly inferred from the actual data values.
-    const mappedCategory = semanticType ? getVisCategory(semanticType) : null;
-    const visCategory: VisCategory = mappedCategory ?? inferVisCategory(fieldValues);
+    const decision = resolveEncodingTypeDecision(semanticType, fieldValues, channel, data, fieldName);
+    return decision.vlType;
+}
 
-    // Step 2: Map to VL type with channel-specific overrides.
-    // Chart-specific dtype decisions (e.g. "bar chart needs a discrete axis")
-    // are handled by each template's buildEncodings, NOT here.
-
-    switch (visCategory) {
-        case 'temporal':
-            if (['size', 'column', 'row'].includes(channel)) {
-                return 'ordinal';
-            }
-            if (channel === 'color') {
-                const uniqueColorValues = new Set(data.map(r => r[fieldName])).size;
-                return uniqueColorValues > 12 ? 'temporal' : 'ordinal';
-            }
-            // Validate temporal parsing
-            {
-                const sampleValues = data.map(r => r[fieldName]).slice(0, 15).filter(v => v != null);
-                const isValidTemporal = sampleValues.length > 0 && sampleValues.some(val => {
-                    if (val instanceof Date) return true;
-                    if (typeof val === 'number') {
-                        if (val >= 1000 && val <= 3000) return true;
-                        if (val > 86400000 && val < 4200000000000) return true;
-                        return false;
-                    }
-                    if (typeof val === 'string') {
-                        const trimmed = val.trim();
-                        if (!trimmed) return false;
-                        if (/^\d{4}$/.test(trimmed)) return true;
-                        return !Number.isNaN(Date.parse(trimmed));
-                    }
-                    return false;
-                });
-
-                if (!isValidTemporal) return 'ordinal';
-                return 'temporal';
-            }
-        case 'ordinal': {
-            // Guard against mis-classified continuous measures (e.g. "Index"
-            // assigned to a field like `normalized_fertility_index` whose values
-            // are dense floats).  If the non-null numeric values are mostly
-            // fractional and high-cardinality, treat them as quantitative.
-            const numericVals = fieldValues.filter(v => v != null && !isNaN(+v)).map(Number);
-            if (numericVals.length > 0) {
-                const uniqueCount = new Set(numericVals).size;
-                const hasFractions = numericVals.some(v => v % 1 !== 0);
-                if (hasFractions && uniqueCount > 20) {
-                    return 'quantitative';
-                }
-            }
-            return 'ordinal';
-        }
-        case 'quantitative':
-            return 'quantitative';
-        case 'geographic':
-            return 'quantitative';
-        case 'nominal':
-        default:
-            return 'nominal';
-    }
+/**
+ * Resolve encoding type and return the full decision object.
+ * Used internally when the assembler needs the reasoning metadata.
+ */
+function resolveEncodingTypeFull(
+    semanticType: string,
+    fieldValues: any[],
+    channel: string,
+    data: any[],
+    fieldName: string,
+): EncodingTypeDecision {
+    return resolveEncodingTypeDecision(semanticType, fieldValues, channel, data, fieldName);
 }
 
 // ---------------------------------------------------------------------------
@@ -346,6 +307,8 @@ export function assembleChart(
         minStep: minStepVal = 6,
         minSubplotSize: minSubplotVal = 60,
         defaultStepMultiplier = 1,
+        maintainContinuousAxisRatio = false,
+        continuousMarkCrossSection,
     } = effectiveOptions;
 
     const vgObj = structuredClone(chartTemplate.template);
@@ -355,6 +318,7 @@ export function assembleChart(
 
     // --- Resolve encodings ---
     const resolvedEncodings: Record<string, any> = {};
+    const encodingTypeDecisions: Record<string, EncodingTypeDecision> = {};
     for (const [channel, encoding] of Object.entries(encodings)) {
         const encodingObj: any = {};
 
@@ -377,7 +341,9 @@ export function assembleChart(
             const fieldValues = data.map(r => r[fieldName]);
 
             // Unified type resolution: semantic type + data inference + channel rules
-            encodingObj.type = resolveEncodingType(semanticType, fieldValues, channel, data, fieldName);
+            const typeDecision = resolveEncodingTypeFull(semanticType, fieldValues, channel, data, fieldName);
+            encodingObj.type = typeDecision.vlType;
+            encodingTypeDecisions[fieldName] = typeDecision;
 
             // Explicit type override
             if (encoding.type) {
@@ -565,14 +531,93 @@ export function assembleChart(
         }
     }
 
+    // --- Compute zero-baseline decisions for quantitative positional axes ---
+    const tplMark = chartTemplate.template?.mark;
+    const templateMarkType = typeof tplMark === 'string' ? tplMark : tplMark?.type;
+    const zeroDecisions: Record<string, ZeroDecision> = {};
+    for (const ch of ['x', 'y'] as const) {
+        const enc = resolvedEncodings[ch];
+        if (!enc?.field || enc.type !== 'quantitative') continue;
+        const fieldName = enc.field;
+        const semType = semanticTypes[fieldName] || '';
+        const numericValues = data
+            .map(r => r[fieldName])
+            .filter((v: any) => v != null && typeof v === 'number' && !isNaN(v));
+
+        // Determine effective mark type — check layers if present
+        let effectiveMarkType = templateMarkType || 'point';
+        if (!templateMarkType && chartTemplate.template?.layer) {
+            const firstLayerMark = chartTemplate.template.layer[0]?.mark;
+            effectiveMarkType = typeof firstLayerMark === 'string' ? firstLayerMark : firstLayerMark?.type || 'point';
+        }
+
+        const decision = computeZeroDecision(semType, ch, effectiveMarkType, numericValues);
+        zeroDecisions[ch] = decision;
+    }
+
     // --- Build encodings into spec ---
-    const buildContext: BuildEncodingContext = { table: data, semanticTypes, canvasSize, chartType, chartProperties };
+    const buildContext: BuildEncodingContext = {
+        table: data,
+        semanticTypes,
+        canvasSize,
+        chartType,
+        chartProperties,
+        semanticMetadata: {
+            encodingTypeDecisions,
+            zeroDecisions,
+        },
+    };
     chartTemplate.buildEncodings(vgObj, resolvedEncodings, buildContext);
 
     // Merge any warnings emitted by buildEncodings
     if (vgObj._warnings && Array.isArray(vgObj._warnings)) {
         warnings.push(...vgObj._warnings);
         delete vgObj._warnings;
+    }
+
+    // --- Apply zero-baseline decisions to VL spec ---
+    // This applies the semantic-type-driven zero decisions computed above.
+    // It sets scale.zero and scale.domain on quantitative positional encodings.
+    // Must run after buildEncodings because templates may change encoding types.
+    for (const [ch, decision] of Object.entries(zeroDecisions)) {
+        // Find the encoding — may be on top-level or in a layer
+        const targets: any[] = [];
+        if (vgObj.encoding?.[ch]?.type === 'quantitative') {
+            targets.push(vgObj.encoding[ch]);
+        }
+        if (Array.isArray(vgObj.layer)) {
+            for (const layer of vgObj.layer) {
+                if (layer.encoding?.[ch]?.type === 'quantitative') {
+                    targets.push(layer.encoding[ch]);
+                }
+            }
+        }
+
+        for (const enc of targets) {
+            if (!enc.scale) enc.scale = {};
+
+            // Don't override if the template already set scale.zero explicitly
+            if (enc.scale.zero !== undefined) continue;
+            // Don't override if domain is already constrained
+            if (enc.scale.domain && Array.isArray(enc.scale.domain)) continue;
+
+            enc.scale.zero = decision.zero;
+
+            // Apply domain padding for non-zero axes
+            if (!decision.zero && decision.domainPadFraction > 0) {
+                const fieldName = enc.field;
+                if (fieldName) {
+                    const numericValues = data
+                        .map(r => r[fieldName])
+                        .filter((v: any) => v != null && typeof v === 'number' && !isNaN(v));
+                    const paddedDomain = computePaddedDomain(numericValues, decision.domainPadFraction);
+                    if (paddedDomain) {
+                        enc.scale.domain = paddedDomain;
+                        enc.scale.nice = false; // Don't let VL re-introduce 0 via nice rounding
+                    }
+                }
+            }
+        }
     }
 
     // --- Temporal data conversion ---
@@ -746,10 +791,15 @@ export function assembleChart(
     for (const channel of ['x', 'y', 'column', 'row', 'xOffset', 'yOffset', 'color']) {
         const enc = vgObj.encoding?.[channel];
         if (enc?.field && isDiscreteType(enc.type)) {
+            // For column-only facets (no row), we'll wrap into multiple rows
+            // later, so the cap should be the full wrappable grid — not just
+            // a single row of facets.
+            const hasRow = vgObj.encoding?.row != undefined;
+            const columnCap = hasRow ? maxFacetColumns : maxFacetNominalValues;
             const maxNominalValuesToKeep = channel === 'x' ? maxXToKeep
                 : channel === 'y' ? maxYToKeep
                 : channel === 'row' ? maxFacetRows
-                : channel === 'column' ? maxFacetColumns
+                : channel === 'column' ? columnCap
                 : maxFacetNominalValues;
             const fieldName = enc.field;
             const uniqueValues = [...new Set(values.map((r: any) => r[fieldName]))];
@@ -917,20 +967,53 @@ export function assembleChart(
             xDiscreteCount = nominalCount.x * nominalCount.xOffset;
         }
 
+        // For wrapping decisions, continuous axes need a larger minimum
+        // subplot width than discrete axes — a 60px scatter plot is
+        // unreadable. Use a fraction of the base canvas width as the
+        // minimum readable size for continuous subplots.
+        const minReadableSubplot = Math.max(minSubplotVal, Math.round(defaultChartWidth * 0.25));
         const minSubplotWidth = xDiscreteCount > 0
             ? Math.max(minSubplotVal, xDiscreteCount * minStepVal)
-            : minSubplotVal;
+            : minReadableSubplot;
 
         const maxTotalWidth = facetMaxStretchVal * defaultChartWidth;
         const maxColsByWidth = Math.max(1, Math.floor(maxTotalWidth / minSubplotWidth));
         const facetCount = nominalCount.column || 1;
-        const numCols = Math.min(maxColsByWidth, facetCount);
+
+        // Balanced wrapping: prefer fewer rows first, then balance columns
+        // within that row count. Strategy:
+        //   1. Find the minimum number of rows: ceil(N / maxColsByWidth)
+        //   2. Given that row count, pick the smallest number of columns
+        //      that still fits: ceil(N / numRows)
+        //   This maximizes subplot width while keeping the grid compact.
+        let numCols: number;
+        if (facetCount <= maxColsByWidth) {
+            // All fit in one row — no wrapping needed
+            numCols = facetCount;
+        } else {
+            const minRows = Math.ceil(facetCount / maxColsByWidth);
+            // Balance: use just enough columns to fill minRows rows evenly
+            numCols = Math.ceil(facetCount / minRows);
+        }
 
         vgObj.encoding.facet.columns = numCols;
 
         const numRows = Math.ceil(facetCount / numCols);
-        if (numCols > 1 && numRows >= 3) {
-            vgObj.resolve = { axis: { x: "independent" } };
+
+        // For wrapped facets with multiple rows, keep axes independent
+        // (each subplot retains its own tick labels for readability) but
+        // suppress the per-subplot axis titles — the facet header already
+        // identifies each subplot, so repeating "Category" etc. is clutter.
+        if (numRows >= 2) {
+            const encTarget = vgObj.encoding;
+            if (encTarget?.x) {
+                if (!encTarget.x.axis) encTarget.x.axis = {};
+                encTarget.x.axis.title = null;
+            }
+            if (encTarget?.y) {
+                if (!encTarget.y.axis) encTarget.y.axis = {};
+                encTarget.y.axis.title = null;
+            }
         }
 
         delete vgObj.encoding.column;
@@ -1113,32 +1196,219 @@ export function assembleChart(
         }
     }
 
+    // --- Helper: count distinct series (color/detail categories) ---
+    const countDistinctSeries = (spec: any, data: any[]): number => {
+        const seriesFields: string[] = [];
+        const colorField = (spec.encoding?.color as any)?.field;
+        const detailField = (spec.encoding?.detail as any)?.field;
+        if (colorField) seriesFields.push(colorField);
+        if (detailField && detailField !== colorField) seriesFields.push(detailField);
+
+        if (seriesFields.length === 0) return 1; // single series
+
+        const seriesKeys = new Set<string>();
+        for (const row of data) {
+            const key = seriesFields.map(f => String(row[f] ?? '')).join('\x00');
+            seriesKeys.add(key);
+        }
+        return seriesKeys.size;
+    };
+
+    // --- Gas pressure stretch for non-banded continuous axes (§2) ---
+    // When both x and y are continuous and non-banded (e.g. scatter plot),
+    // compute density-aware stretch using the gas pressure model.
+    const xIsContinuousNonBanded = xTotalNominalCount === 0 && xContinuousAsDiscrete === 0;
+    const yIsContinuousNonBanded = yTotalNominalCount === 0 && yContinuousAsDiscrete === 0;
+
+    let gasPressureResult: GasPressureDecision | null = null;
+
+    if (xIsContinuousNonBanded && yIsContinuousNonBanded) {
+        // Both axes are continuous — run gas pressure model on the 2D point cloud
+        const xEnc = vgObj.encoding?.x;
+        const yEnc = vgObj.encoding?.y;
+
+        if (xEnc?.field && yEnc?.field) {
+            const isTempX = xEnc.type === 'temporal';
+            const isTempY = yEnc.type === 'temporal';
+
+            const xNumeric: number[] = [];
+            const yNumeric: number[] = [];
+            for (const row of values) {
+                let xv = row[xEnc.field];
+                let yv = row[yEnc.field];
+                if (xv == null || yv == null) continue;
+                if (isTempX) xv = +new Date(xv);
+                else xv = +xv;
+                if (isTempY) yv = +new Date(yv);
+                else yv = +yv;
+                if (isNaN(xv) || isNaN(yv)) continue;
+                xNumeric.push(xv);
+                yNumeric.push(yv);
+            }
+
+            if (xNumeric.length > 1) {
+                const xMin = Math.min(...xNumeric);
+                const xMax = Math.max(...xNumeric);
+                const yMin = Math.min(...yNumeric);
+                const yMax = Math.max(...yNumeric);
+
+                // Use axis domain if available (e.g. zero-based), else data extent
+                const xDomain: [number, number] = xEnc.scale?.domain
+                    ? [+xEnc.scale.domain[0], +xEnc.scale.domain[1]]
+                    : [xMin, xMax];
+                const yDomain: [number, number] = yEnc.scale?.domain
+                    ? [+yEnc.scale.domain[0], +yEnc.scale.domain[1]]
+                    : [yMin, yMax];
+
+                let gasPressureParams = DEFAULT_GAS_PRESSURE_PARAMS;
+                if (continuousMarkCrossSection != null) {
+                    if (typeof continuousMarkCrossSection === 'number') {
+                        gasPressureParams = { ...DEFAULT_GAS_PRESSURE_PARAMS, markCrossSection: continuousMarkCrossSection };
+                    } else {
+                        // Per-axis: use max for global pressure, individual for per-axis stretch
+                        const maxCS = Math.max(continuousMarkCrossSection.x, continuousMarkCrossSection.y);
+                        gasPressureParams = {
+                            ...DEFAULT_GAS_PRESSURE_PARAMS,
+                            markCrossSection: maxCS,
+                            markCrossSectionX: continuousMarkCrossSection.x,
+                            markCrossSectionY: continuousMarkCrossSection.y,
+                            ...(continuousMarkCrossSection.elasticity != null && { elasticity: continuousMarkCrossSection.elasticity }),
+                            ...(continuousMarkCrossSection.maxStretch != null && { maxStretch: continuousMarkCrossSection.maxStretch }),
+                        };
+
+                        // Series-count-based pressure: count distinct color/detail categories
+                        // and assign to the appropriate axis.
+                        if (continuousMarkCrossSection.seriesCountAxis) {
+                            const resolvedAxis = continuousMarkCrossSection.seriesCountAxis === 'auto'
+                                ? 'y'  // In 2D (both continuous), default series axis is Y
+                                : continuousMarkCrossSection.seriesCountAxis;
+
+                            const nSeries = countDistinctSeries(vgObj, values);
+                            if (resolvedAxis === 'y') {
+                                gasPressureParams.yItemCountOverride = nSeries;
+                            } else {
+                                gasPressureParams.xItemCountOverride = nSeries;
+                            }
+                        }
+                    }
+                }
+
+                gasPressureResult = computeGasPressure(
+                    xNumeric, yNumeric,
+                    xDomain, yDomain,
+                    subplotWidth, subplotHeight,
+                    gasPressureParams,
+                );
+
+                if (gasPressureResult.stretchX > 1 || gasPressureResult.stretchY > 1) {
+                    let sx = gasPressureResult.stretchX;
+                    let sy = gasPressureResult.stretchY;
+                    if (maintainContinuousAxisRatio) {
+                        const maxStretch = Math.max(sx, sy);
+                        sx = maxStretch;
+                        sy = maxStretch;
+                    }
+                    // For series-based pressure: stretching the positional axis
+                    // also reduces visual overlap. Ensure the non-series axis
+                    // stretches at least as much as the series axis.
+                    if (typeof continuousMarkCrossSection === 'object' &&
+                        continuousMarkCrossSection.seriesCountAxis) {
+                        const sAxis = continuousMarkCrossSection.seriesCountAxis === 'auto'
+                            ? 'y' : continuousMarkCrossSection.seriesCountAxis;
+                        if (sAxis === 'y' && sy > 1 && sx < sy) sx = sy;
+                        if (sAxis === 'x' && sx > 1 && sy < sx) sy = sx;
+                    }
+                    subplotWidth = Math.round(subplotWidth * sx);
+                    subplotHeight = Math.round(subplotHeight * sy);
+                }
+            }
+        }
+    } else if (xIsContinuousNonBanded || yIsContinuousNonBanded) {
+        // One axis continuous, one discrete.
+        // Two modes:
+        //   1. Series-based: stretch the continuous axis based on series count
+        //      (e.g. stacked bar — each stacked segment needs min height).
+        //   2. Positional: stretch based on point count / unique positions
+        //      (only when the continuous axis is positional, not a measure).
+        const contAxis = xIsContinuousNonBanded ? 'x' : 'y';
+        const otherAxisHasDiscreteItems = contAxis === 'x'
+            ? (yTotalNominalCount > 0 || yContinuousAsDiscrete > 0)
+            : (xTotalNominalCount > 0 || xContinuousAsDiscrete > 0);
+
+        // Check if series-based stretch is configured for this axis
+        let seriesStretchApplied = false;
+        if (typeof continuousMarkCrossSection === 'object' && continuousMarkCrossSection.seriesCountAxis) {
+            const resolvedAxis = continuousMarkCrossSection.seriesCountAxis === 'auto'
+                ? contAxis  // In 1D, 'auto' → the continuous axis
+                : continuousMarkCrossSection.seriesCountAxis;
+
+            if (resolvedAxis === contAxis) {
+                // Series-based stretch on the continuous axis
+                const sigmaPerSeries = contAxis === 'x'
+                    ? continuousMarkCrossSection.x
+                    : continuousMarkCrossSection.y;
+                const baseDim = contAxis === 'x' ? subplotWidth : subplotHeight;
+                const nSeries = countDistinctSeries(vgObj, values);
+                const pressure = (nSeries * sigmaPerSeries) / baseDim;
+
+                const elast = continuousMarkCrossSection.elasticity ?? DEFAULT_GAS_PRESSURE_PARAMS.elasticity;
+                const maxS = continuousMarkCrossSection.maxStretch ?? DEFAULT_GAS_PRESSURE_PARAMS.maxStretch;
+
+                if (pressure > 1) {
+                    const stretch = Math.min(maxS, Math.pow(pressure, elast));
+                    if (contAxis === 'x') {
+                        subplotWidth = Math.round(subplotWidth * stretch);
+                    } else {
+                        subplotHeight = Math.round(subplotHeight * stretch);
+                    }
+                }
+                seriesStretchApplied = true;
+            }
+        }
+
+        // Fallback: positional 1D stretch (only when no series stretch and
+        // the continuous axis is positional, not a pure measure).
+        if (!seriesStretchApplied && !otherAxisHasDiscreteItems) {
+            const contEnc = vgObj.encoding?.[contAxis];
+            if (contEnc?.field) {
+                const isTemporal = contEnc.type === 'temporal';
+                const contValues: number[] = [];
+                for (const row of values) {
+                    let v = row[contEnc.field];
+                    if (v == null) continue;
+                    if (isTemporal) v = +new Date(v);
+                    else v = +v;
+                    if (!isNaN(v)) contValues.push(v);
+                }
+                const sigma1d = Math.sqrt(DEFAULT_GAS_PRESSURE_PARAMS.markCrossSection);
+                const baseDim = contAxis === 'x' ? subplotWidth : subplotHeight;
+                const pressure1d = (contValues.length * sigma1d) / baseDim;
+                if (pressure1d > 1) {
+                    const stretch1d = Math.min(
+                        DEFAULT_GAS_PRESSURE_PARAMS.maxStretch,
+                        Math.pow(pressure1d, DEFAULT_GAS_PRESSURE_PARAMS.elasticity),
+                    );
+                    if (contAxis === 'x') {
+                        subplotWidth = Math.round(subplotWidth * stretch1d);
+                    } else {
+                        subplotHeight = Math.round(subplotHeight * stretch1d);
+                    }
+                }
+            }
+        }
+    }
+
     // --- Elastic stretch for discrete axes ---
-    function computeElasticBudget(totalCount: number, defaultBudget: number): number {
-        if (totalCount <= 0) return defaultBudget;
-        const pressure = (totalCount * defaultStepSize) / defaultBudget;
-        if (pressure <= 1) return defaultBudget;
-        const stretch = Math.min(maxStretchVal, Math.pow(pressure, elasticityVal));
-        return defaultBudget * stretch;
-    }
+    // Use reusable decision functions from decisions.ts
+    const elasticParams: ElasticStretchParams = {
+        elasticity: elasticityVal,
+        maxStretch: maxStretchVal,
+        defaultStepSize,
+        minStep: minStepVal,
+    };
 
-    // Compute effective step size per axis, covering both discrete and
-    // continuous-as-discrete cases.  Continuous axes get their own budget
-    // so they don't interfere with discrete step sizing on the other axis.
-    function computeAxisStep(nominalCount: number, continuousCount: number, baseDim: number): { step: number; budget: number; count: number } {
-        if (nominalCount > 0) {
-            const budget = computeElasticBudget(nominalCount, baseDim);
-            return { step: Math.floor(budget / nominalCount), budget, count: nominalCount };
-        }
-        if (continuousCount > 0) {
-            const budget = computeElasticBudget(continuousCount, baseDim);
-            return { step: Math.floor(budget / continuousCount), budget, count: continuousCount };
-        }
-        return { step: defaultStepSize, budget: baseDim, count: 0 };
-    }
-
-    const xAxis = computeAxisStep(xTotalNominalCount, xContinuousAsDiscrete, subplotWidth);
-    const yAxis = computeAxisStep(yTotalNominalCount, yContinuousAsDiscrete, subplotHeight);
+    const xAxis = computeAxisStep(xTotalNominalCount, xContinuousAsDiscrete, subplotWidth, elasticParams);
+    const yAxis = computeAxisStep(yTotalNominalCount, yContinuousAsDiscrete, subplotHeight, elasticParams);
 
     // Per-axis step sizes for VL step-based layout.
     // Only nominal/ordinal axes use VL's {step: N} layout.
@@ -1164,7 +1434,7 @@ export function assembleChart(
         const itemsPerGroup = nominalCount.xOffset;
         const defaultGroupStep = itemsPerGroup * defaultStepSize;
         const minGroupStep = 2 * itemsPerGroup;
-        const groupAxis = computeAxisStep(nominalCount.x, 0, subplotWidth);
+        const groupAxis = computeAxisStep(nominalCount.x, 0, subplotWidth, elasticParams);
         // Apply elastic budget at group level, then clamp
         const groupStep = Math.max(minGroupStep, Math.min(defaultGroupStep, groupAxis.step));
         xStepSize = groupStep;
@@ -1184,7 +1454,7 @@ export function assembleChart(
         const itemsPerGroup = nominalCount.yOffset;
         const defaultGroupStep = itemsPerGroup * defaultStepSize;
         const minGroupStep = 2 * itemsPerGroup;
-        const groupAxis = computeAxisStep(nominalCount.y, 0, subplotHeight);
+        const groupAxis = computeAxisStep(nominalCount.y, 0, subplotHeight, elasticParams);
         const groupStep = Math.max(minGroupStep, Math.min(defaultGroupStep, groupAxis.step));
         yStepSize = groupStep;
         yStepFor = 'position';
@@ -1256,40 +1526,23 @@ export function assembleChart(
     const xEffStep = xStepSize;
     const yEffStep = yStepSize;
 
-    // Dynamic label sizing — applies to truly discrete (nominal/ordinal) axes
-    // whose text labels can be long and overlap at small step sizes.
-    // Continuous-as-discrete axes (temporal/quantitative used as positions)
-    // keep VL's continuous axis with short numeric/date tick labels, so they
-    // only need elastic stretch, not label resizing.
-    const defaultLabelFontSize = 10;
-    const defaultLabelLimit = 100;
-
+    // Dynamic label sizing — use reusable decision function
     const xHasDiscreteItems = xTotalNominalCount > 0;
     const yHasDiscreteItems = yTotalNominalCount > 0;
 
-    let xLabelFontSize = xHasDiscreteItems ? Math.max(6, Math.min(10, xEffStep - 1)) : defaultLabelFontSize;
-    let yLabelFontSize = yHasDiscreteItems ? Math.max(6, Math.min(10, yEffStep - 1)) : defaultLabelFontSize;
-    let xLabelLimit = xHasDiscreteItems ? Math.max(30, Math.min(100, xEffStep * 8)) : defaultLabelLimit;
-    let xLabelAngle: number | undefined = undefined;
-    if (xHasDiscreteItems) {
-        if (xEffStep < 10) {
-            xLabelAngle = -90;
-            xLabelFontSize = Math.max(6, Math.min(8, xEffStep));
-            xLabelLimit = 40;
-        } else if (xEffStep < 16) {
-            xLabelAngle = -45;
-            xLabelFontSize = Math.max(7, Math.min(9, xEffStep));
-            xLabelLimit = 60;
-        }
-    }
+    const xLabelDecision = computeLabelSizing(xEffStep, xHasDiscreteItems);
+    const yLabelDecision = computeLabelSizing(yEffStep, yHasDiscreteItems);
 
-    const axisXConfig: Record<string, any> = { labelLimit: xLabelLimit, labelFontSize: xLabelFontSize };
-    if (xLabelAngle !== undefined) {
-        axisXConfig.labelAngle = xLabelAngle;
-        axisXConfig.labelAlign = "right";
-        axisXConfig.labelBaseline = xLabelAngle === -90 ? "middle" : "top";
+    const axisXConfig: Record<string, any> = {
+        labelLimit: xLabelDecision.labelLimit,
+        labelFontSize: xLabelDecision.fontSize,
+    };
+    if (xLabelDecision.labelAngle !== undefined) {
+        axisXConfig.labelAngle = xLabelDecision.labelAngle;
+        axisXConfig.labelAlign = xLabelDecision.labelAlign;
+        axisXConfig.labelBaseline = xLabelDecision.labelBaseline;
     }
-    const axisYConfig: Record<string, any> = { labelFontSize: yLabelFontSize };
+    const axisYConfig: Record<string, any> = { labelFontSize: yLabelDecision.fontSize };
 
     vgObj.config = {
         view: {

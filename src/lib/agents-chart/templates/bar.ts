@@ -237,6 +237,7 @@ export const stackedBarChartDef: ChartTemplateDef = {
                 { value: "layered", label: "Layered (overlap)" },
             ] },
         ] as ChartPropertyDef[],
+        overrideDefaultSettings: (opts) => ({ ...opts, continuousMarkCrossSection: { x: 20, y: 20, seriesCountAxis: 'auto' } }),
         postProcessing: adjustBarMarks,
 };
 
@@ -276,7 +277,6 @@ export const heatmapDef: ChartTemplateDef = {
         },
         channels: ["x", "y", "color", "column", "row"],
         buildEncodings: (spec, encodings, context) => {
-            //ensureDiscreteAxes(encodings, context.table, 20);
             context.axisFlags = { x: { banded: true }, y: { banded: true } };
             defaultBuildEncodings(spec, encodings, context);
 
