@@ -185,7 +185,7 @@ export const cjsStackedBarChartDef: ChartTemplateDef = {
 export const cjsGroupedBarChartDef: ChartTemplateDef = {
     chart: 'Grouped Bar Chart',
     template: { mark: 'bar', encoding: {} },
-    channels: ['x', 'y', 'color', 'column', 'row'],
+    channels: ['x', 'y', 'group', 'column', 'row'],
     markCognitiveChannel: 'length',
     declareLayoutMode: (cs, table) => {
         const result = detectBandedAxisForceDiscrete(cs, table, { preferAxis: 'x' });
@@ -198,7 +198,7 @@ export const cjsGroupedBarChartDef: ChartTemplateDef = {
     instantiate: (spec, ctx) => {
         const { channelSemantics, table, chartProperties } = ctx;
         const { categoryAxis, valueAxis } = detectAxes(channelSemantics);
-        const colorField = channelSemantics.color?.field;
+        const groupField = channelSemantics.group?.field || channelSemantics.color?.field;
 
         const catField = channelSemantics[categoryAxis]?.field;
         const valField = channelSemantics[valueAxis]?.field;
@@ -227,14 +227,14 @@ export const cjsGroupedBarChartDef: ChartTemplateDef = {
                     },
                 },
                 plugins: {
-                    legend: { display: !!colorField },
+                    legend: { display: !!groupField },
                     tooltip: { enabled: true },
                 },
             },
         };
 
-        if (colorField) {
-            const groups = groupBy(table, colorField);
+        if (groupField) {
+            const groups = groupBy(table, groupField);
             let colorIdx = 0;
             for (const [name, rows] of groups) {
                 const values = buildCategoryAlignedData(rows, catField, valField, categories);

@@ -352,7 +352,7 @@ export function genChartJsGroupedBarTests(): TestCase[] {
                 Budget: { type: Type.Number, semanticType: 'Revenue', levels: [] },
                 Department: { type: Type.String, semanticType: 'Category', levels: ['Sales','Engineering','Marketing'] },
             },
-            encodingMap: { x: makeEncodingItem('Year'), y: makeEncodingItem('Budget'), color: makeEncodingItem('Department') },
+            encodingMap: { x: makeEncodingItem('Year'), y: makeEncodingItem('Budget'), group: makeEncodingItem('Department') },
         });
     }
 
