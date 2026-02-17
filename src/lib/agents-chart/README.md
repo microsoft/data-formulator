@@ -1,11 +1,11 @@
 # agents-chart
 
-A semantic-level visualization library that compiles to Vega-Lite.
-The LLM outputs only chart type, field assignments, and a **semantic type**
-per field (e.g. `Revenue`, `Rank`, `CategoryCode`). A deterministic compiler
-derives all low-level parameters — sizing, zero-baseline, formatting, color
-schemes, and mark templates — so charts look good *and* stay editable
-without calling the LLM again.
+A semantic-level visualization library that compiles data + semantic annotations
+into chart specifications for multiple rendering backends. The LLM outputs only
+chart type, field assignments, and a **semantic type** per field (e.g. `Revenue`,
+`Rank`, `CategoryCode`). A deterministic compiler derives all low-level
+parameters — sizing, zero-baseline, formatting, color schemes, and mark
+templates — so charts look good *and* stay editable without calling the LLM again.
 
 Pure TypeScript · No UI framework dependencies · Data-in, spec-out
 
@@ -16,22 +16,28 @@ Pure TypeScript · No UI framework dependencies · Data-in, spec-out
 
 ## Why
 
-LLM-generated Vega-Lite faces a dilemma:
+LLM-generated chart specs face a dilemma:
 
-| Approach | Looks good | Editable | Bespoke charts | Cost per edit |
+| Approach | Looks good | Editable | Bespoke charts | Cost to re-encode |
 |----------|:---:|:---:|:---:|:---:|
-| VL defaults | ✗ | ✓ | ✗ | 0 |
-| LLM-tuned VL | ✓ | ✗ | Sometimes | 1 LLM call |
+| Library defaults | ✗ | ✓ | ✗ | 0 |
+| LLM-tuned spec | ✓ | ✗ | Sometimes | 1 LLM call |
 | **agents-chart** | **✓** | **✓** | **✓** | **0** |
 
 **Simple specs** are editable but look bad (wrong sizing, misleading
 encodings). **Polished specs** look great but are brittle (hard-coded
-values break on every field swap). agents-chart resolves this by operating
-at a higher semantic level above VL.
+values break on every field swap). agents-chart resolves this: when a user
+swaps fields, changes chart type, or adds facets for exploration, the
+compiler re-derives all parameters automatically — no LLM call needed.
+
+Because the output is native library code (Vega-Lite, ECharts, or Chart.js),
+users retain full control over aesthetic fine-tuning — fonts, colors, legends,
+annotations — using each library's own API. There is no abstraction tax or
+reduced expressiveness.
 
 ### Key insight: semantic types as the contract
 
-Instead of asking the LLM to set dozens of low-level VL parameters, we ask
+Instead of asking the LLM to set dozens of low-level parameters, we ask
 it one thing: **what does this data mean?** — expressed as a semantic type.
 
 ```
@@ -53,18 +59,19 @@ semantic type. No hard-coded constants go stale. No LLM call needed.
 ```
 1. LLM generates:   chart type + semantic types   (~10-line JSON)
 2. User edits:      swap field / change mark / add facet → compiler handles it (no AI)
-3. Fine-tune (2%):  edit the generated VL directly for bespoke styling
+3. Fine-tune (2%):  edit the generated spec directly for bespoke styling
 ```
 
 ---
 
 ## Quick start
 
-```ts
-import { assembleChart } from './lib/agents-chart';
+### Vega-Lite
 
-// Unified single-object interface
-const spec = assembleChart({
+```ts
+import { assembleVegaLite } from './lib/agents-chart';
+
+const spec = assembleVegaLite({
   data: { values: myData },
   semantic_types: { weight: 'Quantity', mpg: 'Quantity', origin: 'Country' },
   chart_spec: {
@@ -73,10 +80,14 @@ const spec = assembleChart({
     canvasSize: { width: 400, height: 300 },
   },
 });
+```
 
-// ECharts backend
-import { ecAssembleChart } from './lib/agents-chart';
-const option = ecAssembleChart({
+### ECharts
+
+```ts
+import { assembleECharts } from './lib/agents-chart';
+
+const option = assembleECharts({
   data: { values: myData },
   semantic_types: { weight: 'Quantity', mpg: 'Quantity' },
   chart_spec: {
@@ -84,10 +95,14 @@ const option = ecAssembleChart({
     encodings: { x: { field: 'weight' }, y: { field: 'mpg' } },
   },
 });
+```
 
-// Chart.js backend
-import { cjsAssembleChart } from './lib/agents-chart';
-const config = cjsAssembleChart({
+### Chart.js
+
+```ts
+import { assembleChartjs } from './lib/agents-chart';
+
+const config = assembleChartjs({
   data: { values: myData },
   semantic_types: { weight: 'Quantity' },
   chart_spec: { chartType: 'Bar Chart', encodings: { x: { field: 'category' }, y: { field: 'value' } } },
@@ -99,26 +114,36 @@ const config = cjsAssembleChart({
 ## Architecture
 
 ```
-index.ts                ← public API (re-exports core/ + vegalite/)
+index.ts                ← public API (re-exports core/ + all backends)
 
 core/                   ← target-language-agnostic
-  types.ts              ← shared type definitions
+  types.ts              ← shared type definitions (ChartAssemblyInput, ChartTemplateDef, …)
   semantic-types.ts     ← ~70 semantic types + VisCategory helpers
   decisions.ts          ← pure decision functions (layout, encoding type)
-  resolve-semantics.ts  ← Phase 0: semantic resolution (VL-free)
-  compute-layout.ts     ← Phase 1: layout computation (VL-free)
-  filter-overflow.ts    ← overflow filtering (VL-free)
+  resolve-semantics.ts  ← Phase 0: semantic resolution
+  compute-layout.ts     ← Phase 1: layout computation
+  filter-overflow.ts    ← overflow filtering
 
 vegalite/               ← Vega-Lite backend
-  assemble.ts           ← assembleChart() orchestrator
+  assemble.ts           ← assembleVegaLite() orchestrator
   instantiate-spec.ts   ← Phase 2: VL spec instantiation
   templates/            ← chart templates (bar, scatter, bump, …)
+
+echarts/                ← ECharts backend
+  assemble.ts           ← assembleECharts() orchestrator
+  instantiate-spec.ts   ← Phase 2: EC option instantiation
+  templates/            ← chart templates
+
+chartjs/                ← Chart.js backend
+  assemble.ts           ← assembleChartjs() orchestrator
+  instantiate-spec.ts   ← Phase 2: CJS config instantiation
+  templates/            ← chart templates
 ```
 
 ### Type resolution pipeline
 
 ```
-  semantic type → getVisCategory() → VisCategory → channel/chart rules → VL encoding type
+  semantic type → getVisCategory() → VisCategory → channel/chart rules → encoding type
                                       ↑
             (fallback: inferVisCategory() inspects raw data)
 ```
@@ -127,9 +152,18 @@ vegalite/               ← Vega-Lite backend
 
 ## Public API
 
-### `assembleChart(input: ChartAssemblyInput)`
+### Assembly functions
 
-All three backends (`assembleChart`, `ecAssembleChart`, `cjsAssembleChart`) accept a single `ChartAssemblyInput` object:
+Each backend has its own assembly function. All accept the same
+`ChartAssemblyInput` shape:
+
+| Function | Output | Import |
+|----------|--------|--------|
+| `assembleVegaLite(input)` | Vega-Lite spec | `import { assembleVegaLite } from './lib/agents-chart'` |
+| `assembleECharts(input)` | ECharts option object | `import { assembleECharts } from './lib/agents-chart'` |
+| `assembleChartjs(input)` | Chart.js config object | `import { assembleChartjs } from './lib/agents-chart'` |
+
+### Input types
 
 ```ts
 interface ChartAssemblyInput {
@@ -152,10 +186,6 @@ interface ChartAssemblyInput {
 | `chart_spec` | What to draw — chart type, encodings, canvas size, properties |
 | `options` | Layout tuning (elasticity, step sizes, tooltips, etc.) |
 
-> **Legacy positional API** (`assembleChart(chartType, encodings, data, ...)`) is still supported but deprecated.
-
-### Key types
-
 ```ts
 interface ChartEncoding {
   field?: string;
@@ -177,15 +207,26 @@ interface AssembleOptions {
 }
 ```
 
-### Template system
+### Template registries
 
-Declarative templates for 20+ chart types — basic (bar, line, scatter) and
-bespoke (bump chart, candlestick, streamgraph, waterfall, ridge plot).
+Each backend has its own set of supported chart types and template
+definitions. Templates are organized by category and can be looked up by
+chart type name.
+
+| Backend | Template map | Flat list | Lookup | Channels |
+|---------|-------------|-----------|--------|----------|
+| Vega-Lite | `vlTemplateDefs` | `vlAllTemplateDefs` | `vlGetTemplateDef(name)` | `vlGetTemplateChannels(name)` |
+| ECharts | `ecTemplateDefs` | `ecAllTemplateDefs` | `ecGetTemplateDef(name)` | `ecGetTemplateChannels(name)` |
+| Chart.js | `cjsTemplateDefs` | `cjsAllTemplateDefs` | `cjsGetTemplateDef(name)` | `cjsGetTemplateChannels(name)` |
 
 ```ts
-chartTemplateDefs      // Map<string, ChartTemplateDef>
-getTemplateDef(name)   // look up by chart name
-getTemplateChannels(name)
+// Example: list available Vega-Lite chart categories
+import { vlTemplateDefs } from './lib/agents-chart';
+Object.keys(vlTemplateDefs); // ["Scatter & Point", "Bar", "Line & Area", ...]
+
+// Example: get channels for a specific chart type
+import { vlGetTemplateChannels } from './lib/agents-chart';
+vlGetTemplateChannels('Scatter Plot'); // ["x", "y", "color", "size", "shape"]
 ```
 
 ### Semantic types (~70 types)
@@ -199,6 +240,29 @@ getTemplateChannels(name)
 | Categorical | `PersonName`, `Company`, `Status`, `Boolean` |
 | Ranges | `Range`, `AgeGroup`, `Bucket` |
 | Fallbacks | `String`, `Number`, `Unknown` |
+
+### Core utilities (shared across backends)
+
+These are re-exported from `core/` and available at the top level:
+
+```ts
+import {
+  // Semantic type helpers
+  inferVisCategory,     // infer VisCategory from raw data
+  getVisCategory,       // look up VisCategory for a known semantic type
+
+  // Shared types
+  type ChartAssemblyInput,
+  type ChartEncoding,
+  type ChartTemplateDef,
+  type AssembleOptions,
+  type ChartWarning,
+
+  // Layout constants
+  channels,
+  channelGroups,
+} from './lib/agents-chart';
+```
 
 ---
 
@@ -218,11 +282,11 @@ getTemplateChannels(name)
 
 1. **No UI dependencies** — pure data-in, spec-out.
 2. **Semantic types drive everything** — the caller annotates fields; the
-   compiler derives all VL config. Fallback: `inferVisCategory()` inspects raw data.
+   compiler derives all config. Fallback: `inferVisCategory()` inspects raw data.
 3. **Callers own the data** — no aggregation transforms applied.
 4. **Layout is configurable** — elastic stretch, facet sizing, step sizes
    exposed in `AssembleOptions`.
 5. **Templates are declarative** — each chart type is a `ChartTemplateDef`
-   with a VL skeleton, channel list, and optional post-processor.
-6. **Backend-agnostic semantics** — the same semantic reasoning can target
-   Vega-Lite today, ECharts or Plotly tomorrow.
+   with a skeleton, channel list, and optional post-processor.
+6. **Backend-agnostic semantics** — the same semantic reasoning targets
+   Vega-Lite, ECharts, and Chart.js through separate assembly functions.

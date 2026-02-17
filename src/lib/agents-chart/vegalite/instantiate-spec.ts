@@ -64,7 +64,7 @@ import {
  * @param context     Combined context from all phases
  * @param warnings    Array to append warnings to
  */
-export function applyLayoutToSpec(
+export function vlApplyLayoutToSpec(
     vgObj: any,
     context: InstantiateContext,
     warnings: ChartWarning[],
@@ -414,7 +414,7 @@ export function applyLayoutToSpec(
 /**
  * Apply tooltip configuration to a VL spec.
  */
-export function applyTooltips(vgObj: any): void {
+export function vlApplyTooltips(vgObj: any): void {
     if (!vgObj.config) vgObj.config = {};
     vgObj.config.mark = { ...vgObj.config.mark, tooltip: true };
 }

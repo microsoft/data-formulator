@@ -15,11 +15,21 @@
  *   echarts/    — ECharts backend: assembly, templates, spec instantiation
  *   chartjs/    — Chart.js backend: assembly, templates, spec instantiation
  *
- * Usage (new unified interface):
- * ```ts
- * import { assembleChart } from './lib/agents-chart';
+ * Assembly functions:
+ *   assembleVegaLite(input)  — Vega-Lite spec
+ *   assembleECharts(input)   — ECharts option object
+ *   assembleChartjs(input)   — Chart.js config object
  *
- * const spec = assembleChart({
+ * Template registries:
+ *   vlTemplateDefs / vlGetTemplateDef / vlGetTemplateChannels
+ *   ecTemplateDefs / ecGetTemplateDef / ecGetTemplateChannels
+ *   cjsTemplateDefs / cjsGetTemplateDef / cjsGetTemplateChannels
+ *
+ * Usage:
+ * ```ts
+ * import { assembleVegaLite } from './lib/agents-chart';
+ *
+ * const spec = assembleVegaLite({
  *   data: { values: myData },
  *   semantic_types: { weight: 'Quantity', mpg: 'Quantity', origin: 'Country' },
  *   chart_spec: {
@@ -34,11 +44,11 @@
 // Core: types, semantic types, decisions, layout, overflow
 export * from './core';
 
-// Vega-Lite backend: assembleChart, templates, spec instantiation
+// Vega-Lite backend: assembleVegaLite, templates, spec instantiation
 export * from './vegalite';
 
-// ECharts backend: ecAssembleChart, templates, spec instantiation
+// ECharts backend: assembleECharts, templates, spec instantiation
 export * from './echarts';
 
-// Chart.js backend: cjsAssembleChart, templates, spec instantiation
+// Chart.js backend: assembleChartjs, templates, spec instantiation
 export * from './chartjs';

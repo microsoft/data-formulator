@@ -18,7 +18,7 @@
  *   buildVLEncodings    → resolvedEncodings
  *   template.instantiate
  *   restructureFacets
- *   applyLayoutToSpec
+ *   vlApplyLayoutToSpec
  *   post-layout adjustments (facet binning, independent scales, tooltips)
  *
  * ── Backend Translation Responsibilities ────────────────────
@@ -53,12 +53,12 @@ import {
     InstantiateContext,
 } from '../core/types';
 import type { ChartWarning } from '../core/types';
-import { getTemplateDef } from './templates';
+import { vlGetTemplateDef } from './templates';
 import { inferVisCategory } from '../core/semantic-types';
 import { resolveSemantics, convertTemporalData } from '../core/resolve-semantics';
 import { filterOverflow } from '../core/filter-overflow';
 import { computeLayout } from '../core/compute-layout';
-import { applyLayoutToSpec, applyTooltips } from './instantiate-spec';
+import { vlApplyLayoutToSpec, vlApplyTooltips } from './instantiate-spec';
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -68,7 +68,7 @@ import { applyLayoutToSpec, applyTooltips } from './instantiate-spec';
  * Assemble a Vega-Lite specification.
  *
  * ```ts
- * const spec = assembleChart({
+ * const spec = assembleVegaLite({
  *   data: { values: myRows },
  *   semantic_types: { weight: 'Quantity', mpg: 'Quantity' },
  *   chart_spec: {
@@ -80,7 +80,7 @@ import { applyLayoutToSpec, applyTooltips } from './instantiate-spec';
  * });
  * ```
  */
-export function assembleChart(input: ChartAssemblyInput): any {
+export function assembleVegaLite(input: ChartAssemblyInput): any {
     const chartType = input.chart_spec.chartType;
     const encodings = input.chart_spec.encodings;
     const data = input.data.values ?? [];
@@ -88,7 +88,7 @@ export function assembleChart(input: ChartAssemblyInput): any {
     const canvasSize = input.chart_spec.canvasSize ?? { width: 400, height: 320 };
     const chartProperties = input.chart_spec.chartProperties;
     const options = input.options ?? {};
-    const chartTemplate = getTemplateDef(chartType) as ChartTemplateDef;
+    const chartTemplate = vlGetTemplateDef(chartType) as ChartTemplateDef;
     if (!chartTemplate) {
         throw new Error(`Unknown chart type: ${chartType}`);
     }
@@ -249,9 +249,9 @@ export function assembleChart(input: ChartAssemblyInput): any {
 
     restructureFacets(vgObj, nominalCounts, canvasSize, effectiveOptions);
 
-    // --- applyLayoutToSpec (VL-specific: config, sizing, formatting) ---
+    // --- vlApplyLayoutToSpec (VL-specific: config, sizing, formatting) ---
 
-    applyLayoutToSpec(vgObj, instantiateContext, warnings);
+    vlApplyLayoutToSpec(vgObj, instantiateContext, warnings);
 
     // --- Post-layout adjustments (VL-specific) ---
 
@@ -307,7 +307,7 @@ export function assembleChart(input: ChartAssemblyInput): any {
     }
 
     if (addTooltipsOpt) {
-        applyTooltips(vgObj);
+        vlApplyTooltips(vgObj);
     }
 
     // ═══════════════════════════════════════════════════════════════════════

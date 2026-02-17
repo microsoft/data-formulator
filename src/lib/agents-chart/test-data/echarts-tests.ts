@@ -4,8 +4,8 @@
 /**
  * ECharts backend comparison tests.
  *
- * Runs the same test inputs through BOTH assembleChart (Vega-Lite) and
- * ecAssembleChart (ECharts) to verify:
+ * Runs the same test inputs through BOTH assembleVegaLite (Vega-Lite) and
+ * assembleECharts (ECharts) to verify:
  *   1. Both produce valid output from the same inputs
  *   2. The structural differences are as expected (encoding-based vs series-based)
  *   3. Core analysis phases (semantics, layout, overflow) produce identical results

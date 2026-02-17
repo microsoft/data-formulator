@@ -74,7 +74,7 @@ import { ecCombineFacetPanels } from './facet';
  * Assemble an ECharts option object.
  *
  * ```ts
- * const option = ecAssembleChart({
+ * const option = assembleECharts({
  *   data: { values: myRows },
  *   semantic_types: { weight: 'Quantity' },
  *   chart_spec: { chartType: 'Bar Chart', encodings: { x: { field: 'category' }, y: { field: 'value' } } },
@@ -84,7 +84,7 @@ import { ecCombineFacetPanels } from './facet';
  *
  * @returns An ECharts option object with optional `_warnings` and `_width`/`_height` hints
  */
-export function ecAssembleChart(input: ChartAssemblyInput): any {
+export function assembleECharts(input: ChartAssemblyInput): any {
     const chartType = input.chart_spec.chartType;
     const encodings = input.chart_spec.encodings;
     const data = input.data.values ?? [];

@@ -10,7 +10,7 @@ import { DictTable } from "../components/ComponentType";
 import { Type } from "../data/types";
 import * as d3 from 'd3';
 
-import { assembleChart, type ChartEncoding, type AssembleOptions } from "../lib/agents-chart";
+import { assembleVegaLite, type ChartEncoding, type AssembleOptions } from "../lib/agents-chart";
 
 export function getUrls() {
     return {
@@ -419,7 +419,7 @@ export const assembleVegaChart = (
         }
     }
 
-    return assembleChart({
+    return assembleVegaLite({
         data: { values: workingTable },
         semantic_types: semanticTypes,
         chart_spec: {

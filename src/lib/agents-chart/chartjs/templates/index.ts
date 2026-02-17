@@ -21,7 +21,7 @@ import { cjsRoseChartDef } from './rose';
 /**
  * Chart.js chart template definitions, grouped by category.
  */
-export const cjsChartTemplateDefs: { [key: string]: ChartTemplateDef[] } = {
+export const cjsTemplateDefs: { [key: string]: ChartTemplateDef[] } = {
     'Scatter & Point': [cjsScatterPlotDef],
     'Bar':             [cjsBarChartDef, cjsGroupedBarChartDef, cjsStackedBarChartDef, cjsHistogramDef],
     'Line & Area':     [cjsLineChartDef, cjsAreaChartDef],
@@ -32,7 +32,7 @@ export const cjsChartTemplateDefs: { [key: string]: ChartTemplateDef[] } = {
 /**
  * Flat list of all Chart.js chart template definitions.
  */
-export const cjsAllTemplateDefs: ChartTemplateDef[] = Object.values(cjsChartTemplateDefs).flat();
+export const cjsAllTemplateDefs: ChartTemplateDef[] = Object.values(cjsTemplateDefs).flat();
 
 /**
  * Look up a Chart.js chart template definition by chart type name.

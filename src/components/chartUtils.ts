@@ -11,7 +11,7 @@
 
 import { DictTable, EncodingItem, FieldItem } from './ComponentType';
 import {
-    getTemplateChannels,
+    vlGetTemplateChannels,
 } from '../lib/agents-chart';
 import {
     inferVisCategory,
@@ -644,7 +644,7 @@ export function recommendEncodings(
     const channelToFieldName = getRecommendation(chartType, tv);
 
     // Filter to channels that actually exist on this template
-    const channels = getTemplateChannels(chartType);
+    const channels = vlGetTemplateChannels(chartType);
     const result: Partial<Record<string, EncodingItem>> = {};
     for (const [channel, fieldName] of Object.entries(channelToFieldName)) {
         if (channels.includes(channel)) {

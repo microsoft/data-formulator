@@ -46,7 +46,7 @@ import { cjsApplyLayoutToSpec, cjsApplyTooltips } from './instantiate-spec';
  * Assemble a Chart.js config object.
  *
  * ```ts
- * const config = cjsAssembleChart({
+ * const config = assembleChartjs({
  *   data: { values: myRows },
  *   semantic_types: { weight: 'Quantity' },
  *   chart_spec: { chartType: 'Bar Chart', encodings: { x: { field: 'category' }, y: { field: 'value' } } },
@@ -56,7 +56,7 @@ import { cjsApplyLayoutToSpec, cjsApplyTooltips } from './instantiate-spec';
  *
  * @returns A Chart.js config object with optional `_warnings` and `_width`/`_height` hints
  */
-export function cjsAssembleChart(input: ChartAssemblyInput): any {
+export function assembleChartjs(input: ChartAssemblyInput): any {
     const chartType = input.chart_spec.chartType;
     const encodings = input.chart_spec.encodings;
     const data = input.data.values ?? [];

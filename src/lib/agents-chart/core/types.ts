@@ -466,7 +466,7 @@ export interface ChartWarning {
  * JSON-serializable object with four top-level keys:
  *
  * ```ts
- * const result = assembleChart({
+ * const result = assembleVegaLite({
  *   data: { values: myRows },
  *   semantic_types: { weight: 'Quantity', origin: 'Country' },
  *   chart_spec: {

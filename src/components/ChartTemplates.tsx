@@ -12,8 +12,8 @@
 
 import { ChartTemplate } from "./ComponentType";
 import {
-    chartTemplateDefs,
-    getTemplateChannels,
+    vlTemplateDefs,
+    vlGetTemplateChannels,
 } from "../lib/agents-chart";
 import InsightsIcon from '@mui/icons-material/Insights';
 import React from "react";
@@ -106,7 +106,7 @@ function addIcons(defs: { chart: string }[]): ChartTemplate[] {
 }
 
 export const CHART_TEMPLATES: { [key: string]: ChartTemplate[] } = Object.fromEntries(
-    Object.entries(chartTemplateDefs).map(([category, defs]) => [
+    Object.entries(vlTemplateDefs).map(([category, defs]) => [
         category,
         addIcons(defs),
     ])
@@ -127,5 +127,5 @@ export function getChartTemplate(chartType: string): ChartTemplate | undefined {
 }
 
 export const getChartChannels = (chartType: string): string[] => {
-    return getTemplateChannels(chartType);
+    return vlGetTemplateChannels(chartType);
 }

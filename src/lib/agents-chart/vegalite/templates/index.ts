@@ -32,7 +32,7 @@ import { customPointDef, customLineDef, customBarDef, customRectDef, customAreaD
  * All chart template definitions, grouped by category.
  * Keys are category names shown in the UI, values are arrays of template definitions.
  */
-export const chartTemplateDefs: { [key: string]: ChartTemplateDef[] } = {
+export const vlTemplateDefs: { [key: string]: ChartTemplateDef[] } = {
     "Scatter & Point":  [scatterPlotDef, linearRegressionDef, boxplotDef, stripPlotDef],
     "Bar":              [barChartDef, groupedBarChartDef, stackedBarChartDef, histogramDef, lollipopChartDef, pyramidChartDef],
     "Line & Area":      [lineChartDef, dottedLineChartDef, bumpChartDef, areaChartDef, streamgraphDef],
@@ -43,20 +43,20 @@ export const chartTemplateDefs: { [key: string]: ChartTemplateDef[] } = {
 };
 
 /**
- * Flat list of all chart template definitions.
+ * Flat list of all Vega-Lite chart template definitions.
  */
-export const allTemplateDefs: ChartTemplateDef[] = Object.values(chartTemplateDefs).flat();
+export const vlAllTemplateDefs: ChartTemplateDef[] = Object.values(vlTemplateDefs).flat();
 
 /**
- * Look up a chart template definition by chart type name.
+ * Look up a Vega-Lite chart template definition by chart type name.
  */
-export function getTemplateDef(chartType: string): ChartTemplateDef | undefined {
-    return allTemplateDefs.find(t => t.chart === chartType);
+export function vlGetTemplateDef(chartType: string): ChartTemplateDef | undefined {
+    return vlAllTemplateDefs.find(t => t.chart === chartType);
 }
 
 /**
- * Get the available channels for a chart type.
+ * Get the available channels for a Vega-Lite chart type.
  */
-export function getTemplateChannels(chartType: string): string[] {
-    return getTemplateDef(chartType)?.channels || [];
+export function vlGetTemplateChannels(chartType: string): string[] {
+    return vlGetTemplateDef(chartType)?.channels || [];
 }

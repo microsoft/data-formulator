@@ -5,7 +5,7 @@
  * Chart.js backend comparison tests.
  *
  * Runs the same test inputs through ALL THREE backends:
- *   assembleChart (Vega-Lite), ecAssembleChart (ECharts), cjsAssembleChart (Chart.js)
+ *   assembleVegaLite (Vega-Lite), assembleECharts (ECharts), assembleChartjs (Chart.js)
  *
  * Covers: Scatter Plot, Line Chart, Bar Chart, Stacked Bar Chart,
  *         Grouped Bar Chart, Area Chart, Pie Chart, Histogram, Radar Chart

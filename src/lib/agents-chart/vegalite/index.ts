@@ -11,15 +11,15 @@
  */
 
 // VL assembly function
-export { assembleChart } from './assemble';
+export { assembleVegaLite } from './assemble';
 
 // VL spec instantiation (Phase 2)
-export { applyLayoutToSpec, applyTooltips } from './instantiate-spec';
+export { vlApplyLayoutToSpec, vlApplyTooltips } from './instantiate-spec';
 
 // VL template registry
 export {
-    chartTemplateDefs,
-    allTemplateDefs,
-    getTemplateDef,
-    getTemplateChannels,
+    vlTemplateDefs,
+    vlAllTemplateDefs,
+    vlGetTemplateDef,
+    vlGetTemplateChannels,
 } from './templates';

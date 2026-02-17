@@ -17,14 +17,14 @@
  */
 
 // EC assembly function
-export { ecAssembleChart } from './assemble';
+export { assembleECharts } from './assemble';
 
 // EC spec instantiation (Phase 2)
 export { ecApplyLayoutToSpec, ecApplyTooltips } from './instantiate-spec';
 
 // EC template registry
 export {
-    ecChartTemplateDefs,
+    ecTemplateDefs,
     ecAllTemplateDefs,
     ecGetTemplateDef,
     ecGetTemplateChannels,

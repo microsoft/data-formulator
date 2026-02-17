@@ -19,7 +19,7 @@ import { Chart, registerables } from 'chart.js';
 import { assembleVegaChart } from '../app/utils';
 import { Channel, EncodingItem } from '../components/ComponentType';
 import { channels } from '../components/ChartTemplates';
-import { ChartWarning, ChartEncoding, ChartAssemblyInput, ecAssembleChart, cjsAssembleChart } from '../lib/agents-chart';
+import { ChartWarning, ChartEncoding, ChartAssemblyInput, assembleECharts, assembleChartjs } from '../lib/agents-chart';
 import { TestCase, TEST_GENERATORS, GALLERY_SECTIONS } from '../lib/agents-chart/test-data';
 
 // Register all Chart.js components
@@ -193,7 +193,7 @@ const VegaChart: React.FC<{ testCase: TestCase }> = React.memo(({ testCase }) =>
 // ============================================================================
 
 /**
- * Convert a TestCase into a ChartAssemblyInput for ecAssembleChart.
+ * Convert a TestCase into a ChartAssemblyInput for assembleECharts.
  */
 function testCaseToEChartsInput(testCase: TestCase, canvasSize: { width: number; height: number }): ChartAssemblyInput {
     const encodings: Record<string, ChartEncoding> = {};
@@ -245,10 +245,10 @@ const EChartsChart: React.FC<{ testCase: TestCase; canvasSize?: { width: number;
         if (!containerRef.current) return;
 
         try {
-            const ecOption = ecAssembleChart(testCaseToEChartsInput(testCase, canvasSize));
+            const ecOption = assembleECharts(testCaseToEChartsInput(testCase, canvasSize));
 
             if (!ecOption) {
-                setError('ecAssembleChart returned no option');
+                setError('assembleECharts returned no option');
                 return;
             }
 
@@ -462,7 +462,7 @@ const VegaChartInline: React.FC<{ testCase: TestCase; canvasSize?: { width: numb
 // ============================================================================
 
 /**
- * Convert a TestCase into a ChartAssemblyInput for cjsAssembleChart.
+ * Convert a TestCase into a ChartAssemblyInput for assembleChartjs.
  * (Same conversion as testCaseToEChartsInput — shared data model.)
  */
 function testCaseToChartJsInput(testCase: TestCase, canvasSize: { width: number; height: number }): ChartAssemblyInput {
@@ -512,10 +512,10 @@ const ChartJsChart: React.FC<{ testCase: TestCase; canvasSize?: { width: number;
         if (!canvasRef.current) return;
 
         try {
-            const cjsConfig = cjsAssembleChart(testCaseToChartJsInput(testCase, canvasSize));
+            const cjsConfig = assembleChartjs(testCaseToChartJsInput(testCase, canvasSize));
 
             if (!cjsConfig) {
-                setError('cjsAssembleChart returned no config');
+                setError('assembleChartjs returned no config');
                 return;
             }
 

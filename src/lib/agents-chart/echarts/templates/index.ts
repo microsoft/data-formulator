@@ -25,7 +25,7 @@ import { ecRoseChartDef } from './rose';
 /**
  * ECharts chart template definitions, grouped by category.
  */
-export const ecChartTemplateDefs: { [key: string]: ChartTemplateDef[] } = {
+export const ecTemplateDefs: { [key: string]: ChartTemplateDef[] } = {
     'Scatter & Point': [ecScatterPlotDef, ecBoxplotDef],
     'Bar':             [ecBarChartDef, ecGroupedBarChartDef, ecStackedBarChartDef, ecHistogramDef, ecHeatmapDef],
     'Line & Area':     [ecLineChartDef, ecAreaChartDef, ecStreamgraphDef],
@@ -37,7 +37,7 @@ export const ecChartTemplateDefs: { [key: string]: ChartTemplateDef[] } = {
 /**
  * Flat list of all ECharts chart template definitions.
  */
-export const ecAllTemplateDefs: ChartTemplateDef[] = Object.values(ecChartTemplateDefs).flat();
+export const ecAllTemplateDefs: ChartTemplateDef[] = Object.values(ecTemplateDefs).flat();
 
 /**
  * Look up an ECharts chart template definition by chart type name.

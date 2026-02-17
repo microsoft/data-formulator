@@ -18,14 +18,14 @@
  */
 
 // CJS assembly function
-export { cjsAssembleChart } from './assemble';
+export { assembleChartjs } from './assemble';
 
 // CJS spec instantiation (Phase 2)
 export { cjsApplyLayoutToSpec, cjsApplyTooltips } from './instantiate-spec';
 
 // CJS template registry
 export {
-    cjsChartTemplateDefs,
+    cjsTemplateDefs,
     cjsAllTemplateDefs,
     cjsGetTemplateDef,
     cjsGetTemplateChannels,
