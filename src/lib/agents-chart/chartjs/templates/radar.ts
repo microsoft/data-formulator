@@ -42,7 +42,8 @@ export const cjsRadarChartDef: ChartTemplateDef = {
                 datasets: [],
             },
             options: {
-                responsive: false,
+                responsive: true,
+                maintainAspectRatio: false,
                 scales: {
                     r: {
                         beginAtZero: true,
@@ -54,9 +55,9 @@ export const cjsRadarChartDef: ChartTemplateDef = {
                     tooltip: { enabled: true },
                 },
             },
-            // Fixed canvas size for radar
-            _width: 450,
-            _height: 400,
+            // Canvas size from context (no axes)
+            _width: Math.max(ctx.canvasSize.width, 350),
+            _height: Math.max(ctx.canvasSize.height, 300),
         };
 
         if (groupField) {

@@ -419,18 +419,20 @@ export const assembleVegaChart = (
         }
     }
 
-    return assembleChart(
-        chartType,
-        encodings,
-        workingTable,
-        semanticTypes,
-        { width: Math.round(baseChartWidth * scaleFactor), height: Math.round(baseChartHeight * scaleFactor) },
-        chartProperties,
-        {
+    return assembleChart({
+        data: { values: workingTable },
+        semantic_types: semanticTypes,
+        chart_spec: {
+            chartType,
+            encodings,
+            canvasSize: { width: Math.round(baseChartWidth * scaleFactor), height: Math.round(baseChartHeight * scaleFactor) },
+            chartProperties,
+        },
+        options: {
             addTooltips,
             ...assembleOptions,
         },
-    );
+    });
 }
 
 export const adaptChart = (chart: Chart, targetTemplate: ChartTemplate) => {

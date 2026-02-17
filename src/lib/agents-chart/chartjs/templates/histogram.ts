@@ -49,7 +49,8 @@ export const cjsHistogramDef: ChartTemplateDef = {
                 datasets: [],
             },
             options: {
-                responsive: false,
+                responsive: true,
+                maintainAspectRatio: false,
                 scales: {
                     x: {
                         title: { display: true, text: xField },

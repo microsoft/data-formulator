@@ -78,15 +78,50 @@ export function ecApplyLayoutToSpec(
 
     // ── Legend positioning ────────────────────────────────────────────────
     const hasLegend = !!option.legend;
+    const hasVisualMap = !!option.visualMap;
+    // Dual legend: when both a categorical legend and a visualMap (continuous
+    // size/color legend) coexist, move the categorical legend to the bottom
+    // to avoid crowding the right side of the chart.
+    const isDualLegend = hasLegend && hasVisualMap;
     if (hasLegend) {
-        // Place legend at the top-right, outside the plot area
-        option.legend = {
-            ...option.legend,
-            top: 0,
-            right: 10,
-            orient: option.legend.orient || 'vertical',
-            textStyle: { fontSize: 11, ...(option.legend.textStyle || {}) },
-        };
+        // If the template already fully positioned the legend (e.g. pie),
+        // skip repositioning — detect by checking if orient was already set.
+        const alreadyPositioned = option.legend.orient && (option.legend.right !== undefined || option.legend.left !== undefined);
+        if (!alreadyPositioned) {
+            const legendLabels: string[] = option.legend.data || [];
+
+            if (isDualLegend) {
+                // Dual legend: move categorical legend to the bottom
+                option._legendWidth = 0; // no right-side space needed for the legend
+                option.legend = {
+                    ...option.legend,
+                    bottom: 0,
+                    left: 'center',
+                    orient: 'horizontal',
+                    textStyle: { fontSize: 11, ...(option.legend.textStyle || {}) },
+                    ...(legendLabels.length > 10 ? { type: 'scroll' } : {}),
+                };
+            } else {
+                // Single legend: keep on the right (default)
+                const maxLabelLen = Math.max(...legendLabels.map((l: string) => (typeof l === 'string' ? l.length : 5)), 3);
+                const estimatedLabelWidth = Math.min(120, maxLabelLen * 7 + 30); // icon + text + padding
+                option._legendWidth = estimatedLabelWidth;
+
+                option.legend = {
+                    ...option.legend,
+                    top: 0,
+                    right: 10,
+                    orient: option.legend.orient || 'vertical',
+                    textStyle: { fontSize: 11, ...(option.legend.textStyle || {}) },
+                    ...(legendLabels.length > 10 ? { type: 'scroll' } : {}),
+                };
+            }
+        } else {
+            // Already positioned — estimate width for grid margin
+            const legendLabels: string[] = option.legend.data || [];
+            const maxLabelLen = Math.max(...legendLabels.map((l: string) => (typeof l === 'string' ? l.length : 5)), 3);
+            option._legendWidth = Math.min(150, maxLabelLen * 7 + 30);
+        }
     }
 
     // ── Grid sizing ──────────────────────────────────────────────────────
@@ -105,11 +140,15 @@ export function ecApplyLayoutToSpec(
     // each grid margin keeps the plot area unchanged but gives breathing
     // room for axis labels / legends / ticks that extend to the canvas edge.
     const CANVAS_BUFFER = 16;
+    const legendWidth = (hasLegend ? (option._legendWidth || 120) : 20);
+    // When dual legend moves the categorical legend to the bottom,
+    // we need extra bottom margin instead of right margin.
+    const bottomLegendExtra = isDualLegend ? 30 : 0;
     const gridMargin = {
         left:   (hasYTitle ? 70 : 50) + CANVAS_BUFFER,
-        right:  (hasLegend ? 120 : 20) + CANVAS_BUFFER,
+        right:  (isDualLegend ? 20 : legendWidth) + CANVAS_BUFFER,
         top:    20 + CANVAS_BUFFER,
-        bottom: (hasXTitle ? 45 : 30) + CANVAS_BUFFER,
+        bottom: (hasXTitle ? 45 : 30) + CANVAS_BUFFER + bottomLegendExtra,
     };
     if (hasAxes) {
         if (!option.grid) option.grid = {};

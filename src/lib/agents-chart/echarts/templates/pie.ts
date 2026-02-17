@@ -62,6 +62,24 @@ export const ecPieChartDef: ChartTemplateDef = {
 
         const innerRadius = chartProperties?.innerRadius ?? 0;
 
+        // Estimate legend width from label text
+        const maxLabelLen = Math.max(...pieData.map(d => d.name.length), 3);
+        const estimatedLegendWidth = Math.min(150, maxLabelLen * 7 + 30); // icon + padding
+
+        // Enforce minimum canvas for pie readability
+        const canvasW = Math.max(ctx.canvasSize.width, 300);
+        const canvasH = Math.max(ctx.canvasSize.height, 250);
+        const isSmall = canvasW <= 350 || canvasH <= 300;
+
+        // Compute pie radius and center based on available space
+        const legendSpace = estimatedLegendWidth + 20; // legend + gap
+        const availableForPie = canvasW - legendSpace;
+        const pieCenterX = `${Math.round(availableForPie / 2)}px`;
+        const pieCenterY = '50%';
+        const maxPieRadius = Math.min(availableForPie, canvasH - 20) / 2;
+        const outerRadiusPx = Math.max(60, Math.round(maxPieRadius * 0.85));
+        const outerRadius = `${outerRadiusPx}px`;
+
         const option: any = {
             tooltip: {
                 trigger: 'item',
@@ -69,10 +87,18 @@ export const ecPieChartDef: ChartTemplateDef = {
             },
             legend: {
                 data: pieData.map(d => d.name),
+                type: pieData.length > 8 ? 'scroll' : 'plain',
+                orient: 'vertical',
+                right: 10,
+                top: 'middle',
+                textStyle: { fontSize: 11 },
             },
             series: [{
                 type: 'pie',
-                radius: innerRadius > 0 ? [`${innerRadius}%`, '70%'] : '70%',
+                radius: innerRadius > 0
+                    ? [`${Math.round(outerRadiusPx * innerRadius / 100)}px`, outerRadius]
+                    : ['0%', outerRadius],
+                center: [pieCenterX, pieCenterY],
                 data: pieData,
                 emphasis: {
                     itemStyle: {
@@ -82,8 +108,12 @@ export const ecPieChartDef: ChartTemplateDef = {
                     },
                 },
                 label: {
-                    show: true,
+                    show: !isSmall,
                     formatter: '{b}: {d}%',
+                    fontSize: 11,
+                },
+                labelLine: {
+                    show: !isSmall,
                 },
                 itemStyle: {
                     borderRadius: chartProperties?.cornerRadius ?? 0,
@@ -93,9 +123,9 @@ export const ecPieChartDef: ChartTemplateDef = {
             color: DEFAULT_COLORS,
         };
 
-        // Fixed canvas size for pie (no axes)
-        option._width = 400;
-        option._height = 350;
+        // Canvas size from context
+        option._width = canvasW;
+        option._height = canvasH;
 
         Object.assign(spec, option);
         delete spec.mark;

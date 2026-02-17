@@ -73,16 +73,17 @@ export const cjsPieChartDef: ChartTemplateDef = {
                 }],
             },
             options: {
-                responsive: false,
+                responsive: true,
+                maintainAspectRatio: false,
                 plugins: {
                     legend: { display: true, position: 'right' as const },
                     tooltip: { enabled: true },
                 },
                 ...(isDoughnut ? { cutout: `${innerRadius}%` } : {}),
             },
-            // Fixed canvas size for pie (no axes)
-            _width: 400,
-            _height: 350,
+            // Canvas size from context (no axes)
+            _width: Math.max(ctx.canvasSize.width, 300),
+            _height: Math.max(ctx.canvasSize.height, 250),
         };
 
         Object.assign(spec, config);

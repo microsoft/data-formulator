@@ -19,7 +19,7 @@ import { Chart, registerables } from 'chart.js';
 import { assembleVegaChart } from '../app/utils';
 import { Channel, EncodingItem } from '../components/ComponentType';
 import { channels } from '../components/ChartTemplates';
-import { ChartWarning, ChartEncoding, ecAssembleChart, cjsAssembleChart } from '../lib/agents-chart';
+import { ChartWarning, ChartEncoding, ChartAssemblyInput, ecAssembleChart, cjsAssembleChart } from '../lib/agents-chart';
 import { TestCase, TEST_GENERATORS, GALLERY_SECTIONS } from '../lib/agents-chart/test-data';
 
 // Register all Chart.js components
@@ -124,7 +124,7 @@ const VegaChart: React.FC<{ testCase: TestCase }> = React.memo(({ testCase }) =>
         <Paper
             elevation={1}
             sx={{
-                p: 2, mb: 2, width: 'fit-content', minWidth: 400, maxWidth: '100%',
+                p: 2, mb: 2, width: 'fit-content', maxWidth: '100%',
                 border: error ? '2px solid #f44336' : '1px solid #e0e0e0',
             }}
         >
@@ -193,9 +193,9 @@ const VegaChart: React.FC<{ testCase: TestCase }> = React.memo(({ testCase }) =>
 // ============================================================================
 
 /**
- * Convert a TestCase into the library-level inputs for ecAssembleChart.
+ * Convert a TestCase into a ChartAssemblyInput for ecAssembleChart.
  */
-function testCaseToEChartsInputs(testCase: TestCase) {
+function testCaseToEChartsInput(testCase: TestCase, canvasSize: { width: number; height: number }): ChartAssemblyInput {
     const encodings: Record<string, ChartEncoding> = {};
     for (const [channel, encoding] of Object.entries(testCase.encodingMap)) {
         if (encoding && encoding.fieldID) {
@@ -217,10 +217,23 @@ function testCaseToEChartsInputs(testCase: TestCase) {
         }
     }
 
-    return { encodings, semanticTypes };
+    return {
+        data: { values: testCase.data },
+        semantic_types: semanticTypes,
+        chart_spec: {
+            chartType: testCase.chartType,
+            encodings,
+            canvasSize,
+            chartProperties: testCase.chartProperties,
+        },
+        options: testCase.assembleOptions,
+    };
 }
 
-const EChartsChart: React.FC<{ testCase: TestCase }> = React.memo(({ testCase }) => {
+/** Stable default so useEffect dependencies don't change on every render. */
+const DEFAULT_CANVAS_SIZE = { width: 400, height: 300 } as const;
+
+const EChartsChart: React.FC<{ testCase: TestCase; canvasSize?: { width: number; height: number } }> = React.memo(({ testCase, canvasSize = DEFAULT_CANVAS_SIZE }) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const chartRef = useRef<echarts.ECharts | null>(null);
     const [error, setError] = useState<string | null>(null);
@@ -232,17 +245,7 @@ const EChartsChart: React.FC<{ testCase: TestCase }> = React.memo(({ testCase })
         if (!containerRef.current) return;
 
         try {
-            const { encodings, semanticTypes } = testCaseToEChartsInputs(testCase);
-
-            const ecOption = ecAssembleChart(
-                testCase.chartType,
-                encodings,
-                testCase.data,
-                semanticTypes,
-                { width: 400, height: 300 },
-                testCase.chartProperties,
-                testCase.assembleOptions,
-            );
+            const ecOption = ecAssembleChart(testCaseToEChartsInput(testCase, canvasSize));
 
             if (!ecOption) {
                 setError('ecAssembleChart returned no option');
@@ -259,6 +262,7 @@ const EChartsChart: React.FC<{ testCase: TestCase }> = React.memo(({ testCase })
             delete displayOption._dataLength;
             delete displayOption._width;
             delete displayOption._height;
+            delete displayOption._legendWidth;
             setSpecJson(JSON.stringify(displayOption, null, 2));
 
             // Initialize or reuse ECharts instance
@@ -277,6 +281,7 @@ const EChartsChart: React.FC<{ testCase: TestCase }> = React.memo(({ testCase })
             delete cleanOption._dataLength;
             delete cleanOption._width;
             delete cleanOption._height;
+            delete cleanOption._legendWidth;
 
             chart.setOption(cleanOption);
             setError(null);
@@ -290,10 +295,10 @@ const EChartsChart: React.FC<{ testCase: TestCase }> = React.memo(({ testCase })
                 chartRef.current = null;
             }
         };
-    }, [testCase]);
+    }, [testCase, canvasSize]);
 
     return (
-        <Box sx={{ flex: 1, minWidth: 400 }}>
+        <Box sx={{ width: 'fit-content' }}>
             <Typography variant="caption" fontWeight={600} color="#e65100"
                 sx={{ display: 'block', mb: 0.5, fontSize: 11, letterSpacing: 0.5 }}>
                 ECharts
@@ -342,7 +347,7 @@ const DualChart: React.FC<{ testCase: TestCase }> = React.memo(({ testCase }) =>
         <Paper
             elevation={1}
             sx={{
-                p: 2, mb: 2, width: 'fit-content', minWidth: 850, maxWidth: '100%',
+                p: 2, mb: 2, width: 'fit-content', maxWidth: '100%',
                 border: '1px solid #e0e0e0',
             }}
         >
@@ -371,7 +376,7 @@ const DualChart: React.FC<{ testCase: TestCase }> = React.memo(({ testCase }) =>
 /**
  * Inline VL chart (no Paper wrapper — used inside DualChart).
  */
-const VegaChartInline: React.FC<{ testCase: TestCase }> = React.memo(({ testCase }) => {
+const VegaChartInline: React.FC<{ testCase: TestCase; canvasSize?: { width: number; height: number } }> = React.memo(({ testCase, canvasSize = DEFAULT_CANVAS_SIZE }) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const [error, setError] = useState<string | null>(null);
     const [specJson, setSpecJson] = useState<string>('');
@@ -390,7 +395,7 @@ const VegaChartInline: React.FC<{ testCase: TestCase }> = React.memo(({ testCase
                 testCase.fields,
                 testCase.data,
                 testCase.metadata,
-                400, 300, true,
+                canvasSize.width, canvasSize.height, true,
                 testCase.chartProperties,
                 1,
                 testCase.assembleOptions,
@@ -418,10 +423,10 @@ const VegaChartInline: React.FC<{ testCase: TestCase }> = React.memo(({ testCase
         } catch (err: any) {
             setError(`VL error: ${err.message}`);
         }
-    }, [testCase]);
+    }, [testCase, canvasSize]);
 
     return (
-        <Box sx={{ flex: 1, minWidth: 400 }}>
+        <Box sx={{ width: 'fit-content' }}>
             <Typography variant="caption" fontWeight={600} color="#1565c0"
                 sx={{ display: 'block', mb: 0.5, fontSize: 11, letterSpacing: 0.5 }}>
                 Vega-Lite
@@ -457,10 +462,10 @@ const VegaChartInline: React.FC<{ testCase: TestCase }> = React.memo(({ testCase
 // ============================================================================
 
 /**
- * Convert a TestCase into the library-level inputs for cjsAssembleChart.
- * (Same conversion as testCaseToEChartsInputs — shared data model.)
+ * Convert a TestCase into a ChartAssemblyInput for cjsAssembleChart.
+ * (Same conversion as testCaseToEChartsInput — shared data model.)
  */
-function testCaseToChartJsInputs(testCase: TestCase) {
+function testCaseToChartJsInput(testCase: TestCase, canvasSize: { width: number; height: number }): ChartAssemblyInput {
     const encodings: Record<string, ChartEncoding> = {};
     for (const [channel, encoding] of Object.entries(testCase.encodingMap)) {
         if (encoding && encoding.fieldID) {
@@ -482,10 +487,20 @@ function testCaseToChartJsInputs(testCase: TestCase) {
         }
     }
 
-    return { encodings, semanticTypes };
+    return {
+        data: { values: testCase.data },
+        semantic_types: semanticTypes,
+        chart_spec: {
+            chartType: testCase.chartType,
+            encodings,
+            canvasSize,
+            chartProperties: testCase.chartProperties,
+        },
+        options: testCase.assembleOptions,
+    };
 }
 
-const ChartJsChart: React.FC<{ testCase: TestCase }> = React.memo(({ testCase }) => {
+const ChartJsChart: React.FC<{ testCase: TestCase; canvasSize?: { width: number; height: number } }> = React.memo(({ testCase, canvasSize = DEFAULT_CANVAS_SIZE }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const chartRef = useRef<Chart | null>(null);
     const [error, setError] = useState<string | null>(null);
@@ -497,17 +512,7 @@ const ChartJsChart: React.FC<{ testCase: TestCase }> = React.memo(({ testCase })
         if (!canvasRef.current) return;
 
         try {
-            const { encodings, semanticTypes } = testCaseToChartJsInputs(testCase);
-
-            const cjsConfig = cjsAssembleChart(
-                testCase.chartType,
-                encodings,
-                testCase.data,
-                semanticTypes,
-                { width: 400, height: 300 },
-                testCase.chartProperties,
-                testCase.assembleOptions,
-            );
+            const cjsConfig = cjsAssembleChart(testCaseToChartJsInput(testCase, canvasSize));
 
             if (!cjsConfig) {
                 setError('cjsAssembleChart returned no config');
@@ -526,13 +531,15 @@ const ChartJsChart: React.FC<{ testCase: TestCase }> = React.memo(({ testCase })
             delete displayConfig._height;
             setSpecJson(JSON.stringify(displayConfig, null, 2));
 
-            // Set canvas size
+            // Set container size — Chart.js responsive mode will fill it
             const w = cjsConfig._width || 400;
             const h = cjsConfig._height || 300;
-            canvasRef.current.width = w;
-            canvasRef.current.height = h;
-            canvasRef.current.style.width = `${w}px`;
-            canvasRef.current.style.height = `${h}px`;
+            const container = canvasRef.current.parentElement;
+            if (container) {
+                container.style.width = `${w}px`;
+                container.style.height = `${h}px`;
+                container.style.position = 'relative';
+            }
 
             // Destroy previous chart
             if (chartRef.current) {
@@ -550,7 +557,8 @@ const ChartJsChart: React.FC<{ testCase: TestCase }> = React.memo(({ testCase })
             // Ensure animation is disabled for gallery rendering
             if (!cleanConfig.options) cleanConfig.options = {};
             cleanConfig.options.animation = false;
-            cleanConfig.options.responsive = false;
+            cleanConfig.options.responsive = true;
+            cleanConfig.options.maintainAspectRatio = false;
 
             chartRef.current = new Chart(canvasRef.current, cleanConfig);
             setError(null);
@@ -564,10 +572,10 @@ const ChartJsChart: React.FC<{ testCase: TestCase }> = React.memo(({ testCase })
                 chartRef.current = null;
             }
         };
-    }, [testCase]);
+    }, [testCase, canvasSize]);
 
     return (
-        <Box sx={{ flex: 1, minWidth: 400 }}>
+        <Box sx={{ width: 'fit-content' }}>
             <Typography variant="caption" fontWeight={600} color="#2e7d32"
                 sx={{ display: 'block', mb: 0.5, fontSize: 11, letterSpacing: 0.5 }}>
                 Chart.js
@@ -582,7 +590,9 @@ const ChartJsChart: React.FC<{ testCase: TestCase }> = React.memo(({ testCase })
                     {error}
                 </Typography>
             ) : (
-                <canvas ref={canvasRef} />
+                <div style={{ position: 'relative' }}>
+                    <canvas ref={canvasRef} />
+                </div>
             )}
             {warnings.length > 0 && (
                 <Box sx={{ mt: 1, p: 1, bgcolor: '#fff3e0', borderLeft: '3px solid #ff9800' }}>
@@ -616,7 +626,7 @@ const TripleChart: React.FC<{ testCase: TestCase }> = React.memo(({ testCase }) 
         <Paper
             elevation={1}
             sx={{
-                p: 2, mb: 2, width: 'fit-content', minWidth: 1250, maxWidth: '100%',
+                p: 2, mb: 2, width: 'fit-content', maxWidth: '100%',
                 border: '1px solid #e0e0e0',
             }}
         >
@@ -633,9 +643,9 @@ const TripleChart: React.FC<{ testCase: TestCase }> = React.memo(({ testCase }) 
                 ))}
             </Box>
             <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
-                <VegaChartInline testCase={testCase} />
-                <EChartsChart testCase={testCase} />
-                <ChartJsChart testCase={testCase} />
+                <VegaChartInline testCase={testCase} canvasSize={{ width: 240, height: 200 }} />
+                <EChartsChart testCase={testCase} canvasSize={{ width: 240, height: 200 }} />
+                <ChartJsChart testCase={testCase} canvasSize={{ width: 240, height: 200 }} />
             </Box>
         </Paper>
     );

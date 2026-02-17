@@ -26,6 +26,7 @@
 import {
     ChartEncoding,
     ChartTemplateDef,
+    ChartAssemblyInput,
     AssembleOptions,
     LayoutDeclaration,
     InstantiateContext,
@@ -42,22 +43,27 @@ import { cjsApplyLayoutToSpec, cjsApplyTooltips } from './instantiate-spec';
 // ---------------------------------------------------------------------------
 
 /**
- * Assemble a Chart.js config object from chart type, encodings, data, and semantic types.
+ * Assemble a Chart.js config object.
  *
- * The returned object is a complete Chart.js configuration that can be passed to
- * `new Chart(canvas, result)`.
+ * ```ts
+ * const config = cjsAssembleChart({
+ *   data: { values: myRows },
+ *   semantic_types: { weight: 'Quantity' },
+ *   chart_spec: { chartType: 'Bar Chart', encodings: { x: { field: 'category' }, y: { field: 'value' } } },
+ *   options: { addTooltips: true },
+ * });
+ * ```
  *
  * @returns A Chart.js config object with optional `_warnings` and `_width`/`_height` hints
  */
-export function cjsAssembleChart(
-    chartType: string,
-    encodings: Record<string, ChartEncoding>,
-    data: any[],
-    semanticTypes: Record<string, string> = {},
-    canvasSize: { width: number; height: number } = { width: 400, height: 320 },
-    chartProperties?: Record<string, any>,
-    options: AssembleOptions = {},
-): any {
+export function cjsAssembleChart(input: ChartAssemblyInput): any {
+    const chartType = input.chart_spec.chartType;
+    const encodings = input.chart_spec.encodings;
+    const data = input.data.values ?? [];
+    const semanticTypes = input.semantic_types ?? {};
+    const canvasSize = input.chart_spec.canvasSize ?? { width: 400, height: 320 };
+    const chartProperties = input.chart_spec.chartProperties;
+    const options = input.options ?? {};
     const chartTemplate = cjsGetTemplateDef(chartType) as ChartTemplateDef;
     if (!chartTemplate) {
         throw new Error(`Unknown Chart.js chart type: ${chartType}. Use cjsAllTemplateDefs to see available types.`);

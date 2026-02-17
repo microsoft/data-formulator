@@ -15,6 +15,7 @@
 export {
     channels,
     channelGroups,
+    type ChartAssemblyInput,
     type ChartEncoding,
     type AssembleOptions,
     type ChartTemplateDef,

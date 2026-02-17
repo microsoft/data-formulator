@@ -16,6 +16,7 @@ import { cjsAreaChartDef } from './area';
 import { cjsPieChartDef } from './pie';
 import { cjsHistogramDef } from './histogram';
 import { cjsRadarChartDef } from './radar';
+import { cjsRoseChartDef } from './rose';
 
 /**
  * Chart.js chart template definitions, grouped by category.
@@ -25,7 +26,7 @@ export const cjsChartTemplateDefs: { [key: string]: ChartTemplateDef[] } = {
     'Bar':             [cjsBarChartDef, cjsGroupedBarChartDef, cjsStackedBarChartDef, cjsHistogramDef],
     'Line & Area':     [cjsLineChartDef, cjsAreaChartDef],
     'Part-to-Whole':   [cjsPieChartDef],
-    'Polar':           [cjsRadarChartDef],
+    'Polar':           [cjsRadarChartDef, cjsRoseChartDef],
 };
 
 /**

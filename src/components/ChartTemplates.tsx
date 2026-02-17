@@ -13,7 +13,6 @@
 import { ChartTemplate } from "./ComponentType";
 import {
     chartTemplateDefs,
-    getTemplateDef,
     getTemplateChannels,
 } from "../lib/agents-chart";
 import InsightsIcon from '@mui/icons-material/Insights';
@@ -50,6 +49,7 @@ import chartIconWaterfall from '../assets/chart-icon-waterfall.svg';
 import chartIconStripPlot from '../assets/chart-icon-strip-plot.svg';
 import chartIconRadar from '../assets/chart-icon-radar.svg';
 import chartIconBump from '../assets/chart-icon-bump.svg';
+import chartIconRose from '../assets/chart-icon-rose.svg';
 
 // Chart Icon Component using static imports
 const ChartIcon: React.FC<{ src: string; alt?: string }> = ({ src, alt = "" }) => {
@@ -75,6 +75,7 @@ const CHART_ICONS: Record<string, any> = {
     "US Map": <ChartIcon src={chartIconUSMap} />,
     "World Map": <ChartIcon src={chartIconWorldMap} />,
     "Pie Chart": <ChartIcon src={chartIconPie} />,
+    "Rose Chart": <ChartIcon src={chartIconRose} />,
     "Line Chart": <ChartIcon src={chartIconLine} />,
     "Dotted Line Chart": <ChartIcon src={chartIconDottedLine} />,
     "Bump Chart": <ChartIcon src={chartIconBump} />,

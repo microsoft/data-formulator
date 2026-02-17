@@ -58,7 +58,8 @@ export const cjsLineChartDef: ChartTemplateDef = {
                 datasets: [],
             },
             options: {
-                responsive: false,
+                responsive: true,
+                maintainAspectRatio: false,
                 scales: {
                     x: {
                         type: xIsDiscrete ? 'category' : 'linear',
@@ -75,9 +76,10 @@ export const cjsLineChartDef: ChartTemplateDef = {
             },
         };
 
-        // Zero-baseline
-        if (channelSemantics.y?.zero?.zero === false) {
-            config.options.scales.y.beginAtZero = false;
+        // Zero-baseline: Chart.js defaults beginAtZero to false, so
+        // explicitly set true when the semantic decision includes zero.
+        if (channelSemantics.y?.zero) {
+            config.options.scales.y.beginAtZero = channelSemantics.y.zero.zero !== false;
         }
 
         if (colorField) {

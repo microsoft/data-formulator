@@ -1150,3 +1150,230 @@ export function genPyramidTests(): TestCase[] {
 
     return tests;
 }
+
+// ------ Rose Chart (Nightingale / Coxcomb) ------
+export function genRoseTests(): TestCase[] {
+    const tests: TestCase[] = [];
+    const rand = seededRandom(1100);
+
+    // 1. Basic rose — wind directions × speed
+    {
+        const directions = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+        const data = directions.map(d => ({ Direction: d, Speed: Math.round(5 + rand() * 25) }));
+        tests.push({
+            title: 'Rose (basic, 8 directions)',
+            description: 'Wind speed by compass direction — classic coxcomb',
+            tags: ['nominal', 'quantitative', 'small'],
+            chartType: 'Rose Chart',
+            data,
+            fields: [makeField('Direction'), makeField('Speed')],
+            metadata: {
+                Direction: { type: Type.String, semanticType: 'Category', levels: directions },
+                Speed: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+            },
+            encodingMap: { x: makeEncodingItem('Direction'), y: makeEncodingItem('Speed') },
+            chartProperties: { alignment: 'center' },
+        });
+    }
+
+    // 2. Stacked rose — wind directions × speed × season
+    {
+        const directions = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+        const seasons = ['Spring', 'Summer', 'Autumn', 'Winter'];
+        const data: any[] = [];
+        for (const d of directions) {
+            for (const s of seasons) {
+                data.push({ Direction: d, Speed: Math.round(3 + rand() * 20), Season: s });
+            }
+        }
+        tests.push({
+            title: 'Stacked Rose (8 dirs × 4 seasons)',
+            description: 'Wind speed stacked by season — polar stacked bar',
+            tags: ['nominal', 'quantitative', 'color', 'stacked'],
+            chartType: 'Rose Chart',
+            data,
+            fields: [makeField('Direction'), makeField('Speed'), makeField('Season')],
+            metadata: {
+                Direction: { type: Type.String, semanticType: 'Category', levels: directions },
+                Speed: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                Season: { type: Type.String, semanticType: 'Category', levels: seasons },
+            },
+            encodingMap: { x: makeEncodingItem('Direction'), y: makeEncodingItem('Speed'), color: makeEncodingItem('Season') },
+            chartProperties: { alignment: 'center' },
+        });
+    }
+
+    // 3. Rose with many categories
+    {
+        const cats = genCategories('Category', 12);
+        const data = cats.map(c => ({ Category: c, Value: Math.round(10 + rand() * 90) }));
+        tests.push({
+            title: 'Rose (medium, 12 categories)',
+            description: '12 categories — tests angular spacing with more slices',
+            tags: ['nominal', 'quantitative', 'medium'],
+            chartType: 'Rose Chart',
+            data,
+            fields: [makeField('Category'), makeField('Value')],
+            metadata: {
+                Category: { type: Type.String, semanticType: 'Category', levels: cats },
+                Value: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+            },
+            encodingMap: { x: makeEncodingItem('Category'), y: makeEncodingItem('Value') },
+        });
+    }
+
+    // 4. Rose with color stacking and many groups
+    {
+        const products = genCategories('Product', 6);
+        const regions = ['North', 'South', 'East', 'West'];
+        const data: any[] = [];
+        for (const p of products) {
+            for (const r of regions) {
+                data.push({ Product: p, Sales: Math.round(100 + rand() * 900), Region: r });
+            }
+        }
+        tests.push({
+            title: 'Stacked Rose (6 products × 4 regions)',
+            description: 'Product sales stacked by region',
+            tags: ['nominal', 'quantitative', 'color', 'stacked', 'medium'],
+            chartType: 'Rose Chart',
+            data,
+            fields: [makeField('Product'), makeField('Sales'), makeField('Region')],
+            metadata: {
+                Product: { type: Type.String, semanticType: 'Product', levels: products },
+                Sales: { type: Type.Number, semanticType: 'Revenue', levels: [] },
+                Region: { type: Type.String, semanticType: 'Category', levels: regions },
+            },
+            encodingMap: { x: makeEncodingItem('Product'), y: makeEncodingItem('Sales'), color: makeEncodingItem('Region') },
+        });
+    }
+
+    // 5. Rose with inner radius (donut-rose)
+    {
+        const months = genMonths(12);
+        const data = months.map(m => ({ Month: m, Rainfall: Math.round(20 + rand() * 150) }));
+        tests.push({
+            title: 'Donut Rose (12 months, innerRadius)',
+            description: 'Monthly rainfall with inner radius — donut style rose',
+            tags: ['ordinal', 'quantitative', 'properties'],
+            chartType: 'Rose Chart',
+            data,
+            fields: [makeField('Month'), makeField('Rainfall')],
+            metadata: {
+                Month: { type: Type.String, semanticType: 'Month', levels: months },
+                Rainfall: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+            },
+            encodingMap: { x: makeEncodingItem('Month'), y: makeEncodingItem('Rainfall') },
+            chartProperties: { innerRadius: 40 },
+        });
+    }
+
+    // 6. Rose with padAngle
+    {
+        const departments = genCategories('Department', 8);
+        const data = departments.map(d => ({ Department: d, Score: Math.round(50 + rand() * 50) }));
+        tests.push({
+            title: 'Rose with gap (padAngle)',
+            description: 'Departments with angle padding between slices',
+            tags: ['nominal', 'quantitative', 'properties'],
+            chartType: 'Rose Chart',
+            data,
+            fields: [makeField('Department'), makeField('Score')],
+            metadata: {
+                Department: { type: Type.String, semanticType: 'Department', levels: departments },
+                Score: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+            },
+            encodingMap: { x: makeEncodingItem('Department'), y: makeEncodingItem('Score') },
+            chartProperties: { padAngle: 0.03 },
+        });
+    }
+
+    // 7. Faceted rose — directions by year (column facet)
+    {
+        const directions = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+        const years = ['2022', '2023', '2024'];
+        const data: any[] = [];
+        for (const yr of years) {
+            for (const d of directions) {
+                data.push({ Direction: d, Speed: Math.round(4 + rand() * 20), Year: yr });
+            }
+        }
+        tests.push({
+            title: 'Faceted Rose (column)',
+            description: 'Wind rose per year — faceted by column',
+            tags: ['nominal', 'quantitative', 'facet'],
+            chartType: 'Rose Chart',
+            data,
+            fields: [makeField('Direction'), makeField('Speed'), makeField('Year')],
+            metadata: {
+                Direction: { type: Type.String, semanticType: 'Direction', levels: directions },
+                Speed: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                Year: { type: Type.String, semanticType: 'Year', levels: years },
+            },
+            encodingMap: { x: makeEncodingItem('Direction'), y: makeEncodingItem('Speed'), column: makeEncodingItem('Year') },
+            chartProperties: { alignment: 'center' },
+        });
+    }
+
+    // 8. Faceted stacked rose — directions × season, faceted by location
+    {
+        const directions = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+        const seasons = ['Spring', 'Summer', 'Autumn', 'Winter'];
+        const locations = ['Coastal', 'Inland'];
+        const data: any[] = [];
+        for (const loc of locations) {
+            for (const d of directions) {
+                for (const s of seasons) {
+                    data.push({ Direction: d, Speed: Math.round(3 + rand() * 18), Season: s, Location: loc });
+                }
+            }
+        }
+        tests.push({
+            title: 'Faceted Stacked Rose (column)',
+            description: 'Stacked wind rose by season, faceted by location',
+            tags: ['nominal', 'quantitative', 'color', 'stacked', 'facet'],
+            chartType: 'Rose Chart',
+            data,
+            fields: [makeField('Direction'), makeField('Speed'), makeField('Season'), makeField('Location')],
+            metadata: {
+                Direction: { type: Type.String, semanticType: 'Direction', levels: directions },
+                Speed: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                Season: { type: Type.String, semanticType: 'Category', levels: seasons },
+                Location: { type: Type.String, semanticType: 'Category', levels: locations },
+            },
+            encodingMap: {
+                x: makeEncodingItem('Direction'), y: makeEncodingItem('Speed'),
+                color: makeEncodingItem('Season'), column: makeEncodingItem('Location'),
+            },
+            chartProperties: { alignment: 'center' },
+        });
+    }
+
+    // 9. Faceted rose — monthly rainfall by region (3 regions)
+    {
+        const months = genMonths(12);
+        const regions = ['North', 'Central', 'South'];
+        const data: any[] = [];
+        for (const r of regions) {
+            for (const m of months) {
+                data.push({ Month: m, Rainfall: Math.round(10 + rand() * 140), Region: r });
+            }
+        }
+        tests.push({
+            title: 'Faceted Rose (monthly × region)',
+            description: 'Monthly rainfall rose faceted by region',
+            tags: ['ordinal', 'quantitative', 'facet'],
+            chartType: 'Rose Chart',
+            data,
+            fields: [makeField('Month'), makeField('Rainfall'), makeField('Region')],
+            metadata: {
+                Month: { type: Type.String, semanticType: 'Month', levels: months },
+                Rainfall: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                Region: { type: Type.String, semanticType: 'Category', levels: regions },
+            },
+            encodingMap: { x: makeEncodingItem('Month'), y: makeEncodingItem('Rainfall'), column: makeEncodingItem('Region') },
+        });
+    }
+
+    return tests;
+}

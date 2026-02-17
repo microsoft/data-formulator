@@ -60,245 +60,192 @@ export function ecCombineFacetPanels(
     const plotW = ref._plotWidth || ref._width || 200;
     const plotH = ref._plotHeight || ref._height || 150;
 
-    // Font scale relative to a "comfortable" 200px plot area
-    const scale = Math.min(1, plotW / 200);
-
-    // ── Compact facet margins ────────────────────────────────────────────
-    const GAP_X = 6;
-    const GAP_Y = 6;
-    const COL_HEADER_H = config.colField ? 18 : 0;
-    const ROW_HEADER_W = config.rowField ? 16 : 0;
+    // ── Simple spacing constants ─────────────────────────────────────────
+    const GAP = 6;                                        // between panels
+    const COL_HEADER_H = config.colField ? 18 : 0;       // facet column headers
+    const ROW_HEADER_W = config.rowField ? 18 : 0;       // facet row headers
     const colHeaderPerRow = config.colHeaderPerRow ?? false;
 
     const refX = ref.xAxis || {};
     const refY = ref.yAxis || {};
     const hasYTitle = !!(refY.name);
 
-    const M_EDGE_L = Math.max(hasYTitle ? 60 : 40, Math.round((hasYTitle ? 70 : 50) * scale));
-    const M_INNER_L = 4;
-    const M_EDGE_B = Math.max(16, Math.round(22 * scale));
-    const M_INNER_B = 4;
-    const M_T = 4;
-    const M_R = 4;
-
-    // X-axis title is rendered as a shared centered element below all panels
+    // Shared axis titles — rendered once as graphic elements
     const sharedXTitle = refX.name || '';
-    const SHARED_X_TITLE_H = sharedXTitle ? 18 : 0;
+    const sharedYTitle = (config.rowField && hasYTitle) ? (refY.name || '') : '';
+    const SHARED_X_H = sharedXTitle ? 18 : 0;
+    const SHARED_Y_W = sharedYTitle ? 18 : 0;
 
-    // Panel outer dimensions — first column is wider (y-axis labels + title)
-    const col0W = plotW + M_EDGE_L + M_R;
-    const colInnerW = plotW + M_INNER_L + M_R;
-    const panelH = plotH + M_T + M_EDGE_B;
+    // ── Uniform cell size ────────────────────────────────────────────────
+    // ── Facet-specific margins ─────────────────────────────────────────
+    // The assembler's refGrid margins include CANVAS_BUFFER (16px) meant
+    // for standalone charts.  In a faceted layout the grids are internal
+    // elements — no buffer needed. Use tighter margins based on content.
+    const mLeft   = hasYTitle && !sharedYTitle ? 55 : 35;  // y-axis labels (+ title if not shared)
+    const mBottom = 22;                                     // x-axis labels
+    const PAD = 4;                                          // minimal padding for inner panels
 
-    /** X-offset of the left edge of column `ci`. */
-    const colOx = (ci: number): number => {
-        if (ci === 0) return ROW_HEADER_W;
-        return ROW_HEADER_W + col0W + GAP_X + (ci - 1) * (colInnerW + GAP_X);
-    };
-    /** Width of column `ci`. */
-    const colW = (ci: number): number => ci === 0 ? col0W : colInnerW;
+    // Cell widths differ: first column includes y-axis label margin,
+    // inner columns use minimal padding.  Row heights differ: only the
+    // bottom row reserves mBottom for x-axis labels.
+    const col0W     = mLeft + plotW + PAD;
+    const colInnerW = PAD + plotW + PAD;
+    const rowInnerH = PAD + plotH + PAD;       // non-bottom rows: compact
+    const rowBottomH = PAD + plotH + mBottom;  // bottom row: x-axis labels
 
     // ── Overall dimensions ───────────────────────────────────────────────
-    const totalW = ROW_HEADER_W + col0W + (nCols > 1 ? (nCols - 1) * (colInnerW + GAP_X) : 0);
-    // When colHeaderPerRow, each row has its own column-header area
-    const rowBlockH = colHeaderPerRow
-        ? COL_HEADER_H + panelH
-        : panelH;
+    const baseLeft = SHARED_Y_W + ROW_HEADER_W;
+    const innerRowBlock = colHeaderPerRow ? COL_HEADER_H + rowInnerH : rowInnerH;
+    const bottomRowBlock = colHeaderPerRow ? COL_HEADER_H + rowBottomH : rowBottomH;
+    const totalW = baseLeft + col0W + (nCols > 1 ? (nCols - 1) * (colInnerW + GAP) : 0);
     const totalH = (colHeaderPerRow ? 0 : COL_HEADER_H)
-        + nRows * rowBlockH + (nRows - 1) * GAP_Y
-        + SHARED_X_TITLE_H;
+        + (nRows > 1 ? (nRows - 1) * (innerRowBlock + GAP) : 0)
+        + bottomRowBlock
+        + SHARED_X_H;
 
     // ── Combined option ──────────────────────────────────────────────────
     const combined: any = {
-        grid: [],
-        xAxis: [],
-        yAxis: [],
-        series: [],
-        _width: totalW,
-        _height: totalH,
+        grid: [], xAxis: [], yAxis: [], series: [],
+        _width: totalW, _height: totalH,
     };
-
     if (ref.tooltip) combined.tooltip = { ...ref.tooltip };
     if (ref.color) combined.color = ref.color;
 
-    const labelFontSize = Math.max(8, Math.round(10 * scale));
+    const fontSize = Math.max(8, Math.round(10 * Math.min(1, plotW / 200)));
+    const headerFontSize = Math.max(9, Math.round(11 * Math.min(1, plotW / 200)));
 
+    // ── Place grids & axes ───────────────────────────────────────────────
+    const gridMap: number[][] = [];
     let gridIdx = 0;
 
     for (let ri = 0; ri < nRows; ri++) {
+        gridMap[ri] = [];
         for (let ci = 0; ci < nCols; ci++) {
             const panel = panels[ri]?.[ci];
-            if (!panel) continue;
+            if (!panel) { gridMap[ri][ci] = -1; continue; }
+            gridMap[ri][ci] = gridIdx;
 
-            const isLeftCol = ci === 0;
-            const isBottomRow = ri === nRows - 1;
+            const isLeft = ci === 0;
+            const isBottom = ri === nRows - 1;
 
-            // Margins for this panel (edge vs inner)
-            const mL = isLeftCol ? M_EDGE_L : M_INNER_L;
-            const mT = M_T;
-
-            const ox = colOx(ci);
-            let oy: number;
+            // Cell position — row height depends on whether it's the bottom row
+            const cx = baseLeft + (ci === 0
+                ? 0
+                : col0W + GAP + (ci - 1) * (colInnerW + GAP));
+            let cy: number;
             if (colHeaderPerRow) {
-                // Each row has its own COL_HEADER_H band
-                oy = ri * (rowBlockH + GAP_Y) + COL_HEADER_H;
+                const rowOff = ri * (innerRowBlock + GAP);
+                cy = rowOff + COL_HEADER_H;
             } else {
-                oy = COL_HEADER_H + ri * (panelH + GAP_Y);
+                const rowOff = COL_HEADER_H + ri * (innerRowBlock + GAP);
+                cy = rowOff;
             }
 
-            // Grid: EXACT plot-area dimensions.
+            // Grid — position the plot area inside the cell.
+            const pLeft = ci === 0 ? mLeft : PAD;
             combined.grid.push({
-                left: ox + mL,
-                top: oy + mT,
+                left: cx + pLeft,
+                top: cy + PAD,
                 width: plotW,
                 height: plotH,
             });
 
-            // ── xAxis ────────────────────────────────────────────────────
-            // X-axis title is rendered as a shared graphic element.
+            // xAxis
             const srcX = panel.xAxis ? { ...panel.xAxis } : { type: 'category' };
             combined.xAxis.push({
                 ...srcX,
                 gridIndex: gridIdx,
-                name: undefined,
-                nameGap: 0,
-                axisLabel: {
-                    ...(srcX.axisLabel || {}),
-                    show: isBottomRow,
-                    fontSize: labelFontSize,
-                },
-                axisTick: { ...(srcX.axisTick || {}), show: isBottomRow },
+                name: undefined, nameGap: 0,
+                axisLabel: { ...(srcX.axisLabel || {}), show: isBottom, fontSize },
+                axisTick: { ...(srcX.axisTick || {}), show: isBottom },
                 axisLine: { show: true },
             });
 
-            // ── yAxis ────────────────────────────────────────────────────
-            // Y-axis title shown only on left-column panels.
+            // yAxis — per-panel name only when row facet is absent
             const srcY = panel.yAxis ? { ...panel.yAxis } : { type: 'value' };
+            const showYName = isLeft && !sharedYTitle;
             combined.yAxis.push({
                 ...srcY,
                 gridIndex: gridIdx,
-                name: isLeftCol ? srcY.name : undefined,
-                nameGap: isLeftCol ? (srcY.nameGap ?? 4) : 0,
-                axisLabel: {
-                    ...(srcY.axisLabel || {}),
-                    show: isLeftCol,
-                    fontSize: labelFontSize,
-                },
-                axisTick: { ...(srcY.axisTick || {}), show: isLeftCol },
+                name: showYName ? srcY.name : undefined,
+                nameGap: showYName ? (srcY.nameGap ?? 4) : 0,
+                axisLabel: { ...(srcY.axisLabel || {}), show: isLeft, fontSize },
+                axisTick: { ...(srcY.axisTick || {}), show: isLeft },
                 axisLine: { show: true },
             });
 
-            // ── Series ───────────────────────────────────────────────────
-            if (panel.series && Array.isArray(panel.series)) {
+            // Series
+            if (Array.isArray(panel.series)) {
                 for (const s of panel.series) {
-                    combined.series.push({
-                        ...s,
-                        xAxisIndex: gridIdx,
-                        yAxisIndex: gridIdx,
-                    });
+                    combined.series.push({ ...s, xAxisIndex: gridIdx, yAxisIndex: gridIdx });
                 }
             }
-
             gridIdx++;
         }
     }
 
-    // ── Facet header labels (graphic elements) ───────────────────────────
-    const graphics: any[] = [];
+    // ── Helpers: grid center from placed grids ───────────────────────────
+    const gridOf = (ri: number, ci: number) => {
+        const gi = gridMap[ri]?.[ci];
+        return gi != null && gi >= 0 ? combined.grid[gi] : null;
+    };
+    const gCX = (g: any) => g.left + g.width / 2;
+    const gCY = (g: any) => g.top + g.height / 2;
 
-    // Column headers — read text from each panel's _colHeader
+    // ── Facet headers — positioned from actual grids ─────────────────────
+    const graphics: any[] = [];
+    const hStyle = { fontSize: headerFontSize, fontWeight: 'bold' as const, fill: '#555',
+                     textAlign: 'center' as const, textVerticalAlign: 'middle' as const };
+
+    // Column headers
     if (config.colField) {
-        if (colHeaderPerRow) {
-            // Wrapped layout: each row has its own header band
-            for (let ri = 0; ri < nRows; ri++) {
-                for (let ci = 0; ci < nCols; ci++) {
-                    const panel = panels[ri]?.[ci];
-                    if (!panel?._colHeader) continue;
-                    const cx = colOx(ci) + colW(ci) / 2;
-                    const headerY = ri * (rowBlockH + GAP_Y) + 2;
-                    graphics.push({
-                        type: 'text',
-                        left: cx,
-                        top: headerY,
-                        style: {
-                            text: String(panel._colHeader),
-                            fontSize: Math.max(9, Math.round(11 * scale)),
-                            fontWeight: 'bold',
-                            fill: '#555',
-                            textAlign: 'center',
-                        },
-                    });
-                }
-            }
-        } else {
-            // Single header row at top
+        const hRows = colHeaderPerRow ? nRows : 1;
+        for (let ri = 0; ri < hRows; ri++) {
             for (let ci = 0; ci < nCols; ci++) {
-                const panel = panels[0]?.[ci];
-                if (!panel?._colHeader) continue;
-                const cx = colOx(ci) + colW(ci) / 2;
+                const p = panels[ri]?.[ci], g = gridOf(ri, ci);
+                if (!p?._colHeader || !g) continue;
                 graphics.push({
-                    type: 'text',
-                    left: cx,
-                    top: 2,
-                    style: {
-                        text: String(panel._colHeader),
-                        fontSize: Math.max(9, Math.round(11 * scale)),
-                        fontWeight: 'bold',
-                        fill: '#555',
-                        textAlign: 'center',
-                    },
+                    type: 'text', left: gCX(g), top: g.top - COL_HEADER_H / 2,
+                    style: { ...hStyle, text: String(p._colHeader) },
                 });
             }
         }
     }
 
-    // Row headers — read text from each row's first panel _rowHeader
+    // Row headers
     if (config.rowField) {
         for (let ri = 0; ri < nRows; ri++) {
-            const panel = panels[ri]?.[0];
-            if (!panel?._rowHeader) continue;
-            let cy: number;
-            if (colHeaderPerRow) {
-                cy = ri * (rowBlockH + GAP_Y) + COL_HEADER_H + panelH / 2;
-            } else {
-                cy = COL_HEADER_H + ri * (panelH + GAP_Y) + panelH / 2;
-            }
+            const p = panels[ri]?.[0], g = gridOf(ri, 0);
+            if (!p?._rowHeader || !g) continue;
             graphics.push({
-                type: 'text',
-                left: ROW_HEADER_W / 2,
-                top: cy,
-                style: {
-                    text: String(panel._rowHeader),
-                    fontSize: Math.max(8, Math.round(10 * scale)),
-                    fontWeight: 'bold',
-                    fill: '#555',
-                    textAlign: 'center',
-                    textVerticalAlign: 'middle',
-                },
+                type: 'text', left: SHARED_Y_W + ROW_HEADER_W / 2, top: gCY(g),
+                style: { ...hStyle, text: String(p._rowHeader) },
                 rotation: Math.PI / 2,
             });
         }
     }
 
-    // ── Shared X-axis title (centered below all panels) ─────────────────
+    // Shared Y-axis title
+    if (sharedYTitle) {
+        const first = gridOf(0, 0), last = gridOf(nRows - 1, 0);
+        if (first && last) {
+            graphics.push({
+                type: 'text', left: SHARED_Y_W / 2, top: (gCY(first) + gCY(last)) / 2,
+                style: { text: sharedYTitle, fontSize: headerFontSize, fill: '#333',
+                         textAlign: 'center', textVerticalAlign: 'middle' },
+                rotation: Math.PI / 2,
+            });
+        }
+    }
+
+    // Shared X-axis title
     if (sharedXTitle) {
-        const cx = totalW / 2;
         graphics.push({
-            type: 'text',
-            left: cx,
-            top: totalH - SHARED_X_TITLE_H + 4,
-            style: {
-                text: sharedXTitle,
-                fontSize: Math.max(9, Math.round(11 * scale)),
-                fill: '#333',
-                textAlign: 'center',
-            },
+            type: 'text', left: totalW / 2, top: totalH - SHARED_X_H + 4,
+            style: { text: sharedXTitle, fontSize: headerFontSize, fill: '#333', textAlign: 'center' },
         });
     }
 
-    if (graphics.length > 0) {
-        combined.graphic = graphics;
-    }
-
+    if (graphics.length > 0) combined.graphic = graphics;
     return combined;
 }

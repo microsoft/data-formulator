@@ -56,11 +56,13 @@ export const ecScatterPlotDef: ChartTemplateDef = {
         };
 
         // Apply zero-baseline decisions
-        if (channelSemantics.x?.zero?.zero === false) {
-            option.xAxis.scale = true;  // ECharts: scale=true means "don't force zero"
+        // ECharts: scale=true means "data-fit, don't force zero"
+        //          scale=false (default) means "include zero"
+        if (channelSemantics.x?.zero) {
+            option.xAxis.scale = !channelSemantics.x.zero.zero;
         }
-        if (channelSemantics.y?.zero?.zero === false) {
-            option.yAxis.scale = true;
+        if (channelSemantics.y?.zero) {
+            option.yAxis.scale = !channelSemantics.y.zero.zero;
         }
 
         // Opacity from chart properties

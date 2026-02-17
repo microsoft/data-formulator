@@ -24,6 +24,7 @@ import { stripPlotDef } from './jitter';
 import { candlestickChartDef } from './candlestick';
 import { waterfallChartDef } from './waterfall';
 import { radarChartDef } from './radar';
+import { roseChartDef } from './rose';
 import { usMapDef, worldMapDef } from './map';
 import { customPointDef, customLineDef, customBarDef, customRectDef, customAreaDef } from './custom';
 
@@ -35,7 +36,7 @@ export const chartTemplateDefs: { [key: string]: ChartTemplateDef[] } = {
     "Scatter & Point":  [scatterPlotDef, linearRegressionDef, boxplotDef, stripPlotDef],
     "Bar":              [barChartDef, groupedBarChartDef, stackedBarChartDef, histogramDef, lollipopChartDef, pyramidChartDef],
     "Line & Area":      [lineChartDef, dottedLineChartDef, bumpChartDef, areaChartDef, streamgraphDef],
-    "Part-to-Whole":    [pieChartDef, heatmapDef, waterfallChartDef],
+    "Part-to-Whole":    [pieChartDef, roseChartDef, heatmapDef, waterfallChartDef],
     "Statistical":      [densityPlotDef, rangedDotPlotDef, radarChartDef, candlestickChartDef],
     "Map":              [usMapDef, worldMapDef],
     "Custom":           [customPointDef, customLineDef, customBarDef, customRectDef, customAreaDef],

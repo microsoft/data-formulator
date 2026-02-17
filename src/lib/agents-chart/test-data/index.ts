@@ -23,13 +23,14 @@ export { genLineTests, genDottedLineTests, genBumpChartTests, genAreaTests, genS
 export {
     genHeatmapTests, genPieTests, genRangedDotPlotTests, genLollipopTests,
     genCustomTests, genWaterfallTests, genCandlestickTests, genRadarTests, genPyramidTests,
+    genRoseTests,
 } from './specialized-tests';
 export { FACET_SIZES, DISCRETE_SIZES, genFacetColumnTests, genFacetRowTests, genFacetColRowTests, genFacetSmallTests, genFacetWrapTests, genFacetClipTests } from './facet-tests';
 export { genOverflowTests, genElasticityTests } from './stress-tests';
 export { genGasPressureTests } from './gas-pressure-tests';
 export { genLineAreaStretchTests } from './line-area-stretch-tests';
-export { genEChartsScatterTests, genEChartsLineTests, genEChartsBarTests, genEChartsStackedBarTests, genEChartsGroupedBarTests, genEChartsStressTests, genEChartsAreaTests, genEChartsPieTests, genEChartsHeatmapTests, genEChartsHistogramTests, genEChartsBoxplotTests, genEChartsRadarTests, genEChartsCandlestickTests, genEChartsStreamgraphTests, genEChartsFacetSmallTests, genEChartsFacetWrapTests, genEChartsFacetClipTests } from './echarts-tests';
-export { genChartJsScatterTests, genChartJsLineTests, genChartJsBarTests, genChartJsStackedBarTests, genChartJsGroupedBarTests, genChartJsAreaTests, genChartJsPieTests, genChartJsHistogramTests, genChartJsRadarTests, genChartJsStressTests } from './chartjs-tests';
+export { genEChartsScatterTests, genEChartsLineTests, genEChartsBarTests, genEChartsStackedBarTests, genEChartsGroupedBarTests, genEChartsStressTests, genEChartsAreaTests, genEChartsPieTests, genEChartsHeatmapTests, genEChartsHistogramTests, genEChartsBoxplotTests, genEChartsRadarTests, genEChartsCandlestickTests, genEChartsStreamgraphTests, genEChartsFacetSmallTests, genEChartsFacetWrapTests, genEChartsFacetClipTests, genEChartsRoseTests } from './echarts-tests';
+export { genChartJsScatterTests, genChartJsLineTests, genChartJsBarTests, genChartJsStackedBarTests, genChartJsGroupedBarTests, genChartJsAreaTests, genChartJsPieTests, genChartJsHistogramTests, genChartJsRadarTests, genChartJsStressTests, genChartJsRoseTests } from './chartjs-tests';
 export { genDiscreteAxisTests } from './discrete-axis-tests';
 export { genUnintendedScatterTests, genUnintendedBarTests, genUnintendedLineAreaTests, genUnintendedPartToWholeTests, genUnintendedStatisticalTests } from './unintended-tests';
 export { genDateTests, genDateYearTests, genDateMonthTests, genDateYearMonthTests, genDateDecadeTests, genDateDateTimeTests, genDateHoursTests } from './date-tests';
@@ -46,6 +47,7 @@ import { genLineTests, genDottedLineTests, genBumpChartTests, genAreaTests, genS
 import {
     genHeatmapTests, genPieTests, genRangedDotPlotTests, genLollipopTests,
     genCustomTests, genWaterfallTests, genCandlestickTests, genRadarTests, genPyramidTests,
+    genRoseTests,
 } from './specialized-tests';
 import { genFacetColumnTests, genFacetRowTests, genFacetColRowTests, genFacetSmallTests, genFacetWrapTests, genFacetClipTests } from './facet-tests';
 import { genOverflowTests, genElasticityTests } from './stress-tests';
@@ -54,8 +56,8 @@ import { genLineAreaStretchTests } from './line-area-stretch-tests';
 import { genDiscreteAxisTests } from './discrete-axis-tests';
 import { genUnintendedScatterTests, genUnintendedBarTests, genUnintendedLineAreaTests, genUnintendedPartToWholeTests, genUnintendedStatisticalTests } from './unintended-tests';
 import { genDateYearTests, genDateMonthTests, genDateYearMonthTests, genDateDecadeTests, genDateDateTimeTests, genDateHoursTests } from './date-tests';
-import { genEChartsScatterTests, genEChartsLineTests, genEChartsBarTests, genEChartsStackedBarTests, genEChartsGroupedBarTests, genEChartsStressTests, genEChartsAreaTests, genEChartsPieTests, genEChartsHeatmapTests, genEChartsHistogramTests, genEChartsBoxplotTests, genEChartsRadarTests, genEChartsCandlestickTests, genEChartsStreamgraphTests, genEChartsFacetSmallTests, genEChartsFacetWrapTests, genEChartsFacetClipTests } from './echarts-tests';
-import { genChartJsScatterTests, genChartJsLineTests, genChartJsBarTests, genChartJsStackedBarTests, genChartJsGroupedBarTests, genChartJsAreaTests, genChartJsPieTests, genChartJsHistogramTests, genChartJsRadarTests, genChartJsStressTests } from './chartjs-tests';
+import { genEChartsScatterTests, genEChartsLineTests, genEChartsBarTests, genEChartsStackedBarTests, genEChartsGroupedBarTests, genEChartsStressTests, genEChartsAreaTests, genEChartsPieTests, genEChartsHeatmapTests, genEChartsHistogramTests, genEChartsBoxplotTests, genEChartsRadarTests, genEChartsCandlestickTests, genEChartsStreamgraphTests, genEChartsFacetSmallTests, genEChartsFacetWrapTests, genEChartsFacetClipTests, genEChartsRoseTests } from './echarts-tests';
+import { genChartJsScatterTests, genChartJsLineTests, genChartJsBarTests, genChartJsStackedBarTests, genChartJsGroupedBarTests, genChartJsAreaTests, genChartJsPieTests, genChartJsHistogramTests, genChartJsRadarTests, genChartJsStressTests, genChartJsRoseTests } from './chartjs-tests';
 
 /** All test generators mapped by chart group */
 export const TEST_GENERATORS: Record<string, () => TestCase[]> = {
@@ -81,6 +83,7 @@ export const TEST_GENERATORS: Record<string, () => TestCase[]> = {
     'Strip Plot': genStripPlotTests,
     'Radar Chart': genRadarTests,
     'Pyramid Chart': genPyramidTests,
+    'Rose Chart': genRoseTests,
     'Custom Charts': genCustomTests,
     'Facet: Columns': genFacetColumnTests,
     'Facet: Rows': genFacetRowTests,
@@ -120,6 +123,7 @@ export const TEST_GENERATORS: Record<string, () => TestCase[]> = {
     'ECharts: Facet Small': genEChartsFacetSmallTests,
     'ECharts: Facet Wrap': genEChartsFacetWrapTests,
     'ECharts: Facet Clip': genEChartsFacetClipTests,
+    'ECharts: Rose': genEChartsRoseTests,
     'ECharts: Stress Tests': genEChartsStressTests,
     'Chart.js: Scatter': genChartJsScatterTests,
     'Chart.js: Line': genChartJsLineTests,
@@ -130,6 +134,7 @@ export const TEST_GENERATORS: Record<string, () => TestCase[]> = {
     'Chart.js: Pie': genChartJsPieTests,
     'Chart.js: Histogram': genChartJsHistogramTests,
     'Chart.js: Radar': genChartJsRadarTests,
+    'Chart.js: Rose': genChartJsRoseTests,
     'Chart.js: Stress Tests': genChartJsStressTests,
 };
 
@@ -143,7 +148,7 @@ export const GALLERY_SECTIONS: GallerySection[] = [
             'Grouped Bar Chart', 'Histogram', 'Heatmap', 'Line Chart', 'Dotted Line Chart',
             'Boxplot', 'Pie Chart', 'Ranged Dot Plot', 'Area Chart', 'Streamgraph',
             'Lollipop Chart', 'Density Plot', 'Bump Chart', 'Candlestick Chart', 'Waterfall Chart',
-            'Strip Plot', 'Radar Chart', 'Pyramid Chart', 'Custom Charts',
+            'Strip Plot', 'Radar Chart', 'Pyramid Chart', 'Rose Chart', 'Custom Charts',
         ],
     },
     {
@@ -192,6 +197,7 @@ export const GALLERY_SECTIONS: GallerySection[] = [
             'ECharts: Facet Small',
             'ECharts: Facet Wrap',
             'ECharts: Facet Clip',
+            'ECharts: Rose',
             'ECharts: Stress Tests',
         ],
     },
@@ -208,6 +214,7 @@ export const GALLERY_SECTIONS: GallerySection[] = [
             'Chart.js: Pie',
             'Chart.js: Histogram',
             'Chart.js: Radar',
+            'Chart.js: Rose',
             'Chart.js: Stress Tests',
         ],
     },

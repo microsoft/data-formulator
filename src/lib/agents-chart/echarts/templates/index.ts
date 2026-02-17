@@ -20,6 +20,7 @@ import { ecBoxplotDef } from './boxplot';
 import { ecRadarChartDef } from './radar';
 import { ecCandlestickDef } from './candlestick';
 import { ecStreamgraphDef } from './streamgraph';
+import { ecRoseChartDef } from './rose';
 
 /**
  * ECharts chart template definitions, grouped by category.
@@ -30,7 +31,7 @@ export const ecChartTemplateDefs: { [key: string]: ChartTemplateDef[] } = {
     'Line & Area':     [ecLineChartDef, ecAreaChartDef, ecStreamgraphDef],
     'Part-to-Whole':   [ecPieChartDef],
     'Financial':       [ecCandlestickDef],
-    'Polar':           [ecRadarChartDef],
+    'Polar':           [ecRadarChartDef, ecRoseChartDef],
 };
 
 /**

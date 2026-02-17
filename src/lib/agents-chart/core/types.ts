@@ -456,6 +456,74 @@ export interface ChartWarning {
 }
 
 // ---------------------------------------------------------------------------
+// Unified Assembly Input
+// ---------------------------------------------------------------------------
+
+/**
+ * Unified input for all chart assembly functions (Vega-Lite, ECharts, Chart.js).
+ *
+ * Instead of passing multiple positional arguments, callers provide a single
+ * JSON-serializable object with four top-level keys:
+ *
+ * ```ts
+ * const result = assembleChart({
+ *   data: { values: myRows },
+ *   semantic_types: { weight: 'Quantity', origin: 'Country' },
+ *   chart_spec: {
+ *     chartType: 'Scatter Plot',
+ *     encodings: { x: { field: 'weight' }, y: { field: 'mpg' } },
+ *     canvasSize: { width: 400, height: 300 },
+ *   },
+ *   options: { addTooltips: true },
+ * });
+ * ```
+ */
+export interface ChartAssemblyInput {
+    /**
+     * Data source — either inline rows or a URL to fetch.
+     *
+     * - `{ values: any[] }` — an array of row objects (like Vega-Lite `data.values`).
+     * - `{ url: string }`   — a URL pointing to a JSON or CSV resource.
+     *   The assembler will resolve this internally before processing.
+     *
+     * At least one of `values` or `url` must be provided.
+     */
+    data: { values: any[]; url?: never } | { url: string; values?: never };
+
+    /**
+     * Per-column semantic type annotations.
+     *
+     * Maps field names to semantic type strings (e.g., `"Quantity"`, `"Country"`,
+     * `"Year"`, `"Percentage"`). These drive encoding type resolution, zero-baseline
+     * decisions, color schemes, formatting, and more.
+     *
+     * Fields not listed here fall back to `inferVisCategory()` which inspects
+     * raw data values.
+     */
+    semantic_types?: Record<string, string>;
+
+    /**
+     * Chart specification — describes *what* to draw.
+     */
+    chart_spec: {
+        /** Template name, e.g. `"Scatter Plot"`, `"Bar Chart"` */
+        chartType: string;
+        /** Channel → encoding map (e.g., `{ x: { field: 'weight' }, y: { field: 'mpg' } }`) */
+        encodings: Record<string, ChartEncoding>;
+        /** Target canvas size in pixels (default: `{ width: 400, height: 320 }`) */
+        canvasSize?: { width: number; height: number };
+        /** Template-specific configurable properties (e.g., bar corner radius, show labels) */
+        chartProperties?: Record<string, any>;
+    };
+
+    /**
+     * Options for the assembler — layout tuning, tooltips, etc.
+     * All fields are optional and have sensible defaults.
+     */
+    options?: AssembleOptions;
+}
+
+// ---------------------------------------------------------------------------
 // Assembly Options
 // ---------------------------------------------------------------------------
 

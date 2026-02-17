@@ -63,13 +63,35 @@ semantic type. No hard-coded constants go stale. No LLM call needed.
 ```ts
 import { assembleChart } from './lib/agents-chart';
 
-const spec = assembleChart(
-  'Scatter Plot',
-  { x: { field: 'weight' }, y: { field: 'mpg' }, color: { field: 'origin' } },
-  myData,
-  { weight: 'Quantity', mpg: 'Quantity', origin: 'Country' },
-  { width: 400, height: 300 },
-);
+// Unified single-object interface
+const spec = assembleChart({
+  data: { values: myData },
+  semantic_types: { weight: 'Quantity', mpg: 'Quantity', origin: 'Country' },
+  chart_spec: {
+    chartType: 'Scatter Plot',
+    encodings: { x: { field: 'weight' }, y: { field: 'mpg' }, color: { field: 'origin' } },
+    canvasSize: { width: 400, height: 300 },
+  },
+});
+
+// ECharts backend
+import { ecAssembleChart } from './lib/agents-chart';
+const option = ecAssembleChart({
+  data: { values: myData },
+  semantic_types: { weight: 'Quantity', mpg: 'Quantity' },
+  chart_spec: {
+    chartType: 'Scatter Plot',
+    encodings: { x: { field: 'weight' }, y: { field: 'mpg' } },
+  },
+});
+
+// Chart.js backend
+import { cjsAssembleChart } from './lib/agents-chart';
+const config = cjsAssembleChart({
+  data: { values: myData },
+  semantic_types: { weight: 'Quantity' },
+  chart_spec: { chartType: 'Bar Chart', encodings: { x: { field: 'category' }, y: { field: 'value' } } },
+});
 ```
 
 ---
@@ -105,19 +127,32 @@ vegalite/               ← Vega-Lite backend
 
 ## Public API
 
-### `assembleChart(chartType, encodings, data, semanticTypes, canvasSize, chartProperties?, options?)`
+### `assembleChart(input: ChartAssemblyInput)`
 
-Returns a Vega-Lite spec object.
+All three backends (`assembleChart`, `ecAssembleChart`, `cjsAssembleChart`) accept a single `ChartAssemblyInput` object:
 
-| Param | Type | Description |
-|---|---|---|
-| `chartType` | `string` | Template name, e.g. `"Scatter Plot"` |
-| `encodings` | `Record<string, ChartEncoding>` | Channel → encoding map |
-| `data` | `any[]` | Array of row objects |
-| `semanticTypes` | `Record<string, string>` | Field name → semantic type |
-| `canvasSize` | `{ width, height }` | Canvas dimensions in px |
-| `chartProperties?` | `Record<string, any>` | Template-specific knobs |
-| `options?` | `AssembleOptions` | Layout tuning (elasticity, step sizes) |
+```ts
+interface ChartAssemblyInput {
+  data: { values: any[] } | { url: string };  // inline rows or URL
+  semantic_types?: Record<string, string>;     // field → semantic type
+  chart_spec: {
+    chartType: string;                         // e.g. "Scatter Plot"
+    encodings: Record<string, ChartEncoding>;  // channel → encoding map
+    canvasSize?: { width: number; height: number }; // default 400×320
+    chartProperties?: Record<string, any>;     // template-specific knobs
+  };
+  options?: AssembleOptions;                   // layout tuning
+}
+```
+
+| Key | Description |
+|---|---|
+| `data` | Data source — either `{ values: [...] }` (inline row objects) or `{ url: "..." }` (JSON/CSV URL) |
+| `semantic_types` | Per-column semantic annotations (e.g., `{ revenue: "Price", country: "Country" }`) |
+| `chart_spec` | What to draw — chart type, encodings, canvas size, properties |
+| `options` | Layout tuning (elasticity, step sizes, tooltips, etc.) |
+
+> **Legacy positional API** (`assembleChart(chartType, encodings, data, ...)`) is still supported but deprecated.
 
 ### Key types
 

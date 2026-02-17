@@ -39,7 +39,8 @@ export const cjsScatterPlotDef: ChartTemplateDef = {
             type: 'scatter',
             data: { datasets: [] },
             options: {
-                responsive: false,
+                responsive: true,
+                maintainAspectRatio: false,
                 scales: {
                     x: {
                         type: 'linear',
@@ -57,11 +58,13 @@ export const cjsScatterPlotDef: ChartTemplateDef = {
         };
 
         // Apply zero-baseline decisions
-        if (channelSemantics.x?.zero?.zero === false) {
-            config.options.scales.x.beginAtZero = false;
+        // Chart.js linear scales default beginAtZero to false, so we must
+        // explicitly set true when the semantic decision includes zero.
+        if (channelSemantics.x?.zero) {
+            config.options.scales.x.beginAtZero = channelSemantics.x.zero.zero !== false;
         }
-        if (channelSemantics.y?.zero?.zero === false) {
-            config.options.scales.y.beginAtZero = false;
+        if (channelSemantics.y?.zero) {
+            config.options.scales.y.beginAtZero = channelSemantics.y.zero.zero !== false;
         }
 
         if (colorField) {

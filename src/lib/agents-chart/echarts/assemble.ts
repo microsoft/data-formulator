@@ -53,6 +53,7 @@
 import {
     ChartEncoding,
     ChartTemplateDef,
+    ChartAssemblyInput,
     AssembleOptions,
     LayoutDeclaration,
     InstantiateContext,
@@ -70,22 +71,27 @@ import { ecCombineFacetPanels } from './facet';
 // ---------------------------------------------------------------------------
 
 /**
- * Assemble an ECharts option object from chart type, encodings, data, and semantic types.
+ * Assemble an ECharts option object.
  *
- * The returned object is a complete ECharts option that can be passed to
- * `echartsInstance.setOption(result)`.
+ * ```ts
+ * const option = ecAssembleChart({
+ *   data: { values: myRows },
+ *   semantic_types: { weight: 'Quantity' },
+ *   chart_spec: { chartType: 'Bar Chart', encodings: { x: { field: 'category' }, y: { field: 'value' } } },
+ *   options: { addTooltips: true },
+ * });
+ * ```
  *
  * @returns An ECharts option object with optional `_warnings` and `_width`/`_height` hints
  */
-export function ecAssembleChart(
-    chartType: string,
-    encodings: Record<string, ChartEncoding>,
-    data: any[],
-    semanticTypes: Record<string, string> = {},
-    canvasSize: { width: number; height: number } = { width: 400, height: 320 },
-    chartProperties?: Record<string, any>,
-    options: AssembleOptions = {},
-): any {
+export function ecAssembleChart(input: ChartAssemblyInput): any {
+    const chartType = input.chart_spec.chartType;
+    const encodings = input.chart_spec.encodings;
+    const data = input.data.values ?? [];
+    const semanticTypes = input.semantic_types ?? {};
+    const canvasSize = input.chart_spec.canvasSize ?? { width: 400, height: 320 };
+    const chartProperties = input.chart_spec.chartProperties;
+    const options = input.options ?? {};
     const chartTemplate = ecGetTemplateDef(chartType) as ChartTemplateDef;
     if (!chartTemplate) {
         throw new Error(`Unknown ECharts chart type: ${chartType}. Use ecAllTemplateDefs to see available types.`);
@@ -386,6 +392,9 @@ export function ecAssembleChart(
     // Store data reference (unlike VL which embeds data.values,
     // ECharts data is embedded directly in series[].data)
     ecOption._dataLength = values.length;
+
+    // Clean internal-only props
+    delete ecOption._legendWidth;
 
     return ecOption;
 }

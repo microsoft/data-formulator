@@ -313,6 +313,73 @@ export function applyLayoutToSpec(
         }
     }
 
+    // --- Dual-legend repositioning ---
+    // When multiple channels produce legends (e.g. color + size, color + opacity),
+    // Vega-Lite stacks them all on the right, which eats into the plot area on a
+    // 400×300 canvas.  Detect this and move the categorical (nominal/ordinal)
+    // legend to the bottom with horizontal orientation, keeping the quantitative
+    // legend compact on the right.
+    const legendChannels = (['color', 'size', 'shape', 'opacity', 'strokeDash', 'strokeWidth'] as const)
+        .filter(ch => {
+            const targets = collectEncodingTargets(ch);
+            return targets.some(enc => enc.field && enc.legend !== null);
+        });
+
+    if (legendChannels.length >= 2) {
+        // Separate categorical vs quantitative legend channels
+        const categoricalChs: string[] = [];
+        const quantitativeChs: string[] = [];
+        for (const ch of legendChannels) {
+            const targets = collectEncodingTargets(ch);
+            const isQuant = targets.some(enc => enc.type === 'quantitative' || enc.type === 'temporal');
+            if (isQuant) {
+                quantitativeChs.push(ch);
+            } else {
+                categoricalChs.push(ch);
+            }
+        }
+
+        // Move categorical legends to bottom, keep quantitative ones on right
+        if (categoricalChs.length > 0 && quantitativeChs.length > 0) {
+            for (const ch of categoricalChs) {
+                const targets = collectEncodingTargets(ch);
+                for (const enc of targets) {
+                    if (!enc.field) continue;
+                    if (!enc.legend) enc.legend = {};
+                    enc.legend.orient = 'bottom';
+                    enc.legend.direction = 'horizontal';
+
+                    // Responsive columns: estimate how many legend entries fit
+                    // per row based on the available canvas width.
+                    // Each entry ≈ symbol(16) + label + padding.  Estimate label
+                    // width from the longest domain value, then derive columns.
+                    const domainValues = [...new Set(context.table.map((r: any) => r[enc.field]))];
+                    const domainSize = domainValues.length;
+                    const maxLabelLen = Math.max(
+                        ...domainValues.map((v: any) => String(v ?? '').length), 3,
+                    );
+                    // VL legend: symbol (~15px) + label (~5px/char at 11px proportional font) + gap (~8px)
+                    const entryWidth = 15 + maxLabelLen * 5 + 8;
+                    // Available width: VL's bottom legend spans the full SVG width,
+                    // which includes the plot area plus the right-side quantitative
+                    // legend (~130px).  Use that total for column estimation.
+                    const rightLegendWidth = 130;
+                    const availableWidth = canvasSize.width + rightLegendWidth;
+                    const columnsByWidth = Math.max(1, Math.floor(availableWidth / entryWidth));
+                    enc.legend.columns = Math.min(columnsByWidth, domainSize);
+
+                    // For very high cardinality, cap visible symbols to keep
+                    // the bottom legend from growing too tall.
+                    const maxRows = 4;
+                    const maxVisible = columnsByWidth * maxRows;
+                    if (domainSize > maxVisible) {
+                        enc.legend.symbolLimit = maxVisible;
+                    }
+                }
+            }
+        }
+    }
+
     // --- Overflow styling (from TruncationWarning[]) ---
     // Applied AFTER template.instantiate and facet restructuring,
     // so we modify the spec's actual encoding objects.

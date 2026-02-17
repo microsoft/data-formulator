@@ -13,7 +13,7 @@
 
 import { Type } from '../../../data/types';
 import { TestCase, makeField, makeEncodingItem } from './types';
-import { seededRandom, genCategories } from './generators';
+import { seededRandom, genCategories, genMonths } from './generators';
 
 // ---------------------------------------------------------------------------
 // Test data generators
@@ -531,6 +531,83 @@ export function genChartJsStressTests(): TestCase[] {
                 Value: { type: Type.Number, semanticType: 'Quantity', levels: [] },
             },
             encodingMap: { x: makeEncodingItem('Item'), y: makeEncodingItem('Value') },
+        });
+    }
+
+    return tests;
+}
+
+// ===========================================================================
+// Rose Chart tests
+// ===========================================================================
+
+export function genChartJsRoseTests(): TestCase[] {
+    const tests: TestCase[] = [];
+    const rand = seededRandom(1500);
+
+    // 1. Basic rose — wind directions × speed
+    {
+        const directions = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+        const data = directions.map(d => ({ Direction: d, Speed: Math.round(5 + rand() * 25) }));
+        tests.push({
+            title: 'CJS: Rose — 8 Directions',
+            description: 'Wind speed by compass direction. CJS: polarArea chart type.',
+            tags: ['chartjs', 'rose', 'basic'],
+            chartType: 'Rose Chart',
+            data,
+            fields: [makeField('Direction'), makeField('Speed')],
+            metadata: {
+                Direction: { type: Type.String, semanticType: 'Category', levels: directions },
+                Speed: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+            },
+            encodingMap: { x: makeEncodingItem('Direction'), y: makeEncodingItem('Speed') },
+            chartProperties: { alignment: 'center' },
+        });
+    }
+
+    // 2. Stacked rose — directions × season
+    {
+        const directions = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+        const seasons = ['Spring', 'Summer', 'Autumn', 'Winter'];
+        const data: any[] = [];
+        for (const d of directions) {
+            for (const s of seasons) {
+                data.push({ Direction: d, Speed: Math.round(3 + rand() * 20), Season: s });
+            }
+        }
+        tests.push({
+            title: 'CJS: Stacked Rose — 8 dirs × 4 seasons',
+            description: 'Stacked wind rose by season.',
+            tags: ['chartjs', 'rose', 'stacked'],
+            chartType: 'Rose Chart',
+            data,
+            fields: [makeField('Direction'), makeField('Speed'), makeField('Season')],
+            metadata: {
+                Direction: { type: Type.String, semanticType: 'Category', levels: directions },
+                Speed: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                Season: { type: Type.String, semanticType: 'Category', levels: seasons },
+            },
+            encodingMap: { x: makeEncodingItem('Direction'), y: makeEncodingItem('Speed'), color: makeEncodingItem('Season') },
+            chartProperties: { alignment: 'center' },
+        });
+    }
+
+    // 3. Rose — 12 months
+    {
+        const months = genMonths(12);
+        const data = months.map(m => ({ Month: m, Rainfall: Math.round(20 + rand() * 150) }));
+        tests.push({
+            title: 'CJS: Rose — 12 Months Rainfall',
+            description: 'Monthly rainfall as a rose chart.',
+            tags: ['chartjs', 'rose', 'medium'],
+            chartType: 'Rose Chart',
+            data,
+            fields: [makeField('Month'), makeField('Rainfall')],
+            metadata: {
+                Month: { type: Type.String, semanticType: 'Month', levels: months },
+                Rainfall: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+            },
+            encodingMap: { x: makeEncodingItem('Month'), y: makeEncodingItem('Rainfall') },
         });
     }
 

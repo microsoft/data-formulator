@@ -148,6 +148,7 @@ export const SemanticTypes = {
     Boolean: 'Boolean',         // True/False, Yes/No
     Binary: 'Binary',           // Two-value categorical
     Code: 'Code',               // Coded value: "A", "B", "C"
+    Direction: 'Direction',     // Compass direction: "N", "NE", "East", etc.
     
     // =========================================================================
     // BINNED/RANGE TYPES - Discretized continuous values
@@ -209,7 +210,7 @@ export const categoricalTypes = new Set<string>([
     'Name', 'PersonName', 'Username', 'Email',
     'Company', 'Brand', 'Department', 'Product', 'Category',
     // Coded
-    'Status', 'Type', 'Boolean', 'Binary', 'Code',
+    'Status', 'Type', 'Boolean', 'Binary', 'Code', 'Direction',
     // Geographic names
     'Location', 'Country', 'State', 'City', 'Region',
     // Ranges (ordinal but work as categorical for color)
@@ -226,6 +227,8 @@ export const ordinalTypes = new Set<string>([
     'Rank', 'Score', 'Rating', 'Level',
     // Ranges
     'Range', 'AgeGroup', 'Bucket', 'TimeRange',
+    // Compass
+    'Direction',
 ]);
 
 /** Types suitable for geographic/map visualizations */
@@ -332,6 +335,7 @@ const typeHierarchy: Record<string, string | null> = {
     Boolean: null,
     Binary: 'Boolean',
     Code: null,
+    Direction: null,
     
     // Ranges
     Range: null,
@@ -384,8 +388,9 @@ const visCategoryMap: Record<string, VisCategory> = {
     Company: 'nominal', Brand: 'nominal', Department: 'nominal',
     Product: 'nominal', SKU: 'nominal', Category: 'nominal',
     
-    // Coded → nominal
+    // Coded → nominal (Direction is ordinal — clockwise from North)
     Status: 'nominal', Type: 'nominal', Boolean: 'nominal', Binary: 'nominal', Code: 'nominal',
+    Direction: 'ordinal',
     
     // Ranges → ordinal
     Range: 'ordinal', AgeGroup: 'ordinal', Bucket: 'ordinal',
@@ -1079,6 +1084,12 @@ const DOW_ABBR3_SUN = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 /** Quarter labels. */
 const QUARTER_LABELS = ['Q1','Q2','Q3','Q4'];
 
+/** Compass directions — clockwise from North (top of chart). */
+const COMPASS_8 = ['N','NE','E','SE','S','SW','W','NW'];
+const COMPASS_8_FULL = ['North','Northeast','East','Southeast','South','Southwest','West','Northwest'];
+const COMPASS_4 = ['N','E','S','W'];
+const COMPASS_4_FULL = ['North','East','South','West'];
+
 interface OrdinalSequence {
     /** Canonical labels in order */
     labels: string[];
@@ -1102,6 +1113,12 @@ const ORDINAL_SEQUENCES: Record<string, OrdinalSequence[]> = {
     ],
     Quarter: [
         { labels: QUARTER_LABELS, caseInsensitive: true },
+    ],
+    Direction: [
+        { labels: COMPASS_8, caseInsensitive: true },
+        { labels: COMPASS_8_FULL, caseInsensitive: true },
+        { labels: COMPASS_4, caseInsensitive: true },
+        { labels: COMPASS_4_FULL, caseInsensitive: true },
     ],
 };
 

@@ -57,8 +57,9 @@ export const ecAreaChartDef: ChartTemplateDef = {
             series: [],
         };
 
-        if (channelSemantics.y?.zero?.zero === false) {
-            option.yAxis.scale = true;
+        // ECharts: scale=true means "data-fit", scale=false means "include zero"
+        if (channelSemantics.y?.zero) {
+            option.yAxis.scale = !channelSemantics.y.zero.zero;
         }
 
         // Stack / layer mode

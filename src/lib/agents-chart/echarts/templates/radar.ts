@@ -140,9 +140,9 @@ export const ecRadarChartDef: ChartTemplateDef = {
                     lineStyle: { width: 3 },
                 },
             }],
-            // Fixed canvas size for radar (polar layout, no axis-driven sizing)
-            _width: 450,
-            _height: 400,
+            // Enforce minimum canvas for radar readability
+            _width: Math.max(ctx.canvasSize.width, 350),
+            _height: Math.max(ctx.canvasSize.height, 300),
         };
 
         if (legendData.length > 0) {

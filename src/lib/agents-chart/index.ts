@@ -7,23 +7,27 @@
  * Semantic-level chart assembly library.
  *
  * Given data, semantic types, encoding definitions, and a canvas size,
- * generates a Vega-Lite specification. No React/Redux/UI dependencies.
+ * generates a chart specification. No React/Redux/UI dependencies.
  *
  * Architecture:
  *   core/       — Target-agnostic: semantic types, layout, decisions, types
  *   vegalite/   — Vega-Lite backend: assembly, templates, spec instantiation
+ *   echarts/    — ECharts backend: assembly, templates, spec instantiation
+ *   chartjs/    — Chart.js backend: assembly, templates, spec instantiation
  *
- * Usage:
+ * Usage (new unified interface):
  * ```ts
  * import { assembleChart } from './lib/agents-chart';
  *
- * const spec = assembleChart(
- *   'Scatter Plot',
- *   { x: { field: 'weight' }, y: { field: 'mpg' }, color: { field: 'origin' } },
- *   myData,
- *   { weight: 'Quantity', mpg: 'Quantity', origin: 'Country' },
- *   { width: 400, height: 300 },
- * );
+ * const spec = assembleChart({
+ *   data: { values: myData },
+ *   semantic_types: { weight: 'Quantity', mpg: 'Quantity', origin: 'Country' },
+ *   chart_spec: {
+ *     chartType: 'Scatter Plot',
+ *     encodings: { x: { field: 'weight' }, y: { field: 'mpg' }, color: { field: 'origin' } },
+ *     canvasSize: { width: 400, height: 300 },
+ *   },
+ * });
  * ```
  */
 

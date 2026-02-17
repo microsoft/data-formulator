@@ -15,7 +15,7 @@
 
 import { Type } from '../../../data/types';
 import { TestCase, makeField, makeEncodingItem } from './types';
-import { seededRandom, genCategories, genDates } from './generators';
+import { seededRandom, genCategories, genDates, genMonths } from './generators';
 
 // ---------------------------------------------------------------------------
 // Test data generators — shared across VL and EC
@@ -517,7 +517,7 @@ export function genEChartsStressTests(): TestCase[] {
             data,
             fields: [makeField('Date'), makeField('Value')],
             metadata: {
-                Date: { type: Type.String, semanticType: 'Category', levels: days },
+                Date: { type: Type.String, semanticType: 'Temporal', levels: days },
                 Value: { type: Type.Number, semanticType: 'Quantity', levels: [] },
             },
             encodingMap: { x: makeEncodingItem('Date'), y: makeEncodingItem('Value') },
@@ -1311,4 +1311,81 @@ export function genEChartsFacetClipTests(): TestCase[] {
             chartType: 'Scatter Plot', rowCount: 8, scatter: true, seed: 1323,
         }),
     ];
+}
+
+// ===========================================================================
+// Rose Chart tests
+// ===========================================================================
+
+export function genEChartsRoseTests(): TestCase[] {
+    const tests: TestCase[] = [];
+    const rand = seededRandom(1400);
+
+    // 1. Basic rose — wind directions × speed
+    {
+        const directions = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+        const data = directions.map(d => ({ Direction: d, Speed: Math.round(5 + rand() * 25) }));
+        tests.push({
+            title: 'EC: Rose — 8 Directions',
+            description: 'Wind speed by compass direction. VL: arc+theta+radius; EC: series type=bar (polar).',
+            tags: ['echarts', 'rose', 'basic'],
+            chartType: 'Rose Chart',
+            data,
+            fields: [makeField('Direction'), makeField('Speed')],
+            metadata: {
+                Direction: { type: Type.String, semanticType: 'Category', levels: directions },
+                Speed: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+            },
+            encodingMap: { x: makeEncodingItem('Direction'), y: makeEncodingItem('Speed') },
+            chartProperties: { alignment: 'center' },
+        });
+    }
+
+    // 2. Stacked rose — directions × season
+    {
+        const directions = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+        const seasons = ['Spring', 'Summer', 'Autumn', 'Winter'];
+        const data: any[] = [];
+        for (const d of directions) {
+            for (const s of seasons) {
+                data.push({ Direction: d, Speed: Math.round(3 + rand() * 20), Season: s });
+            }
+        }
+        tests.push({
+            title: 'EC: Stacked Rose — 8 dirs × 4 seasons',
+            description: 'Stacked wind rose by season. Tests polar stacked bar rendering.',
+            tags: ['echarts', 'rose', 'stacked'],
+            chartType: 'Rose Chart',
+            data,
+            fields: [makeField('Direction'), makeField('Speed'), makeField('Season')],
+            metadata: {
+                Direction: { type: Type.String, semanticType: 'Category', levels: directions },
+                Speed: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                Season: { type: Type.String, semanticType: 'Category', levels: seasons },
+            },
+            encodingMap: { x: makeEncodingItem('Direction'), y: makeEncodingItem('Speed'), color: makeEncodingItem('Season') },
+            chartProperties: { alignment: 'center' },
+        });
+    }
+
+    // 3. Rose — 12 months
+    {
+        const months = genMonths(12);
+        const data = months.map(m => ({ Month: m, Rainfall: Math.round(20 + rand() * 150) }));
+        tests.push({
+            title: 'EC: Rose — 12 Months Rainfall',
+            description: 'Monthly rainfall as a rose chart. Tests many-category angular layout.',
+            tags: ['echarts', 'rose', 'medium'],
+            chartType: 'Rose Chart',
+            data,
+            fields: [makeField('Month'), makeField('Rainfall')],
+            metadata: {
+                Month: { type: Type.String, semanticType: 'Month', levels: months },
+                Rainfall: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+            },
+            encodingMap: { x: makeEncodingItem('Month'), y: makeEncodingItem('Rainfall') },
+        });
+    }
+
+    return tests;
 }

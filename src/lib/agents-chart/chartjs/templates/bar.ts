@@ -66,7 +66,8 @@ export const cjsBarChartDef: ChartTemplateDef = {
                 }],
             },
             options: {
-                responsive: false,
+                responsive: true,
+                maintainAspectRatio: false,
                 indexAxis: isHorizontal ? 'y' as const : 'x' as const,
                 scales: {
                     x: {
@@ -75,7 +76,6 @@ export const cjsBarChartDef: ChartTemplateDef = {
                     },
                     y: {
                         title: { display: true, text: isHorizontal ? catField : valField },
-                        ...(isHorizontal ? {} : { beginAtZero: true }),
                     },
                 },
                 plugins: {
@@ -84,6 +84,16 @@ export const cjsBarChartDef: ChartTemplateDef = {
                 },
             },
         };
+
+        // Apply zero-baseline from semantic decision
+        const valScale = isHorizontal ? 'x' : 'y';
+        const valCS = channelSemantics[valueAxis];
+        if (valCS?.zero) {
+            config.options.scales[valScale].beginAtZero = valCS.zero.zero !== false;
+        } else {
+            // Default: bars should include zero for length integrity
+            config.options.scales[valScale].beginAtZero = true;
+        }
 
         Object.assign(spec, config);
         delete spec.mark;
@@ -129,7 +139,8 @@ export const cjsStackedBarChartDef: ChartTemplateDef = {
                 datasets: [],
             },
             options: {
-                responsive: false,
+                responsive: true,
+                maintainAspectRatio: false,
                 indexAxis: isHorizontal ? 'y' as const : 'x' as const,
                 scales: {
                     x: {
@@ -139,7 +150,6 @@ export const cjsStackedBarChartDef: ChartTemplateDef = {
                     y: {
                         stacked: true,
                         title: { display: true, text: isHorizontal ? catField : valField },
-                        beginAtZero: true,
                     },
                 },
                 plugins: {
@@ -172,6 +182,15 @@ export const cjsStackedBarChartDef: ChartTemplateDef = {
                 borderColor: DEFAULT_COLORS[0],
                 borderWidth: 1,
             });
+        }
+
+        // Apply zero-baseline from semantic decision
+        const valScaleS = isHorizontal ? 'x' : 'y';
+        const valCSs = channelSemantics[valueAxis];
+        if (valCSs?.zero) {
+            config.options.scales[valScaleS].beginAtZero = valCSs.zero.zero !== false;
+        } else {
+            config.options.scales[valScaleS].beginAtZero = true;
         }
 
         Object.assign(spec, config);
@@ -215,7 +234,8 @@ export const cjsGroupedBarChartDef: ChartTemplateDef = {
                 datasets: [],
             },
             options: {
-                responsive: false,
+                responsive: true,
+                maintainAspectRatio: false,
                 indexAxis: isHorizontal ? 'y' as const : 'x' as const,
                 scales: {
                     x: {
@@ -223,7 +243,6 @@ export const cjsGroupedBarChartDef: ChartTemplateDef = {
                     },
                     y: {
                         title: { display: true, text: isHorizontal ? catField : valField },
-                        beginAtZero: true,
                     },
                 },
                 plugins: {
@@ -256,6 +275,15 @@ export const cjsGroupedBarChartDef: ChartTemplateDef = {
                 borderColor: DEFAULT_COLORS[0],
                 borderWidth: 1,
             });
+        }
+
+        // Apply zero-baseline from semantic decision
+        const valScaleG = isHorizontal ? 'x' : 'y';
+        const valCSg = channelSemantics[valueAxis];
+        if (valCSg?.zero) {
+            config.options.scales[valScaleG].beginAtZero = valCSg.zero.zero !== false;
+        } else {
+            config.options.scales[valScaleG].beginAtZero = true;
         }
 
         Object.assign(spec, config);
