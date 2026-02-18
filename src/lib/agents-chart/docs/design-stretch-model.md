@@ -708,3 +708,376 @@ stretch_positional = max(stretch_positional, stretch_series)
 W = W₀ · stretch_x
 H = H₀ · stretch_y
 ```
+
+---
+
+# §3 Circumference Axis (Radial Pressure Model)
+
+## Problem
+
+Radial charts (pie, rose, sunburst, radar) have no Cartesian axes.
+Instead, data items are arranged around a **circle**. The relevant
+dimension is the **circumference** — the total arc length available for
+distributing items. When many items (or highly skewed items in a pie)
+crowd the circumference, the chart must grow to keep slices/spokes
+legible.
+
+## Why axis models don't apply
+
+Neither the spring model (§1) nor the gas pressure model (§2) directly
+applies to radial charts:
+
+- **§1 (Spring)** assumes a 1D axis of length $L_0$ with banded items.
+  Radial charts have a **closed loop**, so there is no "axis length" to
+  extend — growing the chart means increasing the **radius**, which
+  increases the circumference as $C = 2\pi r$.
+
+- **§2 (Gas)** assumes 2D point-like marks in a canvas area. Radial
+  items are not free-floating points — they are angularly constrained
+  to their slice/spoke positions.
+
+The circumference model maps the spring intuition to polar geometry:
+treat the circumference as a "bent bar axis" and stretch the radius
+instead of a linear dimension.
+
+## Setup
+
+| Symbol | Meaning | Default |
+|---|---|---|
+| $r_0$ | Base radius: largest circle fitting in the base canvas | $\min(W_0, H_0)/2 - m$ |
+| $C_0$ | Base circumference: $2\pi r_0$ | derived |
+| $N_{\text{eff}}$ | Effective item count (see §3.1) | data-dependent |
+| $\ell_{\text{arc}}$ | Minimum arc-length per effective item (px) | 45 |
+| $\alpha$ | Elasticity exponent | 0.5 |
+| $\beta$ | Per-dimension max stretch | 2.0 |
+| $r_{\min}$ | Minimum radius | 60 px |
+| $r_{\max}$ | Maximum radius (absolute cap) | 400 px |
+| $m$ | Margin around the circle (px) for labels/legend | 20 |
+
+## §3.1 Effective Item Count
+
+Different radial chart types have different crowding dynamics. The model
+abstracts this into a single number: **effective item count** $N_{\text{eff}}$.
+
+### Uniform slices/spokes (rose, radar)
+
+All items share equal angular width. Effective count = actual item count:
+
+$$N_{\text{eff}} = N$$
+
+### Variable-width slices (pie, sunburst)
+
+Some slices may be much thinner than others (e.g., a dominant slice of
+90% plus tiny slices of 1% each). The crowding pressure is determined by
+the **thinnest slice**, not the average.
+
+$$N_{\text{eff}} = \frac{\sum v_i}{\min(v_i)}$$
+
+This answers: "how many of the smallest slice would fill the entire circle?"
+If all slices are equal, $N_{\text{eff}} = N$. If one slice dominates and
+many are tiny, $N_{\text{eff}} \gg N$ — reflecting the real crowding pressure.
+
+**Cap:** $N_{\text{eff}} \leq 100$ to prevent degenerate cases (near-zero
+slices) from causing unbounded growth.
+
+### Which ring? (sunburst)
+
+For sunburst charts with multiple rings, compute $N_{\text{eff}}$ on the
+**outer ring** (leaf nodes only). The outer ring has the most items and
+determines the minimum arc width needed.
+
+## §3.2 Pressure and Stretch
+
+Map circumference pressure to radius stretch using the same power-law
+as the bar-chart spring model:
+
+**Pressure:**
+
+$$p = \frac{N_{\text{eff}} \cdot \ell_{\text{arc}}}{C_0} = \frac{N_{\text{eff}} \cdot \ell_{\text{arc}}}{2\pi r_0}$$
+
+**Stretch:**
+
+$$s = \begin{cases}
+1 & \text{if } p \leq 1 \\
+\min(s_{\max},\ p^{\alpha}) & \text{if } p > 1
+\end{cases}$$
+
+**Radius:**
+
+$$r = r_0 \cdot s$$
+
+## §3.3 Per-dimension Max Stretch
+
+Growing the radius expands the canvas in **both** X and Y equally
+(maintaining the circular aspect ratio). To respect the per-dimension
+cap $\beta$, derive the effective max stretch on the radius from the
+tighter dimension:
+
+$$s_{\max} = \min\!\left(\frac{r_{\max}}{r_0},\; \frac{\min(W_0 \cdot \beta,\; H_0 \cdot \beta) - 2m}{2 r_0}\right)$$
+
+This ensures neither canvas dimension exceeds $\beta \times$ base.
+
+## §3.4 Canvas Sizing
+
+After computing the final radius $r$:
+
+$$W = \max(W_0,\ 2r + 2m)$$
+$$H = \max(H_0,\ 2r + 2m)$$
+
+## §3.5 Gauge Faceting
+
+Gauge charts are a special case: each gauge is a single-item radial
+chart, and multiple gauges are laid out in a facet-style grid. The
+template computes its own grid layout (since the assembler's facet path
+doesn't apply to axis-less charts).
+
+All gauge element sizes (progress bar width, pointer width, tick length,
+font sizes) scale **continuously** with the computed gauge radius:
+
+$$s = r / r_{\text{ref}}$$
+
+where $r_{\text{ref}} = 100$ px. Each element size is `baseline × s`,
+clamped to a minimum. This avoids threshold artifacts — a gauge at 80px
+radius looks proportional to one at 140px.
+
+## Parameter table
+
+| Chart type | $N_{\text{eff}}$ source | $\ell_{\text{arc}}$ | $\alpha$ | $\beta$ | $m$ |
+|---|---|---|---|---|---|
+| **Pie** | `total / min(values)` | 45 | 0.5 | 2.0 | 50 (room for legend) |
+| **Rose** | N categories | 45 | 0.5 | 2.0 | 20 |
+| **Sunburst** | outer-ring `total / min` | 45 | 0.5 | 2.0 | 20 |
+| **Radar** | N spokes | 45 | 0.5 | 2.0 | 20 |
+| **Gauge** | N dials (facet grid) | — | — | 2.0 | 20 |
+
+## §3 Summary
+
+| Symbol | Meaning | Default |
+|---|---|---|
+| $N_{\text{eff}}$ | Effective item count | data-dependent |
+| $\ell_{\text{arc}}$ | Minimum arc per item (px) | 45 |
+| $r_0$ | Base radius | $\min(W_0,H_0)/2 - m$ |
+| $C_0$ | Base circumference $2\pi r_0$ | derived |
+| $\alpha$ | Elasticity exponent | 0.5 |
+| $\beta$ | Per-dimension max stretch | 2.0 |
+| $r_{\min}$ | Minimum radius | 60 |
+| $r_{\max}$ | Maximum radius | 400 |
+
+```
+Given: N_eff items, minArc ℓ_arc, base canvas W₀×H₀,
+       margin m, elasticity α, maxStretch β, minRadius, maxRadius
+
+r₀ = max(minRadius, (min(W₀, H₀) / 2) - m)
+C₀ = 2π · r₀
+p  = N_eff · ℓ_arc / C₀
+
+# Effective max stretch on radius (per-dimension cap)
+s_max = min(maxRadius / r₀,
+            (min(W₀·β, H₀·β) - 2m) / (2·r₀))
+
+if p ≤ 1:
+    r = r₀
+else:
+    r = r₀ · min(s_max, p^α)
+
+r = clamp(r, minRadius, maxRadius)
+W = max(W₀, 2r + 2m)
+H = max(H₀, 2r + 2m)
+```
+
+---
+
+# §4 Area Layout (2D Pressure Model)
+
+## Problem
+
+Area-filling charts (treemap, waffle) divide a 2D canvas into
+rectangles whose area encodes value. Unlike Cartesian charts with
+independent X and Y axes, the fundamental resource is **total area**.
+When many items (or highly skewed values) crowd the space, every item
+ends up too small to display its label or be visually distinguishable.
+
+## Why axis and circumference models don't apply
+
+- **§1 (Spring)** and **§2 (Gas)** reason about 1D axes independently.
+  Treemap items don't have stable positions on either axis — the
+  squarify algorithm decides on-the-fly how to partition X and Y.
+
+- **§3 (Circumference)** reasons about a 1D closed loop. Treemap items
+  occupy 2D area, not angular sectors.
+
+The area model treats the problem as: "how much total canvas area do we
+need so the smallest item is large enough to read?"
+
+## Setup
+
+| Symbol | Meaning | Default |
+|---|---|---|
+| $W_0$ | Base canvas width | from context |
+| $H_0$ | Base canvas height | from context |
+| $A_0$ | Base canvas area: $W_0 \times H_0$ | derived |
+| $N_{\text{eff}}$ | Effective item count (same formula as §3.1) | data-dependent |
+| $\ell_{\min}$ | Minimum width per effective item (px), measured as if items were bars | 30 |
+| $\alpha$ | Elasticity exponent | 0.5 |
+| $\beta$ | Per-dimension max stretch | 2.0 |
+| $b$ | X-bias factor (how much more X stretches vs Y) | 1.5 |
+
+## §4.1 Effective Item Count
+
+Treemap items have variable area (variable-width "bars"). Using the same
+`computeEffectiveBarCount` as §3.1:
+
+$$N_{\text{eff}} = \min\!\left(100,\; \frac{\sum v_i}{\min(v_i)}\right)$$
+
+This captures the worst case: how many of the smallest item would fill
+the entire space.
+
+## §4.2 Pressure (1D Projection)
+
+The key insight: **imagine all treemap items laid out as vertical bars of
+variable width along the X axis.** The total width they need is
+$N_{\text{eff}} \times \ell_{\min}$. Pressure is measured against the
+base width:
+
+$$p = \frac{N_{\text{eff}} \cdot \ell_{\min}}{W_0}$$
+
+Even though treemap items actually occupy 2D space, computing pressure in
+1D is sufficient because the squarify algorithm automatically translates
+extra width into proportional height — more total area → larger cells in
+both dimensions.
+
+## §4.3 Area Stretch
+
+The pressure tells us how much total area must grow:
+
+$$A_{\text{stretch}} = \begin{cases}
+1 & \text{if } p \leq 1 \\
+\min(\beta^2,\ p^{\alpha}) & \text{if } p > 1
+\end{cases}$$
+
+The cap is $\beta^2$ because $A = W \times H$ and each dimension is
+capped at $\beta$.
+
+## §4.4 Biased Split to X and Y
+
+Unlike circumference charts (which grow uniformly in both dimensions),
+treemap benefits from a **biased split**: X gets more of the stretch
+because most reading happens left-to-right and labels are horizontal.
+
+Given the X-bias factor $b$:
+
+$$s_x = \min(\beta,\; A_{\text{stretch}}^{\,b/(b+1)})$$
+$$s_y = \min(\beta,\; A_{\text{stretch}}^{\,1/(b+1)})$$
+
+**Invariant:** $s_x \times s_y = A_{\text{stretch}}$ (total area is preserved).
+
+**Special cases:**
+- $b = 1$: uniform stretch, $s_x = s_y = \sqrt{A_{\text{stretch}}}$
+- $b = 2$: X gets ⅔ of the log-stretch, Y gets ⅓
+- $b = 1.5$ (default): X gets 60%, Y gets 40%
+
+## §4.5 Canvas Sizing
+
+$$W = \lfloor W_0 \cdot s_x \rceil$$
+$$H = \lfloor H_0 \cdot s_y \rceil$$
+
+## Worked examples
+
+### Base canvas 400×300, minBarPx = 30, α = 0.5, β = 2.0, b = 1.5
+
+| Scenario | Leaf values | $N_{\text{eff}}$ | Pressure | $A_{\text{stretch}}$ | $s_x$ | $s_y$ | W | H |
+|---|---|---|---|---|---|---|---|---|
+| 5 equal items | [100, 100, 100, 100, 100] | 5 | 0.38 | 1.0 | 1.0 | 1.0 | 400 | 300 |
+| 10 equal items | [100 × 10] | 10 | 0.75 | 1.0 | 1.0 | 1.0 | 400 | 300 |
+| 20 equal items | [100 × 20] | 20 | 1.50 | 1.22 | 1.13 | 1.08 | 452 | 324 |
+| 50 equal items | [100 × 50] | 50 | 3.75 | 1.94 | 1.52 | 1.27 | 608 | 381 |
+| Skewed (1 large + 20 tiny) | [1000, 10×20] | 100 | 7.50 | 2.74 | 1.87 | 1.46 | 748 | 438 |
+| Extreme skew | [10000, 1×99] | 100 | 7.50 | 2.74 | 1.87 | 1.46 | 748 | 438 |
+
+### Why biased split?
+
+Treemap squarify algorithms produce **nearly square** cells when the
+canvas is square. But charts are typically wider than tall (landscape
+aspect ratio). Giving X more stretch pushes the aspect ratio closer to
+square, which **improves** the squarify result:
+
+- A 400×300 canvas with $A_{\text{stretch}} = 2$ uniform → 566×424 (ratio 1.33)
+- Same with $b = 1.5$ → 608×381 → still wider, but cells are larger
+  on the axis where labels display horizontally.
+
+The bias prioritizes horizontal readability: labels inside treemap cells
+are almost always horizontal, so extra width is more valuable than extra
+height for label fitting.
+
+## §4 Summary
+
+| Symbol | Meaning | Default |
+|---|---|---|
+| $N_{\text{eff}}$ | Effective item count ($\sum v / \min v$, cap 100) | data-dependent |
+| $\ell_{\min}$ | Minimum width per effective item (px) | 30 |
+| $\alpha$ | Elasticity exponent | 0.5 |
+| $\beta$ | Per-dimension max stretch | 2.0 |
+| $b$ | X-bias factor (1 = uniform, >1 = X takes more) | 1.5 |
+
+```
+Given: leaf values, base canvas W₀×H₀,
+       minBarPx, elasticity α, maxStretch β, xBias b
+
+N_eff = min(100, sum(values) / min(values))
+p     = N_eff · minBarPx / W₀
+
+if p ≤ 1:
+    A_stretch = 1
+else:
+    A_stretch = min(β², p^α)
+
+s_x = min(β, A_stretch^(b/(b+1)))
+s_y = min(β, A_stretch^(1/(b+1)))
+
+W = round(W₀ · s_x)
+H = round(H₀ · s_y)
+```
+
+---
+
+# §5 Unified Model Summary
+
+The four models form a hierarchy, each adapting the same core idea —
+**pressure → elastic stretch → clamped output** — to a different
+geometric context:
+
+| § | Model | Geometry | Pressure dimension | Stretch dimension(s) | Chart types |
+|---|---|---|---|---|---|
+| §1 | Spring | 1D axis | $N \cdot \ell_0 / L_0$ | 1D (axis length) | Bar, Histogram, Heatmap, Boxplot |
+| §2 | Gas Pressure | 2D point cloud | $\text{uniquePos} \cdot \sigma_{1d} / \text{dim}$ | Per-axis (X, Y independent) | Scatter, Line, Area |
+| §3 | Circumference | 1D closed loop | $N_{\text{eff}} \cdot \ell_{\text{arc}} / C_0$ | Radius (both W, H equally) | Pie, Rose, Sunburst, Radar, Gauge |
+| §4 | Area | 2D filled space | $N_{\text{eff}} \cdot \ell_{\min} / W_0$ | Area (biased X/Y split) | Treemap, Waffle |
+
+### Shared concepts
+
+1. **Pressure = demand / supply.** Items need space; the base canvas
+   provides it. Pressure > 1 means overflow.
+
+2. **Elastic stretch.** Stretch = $\min(\beta,\; p^\alpha)$. The
+   power-law exponent $\alpha$ controls how aggressively the chart grows
+   (0.3 for axes, 0.5 for radial/area).
+
+3. **Per-dimension cap $\beta$.** No axis grows beyond $\beta \times$
+   base. For radial/area models this translates to radius or area caps.
+
+4. **Effective item count.** For charts with variable-width items
+   (pie, treemap), $N_{\text{eff}} = \sum v_i / \min(v_i)$ measures
+   worst-case crowding — how many of the smallest item would fill the
+   entire space.
+
+### Choosing the right model
+
+```
+Is the chart axis-based?
+├── YES: Does it have banded (discrete) axes?
+│   ├── YES → §1 Spring Model
+│   └── NO  → §2 Gas Pressure Model
+└── NO:  Is the layout radial (items around a circle)?
+    ├── YES → §3 Circumference Model
+    └── NO  → §4 Area Model (2D space-filling)
+```

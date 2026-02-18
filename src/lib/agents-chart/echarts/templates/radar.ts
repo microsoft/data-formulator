@@ -17,7 +17,7 @@
  */
 
 import { ChartTemplateDef, ChartPropertyDef } from '../../core/types';
-import { extractCategories, groupBy, DEFAULT_COLORS } from './utils';
+import { extractCategories, groupBy, DEFAULT_COLORS, computeCircumferencePressure } from './utils';
 
 /** Round up to a nice ceiling for radar axis max. */
 function niceMax(v: number): number {
@@ -127,11 +127,21 @@ export const ecRadarChartDef: ChartTemplateDef = {
             });
         }
 
+        // ── Circumference-pressure sizing (spring model) ──────────────
+        // Radar: uniform spokes — each metric is one "bar".
+        // Spokes need more spacing for axis labels than pie/rose.
+        const { radius: pressureRadius, canvasW, canvasH }
+            = computeCircumferencePressure(metrics.length, ctx.canvasSize, {
+                minArcPx: 60,  // spokes need more spacing for axis labels
+                minRadius: 80,
+            });
+
         const option: any = {
             tooltip: { trigger: 'item' },
             radar: {
                 indicator,
                 shape: chartProperties?.shape === 'circle' ? 'circle' : 'polygon',
+                radius: pressureRadius,
             },
             series: [{
                 type: 'radar',
@@ -141,8 +151,8 @@ export const ecRadarChartDef: ChartTemplateDef = {
                 },
             }],
             // Enforce minimum canvas for radar readability
-            _width: Math.max(ctx.canvasSize.width, 350),
-            _height: Math.max(ctx.canvasSize.height, 300),
+            _width: canvasW,
+            _height: canvasH,
         };
 
         if (legendData.length > 0) {

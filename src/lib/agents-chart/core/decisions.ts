@@ -540,3 +540,151 @@ export function computeOverflow(
         omittedCount: overflowed ? uniqueCount - maxToKeep : 0,
     };
 }
+
+// ---------------------------------------------------------------------------
+// Circumference-pressure model for radial charts (§3)
+// ---------------------------------------------------------------------------
+
+/**
+ * Parameters for circumference-pressure scaling (spring model on polar axis).
+ */
+export interface CircumferencePressureParams {
+    /** Minimum arc-length (px) each "effective bar" needs on the
+     *  circumference — analogous to defaultStepSize in the spring model.
+     *  Default: 45 */
+    minArcPx?: number;
+    /** Minimum chart radius in px. Default: 60 */
+    minRadius?: number;
+    /** Maximum chart radius in px. Caps runaway growth. Default: 400 */
+    maxRadius?: number;
+    /** Power-law exponent for pressure → stretch (same as spring model).
+     *  0.5 = square-root growth. Default: 0.5 */
+    elasticity?: number;
+    /** Per-dimension maximum stretch multiplier cap (matches bar-chart
+     *  default of 2.0).  The effective max stretch on the radius is
+     *  derived from min(baseW, baseH) × maxStretch so that the chart
+     *  never exceeds the cap in either dimension.  Default: 2.0 */
+    maxStretch?: number;
+    /** Extra margin outside the chart circle (px) for labels, legend, etc.
+     *  Added to each side when computing canvas dimensions. Default: 20 */
+    margin?: number;
+}
+
+/**
+ * Result of circumference pressure computation.
+ */
+export interface CircumferencePressureResult {
+    /** Computed chart radius in px */
+    radius: number;
+    /** Recommended canvas width (px) */
+    canvasW: number;
+    /** Recommended canvas height (px) */
+    canvasH: number;
+}
+
+/**
+ * Compute radial chart sizing using the spring model mapped to a polar axis.
+ *
+ * Treats the circumference as a linear "bar axis":
+ *   baseCircumference = 2π × baseRadius
+ *   pressure = effectiveItemCount × minArcPx / baseCircumference
+ *   if pressure > 1:  stretch = min(maxStretch, pressure ^ elasticity)
+ *   radius = baseRadius × stretch
+ *
+ * **effectiveItemCount** varies by chart type:
+ *   - Rose / Radar: N categories (uniform slices/spokes)
+ *   - Pie: total / minValue — how many of the smallest slice fit in the
+ *     full circle.  This captures the worst-case thin slice that needs
+ *     minimum arc width.
+ *   - Sunburst: same as pie but computed on the outer ring leaves only.
+ *
+ * Both canvas dimensions grow equally (maintains 1:1 circular aspect).
+ *
+ * @param effectiveItemCount  Effective number of uniform "bars" around
+ *                            the circle (see above)
+ * @param canvasSize          Base canvas dimensions (from context)
+ * @param params              Optional tuning parameters
+ */
+export function computeCircumferencePressure(
+    effectiveItemCount: number,
+    canvasSize: { width: number; height: number },
+    params: CircumferencePressureParams = {},
+): CircumferencePressureResult {
+    const {
+        minArcPx = 45,
+        minRadius = 60,
+        maxRadius = 400,
+        elasticity = 0.5,
+        maxStretch = 2.0,
+        margin = 20,
+    } = params;
+
+    const baseW = canvasSize.width;
+    const baseH = canvasSize.height;
+
+    // Base radius: largest circle that fits in the base canvas
+    const baseRadius = Math.max(minRadius,
+        (Math.min(baseW, baseH) / 2) - margin);
+
+    // ── Effective max-stretch on the radius ──────────────────────────
+    // The radius stretch expands the canvas in BOTH x and y equally.
+    // Cap so that neither dimension exceeds maxStretch × baseDim.
+    const maxCanvasW = baseW * maxStretch;
+    const maxCanvasH = baseH * maxStretch;
+    const maxDiameter = Math.min(maxCanvasW, maxCanvasH);
+    const effectiveMaxRadius = Math.min(maxRadius,
+        (maxDiameter - 2 * margin) / 2);
+    const effectiveMaxStretch = Math.max(1, effectiveMaxRadius / baseRadius);
+
+    // Spring model: pressure = items × step / baseDimension
+    const baseCircumference = 2 * Math.PI * baseRadius;
+    const pressure = (effectiveItemCount * minArcPx) / baseCircumference;
+
+    let radius: number;
+    if (pressure <= 1) {
+        // No pressure — base radius is sufficient
+        radius = baseRadius;
+    } else {
+        // Elastic stretch (same power law as bar-chart spring model)
+        const stretch = Math.min(effectiveMaxStretch, Math.pow(pressure, elasticity));
+        radius = Math.round(baseRadius * stretch);
+    }
+
+    // Clamp
+    radius = Math.min(maxRadius, Math.max(minRadius, radius));
+
+    // Canvas = diameter + margins
+    const diameter = 2 * radius + 2 * margin;
+    const canvasW = Math.max(baseW, diameter);
+    const canvasH = Math.max(baseH, diameter);
+
+    return { radius, canvasW, canvasH };
+}
+
+/**
+ * Compute effective bar count for variable-width slices (pie / sunburst).
+ *
+ * If all slices are equal, this returns N (number of slices).
+ * If slices vary, this returns `total / minValue` — i.e., how many of the
+ * thinnest slice would fill the whole circle.  This is the worst-case
+ * pressure that determines whether the chart needs to grow.
+ *
+ * Capped at 100 to prevent degenerate cases (near-zero slices) from
+ * blowing up the radius.
+ *
+ * @param values  Array of slice values (must be > 0)
+ */
+export function computeEffectiveBarCount(values: number[]): number {
+    if (values.length === 0) return 0;
+    const positiveValues = values.filter(v => v > 0);
+    if (positiveValues.length === 0) return values.length;
+
+    const total = positiveValues.reduce((s, v) => s + v, 0);
+    const minVal = Math.min(...positiveValues);
+
+    // effectiveCount = total / minVal → how many of the smallest slice fill the circle
+    const effective = total / minVal;
+
+    // Cap at 100 to prevent degenerate cases
+    return Math.min(100, effective);
+}

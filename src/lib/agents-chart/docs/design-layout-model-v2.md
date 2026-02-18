@@ -343,6 +343,8 @@ The core computation. All functions already live in
 | `computeElasticBudget()` | Spring (§1) | itemCount, baseDim, params | budget, stretchFactor |
 | `computeAxisStep()` | Spring (§1) | nominalCount, continuousCount, baseDim, params | step, budget |
 | `computeGasPressure()` | Gas (§2) | xValues, yValues, domains, dims, params | stretchX, stretchY |
+| `computeCircumferencePressure()` | Circumference (§3) | effectiveCount, canvas, params | radius, canvasW, canvasH |
+| `computeEffectiveBarCount()` | Shared (§3/§4) | values[] | effectiveCount (variable-width → uniform equiv) |
 | `computeFacetLayout()` | Facet | facetCols, facetRows, dims, params | subplotWidth, subplotHeight |
 | `computeLabelSizing()` | Labels | effectiveStep, hasDiscreteItems | fontSize, labelAngle, labelLimit |
 | `computeOverflow()` | Truncation | itemCount, maxItems | kept, truncated, warnings |
@@ -855,6 +857,23 @@ replace Phase 2 — Phases 0 and 1 remain unchanged.
 ---
 
 ## Special Cases
+
+### Axis-Less Charts (Radial & Area-Filling)
+
+Pie, rose, sunburst, gauge, treemap, sankey, and funnel have **no
+Cartesian axes**. They bypass the standard axis-based layout pipeline
+and use their own pressure model instead (see stretch model doc §3–§4):
+
+- `declareLayoutMode()` returns empty (no axis flags, no overrides).
+- The template's `instantiate()` computes sizing directly:
+  - **Radial charts** (pie, rose, sunburst, gauge) call
+    `computeCircumferencePressure()` to derive canvas dimensions from
+    item count and arc pressure.
+  - **Area charts** (treemap) call `computeEffectiveBarCount()` and
+    apply area-stretch with biased X/Y split.
+  - **Gauge** uses facet-style grid layout with continuous
+    radius-proportional element sizing.
+- `LayoutResult` axis fields (`xStep`, `yStep`, etc.) are unused.
 
 ### Radar Chart
 

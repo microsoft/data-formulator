@@ -259,6 +259,45 @@ export function genPieTests(): TestCase[] {
         });
     }
 
+    // 3. Large — 25 slices (text overlay should be disabled)
+    {
+        const cats = genCategories('Region', 25);
+        const data = cats.map(c => ({ Region: c, Sales: Math.round(500 + rand() * 5000) }));
+        tests.push({
+            title: 'Pie (large, 25 slices)',
+            description: '25 regions — too many slices for text overlay, legend + tooltip only',
+            tags: ['nominal', 'quantitative', 'large', 'stress'],
+            chartType: 'Pie Chart',
+            data,
+            fields: [makeField('Region'), makeField('Sales')],
+            metadata: {
+                Region: { type: Type.String, semanticType: 'Category', levels: cats },
+                Sales: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+            },
+            encodingMap: { size: makeEncodingItem('Sales'), color: makeEncodingItem('Region') },
+        });
+    }
+
+    // 4. Skewed — one dominant slice + several tiny ones
+    {
+        const cats = ['Dominant', 'Small-A', 'Small-B', 'Small-C', 'Tiny-1', 'Tiny-2'];
+        const vals = [5000, 200, 180, 150, 30, 20];
+        const data = cats.map((c, i) => ({ Category: c, Value: vals[i] }));
+        tests.push({
+            title: 'Pie (skewed, 6 slices)',
+            description: 'One dominant slice ~90%, tests circumference pressure with effective bar count',
+            tags: ['nominal', 'quantitative', 'skewed'],
+            chartType: 'Pie Chart',
+            data,
+            fields: [makeField('Category'), makeField('Value')],
+            metadata: {
+                Category: { type: Type.String, semanticType: 'Category', levels: cats },
+                Value: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+            },
+            encodingMap: { size: makeEncodingItem('Value'), color: makeEncodingItem('Category') },
+        });
+    }
+
     return tests;
 }
 

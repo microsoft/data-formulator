@@ -82,11 +82,18 @@ def configure_logging():
         app.logger.addHandler(handler)
 
 
+_blueprints_registered = False
+
 def _register_blueprints():
     """
     Import and register blueprints. This is where heavy imports happen.
-    Called from run_app() with progress feedback.
+    Called at module level (for gunicorn) and from run_app() (for CLI).
+    Guarded to prevent double registration.
     """
+    global _blueprints_registered
+    if _blueprints_registered:
+        return
+    _blueprints_registered = True
     # Import tables routes (imports database connectors)
     print("  Loading data connectors...", flush=True)
     from data_formulator.tables_routes import tables_bp
@@ -110,6 +117,11 @@ def _register_blueprints():
     
     # Start background ISS position collector
     start_iss_collector()
+
+
+# Register blueprints at module level so WSGI servers (gunicorn) pick up all routes.
+# The guard inside _register_blueprints() prevents double registration when run via CLI.
+_register_blueprints()
 
 
 @app.route('/api/example-datasets')

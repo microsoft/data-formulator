@@ -21,6 +21,11 @@ import { ecRadarChartDef } from './radar';
 import { ecCandlestickDef } from './candlestick';
 import { ecStreamgraphDef } from './streamgraph';
 import { ecRoseChartDef } from './rose';
+import { ecGaugeChartDef } from './gauge';
+import { ecFunnelChartDef } from './funnel';
+import { ecTreemapDef } from './treemap';
+import { ecSunburstDef } from './sunburst';
+import { ecSankeyDef } from './sankey';
 
 /**
  * ECharts chart template definitions, grouped by category.
@@ -29,9 +34,11 @@ export const ecTemplateDefs: { [key: string]: ChartTemplateDef[] } = {
     'Scatter & Point': [ecScatterPlotDef, ecBoxplotDef],
     'Bar':             [ecBarChartDef, ecGroupedBarChartDef, ecStackedBarChartDef, ecHistogramDef, ecHeatmapDef],
     'Line & Area':     [ecLineChartDef, ecAreaChartDef, ecStreamgraphDef],
-    'Part-to-Whole':   [ecPieChartDef],
+    'Part-to-Whole':   [ecPieChartDef, ecFunnelChartDef, ecTreemapDef, ecSunburstDef],
     'Financial':       [ecCandlestickDef],
     'Polar':           [ecRadarChartDef, ecRoseChartDef],
+    'Indicator':       [ecGaugeChartDef],
+    'Flow':            [ecSankeyDef],
 };
 
 /**

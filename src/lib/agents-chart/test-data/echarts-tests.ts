@@ -1389,3 +1389,831 @@ export function genEChartsRoseTests(): TestCase[] {
 
     return tests;
 }
+
+// ===========================================================================
+// Gauge Chart tests (ECharts-only)
+// ===========================================================================
+
+export function genEChartsGaugeTests(): TestCase[] {
+    const tests: TestCase[] = [];
+    const rand = seededRandom(1500);
+
+    // 1. Basic gauge — single KPI value
+    {
+        const data = [{ Score: 72.5 }];
+        tests.push({
+            title: 'EC: Gauge — Single KPI',
+            description: 'Single-value gauge chart. ECharts-only — no VL equivalent.',
+            tags: ['echarts', 'gauge', 'basic'],
+            chartType: 'Gauge Chart',
+            data,
+            fields: [makeField('Score')],
+            metadata: {
+                Score: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+            },
+            encodingMap: { size: makeEncodingItem('Score') },
+            chartProperties: { max: 100 },
+        });
+    }
+
+    // 2. Multiple pointers — multi-KPI gauge
+    {
+        const data = [
+            { Metric: 'CPU', Usage: 65 },
+            { Metric: 'Memory', Usage: 82 },
+            { Metric: 'Disk', Usage: 43 },
+        ];
+        tests.push({
+            title: 'EC: Gauge — Multi-Pointer (3 KPIs)',
+            description: 'Three pointers on a single gauge for CPU/Memory/Disk.',
+            tags: ['echarts', 'gauge', 'multi'],
+            chartType: 'Gauge Chart',
+            data,
+            fields: [makeField('Metric'), makeField('Usage')],
+            metadata: {
+                Metric: { type: Type.String, semanticType: 'Category', levels: ['CPU', 'Memory', 'Disk'] },
+                Usage: { type: Type.Number, semanticType: 'Percentage', levels: [] },
+            },
+            encodingMap: { size: makeEncodingItem('Usage'), column: makeEncodingItem('Metric') },
+            chartProperties: { max: 100 },
+        });
+    }
+
+    // 3. Aggregate gauge — average of many values
+    {
+        const data = Array.from({ length: 50 }, () => ({
+            Temperature: Math.round((18 + rand() * 15) * 10) / 10,
+        }));
+        tests.push({
+            title: 'EC: Gauge — Aggregated (50 rows avg)',
+            description: 'Gauge showing average of 50 temperature readings.',
+            tags: ['echarts', 'gauge', 'aggregate'],
+            chartType: 'Gauge Chart',
+            data,
+            fields: [makeField('Temperature')],
+            metadata: {
+                Temperature: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+            },
+            encodingMap: { size: makeEncodingItem('Temperature') },
+            chartProperties: { min: 0, max: 50 },
+        });
+    }
+
+    return tests;
+}
+
+// ===========================================================================
+// Funnel Chart tests (ECharts-only)
+// ===========================================================================
+
+export function genEChartsFunnelTests(): TestCase[] {
+    const tests: TestCase[] = [];
+    const rand = seededRandom(1600);
+
+    // 1. Basic sales funnel
+    {
+        const stages = ['Visits', 'Signups', 'Trials', 'Purchases', 'Renewals'];
+        const data = stages.map((s, i) => ({
+            Stage: s,
+            Count: Math.round(10000 / Math.pow(2, i) + rand() * 500),
+        }));
+        tests.push({
+            title: 'EC: Funnel — Sales Pipeline',
+            description: 'Classic conversion funnel. ECharts-only — no VL equivalent.',
+            tags: ['echarts', 'funnel', 'basic'],
+            chartType: 'Funnel Chart',
+            data,
+            fields: [makeField('Stage'), makeField('Count')],
+            metadata: {
+                Stage: { type: Type.String, semanticType: 'Category', levels: stages },
+                Count: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+            },
+            encodingMap: { y: makeEncodingItem('Stage'), size: makeEncodingItem('Count') },
+        });
+    }
+
+    // 2. Recruitment funnel — ascending
+    {
+        const steps = ['Applied', 'Screened', 'Interviewed', 'Offered', 'Hired'];
+        const data = steps.map((s, i) => ({
+            Step: s,
+            Candidates: Math.round(500 / Math.pow(1.8, i) + rand() * 30),
+        }));
+        tests.push({
+            title: 'EC: Funnel — Recruitment (ascending)',
+            description: 'Hiring funnel sorted ascending (narrowest at top).',
+            tags: ['echarts', 'funnel', 'ascending'],
+            chartType: 'Funnel Chart',
+            data,
+            fields: [makeField('Step'), makeField('Candidates')],
+            metadata: {
+                Step: { type: Type.String, semanticType: 'Category', levels: steps },
+                Candidates: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+            },
+            encodingMap: { y: makeEncodingItem('Step'), size: makeEncodingItem('Candidates') },
+            chartProperties: { sort: 'ascending' },
+        });
+    }
+
+    // 3. Many stages
+    {
+        const steps = ['Awareness', 'Interest', 'Consideration', 'Intent',
+                        'Evaluation', 'Trial', 'Purchase', 'Loyalty'];
+        const data = steps.map((s, i) => ({
+            Phase: s,
+            Users: Math.round(50000 / Math.pow(1.5, i) + rand() * 1000),
+        }));
+        tests.push({
+            title: 'EC: Funnel — 8-Stage Marketing',
+            description: 'Marketing funnel with 8 stages. Tests label fitting.',
+            tags: ['echarts', 'funnel', 'many-stages'],
+            chartType: 'Funnel Chart',
+            data,
+            fields: [makeField('Phase'), makeField('Users')],
+            metadata: {
+                Phase: { type: Type.String, semanticType: 'Category', levels: steps },
+                Users: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+            },
+            encodingMap: { y: makeEncodingItem('Phase'), size: makeEncodingItem('Users') },
+        });
+    }
+
+    return tests;
+}
+
+// ===========================================================================
+// Treemap tests (ECharts-only)
+// ===========================================================================
+
+export function genEChartsTreemapTests(): TestCase[] {
+    const tests: TestCase[] = [];
+    const rand = seededRandom(1700);
+
+    // 1. Flat treemap — market sectors
+    {
+        const sectors = ['Technology', 'Healthcare', 'Finance', 'Energy', 'Consumer', 'Industrials'];
+        const data = sectors.map(s => ({
+            Sector: s,
+            MarketCap: Math.round(500 + rand() * 4500),
+        }));
+        tests.push({
+            title: 'EC: Treemap — Market Sectors',
+            description: 'Flat treemap of market cap by sector. ECharts-only — no VL equivalent.',
+            tags: ['echarts', 'treemap', 'flat'],
+            chartType: 'Treemap',
+            data,
+            fields: [makeField('Sector'), makeField('MarketCap')],
+            metadata: {
+                Sector: { type: Type.String, semanticType: 'Category', levels: sectors },
+                MarketCap: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+            },
+            encodingMap: { color: makeEncodingItem('Sector'), size: makeEncodingItem('MarketCap') },
+        });
+    }
+
+    // 2. Hierarchical treemap — regions → countries
+    {
+        const hierarchy: Record<string, string[]> = {
+            'Americas': ['USA', 'Canada', 'Brazil', 'Mexico'],
+            'Europe': ['UK', 'Germany', 'France', 'Italy'],
+            'Asia': ['China', 'Japan', 'India', 'Korea'],
+        };
+        const data: any[] = [];
+        for (const [region, countries] of Object.entries(hierarchy)) {
+            for (const country of countries) {
+                data.push({
+                    Region: region,
+                    Country: country,
+                    Revenue: Math.round(100 + rand() * 2000),
+                });
+            }
+        }
+        tests.push({
+            title: 'EC: Treemap — Regions × Countries',
+            description: 'Two-level treemap: 3 regions → 4 countries each.',
+            tags: ['echarts', 'treemap', 'hierarchical'],
+            chartType: 'Treemap',
+            data,
+            fields: [makeField('Region'), makeField('Country'), makeField('Revenue')],
+            metadata: {
+                Region: { type: Type.String, semanticType: 'Category', levels: Object.keys(hierarchy) },
+                Country: { type: Type.String, semanticType: 'Country', levels: [] },
+                Revenue: { type: Type.Number, semanticType: 'Revenue', levels: [] },
+            },
+            encodingMap: {
+                color: makeEncodingItem('Region'),
+                detail: makeEncodingItem('Country'),
+                size: makeEncodingItem('Revenue'),
+            },
+        });
+    }
+
+    // 3. Large flat treemap — 15 categories
+    {
+        const categories = genCategories('Item', 15);
+        const data = categories.map(c => ({
+            Item: c,
+            Size: Math.round(50 + rand() * 500),
+        }));
+        tests.push({
+            title: 'EC: Treemap — 15 Categories',
+            description: 'Large flat treemap with 15 items. Tests label fitting and color cycling.',
+            tags: ['echarts', 'treemap', 'large'],
+            chartType: 'Treemap',
+            data,
+            fields: [makeField('Item'), makeField('Size')],
+            metadata: {
+                Item: { type: Type.String, semanticType: 'Category', levels: categories },
+                Size: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+            },
+            encodingMap: { color: makeEncodingItem('Item'), size: makeEncodingItem('Size') },
+        });
+    }
+
+    return tests;
+}
+
+// ===========================================================================
+// Sunburst Chart tests (ECharts-only)
+// ===========================================================================
+
+export function genEChartsSunburstTests(): TestCase[] {
+    const tests: TestCase[] = [];
+    const rand = seededRandom(1800);
+
+    // 1. Flat sunburst — budget categories
+    {
+        const categories = ['Housing', 'Food', 'Transport', 'Entertainment', 'Savings', 'Healthcare'];
+        const data = categories.map(c => ({
+            Category: c,
+            Amount: Math.round(200 + rand() * 2000),
+        }));
+        tests.push({
+            title: 'EC: Sunburst — Budget Categories',
+            description: 'Single-ring sunburst of budget allocation. ECharts-only — no VL equivalent.',
+            tags: ['echarts', 'sunburst', 'flat'],
+            chartType: 'Sunburst Chart',
+            data,
+            fields: [makeField('Category'), makeField('Amount')],
+            metadata: {
+                Category: { type: Type.String, semanticType: 'Category', levels: categories },
+                Amount: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+            },
+            encodingMap: { color: makeEncodingItem('Category'), size: makeEncodingItem('Amount') },
+        });
+    }
+
+    // 2. Two-ring sunburst — departments → teams
+    {
+        const hierarchy: Record<string, string[]> = {
+            'Engineering': ['Frontend', 'Backend', 'Infra', 'QA'],
+            'Product': ['Design', 'PM', 'Research'],
+            'Operations': ['HR', 'Finance', 'Legal'],
+        };
+        const data: any[] = [];
+        for (const [dept, teams] of Object.entries(hierarchy)) {
+            for (const team of teams) {
+                data.push({
+                    Department: dept,
+                    Team: team,
+                    Headcount: Math.round(5 + rand() * 50),
+                });
+            }
+        }
+        tests.push({
+            title: 'EC: Sunburst — Departments × Teams',
+            description: 'Two-ring sunburst: 3 departments → 3–4 teams each.',
+            tags: ['echarts', 'sunburst', 'hierarchical'],
+            chartType: 'Sunburst Chart',
+            data,
+            fields: [makeField('Department'), makeField('Team'), makeField('Headcount')],
+            metadata: {
+                Department: { type: Type.String, semanticType: 'Category', levels: Object.keys(hierarchy) },
+                Team: { type: Type.String, semanticType: 'Category', levels: [] },
+                Headcount: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+            },
+            encodingMap: {
+                color: makeEncodingItem('Department'),
+                detail: makeEncodingItem('Team'),
+                size: makeEncodingItem('Headcount'),
+            },
+        });
+    }
+
+    // 3. Sunburst with many items
+    {
+        const continents: Record<string, string[]> = {
+            'North America': ['USA', 'Canada', 'Mexico'],
+            'Europe': ['UK', 'France', 'Germany', 'Spain', 'Italy'],
+            'Asia': ['China', 'Japan', 'India', 'Korea', 'Thailand'],
+            'South America': ['Brazil', 'Argentina', 'Chile'],
+        };
+        const data: any[] = [];
+        for (const [cont, countries] of Object.entries(continents)) {
+            for (const country of countries) {
+                data.push({
+                    Continent: cont,
+                    Country: country,
+                    Population: Math.round(10 + rand() * 1400),
+                });
+            }
+        }
+        tests.push({
+            title: 'EC: Sunburst — 4 Continents × Countries',
+            description: 'Two-ring sunburst with 16 countries across 4 continents.',
+            tags: ['echarts', 'sunburst', 'large'],
+            chartType: 'Sunburst Chart',
+            data,
+            fields: [makeField('Continent'), makeField('Country'), makeField('Population')],
+            metadata: {
+                Continent: { type: Type.String, semanticType: 'Category', levels: Object.keys(continents) },
+                Country: { type: Type.String, semanticType: 'Country', levels: [] },
+                Population: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+            },
+            encodingMap: {
+                color: makeEncodingItem('Continent'),
+                detail: makeEncodingItem('Country'),
+                size: makeEncodingItem('Population'),
+            },
+        });
+    }
+
+    return tests;
+}
+
+// ===========================================================================
+// Sankey Diagram tests (ECharts-only)
+// ===========================================================================
+
+export function genEChartsSankeyTests(): TestCase[] {
+    const tests: TestCase[] = [];
+    const rand = seededRandom(1900);
+
+    // 1. Simple energy flow
+    {
+        const data = [
+            { Source: 'Coal', Target: 'Electricity', Value: 250 },
+            { Source: 'Gas', Target: 'Electricity', Value: 180 },
+            { Source: 'Gas', Target: 'Heating', Value: 120 },
+            { Source: 'Oil', Target: 'Transport', Value: 300 },
+            { Source: 'Oil', Target: 'Industry', Value: 80 },
+            { Source: 'Electricity', Target: 'Residential', Value: 200 },
+            { Source: 'Electricity', Target: 'Industry', Value: 230 },
+            { Source: 'Heating', Target: 'Residential', Value: 120 },
+        ];
+        tests.push({
+            title: 'EC: Sankey — Energy Flow',
+            description: 'Energy source → use Sankey diagram. ECharts-only — no VL equivalent.',
+            tags: ['echarts', 'sankey', 'basic'],
+            chartType: 'Sankey Diagram',
+            data,
+            fields: [makeField('Source'), makeField('Target'), makeField('Value')],
+            metadata: {
+                Source: { type: Type.String, semanticType: 'Category', levels: [] },
+                Target: { type: Type.String, semanticType: 'Category', levels: [] },
+                Value: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+            },
+            encodingMap: {
+                x: makeEncodingItem('Source'),
+                y: makeEncodingItem('Target'),
+                size: makeEncodingItem('Value'),
+            },
+        });
+    }
+
+    // 2. Website user flow
+    {
+        const data = [
+            { From: 'Home', To: 'Products', Users: 450 },
+            { From: 'Home', To: 'About', Users: 120 },
+            { From: 'Home', To: 'Blog', Users: 200 },
+            { From: 'Products', To: 'Cart', Users: 180 },
+            { From: 'Products', To: 'Details', Users: 270 },
+            { From: 'Details', To: 'Cart', Users: 150 },
+            { From: 'Cart', To: 'Checkout', Users: 200 },
+            { From: 'Cart', To: 'Home', Users: 50 },
+            { From: 'Blog', To: 'Products', Users: 80 },
+        ];
+        tests.push({
+            title: 'EC: Sankey — Website User Flow',
+            description: 'Page-to-page navigation flow with link width proportional to user count.',
+            tags: ['echarts', 'sankey', 'user-flow'],
+            chartType: 'Sankey Diagram',
+            data,
+            fields: [makeField('From'), makeField('To'), makeField('Users')],
+            metadata: {
+                From: { type: Type.String, semanticType: 'Category', levels: [] },
+                To: { type: Type.String, semanticType: 'Category', levels: [] },
+                Users: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+            },
+            encodingMap: {
+                x: makeEncodingItem('From'),
+                y: makeEncodingItem('To'),
+                size: makeEncodingItem('Users'),
+            },
+        });
+    }
+
+    // 3. Dense Sankey — budget allocation
+    {
+        const sources = ['Federal', 'State', 'Municipal'];
+        const intermediates = ['Education', 'Healthcare', 'Defense', 'Infrastructure'];
+        const destinations = ['Salaries', 'Equipment', 'Contracts', 'Research'];
+        const data: any[] = [];
+        for (const src of sources) {
+            for (const mid of intermediates) {
+                data.push({ Source: src, Target: mid, Amount: Math.round(50 + rand() * 500) });
+            }
+        }
+        for (const mid of intermediates) {
+            for (const dst of destinations) {
+                data.push({ Source: mid, Target: dst, Amount: Math.round(30 + rand() * 300) });
+            }
+        }
+        tests.push({
+            title: 'EC: Sankey — Budget Flow (3-layer)',
+            description: '3 sources → 4 intermediates → 4 destinations. Tests dense multi-layer layout.',
+            tags: ['echarts', 'sankey', 'dense'],
+            chartType: 'Sankey Diagram',
+            data,
+            fields: [makeField('Source'), makeField('Target'), makeField('Amount')],
+            metadata: {
+                Source: { type: Type.String, semanticType: 'Category', levels: [] },
+                Target: { type: Type.String, semanticType: 'Category', levels: [] },
+                Amount: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+            },
+            encodingMap: {
+                x: makeEncodingItem('Source'),
+                y: makeEncodingItem('Target'),
+                size: makeEncodingItem('Amount'),
+            },
+        });
+    }
+
+    return tests;
+}
+
+// ===========================================================================
+// Stress tests for ECharts-only chart types
+// ===========================================================================
+
+export function genEChartsUniqueStressTests(): TestCase[] {
+    const tests: TestCase[] = [];
+
+    // ── Gauge stress ─────────────────────────────────────────────────────
+
+    // 1. Gauge — many KPIs (6 pointers side-by-side)
+    {
+        const rand = seededRandom(2000);
+        const metrics = ['CPU', 'Memory', 'Disk', 'Network', 'GPU', 'IO'];
+        const data = metrics.map(m => ({
+            Metric: m,
+            Usage: Math.round(10 + rand() * 90),
+        }));
+        tests.push({
+            title: 'EC Stress: Gauge — 6 KPIs',
+            description: '6 separate gauge dials side-by-side. Tests layout spacing with many gauges.',
+            tags: ['echarts', 'gauge', 'stress'],
+            chartType: 'Gauge Chart',
+            data,
+            fields: [makeField('Metric'), makeField('Usage')],
+            metadata: {
+                Metric: { type: Type.String, semanticType: 'Category', levels: metrics },
+                Usage: { type: Type.Number, semanticType: 'Percentage', levels: [] },
+            },
+            encodingMap: { size: makeEncodingItem('Usage'), column: makeEncodingItem('Metric') },
+            chartProperties: { max: 100 },
+        });
+    }
+
+    // 2. Gauge — aggregated from many rows
+    {
+        const rand = seededRandom(2001);
+        const data = Array.from({ length: 200 }, () => ({
+            Latency: Math.round((5 + rand() * 500) * 10) / 10,
+        }));
+        tests.push({
+            title: 'EC Stress: Gauge — Aggregated (200 rows)',
+            description: 'Single gauge averaging 200 latency readings.',
+            tags: ['echarts', 'gauge', 'stress', 'aggregate'],
+            chartType: 'Gauge Chart',
+            data,
+            fields: [makeField('Latency')],
+            metadata: {
+                Latency: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+            },
+            encodingMap: { size: makeEncodingItem('Latency') },
+            chartProperties: { min: 0, max: 500 },
+        });
+    }
+
+    // ── Funnel stress ────────────────────────────────────────────────────
+
+    // 3. Funnel — 12 stages
+    {
+        const rand = seededRandom(2010);
+        const stages = [
+            'Impression', 'View', 'Click', 'Visit', 'Browse',
+            'Add to Cart', 'Checkout Start', 'Address', 'Payment',
+            'Review', 'Confirm', 'Purchase',
+        ];
+        const data = stages.map((s, i) => ({
+            Stage: s,
+            Users: Math.round(100000 / Math.pow(1.4, i) + rand() * 2000),
+        }));
+        tests.push({
+            title: 'EC Stress: Funnel — 12 Stages',
+            description: '12-stage e-commerce funnel. Tests label fitting in narrow trapezoids.',
+            tags: ['echarts', 'funnel', 'stress', 'many-stages'],
+            chartType: 'Funnel Chart',
+            data,
+            fields: [makeField('Stage'), makeField('Users')],
+            metadata: {
+                Stage: { type: Type.String, semanticType: 'Category', levels: stages },
+                Users: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+            },
+            encodingMap: { y: makeEncodingItem('Stage'), size: makeEncodingItem('Users') },
+        });
+    }
+
+    // 4. Funnel — extreme value ratio (top 100× bottom)
+    {
+        const stages = ['Awareness', 'Interest', 'Desire', 'Action', 'Retention'];
+        const values = [100000, 25000, 5000, 800, 120];
+        const data = stages.map((s, i) => ({ Phase: s, Count: values[i] }));
+        tests.push({
+            title: 'EC Stress: Funnel — Extreme Ratio (833:1)',
+            description: 'Top stage is ~833× larger than bottom. Tests rendering of very thin tail stages.',
+            tags: ['echarts', 'funnel', 'stress', 'extreme-ratio'],
+            chartType: 'Funnel Chart',
+            data,
+            fields: [makeField('Phase'), makeField('Count')],
+            metadata: {
+                Phase: { type: Type.String, semanticType: 'Category', levels: stages },
+                Count: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+            },
+            encodingMap: { y: makeEncodingItem('Phase'), size: makeEncodingItem('Count') },
+        });
+    }
+
+    // ── Treemap stress ───────────────────────────────────────────────────
+
+    // 5. Treemap — 30 flat categories
+    {
+        const rand = seededRandom(2020);
+        const categories = genCategories('Stock', 30);
+        const data = categories.map(c => ({
+            Stock: c,
+            MarketCap: Math.round(100 + rand() * 5000),
+        }));
+        tests.push({
+            title: 'EC Stress: Treemap — 30 Items (Flat)',
+            description: '30-item flat treemap. Tests label density and color cycling.',
+            tags: ['echarts', 'treemap', 'stress', 'flat-large'],
+            chartType: 'Treemap',
+            data,
+            fields: [makeField('Stock'), makeField('MarketCap')],
+            metadata: {
+                Stock: { type: Type.String, semanticType: 'Category', levels: categories },
+                MarketCap: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+            },
+            encodingMap: { color: makeEncodingItem('Stock'), size: makeEncodingItem('MarketCap') },
+        });
+    }
+
+    // 6. Treemap — deep hierarchy (6 regions × 8 products)
+    {
+        const rand = seededRandom(2021);
+        const regions = ['North America', 'Europe', 'Asia Pacific', 'Latin America', 'Middle East', 'Africa'];
+        const products = ['Software', 'Hardware', 'Services', 'Cloud', 'Security', 'Analytics', 'Mobile', 'AI'];
+        const data: any[] = [];
+        for (const r of regions) {
+            for (const p of products) {
+                data.push({
+                    Region: r,
+                    Product: p,
+                    Revenue: Math.round(50 + rand() * 3000),
+                });
+            }
+        }
+        tests.push({
+            title: 'EC Stress: Treemap — 6 Regions × 8 Products (48 leaves)',
+            description: '48-leaf hierarchical treemap. Tests nested labels and color saturation.',
+            tags: ['echarts', 'treemap', 'stress', 'hierarchical-large'],
+            chartType: 'Treemap',
+            data,
+            fields: [makeField('Region'), makeField('Product'), makeField('Revenue')],
+            metadata: {
+                Region: { type: Type.String, semanticType: 'Category', levels: regions },
+                Product: { type: Type.String, semanticType: 'Category', levels: products },
+                Revenue: { type: Type.Number, semanticType: 'Revenue', levels: [] },
+            },
+            encodingMap: {
+                color: makeEncodingItem('Region'),
+                detail: makeEncodingItem('Product'),
+                size: makeEncodingItem('Revenue'),
+            },
+        });
+    }
+
+    // 7. Treemap — extreme value skew (one item dominates)
+    {
+        const rand = seededRandom(2022);
+        const items = ['Dominant', 'Small A', 'Small B', 'Small C', 'Tiny D', 'Tiny E', 'Tiny F', 'Tiny G'];
+        const values = [50000, 800, 600, 400, 100, 80, 50, 30];
+        const data = items.map((item, i) => ({ Category: item, Value: values[i] + Math.round(rand() * 50) }));
+        tests.push({
+            title: 'EC Stress: Treemap — Extreme Skew',
+            description: 'One category dominates (~96% of total). Tests visibility of tiny rectangles.',
+            tags: ['echarts', 'treemap', 'stress', 'skew'],
+            chartType: 'Treemap',
+            data,
+            fields: [makeField('Category'), makeField('Value')],
+            metadata: {
+                Category: { type: Type.String, semanticType: 'Category', levels: items },
+                Value: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+            },
+            encodingMap: { color: makeEncodingItem('Category'), size: makeEncodingItem('Value') },
+        });
+    }
+
+    // ── Sunburst stress ──────────────────────────────────────────────────
+
+    // 8. Sunburst — 5 continents × 6 countries (30 outer slices)
+    {
+        const rand = seededRandom(2030);
+        const hierarchy: Record<string, string[]> = {
+            'North America': ['USA', 'Canada', 'Mexico', 'Cuba', 'Jamaica', 'Panama'],
+            'Europe': ['UK', 'France', 'Germany', 'Spain', 'Italy', 'Netherlands'],
+            'Asia': ['China', 'Japan', 'India', 'Korea', 'Thailand', 'Vietnam'],
+            'Africa': ['Nigeria', 'Egypt', 'South Africa', 'Kenya', 'Ghana', 'Morocco'],
+            'Oceania': ['Australia', 'New Zealand', 'Fiji', 'Samoa', 'Tonga', 'Vanuatu'],
+        };
+        const data: any[] = [];
+        for (const [continent, countries] of Object.entries(hierarchy)) {
+            for (const country of countries) {
+                data.push({
+                    Continent: continent,
+                    Country: country,
+                    GDP: Math.round(10 + rand() * 20000),
+                });
+            }
+        }
+        tests.push({
+            title: 'EC Stress: Sunburst — 5 × 6 (30 outer slices)',
+            description: '30 countries across 5 continents. Tests outer-ring label crowding.',
+            tags: ['echarts', 'sunburst', 'stress', 'large'],
+            chartType: 'Sunburst Chart',
+            data,
+            fields: [makeField('Continent'), makeField('Country'), makeField('GDP')],
+            metadata: {
+                Continent: { type: Type.String, semanticType: 'Category', levels: Object.keys(hierarchy) },
+                Country: { type: Type.String, semanticType: 'Country', levels: [] },
+                GDP: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+            },
+            encodingMap: {
+                color: makeEncodingItem('Continent'),
+                detail: makeEncodingItem('Country'),
+                size: makeEncodingItem('GDP'),
+            },
+        });
+    }
+
+    // 9. Sunburst — flat with 20 slices
+    {
+        const rand = seededRandom(2031);
+        const categories = genCategories('Expense', 20);
+        const data = categories.map(c => ({
+            Expense: c,
+            Amount: Math.round(100 + rand() * 5000),
+        }));
+        tests.push({
+            title: 'EC Stress: Sunburst — 20 Flat Slices',
+            description: 'Single-ring sunburst with 20 categories. Tests label overlap on thin slices.',
+            tags: ['echarts', 'sunburst', 'stress', 'flat-large'],
+            chartType: 'Sunburst Chart',
+            data,
+            fields: [makeField('Expense'), makeField('Amount')],
+            metadata: {
+                Expense: { type: Type.String, semanticType: 'Category', levels: categories },
+                Amount: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+            },
+            encodingMap: { color: makeEncodingItem('Expense'), size: makeEncodingItem('Amount') },
+        });
+    }
+
+    // ── Sankey stress ────────────────────────────────────────────────────
+
+    // 10. Sankey — 4-layer deep (5 → 6 → 6 → 4 = 21 nodes, ~70 links)
+    {
+        const rand = seededRandom(2040);
+        const layer1 = ['Source A', 'Source B', 'Source C', 'Source D', 'Source E'];
+        const layer2 = genCategories('Process', 6);
+        const layer3 = genCategories('Output', 6);
+        const layer4 = ['Final X', 'Final Y', 'Final Z', 'Final W'];
+        const data: any[] = [];
+        for (const s of layer1) {
+            for (const p of layer2) {
+                if (rand() > 0.4) {
+                    data.push({ Source: s, Target: p, Flow: Math.round(20 + rand() * 300) });
+                }
+            }
+        }
+        for (const p of layer2) {
+            for (const o of layer3) {
+                if (rand() > 0.35) {
+                    data.push({ Source: p, Target: o, Flow: Math.round(10 + rand() * 200) });
+                }
+            }
+        }
+        for (const o of layer3) {
+            for (const f of layer4) {
+                if (rand() > 0.3) {
+                    data.push({ Source: o, Target: f, Flow: Math.round(5 + rand() * 150) });
+                }
+            }
+        }
+        tests.push({
+            title: 'EC Stress: Sankey — 4-Layer Deep (~70 links)',
+            description: '5 sources → 6 processes → 6 outputs → 4 finals. Tests multi-layer routing.',
+            tags: ['echarts', 'sankey', 'stress', 'deep'],
+            chartType: 'Sankey Diagram',
+            data,
+            fields: [makeField('Source'), makeField('Target'), makeField('Flow')],
+            metadata: {
+                Source: { type: Type.String, semanticType: 'Category', levels: [] },
+                Target: { type: Type.String, semanticType: 'Category', levels: [] },
+                Flow: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+            },
+            encodingMap: {
+                x: makeEncodingItem('Source'),
+                y: makeEncodingItem('Target'),
+                size: makeEncodingItem('Flow'),
+            },
+        });
+    }
+
+    // 11. Sankey — wide fan-out (2 sources → 15 targets)
+    {
+        const rand = seededRandom(2041);
+        const sources = ['Revenue', 'Funding'];
+        const targets = genCategories('Dept', 15);
+        const data: any[] = [];
+        for (const s of sources) {
+            for (const t of targets) {
+                data.push({ From: s, To: t, Budget: Math.round(100 + rand() * 5000) });
+            }
+        }
+        tests.push({
+            title: 'EC Stress: Sankey — Wide Fan-Out (2 → 15)',
+            description: '2 sources distributing to 15 departments. Tests node stacking with many targets.',
+            tags: ['echarts', 'sankey', 'stress', 'fan-out'],
+            chartType: 'Sankey Diagram',
+            data,
+            fields: [makeField('From'), makeField('To'), makeField('Budget')],
+            metadata: {
+                From: { type: Type.String, semanticType: 'Category', levels: sources },
+                To: { type: Type.String, semanticType: 'Category', levels: targets },
+                Budget: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+            },
+            encodingMap: {
+                x: makeEncodingItem('From'),
+                y: makeEncodingItem('To'),
+                size: makeEncodingItem('Budget'),
+            },
+        });
+    }
+
+    // 12. Sankey — dense mesh (8 × 8 = 64 links)
+    {
+        const rand = seededRandom(2042);
+        const left = genCategories('Origin', 8);
+        const right = genCategories('Dest', 8);
+        const data: any[] = [];
+        for (const l of left) {
+            for (const r of right) {
+                data.push({ Origin: l, Dest: r, Volume: Math.round(10 + rand() * 500) });
+            }
+        }
+        tests.push({
+            title: 'EC Stress: Sankey — Dense Mesh (8 × 8 = 64 links)',
+            description: 'Fully connected 8→8 network. Tests link crossing and visual clarity.',
+            tags: ['echarts', 'sankey', 'stress', 'mesh'],
+            chartType: 'Sankey Diagram',
+            data,
+            fields: [makeField('Origin'), makeField('Dest'), makeField('Volume')],
+            metadata: {
+                Origin: { type: Type.String, semanticType: 'Category', levels: left },
+                Dest: { type: Type.String, semanticType: 'Category', levels: right },
+                Volume: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+            },
+            encodingMap: {
+                x: makeEncodingItem('Origin'),
+                y: makeEncodingItem('Dest'),
+                size: makeEncodingItem('Volume'),
+            },
+        });
+    }
+
+    return tests;
+}

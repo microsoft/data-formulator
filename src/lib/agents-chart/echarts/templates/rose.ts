@@ -17,7 +17,7 @@
  */
 
 import { ChartTemplateDef, ChartPropertyDef } from '../../core/types';
-import { extractCategories, groupBy, DEFAULT_COLORS } from './utils';
+import { extractCategories, groupBy, DEFAULT_COLORS, computeCircumferencePressure } from './utils';
 
 export const ecRoseChartDef: ChartTemplateDef = {
     chart: 'Rose Chart',
@@ -106,14 +106,21 @@ export const ecRoseChartDef: ChartTemplateDef = {
         const maxLabelLen = hasLegend ? Math.max(...legendData.map(d => d.length), 3) : 0;
         const estimatedLegendWidth = hasLegend ? Math.min(150, maxLabelLen * 7 + 40) : 0;
 
+        // ── Circumference-pressure sizing (spring model) ──────────────
+        // Rose: uniform angular width — each petal is one "bar".
+        const { radius: pressureRadius, canvasW: rawCanvasW, canvasH }
+            = computeCircumferencePressure(categories.length, ctx.canvasSize, {
+                minArcPx: 45,
+                minRadius: 80,
+            });
+
         // Canvas size — grow width to fit legend without squeezing the chart
-        const canvasW = Math.max(ctx.canvasSize.width, 350) + (hasLegend ? estimatedLegendWidth : 0);
-        const canvasH = Math.max(ctx.canvasSize.height, 300);
+        const canvasW = rawCanvasW + (hasLegend ? estimatedLegendWidth : 0);
 
         // Shrink polar radius and shift center left to leave room for legend
         const polarRadius = hasLegend
-            ? Math.min((canvasW - estimatedLegendWidth - 40) / 2, (canvasH - 40) / 2)
-            : undefined;  // let ECharts auto-size
+            ? Math.min(pressureRadius, (canvasW - estimatedLegendWidth - 40) / 2, (canvasH - 40) / 2)
+            : pressureRadius;
         const polarCenter = hasLegend
             ? [`${Math.round((canvasW - estimatedLegendWidth) / 2)}px`, '50%']
             : undefined;
@@ -133,7 +140,7 @@ export const ecRoseChartDef: ChartTemplateDef = {
                 axisTick: { show: false },
             },
             polar: {
-                ...(polarRadius != null ? { radius: polarRadius } : {}),
+                radius: polarRadius,
                 ...(polarCenter != null ? { center: polarCenter } : {}),
             },
             series: seriesArr,

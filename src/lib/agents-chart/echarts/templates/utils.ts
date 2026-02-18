@@ -8,6 +8,14 @@
 
 import type { ChannelSemantics, InstantiateContext } from '../../core/types';
 
+// Re-export circumference-pressure functions from core (shared with VL backend)
+export {
+    computeCircumferencePressure,
+    computeEffectiveBarCount,
+    type CircumferencePressureParams,
+    type CircumferencePressureResult,
+} from '../../core/decisions';
+
 // ---------------------------------------------------------------------------
 // Discrete-dimension helpers (mirrored from vegalite/templates/utils.ts)
 // ---------------------------------------------------------------------------
@@ -147,3 +155,5 @@ export function detectAxes(
     // Default: x is category
     return { categoryAxis: 'x', valueAxis: 'y' };
 }
+
+

@@ -91,8 +91,9 @@ function buildRenderFunction(
     height: number,
 ): (container: HTMLElement) => void {
     return (container: HTMLElement) => {
-        // Dynamic import of gofish-graphics (ESM-only)
-        import('gofish-graphics').then((gf) => {
+        // Dynamic import of gofish-graphics (ESM-only, optional dependency)
+        // @ts-ignore — gofish-graphics may not be installed
+        import('gofish-graphics').then((gf: any) => {
             // Clear previous content
             container.innerHTML = '';
 

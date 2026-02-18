@@ -12,7 +12,7 @@
  */
 
 import { ChartTemplateDef, ChartPropertyDef } from '../../core/types';
-import { extractCategories, DEFAULT_COLORS } from './utils';
+import { extractCategories, DEFAULT_COLORS, computeCircumferencePressure, computeEffectiveBarCount } from './utils';
 
 export const ecPieChartDef: ChartTemplateDef = {
     chart: 'Pie Chart',
@@ -62,22 +62,36 @@ export const ecPieChartDef: ChartTemplateDef = {
 
         const innerRadius = chartProperties?.innerRadius ?? 0;
 
-        // Estimate legend width from label text
-        const maxLabelLen = Math.max(...pieData.map(d => d.name.length), 3);
-        const estimatedLegendWidth = Math.min(150, maxLabelLen * 7 + 30); // icon + padding
+        // ── Circumference-pressure sizing (spring model) ──────────────
+        // Pie slices have variable width — use effective bar count based
+        // on the smallest slice to determine worst-case pressure.
+        const sliceValues = pieData.map(d => d.value);
+        const effectiveCount = computeEffectiveBarCount(sliceValues);
+        const { radius: pressureRadius, canvasW: rawCanvasW, canvasH }
+            = computeCircumferencePressure(effectiveCount, ctx.canvasSize, {
+                minArcPx: 45,
+                minRadius: 60,
+                margin: 50,   // extra room for pie label lines + text
+            });
 
-        // Enforce minimum canvas for pie readability
-        const canvasW = Math.max(ctx.canvasSize.width, 300);
-        const canvasH = Math.max(ctx.canvasSize.height, 250);
-        const isSmall = canvasW <= 350 || canvasH <= 300;
+        const canvasW = rawCanvasW;
 
-        // Compute pie radius and center based on available space
-        const legendSpace = estimatedLegendWidth + 20; // legend + gap
-        const availableForPie = canvasW - legendSpace;
-        const pieCenterX = `${Math.round(availableForPie / 2)}px`;
-        const pieCenterY = '50%';
-        const maxPieRadius = Math.min(availableForPie, canvasH - 20) / 2;
-        const outerRadiusPx = Math.max(60, Math.round(maxPieRadius * 0.85));
+        // ── Adaptive label sizing ─────────────────────────────────────
+        // Scale font size and label width based on slice count so that
+        // labels stay readable without crowding.
+        const n = pieData.length;
+        const labelFontSize = n <= 4 ? 13 : n <= 8 ? 11 : n <= 15 ? 10 : 9;
+
+        // Label width budget: available space outside the pie on each side.
+        // Shrink pie more when there are many slices to leave label room.
+        const radiusFraction = n <= 4 ? 0.70 : n <= 8 ? 0.60 : n <= 15 ? 0.55 : 0.50;
+        const labelBudget = Math.max(40, Math.round((canvasW - 40) / 2 * (1 - radiusFraction)));
+
+        // Pie radius
+        const outerRadiusPx = Math.max(60, Math.round(
+            Math.min(pressureRadius,
+                (canvasW - 40) / 2 * radiusFraction,
+                (canvasH - 40) / 2 * radiusFraction)));
         const outerRadius = `${outerRadiusPx}px`;
 
         const option: any = {
@@ -85,20 +99,12 @@ export const ecPieChartDef: ChartTemplateDef = {
                 trigger: 'item',
                 formatter: '{b}: {c} ({d}%)',
             },
-            legend: {
-                data: pieData.map(d => d.name),
-                type: pieData.length > 8 ? 'scroll' : 'plain',
-                orient: 'vertical',
-                right: 10,
-                top: 'middle',
-                textStyle: { fontSize: 11 },
-            },
             series: [{
                 type: 'pie',
                 radius: innerRadius > 0
                     ? [`${Math.round(outerRadiusPx * innerRadius / 100)}px`, outerRadius]
                     : ['0%', outerRadius],
-                center: [pieCenterX, pieCenterY],
+                center: ['50%', '50%'],
                 data: pieData,
                 emphasis: {
                     itemStyle: {
@@ -108,12 +114,14 @@ export const ecPieChartDef: ChartTemplateDef = {
                     },
                 },
                 label: {
-                    show: !isSmall,
+                    show: true,
                     formatter: '{b}: {d}%',
-                    fontSize: 11,
+                    fontSize: labelFontSize,
+                    width: labelBudget,
+                    overflow: 'break',     // word-wrap long labels
                 },
                 labelLine: {
-                    show: !isSmall,
+                    show: true,
                 },
                 itemStyle: {
                     borderRadius: chartProperties?.cornerRadius ?? 0,
