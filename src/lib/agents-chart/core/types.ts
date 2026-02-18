@@ -20,7 +20,7 @@ import type { LabelSizingDecision } from './decisions';
 export const channels = [
     "x", "y", "x2", "y2", "id", "color", "opacity", "size", "shape", "column",
     "row", "latitude", "longitude", "radius", "detail", "group",
-    "open", "high", "low", "close",
+    "open", "high", "low", "close", "angle",
 ] as const;
 
 export const channelGroups: Record<string, string[]> = {

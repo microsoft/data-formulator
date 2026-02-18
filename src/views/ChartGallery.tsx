@@ -19,7 +19,7 @@ import { Chart, registerables } from 'chart.js';
 import { assembleVegaChart } from '../app/utils';
 import { Channel, EncodingItem } from '../components/ComponentType';
 import { channels } from '../components/ChartTemplates';
-import { ChartWarning, ChartEncoding, ChartAssemblyInput, assembleECharts, assembleChartjs } from '../lib/agents-chart';
+import { ChartWarning, ChartEncoding, ChartAssemblyInput, assembleECharts, assembleChartjs, assembleGoFish, GoFishSpec } from '../lib/agents-chart';
 import { TestCase, TEST_GENERATORS, GALLERY_SECTIONS } from '../lib/agents-chart/test-data';
 
 // Register all Chart.js components
@@ -652,6 +652,161 @@ const TripleChart: React.FC<{ testCase: TestCase }> = React.memo(({ testCase }) 
 });
 
 // ============================================================================
+// GoFish Rendering Component
+// ============================================================================
+
+/**
+ * Convert a TestCase into a ChartAssemblyInput for assembleGoFish.
+ * (Same conversion as other backends — shared data model.)
+ */
+function testCaseToGoFishInput(testCase: TestCase, canvasSize: { width: number; height: number }): ChartAssemblyInput {
+    const encodings: Record<string, ChartEncoding> = {};
+    for (const [channel, encoding] of Object.entries(testCase.encodingMap)) {
+        if (encoding && encoding.fieldID) {
+            encodings[channel] = {
+                field: encoding.fieldID,
+                type: encoding.dtype,
+                aggregate: encoding.aggregate,
+                sortOrder: encoding.sortOrder,
+                sortBy: encoding.sortBy,
+                scheme: encoding.scheme,
+            };
+        }
+    }
+
+    const semanticTypes: Record<string, string> = {};
+    for (const [fieldName, meta] of Object.entries(testCase.metadata)) {
+        if (meta.semanticType) {
+            semanticTypes[fieldName] = meta.semanticType;
+        }
+    }
+
+    return {
+        data: { values: testCase.data },
+        semantic_types: semanticTypes,
+        chart_spec: {
+            chartType: testCase.chartType,
+            encodings,
+            canvasSize,
+            chartProperties: testCase.chartProperties,
+        },
+        options: testCase.assembleOptions,
+    };
+}
+
+const GoFishChart: React.FC<{ testCase: TestCase; canvasSize?: { width: number; height: number } }> = React.memo(({ testCase, canvasSize = DEFAULT_CANVAS_SIZE }) => {
+    const containerRef = useRef<HTMLDivElement>(null);
+    const [error, setError] = useState<string | null>(null);
+    const [warnings, setWarnings] = useState<ChartWarning[]>([]);
+    const [specDescription, setSpecDescription] = useState<string>('');
+    const [inferredSize, setInferredSize] = useState<string>('');
+
+    useEffect(() => {
+        if (!containerRef.current) return;
+
+        try {
+            const gfSpec = assembleGoFish(testCaseToGoFishInput(testCase, canvasSize));
+
+            if (!gfSpec) {
+                setError('assembleGoFish returned no spec');
+                return;
+            }
+
+            // Extract warnings
+            setWarnings(gfSpec._warnings || []);
+            setInferredSize(`${gfSpec._width ?? '?'} × ${gfSpec._height ?? '?'}`);
+            setSpecDescription(gfSpec._specDescription || '');
+
+            // Set container size
+            if (containerRef.current) {
+                containerRef.current.style.width = `${gfSpec._width || 400}px`;
+                containerRef.current.style.height = `${gfSpec._height || 300}px`;
+                containerRef.current.innerHTML = '';
+            }
+
+            // Render GoFish chart into the container
+            gfSpec.render(containerRef.current);
+            setError(null);
+        } catch (err: any) {
+            setError(`GoFish error: ${err.message}`);
+        }
+    }, [testCase, canvasSize]);
+
+    return (
+        <Box sx={{ width: 'fit-content' }}>
+            <Typography variant="caption" fontWeight={600} color="#6a1b9a"
+                sx={{ display: 'block', mb: 0.5, fontSize: 11, letterSpacing: 0.5 }}>
+                GoFish
+            </Typography>
+            {inferredSize && (
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5, fontSize: 10 }}>
+                    Inferred size: {inferredSize}
+                </Typography>
+            )}
+            {error ? (
+                <Typography color="error" variant="body2" sx={{ whiteSpace: 'pre-wrap', fontSize: 11 }}>
+                    {error}
+                </Typography>
+            ) : (
+                <Box ref={containerRef} sx={{ minHeight: 200 }} />
+            )}
+            {warnings.length > 0 && (
+                <Box sx={{ mt: 1, p: 1, bgcolor: '#f3e5f5', borderLeft: '3px solid #9c27b0' }}>
+                    {warnings.map((w, i) => (
+                        <Typography key={i} variant="body2" color="secondary.dark" sx={{ fontSize: 11 }}>
+                            {w.message}
+                        </Typography>
+                    ))}
+                </Box>
+            )}
+            {specDescription && (
+                <details style={{ marginTop: 8 }}>
+                    <summary style={{ cursor: 'pointer', fontSize: 11, color: '#888' }}>
+                        GoFish Spec
+                    </summary>
+                    <pre style={{ fontSize: 10, maxHeight: 200, overflow: 'auto', background: '#f3e5f5', padding: 8, borderRadius: 4 }}>
+                        {specDescription}
+                    </pre>
+                </details>
+            )}
+        </Box>
+    );
+});
+
+// ============================================================================
+// Quad Render: VL + GoFish side-by-side (for GoFish backend tests)
+// ============================================================================
+
+const QuadChart: React.FC<{ testCase: TestCase }> = React.memo(({ testCase }) => {
+    return (
+        <Paper
+            elevation={1}
+            sx={{
+                p: 2, mb: 2, width: 'fit-content', maxWidth: '100%',
+                border: '1px solid #e0e0e0',
+            }}
+        >
+            <Typography variant="subtitle2" fontWeight={600} gutterBottom>
+                {testCase.title}
+            </Typography>
+            <Typography variant="caption" color="text.secondary" display="block" mb={1}>
+                {testCase.description}
+            </Typography>
+            <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', mb: 1 }}>
+                {testCase.tags.map(tag => (
+                    <Chip key={tag} label={tag} size="small" variant="outlined"
+                        sx={{ fontSize: 10, height: 20 }} />
+                ))}
+            </Box>
+            <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
+                <VegaChartInline testCase={testCase} canvasSize={{ width: 300, height: 250 }} />
+                <GoFishChart testCase={testCase} canvasSize={{ width: 300, height: 250 }} />
+            </Box>
+        </Paper>
+    );
+});
+
+// ============================================================================
 // Sub-page for a single chart type
 // ============================================================================
 
@@ -663,6 +818,7 @@ const ChartTypeTestPanel: React.FC<{ chartGroup: string }> = ({ chartGroup }) =>
 
     const isEChartsGroup = chartGroup.startsWith('ECharts:');
     const isChartJsGroup = chartGroup.startsWith('Chart.js:');
+    const isGoFishGroup = chartGroup.startsWith('GoFish');
 
     if (tests.length === 0) {
         return (
@@ -675,7 +831,9 @@ const ChartTypeTestPanel: React.FC<{ chartGroup: string }> = ({ chartGroup }) =>
     return (
         <Box sx={{ p: 2, display: 'flex', flexWrap: 'wrap', gap: 2, justifyContent: 'flex-start' }}>
             {tests.map((tc, i) =>
-                isChartJsGroup
+                isGoFishGroup
+                    ? <QuadChart key={`${chartGroup}-${i}`} testCase={tc} />
+                    : isChartJsGroup
                     ? <TripleChart key={`${chartGroup}-${i}`} testCase={tc} />
                     : isEChartsGroup
                     ? <DualChart key={`${chartGroup}-${i}`} testCase={tc} />

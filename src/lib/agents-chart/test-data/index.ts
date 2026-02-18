@@ -31,6 +31,7 @@ export { genGasPressureTests } from './gas-pressure-tests';
 export { genLineAreaStretchTests } from './line-area-stretch-tests';
 export { genEChartsScatterTests, genEChartsLineTests, genEChartsBarTests, genEChartsStackedBarTests, genEChartsGroupedBarTests, genEChartsStressTests, genEChartsAreaTests, genEChartsPieTests, genEChartsHeatmapTests, genEChartsHistogramTests, genEChartsBoxplotTests, genEChartsRadarTests, genEChartsCandlestickTests, genEChartsStreamgraphTests, genEChartsFacetSmallTests, genEChartsFacetWrapTests, genEChartsFacetClipTests, genEChartsRoseTests } from './echarts-tests';
 export { genChartJsScatterTests, genChartJsLineTests, genChartJsBarTests, genChartJsStackedBarTests, genChartJsGroupedBarTests, genChartJsAreaTests, genChartJsPieTests, genChartJsHistogramTests, genChartJsRadarTests, genChartJsStressTests, genChartJsRoseTests } from './chartjs-tests';
+export { genGoFishScatterTests, genGoFishLineTests, genGoFishBarTests, genGoFishStackedBarTests, genGoFishGroupedBarTests, genGoFishAreaTests, genGoFishStackedAreaTests, genGoFishPieTests, genGoFishScatterPieTests, genGoFishStressTests } from './gofish-tests';
 export { genDiscreteAxisTests } from './discrete-axis-tests';
 export { genUnintendedScatterTests, genUnintendedBarTests, genUnintendedLineAreaTests, genUnintendedPartToWholeTests, genUnintendedStatisticalTests } from './unintended-tests';
 export { genDateTests, genDateYearTests, genDateMonthTests, genDateYearMonthTests, genDateDecadeTests, genDateDateTimeTests, genDateHoursTests } from './date-tests';
@@ -58,6 +59,7 @@ import { genUnintendedScatterTests, genUnintendedBarTests, genUnintendedLineArea
 import { genDateYearTests, genDateMonthTests, genDateYearMonthTests, genDateDecadeTests, genDateDateTimeTests, genDateHoursTests } from './date-tests';
 import { genEChartsScatterTests, genEChartsLineTests, genEChartsBarTests, genEChartsStackedBarTests, genEChartsGroupedBarTests, genEChartsStressTests, genEChartsAreaTests, genEChartsPieTests, genEChartsHeatmapTests, genEChartsHistogramTests, genEChartsBoxplotTests, genEChartsRadarTests, genEChartsCandlestickTests, genEChartsStreamgraphTests, genEChartsFacetSmallTests, genEChartsFacetWrapTests, genEChartsFacetClipTests, genEChartsRoseTests } from './echarts-tests';
 import { genChartJsScatterTests, genChartJsLineTests, genChartJsBarTests, genChartJsStackedBarTests, genChartJsGroupedBarTests, genChartJsAreaTests, genChartJsPieTests, genChartJsHistogramTests, genChartJsRadarTests, genChartJsStressTests, genChartJsRoseTests } from './chartjs-tests';
+import { genGoFishScatterTests, genGoFishLineTests, genGoFishBarTests, genGoFishStackedBarTests, genGoFishGroupedBarTests, genGoFishAreaTests, genGoFishStackedAreaTests, genGoFishPieTests, genGoFishScatterPieTests, genGoFishStressTests } from './gofish-tests';
 
 /** All test generators mapped by chart group */
 export const TEST_GENERATORS: Record<string, () => TestCase[]> = {
@@ -136,6 +138,18 @@ export const TEST_GENERATORS: Record<string, () => TestCase[]> = {
     'Chart.js: Radar': genChartJsRadarTests,
     'Chart.js: Rose': genChartJsRoseTests,
     'Chart.js: Stress Tests': genChartJsStressTests,
+    'GoFish Basic': () => [
+        ...genGoFishScatterTests(),
+        ...genGoFishLineTests(),
+        ...genGoFishBarTests(),
+        ...genGoFishStackedBarTests(),
+        ...genGoFishGroupedBarTests(),
+        ...genGoFishAreaTests(),
+        ...genGoFishStackedAreaTests(),
+        ...genGoFishPieTests(),
+        ...genGoFishScatterPieTests(),
+        ...genGoFishStressTests(),
+    ],
 };
 
 /** Gallery organised into three sections */
@@ -216,6 +230,13 @@ export const GALLERY_SECTIONS: GallerySection[] = [
             'Chart.js: Radar',
             'Chart.js: Rose',
             'Chart.js: Stress Tests',
+        ],
+    },
+    {
+        label: 'GoFish Basic',
+        description: 'All GoFish chart examples on one page',
+        entries: [
+            'GoFish Basic',
         ],
     },
 ];

@@ -14,16 +14,19 @@
  *   vegalite/   — Vega-Lite backend: assembly, templates, spec instantiation
  *   echarts/    — ECharts backend: assembly, templates, spec instantiation
  *   chartjs/    — Chart.js backend: assembly, templates, spec instantiation
+ *   gofish/     — GoFish backend: assembly, templates, imperative rendering
  *
  * Assembly functions:
  *   assembleVegaLite(input)  — Vega-Lite spec
  *   assembleECharts(input)   — ECharts option object
  *   assembleChartjs(input)   — Chart.js config object
+ *   assembleGoFish(input)    — GoFish spec with render() function
  *
  * Template registries:
  *   vlTemplateDefs / vlGetTemplateDef / vlGetTemplateChannels
  *   ecTemplateDefs / ecGetTemplateDef / ecGetTemplateChannels
  *   cjsTemplateDefs / cjsGetTemplateDef / cjsGetTemplateChannels
+ *   gfTemplateDefs / gfGetTemplateDef / gfGetTemplateChannels
  *
  * Usage:
  * ```ts
@@ -52,3 +55,6 @@ export * from './echarts';
 
 // Chart.js backend: assembleChartjs, templates, spec instantiation
 export * from './chartjs';
+
+// GoFish backend: assembleGoFish, templates, imperative rendering
+export * from './gofish';

@@ -19,6 +19,7 @@
         "dompurify": "^3.2.4",
         "echarts": "^6.0.0",
         "exceljs": "^4.4.0",
+        "gofish-graphics": "^0.0.22",
         "html2canvas": "^1.4.1",
         "katex": "^0.16.22",
         "localforage": "^1.10.0",
