@@ -161,7 +161,7 @@ export const TEST_GENERATORS: Record<string, () => TestCase[]> = {
 /** Gallery organised into three sections */
 export const GALLERY_SECTIONS: GallerySection[] = [
     {
-        label: 'Chart Types',
+        label: 'VegaLite: Chart Types',
         description: 'Demos for every supported chart type',
         entries: [
             'Scatter Plot', 'Linear Regression', 'Bar Chart', 'Stacked Bar Chart',
@@ -172,12 +172,12 @@ export const GALLERY_SECTIONS: GallerySection[] = [
         ],
     },
     {
-        label: 'Features & Facets',
+        label: 'VegaLite: Features & Facets',
         description: 'Faceting modes and feature combinations',
         entries: ['Facet: Columns', 'Facet: Rows', 'Facet: Cols+Rows', 'Facet: Small', 'Facet: Wrap', 'Facet: Clip'],
     },
     {
-        label: 'Stress Tests',
+        label: 'VegaLite: Stress Tests',
         description: 'Overflow, elasticity, and temporal format stress tests',
         entries: [
             'Overflow', 'Elasticity & Stretch', 'Discrete Axis Sizing', 'Gas Pressure (§2)',
@@ -187,7 +187,7 @@ export const GALLERY_SECTIONS: GallerySection[] = [
         ],
     },
     {
-        label: 'Unintended Use',
+        label: 'VegaLite: Unintended Use',
         description: 'Wrong field types, degenerate data, and missing encodings — graceful failure tests',
         entries: [
             'Unintended: Scatter & Point',
