@@ -31,7 +31,7 @@ export const gfBarChartDef: ChartTemplateDef = {
         };
     },
     instantiate: (spec, ctx) => {
-        const { channelSemantics, table } = ctx;
+        const { channelSemantics, table, layout } = ctx;
         const { categoryAxis, valueAxis } = detectAxes(channelSemantics);
 
         const catField = channelSemantics[categoryAxis]?.field;
@@ -39,6 +39,11 @@ export const gfBarChartDef: ChartTemplateDef = {
         if (!catField || !valField) return;
 
         const isHorizontal = categoryAxis === 'y';
+
+        // Compute bar width/height and spacing from layout
+        const step = isHorizontal ? layout.yStep : layout.xStep;
+        const barSize = step * (1 - layout.stepPadding);
+        const spacing = step * layout.stepPadding;
 
         // Aggregate data: one bar per category
         const catCS = channelSemantics[categoryAxis];
@@ -52,13 +57,16 @@ export const gfBarChartDef: ChartTemplateDef = {
             flow: [{
                 op: 'spread',
                 field: catField,
-                options: { dir: isHorizontal ? 'y' : 'x' },
+                options: { 
+                    dir: isHorizontal ? 'y' : 'x',
+                    spacing: spacing,
+                },
             }],
             mark: {
                 shape: 'rect',
                 options: isHorizontal
-                    ? { w: valField }
-                    : { h: valField },
+                    ? { w: valField, h: barSize }
+                    : { h: valField, w: barSize },
             },
         };
 
@@ -83,7 +91,7 @@ export const gfStackedBarChartDef: ChartTemplateDef = {
         };
     },
     instantiate: (spec, ctx) => {
-        const { channelSemantics, table } = ctx;
+        const { channelSemantics, table, layout } = ctx;
         const { categoryAxis, valueAxis } = detectAxes(channelSemantics);
         const colorField = channelSemantics.color?.field;
 
@@ -95,8 +103,20 @@ export const gfStackedBarChartDef: ChartTemplateDef = {
         const spreadDir = isHorizontal ? 'y' : 'x';
         const stackDir = isHorizontal ? 'x' : 'y';
 
+        // Compute bar width/height and spacing from layout
+        const step = isHorizontal ? layout.yStep : layout.xStep;
+        const barSize = step * (1 - layout.stepPadding);
+        const spacing = step * layout.stepPadding;
+
         const flow: any[] = [
-            { op: 'spread', field: catField, options: { dir: spreadDir } },
+            { 
+                op: 'spread', 
+                field: catField, 
+                options: { 
+                    dir: spreadDir,
+                    spacing: spacing,
+                },
+            },
         ];
 
         if (colorField) {
@@ -113,8 +133,8 @@ export const gfStackedBarChartDef: ChartTemplateDef = {
             mark: {
                 shape: 'rect',
                 options: isHorizontal
-                    ? { w: valField, fill: colorField || undefined }
-                    : { h: valField, fill: colorField || undefined },
+                    ? { w: valField, h: barSize, fill: colorField || undefined }
+                    : { h: valField, w: barSize, fill: colorField || undefined },
             },
         };
 
@@ -140,7 +160,7 @@ export const gfGroupedBarChartDef: ChartTemplateDef = {
         };
     },
     instantiate: (spec, ctx) => {
-        const { channelSemantics, table } = ctx;
+        const { channelSemantics, table, layout } = ctx;
         const { categoryAxis, valueAxis } = detectAxes(channelSemantics);
         const groupField = channelSemantics.group?.field;
 
@@ -151,8 +171,29 @@ export const gfGroupedBarChartDef: ChartTemplateDef = {
         const isHorizontal = categoryAxis === 'y';
         const spreadDir = isHorizontal ? 'y' : 'x';
 
+        // Compute bar width/height and spacing from layout
+        const step = isHorizontal ? layout.yStep : layout.xStep;
+        const usableStep = step * (1 - layout.stepPadding);
+        const spacing = step * layout.stepPadding;
+
+        // For grouped bars, divide bar size by number of groups (like ECharts does)
+        let barSize = usableStep;
+        if (groupField) {
+            const groupCount = new Set(table.map((r: any) => r[groupField])).size;
+            if (groupCount > 1) {
+                barSize = Math.max(1, Math.floor(usableStep / groupCount));
+            }
+        }
+
         const flow: any[] = [
-            { op: 'spread', field: catField, options: { dir: spreadDir } },
+            { 
+                op: 'spread', 
+                field: catField, 
+                options: { 
+                    dir: spreadDir,
+                    spacing: spacing,
+                },
+            },
         ];
 
         // Group by group field using stack in same direction (side-by-side within each category)
@@ -170,8 +211,8 @@ export const gfGroupedBarChartDef: ChartTemplateDef = {
             mark: {
                 shape: 'rect',
                 options: isHorizontal
-                    ? { w: valField, fill: groupField || undefined }
-                    : { h: valField, fill: groupField || undefined },
+                    ? { w: valField, h: barSize, fill: groupField || undefined }
+                    : { h: valField, w: barSize, fill: groupField || undefined },
             },
         };
 
