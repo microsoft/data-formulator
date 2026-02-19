@@ -553,7 +553,9 @@ export const ReportView: FC = () => {
                 config.defaultChartWidth,
                 config.defaultChartHeight,
                 true,
-                chart.config
+                chart.config,
+                1,
+                config.maxStretchFactor,
             );
 
             // Create a temporary container for embedding

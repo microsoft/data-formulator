@@ -29,3 +29,6 @@ export {
     ecGetTemplateDef,
     ecGetTemplateChannels,
 } from './templates';
+
+// EC recommendation & adaptation
+export { ecAdaptChart, ecRecommendEncodings } from './recommendation';

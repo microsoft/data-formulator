@@ -71,6 +71,7 @@ export const ecPieChartDef: ChartTemplateDef = {
             = computeCircumferencePressure(effectiveCount, ctx.canvasSize, {
                 minArcPx: 45,
                 minRadius: 60,
+                maxStretch: ctx.assembleOptions?.maxStretch,
                 margin: 50,   // extra room for pie label lines + text
             });
 

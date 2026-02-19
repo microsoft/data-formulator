@@ -199,6 +199,7 @@ export function assembleECharts(input: ChartAssemblyInput): any {
         canvasSize,
         semanticTypes,
         chartType,
+        assembleOptions: effectiveOptions,
     };
 
     // --- Detect faceting (column / row channels) ---

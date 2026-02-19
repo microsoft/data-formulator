@@ -422,6 +422,7 @@ export function assembleGoFish(input: ChartAssemblyInput): GoFishSpec {
         canvasSize,
         semanticTypes,
         chartType,
+        assembleOptions: effectiveOptions,
     };
 
     const gfSpec: any = structuredClone(chartTemplate.template);

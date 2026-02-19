@@ -340,6 +340,9 @@ export interface InstantiateContext {
 
     /** Chart type name */
     chartType: string;
+
+    /** Assembly options (layout tuning parameters from the caller) */
+    assembleOptions?: AssembleOptions;
 }
 
 

@@ -65,6 +65,7 @@ export const pieChartDef: ChartTemplateDef = {
             effectiveCount, ctx.canvasSize, {
                 minArcPx: 45,
                 minRadius: 60,
+                maxStretch: ctx.assembleOptions?.maxStretch,
                 margin: 50,   // room for labels around pie
             });
 

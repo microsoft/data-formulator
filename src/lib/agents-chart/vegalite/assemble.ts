@@ -235,6 +235,7 @@ export function assembleVegaLite(input: ChartAssemblyInput): any {
         canvasSize,
         semanticTypes,
         chartType,
+        assembleOptions: effectiveOptions,
     };
 
     chartTemplate.instantiate(vgObj, instantiateContext);
@@ -247,7 +248,35 @@ export function assembleVegaLite(input: ChartAssemblyInput): any {
 
     // --- restructureFacets (VL-specific) ---
 
-    restructureFacets(vgObj, nominalCounts, canvasSize, effectiveOptions);
+    const { wrappedRows } = restructureFacets(vgObj, nominalCounts, canvasSize, effectiveOptions);
+
+    // When column-only facets wrap into multiple rows, update the layout
+    // result so that subplotHeight is properly sized for the wrapped grid.
+    // Also update facet.columns so downstream code (header sizing, title
+    // suppression) sees the actual wrapped column count, not the original.
+    if (wrappedRows > 1 && layoutResult.facet) {
+        const facetElasticityVal = effectiveOptions.facetElasticity ?? 0.5;
+        const facetMaxStretchVal2 = effectiveOptions.facetMaxStretch ?? 1.5;
+        const minContinuousSize = Math.max(10, effectiveOptions.minStep ?? 6);
+        const defaultChartHeight = canvasSize.height;
+
+        const originalFacetCount = layoutResult.facet.columns * (layoutResult.facet.rows);
+        const wrappedCols = Math.ceil(originalFacetCount / wrappedRows);
+
+        layoutResult.facet.rows = wrappedRows;
+        layoutResult.facet.columns = wrappedCols;
+
+        const stretch = Math.min(facetMaxStretchVal2, Math.pow(wrappedRows, facetElasticityVal));
+        const newSubplotHeight = Math.round(Math.max(minContinuousSize, defaultChartHeight * stretch / wrappedRows));
+        layoutResult.subplotHeight = newSubplotHeight;
+        layoutResult.facet.subplotHeight = newSubplotHeight;
+
+        // Recalculate subplot width for the new column count
+        const stretchW = Math.min(facetMaxStretchVal2, Math.pow(wrappedCols, facetElasticityVal));
+        const newSubplotWidth = Math.round(Math.max(minContinuousSize, canvasSize.width * stretchW / wrappedCols));
+        layoutResult.subplotWidth = newSubplotWidth;
+        layoutResult.facet.subplotWidth = newSubplotWidth;
+    }
 
     // --- vlApplyLayoutToSpec (VL-specific: config, sizing, formatting) ---
 
@@ -488,7 +517,12 @@ function buildVLEncodings(
                                 colorFieldType = inferVisCategory(data.map(r => r[colorField]));
                             }
 
-                            if (colorField && colorFieldType === 'quantitative') {
+                            // Avoid sort-by-color for layered specs (e.g. lollipop,
+                            // ranged dot plot): VL can't resolve cross-layer "-color"
+                            // references because color may only exist in one layer.
+                            const isLayered = Array.isArray(chartTemplate.template?.layer);
+
+                            if (colorField && colorFieldType === 'quantitative' && !isLayered) {
                                 encodingObj.sort = "-color";
                             } else {
                                 const oppositeChannel = channel === 'x' ? 'y' : 'x';
@@ -590,7 +624,7 @@ function restructureFacets(
     nominalCounts: Record<string, number>,
     canvasSize: { width: number; height: number },
     options: AssembleOptions,
-): void {
+): { wrappedRows: number } {
     const {
         facetMaxStretch: facetMaxStretchVal = 1.5,
         minStep: minStepVal = 6,
@@ -654,6 +688,8 @@ function restructureFacets(
             delete vgObj.layer;
             delete vgObj.encoding;
         }
+
+        return { wrappedRows: numRows };
     }
 
     // For layered specs with row-only or column+row facets
@@ -676,4 +712,6 @@ function restructureFacets(
         delete vgObj.layer;
         delete vgObj.encoding;
     }
+
+    return { wrappedRows: 0 };
 }

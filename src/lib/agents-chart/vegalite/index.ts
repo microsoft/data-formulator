@@ -23,3 +23,6 @@ export {
     vlGetTemplateDef,
     vlGetTemplateChannels,
 } from './templates';
+
+// VL recommendation & adaptation
+export { vlAdaptChart, vlRecommendEncodings } from './recommendation';

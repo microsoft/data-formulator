@@ -55,6 +55,20 @@ def get_temp_tables(workspace, input_tables: list[dict]) -> list[dict]:
 
 agent_bp = Blueprint('agent', __name__, url_prefix='/api/agent')
 
+@agent_bp.errorhandler(Exception)
+def handle_agent_error(e):
+    """Catch-all error handler to ensure JSON responses instead of HTML error pages."""
+    logger.error(f"Unhandled error in agent route: {e}")
+    logger.error(traceback.format_exc())
+    response = flask.jsonify({
+        "status": "error",
+        "error_message": sanitize_model_error(str(e)),
+        "results": [],
+        "result": []
+    })
+    response.headers.add('Access-Control-Allow-Origin', '*')
+    return response, 500
+
 def get_client(model_config):
     for key in model_config:
         model_config[key] = model_config[key].strip()
@@ -277,13 +291,18 @@ def sort_data_request():
         content = request.get_json()
         token = content["token"]
 
-        client = get_client(content['model'])
+        try:
+            client = get_client(content['model'])
 
-        agent = SortDataAgent(client=client)
-        candidates = agent.run(content['field'], content['items'])
+            agent = SortDataAgent(client=client)
+            candidates = agent.run(content['field'], content['items'])
 
-        candidates = candidates if candidates != None else []
-        response = flask.jsonify({ "status": "ok", "token": token, "result": candidates })
+            candidates = candidates if candidates != None else []
+            response = flask.jsonify({ "status": "ok", "token": token, "result": candidates })
+        except Exception as e:
+            logger.error(f"Error in sort-data: {e}")
+            logger.error(traceback.format_exc())
+            response = flask.jsonify({ "token": token, "status": "error", "result": [], "error_message": sanitize_model_error(str(e)) })
     else:
         response = flask.jsonify({ "token": -1, "status": "error", "result": [] })
 
@@ -326,42 +345,47 @@ def derive_data():
         # If user provided chart encodings (via visualization context), use transform mode; otherwise recommendation
         mode = "transform" if current_visualization or expected_visualization else "recommendation"
 
-        identity_id = get_identity_id()
-        workspace = Workspace(identity_id)
-        temp_data = get_temp_tables(workspace, input_tables)
-        max_display_rows = current_app.config['CLI_ARGS']['max_display_rows']
+        try:
+            identity_id = get_identity_id()
+            workspace = Workspace(identity_id)
+            temp_data = get_temp_tables(workspace, input_tables)
+            max_display_rows = current_app.config['CLI_ARGS']['max_display_rows']
 
-        with WorkspaceWithTempData(workspace, temp_data) as workspace:
-            if mode == "recommendation":
-                # Use unified Python agent for recommendations
-                agent = DataRecAgent(client=client, workspace=workspace, agent_coding_rules=agent_coding_rules, max_display_rows=max_display_rows)
-                results = agent.run(input_tables, instruction, n=1, prev_messages=prev_messages)
-            else:
-                # Use unified Python agent that generates Python scripts with DuckDB + pandas
-                agent = DataTransformationAgent(client=client, workspace=workspace, agent_coding_rules=agent_coding_rules, max_display_rows=max_display_rows)
-                results = agent.run(input_tables, instruction, prev_messages,
-                                    current_visualization=current_visualization, expected_visualization=expected_visualization)
-
-            repair_attempts = 0
-            while results[0]['status'] == 'error' and repair_attempts < max_repair_attempts:
-                error_message = results[0]['content']
-                logger.info(f"[derive-data] Code generation failed (attempt {repair_attempts + 1}/{max_repair_attempts}), mode={mode}. Error: {error_message}")
-                new_instruction = f"We run into the following problem executing the code, please fix it:\n\n{error_message}\n\nPlease think step by step, reflect why the error happens and fix the code so that no more errors would occur."
-
-                prev_dialog = results[0]['dialog']
-
-                if mode == "transform":
-                    results = agent.followup(input_tables, prev_dialog, [], new_instruction, n=1)
+            with WorkspaceWithTempData(workspace, temp_data) as workspace:
                 if mode == "recommendation":
-                    results = agent.followup(input_tables, prev_dialog, [], new_instruction, n=1)
+                    # Use unified Python agent for recommendations
+                    agent = DataRecAgent(client=client, workspace=workspace, agent_coding_rules=agent_coding_rules, max_display_rows=max_display_rows)
+                    results = agent.run(input_tables, instruction, n=1, prev_messages=prev_messages)
+                else:
+                    # Use unified Python agent that generates Python scripts with DuckDB + pandas
+                    agent = DataTransformationAgent(client=client, workspace=workspace, agent_coding_rules=agent_coding_rules, max_display_rows=max_display_rows)
+                    results = agent.run(input_tables, instruction, prev_messages,
+                                        current_visualization=current_visualization, expected_visualization=expected_visualization)
 
-                repair_attempts += 1
-                logger.info(f"[derive-data] Repair attempt {repair_attempts}/{max_repair_attempts} result: {results[0]['status']}")
+                repair_attempts = 0
+                while results[0]['status'] == 'error' and repair_attempts < max_repair_attempts:
+                    error_message = results[0]['content']
+                    logger.info(f"[derive-data] Code generation failed (attempt {repair_attempts + 1}/{max_repair_attempts}), mode={mode}. Error: {error_message}")
+                    new_instruction = f"We run into the following problem executing the code, please fix it:\n\n{error_message}\n\nPlease think step by step, reflect why the error happens and fix the code so that no more errors would occur."
 
-            if repair_attempts > 0:
-                logger.info(f"[derive-data] Finished repair loop after {repair_attempts} attempt(s). Final status: {results[0]['status']}")
+                    prev_dialog = results[0]['dialog']
 
-        response = flask.jsonify({ "token": token, "status": "ok", "results": results })
+                    if mode == "transform":
+                        results = agent.followup(input_tables, prev_dialog, [], new_instruction, n=1)
+                    if mode == "recommendation":
+                        results = agent.followup(input_tables, prev_dialog, [], new_instruction, n=1)
+
+                    repair_attempts += 1
+                    logger.info(f"[derive-data] Repair attempt {repair_attempts}/{max_repair_attempts} result: {results[0]['status']}")
+
+                if repair_attempts > 0:
+                    logger.info(f"[derive-data] Finished repair loop after {repair_attempts} attempt(s). Final status: {results[0]['status']}")
+
+            response = flask.jsonify({ "token": token, "status": "ok", "results": results })
+        except Exception as e:
+            logger.error(f"Error in derive-data: {e}")
+            logger.error(traceback.format_exc())
+            response = flask.jsonify({ "token": token, "status": "error", "results": [], "error_message": sanitize_model_error(str(e)) })
     else:
         response = flask.jsonify({ "token": "", "status": "error", "results": [] })
 
@@ -494,32 +518,37 @@ def refine_data():
         logger.info("== user spec ===>")
         logger.info(new_instruction)
 
-        identity_id = get_identity_id()
-        workspace = Workspace(identity_id)
-        temp_data = get_temp_tables(workspace, input_tables)
-        max_display_rows = current_app.config['CLI_ARGS']['max_display_rows']
+        try:
+            identity_id = get_identity_id()
+            workspace = Workspace(identity_id)
+            temp_data = get_temp_tables(workspace, input_tables)
+            max_display_rows = current_app.config['CLI_ARGS']['max_display_rows']
 
-        with WorkspaceWithTempData(workspace, temp_data) as workspace:
-            # Use unified Python agent for followup transformations
-            agent = DataTransformationAgent(client=client, workspace=workspace, agent_coding_rules=agent_coding_rules, max_display_rows=max_display_rows)
-            results = agent.followup(input_tables, dialog, latest_data_sample, new_instruction, n=1,
-                                    current_visualization=current_visualization, expected_visualization=expected_visualization)
+            with WorkspaceWithTempData(workspace, temp_data) as workspace:
+                # Use unified Python agent for followup transformations
+                agent = DataTransformationAgent(client=client, workspace=workspace, agent_coding_rules=agent_coding_rules, max_display_rows=max_display_rows)
+                results = agent.followup(input_tables, dialog, latest_data_sample, new_instruction, n=1,
+                                        current_visualization=current_visualization, expected_visualization=expected_visualization)
 
-            repair_attempts = 0
-            while results[0]['status'] == 'error' and repair_attempts < max_repair_attempts:
-                error_message = results[0]['content']
-                logger.info(f"[refine-data] Code generation failed (attempt {repair_attempts + 1}/{max_repair_attempts}). Error: {error_message}")
-                new_instruction = f"We run into the following problem executing the code, please fix it:\n\n{error_message}\n\nPlease think step by step, reflect why the error happens and fix the code so that no more errors would occur."
-                prev_dialog = results[0]['dialog']
+                repair_attempts = 0
+                while results[0]['status'] == 'error' and repair_attempts < max_repair_attempts:
+                    error_message = results[0]['content']
+                    logger.info(f"[refine-data] Code generation failed (attempt {repair_attempts + 1}/{max_repair_attempts}). Error: {error_message}")
+                    new_instruction = f"We run into the following problem executing the code, please fix it:\n\n{error_message}\n\nPlease think step by step, reflect why the error happens and fix the code so that no more errors would occur."
+                    prev_dialog = results[0]['dialog']
 
-                results = agent.followup(input_tables, prev_dialog, [], new_instruction, n=1)
-                repair_attempts += 1
-                logger.info(f"[refine-data] Repair attempt {repair_attempts}/{max_repair_attempts} result: {results[0]['status']}")
+                    results = agent.followup(input_tables, prev_dialog, [], new_instruction, n=1)
+                    repair_attempts += 1
+                    logger.info(f"[refine-data] Repair attempt {repair_attempts}/{max_repair_attempts} result: {results[0]['status']}")
 
-            if repair_attempts > 0:
-                logger.info(f"[refine-data] Finished repair loop after {repair_attempts} attempt(s). Final status: {results[0]['status']}")
+                if repair_attempts > 0:
+                    logger.info(f"[refine-data] Finished repair loop after {repair_attempts} attempt(s). Final status: {results[0]['status']}")
 
-        response = flask.jsonify({ "token": token, "status": "ok", "results": results})
+            response = flask.jsonify({ "token": token, "status": "ok", "results": results})
+        except Exception as e:
+            logger.error(f"Error in refine-data: {e}")
+            logger.error(traceback.format_exc())
+            response = flask.jsonify({ "token": token, "status": "error", "results": [], "error_message": sanitize_model_error(str(e)) })
     else:
         response = flask.jsonify({ "token": "", "status": "error", "results": []})
 
@@ -543,18 +572,23 @@ def request_code_expl():
         temp_data = get_temp_tables(workspace, input_tables)
 
         with WorkspaceWithTempData(workspace, temp_data) as workspace:
-            code_expl_agent = CodeExplanationAgent(client=client, workspace=workspace)
-            candidates = code_expl_agent.run(input_tables, code)
+            try:
+                code_expl_agent = CodeExplanationAgent(client=client, workspace=workspace)
+                candidates = code_expl_agent.run(input_tables, code)
 
-            # Return the first candidate's content as JSON
-            if candidates and len(candidates) > 0:
-                result = candidates[0]
-                if result['status'] == 'ok':
-                    return jsonify(result)
+                # Return the first candidate's content as JSON
+                if candidates and len(candidates) > 0:
+                    result = candidates[0]
+                    if result['status'] == 'ok':
+                        return jsonify(result)
+                    else:
+                        return jsonify(result), 400
                 else:
-                    return jsonify(result), 400
-            else:
-                return jsonify({'error': 'No explanation generated'}), 400
+                    return jsonify({'error': 'No explanation generated'}), 400
+            except Exception as e:
+                logger.error(f"Error in code-expl: {e}")
+                logger.error(traceback.format_exc())
+                return jsonify({'error': sanitize_model_error(str(e))}), 400
     else:
         return jsonify({'error': 'Invalid request format'}), 400
 
@@ -576,17 +610,22 @@ def request_chart_insight():
         temp_data = get_temp_tables(workspace, input_tables)
 
         with WorkspaceWithTempData(workspace, temp_data) as workspace:
-            agent = ChartInsightAgent(client=client, workspace=workspace)
-            candidates = agent.run(chart_image, chart_type, field_names, input_tables)
+            try:
+                agent = ChartInsightAgent(client=client, workspace=workspace)
+                candidates = agent.run(chart_image, chart_type, field_names, input_tables)
 
-            if candidates and len(candidates) > 0:
-                result = candidates[0]
-                if result['status'] == 'ok':
-                    return jsonify(result)
+                if candidates and len(candidates) > 0:
+                    result = candidates[0]
+                    if result['status'] == 'ok':
+                        return jsonify(result)
+                    else:
+                        return jsonify(result), 400
                 else:
-                    return jsonify(result), 400
-            else:
-                return jsonify({'error': 'No insight generated'}), 400
+                    return jsonify({'error': 'No insight generated'}), 400
+            except Exception as e:
+                logger.error(f"Error in chart-insight: {e}")
+                logger.error(traceback.format_exc())
+                return jsonify({'error': sanitize_model_error(str(e))}), 400
     else:
         return jsonify({'error': 'Invalid request format'}), 400
 

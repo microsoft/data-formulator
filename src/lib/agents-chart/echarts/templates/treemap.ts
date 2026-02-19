@@ -105,7 +105,7 @@ export const ecTreemapDef: ChartTemplateDef = {
         const baseH = ctx.canvasSize.height;
         const minBarPx = 30;          // minimum width per effective bar
         const elasticity = 0.5;
-        const maxStretch = 2.0;       // max per-axis stretch
+        const maxStretch = ctx.assembleOptions?.maxStretch ?? 2.0;       // max per-axis stretch
         const xBias = 1.5;            // X takes more of the stretch than Y
 
         const pressure = (effectiveCount * minBarPx) / baseW;

@@ -84,6 +84,7 @@ export const ChartRenderService: FC = () => {
     const tables = useSelector((state: DataFormulatorState) => state.tables);
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
     const chartSynthesisInProgress = useSelector((state: DataFormulatorState) => state.chartSynthesisInProgress);
+    const maxStretchFactor = useSelector((state: DataFormulatorState) => state.config.maxStretchFactor);
 
     // Track which charts are currently being rendered to avoid duplicates
     const renderingRef = useRef<Set<string>>(new Set());
@@ -122,6 +123,8 @@ export const ChartRenderService: FC = () => {
                 THUMB_HEIGHT,
                 false,  // no tooltips
                 chart.config,
+                1,
+                maxStretchFactor,
             );
 
             if (!thumbSpec || thumbSpec === "Table") return;
@@ -148,6 +151,8 @@ export const ChartRenderService: FC = () => {
                 FULL_HEIGHT,
                 true,   // add tooltips
                 chart.config,
+                1,
+                maxStretchFactor,
             );
 
             if (!fullSpec || fullSpec === "Table") return;

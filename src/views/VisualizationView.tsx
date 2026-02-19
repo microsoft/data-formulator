@@ -294,9 +294,10 @@ const VegaChartRenderer: FC<{
     chartWidth: number;
     chartHeight: number;
     scaleFactor: number;
+    maxStretchFactor?: number;
     chartUnavailable: boolean;
     onSpecReady?: (spec: any | null) => void;
-}> = React.memo(({ chart, conceptShelfItems, visTableRows, tableMetadata, chartWidth, chartHeight, scaleFactor, chartUnavailable, onSpecReady }) => {
+}> = React.memo(({ chart, conceptShelfItems, visTableRows, tableMetadata, chartWidth, chartHeight, scaleFactor, maxStretchFactor, chartUnavailable, onSpecReady }) => {
     
     // Initialize from display SVG cache for instant display on chart switch
     const svgCached = displaySvgCache.get(chart.id);
@@ -327,6 +328,7 @@ const VegaChartRenderer: FC<{
             true,
             chart.config,
             scaleFactor,
+            maxStretchFactor,
         );
 
         if (!spec || spec === "Table") {
@@ -377,7 +379,7 @@ const VegaChartRenderer: FC<{
 
         return () => { cancelled = true; };
 
-    }, [chart.id, chart.chartType, chart.encodingMap, chart.config, conceptShelfItems, visTableRows, tableMetadata, chartWidth, chartHeight, scaleFactor, chartUnavailable]);
+    }, [chart.id, chart.chartType, chart.encodingMap, chart.config, conceptShelfItems, visTableRows, tableMetadata, chartWidth, chartHeight, scaleFactor, maxStretchFactor, chartUnavailable]);
 
     const handleSavePng = useCallback(async () => {
         if (!assembledSpec) return;
@@ -778,20 +780,6 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
         </Tooltip>
     );
 
-    let duplicateButton = (
-        <Tooltip key="duplicate-btn-tooltip" title="Duplicate chart">
-            <span>
-                <IconButton key="duplicate-btn" size="small" sx={actionBtnSx}
-                    disabled={trigger != undefined}
-                    onClick={() => {
-                        dispatch(dfActions.duplicateChart(focusedChart.id));
-                    }}>
-                    <ContentCopyIcon sx={{ fontSize: 18 }} />
-                </IconButton>
-            </span>
-        </Tooltip>
-    );
-
     let deleteButton = (
         <Tooltip title="Delete" key="delete-btn-tooltip">
             <span>
@@ -975,7 +963,6 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
         insightButton,
         saveButton,
         vegaEditorButton,
-        duplicateButton,
         deleteButton,
     ]
 
@@ -1048,6 +1035,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                                         chartWidth={config.defaultChartWidth}
                                         chartHeight={config.defaultChartHeight}
                                         scaleFactor={localScaleFactor}
+                                        maxStretchFactor={config.maxStretchFactor}
                                         chartUnavailable={chartUnavailable}
                                         onSpecReady={handleSpecReady}
                                     />
@@ -1162,11 +1150,25 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
         </Box>
     ]
     
+    const ENCODING_SHELF_WIDTH = 200;
+
     let content = [
-        <Box key='focused-box' className="vega-focused" sx={{ display: "flex", overflow: 'auto', flexDirection: 'column', position: 'relative' }}>
+        <Box key='focused-box' className="vega-focused" sx={{ display: "flex", overflow: 'auto', flexDirection: 'column', position: 'relative', flex: 1, pr: `${ENCODING_SHELF_WIDTH}px` }}>
             {focusedComponent}
         </Box>,
-        <EncodingShelfThread key='encoding-shelf' chartId={focusedChart.id} />
+        /* Floating encoding shelf panel */
+        <Box key='encoding-shelf' sx={{
+            position: 'absolute',
+            top: 0,
+            right: 0,
+            zIndex: 10,
+            height: '100%',
+            pointerEvents: 'none',
+        }}>
+            <Box sx={{ pointerEvents: 'auto' }}>
+                <EncodingShelfThread chartId={focusedChart.id} />
+            </Box>
+        </Box>
     ]
 
     let [scaleMin, scaleMax] = [0.2, 2.4]
@@ -1201,7 +1203,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
         </Tooltip>
     </Stack>, [localScaleFactor]);
 
-    return <Box ref={componentRef} sx={{overflow: "hidden", display: 'flex', flex: 1}}>
+    return <Box ref={componentRef} sx={{overflow: "hidden", display: 'flex', flex: 1, position: 'relative'}}>
         {synthesisRunning ? <Box sx={{
                 position: "absolute", height: "calc(100%)", width: "calc(100%)", zIndex: 1001, 
                 backgroundColor: "rgba(243, 243, 243, 0.8)", display: "flex", alignItems: "center"

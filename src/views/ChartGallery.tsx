@@ -58,6 +58,7 @@ const VegaChart: React.FC<{ testCase: TestCase }> = React.memo(({ testCase }) =>
                 true,  // addTooltips
                 testCase.chartProperties,
                 1,     // scaleFactor
+                testCase.assembleOptions?.maxStretch,
                 testCase.assembleOptions,
             );
 
@@ -398,6 +399,7 @@ const VegaChartInline: React.FC<{ testCase: TestCase; canvasSize?: { width: numb
                 canvasSize.width, canvasSize.height, true,
                 testCase.chartProperties,
                 1,
+                testCase.assembleOptions?.maxStretch,
                 testCase.assembleOptions,
             );
             if (!vlSpec) { setError('No VL spec'); return; }

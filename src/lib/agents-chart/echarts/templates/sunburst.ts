@@ -103,6 +103,7 @@ export const ecSunburstDef: ChartTemplateDef = {
             = computeCircumferencePressure(effectiveCount, ctx.canvasSize, {
                 minArcPx: 45,
                 minRadius: 80,
+                maxStretch: ctx.assembleOptions?.maxStretch,
             });
 
         const outerRadius = Math.max(80, Math.round(Math.min(pressureRadius, (Math.min(canvasW, canvasH) / 2 - 20))));

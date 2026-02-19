@@ -4,8 +4,7 @@
 import _, {  } from "lodash";
 import { useEffect, useRef } from "react";
 import ts from "typescript";
-import { channelGroups, getChartChannels, getChartTemplate } from "../components/ChartTemplates";
-import { Channel, Chart, ChartTemplate, EncodingItem, EncodingMap, FieldItem, Trigger } from "../components/ComponentType";
+import { Channel, Chart, EncodingItem, EncodingMap, FieldItem, Trigger } from "../components/ComponentType";
 import { DictTable } from "../components/ComponentType";
 import { Type } from "../data/types";
 import * as d3 from 'd3';
@@ -152,7 +151,6 @@ export async function fetchWithIdentity(
 }
 
 import * as vm from 'vm-browserify';
-import { generateFreshChart } from "./dfSlice";
 
 export function usePrevious<T>(value: T): T | undefined {
     const ref = useRef<T>();
@@ -394,6 +392,7 @@ export const assembleVegaChart = (
     addTooltips: boolean = false,
     chartProperties?: Record<string, any>,
     scaleFactor: number = 1,
+    maxStretchFactor?: number,
     assembleOptions?: AssembleOptions,
 ) => {
 
@@ -419,108 +418,48 @@ export const assembleVegaChart = (
         }
     }
 
+    // Hack: pie-like radial charts grow too large because the circumference
+    // pressure model + VL's auto-radius both amplify the canvas size.
+    // Apply two dampening levers:
+    //   1. Shrink the base canvas so VL's arc radius starts smaller
+    //   2. Cap maxStretch more aggressively so pressure growth is limited
+    const PIE_LIKE_TYPES = new Set([
+        'Pie Chart', 'Rose Chart', 'Sunburst Chart',
+        'Radar Chart', 'Gauge Chart',
+    ]);
+    const isPieLike = PIE_LIKE_TYPES.has(chartType);
+
+    // Lever 1: reduce base canvas for pie-like charts (0.75× → smaller pie)
+    const canvasShrink = isPieLike ? 0.75 : 1;
+    const effectiveW = Math.round(baseChartWidth * scaleFactor * canvasShrink);
+    const effectiveH = Math.round(baseChartHeight * scaleFactor * canvasShrink);
+
+    // Lever 2: tighter stretch cap for pie-like charts
+    let effectiveMaxStretch = maxStretchFactor;
+    if (effectiveMaxStretch != null && isPieLike) {
+        // Compress toward 1: e.g. 2.0 → 1.3, 3.0 → 1.6, 5.0 → 2.2
+        effectiveMaxStretch = 1 + (effectiveMaxStretch - 1) * 0.3;
+    }
+
     return assembleVegaLite({
         data: { values: workingTable },
         semantic_types: semanticTypes,
         chart_spec: {
             chartType,
             encodings,
-            canvasSize: { width: Math.round(baseChartWidth * scaleFactor), height: Math.round(baseChartHeight * scaleFactor) },
+            canvasSize: { width: effectiveW, height: effectiveH },
             chartProperties,
         },
         options: {
             addTooltips,
+            ...(effectiveMaxStretch != null ? { maxStretch: effectiveMaxStretch } : {}),
             ...assembleOptions,
         },
     });
 }
 
-export const adaptChart = (chart: Chart, targetTemplate: ChartTemplate) => {
-
-    let discardedChannels = Object.entries(chart.encodingMap).filter(([ch, enc]) => {
-        return !targetTemplate.channels.includes(ch) && enc.fieldID != undefined
-    });
-
-    let newEncodingMap = Object.assign({}, ...targetTemplate.channels.map((channel) => {
-        let encoding = Object.keys(chart.encodingMap).includes(channel) ? chart.encodingMap[channel as Channel] : { channel: channel, bin: false }
-        return { [channel]: encoding }
-    })) as EncodingMap
-
-    // for channels that will be discarded, find another way to adapt it
-    for (let [ch, enc] of discardedChannels) {
-        let otherChannelsFromSameGroup = (Object.entries(channelGroups).find(([grp, channelList]) => channelList.includes(ch)) as [string, string[]])[1]
-        let candChannels = targetTemplate.channels.filter(c => otherChannelsFromSameGroup.includes(c) && newEncodingMap[c as Channel].fieldID == undefined);
-        if (candChannels.length > 0) {
-            newEncodingMap[candChannels[0] as Channel] = enc
-        }
-    }
-
-    return { ...chart, chartType: targetTemplate.chart, encodingMap: newEncodingMap }
-}
-
-export const resolveRecommendedChart = (refinedGoal: any, allFields: FieldItem[], table: DictTable) => {
-    
-    let chartObj = refinedGoal['chart'] || {};
-    let rawChartType = chartObj['chart_type'];
-    let chartEncodings = chartObj['encodings'];
-
-    if (chartEncodings == undefined || rawChartType == undefined) {
-        let newChart = generateFreshChart(table.id, 'Scatter Plot') as Chart;
-        let basicEncodings : { [key: string]: string } = table.names.length > 1 ? {x: table.names[0], y: table.names[1]} : {};
-        newChart = resolveChartFields(newChart, allFields, basicEncodings, table);
-        return newChart;
-    }
-
-    let chartTypeMap : any = {
-        "line" : "Line Chart",
-        "histogram": "Histogram",
-        "bar": "Bar Chart",
-        "point": "Scatter Plot",
-        "boxplot": "Boxplot",
-        "area": "Area Chart",
-        "heatmap": "Heatmap",
-        "group_bar": "Grouped Bar Chart",
-        "pie": "Pie Chart",
-        "worldmap": "World Map",
-        "usmap": "US Map",
-        "candlestick": "Candlestick Chart",
-    }
-    let chartType = chartTypeMap[rawChartType] || 'Scatter Plot';
-    let newChart = generateFreshChart(table.id, chartType) as Chart;
-    newChart = resolveChartFields(newChart, allFields, chartEncodings, table);
-
-    // Apply chart config properties from agent recommendation
-    if (chartObj['config'] && typeof chartObj['config'] === 'object') {
-        newChart.config = { ...chartObj['config'] };
-    }
-    return newChart;
-}
-
-export const resolveChartFields = (chart: Chart, allFields: FieldItem[], chartEncodings: { [key: string]: string }, table: DictTable) => {
-    // Get the keys that should be present after this update
-    const newEncodingKeys = new Set(Object.keys(chartEncodings).map(key => key === "facet" ? "column" : key));
-    
-    // Remove encodings that are no longer in chartEncodings
-    for (const key of Object.keys(chart.encodingMap)) {
-        if (!newEncodingKeys.has(key) && chart.encodingMap[key as Channel]?.fieldID != undefined) {
-            chart.encodingMap[key as Channel] = {};
-        }
-    }
-    
-    // Add/update encodings from chartEncodings
-    for (let [key, value] of Object.entries(chartEncodings)) {
-        if (key == "facet") {
-            key = "column";
-        }
-
-        let field = allFields.find(c => c.name === value);
-        if (field) {
-            chart.encodingMap[key as Channel] = { fieldID: field.id };
-        }
-    }
-    
-    return chart;
-}
+// resolveRecommendedChart & resolveChartFields remain in app layer (need generateFreshChart, Chart)
+export { resolveRecommendedChart, resolveChartFields } from './chartRecommendation';
 
 export let getTriggers = (leafTable: DictTable, tables: DictTable[]) => {
     // recursively find triggers that ends in leafTable (if the leaf table is anchored, we will find till the previous table is anchored)

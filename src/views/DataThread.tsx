@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-import React, { FC, useEffect, useMemo, useRef, useState, useCallback, memo } from 'react';
+import React, { FC, useEffect, useMemo, useRef, useState, memo } from 'react';
 
 import {
     Box,
@@ -25,13 +25,14 @@ import {
     Switch,
     FormControlLabel,
     Collapse,
+    Card,
 } from '@mui/material';
 
 
 import '../scss/VisualizationView.scss';
 import { batch, useDispatch, useSelector } from 'react-redux';
-import { DataFormulatorState, dfActions, SSEMessage } from '../app/dfSlice';
-import { getTriggers } from '../app/utils';
+import { DataFormulatorState, dfActions, dfSelectors, SSEMessage } from '../app/dfSlice';
+import { getTriggers, getUrls, fetchWithIdentity } from '../app/utils';
 import { Chart, DictTable, Trigger } from "../components/ComponentType";
 
 import DeleteIcon from '@mui/icons-material/Delete';
@@ -58,9 +59,7 @@ import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 
 import { alpha } from '@mui/material/styles';
 
-import { dfSelectors } from '../app/dfSlice';
 import { RefreshDataDialog } from './RefreshDataDialog';
-import { getUrls, fetchWithIdentity } from '../app/utils';
 import { AppDispatch } from '../app/store';
 import StopIcon from '@mui/icons-material/Stop';
 import UnfoldMoreIcon from '@mui/icons-material/UnfoldMore';
@@ -75,7 +74,9 @@ import { AgentStatusBox, buildChartCard, buildTriggerCard, buildTableCard, Build
 import { UnifiedDataUploadDialog } from './UnifiedDataUploadDialog';
 import { AgentRulesDialog } from './AgentRulesDialog';
 import RuleIcon from '@mui/icons-material/Rule';
+
 import { ViewBorderStyle, transition, radius, borderColor } from '../app/tokens';
+import { SimpleChartRecBox } from './SimpleChartRecBox';
 
 
 export const ThinkingBanner = (message: string, sx?: SxProps) => (
@@ -570,7 +571,7 @@ const WorkspacePanel: FC<{
             </Box>
 
             <Collapse in={workspaceExpanded} timeout={150}>
-                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0, mt: '2px', ml: '14px', py: 0.5 }}>
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: '2px', mt: '2px', ml: '14px', py: 0.5 }}>
                     {tables.map((table, tableIndex) => {
                         const isTableActive = focusedTableId === table.id;
                         const tableCharts = chartElements.filter(ce => ce.tableId === table.id);
@@ -595,7 +596,7 @@ const WorkspacePanel: FC<{
                                         top: 0,
                                         bottom: isLastTable ? 'calc(100% - 10px)' : 0,
                                         width: '1px',
-                                        backgroundColor: 'rgba(0,0,0,0.2)',
+                                        backgroundColor: 'rgba(0,0,0,0.1)',
                                     },
                                     '&::after': {
                                         content: '""',
@@ -604,7 +605,7 @@ const WorkspacePanel: FC<{
                                         top: '10px',
                                         width: '8px',
                                         height: '1px',
-                                        backgroundColor: 'rgba(0,0,0,0.2)',
+                                        backgroundColor: 'rgba(0,0,0,0.1)',
                                     }
                                 }}
                             >
@@ -671,7 +672,7 @@ const WorkspacePanel: FC<{
                                                             top: 0,
                                                             bottom: isLast ? '50%' : 0,
                                                             width: '1px',
-                                                            backgroundColor: 'rgba(0,0,0,0.2)',
+                                                            backgroundColor: 'rgba(0,0,0,0.1)',
                                                         },
                                                         '&::after': {
                                                             content: '""',
@@ -680,7 +681,7 @@ const WorkspacePanel: FC<{
                                                             top: '50%',
                                                             width: '8px',
                                                             height: '1px',
-                                                            backgroundColor: 'rgba(0,0,0,0.2)',
+                                                            backgroundColor: 'rgba(0,0,0,0.1)',
                                                         }
                                                     }}
                                                 >
@@ -737,6 +738,7 @@ let SingleThreadGroupView: FC<{
     usedIntermediateTableIds: string[],
     globalHighlightedTableIds: string[],
     focusedThreadLeafId?: string, // The leaf table ID of the thread containing the focused table
+    chatboxFocused?: boolean, // Whether the chatbox input is focused
     sx?: SxProps
 }> = function ({
     scrollRef,
@@ -749,6 +751,7 @@ let SingleThreadGroupView: FC<{
     usedIntermediateTableIds, // tables that have been used
     globalHighlightedTableIds,
     focusedThreadLeafId,
+    chatboxFocused = false,
     sx
 }) {
 
@@ -1194,13 +1197,13 @@ let SingleThreadGroupView: FC<{
     const TIMELINE_WIDTH = 14;
     const TIMELINE_GAP = '4px'; // gap between timeline and card content
     const DOT_SIZE = 6;
-    const CARD_PY = '4px'; // vertical padding for each timeline row
+    const CARD_PY = '6px'; // vertical padding for each timeline row
 
     const getTimelineDot = (item: typeof timelineItems[0]) => {
         const isTable = item.type === 'table' || item.type === 'leaf-table' || item.type === 'used-table';
         const color = item.highlighted 
             ? theme.palette.primary.main
-            : 'rgba(0,0,0,0.4)';
+            : 'rgba(0,0,0,0.15)';
 
         // For running agent items, show a spinner instead of a dot
         if (item.isRunning) {
@@ -1216,7 +1219,7 @@ let SingleThreadGroupView: FC<{
             if (isStreaming) {
                 return <StreamIcon sx={{ 
                     ...iconSx, 
-                    color: item.highlighted ? theme.palette.success.main : 'rgba(0,0,0,0.4)',
+                    color: item.highlighted ? theme.palette.success.main : 'rgba(0,0,0,0.15)',
                     animation: 'pulse 2s infinite',
                     '@keyframes pulse': {
                         '0%': { opacity: 1 },
@@ -1268,19 +1271,19 @@ let SingleThreadGroupView: FC<{
         const isTrigger = item.type === 'trigger' || item.type === 'leaf-trigger';
         const isTable = item.type === 'table' || item.type === 'leaf-table' || item.type === 'used-table';
         const isChart = item.type === 'chart';
-        const dashedColor = item.highlighted ? theme.palette.primary.main : 'rgba(0,0,0,0.4)';
+        const dashedColor = item.highlighted ? alpha(theme.palette.primary.main, 0.6) : 'rgba(0,0,0,0.1)';
         const dashedWidth = item.highlighted ? '2px' : '1px';
-        const dashedStyle = item.highlighted ? 'solid' : 'dashed';
+        const dashedStyle = 'solid';
         // Bottom connector uses unhighlighted style if next item isn't highlighted
         const bottomHighlighted = item.highlighted && nextHighlighted;
-        const bottomDashedColor = bottomHighlighted ? theme.palette.primary.main : 'rgba(0,0,0,0.4)';
+        const bottomDashedColor = bottomHighlighted ? alpha(theme.palette.primary.main, 0.6) : 'rgba(0,0,0,0.1)';
         const bottomDashedWidth = bottomHighlighted ? '2px' : '1px';
-        const bottomDashedStyle = bottomHighlighted ? 'solid' : 'dashed';
+        const bottomDashedStyle = 'solid';
         const triggerColor = item.highlighted 
             ? theme.palette.custom.main
-            : dashedColor;
-        // Dim non-highlighted cards when highlighting is active
-        const rowHighlightSx = (hasHighlighting && !item.highlighted) ? { opacity: 1 } : {};
+            : 'rgba(0,0,0,0.15)';
+        // Dim non-highlighted cards when chatbox is focused
+        const rowHighlightSx = (chatboxFocused && hasHighlighting && !item.highlighted) ? { opacity: 0.35 } : {};
 
         // Triggers: agent icon on the timeline
         if (isTrigger) {
@@ -1338,9 +1341,9 @@ let SingleThreadGroupView: FC<{
                     {(index > 0 || !hideLabel) && (() => {
                         // When connecting to the header (index 0, label visible), match the header's highlight state
                         const useHeader = index === 0 && !hideLabel;
-                        const topColor = useHeader ? (headerHL ? theme.palette.primary.main : 'rgba(0,0,0,0.4)') : dashedColor;
+                        const topColor = useHeader ? (headerHL ? alpha(theme.palette.primary.main, 0.6) : 'rgba(0,0,0,0.1)') : dashedColor;
                         const topWidth = useHeader ? (headerHL ? '2px' : '1px') : dashedWidth;
-                        const topStyle = useHeader ? (headerHL ? 'solid' : 'dashed') : dashedStyle;
+                        const topStyle = 'solid';
                         return <Box sx={{ width: 0, flex: '1 1 0', minHeight: 6, borderLeft: `${topWidth} ${topStyle} ${topColor}` }} />;
                     })()}
                     {index === 0 && hideLabel && <Box sx={{ flex: '1 1 0', minHeight: 6 }} />}
@@ -1369,17 +1372,18 @@ let SingleThreadGroupView: FC<{
                 margin: '1px 0',
             },
             padding: '6px',
+            ...(chatboxFocused && focusedThreadLeafId && !shouldHighlightThread ? { opacity: 0.35 } : {}),
         }}
         >
         <div style={{ padding: '2px 4px 2px 4px', marginTop: 0, direction: 'ltr' }}>
             {!hideLabel && (() => {
                 const hlColor = theme.palette.primary.main;
                 const nhColor = 'rgba(0,0,0,0.35)';
-                const connColor = headerHL ? hlColor : 'rgba(0,0,0,0.4)';
+                const connColor = headerHL ? alpha(theme.palette.primary.main, 0.6) : 'rgba(0,0,0,0.1)';
                 const connWidth = headerHL ? '2px' : '1px';
-                const connStyle = headerHL ? 'solid' : 'dashed';
+                const connStyle = 'solid';
                 return (
-                <Box sx={{ display: 'flex', flexDirection: 'row', ...(hasHighlighting && !headerHL ? { opacity: 0.8 } : {}) }}>
+                <Box sx={{ display: 'flex', flexDirection: 'row', ...(chatboxFocused && hasHighlighting && !headerHL ? { opacity: 0.35 } : {}) }}>
                     <Box sx={{ 
                         width: TIMELINE_WIDTH, flexShrink: 0, 
                         display: 'flex', flexDirection: 'column', alignItems: 'center',
@@ -1387,7 +1391,7 @@ let SingleThreadGroupView: FC<{
                         <Box sx={{ flex: '1 1 0', minHeight: 6 }} />
                         <Box sx={{ 
                             width: 8, height: 8, borderRadius: '50%', 
-                            border: `1.5px solid ${headerHL ? hlColor : nhColor}`,
+                            border: `1.5px solid ${headerHL ? alpha(hlColor, 0.6) : 'rgba(0,0,0,0.15)'}`,
                             backgroundColor: 'transparent',
                             flexShrink: 0,
                         }} />
@@ -1872,6 +1876,20 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
     const containerRef = useRef<null | HTMLDivElement>(null)
     const suppressScrollRef = useRef(false);
     const [expandedColumns, setExpandedColumns] = useState(false);
+    const [containerWidth, setContainerWidth] = useState(0);
+    const [chatboxFocused, setChatboxFocused] = useState(false);
+
+    useEffect(() => {
+        const el = containerRef.current;
+        if (!el) return;
+        const ro = new ResizeObserver((entries) => {
+            for (const entry of entries) {
+                setContainerWidth(entry.contentRect.width);
+            }
+        });
+        ro.observe(el);
+        return () => ro.disconnect();
+    }, []);
 
     const theme = useTheme();
 
@@ -1886,14 +1904,18 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
 
     const dispatch = useDispatch();
 
+    // Track previous table/chart counts to detect agent additions
+    const prevCountsRef = useRef({ tables: tables.length, charts: charts.length });
+
     useEffect(() => {
-        // load the example datasets
-        if (focusedTableId) {
-            if (suppressScrollRef.current) {
-                suppressScrollRef.current = false;
-            } else {
-                executeScroll(true);
-            }
+        // Only auto-scroll when new tables or charts are added (e.g., by the agent),
+        // not when the user simply changes focus by clicking.
+        const prevCounts = prevCountsRef.current;
+        const isNewItem = tables.length > prevCounts.tables || charts.length > prevCounts.charts;
+        prevCountsRef.current = { tables: tables.length, charts: charts.length };
+
+        if (focusedTableId && isNewItem) {
+            executeScroll(true);
         }
     }, [focusedTableId]);
 
@@ -2179,19 +2201,23 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
         }
     }
 
-    // Pick the best column la=yout: balances scroll burden vs whitespace.
-    // Measure actual panel height from the DOM (accounts for browser zoom, panel resizing, etc.)
+    // Pick the best column layout: dynamically based on container width.
     const availableHeight = containerRef.current?.clientHeight ?? 600;
-    const MAX_COLUMNS = 3;
     const hasMultipleThreads = allThreadEntries.length > 1;
+
+    const CARD_WIDTH = 220;
+    const CARD_GAP = 12; // padding + spacing between cards in a column
+    const COLUMN_WIDTH = CARD_WIDTH + CARD_GAP;
+    const PANEL_PADDING = 16;
+
+    // Determine how many columns fit in the available container width (1-3)
+    const fittableColumns = Math.max(1, Math.min(3, Math.floor((containerWidth - PANEL_PADDING) / COLUMN_WIDTH)));
+    const MAX_COLUMNS = fittableColumns;
     const columnLayout: number[][] = chooseBestColumnLayout(
         allThreadHeights, MAX_COLUMNS, availableHeight, /* flexOrder */ false,
-        /* minColumns */ hasMultipleThreads ? 2 : 1
+        /* minColumns */ Math.min(fittableColumns, hasMultipleThreads ? 2 : 1)
     );
     const actualColumns = columnLayout.length || 1;
-
-    const CARD_WIDTH = hasMultipleThreads ? 220 : 220;
-    const CARD_GAP = 12; // padding + spacing between cards in a column
 
     let renderThreadEntry = (entry: ThreadEntry) => {
         let usedTableIds = entry.usedTableIds || [];
@@ -2208,6 +2234,7 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
             usedIntermediateTableIds={usedTableIds}
             globalHighlightedTableIds={globalHighlightedTableIds}
             focusedThreadLeafId={focusedThreadLeafId}
+            chatboxFocused={chatboxFocused}
             sx={{
                 backgroundColor: 'white',
                 borderRadius: radius.md,
@@ -2222,26 +2249,8 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
             }} />;
     };
 
-    // Column-based panel width: each column = CARD_WIDTH + CARD_GAP
-    const COLUMN_WIDTH = CARD_WIDTH + CARD_GAP;
-    const MIN_PANEL_WIDTH = 0; // ensure enough room for floating chat chip
-    const panelWidth = Math.max(actualColumns * COLUMN_WIDTH + 16, MIN_PANEL_WIDTH);
-
-    let workspacePanel = baseTables.length > 0 ? (
-        <WorkspacePanel
-            tables={baseTables}
-            chartElements={chartElements}
-            suppressScrollRef={suppressScrollRef}
-            sx={{
-                my: 0.5,
-                flex: 'none',
-                display: 'flex',
-                flexDirection: 'column',
-                height: 'fit-content',
-                width: CARD_WIDTH,
-            }}
-        />
-    ) : null;
+    // Let content fill available width; column count driven by container size
+    const panelWidth = '100%';
 
     let view = hasContent ? (
         <Box sx={{ 
@@ -2250,10 +2259,13 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
             position: 'relative',
             display: 'flex',
             flexDirection: 'row',
+            justifyContent: 'center',
             direction: 'ltr',
             height: 'calc(100% - 16px)',
-            gap: 0.25,
-            p: 1,
+            gap: `${CARD_GAP}px`,
+            py: 1,
+            pl: `${PANEL_PADDING / 2}px`,
+            pr: 0,
             width: panelWidth,
         }}>
             {/* First column: workspace panel + first batch of threads */}
@@ -2262,10 +2274,9 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
                 flexDirection: 'column',
                 alignItems: 'center',
                 gap: 0,
-                flex: 1,
-                minWidth: 0,
+                width: CARD_WIDTH,
+                flexShrink: 0,
             }}>
-                {workspacePanel}
                 {(columnLayout[0] || []).map((idx: number) => {
                     const entry = allThreadEntries[idx];
                     return entry ? renderThreadEntry(entry) : null;
@@ -2278,8 +2289,8 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
                     flexDirection: 'column',
                     alignItems: 'center',
                     gap: 0,
-                    flex: 1,
-                    minWidth: 0,
+                    width: CARD_WIDTH,
+                    flexShrink: 0,
                 }}>
                     {columnIndices.map((idx: number) => {
                         const entry = allThreadEntries[idx];
@@ -2291,16 +2302,17 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
     ) : null;
 
     return (
-        <Box className="data-thread" sx={{ ...sx, position: 'relative' }}>
+        <Box className="data-thread" sx={{ ...sx, position: 'relative', display: 'flex', flexDirection: 'column' }}>
             <Box ref={containerRef} sx={{
                     overflow: 'hidden', 
                     direction: 'rtl', 
                     display: 'block', 
                     flex: 1,
-                    height: 'calc(100% - 48px)',
+                    minHeight: 0,
                 }}>
                 {view}
             </Box>
+            <SimpleChartRecBox onExpandedChange={setChatboxFocused} />
         </Box>
     );
 }

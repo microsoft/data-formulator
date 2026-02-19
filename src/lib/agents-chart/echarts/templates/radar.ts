@@ -134,6 +134,7 @@ export const ecRadarChartDef: ChartTemplateDef = {
             = computeCircumferencePressure(metrics.length, ctx.canvasSize, {
                 minArcPx: 60,  // spokes need more spacing for axis labels
                 minRadius: 80,
+                maxStretch: ctx.assembleOptions?.maxStretch,
             });
 
         const option: any = {

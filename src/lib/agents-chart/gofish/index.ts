@@ -32,3 +32,6 @@ export {
     gfGetTemplateDef,
     gfGetTemplateChannels,
 } from './templates';
+
+// GF recommendation & adaptation
+export { gfAdaptChart, gfRecommendEncodings } from './recommendation';

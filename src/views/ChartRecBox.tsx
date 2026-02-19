@@ -565,13 +565,36 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
             body: messageBody,
             signal: controller.signal
         })
-        .then((response) => response.json())
+        .then((response) => {
+            if (!response.ok) {
+                return response.text().then(text => {
+                    try {
+                        const errorData = JSON.parse(text);
+                        throw new Error(errorData.error_message || errorData.error || `Server error (${response.status})`);
+                    } catch (parseError) {
+                        if (parseError instanceof SyntaxError) {
+                            throw new Error(`Server error (${response.status}): The server returned an unexpected response.`);
+                        }
+                        throw parseError;
+                    }
+                });
+            }
+            return response.json();
+        })
         .then((data) => {
             setIsFormulating(false);
 
             dispatch(dfActions.changeChartRunningStatus({chartId: originateChartId, status: false}));
 
-            if (data.results.length > 0) {
+            if (data.status === "error" && data.error_message) {
+                dispatch(dfActions.addMessages({
+                    "timestamp": Date.now(),
+                    "component": "chart builder",
+                    "type": "error",
+                    "value": `Data formulation failed: ${data.error_message}`,
+                }));
+                dispatch(dfActions.deleteAgentWorkInProgress(actionId));
+            } else if (data.results && data.results.length > 0) {
                 if (data["token"] === token) {
                     const candidates = data["results"].filter((item: any) => item["status"] === "ok");
 

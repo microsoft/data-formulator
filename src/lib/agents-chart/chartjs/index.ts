@@ -30,3 +30,6 @@ export {
     cjsGetTemplateDef,
     cjsGetTemplateChannels,
 } from './templates';
+
+// CJS recommendation & adaptation
+export { cjsAdaptChart, cjsRecommendEncodings } from './recommendation';

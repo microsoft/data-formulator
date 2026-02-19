@@ -558,6 +558,7 @@ const ConfigDialog: React.FC = () => {
 
     const [defaultChartWidth, setDefaultChartWidth] = useState(config.defaultChartWidth ?? 300);
     const [defaultChartHeight, setDefaultChartHeight] = useState(config.defaultChartHeight ?? 300);
+    const [maxStretchFactor, setMaxStretchFactor] = useState(config.maxStretchFactor ?? 2.0);
     const [frontendRowLimit, setFrontendRowLimit] = useState(config.frontendRowLimit ?? 50000);
     const [paletteKey, setPaletteKey] = useState(
         (config.paletteKey && palettes[config.paletteKey]) ? config.paletteKey : defaultPaletteKey
@@ -567,6 +568,7 @@ const ConfigDialog: React.FC = () => {
     const hasChanges = formulateTimeoutSeconds !== config.formulateTimeoutSeconds || 
                       defaultChartWidth !== config.defaultChartWidth ||
                       defaultChartHeight !== config.defaultChartHeight ||
+                      maxStretchFactor !== config.maxStretchFactor ||
                       frontendRowLimit !== config.frontendRowLimit ||
                       paletteKey !== ((config.paletteKey && palettes[config.paletteKey]) ? config.paletteKey : defaultPaletteKey);
 
@@ -700,6 +702,36 @@ const ConfigDialog: React.FC = () => {
                                 </Typography>
                             </Box>
                         </Box>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                            <Box sx={{ flex: 1 }}>
+                                <TextField
+                                    label="max chart stretch factor"
+                                    type="number"
+                                    variant="outlined"
+                                    value={maxStretchFactor}
+                                    onChange={(e) => {
+                                        const value = parseFloat(e.target.value);
+                                        setMaxStretchFactor(value);
+                                    }}
+                                    fullWidth
+                                    slotProps={{
+                                        input: {
+                                            inputProps: {
+                                                min: 1,
+                                                max: 5,
+                                                step: 0.1
+                                            }
+                                        }
+                                    }}
+                                    error={isNaN(maxStretchFactor) || maxStretchFactor < 1 || maxStretchFactor > 5}
+                                    helperText={isNaN(maxStretchFactor) || maxStretchFactor < 1 || maxStretchFactor > 5 ? 
+                                        "Value must be between 1.0 and 5.0" : ""}
+                                />
+                                <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+                                    How much charts can grow beyond the base size (1.0 = no stretch, 2.0 = up to 2×).
+                                </Typography>
+                            </Box>
+                        </Box>
                         <Divider><Typography variant="caption">Backend</Typography></Divider>
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                             <Box sx={{ flex: 1 }}>
@@ -733,6 +765,7 @@ const ConfigDialog: React.FC = () => {
                         setFormulateTimeoutSeconds(30);
                         setDefaultChartWidth(300);
                         setDefaultChartHeight(300);
+                        setMaxStretchFactor(2.0);
                         setFrontendRowLimit(50000);
                         setPaletteKey(defaultPaletteKey);
                     }}>Reset to default</Button>
@@ -742,9 +775,10 @@ const ConfigDialog: React.FC = () => {
                         disabled={!hasChanges || isNaN(formulateTimeoutSeconds) || formulateTimeoutSeconds <= 0 || formulateTimeoutSeconds > 3600
                             || isNaN(defaultChartWidth) || defaultChartWidth <= 0 || defaultChartWidth > 1000
                             || isNaN(defaultChartHeight) || defaultChartHeight <= 0 || defaultChartHeight > 1000
+                            || isNaN(maxStretchFactor) || maxStretchFactor < 1 || maxStretchFactor > 5
                             || isNaN(frontendRowLimit) || frontendRowLimit < 100 || frontendRowLimit > 1000000}
                         onClick={() => {
-                            dispatch(dfActions.setConfig({formulateTimeoutSeconds, defaultChartWidth, defaultChartHeight, frontendRowLimit, paletteKey}));
+                            dispatch(dfActions.setConfig({formulateTimeoutSeconds, defaultChartWidth, defaultChartHeight, maxStretchFactor, frontendRowLimit, paletteKey}));
                             setOpen(false);
                         }}
                     >
@@ -1036,11 +1070,9 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
                         <Typography fontSize="inherit" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                             <TableMenu />
                         </Typography>
-                        <Divider orientation="vertical" variant="middle" flexItem />
                         <Typography fontSize="inherit" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                             <SessionMenu />
                         </Typography>
-                        <Divider orientation="vertical" variant="middle" flexItem />
                         <ResetDialog />
                     </Box>
                 )}

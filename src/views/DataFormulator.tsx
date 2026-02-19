@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import '../scss/App.scss';
 
 import { useDispatch, useSelector } from "react-redux"; /* code change */
@@ -14,7 +14,7 @@ import {
 
 import _ from 'lodash';
 
-import { Allotment } from "allotment";
+import { Allotment, AllotmentHandle } from "allotment";
 import "allotment/dist/style.css";
 
 import {
@@ -184,7 +184,7 @@ export const DataFormulatorFC = ({ }) => {
         </Box>);
 
     const visPane = (
-        <Box sx={{width: '100%', height: '100%', 
+        <Box className="inner-allotment" sx={{width: '100%', height: '100%', 
             "& .split-view-view:first-of-type": {
                 display: 'flex',
                 overflow: 'hidden',
@@ -207,68 +207,65 @@ export const DataFormulatorFC = ({ }) => {
         //boxShadow: '0 0 5px rgba(0,0,0,0.1)',
     }
 
+    // Discrete column snapping for DataThread
+    const CARD_WIDTH = 220;
+    const CARD_GAP = 12;
+    const COLUMN_WIDTH = CARD_WIDTH + CARD_GAP;
+    const PANEL_PADDING = 16;
+    const columnSize = (n: number) => n * COLUMN_WIDTH + PANEL_PADDING;
+    const allotmentRef = useRef<AllotmentHandle>(null);
+    const containerRef = useRef<HTMLDivElement>(null);
+
+    const snapToColumns = useCallback((sizes: number[]) => {
+        if (!allotmentRef.current || sizes.length < 2) return;
+        const raw = sizes[0];
+        // Find nearest discrete column count (1-3)
+        let bestCols = 1;
+        let bestDist = Infinity;
+        for (let n = 1; n <= 3; n++) {
+            const dist = Math.abs(raw - columnSize(n));
+            if (dist < bestDist) {
+                bestDist = dist;
+                bestCols = n;
+            }
+        }
+        const snapped = columnSize(bestCols);
+        if (Math.abs(raw - snapped) > 2) {
+            const totalWidth = sizes.reduce((a, b) => a + b, 0);
+            allotmentRef.current.resize([snapped, totalWidth - snapped]);
+        }
+    }, []);
+
     const fixedSplitPane = ( 
         <Box sx={{display: 'flex', flexDirection: 'row', height: '100%'}}>
-            <Box sx={{
-                ...borderBoxStyle,
-                    margin: '4px 4px 4px 8px', backgroundColor: 'white',
-                    display: 'flex', height: '100%', width: 'fit-content', flexDirection: 'column',
-                    position: 'relative'}}>
-                {tables.length > 0 ?  <DataThread sx={{
-                    minWidth: 201,
-                    display: 'flex', 
-                    flexDirection: 'column',
+            <Box className="outer-allotment" sx={{
+                    margin: '4px 8px 4px 8px', backgroundColor: 'white',
+                    display: 'flex', height: '100%', width: '100%', flexDirection: 'column',
                     overflow: 'hidden',
-                    alignContent: 'flex-start',
-                    height: '100%',
-                }}/>  : ""}
-                {/* Floating chat chip for exploration — overlays bottom of DataThread
-                {tables.length > 0 && (
-                    <Box sx={{
-                        position: 'absolute',
-                        bottom: 12,
-                        left: '50%',
-                        transform: 'translateX(-50%)',
-                        width: 'calc(100% - 36px)',
-                        maxWidth: 480,
-                        direction: 'ltr',
-                        zIndex: 10,
-                        pointerEvents: 'none',
-                    }}>
-                        <ChartRecBox
-                            tableId={(focusedId?.type === 'table' ? focusedId.tableId : undefined) || tables[0]?.id || ''}
-                            sx={{
-                                pointerEvents: 'auto',
-                                maxWidth: '100%',
-                                minWidth: 240,
-                                backgroundColor: 'rgba(255, 255, 255, 0.95)',
-                                backdropFilter: 'blur(8px)',
-                                borderRadius: '14px',
-                                boxShadow: shadow.xl,
-                                px: 1.5, py: 0.25,
-                                '& .MuiCard-root': {
-                                    border: 'none',
-                                    px: 0,
-                                },
-                            }}
-                        />
-                    </Box>
-                )} */}
+                    position: 'relative'}}>
+                <Allotment ref={allotmentRef} onDragEnd={snapToColumns} proportionalLayout={false}>
+                    {tables.length > 0 ? (
+                        <Allotment.Pane minSize={columnSize(1)} preferredSize={columnSize(2)} maxSize={columnSize(3)} snap={false}>
+                            <DataThread sx={{
+                                display: 'flex', 
+                                flexDirection: 'column',
+                                overflow: 'hidden',
+                                alignContent: 'flex-start',
+                                height: '100%',
+                            }}/>
+                        </Allotment.Pane>
+                    ) : null}
+                    <Allotment.Pane minSize={300}>
+                        <Box sx={{ ...borderBoxStyle, height: '100%', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+                            {viewMode === 'editor' ? (
+                                visPane
+                            ) : (
+                                <ReportView />
+                            )}
+                        </Box>
+                    </Allotment.Pane>
+                </Allotment>
             </Box>
-            <Box sx={{
-                ...borderBoxStyle,
-                margin: '4px 8px 4px 4px', backgroundColor: 'white',
-                display: 'flex', height: '100%', flex: 1, overflow: 'hidden', flexDirection: 'row'
-            }}>
-                {viewMode === 'editor' ? (
-                    <>
-                        {visPane}
-                    </>
-                ) : (
-                    <ReportView />
-                )}
-            </Box>
-            
         </Box>
     );
 

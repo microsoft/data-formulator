@@ -164,6 +164,7 @@ export function assembleChartjs(input: ChartAssemblyInput): any {
         canvasSize,
         semanticTypes,
         chartType,
+        assembleOptions: effectiveOptions,
     };
 
     // Standard single-panel rendering (no faceting for initial CJS backend)

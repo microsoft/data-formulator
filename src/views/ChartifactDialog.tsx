@@ -174,7 +174,9 @@ export const convertToChartifact = (reportMarkdown: string, reportStyle: string,
                     config.defaultChartWidth,
                     config.defaultChartHeight,
                     true,
-                    chart.config
+                    chart.config,
+                    1,
+                    config.maxStretchFactor,
                 );
 
                 // Convert the spec to use named data source

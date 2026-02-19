@@ -24,6 +24,7 @@ import {
     Chip,
     Autocomplete,
     Menu,
+    Divider,
     alpha,
     useTheme,
     SxProps,
@@ -145,22 +146,17 @@ export const TriggerCard: FC<{
                 return field.name;
             });
 
-        encodingComp = Object.entries(encodingMap)
-            .filter(([channel, encoding]) => {
-                return encoding.fieldID != undefined;
-            })
-            .map(([channel, encoding], index) => {
-                let field = fieldItems.find(f => f.id == encoding.fieldID) as FieldItem;
-                return [index > 0 ? '⨉' : '', 
-                        <Chip 
-                            key={`trigger-${channel}-${field?.id}`}
-                            sx={{color:'inherit', maxWidth: '110px', m: 0.25,
-                                   height: 18, fontSize: 12, borderRadius: radius.sm, 
-                                   border: `1px solid ${borderColor.component}`, 
-                                   background: 'rgb(250 235 215 / 70%)',
-                                   '& .MuiChip-label': { px: 0.5 }}} 
-                              label={`${field?.name}`} />]
-            })
+        encodingComp = <Typography component="span" key="enc-fields" sx={{ fontSize: 'inherit', color: 'inherit' }}>
+            {Object.entries(encodingMap)
+                .filter(([channel, encoding]) => encoding.fieldID != undefined)
+                .map(([channel, encoding], index) => {
+                    let field = fieldItems.find(f => f.id == encoding.fieldID) as FieldItem;
+                    return <React.Fragment key={`trigger-${channel}-${field?.id}`}>
+                        {index > 0 ? <span style={{ margin: '0 2px', opacity: 0.5 }}> × </span> : ''}
+                        <span>{field?.name}</span>
+                    </React.Fragment>;
+                })}
+        </Typography>
     }
 
     let prompt: string = trigger.displayInstruction;
@@ -230,11 +226,9 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
     let trigger = chart.source == "trigger" ? tables.find(t => t.derive?.trigger?.chart?.id == chartId)?.derive?.trigger : undefined;
 
     let [prompt, setPrompt] = useState<string>(trigger?.instruction || "");
-    let [ideateMode, setIdeateMode] = useState<boolean>(false);
 
     useEffect(() => {
         setPrompt(trigger?.instruction || "");
-        setIdeateMode(false);
     }, [chartId]);
 
     let encodingMap = chart?.encodingMap;
@@ -242,6 +236,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
     const dispatch = useDispatch<AppDispatch>();
 
     const [chartTypeMenuOpen, setChartTypeMenuOpen] = useState<boolean>(false);
+    const [encodingHovered, setEncodingHovered] = useState<boolean>(false);
     
 
     let handleUpdateChartType = (newChartType: string) => {
@@ -296,11 +291,21 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
     let encodingBoxGroups = Object.entries(channelGroups)
         .filter(([group, channelList]) => channelList.some(ch => Object.keys(encodingMap).includes(ch)))
         .map(([group, channelList]) => {
+            let channels = channelList.filter(channel => Object.keys(encodingMap).includes(channel));
+            let occupiedChannels = channels.filter(ch => encodingMap[ch as Channel]?.fieldID);
+            let unoccupiedChannels = channels.filter(ch => !encodingMap[ch as Channel]?.fieldID);
 
-            let component = <Box key={`encoding-group-box-${group}`}>
-                {group && <Typography key={`encoding-group-${group}`} sx={{ fontSize: 10, color: "text.secondary", marginBottom: "3px" }}>{group}</Typography>}
-                {channelList.filter(channel => Object.keys(encodingMap).includes(channel))
-                    .map(channel => <EncodingBox key={`shelf-${channel}`} channel={channel as Channel} chartId={chartId} tableId={currentTable.id} />)}
+            let hasVisibleContent = occupiedChannels.length > 0 || encodingHovered;
+
+            let component = <Box key={`encoding-group-box-${group}`} sx={{ mt: (group && encodingHovered) ? '6px' : 0 }}>
+                {occupiedChannels.map(channel => 
+                    <EncodingBox key={`shelf-${channel}`} channel={channel as Channel} chartId={chartId} tableId={currentTable.id} />
+                )}
+                <Collapse in={encodingHovered} timeout={200}>
+                    {unoccupiedChannels.map(channel => 
+                        <EncodingBox key={`shelf-${channel}`} channel={channel as Channel} chartId={chartId} tableId={currentTable.id} />
+                    )}
+                </Collapse>
             </Box>
             return component;
         });
@@ -611,12 +616,34 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
         const timeoutId = setTimeout(() => controller.abort(), config.formulateTimeoutSeconds * 1000);
     
         fetchWithIdentity(engine, {...message, signal: controller.signal })
-            .then((response: Response) => response.json())
+            .then((response: Response) => {
+                if (!response.ok) {
+                    return response.text().then(text => {
+                        try {
+                            const errorData = JSON.parse(text);
+                            throw new Error(errorData.error_message || errorData.error || `Server error (${response.status})`);
+                        } catch (parseError) {
+                            if (parseError instanceof SyntaxError) {
+                                throw new Error(`Server error (${response.status}): The server returned an unexpected response.`);
+                            }
+                            throw parseError;
+                        }
+                    });
+                }
+                return response.json();
+            })
             .then((data) => {
                 
                 dispatch(dfActions.changeChartRunningStatus({chartId, status: false}))
 
-                if (data.results.length > 0) {
+                if (data.status === "error" && data.error_message) {
+                    dispatch(dfActions.addMessages({
+                        "timestamp": Date.now(),
+                        "component": "chart builder",
+                        "type": "error",
+                        "value": `Data formulation failed: ${data.error_message}`,
+                    }));
+                } else if (data.results && data.results.length > 0) {
                     if (data["token"] == token) {
                         let candidates = data["results"].filter((item: any) => {
                             return item["status"] == "ok"  
@@ -826,14 +853,23 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
     // zip multiple components together
     const w: any = (a: any[], b: any[]) => a.length ? [a[0], ...w(b, a.slice(1))] : b;
 
-    let formulateInputBox = <Box key='text-input-boxes' sx={{display: 'flex', flexDirection: 'row', flex: 1, padding: '0px 2px'}}>
+    let formulateInputBox = <Card key='text-input-boxes' variant='outlined' sx={{
+        display: 'flex', flexDirection: 'column',
+        px: 1, pt: 0.5, pb: 0.25,
+        borderWidth: 1.5,
+        borderColor: alpha(theme.palette.primary.main, 0.5),
+        borderRadius: '8px',
+        overflow: 'visible',
+        flexShrink: 0,
+    }}>
         <TextField
-            id="outlined-multiline-flexible"
+            variant="standard"
             sx={{
-                "& .MuiInputLabel-root": { fontSize: '12px' },
-                "& .MuiInput-input": { fontSize: '12px' },
-                "& .MuiInput-underline:before": { borderBottomColor: theme.palette.primary.main },
-                "& .MuiInput-underline:after": { borderBottomColor: theme.palette.primary.main },
+                flex: 1,
+                "& .MuiInput-input": { fontSize: '12px', lineHeight: 1.5 },
+                "& .MuiInput-underline:before": { borderBottom: 'none' },
+                "& .MuiInput-underline:hover:not(.Mui-disabled):before": { borderBottom: 'none' },
+                "& .MuiInput-underline:after": { borderBottom: 'none' },
             }}
             onChange={(event: any) => {
                 setPrompt(event.target.value);
@@ -850,82 +886,66 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                 inputLabel: { shrink: true },
             }}
             value={prompt}
-            label=""
-            placeholder={"what's next?"}
+            placeholder={"follow up on this chart"}
             fullWidth
             multiline
-            variant="standard"
-            size="small"
-            maxRows={4} 
-            minRows={1}
+            minRows={2}
+            maxRows={5}
         />
-        {trigger ? 
-            <Box sx={{display: 'flex'}}>
+        <Box sx={{
+            display: 'flex', flexDirection: 'row', alignItems: 'center',
+            justifyContent: 'flex-end',
+        }}>
+            {trigger ? 
                 <Tooltip title={<Typography sx={{fontSize: 11}}>formulate and override <TableIcon sx={{width: 10, height: 10, marginBottom: '-1px'}}/>{trigger.resultTableId}</Typography>}>
                     <span>
-                        <IconButton sx={{ marginLeft: "0"}} size="small"
-                             color={"warning"} onClick={() => { 
-                                deriveNewData(trigger!.instruction, 'formulate', trigger!.resultTableId); 
-                            }}>
-                            <ChangeCircleOutlinedIcon fontSize="small" />
+                        <IconButton size="small" color={"warning"} sx={{ p: 0.5 }} onClick={() => { 
+                            deriveNewData(trigger!.instruction, 'formulate', trigger!.resultTableId); 
+                        }}>
+                            <ChangeCircleOutlinedIcon sx={{ fontSize: 18 }} />
                         </IconButton>
                     </span>
                 </Tooltip>
-            </Box>
-            : 
-            <Tooltip title={`Formulate`}>
+                : 
+                <Tooltip title={`Formulate`}>
+                    <span>
+                        <IconButton size="small" color={"primary"} sx={{ p: 0.5 }} onClick={() => { deriveNewData(prompt, 'formulate'); }}>
+                            <PrecisionManufacturing sx={{
+                                fontSize: 20,
+                                ...(isChartAvailable ? {} : {
+                                    animation: 'pulseAttention 3s ease-in-out infinite',
+                                    '@keyframes pulseAttention': {
+                                        '0%, 90%': { scale: 1 },
+                                        '95%': { scale: 1.2 },
+                                        '100%': { scale: 1 },
+                                    },
+                                }),
+                            }} />
+                        </IconButton>
+                    </span>
+                </Tooltip>
+            }
+            <Divider orientation="vertical" flexItem sx={{ mx: 0.5 }} />
+            <Tooltip title={currentChartIdeas.length > 0 ? "Refresh ideas" : "Get ideas"}>
                 <span>
-                    <IconButton sx={{ marginLeft: "0"}} 
-                         color={"primary"} onClick={() => { deriveNewData(prompt, 'formulate'); }}>
-                        <PrecisionManufacturing sx={{
-                            ...(isChartAvailable ? {} : {
-                                animation: 'pulseAttention 3s ease-in-out infinite',
-                                '@keyframes pulseAttention': {
-                                    '0%, 90%': {
-                                        scale: 1,
-                                    },
-                                    '95%': {
-                                        scale: 1.2,
-                                    },
-                                    '100%': {
-                                        scale: 1,
-                                    },
-                                },
-                            }),
-                        }} />
+                    <IconButton size="small"
+                        disabled={isLoadingIdeas}
+                        sx={{ p: 0.5, color: theme.palette.custom.textColor || theme.palette.custom.main,
+                            '&:hover': { backgroundColor: alpha(theme.palette.custom.main, 0.08) } }}
+                        onClick={() => getIdeasForVisualization()}>
+                        {isLoadingIdeas 
+                            ? <CircularProgress size={20} sx={{ color: theme.palette.custom.main }} />
+                            : <TipsAndUpdatesIcon sx={{ fontSize: 20 }} />}
                     </IconButton>
                 </span>
             </Tooltip>
-        }
-    </Box>
-
-    // Ideas display section - get ideas for current chart
-    let ideasSection = currentChartIdeas.length > 0 ? (
-        <Box key='ideas-section'>
-            <Box sx={{
-                p: 0.5,
-                display: 'flex', 
-                flexWrap: 'wrap', 
-                gap: 0.75,
-            }}>
-                {currentChartIdeas.map((idea, index) => (
-                    <IdeaChip
-                        mini={true}
-                        key={index}
-                        idea={idea}
-                        theme={theme}
-                        onClick={() => handleIdeaClick(idea.text)}
-                    />
-                ))}
-                {isLoadingIdeas && thinkingBuffer && <ThinkingBufferEffect text={thinkingBuffer.slice(-40)} sx={{ width: '100%' }} />}
-            </Box>
         </Box>
-    ) : null;
+    </Card>
 
 
 
     let channelComponent = (
-        <Box sx={{ width: "100%", minWidth: "210px", height: '100%', display: "flex", flexDirection: "column", gap: '6px' }}>
+        <Box sx={{ width: "100%", minWidth: "210px", height: '100%', display: "flex", flexDirection: "column", gap: '4px' }}>
             <Box key='mark-selector-box' sx={{ flex: '0 0 auto', display: 'flex', alignItems: 'center' }}>
                 <FormControl sx={{ m: 1, minWidth: 120, flex: 1, margin: "0px 0"}} size="small">
                     <Select
@@ -1017,12 +1037,17 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                 </FormControl>
             </Box>
             {/* Template-driven config property selectors */}
+            <Box key='encoding-and-config' sx={{ 
+                    flex: '1 1 auto',
+                }} style={{ height: "calc(100% - 100px)" }} className="encoding-list"
+                onMouseEnter={() => setEncodingHovered(true)}
+                onMouseLeave={() => setEncodingHovered(false)}>
             {(() => {
                     const template = getChartTemplate(chart.chartType);
                     const configProps = template?.properties;
                     if (!configProps || configProps.length === 0) return null;
                     return (
-                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
+                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: '1px', mb: '6px' }}>
                             {configProps.map((propDef) => {
                                 // App-level visibility: hide certain properties unless relevant channels are assigned
                                 if (propDef.key === 'independentYAxis') {
@@ -1115,9 +1140,8 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                                     <Box key={`config-${propDef.key}`} sx={{
                                         display: 'flex', alignItems: 'center', 
                                         borderRadius: '12px',
-                                        backgroundColor: 'rgba(0,0,0,0.04)', minHeight: '22px',
+                                        minHeight: '22px',
                                         overflow: 'hidden',
-                                        '&:hover': { backgroundColor: 'rgba(0,0,0,0.07)' },
                                     }}>
                                         <Typography variant="caption" sx={{
                                             padding: '0px 8px', color: 'text.secondary', fontSize: 10,
@@ -1136,7 +1160,10 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                                             disableUnderline
                                             sx={{
                                                 flex: 1, fontSize: 11, height: '22px',
-                                                '& .MuiSelect-select': { padding: '1px 20px 1px 0px !important', fontSize: 11 },
+                                                backgroundColor: 'rgba(0,0,0,0.04)',
+                                                borderRadius: '6px',
+                                                '&:hover': { backgroundColor: 'rgba(0,0,0,0.07)' },
+                                                '& .MuiSelect-select': { padding: '1px 20px 1px 6px !important', fontSize: 11 },
                                                 '& .MuiSvgIcon-root': { fontSize: 14, right: 2 },
                                             }}
                                             renderValue={(idx: number) => {
@@ -1155,112 +1182,47 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                         </Box>
                     );
                 })()}
-            <Box key='encoding-groups' sx={{ flex: '1 1 auto' }} style={{ height: "calc(100% - 100px)" }} className="encoding-list">
                 {encodingBoxGroups}
             </Box>
             {formulateInputBox}
         </Box>);
 
     const encodingShelfCard = (
-        <>
-            <Box sx={{ 
-                padding: '4px 6px', 
-                maxWidth: "400px", 
-                display: 'flex', 
-                flexDirection: 'column', 
-                borderRadius: '8px',
-                border: `1px solid ${theme.palette.divider}`,
-                backgroundColor: trigger ? "rgba(255, 160, 122, 0.04)" : "white",
-            }}>
-                {ideateMode ? (
-                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: '6px', padding: '4px 0px' }}>
-                        <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                            <Button
-                                variant="text"
-                                size="small"
-                                disabled={isLoadingIdeas}
-                                onClick={() => getIdeasForVisualization()}
-                                startIcon={<TipsAndUpdatesIcon sx={{ fontSize: 14 }} />}
-                                sx={{
-                                    fontSize: 11,
-                                    textTransform: 'none',
-                                    padding: '2px 6px',
-                                    borderRadius: '6px',
-                                    color: isLoadingIdeas ? 'text.disabled' : (theme.palette.custom.textColor || theme.palette.custom.main),
-                                    '&:hover': { backgroundColor: alpha(theme.palette.custom.main, 0.08) },
-                                }}
-                            >
-                                Other ideas?
-                            </Button>
-                        </Box>
-                        {/* Loading state */}
-                        {isLoadingIdeas && (
-                            <Box sx={{ padding: '2px 0' }}>
-                                {ThinkingBanner('ideating...')}
-                            </Box>
-                        )}
-                        {/* Ideas chips */}
-                        {ideasSection}
-                    </Box>
-                ) : (
-                    <Box sx={{ padding: '4px 0px' }}>
-                        {channelComponent}
-                    </Box>
-                )}
+        <Box sx={{ 
+            padding: '4px 6px', 
+            maxWidth: "400px", 
+            display: 'flex', 
+            flexDirection: 'column', 
+        }}>
+            <Box sx={{ padding: '4px 0px' }}>
+                {channelComponent}
             </Box>
-            {/* Buttons below card */}
-            {!trigger && (ideateMode ? (
-                <Box sx={{ 
+            {/* Ideas chips shown inline below the formulate box */}
+            {(currentChartIdeas.length > 0 || (isLoadingIdeas && thinkingBuffer)) && (
+                <Box sx={{
                     display: 'flex', 
-                    width: 'fit-content',
-                    padding: '6px 2px 0',
+                    flexWrap: 'wrap', 
+                    gap: 0.5,
+                    pt: 0.5,
                 }}>
-                    <Button
-                        variant="text"
-                        size="small"
-                        onClick={() => setIdeateMode(false)}
-                        startIcon={<ArrowBackIcon sx={{ fontSize: 14 }} />}
-                        sx={{
-                            fontSize: 11,
-                            textTransform: 'none',
-                            padding: '2px 6px',
-                            borderRadius: '6px',
-                            color: 'text.secondary',
-                            '&:hover': { backgroundColor: 'rgba(0,0,0,0.04)' },
-                        }}
-                    >
-                        Back to editor
-                    </Button>
+                    {currentChartIdeas.map((idea, index) => (
+                        <IdeaChip
+                            mini={true}
+                            key={index}
+                            idea={idea}
+                            theme={theme}
+                            onClick={() => handleIdeaClick(idea.text)}
+                        />
+                    ))}
+                    {isLoadingIdeas && thinkingBuffer && <ThinkingBufferEffect text={thinkingBuffer.slice(-40)} sx={{ width: '100%' }} />}
                 </Box>
-            ) : (
-                <Box sx={{ 
-                    display: 'flex', 
-                    width: 'fit-content',
-                    padding: '6px 2px 0',
-                }}>
-                    <Button 
-                        variant="text"
-                        disabled={isLoadingIdeas} 
-                        size="small"
-                        onClick={() => { setIdeateMode(true); if (currentChartIdeas.length === 0) getIdeasForVisualization(); }}
-                        startIcon={isLoadingIdeas ? undefined : <TipsAndUpdatesIcon sx={{ fontSize: 14 }} />}
-                        sx={{
-                            fontSize: 11,
-                            textTransform: 'none',
-                            justifyContent: 'flex-start',
-                            padding: '2px 6px',
-                            borderRadius: '6px',
-                            color: theme.palette.custom.textColor || theme.palette.custom.main,
-                            '&:hover': {
-                                backgroundColor: alpha(theme.palette.custom.main, 0.08),
-                            },
-                        }}
-                    >
-                        {currentChartIdeas.length > 0 ? "View ideas" : "Some ideas?"}
-                    </Button>
+            )}
+            {isLoadingIdeas && !thinkingBuffer && (
+                <Box sx={{ padding: '2px 0' }}>
+                    {ThinkingBanner('ideating...')}
                 </Box>
-            ))}
-        </>
+            )}
+        </Box>
     );
 
     return encodingShelfCard;

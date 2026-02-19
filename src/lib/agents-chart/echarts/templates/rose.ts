@@ -112,6 +112,7 @@ export const ecRoseChartDef: ChartTemplateDef = {
             = computeCircumferencePressure(categories.length, ctx.canvasSize, {
                 minArcPx: 45,
                 minRadius: 80,
+                maxStretch: ctx.assembleOptions?.maxStretch,
             });
 
         // Canvas size — grow width to fit legend without squeezing the chart

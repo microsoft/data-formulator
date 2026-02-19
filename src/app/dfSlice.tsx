@@ -7,9 +7,9 @@ import { enableMapSet } from 'immer';
 import { DictTable } from "../components/ComponentType";
 import { Message } from '../views/MessageSnackbar';
 import { getChartTemplate, getChartChannels } from "../components/ChartTemplates"
-import { recommendEncodings } from '../components/chartUtils';
+import { vlAdaptChart, vlRecommendEncodings } from '../lib/agents-chart';
 import { getDataTable } from '../views/VisualizationView';
-import { adaptChart, getTriggers, getUrls, computeContentHash, fetchWithIdentity } from './utils';
+import { getTriggers, getUrls, computeContentHash, fetchWithIdentity } from './utils';
 import { getChartPngDataUrl } from './chartCache';
 import { Type } from '../data/types';
 import { createTableFromFromObjectArray, inferTypeFromValueArray } from '../data/utils';
@@ -67,6 +67,7 @@ export interface ClientConfig {
     formulateTimeoutSeconds: number;
     defaultChartWidth: number;
     defaultChartHeight: number;
+    maxStretchFactor: number; // max per-axis stretch multiplier for chart sizing (default 2.0)
     frontendRowLimit: number; // max rows to keep in browser when loading locally (non-virtual)
     paletteKey: string; // active color palette key from tokens.ts
 }
@@ -177,6 +178,7 @@ const initialState: DataFormulatorState = {
         formulateTimeoutSeconds: 60,
         defaultChartWidth: 400,
         defaultChartHeight: 300,
+        maxStretchFactor: 2.0,
         frontendRowLimit: 50000,
         paletteKey: 'fluent',
     },
@@ -758,10 +760,15 @@ export const dataFormulatorSlice = createSlice({
             // Auto-populate encodings based on table metadata
             let table = state.tables.find(t => t.id === tableId);
             if (table) {
-                const suggested = recommendEncodings(chartType, table, state.conceptShelfItems);
-                for (const [channel, encoding] of Object.entries(suggested)) {
-                    if (encoding && freshChart.encodingMap[channel as Channel]?.fieldID == undefined) {
-                        freshChart.encodingMap[channel as Channel] = encoding;
+                const semanticTypes: Record<string, string> = {};
+                for (const [fn, meta] of Object.entries(table.metadata)) {
+                    if (meta?.semanticType) semanticTypes[fn] = meta.semanticType;
+                }
+                const suggested = vlRecommendEncodings(chartType, table.rows, semanticTypes);
+                for (const [channel, fieldName] of Object.entries(suggested)) {
+                    if (freshChart.encodingMap[channel as Channel]?.fieldID == undefined) {
+                        const fieldItem = state.conceptShelfItems.find(f => f.name === fieldName && table!.names.includes(f.name));
+                        if (fieldItem) freshChart.encodingMap[channel as Channel] = { fieldID: fieldItem.id };
                     }
                 }
             }
@@ -808,16 +815,48 @@ export const dataFormulatorSlice = createSlice({
 
             let chart = dfSelectors.getAllCharts(state).find(c => c.id == chartId);
             if (chart) {
-                chart = adaptChart(chart, getChartTemplate(chartType) as ChartTemplate);
-                
-                // Auto-populate encodings based on table metadata
+                const template = getChartTemplate(chartType) as ChartTemplate;
+                const sourceType = chart.chartType;
+
+                // Get data table + semantic types for recommendation-based adaptation
                 let allCharts = dfSelectors.getAllCharts(state);
                 let table = getDataTable(chart, state.tables, allCharts, state.conceptShelfItems);
+                const semanticTypes: Record<string, string> = {};
                 if (table) {
-                    const suggested = recommendEncodings(chartType, table, state.conceptShelfItems);
-                    for (const [channel, encoding] of Object.entries(suggested)) {
-                        if (encoding && chart.encodingMap[channel as Channel]?.fieldID == undefined) {
-                            chart.encodingMap[channel as Channel] = encoding;
+                    for (const [fn, meta] of Object.entries(table.metadata)) {
+                        if (meta?.semanticType) semanticTypes[fn] = meta.semanticType;
+                    }
+                }
+
+                // Extract current encodings as field names
+                const filledEncodings: Record<string, string> = {};
+                for (const [ch, enc] of Object.entries(chart.encodingMap)) {
+                    if (enc.fieldID != null) {
+                        const field = state.conceptShelfItems.find(f => f.id === enc.fieldID);
+                        if (field) filledEncodings[ch] = field.name;
+                    }
+                }
+
+                // Adapt encodings: re-recommends with preference for existing fields
+                const adapted = vlAdaptChart(sourceType, chartType, filledEncodings, table?.rows, semanticTypes);
+
+                // Build new encoding map from adapted field names
+                const newEncodingMap = Object.assign(
+                    {}, ...template.channels.map((ch: string) => ({ [ch]: {} as EncodingItem })),
+                ) as EncodingMap;
+                for (const [ch, fieldName] of Object.entries(adapted)) {
+                    const field = state.conceptShelfItems.find(f => f.name === fieldName);
+                    if (field) newEncodingMap[ch as Channel] = { fieldID: field.id };
+                }
+                chart = { ...chart, chartType, encodingMap: newEncodingMap };
+                
+                // Fill any remaining empty channels via full recommendation
+                if (table) {
+                    const suggested = vlRecommendEncodings(chartType, table.rows, semanticTypes);
+                    for (const [channel, fieldName] of Object.entries(suggested)) {
+                        if (chart.encodingMap[channel as Channel]?.fieldID == undefined) {
+                            const fieldItem = state.conceptShelfItems.find(f => f.name === fieldName && table!.names.includes(f.name));
+                            if (fieldItem) chart.encodingMap[channel as Channel] = { fieldID: fieldItem.id };
                         }
                     }
                 }

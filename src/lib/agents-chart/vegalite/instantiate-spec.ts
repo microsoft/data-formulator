@@ -198,40 +198,65 @@ export function vlApplyLayoutToSpec(
         }
     }
 
-    // --- Banded continuous axis domain padding ---
+    // --- Continuous axis domain padding ---
+    // For banded continuous axes (e.g. Heatmap), add half-step buffer.
+    // For non-banded low-cardinality continuous axes (e.g. Year with 2 values
+    // on a scatter plot), add a percentage-based buffer so points aren't
+    // jammed at the axis edges.
+    const LOW_CARD_THRESHOLD = 20;   // apply buffer when ≤ this many unique values
+    const LOW_CARD_PAD_FRAC  = 0.05; // 5% of data range on each side
+
     for (const axis of ['x', 'y'] as const) {
-        const count = axis === 'x' ? layout.xContinuousAsDiscrete : layout.yContinuousAsDiscrete;
-        if (count <= 0) continue;
+        const bandedCount = axis === 'x' ? layout.xContinuousAsDiscrete : layout.yContinuousAsDiscrete;
 
         // Check both top-level and spec encoding
         const enc = vgObj.encoding?.[axis] || vgObj.spec?.encoding?.[axis];
-        if (enc) {
-            if (!enc.scale) enc.scale = {};
-            enc.scale.nice = false;
+        if (!enc) continue;
 
-            const isTemporal = enc.type === 'temporal';
-            const numericVals = context.table
-                .map((r: any) => {
-                    const raw = r[enc.field];
-                    if (raw == null) return NaN;
-                    if (isTemporal) return +new Date(raw);
-                    return +raw;
-                })
-                .filter((v: number) => !isNaN(v));
-            if (numericVals.length > 1) {
-                const minVal = Math.min(...numericVals);
-                const maxVal = Math.max(...numericVals);
-                const dataRange = maxVal - minVal;
-                const halfStep = dataRange / (count - 1) / 2;
-                if (isTemporal) {
-                    enc.scale.domain = [
-                        new Date(minVal - halfStep).toISOString(),
-                        new Date(maxVal + halfStep).toISOString(),
-                    ];
-                } else {
-                    enc.scale.domain = [minVal - halfStep, maxVal + halfStep];
-                }
-            }
+        const isTemporal = enc.type === 'temporal';
+        const isContinuous = enc.type === 'quantitative' || isTemporal;
+        if (!isContinuous) continue;
+
+        // Already has an explicit domain — don't override
+        if (enc.scale?.domain) continue;
+
+        const numericVals = context.table
+            .map((r: any) => {
+                const raw = r[enc.field];
+                if (raw == null) return NaN;
+                if (isTemporal) return +new Date(raw);
+                return +raw;
+            })
+            .filter((v: number) => !isNaN(v));
+        if (numericVals.length <= 1) continue;
+
+        const uniqueCount = new Set(numericVals).size;
+        const minVal = Math.min(...numericVals);
+        const maxVal = Math.max(...numericVals);
+        const dataRange = maxVal - minVal;
+        if (dataRange === 0) continue;
+
+        let pad: number;
+        if (bandedCount > 1) {
+            // Banded: half-step buffer (original logic)
+            pad = dataRange / (bandedCount - 1) / 2;
+        } else if (uniqueCount <= LOW_CARD_THRESHOLD) {
+            // Low-cardinality continuous: percentage-based buffer
+            pad = dataRange * LOW_CARD_PAD_FRAC;
+        } else {
+            continue; // high-cardinality non-banded — VL defaults are fine
+        }
+
+        if (!enc.scale) enc.scale = {};
+        enc.scale.nice = false;
+
+        if (isTemporal) {
+            enc.scale.domain = [
+                new Date(minVal - pad).toISOString(),
+                new Date(maxVal + pad).toISOString(),
+            ];
+        } else {
+            enc.scale.domain = [minVal - pad, maxVal + pad];
         }
     }
 

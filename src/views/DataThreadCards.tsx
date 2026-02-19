@@ -13,22 +13,21 @@ import {
     Tooltip,
     ButtonGroup,
     useTheme,
+    CircularProgress,
 } from '@mui/material';
 
 import { dfActions } from '../app/dfSlice';
 import { Chart, DictTable, Trigger } from "../components/ComponentType";
 
 import DeleteIcon from '@mui/icons-material/Delete';
-import AddchartIcon from '@mui/icons-material/Addchart';
 import { AnchorIcon } from '../icons';
-import SettingsIcon from '@mui/icons-material/Settings';
+import MoreVertIcon from '@mui/icons-material/MoreVert';
 import CloseIcon from '@mui/icons-material/Close';
 import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import CancelOutlinedIcon from '@mui/icons-material/CancelOutlined';
 
 import { TriggerCard } from './EncodingShelfCard';
-import { ThinkingBanner } from './DataThread';
 import { ComponentBorderStyle, shadow, transition } from '../app/tokens';
 
 
@@ -88,7 +87,7 @@ export const AgentStatusBox = memo<{
                         color: getAgentStatusColor(agentStatus)
                     },
                 }}>
-                    {agentStatus === 'running' && ThinkingBanner('thinking...', { py: 0.5 })}
+                    {agentStatus === 'running' && <CircularProgress size={10} sx={{ color: 'text.secondary' }} />}
                     {agentStatus === 'completed' && <CheckCircleOutlineIcon />}
                     {agentStatus === 'failed' && <CancelOutlinedIcon />}
                     {agentStatus === 'warning' && <HelpOutlineIcon />}
@@ -99,7 +98,7 @@ export const AgentStatusBox = memo<{
                         {agentStatus === 'warning' && 'hmm...'}
                         {agentStatus === 'failed' && 'oops...'}
                         {agentStatus === 'completed' && 'completed'}
-                        {agentStatus === 'running' && ''}
+                        {agentStatus === 'running' && 'working...'}
                     </Typography>
                     <Tooltip title="Delete message">
                         <IconButton
@@ -121,7 +120,7 @@ export const AgentStatusBox = memo<{
                     </Tooltip>
                 </Box>
             )}
-            {currentActions.map((a, index, array) => {
+            {agentStatus !== 'running' && currentActions.map((a, index, array) => {
                 let descriptions = String(a.description).split('\n');
                 return (
                     <React.Fragment key={a.actionId + "-" + index}>
@@ -326,22 +325,10 @@ export let buildTableCard = (props: BuildTableCardProps) => {
                                 handleOpenTableMenu(table!, event.currentTarget);
                             }}
                         >
-                            <SettingsIcon fontSize="small" sx={{ fontSize: 16 }} />
+                            <MoreVertIcon fontSize="small" sx={{ fontSize: 16 }} />
                         </IconButton>
                     </Tooltip>
-                    <Tooltip key="create-new-chart-btn-tooltip" title="create a new chart">
-                        <IconButton aria-label="create chart" size="small" sx={{ padding: 0.25, '&:hover': {
-                            transform: 'scale(1.2)',
-                            transition: transition.fast
-                            } }}
-                            onClick={(event) => {
-                                event.stopPropagation();
-                                dispatch(dfActions.setFocused({ type: 'table', tableId }));
-                            }}
-                        >   
-                            <AddchartIcon fontSize="small" sx={{ fontSize: 18 }} color='primary'/>
-                        </IconButton>
-                    </Tooltip>
+
                 </ButtonGroup>
             </Box>
         </Card>

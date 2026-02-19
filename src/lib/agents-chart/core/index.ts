@@ -80,3 +80,10 @@ export {
 export { resolveSemantics, convertTemporalData } from './resolve-semantics';
 export { filterOverflow } from './filter-overflow';
 export { computeLayout } from './compute-layout';
+
+// Recommendation & adaptation engine
+export {
+    adaptChannels,
+    recommendChannels,
+    type SemanticRole,
+} from './recommendation';

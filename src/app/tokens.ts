@@ -17,13 +17,13 @@ export const borderColor = {
      *  TableSelectionView, DataLoadingThread, DBTableManager */
     divider: 'rgba(0, 0, 0, 0.12)',
 
-    /** 0.15 — inner components: cards, chips, inputs, thumbnails
+    /** 0.10 — inner components: cards, chips, inputs, thumbnails
      *  DataThreadCards table card, EncodingShelfCard tab divider */
-    component: 'rgba(0, 0, 0, 0.15)',
+    component: 'rgba(0, 0, 0, 0.10)',
 
-    /** 0.20 — outer containers: panels, dialogs, popovers, drop zones
+    /** 0.12 — outer containers: panels, dialogs, popovers, drop zones
      *  DataThread popups, UnifiedDataUploadDialog, AgentRulesDialog */
-    view: 'rgba(0, 0, 0, 0.2)',
+    view: 'rgba(0, 0, 0, 0.12)',
 } as const;
 
 // ── Composite border styles (spread into sx) ───────────────────────────
