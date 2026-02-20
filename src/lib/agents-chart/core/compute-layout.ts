@@ -99,6 +99,11 @@ interface AxisLayoutInput {
  * @param table              Data rows (post-overflow filtered)
  * @param canvasSize         Target canvas dimensions
  * @param options            Assembly options (merged with template overrides)
+ * @param facetGrid          Optional pre-decided facet grid from computeFacetGrid.
+ *                           When provided, computeLayout uses these column/row
+ *                           counts instead of counting from data — this
+ *                           eliminates the circularity between wrapping and
+ *                           banded axis sizing.
  */
 export function computeLayout(
     channelSemantics: Record<string, ChannelSemantics>,
@@ -106,13 +111,13 @@ export function computeLayout(
     table: any[],
     canvasSize: { width: number; height: number },
     options: AssembleOptions = {},
+    facetGrid?: { columns: number; rows: number },
 ): LayoutResult {
     const {
         elasticity: elasticityVal = 0.5,
         maxStretch: maxStretchVal = 2,
         facetElasticity: facetElasticityVal = 0.3,
-        facetMaxStretch: facetMaxStretchVal = 1.5,
-        minStep: minStepVal = 6,
+        minStep: minStepVal = 8,
         minSubplotSize: minSubplotVal = 60,
         defaultStepMultiplier = 1,
         stepPadding: stepPaddingVal = 0.1,
@@ -122,6 +127,11 @@ export function computeLayout(
 
     const defaultChartWidth = canvasSize.width;
     const defaultChartHeight = canvasSize.height;
+
+    // Facet overhead: fixed (axis labels, titles) + per-panel gap (spacing).
+    const fixW = options.facetFixedPadding?.width ?? 0;
+    const fixH = options.facetFixedPadding?.height ?? 0;
+    const gap  = options.facetGap ?? 0;
 
     const baseRefSize = 300;
     const sizeRatio = Math.max(defaultChartWidth, defaultChartHeight) / baseRefSize;
@@ -170,8 +180,11 @@ export function computeLayout(
     let yTotalNominalCount = nominalCount.y * yGroupMultiplier;
 
     // --- Step size hints ---
-    const xMinGroupStep = xGroupMultiplier > 1 ? 2 * xGroupMultiplier : minStepVal;
-    const yMinGroupStep = yGroupMultiplier > 1 ? 2 * yGroupMultiplier : minStepVal;
+    // Minimum group step: the inter-group gap (stepPadding × step) must be
+    // at least MIN_GROUP_GAP_PX pixels so groups are visually separated.
+    const MIN_GROUP_GAP_PX = 3;
+    const xMinGroupStep = xGroupMultiplier > 1 ? Math.max(Math.ceil(MIN_GROUP_GAP_PX / stepPaddingVal), 2 * xGroupMultiplier) : minStepVal;
+    const yMinGroupStep = yGroupMultiplier > 1 ? Math.max(Math.ceil(MIN_GROUP_GAP_PX / stepPaddingVal), 2 * yGroupMultiplier) : minStepVal;
 
     // (Overflow filtering is now handled by filterOverflow() before
     //  computeLayout is called. The data passed here is already filtered.)
@@ -208,26 +221,36 @@ export function computeLayout(
     }
 
     // --- Facet layout ---
+    // Use pre-decided grid from filterOverflow when available.
+    // This avoids the circularity where wrapping depends on subplot
+    // width which depends on facet count which depends on wrapping.
     let facetCols = 1;
     let facetRows = 1;
-    if (nominalCount.column > 0) facetCols = nominalCount.column;
-    if (nominalCount.row > 0) facetRows = nominalCount.row;
+    if (facetGrid) {
+        facetCols = facetGrid.columns;
+        facetRows = facetGrid.rows;
+    } else {
+        if (nominalCount.column > 0) facetCols = nominalCount.column;
+        if (nominalCount.row > 0) facetRows = nominalCount.row;
+    }
 
     // --- Facet subplot sizing ---
     const minContinuousSize = Math.max(10, minStepVal);
 
     let subplotWidth: number;
     if (facetCols > 1) {
-        const stretch = Math.min(facetMaxStretchVal, Math.pow(facetCols, facetElasticityVal));
-        subplotWidth = Math.round(Math.max(minContinuousSize, defaultChartWidth * stretch / facetCols));
+        const stretch = Math.min(maxStretchVal, Math.pow(facetCols, facetElasticityVal));
+        subplotWidth = Math.round(Math.max(minContinuousSize,
+            (defaultChartWidth * stretch - fixW) / facetCols - gap));
     } else {
         subplotWidth = defaultChartWidth;
     }
 
     let subplotHeight: number;
     if (facetRows > 1) {
-        const stretch = Math.min(facetMaxStretchVal, Math.pow(facetRows, facetElasticityVal));
-        subplotHeight = Math.round(Math.max(minContinuousSize, defaultChartHeight * stretch / facetRows));
+        const stretch = Math.min(maxStretchVal, Math.pow(facetRows, facetElasticityVal));
+        subplotHeight = Math.round(Math.max(minContinuousSize,
+            (defaultChartHeight * stretch - fixH) / facetRows - gap));
     } else {
         subplotHeight = defaultChartHeight;
     }
@@ -412,7 +435,7 @@ export function computeLayout(
     if (xIsDiscrete && xHasGrouping) {
         const itemsPerGroup = nominalCount.group;
         const defaultGroupStep = itemsPerGroup * defaultStepSize;
-        const minGroupStep = 2 * itemsPerGroup;
+        const minGroupStep = Math.max(Math.ceil(MIN_GROUP_GAP_PX / stepPaddingVal), 2 * itemsPerGroup);
         const groupAxis = computeAxisStep(nominalCount.x, 0, subplotWidth, elasticParams);
         const groupStep = Math.max(minGroupStep, Math.min(defaultGroupStep, groupAxis.step));
         xStepSize = groupStep;
@@ -428,7 +451,7 @@ export function computeLayout(
     if (yIsDiscrete && yHasGrouping) {
         const itemsPerGroup = nominalCount.group;
         const defaultGroupStep = itemsPerGroup * defaultStepSize;
-        const minGroupStep = 2 * itemsPerGroup;
+        const minGroupStep = Math.max(Math.ceil(MIN_GROUP_GAP_PX / stepPaddingVal), 2 * itemsPerGroup);
         const groupAxis = computeAxisStep(nominalCount.y, 0, subplotHeight, elasticParams);
         const groupStep = Math.max(minGroupStep, Math.min(defaultGroupStep, groupAxis.step));
         yStepSize = groupStep;
@@ -453,6 +476,49 @@ export function computeLayout(
             subplotHeight = continuousSize;
         }
     }
+
+    // --- Unified stretch budget ------------------------------------------------
+    // Cap the per-subplot dimensions so total canvas never exceeds
+    // canvasWidth × maxStretch (and canvasHeight × maxStretch).
+    // Formula: effectiveW = W × maxStretch − fixedPad; each panel costs subplot + gap.
+    const maxSubplotW = (defaultChartWidth * maxStretchVal - fixW) / facetCols - gap;
+    const maxSubplotH = (defaultChartHeight * maxStretchVal - fixH) / facetRows - gap;
+
+    // Clamp step sizes for discrete/banded axes so VL step-based
+    // sizing respects the same budget.
+    // When step unit is 'group', divide by the number of groups (nominalCount)
+    // rather than the total item count (groups × items-per-group).
+    if (xTotalNominalCount > 0) {
+        const divisor = xStepUnit === 'group' ? nominalCount.x : xTotalNominalCount;
+        const cap = Math.max(minStepVal, Math.floor(maxSubplotW / divisor));
+        if (xStepSize > cap) xStepSize = cap;
+    }
+    if (xContinuousAsDiscrete > 0) {
+        const cap = Math.max(minStepVal, Math.floor(maxSubplotW / (xContinuousAsDiscrete + 1)));
+        if (xStepSize > cap) xStepSize = cap;
+    }
+    if (yTotalNominalCount > 0) {
+        const divisor = yStepUnit === 'group' ? nominalCount.y : yTotalNominalCount;
+        const cap = Math.max(minStepVal, Math.floor(maxSubplotH / divisor));
+        if (yStepSize > cap) yStepSize = cap;
+    }
+    if (yContinuousAsDiscrete > 0) {
+        const cap = Math.max(minStepVal, Math.floor(maxSubplotH / (yContinuousAsDiscrete + 1)));
+        if (yStepSize > cap) yStepSize = cap;
+    }
+
+    // Recompute banded subplot size after step clamping.
+    for (const axis of ['x', 'y'] as const) {
+        const count = axis === 'x' ? xContinuousAsDiscrete : yContinuousAsDiscrete;
+        if (count <= 0) continue;
+        const stepSize = axis === 'x' ? xStepSize : yStepSize;
+        if (axis === 'x') subplotWidth = Math.round(stepSize * (count + 1));
+        else subplotHeight = Math.round(stepSize * (count + 1));
+    }
+
+    // Clamp continuous subplot dimensions.
+    subplotWidth = Math.min(subplotWidth, Math.round(maxSubplotW));
+    subplotHeight = Math.min(subplotHeight, Math.round(maxSubplotH));
 
     // --- Label sizing ---
     const xHasDiscreteItems = xTotalNominalCount > 0;
@@ -480,6 +546,7 @@ export function computeLayout(
             subplotWidth,
             subplotHeight,
         } : undefined,
+        effectiveFacetGap: gap,
         truncations: [],  // Overflow truncations are handled by filterOverflow
     };
 }
@@ -509,4 +576,151 @@ function countDistinctSeries(
         seriesKeys.add(key);
     }
     return seriesKeys.size;
+}
+
+// ---------------------------------------------------------------------------
+// Public: computeFacetGrid
+// ---------------------------------------------------------------------------
+
+/**
+ * Decide the facet grid layout (including column-only wrapping).
+ *
+ * This runs BEFORE filterOverflow and computeLayout.  It:
+ *   1. Counts unique column/row values from data.
+ *   2. Computes banded-aware minimum subplot dimensions.
+ *   3. Computes max columns/rows that fit in the canvas budget.
+ *   4. For column-only: wraps into a 2D grid (total panels = cols × rows).
+ *   5. For column+row: caps each dimension independently.
+ *
+ * Returns `undefined` when there are no facet channels.
+ *
+ * @param channelSemantics  Phase 0 output
+ * @param declaration       Template layout declaration
+ * @param data              Data rows (pre-overflow — possibly after temporal conversion)
+ * @param canvasSize        Target canvas dimensions
+ * @param options           Assembly options
+ */
+export function computeFacetGrid(
+    channelSemantics: Record<string, ChannelSemantics>,
+    declaration: LayoutDeclaration,
+    data: any[],
+    canvasSize: { width: number; height: number },
+    options: AssembleOptions,
+): import('./types').FacetGridResult | undefined {
+    const { maxStretch: ms = 2 } = options;
+    const fixW = options.facetFixedPadding?.width ?? 0;
+    const fixH = options.facetFixedPadding?.height ?? 0;
+    const gap  = options.facetGap ?? 0;
+
+    const { minSubplotWidth, minSubplotHeight } = computeMinSubplotDimensions(
+        channelSemantics, declaration, data, options,
+    );
+
+    // effectiveW = totalBudget - fixedOverhead; each panel costs (subplot + gap).
+    const effectiveW = canvasSize.width * ms - fixW;
+    const effectiveH = canvasSize.height * ms - fixH;
+    const maxFacetColumns = Math.max(1, Math.floor(
+        effectiveW / (minSubplotWidth + gap),
+    ));
+    const maxFacetRows = Math.max(1, Math.floor(
+        effectiveH / (minSubplotHeight + gap),
+    ));
+
+    // Identify column/row fields
+    const colField = channelSemantics.column?.field;
+    const rowField = channelSemantics.row?.field;
+    if (!colField && !rowField) return undefined;
+
+    const colCount = colField
+        ? new Set(data.map((r: any) => r[colField])).size : 0;
+    const rowCount = rowField
+        ? new Set(data.map((r: any) => r[rowField])).size : 0;
+
+    if (colCount === 0 && rowCount === 0) return undefined;
+
+    if (colCount > 0 && rowCount === 0) {
+        // Column-only: 2D budget for total panels, wrap visually.
+        const maxTotalPanels = maxFacetColumns * maxFacetRows;
+        const effectiveCount = Math.min(colCount, maxTotalPanels);
+        // Balanced wrapping: compute rows first, then distribute evenly.
+        // e.g. 10 items, max 6/row → 2 rows of 5 instead of 6+4.
+        const visRows = Math.ceil(effectiveCount / maxFacetColumns);
+        const visCols = Math.ceil(effectiveCount / visRows);
+        return {
+            columns: visCols,
+            rows: visRows,
+            maxColumnValues: maxTotalPanels,
+            maxRowValues: maxFacetRows,
+        };
+    }
+
+    // Column+row or row-only: cap each dimension independently.
+    return {
+        columns: Math.max(1, Math.min(colCount, maxFacetColumns)),
+        rows: Math.max(1, Math.min(rowCount, maxFacetRows)),
+        maxColumnValues: maxFacetColumns,
+        maxRowValues: maxFacetRows,
+    };
+}
+
+// ---------------------------------------------------------------------------
+// Public: computeMinSubplotDimensions
+// ---------------------------------------------------------------------------
+
+/**
+ * Compute minimum subplot dimensions considering banded and discrete axes.
+ *
+ * For banded axes (e.g. temporal x on candlestick), each data point needs
+ * `minStep` px, so the subplot minimum can be much larger than the generic
+ * `minSubplotSize` (60px).  For discrete axes, the count of unique values
+ * drives the minimum similarly.
+ *
+ * This is used by both filterOverflow (pre-layout) and the assemblers
+ * (post-layout) to consistently compute facet column/row caps.
+ *
+ * @param channelSemantics  Phase 0 output (field, type per channel)
+ * @param declaration       Template layout declaration (axisFlags, resolvedTypes)
+ * @param data              Data rows
+ * @param options           Assembly options ({ minStep, minSubplotSize })
+ * @returns                 { minSubplotWidth, minSubplotHeight }
+ */
+export function computeMinSubplotDimensions(
+    channelSemantics: Record<string, ChannelSemantics>,
+    declaration: LayoutDeclaration,
+    data: any[],
+    options: { minStep?: number; minSubplotSize?: number },
+): { minSubplotWidth: number; minSubplotHeight: number } {
+    const minStep = options.minStep ?? 6;
+    const minSubplot = options.minSubplotSize ?? 60;
+
+    let minSubplotWidth = minSubplot;
+    let minSubplotHeight = minSubplot;
+
+    const isDiscreteType = (t: string | undefined) =>
+        t === 'nominal' || t === 'ordinal';
+
+    for (const axis of ['x', 'y'] as const) {
+        const cs = channelSemantics[axis];
+        if (!cs?.field) continue;
+
+        const effectiveType = declaration.resolvedTypes?.[axis] ?? cs.type;
+        const isBanded = declaration.axisFlags?.[axis]?.banded === true;
+        const isDiscrete = isDiscreteType(effectiveType);
+
+        let itemCount = 0;
+        if (isBanded || isDiscrete) {
+            itemCount = new Set(data.map((r: any) => r[cs.field])).size;
+        }
+
+        if (itemCount > 0) {
+            const minDim = Math.max(minSubplot, itemCount * minStep);
+            if (axis === 'x') {
+                minSubplotWidth = Math.max(minSubplotWidth, minDim);
+            } else {
+                minSubplotHeight = Math.max(minSubplotHeight, minDim);
+            }
+        }
+    }
+
+    return { minSubplotWidth, minSubplotHeight };
 }

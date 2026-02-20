@@ -32,12 +32,12 @@
  *       values from the layout numbers.
  *
  *   Facet wrapping
- *     → When the user specifies column-only facets, this assembler
- *       computes `maxColsPerRow` using the same parameters VL uses
- *       (facetMaxStretch, minStep, minSubplotSize), restructures the
- *       flat 1×N panels into a wrapped 2D grid, and passes the result
- *       to ecCombineFacetPanels.  The combiner itself has NO wrapping
- *       logic — it renders whatever grid it receives.
+ *     → Column wrapping is decided by filterOverflow (shared with VL).
+ *       This assembler reads `overflowResult.facetGrid` for the grid
+ *       dimensions, restructures the flat 1×N panels into a wrapped
+ *       2D grid, and passes the result to ecCombineFacetPanels.
+ *       The combiner itself has NO wrapping logic — it renders
+ *       whatever grid it receives.
  *
  *   Per-panel vs shared axis titles
  *     → The facet combiner keeps Y-axis titles on the left column only
@@ -62,7 +62,7 @@ import type { ChartWarning } from '../core/types';
 import { ecGetTemplateDef } from './templates';
 import { resolveSemantics, convertTemporalData } from '../core/resolve-semantics';
 import { filterOverflow } from '../core/filter-overflow';
-import { computeLayout } from '../core/compute-layout';
+import { computeLayout, computeFacetGrid } from '../core/compute-layout';
 import { ecApplyLayoutToSpec, ecApplyTooltips } from './instantiate-spec';
 import { ecCombineFacetPanels } from './facet';
 
@@ -128,6 +128,17 @@ export function assembleECharts(input: ChartAssemblyInput): any {
         ...(declaration.paramOverrides || {}),
     };
 
+    // ECharts facet overhead:
+    //   Fixed: mLeft (~35-55px width) + mBottom (~22px height).
+    //   Gap:   GAP + PAD between panels (ref 14px at 400px canvas,
+    //          core scales proportionally).
+    if (effectiveOptions.facetFixedPadding == null) {
+        effectiveOptions.facetFixedPadding = { width: 55, height: 22 };
+    }
+    if (effectiveOptions.facetGap == null) {
+        effectiveOptions.facetGap = 14;   // reference at 400px canvas
+    }
+
     const {
         addTooltips: addTooltipsOpt = false,
     } = effectiveOptions;
@@ -145,9 +156,14 @@ export function assembleECharts(input: ChartAssemblyInput): any {
     const allMarkTypes = new Set<string>();
     if (templateMarkType) allMarkTypes.add(templateMarkType);
 
+    // ── Facet grid decision (shared, in layout module) ─────────────────
+    const facetGridResult = computeFacetGrid(
+        channelSemantics, declaration, convertedData, canvasSize, effectiveOptions,
+    );
+
     const overflowResult = filterOverflow(
         channelSemantics, declaration, encodings, convertedData,
-        canvasSize, effectiveOptions, allMarkTypes,
+        canvasSize, effectiveOptions, allMarkTypes, facetGridResult,
     );
 
     let values = overflowResult.filteredData;
@@ -163,6 +179,7 @@ export function assembleECharts(input: ChartAssemblyInput): any {
         values,
         canvasSize,
         effectiveOptions,
+        facetGridResult,
     );
 
     layoutResult.truncations = overflowResult.truncations;
@@ -226,58 +243,16 @@ export function assembleECharts(input: ChartAssemblyInput): any {
         // ── Shared layout (facet-aware, same as VL path) ─────────────────
         const facetLayout = computeLayout(
             channelSemantics, declaration, values, canvasSize, effectiveOptions,
+            facetGridResult,
         );
         facetLayout.truncations = overflowResult.truncations;
 
         const nRows = rowValues.length || 1;
         const nCols = colValues.length || 1;
 
-        // ── Column wrapping (matches VL restructureFacets logic) ─────────
-        // For column-only facets, compute how many columns fit per visual
-        // row using the same parameters VL uses: facetMaxStretch, minStep,
-        // minSubplotSize, and the x-axis discrete count.
-        let maxColsPerRow = nCols;          // default: no wrapping
-        if (colField && !rowField && nCols > 1) {
-            const {
-                facetMaxStretch: fms = 1.5,
-                minStep: ms = 6,
-                minSubplotSize: mss = 60,
-            } = effectiveOptions;
-
-            // Count discrete positions on x
-            let xDiscreteCount = 0;
-            const xCS = channelSemantics.x;
-            if (xCS?.field) {
-                const xType = declaration.resolvedTypes?.x || xCS.type;
-                if (xType === 'nominal' || xType === 'ordinal') {
-                    xDiscreteCount = new Set(values.map((r: any) => r[xCS.field])).size;
-                }
-            }
-            // Account for grouping (color → multiple bars per category)
-            const colorCS = channelSemantics.color;
-            if (colorCS?.field) {
-                const cType = declaration.resolvedTypes?.color || colorCS.type;
-                if (cType === 'nominal' || cType === 'ordinal') {
-                    const groupCount = new Set(values.map((r: any) => r[colorCS.field])).size;
-                    if (groupCount > 0) xDiscreteCount *= groupCount;
-                }
-            }
-
-            const minReadable = Math.max(mss, Math.round(canvasSize.width * 0.25));
-            const minSubW = xDiscreteCount > 0
-                ? Math.max(mss, xDiscreteCount * ms)
-                : minReadable;
-
-            const maxTotalW = fms * canvasSize.width;
-            const maxByWidth = Math.max(1, Math.floor(maxTotalW / minSubW));
-
-            if (nCols <= maxByWidth) {
-                maxColsPerRow = nCols;
-            } else {
-                const minRows = Math.ceil(nCols / maxByWidth);
-                maxColsPerRow = Math.ceil(nCols / minRows);
-            }
-        }
+        // ── Column wrapping ─────────────────────────────────────────────
+        // Use the facet grid decided by computeFacetGrid.
+        const maxColsPerRow = facetGridResult?.columns ?? nCols;
 
         const panels: any[][] = [];
         for (let ri = 0; ri < nRows; ri++) {

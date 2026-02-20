@@ -400,8 +400,8 @@ export interface FacetLayoutDecision {
 export interface FacetLayoutParams {
     /** Power-law exponent for facet stretch (default: 0.3) */
     facetElasticity: number;
-    /** Maximum facet stretch multiplier cap (default: 1.5) */
-    facetMaxStretch: number;
+    /** Maximum total stretch multiplier cap (default: 2) */
+    maxStretch: number;
     /** Minimum subplot size in px (default: 60) */
     minSubplotSize: number;
 }
@@ -426,7 +426,7 @@ export function computeFacetLayout(
 
     let subplotWidth: number;
     if (facetCols > 1) {
-        const stretch = Math.min(params.facetMaxStretch, Math.pow(facetCols, params.facetElasticity));
+        const stretch = Math.min(params.maxStretch, Math.pow(facetCols, params.facetElasticity));
         subplotWidth = Math.round(Math.max(minContinuousSize, baseWidth * stretch / facetCols));
     } else {
         subplotWidth = baseWidth;
@@ -434,7 +434,7 @@ export function computeFacetLayout(
 
     let subplotHeight: number;
     if (facetRows > 1) {
-        const stretch = Math.min(params.facetMaxStretch, Math.pow(facetRows, params.facetElasticity));
+        const stretch = Math.min(params.maxStretch, Math.pow(facetRows, params.facetElasticity));
         subplotHeight = Math.round(Math.max(minContinuousSize, baseHeight * stretch / facetRows));
     } else {
         subplotHeight = baseHeight;

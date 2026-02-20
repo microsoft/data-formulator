@@ -355,27 +355,27 @@ export function genElasticityTests(): TestCase[] {
         '8 column facets, 5 bars each, default axis & facet settings',
         ['facet+axis', 'default'],
         bars5,
-        { elasticity: 0.5, maxStretch: 2, facetElasticity: 0.3, facetMaxStretch: 1.5 },
+        { elasticity: 0.5, maxStretch: 2, facetElasticity: 0.3 },
         facets8,
     ));
 
     // B2: 8 facets × 5 bars — conservative facet, default axis
     tests.push(makeBarTest(
-        '8F × 5B — conservative facet (fe=0.15, fs=1.2)',
-        '8 column facets, 5 bars, conservative facet stretch, default axis',
+        '8F × 5B — conservative facet (fe=0.15, ms=1.5)',
+        '8 column facets, 5 bars, conservative unified stretch',
         ['facet+axis', 'conservative-facet'],
         bars5,
-        { elasticity: 0.5, maxStretch: 2, facetElasticity: 0.15, facetMaxStretch: 1.2 },
+        { elasticity: 0.5, maxStretch: 1.5, facetElasticity: 0.15 },
         facets8,
     ));
 
     // B3: 8 facets × 5 bars — aggressive facet, default axis
     tests.push(makeBarTest(
-        '8F × 5B — aggressive facet (fe=0.6, fs=2.5)',
-        '8 column facets, 5 bars, aggressive facet stretch, default axis',
+        '8F × 5B — aggressive (fe=0.6, ms=2.5)',
+        '8 column facets, 5 bars, aggressive unified stretch',
         ['facet+axis', 'aggressive-facet'],
         bars5,
-        { elasticity: 0.5, maxStretch: 2, facetElasticity: 0.6, facetMaxStretch: 2.5 },
+        { elasticity: 0.5, maxStretch: 2.5, facetElasticity: 0.6 },
         facets8,
     ));
 
@@ -385,27 +385,27 @@ export function genElasticityTests(): TestCase[] {
         '12 column facets, 8 bars each, default settings',
         ['facet+axis', 'large', 'default'],
         bars8,
-        { elasticity: 0.5, maxStretch: 2, facetElasticity: 0.3, facetMaxStretch: 1.5 },
+        { elasticity: 0.5, maxStretch: 2, facetElasticity: 0.3 },
         facets12,
     ));
 
-    // B5: 12 facets × 8 bars — conservative facet, aggressive axis
+    // B5: 12 facets × 8 bars — tight budget, aggressive axis elasticity
     tests.push(makeBarTest(
-        '12F × 8B — tight facet (fe=0.15, fs=1.2), wide axis (e=0.8, s=3)',
-        '12 facets, 8 bars, conservative facet + aggressive axis',
+        '12F × 8B — tight (ms=1.5, fe=0.15, e=0.8)',
+        '12 facets, 8 bars, tight unified budget + high axis elasticity',
         ['facet+axis', 'large', 'mixed-tight-facet'],
         bars8,
-        { elasticity: 0.8, maxStretch: 3, facetElasticity: 0.15, facetMaxStretch: 1.2 },
+        { elasticity: 0.8, maxStretch: 1.5, facetElasticity: 0.15 },
         facets12,
     ));
 
-    // B6: 12 facets × 8 bars — aggressive facet, conservative axis
+    // B6: 12 facets × 8 bars — wide budget, low axis elasticity
     tests.push(makeBarTest(
-        '12F × 8B — wide facet (fe=0.6, fs=2.5), tight axis (e=0.2, s=1.2)',
-        '12 facets, 8 bars, aggressive facet + conservative axis',
+        '12F × 8B — wide (ms=3, fe=0.6, e=0.2)',
+        '12 facets, 8 bars, wide unified budget + low axis elasticity',
         ['facet+axis', 'large', 'mixed-wide-facet'],
         bars8,
-        { elasticity: 0.2, maxStretch: 1.2, facetElasticity: 0.6, facetMaxStretch: 2.5 },
+        { elasticity: 0.2, maxStretch: 3, facetElasticity: 0.6 },
         facets12,
     ));
 
@@ -415,7 +415,7 @@ export function genElasticityTests(): TestCase[] {
         '8 column facets, 5 bars, stretch disabled',
         ['facet+axis', 'no-stretch'],
         bars5,
-        { elasticity: 0, maxStretch: 1, facetElasticity: 0, facetMaxStretch: 1 },
+        { elasticity: 0, maxStretch: 1, facetElasticity: 0 },
         facets8,
     ));
 

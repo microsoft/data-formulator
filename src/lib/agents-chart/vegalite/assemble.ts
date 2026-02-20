@@ -36,7 +36,7 @@
  *   Facet wrapping
  *     → `restructureFacets()` converts column-only to `facet` +
  *       `columns: N`.  The wrapping decision uses the same parameters
- *       (facetMaxStretch, minStep, minSubplotSize) as ECharts.
+ *       (maxStretch, minStep, minSubplotSize) as ECharts.
  *
  *   Axis titles, labels, legends
  *     → VL handles these declaratively via encoding / config.
@@ -57,7 +57,7 @@ import { vlGetTemplateDef } from './templates';
 import { inferVisCategory } from '../core/semantic-types';
 import { resolveSemantics, convertTemporalData } from '../core/resolve-semantics';
 import { filterOverflow } from '../core/filter-overflow';
-import { computeLayout } from '../core/compute-layout';
+import { computeLayout, computeFacetGrid, computeMinSubplotDimensions } from '../core/compute-layout';
 import { vlApplyLayoutToSpec, vlApplyTooltips } from './instantiate-spec';
 
 // ---------------------------------------------------------------------------
@@ -140,9 +140,23 @@ export function assembleVegaLite(input: ChartAssemblyInput): any {
 
     const {
         addTooltips: addTooltipsOpt = false,
-        facetMaxStretch: facetMaxStretchVal = 1.5,
+        maxStretch: maxStretchVal = 2,
         minSubplotSize: minSubplotVal = 60,
     } = effectiveOptions;
+
+    // VL facet overhead:
+    //   Fixed: y-axis labels (~35px width) + x-axis labels (~22px height)
+    //          + titles/legend margin.
+    //   Gap:   config.facet.spacing between panels; shrunk post-layout for
+    //          small subplots (see facetGapVal below).
+    if (effectiveOptions.facetFixedPadding == null) {
+        effectiveOptions.facetFixedPadding = { width: 50, height: 40 };
+    }
+    if (effectiveOptions.facetGap == null) {
+        effectiveOptions.facetGap = 10;
+    }
+    const facetFixW = effectiveOptions.facetFixedPadding.width;
+    const facetFixH = effectiveOptions.facetFixedPadding.height;
 
     // ═══════════════════════════════════════════════════════════════════════
     // STEP 0b: Temporal Data Conversion
@@ -164,9 +178,16 @@ export function assembleVegaLite(input: ChartAssemblyInput): any {
         }
     }
 
+    // ── Facet grid decision (shared, in layout module) ─────────────────
+    // Decides wrapping + caps BEFORE data filtering so computeLayout
+    // receives the correct grid and filterOverflow clips accordingly.
+    const facetGridResult = computeFacetGrid(
+        channelSemantics, declaration, convertedData, canvasSize, effectiveOptions,
+    );
+
     const overflowResult = filterOverflow(
         channelSemantics, declaration, encodings, convertedData,
-        canvasSize, effectiveOptions, allMarkTypes,
+        canvasSize, effectiveOptions, allMarkTypes, facetGridResult,
     );
 
     let values = overflowResult.filteredData;
@@ -183,6 +204,7 @@ export function assembleVegaLite(input: ChartAssemblyInput): any {
         values,  // post-overflow filtered data
         canvasSize,
         effectiveOptions,
+        facetGridResult,
     );
 
     // Attach overflow truncations from filterOverflow
@@ -247,36 +269,11 @@ export function assembleVegaLite(input: ChartAssemblyInput): any {
     }
 
     // --- restructureFacets (VL-specific) ---
+    // The facet grid (including wrapping) was already decided by
+    // filterOverflow.  restructureFacets only performs the VL structural
+    // transform (column encoding → facet + spec for layered specs).
 
-    const { wrappedRows } = restructureFacets(vgObj, nominalCounts, canvasSize, effectiveOptions);
-
-    // When column-only facets wrap into multiple rows, update the layout
-    // result so that subplotHeight is properly sized for the wrapped grid.
-    // Also update facet.columns so downstream code (header sizing, title
-    // suppression) sees the actual wrapped column count, not the original.
-    if (wrappedRows > 1 && layoutResult.facet) {
-        const facetElasticityVal = effectiveOptions.facetElasticity ?? 0.5;
-        const facetMaxStretchVal2 = effectiveOptions.facetMaxStretch ?? 1.5;
-        const minContinuousSize = Math.max(10, effectiveOptions.minStep ?? 6);
-        const defaultChartHeight = canvasSize.height;
-
-        const originalFacetCount = layoutResult.facet.columns * (layoutResult.facet.rows);
-        const wrappedCols = Math.ceil(originalFacetCount / wrappedRows);
-
-        layoutResult.facet.rows = wrappedRows;
-        layoutResult.facet.columns = wrappedCols;
-
-        const stretch = Math.min(facetMaxStretchVal2, Math.pow(wrappedRows, facetElasticityVal));
-        const newSubplotHeight = Math.round(Math.max(minContinuousSize, defaultChartHeight * stretch / wrappedRows));
-        layoutResult.subplotHeight = newSubplotHeight;
-        layoutResult.facet.subplotHeight = newSubplotHeight;
-
-        // Recalculate subplot width for the new column count
-        const stretchW = Math.min(facetMaxStretchVal2, Math.pow(wrappedCols, facetElasticityVal));
-        const newSubplotWidth = Math.round(Math.max(minContinuousSize, canvasSize.width * stretchW / wrappedCols));
-        layoutResult.subplotWidth = newSubplotWidth;
-        layoutResult.facet.subplotWidth = newSubplotWidth;
-    }
+    restructureFacets(vgObj, nominalCounts, facetGridResult);
 
     // --- vlApplyLayoutToSpec (VL-specific: config, sizing, formatting) ---
 
@@ -286,8 +283,25 @@ export function assembleVegaLite(input: ChartAssemblyInput): any {
 
     const defaultChartWidth = canvasSize.width;
     const defaultChartHeight = canvasSize.height;
-    const maxFacetColumns = Math.max(2, Math.floor(defaultChartWidth * facetMaxStretchVal / minSubplotVal));
-    const maxFacetRows = Math.max(2, Math.floor(defaultChartHeight * facetMaxStretchVal / minSubplotVal));
+
+    // Compute banded-aware minimum subplot dimensions from core helper.
+    const { minSubplotWidth, minSubplotHeight } = computeMinSubplotDimensions(
+        channelSemantics, declaration, values, effectiveOptions,
+    );
+
+    // Shrink gap for small subplots: scale linearly from the reference
+    // (10px gap at 100px subplot), with a floor of 4px.
+    const refGap = effectiveOptions.facetGap ?? 0;
+    const subplotDim = Math.min(layoutResult.subplotWidth, layoutResult.subplotHeight);
+    const REF_SUBPLOT = 100;
+    const facetGapVal = Math.max(6, Math.round(refGap * subplotDim / REF_SUBPLOT));
+
+    // Apply the computed gap to the VL spec so Vega-Lite uses it for spacing.
+    vgObj.config = vgObj.config || {};
+    vgObj.config.facet = { spacing: facetGapVal };
+
+    const maxFacetColumns = Math.max(2, Math.floor((defaultChartWidth * maxStretchVal - facetFixW) / (minSubplotWidth + facetGapVal)));
+    const maxFacetRows = Math.max(2, Math.floor((defaultChartHeight * maxStretchVal - facetFixH) / (minSubplotHeight + facetGapVal)));
     const maxFacetNominalValues = maxFacetColumns * maxFacetRows;
 
     // Bin quantitative facets
@@ -619,47 +633,30 @@ function buildVLEncodings(
 // restructureFacets — VL-specific spec transforms for faceted charts
 // ===========================================================================
 
+/**
+ * Purely structural VL transform for faceted charts.
+ *
+ * This function does NOT decide wrapping or column counts — that is done
+ * earlier by computeFacetGrid, which returns a `FacetGridResult`.  This function
+ * only:
+ *   1. Moves `encoding.column` → `encoding.facet` (with `columns: N`).
+ *   2. For layered specs, hoists to top-level `facet` + `spec`.
+ *   3. Hides axis titles when there are multiple rows.
+ */
 function restructureFacets(
     vgObj: any,
     nominalCounts: Record<string, number>,
-    canvasSize: { width: number; height: number },
-    options: AssembleOptions,
-): { wrappedRows: number } {
-    const {
-        facetMaxStretch: facetMaxStretchVal = 1.5,
-        minStep: minStepVal = 6,
-        minSubplotSize: minSubplotVal = 60,
-    } = options;
-
-    const defaultChartWidth = canvasSize.width;
+    facetGrid?: { columns: number; rows: number },
+): void {
 
     if (vgObj.encoding?.column != undefined && vgObj.encoding?.row == undefined) {
         vgObj.encoding.facet = vgObj.encoding.column;
 
-        let xDiscreteCount = nominalCounts.x;
-        if (nominalCounts.group > 0) {
-            xDiscreteCount = nominalCounts.x * nominalCounts.group;
-        }
-
-        const minReadableSubplot = Math.max(minSubplotVal, Math.round(defaultChartWidth * 0.25));
-        const minSubplotWidth = xDiscreteCount > 0
-            ? Math.max(minSubplotVal, xDiscreteCount * minStepVal)
-            : minReadableSubplot;
-
-        const maxTotalWidth = facetMaxStretchVal * defaultChartWidth;
-        const maxColsByWidth = Math.max(1, Math.floor(maxTotalWidth / minSubplotWidth));
-        const facetCount = nominalCounts.column || 1;
-
-        let numCols: number;
-        if (facetCount <= maxColsByWidth) {
-            numCols = facetCount;
-        } else {
-            const minRows = Math.ceil(facetCount / maxColsByWidth);
-            numCols = Math.ceil(facetCount / minRows);
-        }
+        // Use the grid decided by computeFacetGrid.
+        const numCols = facetGrid?.columns ?? (nominalCounts.column || 1);
+        const numRows = facetGrid?.rows ?? 1;
 
         vgObj.encoding.facet.columns = numCols;
-        const numRows = Math.ceil(facetCount / numCols);
 
         if (numRows >= 2) {
             const encTarget = vgObj.encoding;
@@ -675,12 +672,21 @@ function restructureFacets(
 
         delete vgObj.encoding.column;
 
-        // For layered specs, VL doesn't support encoding.facet inline
+        // For layered specs, VL doesn't support encoding.facet inline —
+        // restructure to top-level facet + spec.
+        // IMPORTANT: In top-level facet mode, `columns` must be a sibling
+        // of `facet`, not nested inside it. (VL ignores columns inside
+        // the facet object when it's a top-level property.)
         if (vgObj.layer && Array.isArray(vgObj.layer)) {
             const facetDef = { ...vgObj.encoding.facet };
+            const wrapColumns = facetDef.columns;
+            delete facetDef.columns; // remove from facet object
             delete vgObj.encoding.facet;
 
             vgObj.facet = facetDef;
+            if (wrapColumns != null) {
+                vgObj.columns = wrapColumns; // top-level sibling
+            }
             vgObj.spec = {
                 layer: vgObj.layer,
                 encoding: vgObj.encoding,
@@ -689,7 +695,7 @@ function restructureFacets(
             delete vgObj.encoding;
         }
 
-        return { wrappedRows: numRows };
+        return;
     }
 
     // For layered specs with row-only or column+row facets
@@ -712,6 +718,4 @@ function restructureFacets(
         delete vgObj.layer;
         delete vgObj.encoding;
     }
-
-    return { wrappedRows: 0 };
 }

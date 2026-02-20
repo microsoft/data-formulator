@@ -76,7 +76,7 @@ export const ecGaugeChartDef: ChartTemplateDef = {
         const baseW = ctx.canvasSize.width;
         const baseH = ctx.canvasSize.height;
         const minCellDim = 180;       // minimum px per gauge cell
-        const facetMaxStretch = ctx.assembleOptions?.maxStretch ?? 2.0;  // max canvas stretch
+        const maxStretchFactor = ctx.assembleOptions?.maxStretch ?? 2.0;  // max canvas stretch
 
         let gridCols: number, gridRows: number;
         if (n === 1) {
@@ -84,7 +84,7 @@ export const ecGaugeChartDef: ChartTemplateDef = {
             gridRows = 1;
         } else {
             const maxCols = Math.max(1,
-                Math.floor(baseW * facetMaxStretch / minCellDim));
+                Math.floor(baseW * maxStretchFactor / minCellDim));
             if (n <= maxCols) {
                 gridCols = n;
                 gridRows = 1;

@@ -460,3 +460,193 @@ export function genFacetClipTests(): TestCase[] {
         }),
     ];
 }
+
+// ============================================================================
+// Overflowed Facet Tests
+// ============================================================================
+
+/**
+ * Helper: build a facet overflow test with many column facets
+ * and a banded (discrete) x-axis with `xCount` values.
+ */
+function buildOverflowFacetTest(opts: {
+    title: string;
+    description: string;
+    tags: string[];
+    chartType: string;
+    colCount?: number;
+    rowCount?: number;
+    /** Number of banded/discrete x values per facet panel */
+    xBandedCount?: number;
+    /** If true, use continuous x × y (scatter) instead of discrete x */
+    continuousXY?: boolean;
+    seed: number;
+}): TestCase {
+    const { title, description, tags, chartType, colCount, rowCount, xBandedCount, continuousXY, seed } = opts;
+    const rand = seededRandom(seed);
+    const colVals = colCount ? genCategories('Region', colCount) : undefined;
+    const rowVals = rowCount ? genCategories('Zone', rowCount) : undefined;
+
+    const data: Record<string, any>[] = [];
+    const facets: { col?: string; row?: string }[] = [];
+
+    if (colVals && rowVals) {
+        for (const c of colVals) for (const r of rowVals) facets.push({ col: c, row: r });
+    } else if (colVals) {
+        for (const c of colVals) facets.push({ col: c });
+    } else if (rowVals) {
+        for (const r of rowVals) facets.push({ row: r });
+    }
+
+    const xCategories = xBandedCount ? genCategories('Item', xBandedCount) : [];
+
+    for (const facet of facets) {
+        if (continuousXY) {
+            for (let i = 0; i < 20; i++) {
+                data.push({
+                    X: Math.round(10 + rand() * 90),
+                    Y: Math.round(10 + rand() * 90),
+                    ...(facet.col != null ? { Col: facet.col } : {}),
+                    ...(facet.row != null ? { Row: facet.row } : {}),
+                });
+            }
+        } else {
+            for (const cat of xCategories) {
+                data.push({
+                    Category: cat,
+                    Value: Math.round(50 + rand() * 500),
+                    ...(facet.col != null ? { Col: facet.col } : {}),
+                    ...(facet.row != null ? { Row: facet.row } : {}),
+                });
+            }
+        }
+    }
+
+    const encodingMap: Partial<Record<Channel, EncodingItem>> = {};
+    const fields: ReturnType<typeof makeField>[] = [];
+    const metadata: Record<string, any> = {};
+
+    if (continuousXY) {
+        encodingMap.x = makeEncodingItem('X');
+        encodingMap.y = makeEncodingItem('Y');
+        fields.push(makeField('X'), makeField('Y'));
+        metadata['X'] = { type: Type.Number, semanticType: 'Value', levels: [] };
+        metadata['Y'] = { type: Type.Number, semanticType: 'Value', levels: [] };
+    } else {
+        encodingMap.x = makeEncodingItem('Category');
+        encodingMap.y = makeEncodingItem('Value');
+        fields.push(makeField('Category'), makeField('Value'));
+        metadata['Category'] = { type: Type.String, semanticType: 'Category', levels: xCategories };
+        metadata['Value'] = { type: Type.Number, semanticType: 'Revenue', levels: [] };
+    }
+
+    if (colVals) {
+        encodingMap.column = makeEncodingItem('Col');
+        fields.push(makeField('Col'));
+        metadata['Col'] = { type: Type.String, semanticType: 'Category', levels: colVals };
+    }
+    if (rowVals) {
+        encodingMap.row = makeEncodingItem('Row');
+        fields.push(makeField('Row'));
+        metadata['Row'] = { type: Type.String, semanticType: 'Category', levels: rowVals };
+    }
+
+    return { title, description, tags, chartType, data, fields, metadata, encodingMap };
+}
+
+/**
+ * Overflowed Column facets — enough column facet values that the layout
+ * must clip/wrap, combined with discrete (banded) or continuous axes.
+ *
+ * Tests that computeFacetGrid correctly caps and wraps column-only facets.
+ */
+export function genFacetOverflowedColTests(): TestCase[] {
+    return [
+        // 20 columns with 30 discrete x values each — banded axis makes
+        // each subplot wide, so far fewer columns fit than with continuous.
+        buildOverflowFacetTest({
+            title: '20 Cols × 30 Discrete — Bar (banded overflow)',
+            description: '20 column facets, 30 bars each. Banded x-axis forces wide subplots — heavy overflow + wrap.',
+            tags: ['facet', 'column', 'overflow', 'banded', 'bar'],
+            chartType: 'Bar Chart',
+            colCount: 20,
+            xBandedCount: 30,
+            seed: 1300,
+        }),
+        // 20 columns with continuous x × y — smaller subplots fit more columns.
+        buildOverflowFacetTest({
+            title: '20 Cols — Scatter (continuous overflow)',
+            description: '20 column facets with scatter plots. Continuous axes allow more columns before overflow.',
+            tags: ['facet', 'column', 'overflow', 'continuous', 'scatter'],
+            chartType: 'Scatter Plot',
+            colCount: 20,
+            continuousXY: true,
+            seed: 1301,
+        }),
+    ];
+}
+
+/**
+ * Overflowed Column + Row facets — both dimensions exceed comfortable
+ * capacity, requiring independent capping on each axis.
+ *
+ * With canvas 400×300 and minSubplotSize 60:
+ *   - 20 bars → minSubplotWidth = max(60, 20×6) = 120 → maxFacetCols = floor(600/120) = 5
+ *   - continuous y → minSubplotHeight = 60 → maxFacetRows = floor(450/60) = 7
+ *   So 8 cols clips to 5, 10 rows clips to 7.
+ */
+export function genFacetOverflowedColRowTests(): TestCase[] {
+    return [
+        // 8 cols × 10 rows, 20 bars each → clips to ~5×7.
+        buildOverflowFacetTest({
+            title: '8×10 Col×Row × 20 Bars (overflow both)',
+            description: '8 columns × 10 rows, 20 bars each. Both dimensions overflow: cols clip to ~5, rows to ~7.',
+            tags: ['facet', 'colrow', 'overflow', 'bar'],
+            chartType: 'Bar Chart',
+            colCount: 8,
+            rowCount: 10,
+            xBandedCount: 20,
+            seed: 1310,
+        }),
+        // 15 cols × 12 rows, scatter → clips to ~10×7 (continuous needs only 60px).
+        buildOverflowFacetTest({
+            title: '15×12 Col×Row — Scatter (extreme overflow)',
+            description: '15 columns × 12 rows = 180 panels (scatter). Both dimensions far exceed budget.',
+            tags: ['facet', 'colrow', 'overflow', 'extreme', 'scatter'],
+            chartType: 'Scatter Plot',
+            colCount: 15,
+            rowCount: 12,
+            continuousXY: true,
+            seed: 1311,
+        }),
+    ];
+}
+
+/**
+ * Overflowed Row facets — enough row facet values that the layout
+ * must clip vertically.
+ */
+export function genFacetOverflowedRowTests(): TestCase[] {
+    return [
+        // 15 rows with 10 bars each.
+        buildOverflowFacetTest({
+            title: '15 Rows — Bar (row overflow)',
+            description: '15 row facets, 10 bars each. Vertical overflow requiring row clipping.',
+            tags: ['facet', 'row', 'overflow', 'bar'],
+            chartType: 'Bar Chart',
+            rowCount: 15,
+            xBandedCount: 10,
+            seed: 1320,
+        }),
+        // 12 rows, scatter — vertical overflow.
+        buildOverflowFacetTest({
+            title: '12 Rows — Scatter (row overflow)',
+            description: '12 row facets with scatter plots. Tests vertical clipping.',
+            tags: ['facet', 'row', 'overflow', 'scatter'],
+            chartType: 'Scatter Plot',
+            rowCount: 12,
+            continuousXY: true,
+            seed: 1321,
+        }),
+    ];
+}

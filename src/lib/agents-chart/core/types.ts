@@ -205,6 +205,25 @@ export interface OverflowResult {
 }
 
 /**
+ * Result of facet grid computation (from computeFacetGrid).
+ *
+ * Decides the visual grid layout (including column-only wrapping)
+ * and the maximum number of unique values to keep per facet channel.
+ *
+ * Pipeline:  computeFacetGrid → filterOverflow (uses caps) → computeLayout (uses grid)
+ */
+export interface FacetGridResult {
+    /** Visual columns per row (after wrapping for column-only) */
+    columns: number;
+    /** Visual rows (after wrapping for column-only) */
+    rows: number;
+    /** Max unique values to keep for the column channel */
+    maxColumnValues: number;
+    /** Max unique values to keep for the row channel */
+    maxRowValues: number;
+}
+
+/**
  * Describes one axis that was truncated due to overflow.
  */
 export interface TruncationWarning {
@@ -292,6 +311,13 @@ export interface LayoutResult {
         subplotWidth: number;
         subplotHeight: number;
     };
+
+    /**
+     * Gap between facet panels in px, as set by the backend.
+     * Backends use this to configure their own spacing
+     * (VL config.facet.spacing, ECharts GAP, etc.).
+     */
+    effectiveFacetGap: number;
 
     /**
      * Inter-category padding fraction (0–1) used by the layout engine.
@@ -549,16 +575,35 @@ export interface AssembleOptions {
     stepPadding?: number;
     /** Power-law exponent for discrete axis stretch (default: 0.5) */
     elasticity?: number;
-    /** Maximum axis stretch multiplier cap (default: 2) */
+    /**
+     * Maximum total stretch multiplier cap (default: 2).
+     *
+     * This is a **unified** budget: the combined stretch from facet
+     * layout AND discrete/banded axis sizing must stay within this
+     * factor.  For example, with maxStretch=2 and a 400px canvas,
+     * the total chart width never exceeds 800px regardless of how
+     * many facet columns or discrete axis items there are.
+     */
     maxStretch?: number;
     /** Power-law exponent for facet subplot stretch — lower = more conservative (default: 0.3) */
     facetElasticity?: number;
-    /** Maximum facet stretch multiplier cap (default: 1.5) */
-    facetMaxStretch?: number;
     /** Minimum pixels per discrete axis item (default: 6) */
     minStep?: number;
     /** Minimum facet subplot size in px (default: 60) */
     minSubplotSize?: number;
+    /**
+     * Fixed overhead in px for axis labels, titles, legend, etc.
+     * Subtracted once from the total canvas budget (not per-panel).
+     * Each backend sets its own default; core uses { width: 0, height: 0 }.
+     */
+    facetFixedPadding?: { width: number; height: number };
+    /**
+     * Gap in px between adjacent facet panels (spacing, headers).
+     * Used directly by the core layout engine to compute subplot sizes
+     * and max canvas dimensions.
+     * Each backend sets its own value (VL ≈ 10, ECharts ≈ 14); core uses 0.
+     */
+    facetGap?: number;
     /** Multiplier for the default step size (default: 1). Values >1 give more room per category. */
     defaultStepMultiplier?: number;
     /**

@@ -26,6 +26,7 @@ import type {
     OverflowResult,
     OverflowStrategy,
     OverflowStrategyContext,
+    FacetGridResult,
 } from './types';
 import type { ChartWarning } from './types';
 import { inferVisCategory } from './semantic-types';
@@ -44,6 +45,7 @@ import { inferVisCategory } from './semantic-types';
  * @param canvasSize        Target canvas dimensions
  * @param options           Assembly options (merged with declaration.paramOverrides)
  * @param allMarkTypes      Set of all mark types in the template (for connected-mark detection)
+ * @param facetGrid         Pre-computed facet grid from computeFacetGrid (caps for facet channels)
  * @returns                 OverflowResult with filtered data, nominal counts, truncations, and warnings
  */
 export function filterOverflow(
@@ -54,19 +56,23 @@ export function filterOverflow(
     canvasSize: { width: number; height: number },
     options: AssembleOptions,
     allMarkTypes: Set<string>,
+    facetGrid?: FacetGridResult,
 ): OverflowResult {
     const {
         maxStretch: maxStretchVal = 2,
-        facetMaxStretch: facetMaxStretchVal = 1.5,
         minStep: minStepVal = 6,
-        minSubplotSize: minSubplotVal = 60,
+        stepPadding: stepPaddingVal = 0.1,
     } = options;
 
     const chartWidth = canvasSize.width;
     const chartHeight = canvasSize.height;
 
-    const maxFacetColumns = Math.max(2, Math.floor(chartWidth * facetMaxStretchVal / minSubplotVal));
-    const maxFacetRows = Math.max(2, Math.floor(chartHeight * facetMaxStretchVal / minSubplotVal));
+    // Facet caps come from the pre-computed facetGrid.
+    // For column-only: maxColumnValues is the full 2D budget (cols × rows)
+    //   because wrapping uses vertical space too.
+    // For column+row: each dimension is capped independently.
+    const maxFacetColumns = facetGrid?.maxColumnValues ?? 1;
+    const maxFacetRows = facetGrid?.maxRowValues ?? 1;
     const maxFacetNominalValues = maxFacetColumns * maxFacetRows;
 
     // --- Build effective channel info from semantics + declaration ---
@@ -95,8 +101,11 @@ export function filterOverflow(
     const xGroupMultiplier = (groupAxis === 'x' && groupCount > 1) ? groupCount : 1;
     const yGroupMultiplier = (groupAxis === 'y' && groupCount > 1) ? groupCount : 1;
 
-    const xMinGroupStep = xGroupMultiplier > 1 ? 2 * xGroupMultiplier : minStepVal;
-    const yMinGroupStep = yGroupMultiplier > 1 ? 2 * yGroupMultiplier : minStepVal;
+    // Minimum group step: the inter-group gap (stepPadding × step) must be
+    // at least MIN_GROUP_GAP_PX pixels so groups are visually separated.
+    const MIN_GROUP_GAP_PX = 3;
+    const xMinGroupStep = xGroupMultiplier > 1 ? Math.max(Math.ceil(MIN_GROUP_GAP_PX / stepPaddingVal), 2 * xGroupMultiplier) : minStepVal;
+    const yMinGroupStep = yGroupMultiplier > 1 ? Math.max(Math.ceil(MIN_GROUP_GAP_PX / stepPaddingVal), 2 * yGroupMultiplier) : minStepVal;
     const maxXToKeep = Math.floor(chartWidth * maxStretchVal / xMinGroupStep);
     const maxYToKeep = Math.floor(chartHeight * maxStretchVal / yMinGroupStep);
 
@@ -127,14 +136,50 @@ export function filterOverflow(
     for (const channel of ['x', 'y', 'column', 'row', 'color'] as const) {
         const fieldName = effectiveField(channel);
         const type = effectiveType(channel);
-        if (!fieldName || !isDiscreteType(type)) continue;
+        if (!fieldName) continue;
+
+        // For non-discrete types on column/row, apply the same overflow
+        // cap and data filtering — every unique value becomes a facet panel.
+        if (!isDiscreteType(type)) {
+            if (channel === 'column' || channel === 'row') {
+                const hasRow = !!effectiveField('row');
+                // Column+row: cap each dimension independently.
+                // Column-only: use full 2D budget (cols × rows) since we wrap.
+                const maxToKeep = channel === 'row' ? maxFacetRows
+                    : hasRow ? maxFacetColumns
+                    : maxFacetNominalValues;
+
+                const uniqueValues = [...new Set(filteredData.map(r => r[fieldName]))];
+                nominalCounts[channel] = Math.min(uniqueValues.length, maxToKeep);
+
+                if (uniqueValues.length > maxToKeep) {
+                    // For non-discrete facets, keep the first N values (sorted)
+                    const sorted = [...uniqueValues].sort();
+                    const valuesToKeep = sorted.slice(0, maxToKeep);
+
+                    const omittedCount = uniqueValues.length - valuesToKeep.length;
+                    warnings.push({
+                        severity: 'warning',
+                        code: 'overflow',
+                        message: `${omittedCount} of ${uniqueValues.length} values in '${fieldName}' were omitted (showing first ${valuesToKeep.length}).`,
+                        channel,
+                        field: fieldName,
+                    });
+
+                    const keepSet = new Set(valuesToKeep);
+                    filteredData = filteredData.filter(row => keepSet.has(row[fieldName]));
+                }
+            }
+            continue;
+        }
 
         const hasRow = !!effectiveField('row');
-        const columnCap = hasRow ? maxFacetColumns : maxFacetNominalValues;
+        // Column+row: cap each dimension independently.
+        // Column-only: use full 2D budget (cols × rows) since we wrap.
         const maxToKeep = channel === 'x' ? maxXToKeep
             : channel === 'y' ? maxYToKeep
             : channel === 'row' ? maxFacetRows
-            : channel === 'column' ? columnCap
+            : channel === 'column' ? (hasRow ? maxFacetColumns : maxFacetNominalValues)
             : maxFacetNominalValues;
 
         const uniqueValues = [...new Set(filteredData.map(r => r[fieldName]))];

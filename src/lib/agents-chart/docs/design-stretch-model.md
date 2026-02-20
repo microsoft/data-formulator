@@ -379,7 +379,7 @@ Faceting splits one chart into a grid of subplots (small multiples), each showin
 |---|---|---|---|
 | $F_c$ | Number of facet columns | cardinality of `column` / `facet` field | data-dependent |
 | $F_r$ | Number of facet rows | cardinality of `row` field | data-dependent |
-| $\beta_f$ | Facet stretch ratio (canvas can grow up to $(1 + \beta_f) \cdot L_0$) | `facetMaxStretch - 1` | 0.5 |
+| $\beta_f$ | Facet stretch ratio (canvas can grow up to $(1 + \beta_f) \cdot L_0$) | `maxStretch - 1` (unified) | 1.0 |
 | $\alpha_f$ | Facet elasticity exponent | `facetElasticity` | 0.3 |
 | $S_{\min}$ | Minimum subplot size (continuous axis) | `minSubplotSize` | 60px |
 | $\ell_{\min}^{f}$ | Facet-mode minimum band size (overrides $\ell_{\min}$) | — | 3px |
