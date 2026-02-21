@@ -202,6 +202,24 @@ function resolveTemporalFormat(
 // ---------------------------------------------------------------------------
 
 /**
+ * Expand a year string to an unambiguous 4-digit representation.
+ *
+ * - "98" → "1998",  "07" → "2007",  "00" → "2000"
+ * - "1998" → "1998" (already 4+ digits, pass through)
+ * - "FY 2018" → "FY 2018" (non-numeric, pass through)
+ *
+ * Two-digit cutoff: 0–49 → 2000s, 50–99 → 1900s (same heuristic JS Date uses).
+ */
+function expandToFullYear(val: string): string {
+    const trimmed = val.trim();
+    if (/^\d{2}$/.test(trimmed)) {
+        const n = parseInt(trimmed, 10);
+        return String(n <= 49 ? 2000 + n : 1900 + n);
+    }
+    return val;
+}
+
+/**
  * Convert temporal field values in the data table to canonical string
  * representations for Vega-Lite consumption.
  *
@@ -241,7 +259,14 @@ export function convertTemporalData(
             } else if (val instanceof Date) {
                 r[temporalKey] = val.toISOString();
             } else {
-                r[temporalKey] = String(val);
+                // For Year/Decade strings, normalise to 4-digit years so
+                // Vega-Lite parses them unambiguously and doesn't auto-tick
+                // at sub-year intervals (e.g. "98" → "1998").
+                if ((st === 'Year' || st === 'Decade') && typeof val === 'string') {
+                    r[temporalKey] = expandToFullYear(val);
+                } else {
+                    r[temporalKey] = String(val);
+                }
             }
         }
         return r;

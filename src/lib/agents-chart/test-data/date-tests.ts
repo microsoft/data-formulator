@@ -161,19 +161,47 @@ export function genDateMonthTests(): TestCase[] {
 export function genDateYearMonthTests(): TestCase[] {
     return genDateTests([
         {
-            label: 'Year-Month (YYYY-MM)',
-            description: 'Year-month strings: "2020-01", "2020-02", …',
+            label: 'Year-Month (YYYY-MM, 1 year)',
+            description: 'Year-month strings within one year: "2020-01", …, "2020-12"',
             values: Array.from({ length: 12 }, (_, i) => `2020-${String(i + 1).padStart(2, '0')}`),
             fieldName: 'Date',
             expectedType: Type.Date,
             semanticType: 'Date',
         },
         {
-            label: 'Year-Month (Mon YYYY)',
-            description: 'Natural year-month: "Jan 2020", "Feb 2020", …',
+            label: 'Year-Month (YYYY-MM, 3 years)',
+            description: 'Year-month strings spanning 3 years: "2020-01", …, "2022-12"',
+            values: (() => {
+                const vals: string[] = [];
+                for (let y = 2020; y <= 2022; y++)
+                    for (let m = 1; m <= 12; m++)
+                        vals.push(`${y}-${String(m).padStart(2, '0')}`);
+                return vals;
+            })(),
+            fieldName: 'Date',
+            expectedType: Type.Date,
+            semanticType: 'Date',
+        },
+        {
+            label: 'Year-Month (Mon YYYY, 1 year)',
+            description: 'Natural year-month within one year: "Jan 2020", …, "Dec 2020"',
             values: (() => {
                 const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
                 return months.map(m => `${m} 2020`);
+            })(),
+            fieldName: 'Date',
+            expectedType: Type.Date,
+            semanticType: 'Date',
+        },
+        {
+            label: 'Year-Month (Mon YYYY, 5 years)',
+            description: 'Natural year-month spanning 5 years: "Jan 2018", …, "Dec 2022"',
+            values: (() => {
+                const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                const vals: string[] = [];
+                for (let y = 2018; y <= 2022; y++)
+                    for (const m of months) vals.push(`${m} ${y}`);
+                return vals;
             })(),
             fieldName: 'Date',
             expectedType: Type.Date,
@@ -242,9 +270,23 @@ export function genDateDecadeTests(): TestCase[] {
 export function genDateDateTimeTests(): TestCase[] {
     return genDateTests([
         {
-            label: 'Date (ISO YYYY-MM-DD)',
-            description: 'ISO date strings: "2020-01-15", "2020-02-15", …',
+            label: 'Date (ISO YYYY-MM-DD, 1 year)',
+            description: 'ISO date strings within one year: "2020-01-15", "2020-02-15", …',
             values: Array.from({ length: 12 }, (_, i) => `2020-${String(i + 1).padStart(2, '0')}-15`),
+            fieldName: 'Date',
+            expectedType: Type.Date,
+            semanticType: 'Date',
+        },
+        {
+            label: 'Date (ISO YYYY-MM-DD, 3 years)',
+            description: 'ISO date strings spanning 3 years: "2020-01-15", …, "2022-12-15"',
+            values: (() => {
+                const vals: string[] = [];
+                for (let y = 2020; y <= 2022; y++)
+                    for (let m = 1; m <= 12; m++)
+                        vals.push(`${y}-${String(m).padStart(2, '0')}-15`);
+                return vals;
+            })(),
             fieldName: 'Date',
             expectedType: Type.Date,
             semanticType: 'Date',
