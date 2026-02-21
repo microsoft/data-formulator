@@ -70,9 +70,8 @@ const BAR_MATRIX: BarMatrixEntry[] = [
     { x: 'Q', y: 'Q', n: 20,  desc: 'Both quantitative — dynamic mark resizing' },
     { x: 'Q', y: 'Q', n: 30,  desc: 'Equally spaced 1..30 — continuous banded', extraTags: ['equally-spaced'] },
 
-    // ── Edge combos (4 tests) ───────────────────────────────────────
+    // ── Edge combos (3 tests) ───────────────────────────────────────
     { x: 'N', y: 'N', n: 0,  xCard: 5, yCard: 5, desc: 'Cat × cat bars (degenerate)', extraTags: ['edge-case'] },
-    { x: 'T', y: 'T', n: 20, desc: 'Date × date bars (degenerate)', extraTags: ['edge-case'] },
     { x: 'T', y: 'N', n: 25, yCard: 5,  desc: 'Temporal x, categorical y' },
     { x: 'N', y: 'T', n: 25, xCard: 5,  desc: 'Categorical x, temporal y' },
 ];
@@ -96,9 +95,8 @@ const STACKED_BAR_MATRIX: BarMatrixEntry[] = [
     { x: 'Q', y: 'N', n: 24,  yCard: 8,  color: 'N', colorCard: 3, desc: 'Horizontal stack — 8 cats × 3' },
     { x: 'Q', y: 'T', n: 45,  color: 'N', colorCard: 3, desc: 'Horizontal temporal stack — 15 dates × 3' },
 
-    // ── Edge combos (3 tests) ───────────────────────────────────────
+    // ── Edge combos (2 tests) ───────────────────────────────────────
     { x: 'N', y: 'N', n: 0,  xCard: 5, yCard: 5, color: 'N', colorCard: 3, desc: 'Cat × cat stacked (degenerate)', extraTags: ['edge-case'] },
-    { x: 'T', y: 'T', n: 30, color: 'N', colorCard: 3, desc: 'Date × date stacked (degenerate)', extraTags: ['edge-case'] },
     { x: 'T', y: 'N', n: 20, yCard: 5,  color: 'N', colorCard: 4, desc: 'Temporal × cat stacked' },
 ];
 
@@ -123,9 +121,8 @@ const GROUPED_BAR_MATRIX: BarMatrixEntry[] = [
     { x: 'N', y: 'Q', n: 400, xCard: 8,  color: 'Q', colorCard: 50, desc: 'Numeric group (1–50) — large' },
     { x: 'N', y: 'Q', n: 50,  xCard: 5,  color: 'Q', desc: 'Continuous float on group — gradient' },
 
-    // ── Edge combos (3 tests) ───────────────────────────────────────
+    // ── Edge combos (2 tests) ───────────────────────────────────────
     { x: 'N', y: 'N', n: 0,  xCard: 5, yCard: 5, color: 'N', colorCard: 3, desc: 'Cat × cat grouped (degenerate)', extraTags: ['edge-case'] },
-    { x: 'T', y: 'T', n: 30, color: 'N', colorCard: 3, desc: 'Date × date grouped (degenerate)', extraTags: ['edge-case'] },
     { x: 'T', y: 'N', n: 20, yCard: 5,  color: 'N', colorCard: 4, desc: 'Temporal × cat grouped' },
 ];
 

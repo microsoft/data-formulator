@@ -39,6 +39,7 @@ function buildContinuousColorAreaLayers(
     spec: any,
     resolvedEncodings: Record<string, any>,
     config?: Record<string, any>,
+    dataLength: number = 30,
 ): void {
     const colorEnc = { ...resolvedEncodings.color };
 
@@ -54,7 +55,8 @@ function buildContinuousColorAreaLayers(
         areaMark.interpolate = config.interpolate;
     }
 
-    const pointMark: any = { type: 'point', filled: true, size: 60 };
+    const pointSize = Math.round(Math.max(15, Math.min(60, 1200 / dataLength)));
+    const pointMark: any = { type: 'point', filled: true, size: pointSize };
 
     spec.layer = [
         { mark: areaMark, encoding: { ...sharedEncodings } },
@@ -77,7 +79,7 @@ export const areaChartDef: ChartTemplateDef = {
         // Continuous color on area marks has the same grouping problem as lines.
         // Use area + point layer approach.
         if (hasContinuousColorOnConnectedMark(ctx.resolvedEncodings)) {
-            buildContinuousColorAreaLayers(spec, ctx.resolvedEncodings, ctx.chartProperties);
+            buildContinuousColorAreaLayers(spec, ctx.resolvedEncodings, ctx.chartProperties, ctx.table.length);
         } else {
             defaultBuildEncodings(spec, ctx.resolvedEncodings);
             const config = ctx.chartProperties;

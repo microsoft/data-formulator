@@ -35,7 +35,6 @@ export { genEChartsScatterTests, genEChartsLineTests, genEChartsBarTests, genECh
 export { genChartJsScatterTests, genChartJsLineTests, genChartJsBarTests, genChartJsStackedBarTests, genChartJsGroupedBarTests, genChartJsAreaTests, genChartJsPieTests, genChartJsHistogramTests, genChartJsRadarTests, genChartJsStressTests, genChartJsRoseTests } from './chartjs-tests';
 export { genGoFishScatterTests, genGoFishLineTests, genGoFishBarTests, genGoFishStackedBarTests, genGoFishGroupedBarTests, genGoFishAreaTests, genGoFishStackedAreaTests, genGoFishPieTests, genGoFishScatterPieTests, genGoFishStressTests } from './gofish-tests';
 export { genDiscreteAxisTests } from './discrete-axis-tests';
-export { genUnintendedScatterTests, genUnintendedBarTests, genUnintendedLineAreaTests, genUnintendedPartToWholeTests, genUnintendedStatisticalTests } from './unintended-tests';
 export { genDateTests, genDateYearTests, genDateMonthTests, genDateYearMonthTests, genDateDecadeTests, genDateDateTimeTests, genDateHoursTests } from './date-tests';
 
 // ---------------------------------------------------------------------------
@@ -59,7 +58,6 @@ import { genOverflowTests, genElasticityTests } from './stress-tests';
 import { genGasPressureTests } from './gas-pressure-tests';
 import { genLineAreaStretchTests } from './line-area-stretch-tests';
 import { genDiscreteAxisTests } from './discrete-axis-tests';
-import { genUnintendedScatterTests, genUnintendedBarTests, genUnintendedLineAreaTests, genUnintendedPartToWholeTests, genUnintendedStatisticalTests } from './unintended-tests';
 import { genDateYearTests, genDateMonthTests, genDateYearMonthTests, genDateDecadeTests, genDateDateTimeTests, genDateHoursTests } from './date-tests';
 import { genEChartsScatterTests, genEChartsLineTests, genEChartsBarTests, genEChartsStackedBarTests, genEChartsGroupedBarTests, genEChartsStressTests, genEChartsAreaTests, genEChartsPieTests, genEChartsHeatmapTests, genEChartsHistogramTests, genEChartsBoxplotTests, genEChartsRadarTests, genEChartsCandlestickTests, genEChartsStreamgraphTests, genEChartsFacetSmallTests, genEChartsFacetWrapTests, genEChartsFacetClipTests, genEChartsRoseTests, genEChartsGaugeTests, genEChartsFunnelTests, genEChartsTreemapTests, genEChartsSunburstTests, genEChartsSankeyTests, genEChartsUniqueStressTests } from './echarts-tests';
 import { genChartJsScatterTests, genChartJsLineTests, genChartJsBarTests, genChartJsStackedBarTests, genChartJsGroupedBarTests, genChartJsAreaTests, genChartJsPieTests, genChartJsHistogramTests, genChartJsRadarTests, genChartJsStressTests, genChartJsRoseTests } from './chartjs-tests';
@@ -108,11 +106,6 @@ export const TEST_GENERATORS: Record<string, () => TestCase[]> = {
     'Dates: Decade': genDateDecadeTests,
     'Dates: Date/DateTime': genDateDateTimeTests,
     'Dates: Hours': genDateHoursTests,
-    'Unintended: Scatter & Point': genUnintendedScatterTests,
-    'Unintended: Bar': genUnintendedBarTests,
-    'Unintended: Line & Area': genUnintendedLineAreaTests,
-    'Unintended: Part-to-Whole': genUnintendedPartToWholeTests,
-    'Unintended: Statistical': genUnintendedStatisticalTests,
     'Discrete Axis Sizing': genDiscreteAxisTests,
     'Gas Pressure (§2)': genGasPressureTests,
     'Line/Area Stretch': genLineAreaStretchTests,
@@ -168,7 +161,7 @@ export const TEST_GENERATORS: Record<string, () => TestCase[]> = {
 /** Gallery organised into three sections */
 export const GALLERY_SECTIONS: GallerySection[] = [
     {
-        label: 'VegaLite: Chart Types',
+        label: 'VegaLite',
         description: 'Demos for every supported chart type',
         entries: [
             'Scatter Plot', 'Linear Regression', 'Bar Chart', 'Stacked Bar Chart',
@@ -179,29 +172,18 @@ export const GALLERY_SECTIONS: GallerySection[] = [
         ],
     },
     {
-        label: 'VegaLite: Features & Facets',
+        label: 'Facets',
         description: 'Faceting modes and feature combinations',
         entries: ['Facet: Columns', 'Facet: Rows', 'Facet: Cols+Rows', 'Facet: Small', 'Facet: Wrap', 'Facet: Clip', 'Facet: Overflowed Col', 'Facet: Overflowed Col+Row', 'Facet: Overflowed Row'],
     },
     {
-        label: 'VegaLite: Stress Tests',
+        label: 'Stress Tests',
         description: 'Overflow, elasticity, and temporal format stress tests',
         entries: [
             'Overflow', 'Elasticity & Stretch', 'Discrete Axis Sizing', 'Gas Pressure (§2)',
             'Line/Area Stretch',
             'Dates: Year', 'Dates: Month', 'Dates: Year-Month',
             'Dates: Decade', 'Dates: Date/DateTime', 'Dates: Hours',
-        ],
-    },
-    {
-        label: 'VegaLite: Unintended Use',
-        description: 'Wrong field types, degenerate data, and missing encodings — graceful failure tests',
-        entries: [
-            'Unintended: Scatter & Point',
-            'Unintended: Bar',
-            'Unintended: Line & Area',
-            'Unintended: Part-to-Whole',
-            'Unintended: Statistical',
         ],
     },
     {

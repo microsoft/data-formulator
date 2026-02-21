@@ -60,6 +60,7 @@ function buildContinuousColorLineLayers(
     spec: any,
     resolvedEncodings: Record<string, any>,
     config?: Record<string, any>,
+    dataLength: number = 30,
 ): void {
     const colorEnc = { ...resolvedEncodings.color };
 
@@ -79,8 +80,9 @@ function buildContinuousColorLineLayers(
         lineMark.interpolate = config.interpolate;
     }
 
-    // Point layer: individual colored dots
-    const pointMark: any = { type: 'point', filled: true, size: 60 };
+    // Point layer: individual colored dots — size scales inversely with density
+    const pointSize = Math.round(Math.max(15, Math.min(60, 1200 / dataLength)));
+    const pointMark: any = { type: 'point', filled: true, size: pointSize };
 
     spec.layer = [
         { mark: lineMark, encoding: { ...sharedEncodings } },
@@ -103,7 +105,7 @@ export const lineChartDef: ChartTemplateDef = {
     }),
     instantiate: (spec, ctx) => {
         if (hasContinuousColor(ctx.resolvedEncodings)) {
-            buildContinuousColorLineLayers(spec, ctx.resolvedEncodings, ctx.chartProperties);
+            buildContinuousColorLineLayers(spec, ctx.resolvedEncodings, ctx.chartProperties, ctx.table.length);
         } else {
             defaultBuildEncodings(spec, ctx.resolvedEncodings);
             applyInterpolate(spec, ctx.chartProperties);
@@ -122,7 +124,7 @@ export const dottedLineChartDef: ChartTemplateDef = {
     }),
     instantiate: (spec, ctx) => {
         if (hasContinuousColor(ctx.resolvedEncodings)) {
-            buildContinuousColorLineLayers(spec, ctx.resolvedEncodings, ctx.chartProperties);
+            buildContinuousColorLineLayers(spec, ctx.resolvedEncodings, ctx.chartProperties, ctx.table.length);
         } else {
             defaultBuildEncodings(spec, ctx.resolvedEncodings);
             applyInterpolate(spec, ctx.chartProperties);
