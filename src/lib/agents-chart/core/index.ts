@@ -31,6 +31,7 @@ export {
     type OverflowStrategy,
     type OverflowStrategyContext,
     type OverflowResult,
+    type ChannelBudgets,
 } from './types';
 
 // Semantic type system
@@ -79,7 +80,7 @@ export {
 // Phase modules (analysis pipeline — VL-free)
 export { resolveSemantics, convertTemporalData } from './resolve-semantics';
 export { filterOverflow } from './filter-overflow';
-export { computeLayout } from './compute-layout';
+export { computeLayout, computeChannelBudgets } from './compute-layout';
 
 // Recommendation & adaptation engine
 export {

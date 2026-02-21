@@ -5,413 +5,342 @@ import { Type } from '../../../data/types';
 import { TestCase, makeField, makeEncodingItem } from './types';
 import { seededRandom, genDates, genCategories, genRandomNames } from './generators';
 
-// ------ Scatter Plot ------
-export function genScatterTests(): TestCase[] {
-    const tests: TestCase[] = [];
-    const rand = seededRandom(42);
+// ============================================================================
+// Scatter Plot Tests — Matrix-driven
+//
+// Each test is defined as a compact row in SCATTER_MATRIX.  A generator
+// function converts matrix entries into full TestCase objects.
+//
+// Matrix dimensions:
+//   Axis types:  Q (quantitative), T (temporal), N (nominal)
+//   xy combos:   9 = [Q,T,N] × [Q,T,N]
+//   3rd channel: none | color(Q/T/N) | size(Q/N) | both
+//   Density:     small (≤25 pts), medium (26–100), large (>100)
+//
+// Note: Scatter plots don't distinguish nominal from ordinal visually —
+// all categorical channels use N (nominal).  The one exception is size='N'
+// which generates ranked labels (Low/Medium/High) for ordinal size levels.
+//
+// Default test canvas: 300 × 300 px.
+// ============================================================================
 
-    // 1. Basic quant x quant, small
-    {
-        const n = 30;
-        const data = Array.from({ length: n }, (_, i) => ({
-            Height: 150 + rand() * 50,
-            Weight: 40 + rand() * 60,
-        }));
-        tests.push({
-            title: 'Quant × Quant (small)',
-            description: '30 points, two quantitative axes',
-            tags: ['quantitative', 'small'],
-            chartType: 'Scatter Plot',
-            data,
-            fields: [makeField('Height'), makeField('Weight')],
-            metadata: { 
-                Height: { type: Type.Number, semanticType: 'Quantity', levels: [] },
-                Weight: { type: Type.Number, semanticType: 'Quantity', levels: [] },
-            },
-            encodingMap: { x: makeEncodingItem('Height'), y: makeEncodingItem('Weight') },
-        });
-    }
+type DimType = 'Q' | 'T' | 'N';
 
-    // 2. Quant x quant with nominal color (medium)
-    {
-        const categories = genCategories('Category', 6);
-        const n = 60;
-        const data = Array.from({ length: n }, (_, i) => ({
-            Revenue: 100 + rand() * 900,
-            Profit: -200 + rand() * 600,
-            Segment: categories[i % categories.length],
-        }));
-        tests.push({
-            title: 'Quant × Quant + Color (medium)',
-            description: '60 points, 6 color categories',
-            tags: ['quantitative', 'nominal', 'color', 'medium'],
-            chartType: 'Scatter Plot',
-            data,
-            fields: [makeField('Revenue'), makeField('Profit'), makeField('Segment')],
-            metadata: {
-                Revenue: { type: Type.Number, semanticType: 'Revenue', levels: [] },
-                Profit: { type: Type.Number, semanticType: 'Amount', levels: [] },
-                Segment: { type: Type.String, semanticType: 'Category', levels: categories },
-            },
-            encodingMap: { x: makeEncodingItem('Revenue'), y: makeEncodingItem('Profit'), color: makeEncodingItem('Segment') },
-        });
-    }
-
-    // 3. Temporal x quant with color (large)
-    {
-        const dates = genDates(100);
-        const companies = genCategories('Company', 5);
-        const data: any[] = [];
-        for (const date of dates) {
-            for (const co of companies) {
-                data.push({ Date: date, StockPrice: 50 + rand() * 200, Company: co });
-            }
-        }
-        tests.push({
-            title: 'Temporal × Quant + Color (large)',
-            description: '500 points, temporal x-axis, 5 company colors',
-            tags: ['temporal', 'quantitative', 'color', 'large'],
-            chartType: 'Scatter Plot',
-            data,
-            fields: [makeField('Date'), makeField('StockPrice'), makeField('Company')],
-            metadata: {
-                Date: { type: Type.Date, semanticType: 'Date', levels: [] },
-                StockPrice: { type: Type.Number, semanticType: 'Price', levels: [] },
-                Company: { type: Type.String, semanticType: 'Company', levels: companies },
-            },
-            encodingMap: { x: makeEncodingItem('Date'), y: makeEncodingItem('StockPrice'), color: makeEncodingItem('Company') },
-        });
-    }
-
-    // 4. Quant size encoding
-    {
-        const countries = genCategories('Country', 15);
-        const data = countries.map(c => ({
-            GDP: 500 + rand() * 20000,
-            Population: 1e6 + rand() * 1.4e9,
-            Country: c,
-            LifeExpectancy: 55 + rand() * 30,
-        }));
-        tests.push({
-            title: 'Bubble chart (size + color)',
-            description: '15 countries with GDP, Population as size, LifeExpectancy as color',
-            tags: ['quantitative', 'size', 'color', 'medium'],
-            chartType: 'Scatter Plot',
-            data,
-            fields: [makeField('GDP'), makeField('Population'), makeField('Country'), makeField('LifeExpectancy')],
-            metadata: {
-                GDP: { type: Type.Number, semanticType: 'Amount', levels: [] },
-                Population: { type: Type.Number, semanticType: 'Quantity', levels: [] },
-                Country: { type: Type.String, semanticType: 'Country', levels: countries },
-                LifeExpectancy: { type: Type.Number, semanticType: 'Quantity', levels: [] },
-            },
-            encodingMap: { 
-                x: makeEncodingItem('GDP'), y: makeEncodingItem('LifeExpectancy'), 
-                size: makeEncodingItem('Population'), color: makeEncodingItem('Country'),
-            },
-        });
-    }
-
-    // 5. Dense scatter — coverage-based point sizing (200 points)
-    {
-        const n = 200;
-        const data = Array.from({ length: n }, () => ({
-            X: rand() * 100,
-            Y: rand() * 100,
-        }));
-        tests.push({
-            title: 'Dense scatter (200 pts)',
-            description: '200 random points — tests coverage-based point sizing (moderate density)',
-            tags: ['quantitative', 'density', 'medium'],
-            chartType: 'Scatter Plot',
-            data,
-            fields: [makeField('X'), makeField('Y')],
-            metadata: {
-                X: { type: Type.Number, semanticType: 'Quantity', levels: [] },
-                Y: { type: Type.Number, semanticType: 'Quantity', levels: [] },
-            },
-            encodingMap: { x: makeEncodingItem('X'), y: makeEncodingItem('Y') },
-        });
-    }
-
-    // 6. Very dense scatter — 2000 points
-    {
-        const n = 2000;
-        const data = Array.from({ length: n }, () => ({
-            X: rand() * 100,
-            Y: rand() * 100,
-        }));
-        tests.push({
-            title: 'Very dense scatter (2000 pts)',
-            description: '2000 random points — should shrink to small dots',
-            tags: ['quantitative', 'density', 'large'],
-            chartType: 'Scatter Plot',
-            data,
-            fields: [makeField('X'), makeField('Y')],
-            metadata: {
-                X: { type: Type.Number, semanticType: 'Quantity', levels: [] },
-                Y: { type: Type.Number, semanticType: 'Quantity', levels: [] },
-            },
-            encodingMap: { x: makeEncodingItem('X'), y: makeEncodingItem('Y') },
-        });
-    }
-
-    // 7. Dense scatter with color — 500 points, 4 groups
-    {
-        const groups = ['A', 'B', 'C', 'D'];
-        const n = 500;
-        const data = Array.from({ length: n }, (_, i) => ({
-            X: rand() * 100,
-            Y: rand() * 100,
-            Group: groups[i % groups.length],
-        }));
-        tests.push({
-            title: 'Dense + Color (500 pts, 4 groups)',
-            description: '500 points with 4 color groups — tests sizing with color channel',
-            tags: ['quantitative', 'nominal', 'color', 'density', 'large'],
-            chartType: 'Scatter Plot',
-            data,
-            fields: [makeField('X'), makeField('Y'), makeField('Group')],
-            metadata: {
-                X: { type: Type.Number, semanticType: 'Quantity', levels: [] },
-                Y: { type: Type.Number, semanticType: 'Quantity', levels: [] },
-                Group: { type: Type.String, semanticType: 'Category', levels: groups },
-            },
-            encodingMap: { x: makeEncodingItem('X'), y: makeEncodingItem('Y'), color: makeEncodingItem('Group') },
-        });
-    }
-
-    // 8. Bubble chart with many points — size encoding should prevent point shrinking
-    {
-        const n = 300;
-        const data = Array.from({ length: n }, () => ({
-            X: rand() * 100,
-            Y: rand() * 100,
-            Z: rand() * 1000,
-        }));
-        tests.push({
-            title: 'Dense bubble (300 pts, size mapped)',
-            description: '300 points with size encoding — applyPointSizeScaling should be skipped',
-            tags: ['quantitative', 'size', 'density', 'medium'],
-            chartType: 'Scatter Plot',
-            data,
-            fields: [makeField('X'), makeField('Y'), makeField('Z')],
-            metadata: {
-                X: { type: Type.Number, semanticType: 'Quantity', levels: [] },
-                Y: { type: Type.Number, semanticType: 'Quantity', levels: [] },
-                Z: { type: Type.Number, semanticType: 'Quantity', levels: [] },
-            },
-            encodingMap: { x: makeEncodingItem('X'), y: makeEncodingItem('Y'), size: makeEncodingItem('Z') },
-        });
-    }
-
-    // ---- Bubble chart size evaluation suite ----
-
-    // 9. Bubble — 5 points
-    {
-        const countries = genCategories('Country', 5);
-        const data = countries.map(c => ({
-            X: rand() * 100,
-            Y: rand() * 100,
-            Population: Math.round(1e6 + rand() * 1.4e9),
-            Country: c,
-        }));
-        tests.push({
-            title: 'Bubble 5 pts (quant size)',
-            description: '5 countries — sparse, max size should be at VL default 361',
-            tags: ['quantitative', 'size', 'bubble', 'small'],
-            chartType: 'Scatter Plot',
-            data,
-            fields: [makeField('X'), makeField('Y'), makeField('Population'), makeField('Country')],
-            metadata: {
-                X: { type: Type.Number, semanticType: 'Quantity', levels: [] },
-                Y: { type: Type.Number, semanticType: 'Quantity', levels: [] },
-                Population: { type: Type.Number, semanticType: 'Quantity', levels: [] },
-                Country: { type: Type.String, semanticType: 'Country', levels: countries },
-            },
-            encodingMap: { x: makeEncodingItem('X'), y: makeEncodingItem('Y'), size: makeEncodingItem('Population'), color: makeEncodingItem('Country') },
-        });
-    }
-
-    // 10. Bubble — 15 points
-    {
-        const countries = genCategories('Country', 15);
-        const data = countries.map(c => ({
-            GDP: 500 + rand() * 20000,
-            LifeExp: 55 + rand() * 30,
-            Population: Math.round(1e6 + rand() * 1.4e9),
-            Country: c,
-        }));
-        tests.push({
-            title: 'Bubble 15 pts (quant size)',
-            description: '15 countries — moderate, should still be near VL default',
-            tags: ['quantitative', 'size', 'bubble', 'medium'],
-            chartType: 'Scatter Plot',
-            data,
-            fields: [makeField('GDP'), makeField('LifeExp'), makeField('Population'), makeField('Country')],
-            metadata: {
-                GDP: { type: Type.Number, semanticType: 'Amount', levels: [] },
-                LifeExp: { type: Type.Number, semanticType: 'Quantity', levels: [] },
-                Population: { type: Type.Number, semanticType: 'Quantity', levels: [] },
-                Country: { type: Type.String, semanticType: 'Country', levels: countries },
-            },
-            encodingMap: { x: makeEncodingItem('GDP'), y: makeEncodingItem('LifeExp'), size: makeEncodingItem('Population'), color: makeEncodingItem('Country') },
-        });
-    }
-
-    // 11. Bubble — 50 points
-    {
-        const n = 50;
-        const data = Array.from({ length: n }, (_, i) => ({
-            X: rand() * 100,
-            Y: rand() * 100,
-            Size: Math.round(10 + rand() * 990),
-            Group: ['A', 'B', 'C', 'D', 'E'][i % 5],
-        }));
-        tests.push({
-            title: 'Bubble 50 pts (quant size)',
-            description: '50 points with 5 color groups — density starts to matter',
-            tags: ['quantitative', 'size', 'bubble', 'medium'],
-            chartType: 'Scatter Plot',
-            data,
-            fields: [makeField('X'), makeField('Y'), makeField('Size'), makeField('Group')],
-            metadata: {
-                X: { type: Type.Number, semanticType: 'Quantity', levels: [] },
-                Y: { type: Type.Number, semanticType: 'Quantity', levels: [] },
-                Size: { type: Type.Number, semanticType: 'Quantity', levels: [] },
-                Group: { type: Type.String, semanticType: 'Category', levels: ['A', 'B', 'C', 'D', 'E'] },
-            },
-            encodingMap: { x: makeEncodingItem('X'), y: makeEncodingItem('Y'), size: makeEncodingItem('Size'), color: makeEncodingItem('Group') },
-        });
-    }
-
-    // 12. Bubble — 100 points
-    {
-        const n = 100;
-        const data = Array.from({ length: n }, () => ({
-            X: rand() * 100,
-            Y: rand() * 100,
-            Revenue: Math.round(100 + rand() * 9900),
-        }));
-        tests.push({
-            title: 'Bubble 100 pts (quant size)',
-            description: '100 points — fair-share starts shrinking max size',
-            tags: ['quantitative', 'size', 'bubble', 'large'],
-            chartType: 'Scatter Plot',
-            data,
-            fields: [makeField('X'), makeField('Y'), makeField('Revenue')],
-            metadata: {
-                X: { type: Type.Number, semanticType: 'Quantity', levels: [] },
-                Y: { type: Type.Number, semanticType: 'Quantity', levels: [] },
-                Revenue: { type: Type.Number, semanticType: 'Amount', levels: [] },
-            },
-            encodingMap: { x: makeEncodingItem('X'), y: makeEncodingItem('Y'), size: makeEncodingItem('Revenue') },
-        });
-    }
-
-    // 13. Bubble — 500 points (very dense)
-    {
-        const n = 500;
-        const data = Array.from({ length: n }, () => ({
-            X: rand() * 100,
-            Y: rand() * 100,
-            Weight: Math.round(1 + rand() * 100),
-        }));
-        tests.push({
-            title: 'Bubble 500 pts (quant size)',
-            description: '500 points — should shrink significantly',
-            tags: ['quantitative', 'size', 'bubble', 'large'],
-            chartType: 'Scatter Plot',
-            data,
-            fields: [makeField('X'), makeField('Y'), makeField('Weight')],
-            metadata: {
-                X: { type: Type.Number, semanticType: 'Quantity', levels: [] },
-                Y: { type: Type.Number, semanticType: 'Quantity', levels: [] },
-                Weight: { type: Type.Number, semanticType: 'Quantity', levels: [] },
-            },
-            encodingMap: { x: makeEncodingItem('X'), y: makeEncodingItem('Y'), size: makeEncodingItem('Weight') },
-        });
-    }
-
-    // 14. Bubble — ordinal size
-    {
-        const priorities = ['Low', 'Medium', 'High', 'Critical'];
-        const n = 30;
-        const data = Array.from({ length: n }, () => ({
-            X: rand() * 100,
-            Y: rand() * 100,
-            Priority: priorities[Math.floor(rand() * priorities.length)],
-        }));
-        tests.push({
-            title: 'Bubble 30 pts (ordinal size)',
-            description: '30 points sized by ordinal Priority — 4 distinct size levels',
-            tags: ['ordinal', 'size', 'bubble', 'medium'],
-            chartType: 'Scatter Plot',
-            data,
-            fields: [makeField('X'), makeField('Y'), makeField('Priority')],
-            metadata: {
-                X: { type: Type.Number, semanticType: 'Quantity', levels: [] },
-                Y: { type: Type.Number, semanticType: 'Quantity', levels: [] },
-                Priority: { type: Type.String, semanticType: 'Rank', levels: priorities },
-            },
-            encodingMap: { x: makeEncodingItem('X'), y: makeEncodingItem('Y'), size: makeEncodingItem('Priority') },
-        });
-    }
-
-    // 15. Bubble — size with large numeric range
-    {
-        const countries = genCategories('Country', 20);
-        const data = countries.map(c => ({
-            X: rand() * 100,
-            Y: rand() * 100,
-            Pop: Math.round(1e3 + rand() * 1e9),
-            Country: c,
-        }));
-        tests.push({
-            title: 'Bubble 20 pts (huge value range)',
-            description: '20 countries, Pop ranges 1K-1B — tests sqrt scale discrimination',
-            tags: ['quantitative', 'size', 'bubble', 'medium', 'skewed'],
-            chartType: 'Scatter Plot',
-            data,
-            fields: [makeField('X'), makeField('Y'), makeField('Pop'), makeField('Country')],
-            metadata: {
-                X: { type: Type.Number, semanticType: 'Quantity', levels: [] },
-                Y: { type: Type.Number, semanticType: 'Quantity', levels: [] },
-                Pop: { type: Type.Number, semanticType: 'Quantity', levels: [] },
-                Country: { type: Type.String, semanticType: 'Country', levels: countries },
-            },
-            encodingMap: { x: makeEncodingItem('X'), y: makeEncodingItem('Y'), size: makeEncodingItem('Pop'), color: makeEncodingItem('Country') },
-        });
-    }
-
-    // 16. Bubble — size with narrow numeric range
-    {
-        const n = 20;
-        const data = Array.from({ length: n }, () => ({
-            X: rand() * 100,
-            Y: rand() * 100,
-            Score: 90 + rand() * 10,
-        }));
-        tests.push({
-            title: 'Bubble 20 pts (narrow value range)',
-            description: '20 points, Score 90-100 — tests size discrimination for tight data',
-            tags: ['quantitative', 'size', 'bubble', 'medium', 'narrow'],
-            chartType: 'Scatter Plot',
-            data,
-            fields: [makeField('X'), makeField('Y'), makeField('Score')],
-            metadata: {
-                X: { type: Type.Number, semanticType: 'Quantity', levels: [] },
-                Y: { type: Type.Number, semanticType: 'Quantity', levels: [] },
-                Score: { type: Type.Number, semanticType: 'Quantity', levels: [] },
-            },
-            encodingMap: { x: makeEncodingItem('X'), y: makeEncodingItem('Y'), size: makeEncodingItem('Score') },
-        });
-    }
-
-    return tests;
+/** A single row in the scatter test matrix. */
+interface MatrixEntry {
+    x: DimType;
+    y: DimType;
+    n: number;           // data points (0 → derive from xCard × yCard for C×C grid)
+    color?: DimType;
+    size?: DimType;
+    xCard?: number;      // C cardinality for x
+    yCard?: number;      // C cardinality for y
+    colorCard?: number;  // C cardinality for color
+    sizeCard?: number;   // C/ordinal cardinality for size
+    hugeRange?: boolean; // size field 1K–1B
+    desc?: string;       // override auto-generated description
+    extraTags?: string[];
 }
 
-// ------ Linear Regression ------
+// ============================================================================
+// THE MATRIX — one row per test case (25 tests)
+// ============================================================================
+
+const SCATTER_MATRIX: MatrixEntry[] = [
+    // ── Q × Q (15 tests) ─────────────────────────────────────────────
+    //  xy only
+    { x: 'Q', y: 'Q', n: 20,  desc: 'Baseline — two quantitative axes, no extra encodings' },
+    //  + color
+    { x: 'Q', y: 'Q', n: 20,  color: 'N', colorCard: 3 },
+    { x: 'Q', y: 'Q', n: 20,  color: 'Q', desc: 'Continuous color — expect gradient legend' },
+    { x: 'Q', y: 'Q', n: 30,  color: 'T', desc: 'Temporal color gradient — shows progression over time' },
+    //  + size
+    { x: 'Q', y: 'Q', n: 50,  size: 'Q' },
+    { x: 'Q', y: 'Q', n: 20,  size: 'N', sizeCard: 4, desc: 'Ordinal size — 4 discrete priority levels' },
+    //  + size + color
+    { x: 'Q', y: 'Q', n: 15,  size: 'Q', color: 'N', colorCard: 3, desc: 'Gapminder-style: bubbles + 3 color groups' },
+    { x: 'Q', y: 'Q', n: 30,  size: 'Q', color: 'Q', desc: 'Both size and color are continuous — 4D encoding' },
+    { x: 'Q', y: 'Q', n: 20,  size: 'Q', color: 'N', colorCard: 20, hugeRange: true, desc: 'Size 1K–1B — tests sqrt scale discrimination' },
+    //  density / scaling
+    { x: 'Q', y: 'Q', n: 100, desc: 'Moderate density — point-size reduction' },
+    { x: 'Q', y: 'Q', n: 500, desc: 'High density — aggressive point-size reduction' },
+    { x: 'Q', y: 'Q', n: 200, color: 'N', colorCard: 20, desc: 'Dense scatter with 20 nominal color groups' },
+    { x: 'Q', y: 'Q', n: 100, color: 'N', colorCard: 50, desc: '50 colors — tests legend overflow', extraTags: ['overflow'] },
+    //  bubble scaling
+    { x: 'Q', y: 'Q', n: 10,  size: 'Q', desc: 'Sparse — large bubbles expected', extraTags: ['scaling'] },
+    { x: 'Q', y: 'Q', n: 200, size: 'Q', desc: 'Dense — bubbles should shrink significantly', extraTags: ['scaling'] },
+
+    // ── N × Q (4 tests) ──────────────────────────────────────────────
+    { x: 'N', y: 'Q', n: 25,  xCard: 5,  color: 'Q', desc: 'Strip + continuous color gradient' },
+    { x: 'N', y: 'Q', n: 25,  xCard: 5,  size: 'Q', desc: 'Bubble strip — size encodes a measure' },
+    { x: 'N', y: 'Q', n: 30,  xCard: 2,  desc: 'Binary category strip (e.g., Yes/No)', extraTags: ['edge-case'] },
+    { x: 'N', y: 'Q', n: 60,  xCard: 60, desc: '60 categories — heavy discrete-axis overflow', extraTags: ['overflow'] },
+
+    // ── Q × N (3 tests) — mirrors N×Q with flipped orientation ──────
+    { x: 'Q', y: 'N', n: 25,  yCard: 5,  color: 'Q', desc: 'Horizontal strip + continuous color' },
+    { x: 'Q', y: 'N', n: 25,  yCard: 5,  size: 'Q', desc: 'Horizontal bubble strip' },
+    { x: 'Q', y: 'N', n: 60,  yCard: 60, desc: 'Horizontal 60-cat overflow on y', extraTags: ['overflow'] },
+
+    // ── N × N (3 tests) ──────────────────────────────────────────────
+    { x: 'N', y: 'N', n: 0,   xCard: 5,  yCard: 6,  size: 'Q', desc: 'Bubble grid — partial grid occupancy' },
+    { x: 'N', y: 'N', n: 0,   xCard: 5,  yCard: 4,  color: 'Q', desc: 'Heatmap-like scatter — continuous color on grid' },
+    { x: 'N', y: 'N', n: 0,   xCard: 15, yCard: 12, size: 'Q', desc: 'Large grid — high-cardinality overflow on both axes', extraTags: ['overflow', 'scaling'] },
+];
+
+// ============================================================================
+// Generator internals
+// ============================================================================
+
+interface ChannelInfo {
+    role: 'x' | 'y' | 'color' | 'size';
+    dimType: DimType;
+    fieldName: string;
+    card?: number;
+    levels?: string[];
+    dates?: string[];
+}
+
+/** Preferred field names per (role, dimType). */
+const PREFERRED_NAMES: Record<string, Record<DimType, string>> = {
+    x:     { Q: 'X',        T: 'Date',      N: 'Category' },
+    y:     { Q: 'Y',        T: 'EndDate',   N: 'Group' },
+    color: { Q: 'ColorVal', T: 'Timestamp', N: 'Segment' },
+    size:  { Q: 'Size',     T: 'Period',    N: 'Level' },
+};
+
+/** Fallback pools when the preferred name is already taken. */
+const FALLBACK_NAMES: Record<DimType, string[]> = {
+    Q: ['X', 'Y', 'Measure', 'Value', 'Score'],
+    T: ['Date', 'EndDate', 'StartDate', 'Timestamp'],
+    N: ['Category', 'Group', 'Segment', 'Level', 'Type'],
+};
+
+/** Semantic-type pool so multiple C channels get distinct category sets. */
+const CAT_SEMANTICS = ['Category', 'Country', 'Department', 'Product', 'Company'];
+
+/** Start years for temporal channels (staggered to avoid overlap in T×T). */
+const T_START_YEARS = [2020, 2023, 2019, 2022];
+
+// ---------------------------------------------------------------------------
+// Channel & data generation
+// ---------------------------------------------------------------------------
+
+function buildChannels(entry: MatrixEntry): ChannelInfo[] {
+    const used = new Set<string>();
+    const channels: ChannelInfo[] = [];
+    let tIdx = 0;   // temporal channel counter
+    let cIdx = 0;   // categorical channel counter
+    let cSeed = 500;
+
+    function pickName(dim: DimType, role: string): string {
+        const primary = PREFERRED_NAMES[role]?.[dim];
+        if (primary && !used.has(primary)) { used.add(primary); return primary; }
+        for (const n of FALLBACK_NAMES[dim]) {
+            if (!used.has(n)) { used.add(n); return n; }
+        }
+        return `${role}_field`;
+    }
+
+    const specs: { role: 'x' | 'y' | 'color' | 'size'; dim: DimType; card?: number }[] = [
+        { role: 'x', dim: entry.x, card: entry.xCard },
+        { role: 'y', dim: entry.y, card: entry.yCard },
+    ];
+    if (entry.color) specs.push({ role: 'color', dim: entry.color, card: entry.colorCard });
+    if (entry.size)  specs.push({ role: 'size',  dim: entry.size,  card: entry.sizeCard });
+
+    const effectiveN = entry.n || (entry.xCard || 5) * (entry.yCard || 5);
+
+    for (const { role, dim, card } of specs) {
+        const ch: ChannelInfo = { role, dimType: dim, fieldName: pickName(dim, role) };
+
+        if (dim === 'N') {
+            const c = card || (role === 'size' ? 4 : role === 'color' ? 3 : 5);
+            ch.card = c;
+            if (role === 'size') {
+                ch.levels = ['Low', 'Medium', 'High', 'Critical', 'Extreme'].slice(0, c);
+            } else if (c > 30) {
+                ch.levels = genRandomNames(c, cSeed);
+                cSeed += 100;
+            } else {
+                ch.levels = genCategories(CAT_SEMANTICS[cIdx % CAT_SEMANTICS.length], c);
+            }
+            cIdx++;
+        }
+
+        if (dim === 'T') {
+            ch.dates = genDates(effectiveN, T_START_YEARS[tIdx % T_START_YEARS.length]);
+            tIdx++;
+        }
+
+        channels.push(ch);
+    }
+
+    return channels;
+}
+
+/** Generate a single field value for row `i`. */
+function genValue(
+    ch: ChannelInfo, i: number, entry: MatrixEntry, rand: () => number,
+): any {
+    switch (ch.dimType) {
+        case 'Q': {
+            if (entry.hugeRange && ch.role === 'size')
+                return Math.round(1e3 + rand() * 1e9);
+            return Math.round(rand() * 1000) / 10;
+        }
+        case 'T':
+            return ch.dates![i % ch.dates!.length];
+        case 'N':
+            return ch.levels![i % ch.levels!.length];
+    }
+}
+
+/** Generate data for C×C grid mode (cross-product, ~70 % occupancy). */
+function genGridData(
+    channels: ChannelInfo[], rand: () => number,
+): Record<string, any>[] {
+    const xCh = channels.find(c => c.role === 'x')!;
+    const yCh = channels.find(c => c.role === 'y')!;
+    const extras = channels.filter(c => c.role !== 'x' && c.role !== 'y');
+    const data: Record<string, any>[] = [];
+
+    for (const xVal of xCh.levels!) {
+        for (const yVal of yCh.levels!) {
+            if (rand() > 0.3) {
+                const row: Record<string, any> = {
+                    [xCh.fieldName]: xVal,
+                    [yCh.fieldName]: yVal,
+                };
+                for (const ch of extras) {
+                    if (ch.dimType === 'Q') row[ch.fieldName] = Math.round(100 + rand() * 900);
+                    else if (ch.dimType === 'N') row[ch.fieldName] = ch.levels![Math.floor(rand() * ch.levels!.length)];
+                }
+                data.push(row);
+            }
+        }
+    }
+    return data;
+}
+
+// ---------------------------------------------------------------------------
+// Title & tags
+// ---------------------------------------------------------------------------
+
+function buildTitle(entry: MatrixEntry): string {
+    const xLabel = entry.x === 'N' && entry.xCard ? `N(${entry.xCard})` : entry.x;
+    const yLabel = entry.y === 'N' && entry.yCard ? `N(${entry.yCard})` : entry.y;
+    const parts = [`${xLabel}×${yLabel}`];
+
+    const extras: string[] = [];
+    if (entry.color) {
+        extras.push(`color(${entry.color === 'N' ? `N,${entry.colorCard || 3}` : entry.color})`);
+    }
+    if (entry.size) {
+        extras.push(`size(${entry.size === 'N' ? `N,${entry.sizeCard || 4}` : entry.size})`);
+    }
+    if (extras.length) parts.push('+' + extras.join('+'));
+
+    if (entry.hugeRange) parts.push('hugeRange');
+
+    if (entry.n === 0)   parts.push('grid');
+    else                 parts.push(`(${entry.n} ${entry.n === 1 ? 'pt' : 'pts'})`);
+
+    return parts.join(' ');
+}
+
+function buildTags(entry: MatrixEntry, dataLen: number): string[] {
+    const tags: string[] = [];
+
+    // Dimension types present
+    const dims = new Set<DimType>([entry.x, entry.y]);
+    if (entry.color) dims.add(entry.color);
+    if (entry.size)  dims.add(entry.size);
+    if (dims.has('Q')) tags.push('quantitative');
+    if (dims.has('T')) tags.push('temporal');
+    if (dims.has('N')) tags.push('nominal');
+
+    // Channel presence
+    if (entry.color) tags.push('color');
+    if (entry.size)  tags.push('size');
+    if (entry.color === 'Q' || entry.color === 'T') tags.push('continuous-color');
+
+    // Scale
+    const n = dataLen;
+    if (n <= 25) tags.push('small');
+    else if (n <= 100) tags.push('medium');
+    else { tags.push('large'); tags.push('scaling'); }
+
+    if (entry.extraTags) tags.push(...entry.extraTags);
+
+    return [...new Set(tags)];
+}
+
+// ---------------------------------------------------------------------------
+// Matrix entry → TestCase
+// ---------------------------------------------------------------------------
+
+function matrixToTestCase(entry: MatrixEntry, rand: () => number): TestCase {
+    const channels = buildChannels(entry);
+
+    const isGrid = entry.x === 'N' && entry.y === 'N' && entry.n === 0;
+
+    // Generate data
+    let data: Record<string, any>[];
+    if (isGrid) {
+        data = genGridData(channels, rand);
+    } else {
+        data = Array.from({ length: entry.n }, (_, i) => {
+            const row: Record<string, any> = {};
+            for (const ch of channels) row[ch.fieldName] = genValue(ch, i, entry, rand);
+            return row;
+        });
+    }
+
+    // Build fields, metadata, encodingMap
+    const fields = channels.map(ch => makeField(ch.fieldName));
+
+    const typeMap: Record<DimType, Type> = { Q: Type.Number, T: Type.Date, N: Type.String };
+    const semMap: Record<DimType, string> = { Q: 'Quantity', T: 'Date', N: 'Category' };
+
+    const metadata: Record<string, { type: Type; semanticType: string; levels: any[] }> = {};
+    const encodingMap: Partial<Record<string, any>> = {};
+
+    for (const ch of channels) {
+        let semanticType = semMap[ch.dimType];
+        if (ch.role === 'size' && ch.dimType === 'N') semanticType = 'Rank';
+        metadata[ch.fieldName] = {
+            type: typeMap[ch.dimType],
+            semanticType,
+            levels: ch.levels || [],
+        };
+        encodingMap[ch.role] = makeEncodingItem(ch.fieldName);
+    }
+
+    return {
+        title: buildTitle(entry),
+        description: entry.desc || buildTitle(entry),
+        tags: buildTags(entry, data.length),
+        chartType: 'Scatter Plot',
+        data,
+        fields,
+        metadata,
+        encodingMap,
+    };
+}
+
+// ============================================================================
+// Public exports
+// ============================================================================
+
+export function genScatterTests(): TestCase[] {
+    const rand = seededRandom(42);
+    return SCATTER_MATRIX.map(entry => matrixToTestCase(entry, rand));
+}
+
+// ============================================================================
+// Linear Regression Tests  (not matrix-driven — only 2 cases)
+// ============================================================================
+
 export function genLinearRegressionTests(): TestCase[] {
     const tests: TestCase[] = [];
     const rand = seededRandom(55);
@@ -466,82 +395,6 @@ export function genLinearRegressionTests(): TestCase[] {
                 Gender: { type: Type.String, semanticType: 'Category', levels: groups },
             },
             encodingMap: { x: makeEncodingItem('Experience'), y: makeEncodingItem('Salary'), color: makeEncodingItem('Gender') },
-        });
-    }
-
-    // 3. Regression with column facet
-    {
-        const regions = ['East', 'West', 'Central'];
-        const data: any[] = [];
-        for (const r of regions) {
-            const slope = r === 'East' ? 0.9 : r === 'West' ? 0.5 : 0.7;
-            for (let i = 0; i < 25; i++) {
-                const x = 5 + rand() * 90;
-                data.push({
-                    Spend: Math.round(x * 10) / 10,
-                    Revenue: Math.round(10 + x * slope + (rand() - 0.5) * 25),
-                    Region: r,
-                });
-            }
-        }
-        tests.push({
-            title: 'Regression + Column Facet (3 regions)',
-            description: '75 points — separate subplot per region',
-            tags: ['quantitative', 'facet', 'medium'],
-            chartType: 'Linear Regression',
-            data,
-            fields: [makeField('Spend'), makeField('Revenue'), makeField('Region')],
-            metadata: {
-                Spend: { type: Type.Number, semanticType: 'Quantity', levels: [] },
-                Revenue: { type: Type.Number, semanticType: 'Quantity', levels: [] },
-                Region: { type: Type.String, semanticType: 'Category', levels: regions },
-            },
-            encodingMap: {
-                x: makeEncodingItem('Spend'),
-                y: makeEncodingItem('Revenue'),
-                column: makeEncodingItem('Region'),
-            },
-        });
-    }
-
-    // 4. Regression with color + facet
-    {
-        const depts = ['Sales', 'Engineering'];
-        const levels = ['Junior', 'Senior'];
-        const data: any[] = [];
-        for (const d of depts) {
-            for (const l of levels) {
-                const base = l === 'Senior' ? 20 : 0;
-                for (let i = 0; i < 15; i++) {
-                    const x = 1 + rand() * 20;
-                    data.push({
-                        Years: Math.round(x * 10) / 10,
-                        Performance: Math.round(40 + base + x * 2.5 + (rand() - 0.5) * 15),
-                        Level: l,
-                        Department: d,
-                    });
-                }
-            }
-        }
-        tests.push({
-            title: 'Color + Facet (2×2)',
-            description: '60 pts — color by level, facet by department',
-            tags: ['quantitative', 'color', 'facet', 'medium'],
-            chartType: 'Linear Regression',
-            data,
-            fields: [makeField('Years'), makeField('Performance'), makeField('Level'), makeField('Department')],
-            metadata: {
-                Years: { type: Type.Number, semanticType: 'Quantity', levels: [] },
-                Performance: { type: Type.Number, semanticType: 'Quantity', levels: [] },
-                Level: { type: Type.String, semanticType: 'Category', levels: levels },
-                Department: { type: Type.String, semanticType: 'Category', levels: depts },
-            },
-            encodingMap: {
-                x: makeEncodingItem('Years'),
-                y: makeEncodingItem('Performance'),
-                color: makeEncodingItem('Level'),
-                column: makeEncodingItem('Department'),
-            },
         });
     }
 

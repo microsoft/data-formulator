@@ -57,7 +57,7 @@ import { vlGetTemplateDef } from './templates';
 import { inferVisCategory } from '../core/semantic-types';
 import { resolveSemantics, convertTemporalData } from '../core/resolve-semantics';
 import { filterOverflow } from '../core/filter-overflow';
-import { computeLayout, computeFacetGrid, computeMinSubplotDimensions } from '../core/compute-layout';
+import { computeLayout, computeChannelBudgets, computeMinSubplotDimensions } from '../core/compute-layout';
 import { vlApplyLayoutToSpec, vlApplyTooltips } from './instantiate-spec';
 
 // ---------------------------------------------------------------------------
@@ -178,16 +178,17 @@ export function assembleVegaLite(input: ChartAssemblyInput): any {
         }
     }
 
-    // ── Facet grid decision (shared, in layout module) ─────────────────
-    // Decides wrapping + caps BEFORE data filtering so computeLayout
-    // receives the correct grid and filterOverflow clips accordingly.
-    const facetGridResult = computeFacetGrid(
+    // ── Channel budgets (shared, in layout module) ─────────────────────
+    // Computes per-channel max-to-keep using the most conservative
+    // assumptions (minStep, maxStretch).  Also decides facet grid.
+    const budgets = computeChannelBudgets(
         channelSemantics, declaration, convertedData, canvasSize, effectiveOptions,
     );
+    const facetGridResult = budgets.facetGrid;
 
     const overflowResult = filterOverflow(
         channelSemantics, declaration, encodings, convertedData,
-        canvasSize, effectiveOptions, allMarkTypes, facetGridResult,
+        budgets, allMarkTypes,
     );
 
     let values = overflowResult.filteredData;
@@ -270,7 +271,7 @@ export function assembleVegaLite(input: ChartAssemblyInput): any {
 
     // --- restructureFacets (VL-specific) ---
     // The facet grid (including wrapping) was already decided by
-    // filterOverflow.  restructureFacets only performs the VL structural
+    // computeChannelBudgets.  restructureFacets only performs the VL structural
     // transform (column encoding → facet + spec for layered specs).
 
     restructureFacets(vgObj, nominalCounts, facetGridResult);
@@ -505,53 +506,17 @@ function buildVLEncodings(
                 }
             }
         } else {
-            // Auto-sort: discrete axis (nominal/ordinal) with quantitative opposite
+            // Auto-sort: apply canonical ordinal sort (months, days, quarters, etc.)
+            // when available. Otherwise, set `sort: null` so VL preserves the data
+            // encounter order rather than its default alphabetical sort.
+            // Alphabetical sort breaks labels like "Stage 1", "Stage 10", "Stage 2"
+            // which should follow their natural data order.
             const isDiscreteType = encodingObj.type === 'nominal' || encodingObj.type === 'ordinal';
-            if ((channel === 'x' && isDiscreteType && encodings.y?.field) ||
-                (channel === 'y' && isDiscreteType && encodings.x?.field)) {
-
-                // If Phase 0 detected a canonical ordinal sort (months, days, etc.),
-                // use that instead of sorting by the quantitative opposite.
+            if (isDiscreteType) {
                 if (cs?.ordinalSortOrder && cs.ordinalSortOrder.length > 0) {
                     encodingObj.sort = cs.ordinalSortOrder;
                 } else {
-                    const fieldOrigType = fieldName ? inferVisCategory(data.map(r => r[fieldName])) : undefined;
-                    if (fieldOrigType !== 'temporal') {
-                        // Sort-by-measure only makes sense for bar-like charts where
-                        // reordering categories by their value is informative.
-                        // For line/area/streamgraph charts the x-axis sequence carries
-                        // meaning (trends, progression) — sorting by y destroys that.
-                        const sequentialMarks = new Set(['line', 'area', 'trail']);
-                        const isSequentialMark = templateMarkType && sequentialMarks.has(templateMarkType);
-
-                        if (!isSequentialMark) {
-                            const colorField = encodings.color?.field;
-                            let colorFieldType: string | undefined;
-                            if (colorField) {
-                                colorFieldType = inferVisCategory(data.map(r => r[colorField]));
-                            }
-
-                            // Avoid sort-by-color for layered specs (e.g. lollipop,
-                            // ranged dot plot): VL can't resolve cross-layer "-color"
-                            // references because color may only exist in one layer.
-                            const isLayered = Array.isArray(chartTemplate.template?.layer);
-
-                            if (colorField && colorFieldType === 'quantitative' && !isLayered) {
-                                encodingObj.sort = "-color";
-                            } else {
-                                const oppositeChannel = channel === 'x' ? 'y' : 'x';
-                                const oppositeField = encodings[oppositeChannel]?.field;
-                                if (oppositeField) {
-                                    if (inferVisCategory(data.map(r => r[oppositeField])) === 'quantitative') {
-                                        encodingObj.sort = `-${oppositeChannel}`;
-                                    }
-                                }
-                            }
-                        } else {
-                            // Sequential marks: preserve data order (VL default)
-                            encodingObj.sort = null;
-                        }
-                    }
+                    encodingObj.sort = null;
                 }
             }
         }

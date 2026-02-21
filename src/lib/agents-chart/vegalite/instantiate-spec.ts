@@ -127,16 +127,19 @@ export function vlApplyLayoutToSpec(
     }
 
     // --- Apply temporal formatting ---
+    // For positional temporal axes (x/y), do NOT set axis.format — VL's
+    // built-in multi-level temporal labeling (e.g. "2016" at year boundaries,
+    // "April" / "July" within a year) is far superior to a single uniform
+    // format string which loses hierarchical context.
+    // We still apply the format to color legends where multi-level is unavailable.
     const applyTemporalFormat = (enc: any, channel: string, cs: ChannelSemantics | undefined) => {
         if (!enc || !cs?.temporalFormat) return;
         if (enc.type === 'temporal') {
-            if (channel === 'x' || channel === 'y') {
-                if (!enc.axis) enc.axis = {};
-                enc.axis.format = cs.temporalFormat;
-            } else if (channel === 'color') {
+            if (channel === 'color') {
                 if (!enc.legend) enc.legend = {};
                 enc.legend.format = cs.temporalFormat;
             }
+            // x/y: intentionally omitted — let VL use native multi-level labels
         }
     };
 

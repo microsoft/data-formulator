@@ -19,7 +19,9 @@ export { seededRandom, genDates, genMonths, genYears, genNaturalDates, genCatego
 export { genScatterTests, genLinearRegressionTests } from './scatter-tests';
 export { genBarTests, genStackedBarTests, genGroupedBarTests } from './bar-tests';
 export { genHistogramTests, genBoxplotTests, genDensityTests, genStripPlotTests } from './distribution-tests';
-export { genLineTests, genDottedLineTests, genBumpChartTests, genAreaTests, genStreamgraphTests } from './line-area-tests';
+export { genLineTests } from './line-tests';
+export { genDottedLineTests, genBumpChartTests } from './line-area-tests';
+export { genAreaTests, genStreamgraphTests } from './area-tests';
 export {
     genHeatmapTests, genPieTests, genRangedDotPlotTests, genLollipopTests,
     genCustomTests, genWaterfallTests, genCandlestickTests, genRadarTests, genPyramidTests,
@@ -44,7 +46,9 @@ import { TestCase, GallerySection } from './types';
 import { genScatterTests, genLinearRegressionTests } from './scatter-tests';
 import { genBarTests, genStackedBarTests, genGroupedBarTests } from './bar-tests';
 import { genHistogramTests, genBoxplotTests, genDensityTests, genStripPlotTests } from './distribution-tests';
-import { genLineTests, genDottedLineTests, genBumpChartTests, genAreaTests, genStreamgraphTests } from './line-area-tests';
+import { genLineTests } from './line-tests';
+import { genDottedLineTests, genBumpChartTests } from './line-area-tests';
+import { genAreaTests, genStreamgraphTests } from './area-tests';
 import {
     genHeatmapTests, genPieTests, genRangedDotPlotTests, genLollipopTests,
     genCustomTests, genWaterfallTests, genCandlestickTests, genRadarTests, genPyramidTests,

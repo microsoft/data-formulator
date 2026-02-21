@@ -54,6 +54,14 @@ export function genNaturalDates(n: number, startYear = 1998): string[] {
     return dates;
 }
 
+/** Generate ordinal labels with inherent sequence: "Stage 1", "Stage 2", etc. */
+export function genOrdinalLabels(prefix: string, n: number): string[] {
+    return Array.from({ length: n }, (_, i) => `${prefix} ${i + 1}`);
+}
+
+/** Ordinal label prefixes — rotated for variety across channels */
+export const ORDINAL_PREFIXES = ['Stage', 'Step', 'Phase', 'Level', 'Round'];
+
 /** Generate category names by semantic type */
 export function genCategories(semanticType: string, n: number): string[] {
     const pools: Record<string, string[]> = {

@@ -44,7 +44,7 @@ import type { ChartWarning } from '../core/types';
 import { gfGetTemplateDef } from './templates';
 import { resolveSemantics, convertTemporalData } from '../core/resolve-semantics';
 import { filterOverflow } from '../core/filter-overflow';
-import { computeLayout } from '../core/compute-layout';
+import { computeLayout, computeChannelBudgets } from '../core/compute-layout';
 
 // ---------------------------------------------------------------------------
 // GoFish Spec Type
@@ -372,9 +372,14 @@ export function assembleGoFish(input: ChartAssemblyInput): GoFishSpec {
     const allMarkTypes = new Set<string>();
     if (templateMarkType) allMarkTypes.add(templateMarkType);
 
+    // ── Channel budgets (shared, in layout module) ─────────────────────
+    const budgets = computeChannelBudgets(
+        channelSemantics, declaration, convertedData, canvasSize, effectiveOptions,
+    );
+
     const overflowResult = filterOverflow(
         channelSemantics, declaration, encodings, convertedData,
-        canvasSize, effectiveOptions, allMarkTypes,
+        budgets, allMarkTypes,
     );
 
     const values = overflowResult.filteredData;

@@ -116,6 +116,154 @@ export function genUnintendedScatterTests(): TestCase[] {
         });
     }
 
+    // Scatter: vertical line (all x identical)
+    {
+        const n = 15;
+        const data = Array.from({ length: n }, () => ({ X: 42, Y: rand() * 100 }));
+        tests.push({
+            title: 'Scatter: vertical line',
+            description: '15 points with identical x — zero x-range',
+            tags: ['unintended', 'degenerate'],
+            chartType: 'Scatter Plot',
+            data,
+            fields: [makeField('X'), makeField('Y')],
+            metadata: {
+                X: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                Y: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+            },
+            encodingMap: { x: makeEncodingItem('X'), y: makeEncodingItem('Y') },
+        });
+    }
+
+    // Scatter: horizontal line (all y identical)
+    {
+        const n = 15;
+        const data = Array.from({ length: n }, () => ({ X: rand() * 100, Y: 50 }));
+        tests.push({
+            title: 'Scatter: horizontal line',
+            description: '15 points with identical y — zero y-range',
+            tags: ['unintended', 'degenerate'],
+            chartType: 'Scatter Plot',
+            data,
+            fields: [makeField('X'), makeField('Y')],
+            metadata: {
+                X: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                Y: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+            },
+            encodingMap: { x: makeEncodingItem('X'), y: makeEncodingItem('Y') },
+        });
+    }
+
+    // Scatter: empty data
+    {
+        tests.push({
+            title: 'Scatter: empty data',
+            description: 'Zero rows — should render axes but no marks',
+            tags: ['unintended', 'degenerate'],
+            chartType: 'Scatter Plot',
+            data: [],
+            fields: [makeField('X'), makeField('Y')],
+            metadata: {
+                X: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                Y: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+            },
+            encodingMap: { x: makeEncodingItem('X'), y: makeEncodingItem('Y') },
+        });
+    }
+
+    // Scatter: null/NaN values
+    {
+        const data = [
+            { X: 10, Y: 20 },
+            { X: null, Y: 30 },
+            { X: 40, Y: null },
+            { X: NaN, Y: 50 },
+            { X: 60, Y: NaN },
+            { X: 70, Y: 80 },
+        ];
+        tests.push({
+            title: 'Scatter: null/NaN values',
+            description: 'Mix of valid, null, and NaN — should skip invalid rows gracefully',
+            tags: ['unintended', 'degenerate'],
+            chartType: 'Scatter Plot',
+            data,
+            fields: [makeField('X'), makeField('Y')],
+            metadata: {
+                X: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                Y: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+            },
+            encodingMap: { x: makeEncodingItem('X'), y: makeEncodingItem('Y') },
+        });
+    }
+
+    // Scatter: single-value color (1 group)
+    {
+        const n = 10;
+        const data = Array.from({ length: n }, () => ({
+            X: rand() * 100, Y: rand() * 100, Color: 'OnlyGroup',
+        }));
+        tests.push({
+            title: 'Scatter: 1-value color',
+            description: '10 points with a single color group — degenerate legend',
+            tags: ['unintended', 'degenerate'],
+            chartType: 'Scatter Plot',
+            data,
+            fields: [makeField('X'), makeField('Y'), makeField('Color')],
+            metadata: {
+                X: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                Y: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                Color: { type: Type.String, semanticType: 'Category', levels: ['OnlyGroup'] },
+            },
+            encodingMap: { x: makeEncodingItem('X'), y: makeEncodingItem('Y'), color: makeEncodingItem('Color') },
+        });
+    }
+
+    // Scatter: size zeros and negatives
+    {
+        const data = [
+            { X: 10, Y: 20, Size: 0 },
+            { X: 30, Y: 40, Size: -5 },
+            { X: 50, Y: 60, Size: 100 },
+            { X: 70, Y: 80, Size: -20 },
+            { X: 90, Y: 10, Size: 1 },
+        ];
+        tests.push({
+            title: 'Scatter: size zeros/negatives',
+            description: 'Size field contains 0 and negative values — edge case for area scaling',
+            tags: ['unintended', 'degenerate'],
+            chartType: 'Scatter Plot',
+            data,
+            fields: [makeField('X'), makeField('Y'), makeField('Size')],
+            metadata: {
+                X: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                Y: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                Size: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+            },
+            encodingMap: { x: makeEncodingItem('X'), y: makeEncodingItem('Y'), size: makeEncodingItem('Size') },
+        });
+    }
+
+    // Scatter: same field on x and y (x = y)
+    {
+        const n = 15;
+        const data = Array.from({ length: n }, () => {
+            const v = rand() * 100;
+            return { Value: v };
+        });
+        tests.push({
+            title: 'Scatter: same field x = y',
+            description: 'Same field mapped to both axes — should produce a diagonal line',
+            tags: ['unintended', 'degenerate'],
+            chartType: 'Scatter Plot',
+            data,
+            fields: [makeField('Value')],
+            metadata: {
+                Value: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+            },
+            encodingMap: { x: makeEncodingItem('Value'), y: makeEncodingItem('Value') },
+        });
+    }
+
     // Boxplot: single value per group
     {
         const cats = ['A', 'B', 'C'];

@@ -62,7 +62,7 @@ import type { ChartWarning } from '../core/types';
 import { ecGetTemplateDef } from './templates';
 import { resolveSemantics, convertTemporalData } from '../core/resolve-semantics';
 import { filterOverflow } from '../core/filter-overflow';
-import { computeLayout, computeFacetGrid } from '../core/compute-layout';
+import { computeLayout, computeChannelBudgets } from '../core/compute-layout';
 import { ecApplyLayoutToSpec, ecApplyTooltips } from './instantiate-spec';
 import { ecCombineFacetPanels } from './facet';
 
@@ -156,14 +156,15 @@ export function assembleECharts(input: ChartAssemblyInput): any {
     const allMarkTypes = new Set<string>();
     if (templateMarkType) allMarkTypes.add(templateMarkType);
 
-    // ── Facet grid decision (shared, in layout module) ─────────────────
-    const facetGridResult = computeFacetGrid(
+    // ── Channel budgets (shared, in layout module) ─────────────────────
+    const budgets = computeChannelBudgets(
         channelSemantics, declaration, convertedData, canvasSize, effectiveOptions,
     );
+    const facetGridResult = budgets.facetGrid;
 
     const overflowResult = filterOverflow(
         channelSemantics, declaration, encodings, convertedData,
-        canvasSize, effectiveOptions, allMarkTypes, facetGridResult,
+        budgets, allMarkTypes,
     );
 
     let values = overflowResult.filteredData;

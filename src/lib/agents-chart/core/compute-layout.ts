@@ -49,6 +49,7 @@ import type {
     LayoutDeclaration,
     LayoutResult,
     AssembleOptions,
+    ChannelBudgets,
 } from './types';
 import {
     computeElasticBudget,
@@ -117,7 +118,7 @@ export function computeLayout(
         elasticity: elasticityVal = 0.5,
         maxStretch: maxStretchVal = 2,
         facetElasticity: facetElasticityVal = 0.3,
-        minStep: minStepVal = 8,
+        minStep: minStepVal = 6,
         minSubplotSize: minSubplotVal = 60,
         defaultStepMultiplier = 1,
         stepPadding: stepPaddingVal = 0.1,
@@ -579,6 +580,112 @@ function countDistinctSeries(
 }
 
 // ---------------------------------------------------------------------------
+// Public: computeChannelBudgets
+// ---------------------------------------------------------------------------
+
+/**
+ * Compute per-channel maximum values that can fit on the canvas.
+ *
+ * Uses the **most conservative** assumptions:
+ *   - minStep  (smallest px per discrete item)
+ *   - minSubplotSize (smallest subplot for continuous axes)
+ *   - maxStretch (maximum canvas stretching)
+ *
+ * This is Step 0c-a in the pipeline — it runs before filterOverflow
+ * and produces the budgets that filterOverflow consumes.
+ *
+ * Pipeline:  computeChannelBudgets → filterOverflow → computeLayout
+ *
+ * @param channelSemantics  Phase 0 output (field, type per channel)
+ * @param declaration       Template layout declaration
+ * @param data              Full data table (pre-overflow)
+ * @param canvasSize        Target canvas dimensions
+ * @param options           Assembly options
+ * @returns                 ChannelBudgets with per-channel max-to-keep
+ */
+export function computeChannelBudgets(
+    channelSemantics: Record<string, ChannelSemantics>,
+    declaration: LayoutDeclaration,
+    data: any[],
+    canvasSize: { width: number; height: number },
+    options: AssembleOptions,
+): ChannelBudgets {
+    const {
+        maxStretch: maxStretchVal = 2,
+        minStep: minStepVal = 6,
+        stepPadding: stepPaddingVal = 0.1,
+        maxColorValues: maxColorVal = 24,
+    } = options;
+
+    const fixW = options.facetFixedPadding?.width ?? 0;
+    const fixH = options.facetFixedPadding?.height ?? 0;
+    const gap  = options.facetGap ?? 0;
+
+    const isDiscreteType = (t: string | undefined) => t === 'nominal' || t === 'ordinal';
+    const effectiveType = (ch: string): string | undefined =>
+        declaration.resolvedTypes?.[ch] ?? channelSemantics[ch]?.type;
+
+    // --- 1. Facet grid (delegates to computeFacetGrid) ---
+    const facetGrid = computeFacetGrid(
+        channelSemantics, declaration, data, canvasSize, options,
+    );
+    const facetCols = facetGrid?.columns ?? 1;
+    const facetRows = facetGrid?.rows ?? 1;
+
+    // --- 2. Per-subplot budget at maximum stretch ---
+    const maxSubplotW = Math.max(
+        options.minSubplotSize ?? 60,
+        (canvasSize.width * maxStretchVal - fixW) / facetCols - gap,
+    );
+    const maxSubplotH = Math.max(
+        options.minSubplotSize ?? 60,
+        (canvasSize.height * maxStretchVal - fixH) / facetRows - gap,
+    );
+
+    // --- 3. Grouping detection ---
+    const groupField = channelSemantics.group?.field;
+    let groupCount = 0;
+    let groupAxis: 'x' | 'y' | undefined;
+    if (groupField) {
+        groupCount = new Set(data.map(r => r[groupField])).size;
+        if (isDiscreteType(effectiveType('x'))) groupAxis = 'x';
+        else if (isDiscreteType(effectiveType('y'))) groupAxis = 'y';
+    }
+
+    const xGroupMultiplier = (groupAxis === 'x' && groupCount > 1) ? groupCount : 1;
+    const yGroupMultiplier = (groupAxis === 'y' && groupCount > 1) ? groupCount : 1;
+
+    const MIN_GROUP_GAP_PX = 3;
+    const xMinGroupStep = xGroupMultiplier > 1
+        ? Math.max(Math.ceil(MIN_GROUP_GAP_PX / stepPaddingVal), 2 * xGroupMultiplier)
+        : minStepVal;
+    const yMinGroupStep = yGroupMultiplier > 1
+        ? Math.max(Math.ceil(MIN_GROUP_GAP_PX / stepPaddingVal), 2 * yGroupMultiplier)
+        : minStepVal;
+
+    // --- 4. Per-channel budgets ---
+    const maxXToKeep = Math.floor(maxSubplotW / xMinGroupStep);
+    const maxYToKeep = Math.floor(maxSubplotH / yMinGroupStep);
+
+    const hasRow = !!channelSemantics.row?.field;
+    const maxFacetColumns = facetGrid?.maxColumnValues ?? Infinity;
+    const maxFacetRows    = facetGrid?.maxRowValues ?? Infinity;
+    const maxFacetTotal   = facetGrid
+        ? maxFacetColumns * (facetGrid.maxRowValues ?? 1)
+        : Infinity;
+
+    const maxValues: Record<string, number> = {
+        x:      maxXToKeep,
+        y:      maxYToKeep,
+        column: hasRow ? maxFacetColumns : maxFacetTotal,
+        row:    maxFacetRows,
+        color:  maxColorVal,
+    };
+
+    return { maxValues, facetGrid };
+}
+
+// ---------------------------------------------------------------------------
 // Public: computeFacetGrid
 // ---------------------------------------------------------------------------
 
@@ -611,14 +718,87 @@ export function computeFacetGrid(
     const fixW = options.facetFixedPadding?.width ?? 0;
     const fixH = options.facetFixedPadding?.height ?? 0;
     const gap  = options.facetGap ?? 0;
+    const minStep = options.minStep ?? 6;
+    const stepPadding = options.stepPadding ?? 0.1;
+    const baseMinSubplot = options.minSubplotSize ?? 60;
 
-    const { minSubplotWidth, minSubplotHeight } = computeMinSubplotDimensions(
-        channelSemantics, declaration, data, options,
-    );
+    const isDiscreteType = (t: string | undefined) => t === 'nominal' || t === 'ordinal';
+
+    // --- Compute min subplot size per axis ---
+    //
+    // Continuous:  baseMinSubplot (e.g. 60px).
+    //
+    // Discrete (not grouped):
+    //   min(minStep × valueCount, maxDim)
+    //
+    // Discrete (grouped):
+    //   perCategoryStep = max(minStep × groupCount, minGroupStep)
+    //   min(perCategoryStep × valueCount, maxDim)
+    //
+    //   where minGroupStep accounts for the inter-group gap:
+    //     the gap = stepPadding × step, which must be ≥ MIN_GROUP_GAP_PX.
+    //
+    // Always capped at maxDim (full stretched canvas minus fixed overhead)
+    // to guarantee at least 1 facet column/row.
+
+    const maxW = canvasSize.width * ms - fixW;
+    const maxH = canvasSize.height * ms - fixH;
+    const MIN_GROUP_GAP_PX = 3;
+
+    // Grouping detection
+    const groupField = channelSemantics.group?.field;
+    let groupCount = 0;
+    let groupAxis: 'x' | 'y' | undefined;
+    if (groupField) {
+        groupCount = new Set(data.map((r: any) => r[groupField])).size;
+        const xType = declaration.resolvedTypes?.x ?? channelSemantics.x?.type;
+        const yType = declaration.resolvedTypes?.y ?? channelSemantics.y?.type;
+        if (isDiscreteType(xType)) groupAxis = 'x';
+        else if (isDiscreteType(yType)) groupAxis = 'y';
+    }
+
+    let minSubplotWidth = baseMinSubplot;
+    let minSubplotHeight = baseMinSubplot;
+
+    for (const axis of ['x', 'y'] as const) {
+        const cs = channelSemantics[axis];
+        if (!cs?.field) continue;
+
+        const effectiveType = declaration.resolvedTypes?.[axis] ?? cs.type;
+        const isBanded = declaration.axisFlags?.[axis]?.banded === true;
+        if (!isDiscreteType(effectiveType) && !isBanded) continue;
+
+        const valueCount = new Set(data.map((r: any) => r[cs.field])).size;
+        const axisGroupCount = (groupAxis === axis && groupCount > 1) ? groupCount : 1;
+        const maxDim = axis === 'x' ? maxW : maxH;
+
+        let perCategoryStep: number;
+        if (axisGroupCount > 1) {
+            // Grouped: each category needs room for groupCount sub-items
+            // PLUS enough inter-group gap (stepPadding × step ≥ MIN_GROUP_GAP_PX).
+            const minGroupStep = Math.max(
+                Math.ceil(MIN_GROUP_GAP_PX / stepPadding),
+                2 * axisGroupCount,
+            );
+            perCategoryStep = Math.max(minStep * axisGroupCount, minGroupStep);
+        } else {
+            // Ungrouped: one item per category
+            perCategoryStep = minStep;
+        }
+
+        const dataDrivenMin = Math.min(perCategoryStep * valueCount, maxDim);
+        const minDim = Math.max(baseMinSubplot, dataDrivenMin);
+
+        if (axis === 'x') {
+            minSubplotWidth = minDim;
+        } else {
+            minSubplotHeight = minDim;
+        }
+    }
 
     // effectiveW = totalBudget - fixedOverhead; each panel costs (subplot + gap).
-    const effectiveW = canvasSize.width * ms - fixW;
-    const effectiveH = canvasSize.height * ms - fixH;
+    const effectiveW = maxW;
+    const effectiveH = maxH;
     const maxFacetColumns = Math.max(1, Math.floor(
         effectiveW / (minSubplotWidth + gap),
     ));

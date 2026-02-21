@@ -6,14 +6,20 @@
  * OVERFLOW FILTERING
  * =============================================================================
  *
- * Determines which discrete values to keep when there are too many for
+ * Decides *which* discrete values to keep when there are too many for
  * the available canvas space, then filters the data accordingly.
  *
- * Runs AFTER declareLayoutMode (so type overrides and additional encodings
- * are known) and BEFORE computeLayout and buildVLEncodings.
+ * This module does **no layout math**.  Per-channel capacity budgets
+ * are computed upstream by `computeChannelBudgets` and passed in as
+ * a `ChannelBudgets` object.  This module focuses on:
+ *   1. Iterating each discrete channel
+ *   2. Applying the overflow strategy (which values to keep)
+ *   3. Filtering data rows
+ *   4. Producing truncation warnings
  *
- * VL dependency: **None** — works on abstract channel semantics and
- * LayoutDeclaration, not on VL encoding objects.
+ * Runs AFTER computeChannelBudgets and BEFORE computeLayout.
+ *
+ * VL dependency: **None**
  * =============================================================================
  */
 
@@ -21,12 +27,11 @@ import type {
     ChannelSemantics,
     ChartEncoding,
     LayoutDeclaration,
-    AssembleOptions,
     TruncationWarning,
     OverflowResult,
     OverflowStrategy,
     OverflowStrategyContext,
-    FacetGridResult,
+    ChannelBudgets,
 } from './types';
 import type { ChartWarning } from './types';
 import { inferVisCategory } from './semantic-types';
@@ -39,13 +44,11 @@ import { inferVisCategory } from './semantic-types';
  * Filter data to keep only the values that fit within the canvas.
  *
  * @param channelSemantics  Phase 0 output (field, type per channel)
- * @param declaration       Template layout declaration (resolvedTypes, grouping, overflowStrategy)
+ * @param declaration       Template layout declaration (resolvedTypes, overflowStrategy)
  * @param encodings         Original user-level encodings (for sort info)
  * @param data              Full data table
- * @param canvasSize        Target canvas dimensions
- * @param options           Assembly options (merged with declaration.paramOverrides)
+ * @param budgets           Per-channel capacity budgets from computeChannelBudgets
  * @param allMarkTypes      Set of all mark types in the template (for connected-mark detection)
- * @param facetGrid         Pre-computed facet grid from computeFacetGrid (caps for facet channels)
  * @returns                 OverflowResult with filtered data, nominal counts, truncations, and warnings
  */
 export function filterOverflow(
@@ -53,27 +56,9 @@ export function filterOverflow(
     declaration: LayoutDeclaration,
     encodings: Record<string, ChartEncoding>,
     data: any[],
-    canvasSize: { width: number; height: number },
-    options: AssembleOptions,
+    budgets: ChannelBudgets,
     allMarkTypes: Set<string>,
-    facetGrid?: FacetGridResult,
 ): OverflowResult {
-    const {
-        maxStretch: maxStretchVal = 2,
-        minStep: minStepVal = 6,
-        stepPadding: stepPaddingVal = 0.1,
-    } = options;
-
-    const chartWidth = canvasSize.width;
-    const chartHeight = canvasSize.height;
-
-    // Facet caps come from the pre-computed facetGrid.
-    // For column-only: maxColumnValues is the full 2D budget (cols × rows)
-    //   because wrapping uses vertical space too.
-    // For column+row: each dimension is capped independently.
-    const maxFacetColumns = facetGrid?.maxColumnValues ?? 1;
-    const maxFacetRows = facetGrid?.maxRowValues ?? 1;
-    const maxFacetNominalValues = maxFacetColumns * maxFacetRows;
 
     // --- Build effective channel info from semantics + declaration ---
 
@@ -87,28 +72,6 @@ export function filterOverflow(
 
     const isDiscreteType = (t: string | undefined) => t === 'nominal' || t === 'ordinal';
 
-    // --- Grouping detection: if 'group' channel exists, find discrete axis ---
-    const groupField = channelSemantics.group?.field;
-    let groupCount = 0;
-    let groupAxis: 'x' | 'y' | undefined;
-    if (groupField) {
-        groupCount = new Set(data.map(r => r[groupField])).size;
-        // Grouping subdivides whichever positional axis is discrete
-        if (isDiscreteType(effectiveType('x'))) groupAxis = 'x';
-        else if (isDiscreteType(effectiveType('y'))) groupAxis = 'y';
-    }
-
-    const xGroupMultiplier = (groupAxis === 'x' && groupCount > 1) ? groupCount : 1;
-    const yGroupMultiplier = (groupAxis === 'y' && groupCount > 1) ? groupCount : 1;
-
-    // Minimum group step: the inter-group gap (stepPadding × step) must be
-    // at least MIN_GROUP_GAP_PX pixels so groups are visually separated.
-    const MIN_GROUP_GAP_PX = 3;
-    const xMinGroupStep = xGroupMultiplier > 1 ? Math.max(Math.ceil(MIN_GROUP_GAP_PX / stepPaddingVal), 2 * xGroupMultiplier) : minStepVal;
-    const yMinGroupStep = yGroupMultiplier > 1 ? Math.max(Math.ceil(MIN_GROUP_GAP_PX / stepPaddingVal), 2 * yGroupMultiplier) : minStepVal;
-    const maxXToKeep = Math.floor(chartWidth * maxStretchVal / xMinGroupStep);
-    const maxYToKeep = Math.floor(chartHeight * maxStretchVal / yMinGroupStep);
-
     // --- Filter data ---
 
     const nominalCounts: Record<string, number> = {
@@ -119,8 +82,9 @@ export function filterOverflow(
     let filteredData = data;
 
     // Compute group nominal count
-    if (groupCount > 0) {
-        nominalCounts.group = groupCount;
+    const groupField = channelSemantics.group?.field;
+    if (groupField) {
+        nominalCounts.group = new Set(data.map(r => r[groupField])).size;
     }
 
     // Strategy context for custom or default overflow
@@ -138,17 +102,13 @@ export function filterOverflow(
         const type = effectiveType(channel);
         if (!fieldName) continue;
 
-        // For non-discrete types on column/row, apply the same overflow
-        // cap and data filtering — every unique value becomes a facet panel.
+        // Budget for this channel (Infinity if uncapped)
+        const maxToKeep = budgets.maxValues[channel] ?? Infinity;
+
+        // For non-discrete types on column/row, apply overflow cap —
+        // every unique value becomes a facet panel.
         if (!isDiscreteType(type)) {
             if (channel === 'column' || channel === 'row') {
-                const hasRow = !!effectiveField('row');
-                // Column+row: cap each dimension independently.
-                // Column-only: use full 2D budget (cols × rows) since we wrap.
-                const maxToKeep = channel === 'row' ? maxFacetRows
-                    : hasRow ? maxFacetColumns
-                    : maxFacetNominalValues;
-
                 const uniqueValues = [...new Set(filteredData.map(r => r[fieldName]))];
                 nominalCounts[channel] = Math.min(uniqueValues.length, maxToKeep);
 
@@ -172,15 +132,6 @@ export function filterOverflow(
             }
             continue;
         }
-
-        const hasRow = !!effectiveField('row');
-        // Column+row: cap each dimension independently.
-        // Column-only: use full 2D budget (cols × rows) since we wrap.
-        const maxToKeep = channel === 'x' ? maxXToKeep
-            : channel === 'y' ? maxYToKeep
-            : channel === 'row' ? maxFacetRows
-            : channel === 'column' ? (hasRow ? maxFacetColumns : maxFacetNominalValues)
-            : maxFacetNominalValues;
 
         const uniqueValues = [...new Set(filteredData.map(r => r[fieldName]))];
         nominalCounts[channel] = Math.min(uniqueValues.length, maxToKeep);
@@ -294,7 +245,7 @@ const defaultOverflowStrategy: OverflowStrategy = (
     const fieldOriginalType = inferVisCategory(data.map(r => r[fieldName]));
     if (fieldOriginalType === 'quantitative' || channel === 'color') {
         return uniqueValues.sort((a, b) => a - b)
-            .slice(0, channel === 'color' ? 24 : maxToKeep);
+            .slice(0, maxToKeep);
     }
 
     // Facet channels: first N

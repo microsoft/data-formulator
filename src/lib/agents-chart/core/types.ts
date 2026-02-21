@@ -192,6 +192,24 @@ export interface OverflowStrategyContext {
     allMarkTypes: Set<string>;
 }
 
+/**
+ * Per-channel maximum values that can fit on the canvas.
+ *
+ * Computed once by `computeChannelBudgets` using the most conservative
+ * assumptions (minStep, minSubplotSize, maxStretch).  Passed to
+ * `filterOverflow` so it only needs to decide *which* values to keep
+ * and filter rows — no layout math.
+ *
+ * Pipeline:  computeChannelBudgets → filterOverflow → computeLayout
+ */
+export interface ChannelBudgets {
+    /** Maximum discrete values to keep per channel.
+     *  Channels not present here are uncapped (`Infinity`). */
+    maxValues: Record<string, number>;
+    /** Facet grid decision (if facet channels exist) */
+    facetGrid?: FacetGridResult;
+}
+
 /** Result of overflow filtering. */
 export interface OverflowResult {
     /** Data after removing overflow rows */
@@ -589,6 +607,8 @@ export interface AssembleOptions {
     facetElasticity?: number;
     /** Minimum pixels per discrete axis item (default: 6) */
     minStep?: number;
+    /** Maximum number of distinct color values before overflow truncation (default: 24) */
+    maxColorValues?: number;
     /** Minimum facet subplot size in px (default: 60) */
     minSubplotSize?: number;
     /**

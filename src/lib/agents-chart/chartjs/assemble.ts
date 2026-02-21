@@ -35,7 +35,7 @@ import type { ChartWarning } from '../core/types';
 import { cjsGetTemplateDef } from './templates';
 import { resolveSemantics, convertTemporalData } from '../core/resolve-semantics';
 import { filterOverflow } from '../core/filter-overflow';
-import { computeLayout } from '../core/compute-layout';
+import { computeLayout, computeChannelBudgets } from '../core/compute-layout';
 import { cjsApplyLayoutToSpec, cjsApplyTooltips } from './instantiate-spec';
 
 // ---------------------------------------------------------------------------
@@ -114,9 +114,14 @@ export function assembleChartjs(input: ChartAssemblyInput): any {
     const allMarkTypes = new Set<string>();
     if (templateMarkType) allMarkTypes.add(templateMarkType);
 
+    // ── Channel budgets (shared, in layout module) ─────────────────────
+    const budgets = computeChannelBudgets(
+        channelSemantics, declaration, convertedData, canvasSize, effectiveOptions,
+    );
+
     const overflowResult = filterOverflow(
         channelSemantics, declaration, encodings, convertedData,
-        canvasSize, effectiveOptions, allMarkTypes,
+        budgets, allMarkTypes,
     );
 
     let values = overflowResult.filteredData;

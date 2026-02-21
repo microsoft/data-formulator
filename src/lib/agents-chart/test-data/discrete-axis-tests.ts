@@ -223,13 +223,13 @@ function genLineSizing(): TestCase[] {
     const rand = seededRandom(500);
 
     for (const { n, label } of SIZES) {
-        // Discrete X (nominal categories)
+        // Discrete X (ordinal — numbered steps imply sequence)
         {
             const categories = cats('Step', n);
             const data = categories.map(c => ({ Step: c, Value: randVal(rand) }));
             tests.push({
                 title: `Line ▸ X ×${label}`,
-                description: `Line chart with ${n} discrete categories on X`,
+                description: `Line chart with ${n} ordinal steps on X`,
                 tags: ['line', 'discrete-x', `n${label}`],
                 chartType: 'Line Chart',
                 data,
@@ -251,14 +251,14 @@ function genAreaSizing(): TestCase[] {
     const series = cats('S', 3);
 
     for (const { n, label } of SIZES) {
-        // Discrete X (nominal categories, stacked color)
+        // Discrete X (ordinal — numbered periods imply sequence)
         {
             const categories = cats('Period', n);
             const data: Record<string, any>[] = [];
             for (const c of categories) for (const s of series) data.push({ Period: c, Series: s, Value: randVal(rand, 5, 200) });
             tests.push({
                 title: `Area ▸ X ×${label}`,
-                description: `Stacked area with ${n} x-categories × 3 series`,
+                description: `Stacked area with ${n} ordinal periods × 3 series`,
                 tags: ['area', 'discrete-x', `n${label}`],
                 chartType: 'Area Chart',
                 data,
