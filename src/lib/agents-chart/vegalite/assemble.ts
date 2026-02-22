@@ -472,6 +472,23 @@ function buildVLEncodings(
         }
 
         // --- Sorting ---
+        // Helper: when the field's actual data values are numeric but the
+        // encoding is nominal, domain/sort arrays must keep numeric types
+        // so Vega-Lite can match them against the data.
+        const fieldIsNumeric = fieldName
+            ? data.some(r => typeof r[fieldName] === 'number')
+            : false;
+        const preserveDomainTypes = (arr: any[]): any[] => {
+            if (!fieldIsNumeric) return arr;
+            return arr.map(v => {
+                if (typeof v === 'string') {
+                    const n = Number(v);
+                    if (!isNaN(n) && String(n) === v.trim()) return n;
+                }
+                return v;
+            });
+        };
+
         if (encoding.sortBy || encoding.sortOrder) {
             if (!encoding.sortBy) {
                 if (encoding.sortOrder) {
@@ -498,6 +515,9 @@ function buildVLEncodings(
                             sortedValues = sortedValues.map((v: any) => v.toString());
                         }
 
+                        // Preserve numeric types for nominal fields with numeric data
+                        sortedValues = preserveDomainTypes(sortedValues);
+
                         encodingObj.sort = (encoding.sortOrder === "ascending" || !encoding.sortOrder)
                             ? sortedValues : sortedValues.reverse();
                     }
@@ -514,7 +534,16 @@ function buildVLEncodings(
             const isDiscreteType = encodingObj.type === 'nominal' || encodingObj.type === 'ordinal';
             if (isDiscreteType) {
                 if (cs?.ordinalSortOrder && cs.ordinalSortOrder.length > 0) {
-                    encodingObj.sort = cs.ordinalSortOrder;
+                    encodingObj.sort = preserveDomainTypes(cs.ordinalSortOrder);
+                } else if (fieldIsNumeric) {
+                    // Numeric data treated as nominal: sort by numeric value
+                    // so labels appear as 0,1,2,3… instead of data-encounter order.
+                    // Don't use `sort: null` here — it preserves encounter order
+                    // which scrambles numeric categories.
+                    const uniqueNums = [...new Set(data.map(r => r[fieldName]))]
+                        .filter(v => v != null)
+                        .sort((a: number, b: number) => a - b);
+                    encodingObj.sort = uniqueNums;
                 } else {
                     encodingObj.sort = null;
                 }
@@ -606,7 +635,6 @@ function buildVLEncodings(
  * only:
  *   1. Moves `encoding.column` → `encoding.facet` (with `columns: N`).
  *   2. For layered specs, hoists to top-level `facet` + `spec`.
- *   3. Hides axis titles when there are multiple rows.
  */
 function restructureFacets(
     vgObj: any,
@@ -623,17 +651,9 @@ function restructureFacets(
 
         vgObj.encoding.facet.columns = numCols;
 
-        if (numRows >= 2) {
-            const encTarget = vgObj.encoding;
-            if (encTarget?.x) {
-                if (!encTarget.x.axis) encTarget.x.axis = {};
-                encTarget.x.axis.title = null;
-            }
-            if (encTarget?.y) {
-                if (!encTarget.y.axis) encTarget.y.axis = {};
-                encTarget.y.axis.title = null;
-            }
-        }
+        // Axis title suppression for faceted charts is handled by
+        // vlApplyLayoutToSpec, which uses actual subplot dimensions
+        // to decide whether titles should be hidden (size-based threshold).
 
         delete vgObj.encoding.column;
 

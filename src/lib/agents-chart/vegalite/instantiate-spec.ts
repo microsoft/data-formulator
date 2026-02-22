@@ -303,25 +303,26 @@ export function vlApplyLayoutToSpec(
         vgObj.config.header = { labelLimit: 120, labelFontSize: 9 };
     }
 
-    // Reduce clutter in faceted charts
+    // In faceted charts, use lighter axis title styling to reduce clutter
     const facetRows = layout.facet?.rows ?? 1;
     const facetCols = layout.facet?.columns ?? 1;
     const encTarget = vgObj.spec?.encoding || vgObj.encoding;
-    const yTitleThreshold = 100;
-    const xTitleThreshold = 100;
 
-    if (facetRows > 1 && layout.subplotHeight < yTitleThreshold) {
-        if (vgObj.config?.axisY) vgObj.config.axisY.title = null;
-        if (encTarget?.y) {
+    if (facetRows > 1 || facetCols > 1) {
+        if (!vgObj.config) vgObj.config = {};
+        const lightTitle = { titleFontWeight: 'normal' as const, titleFontSize: 11, titleColor: '#666' };
+        vgObj.config.axisX = { ...(vgObj.config.axisX || {}), ...lightTitle };
+        vgObj.config.axisY = { ...(vgObj.config.axisY || {}), ...lightTitle };
+    }
+
+    // When row faceting is used, use lighter y axis title styling;
+    // hide it entirely if y is nominal (the labels speak for themselves).
+    if (encTarget?.row || (facetRows > 1 && encTarget?.y)) {
+        if (encTarget?.y?.type === 'nominal') {
+            if (!vgObj.config) vgObj.config = {};
+            vgObj.config.axisY = { ...(vgObj.config.axisY || {}), title: null };
             if (!encTarget.y.axis) encTarget.y.axis = {};
             encTarget.y.axis.title = null;
-        }
-    }
-    if (facetCols > 1 && facetRows > 1 && layout.subplotWidth < xTitleThreshold) {
-        if (vgObj.config?.axisX) vgObj.config.axisX.title = null;
-        if (encTarget?.x) {
-            if (!encTarget.x.axis) encTarget.x.axis = {};
-            encTarget.x.axis.title = null;
         }
     }
 

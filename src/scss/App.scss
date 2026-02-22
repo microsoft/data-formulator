@@ -174,50 +174,16 @@ h2.view-title {
 
 // Allotment sash (divider) styling
 
-// Outer allotment: chip-in-the-middle for the vertical sash
+// Outer allotment: trim sash to avoid overlapping with rounded corners of the vis panel
 .outer-allotment {
+    // Hide the gray separator border (it would overlap with the rounded vis panel corners)
     --separator-border: transparent !important;
-    --focus-border: transparent !important;
+    --focus-border: #007fd4 !important;
+    --sash-hover-transition-duration: 0s !important;
 
-    // Target sash elements using attribute selector (CSS modules use hashed class names)
     [class*="sash_"][class*="vertical"] {
-        background: transparent !important;
-        pointer-events: none !important;
-        cursor: default !important;
-
-        // Override library's ::before hover highlight
-        &::before {
-            background: transparent !important;
-            width: 0 !important;
-            height: 0 !important;
-        }
-
-        // Chip handle via ::after
-        &::after {
-            content: '';
-            position: absolute;
-            left: 50%;
-            top: 50%;
-            transform: translate(-50%, -50%);
-            width: 6px;
-            height: 40px;
-            border-radius: 3px;
-            background: #d4d4d4;
-            box-shadow: 0 0 0 3px rgba(255,255,255,0.9);
-            transition: background 0.2s ease, box-shadow 0.2s ease;
-            pointer-events: auto !important;
-            cursor: col-resize !important;
-        }
-
-        &:hover::after {
-            background: #aaa;
-            box-shadow: 0 0 0 3px rgba(255,255,255,1);
-        }
-    }
-
-    // Hide separator border pseudo-element on split-view panes
-    [class*="splitViewView"]::before {
-        background-color: transparent !important;
+        top: 16px !important;
+        height: calc(100% - 32px) !important;
     }
 }
 

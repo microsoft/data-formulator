@@ -65,7 +65,8 @@ def run_exploration_flow_streaming(
     max_iterations: int = 5,
     max_repair_attempts: int = 1,
     agent_exploration_rules: str = "",
-    agent_coding_rules: str = ""
+    agent_coding_rules: str = "",
+    conversation_history: list[dict[str, str]] | None = None
 ) -> Generator[dict[str, Any], None, None]:
     """
     Run the complete exploration flow from high-level question to final insights as a streaming generator.
@@ -120,6 +121,15 @@ def run_exploration_flow_streaming(
         completed_steps = []
         current_question = initial_plan[0] if len(initial_plan) > 0 else "Let's explore something interesting."
         current_plan = initial_plan[1:] 
+
+        # If there is previous conversation history, prepend it as context to the current question
+        if conversation_history:
+            history_lines = []
+            for msg in conversation_history:
+                role_label = "User" if msg.get("role") == "user" else "Assistant"
+                history_lines.append(f"{role_label}: {msg.get('content', '')}")
+            history_context = "\n".join(history_lines)
+            current_question = f"[PREVIOUS CONVERSATION FOR REFERENCE]\n{history_context}\n\n[CURRENT REQUEST]\n{current_question}"
         
         # Collect exploration plans at each step
         exploration_plan_list = []
@@ -242,10 +252,15 @@ def run_exploration_flow_streaming(
             # Step 3: Use exploration agent to analyze results and decide next step
             logger.info(f"Iteration {iteration}: Using exploration agent to decide next step")
             
+            # If no remaining plan and we haven't explored much yet, ask agent to generate steps
+            next_steps_for_followup = current_plan
+            if not current_plan and len(completed_steps) < max_iterations:
+                next_steps_for_followup = ["(no remaining steps — please generate new follow-up steps to continue exploring if needed)"]
+
             followup_results = exploration_agent.suggest_followup(
                 input_tables=input_tables,
                 completed_steps=completed_steps,
-                next_steps=current_plan
+                next_steps=next_steps_for_followup
             )
 
             if not followup_results or followup_results[0]['status'] != 'ok':

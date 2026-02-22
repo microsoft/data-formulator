@@ -125,7 +125,8 @@ export interface DataFormulatorState {
         description: string, 
         status: 'running' | 'completed' | 'warning' | 'failed',
         lastUpdate: number, // the time the action is last updated
-        hidden: boolean // whether the action is hidden
+        hidden: boolean, // whether the action is hidden
+        messages: { content: string, role: 'user' | 'thinking' | 'completion' | 'error' | 'clarify', sourceTable?: string, resultTable?: string, timestamp: number }[] // accumulated messages from this action
     }[];
 
     // Data cleaning dialog state
@@ -481,12 +482,22 @@ export const dataFormulatorSlice = createSlice({
                 cleanInProgress: false,
             };
         },
-        updateAgentWorkInProgress: (state, action: PayloadAction<{actionId: string, tableId?: string, description: string, status: 'running' | 'completed' | 'warning' | 'failed', hidden: boolean}>) => {
+        updateAgentWorkInProgress: (state, action: PayloadAction<{actionId: string, tableId?: string, description: string, status: 'running' | 'completed' | 'warning' | 'failed', hidden: boolean, message?: { content: string, role: 'user' | 'thinking' | 'completion' | 'error' | 'clarify', sourceTable?: string, resultTable?: string }}>) => {
+            const now = Date.now();
             if (state.agentActions.some(a => a.actionId == action.payload.actionId)) {
-                state.agentActions = state.agentActions.map(a => a.actionId == action.payload.actionId ? 
-                    {...a, ...action.payload, lastUpdate: Date.now()} : a);
+                state.agentActions = state.agentActions.map(a => {
+                    if (a.actionId != action.payload.actionId) return a;
+                    const updated = {...a, ...action.payload, lastUpdate: now};
+                    if (action.payload.message) {
+                        updated.messages = [...(a.messages || []), { ...action.payload.message, timestamp: now }];
+                    }
+                    return updated;
+                });
             } else {
-                state.agentActions = [...state.agentActions, {...action.payload, tableId: action.payload.tableId || "", lastUpdate: Date.now(), hidden: action.payload.hidden}];
+                const messages = action.payload.message 
+                    ? [{ ...action.payload.message, timestamp: now }] 
+                    : [];
+                state.agentActions = [...state.agentActions, {...action.payload, tableId: action.payload.tableId || "", lastUpdate: now, hidden: action.payload.hidden, messages}];
             }
         },
         deleteAgentWorkInProgress: (state, action: PayloadAction<string>) => {
@@ -838,7 +849,18 @@ export const dataFormulatorSlice = createSlice({
                 }
 
                 // Adapt encodings: re-recommends with preference for existing fields
-                const adapted = vlAdaptChart(sourceType, chartType, filledEncodings, table?.rows, semanticTypes);
+                let adapted = vlAdaptChart(sourceType, chartType, filledEncodings, table?.rows, semanticTypes);
+
+                // Fallback: if adaptation returned nothing but we had fields,
+                // keep fields in channels that exist in both source and target
+                if (Object.keys(adapted).length === 0 && Object.keys(filledEncodings).length > 0) {
+                    const targetChannelSet = new Set(template.channels);
+                    for (const [ch, fieldName] of Object.entries(filledEncodings)) {
+                        if (targetChannelSet.has(ch)) {
+                            adapted[ch] = fieldName;
+                        }
+                    }
+                }
 
                 // Build new encoding map from adapted field names
                 const newEncodingMap = Object.assign(

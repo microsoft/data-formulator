@@ -462,7 +462,8 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
         const actionTables = selectedTableIds.map(id => tables.find(t => t.id === id) as DictTable);
 
         const actionId = `deriveDataFromNL_${String(Date.now())}`;
-        dispatch(dfActions.updateAgentWorkInProgress({actionId: actionId, tableId: tableId, description: instruction, status: 'running', hidden: false}));
+        dispatch(dfActions.updateAgentWorkInProgress({actionId: actionId, tableId: tableId, description: instruction, status: 'running', hidden: false,
+            message: { content: instruction, role: 'user', sourceTable: tableId }}));
 
         // Validate table selection
         const firstTableId = selectedTableIds[0];
@@ -755,7 +756,8 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
         }
 
         setIsFormulating(true);
-        dispatch(dfActions.updateAgentWorkInProgress({actionId: actionId, tableId: tableId, description: initialPlan[0], status: 'running', hidden: false}));
+        dispatch(dfActions.updateAgentWorkInProgress({actionId: actionId, tableId: tableId, description: initialPlan[0], status: 'running', hidden: false,
+            message: { content: initialPlan[0], role: 'user', sourceTable: tableId }}));
 
         let actionTables = selectedTableIds.map(id => tables.find(t => t.id === id) as DictTable);
 
@@ -799,7 +801,8 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
         const processStreamingResult = (result: any) => {
 
             if (result.type === "planning") {
-                dispatch(dfActions.updateAgentWorkInProgress({actionId: actionId, description: result.content.message, status: 'running', hidden: false}));
+                dispatch(dfActions.updateAgentWorkInProgress({actionId: actionId, description: result.content.message, status: 'running', hidden: false,
+                    message: { content: result.content.message, role: 'thinking' }}));
             }
 
             if (result.type === "data_transformation" && result.status === "success") {
@@ -859,7 +862,8 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
 
                 createdTables.push(candidateTable);
 
-                dispatch(dfActions.updateAgentWorkInProgress({actionId: actionId, tableId: candidateTable.id, description: '', status: 'running', hidden: false}));
+                dispatch(dfActions.updateAgentWorkInProgress({actionId: actionId, tableId: candidateTable.id, description: displayInstruction, status: 'running', hidden: false,
+                    message: { content: displayInstruction, role: 'thinking', resultTable: candidateTable.id }}));
 
                 // Add missing concept items for this table
                 const names = candidateTable.names;
@@ -945,7 +949,8 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                 let status : "running" | "completed" | "warning" | "failed" = completionResult.status === "success" ? "completed" : "warning";
 
                 dispatch(dfActions.updateAgentWorkInProgress({
-                    actionId: actionId, description: summary, status: status, hidden: false
+                    actionId: actionId, description: summary, status: status, hidden: false,
+                    message: { content: summary, role: 'completion' }
                 }));
 
                 let completionMessage = `Data exploration completed.`;
@@ -960,7 +965,8 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                 // Clear the prompt after successful exploration
                 setPrompt("");
             } else {
-                dispatch(dfActions.updateAgentWorkInProgress({actionId: actionId, description: "The agent got lost in the data.", status: 'warning', hidden: false}));
+                dispatch(dfActions.updateAgentWorkInProgress({actionId: actionId, description: "The agent got lost in the data.", status: 'warning', hidden: false,
+                    message: { content: "The agent got lost in the data.", role: 'clarify' }}));
 
                 dispatch(dfActions.addMessages({
                     "timestamp": Date.now(),
@@ -1026,7 +1032,8 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                                         clearTimeout(timeoutId);
                                         
                                         // Clean up the inprogress thinking when streaming fails
-                                        dispatch(dfActions.updateAgentWorkInProgress({actionId: actionId, description: data.error_message || "Error during data exploration", status: 'failed', hidden: false}));
+                                        dispatch(dfActions.updateAgentWorkInProgress({actionId: actionId, description: data.error_message || "Error during data exploration", status: 'failed', hidden: false,
+                                            message: { content: data.error_message || "Error during data exploration", role: 'error' }}));
                                         
                                         dispatch(dfActions.addMessages({
                                             "timestamp": Date.now(),
@@ -1053,7 +1060,8 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
             
             // Clean up the inprogress thinking when network errors occur
             const errorMessage = error.name === 'AbortError' ? "Data exploration timed out" : `Data exploration failed: ${error.message}`;
-            dispatch(dfActions.updateAgentWorkInProgress({actionId: actionId, description: errorMessage, status: 'failed', hidden: false}));
+            dispatch(dfActions.updateAgentWorkInProgress({actionId: actionId, description: errorMessage, status: 'failed', hidden: false,
+                message: { content: errorMessage, role: 'error' }}));
             
             if (error.name === 'AbortError') {
                 dispatch(dfActions.addMessages({

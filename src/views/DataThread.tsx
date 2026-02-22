@@ -70,7 +70,7 @@ import ScatterPlotIcon from '@mui/icons-material/ScatterPlot';
 import PieChartOutlineIcon from '@mui/icons-material/PieChartOutline';
 import GridOnIcon from '@mui/icons-material/GridOn';
 import { useDataRefresh } from '../app/useDataRefresh';
-import { AgentStatusBox, buildChartCard, buildTriggerCard, buildTableCard, BuildTableCardProps } from './DataThreadCards';
+import { buildChartCard, buildTriggerCard, buildTableCard, BuildTableCardProps } from './DataThreadCards';
 import { UnifiedDataUploadDialog } from './UnifiedDataUploadDialog';
 import { AgentRulesDialog } from './AgentRulesDialog';
 import RuleIcon from '@mui/icons-material/Rule';
@@ -1044,7 +1044,7 @@ let SingleThreadGroupView: FC<{
     // Shared props for buildTableCard calls
     let tableCardProps: Omit<BuildTableCardProps, 'tableId'> = {
         tables, charts, chartElements, usedIntermediateTableIds,
-        highlightedTableIds, agentActions, focusedTableId, focusedChartId, focusedChart,
+        highlightedTableIds, focusedTableId, focusedChartId, focusedChart,
         parentTable, tableIdList, collapsed, scrollRef, dispatch,
         handleOpenTableMenu, primaryBgColor: theme.palette.primary.bgcolor,
     };
@@ -1128,13 +1128,11 @@ let SingleThreadGroupView: FC<{
             tableCard.forEach((subItem: any, j: number) => {
                 if (!subItem) return;
                 const subKey = subItem?.key || `woven-${tableId}-${j}`;
-                const isChart = subKey.includes('chart') || subKey.includes('agent');
-                const isAgent = subKey.includes('agent');
-                const isAgentRunning = isAgent && runningAgentTableIds.has(tableId);
-                // Extract chartType from the key (pattern: 'relevant-chart-{chartId}' or 'agent-status-{chartId}')
+                const isChart = subKey.includes('chart');
+                // Extract chartType from the key (pattern: 'relevant-chart-{chartId}')
                 let itemChartType: string | undefined;
                 if (isChart) {
-                    const cIdMatch = subKey.match(/(?:chart|agent-status)-(.+)$/);
+                    const cIdMatch = subKey.match(/(?:chart)-(.+)$/);
                     if (cIdMatch) {
                         const cObj = charts.find(c => c.id === cIdMatch[1]);
                         itemChartType = cObj?.chartType;
@@ -1147,8 +1145,20 @@ let SingleThreadGroupView: FC<{
                     chartType: itemChartType,
                     highlighted: isHighlighted,
                     element: subItem,
-                    ...(isAgentRunning ? { isRunning: true } : {}),
                 });
+            });
+        }
+
+        // If an agent is running on this table, add a "working..." indicator
+        if (runningAgentTableIds.has(tableId)) {
+            const runningAction = agentActions.find(a => a.tableId === tableId && a.status === 'running' && !a.hidden);
+            const message = runningAction?.description || 'working...';
+            timelineItems.push({
+                key: `agent-running-${tableId}`,
+                type: 'chart',
+                highlighted: isHighlighted,
+                isRunning: true,
+                element: ThinkingBanner(message, { px: 1, py: 0.5 }),
             });
         }
     });
@@ -1169,12 +1179,10 @@ let SingleThreadGroupView: FC<{
             leafCards.forEach((subItem: any, j: number) => {
                 if (!subItem) return;
                 const subKey = subItem?.key || `leaf-card-${lt.id}-${j}`;
-                const isChart = subKey.includes('chart') || subKey.includes('agent');
-                const isAgent = subKey.includes('agent');
-                const isAgentRunning = isAgent && runningAgentTableIds.has(lt.id);
+                const isChart = subKey.includes('chart');
                 let leafChartType: string | undefined;
                 if (isChart) {
-                    const cIdMatch = subKey.match(/(?:chart|agent-status)-(.+)$/);
+                    const cIdMatch = subKey.match(/(?:chart)-(.+)$/);
                     if (cIdMatch) {
                         const cObj = charts.find(c => c.id === cIdMatch[1]);
                         leafChartType = cObj?.chartType;
@@ -1187,8 +1195,20 @@ let SingleThreadGroupView: FC<{
                     chartType: leafChartType,
                     highlighted: highlightedTableIds.includes(lt.id),
                     element: subItem,
-                    ...(isAgentRunning ? { isRunning: true } : {}),
                 });
+            });
+        }
+
+        // If an agent is running on this leaf table, add a "working..." indicator
+        if (runningAgentTableIds.has(lt.id)) {
+            const runningAction = agentActions.find(a => a.tableId === lt.id && a.status === 'running' && !a.hidden);
+            const message = runningAction?.description || 'working...';
+            timelineItems.push({
+                key: `agent-running-${lt.id}`,
+                type: 'chart',
+                highlighted: highlightedTableIds.includes(lt.id),
+                isRunning: true,
+                element: ThinkingBanner(message, { px: 1, py: 0.5 }),
             });
         }
     });
@@ -1681,18 +1701,16 @@ const ChartThumbnail: FC<{
 const LAYOUT_TABLE_HEIGHT = 28 + 8;     // table card + row padding
 const LAYOUT_TRIGGER_HEIGHT = 43 + 8;   // trigger card (2 lines) + row padding
 const LAYOUT_CHART_HEIGHT = 90 + 8;     // chart card (~70-110) + row padding
-const LAYOUT_MESSAGE_HEIGHT = 80 + 8;   // agent message (~60-120) + row padding
 const LAYOUT_THREAD_OVERHEAD = 52;      // header divider + thread padding
 const LAYOUT_THREAD_GAP = 8;            // my: 0.5 = 4px top + 4px bottom between threads
 
 function estimateThreadHeight(
-    tableCount: number, triggerCount: number, chartCount: number, messageCount: number
+    tableCount: number, triggerCount: number, chartCount: number
 ): number {
     return LAYOUT_THREAD_OVERHEAD
         + tableCount * LAYOUT_TABLE_HEIGHT
         + triggerCount * LAYOUT_TRIGGER_HEIGHT
-        + chartCount * LAYOUT_CHART_HEIGHT
-        + messageCount * LAYOUT_MESSAGE_HEIGHT;
+        + chartCount * LAYOUT_CHART_HEIGHT;
 }
 
 /**
@@ -1870,7 +1888,6 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
     let chartSynthesisInProgress = useSelector((state: DataFormulatorState) => state.chartSynthesisInProgress);
 
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
-    const agentActions = useSelector((state: DataFormulatorState) => state.agentActions);
 
     const scrollRef = useRef<null | HTMLDivElement>(null)
     const containerRef = useRef<null | HTMLDivElement>(null)
@@ -1893,11 +1910,11 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
 
     const theme = useTheme();
 
-    const executeScroll = (smooth: boolean = true) => { 
+    const executeScroll = (smooth: boolean = true, block: ScrollLogicalPosition = 'center') => { 
         if (scrollRef.current != null) {
             scrollRef.current.scrollIntoView({ 
                 behavior: smooth ? 'smooth' : 'auto', 
-                block: 'center'
+                block
             }) 
         }
     }
@@ -1918,6 +1935,28 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
             executeScroll(true);
         }
     }, [focusedTableId]);
+
+    // When the chatbox panel expands, scroll the focused table above the overlay if needed
+    useEffect(() => {
+        if (chatboxFocused && focusedTableId && scrollRef.current && containerRef.current) {
+            setTimeout(() => {
+                if (!scrollRef.current || !containerRef.current) return;
+                const container = containerRef.current;
+                const el = scrollRef.current;
+                const containerRect = container.getBoundingClientRect();
+                const elRect = el.getBoundingClientRect();
+                // The overlay panel is ~220px from bottom; ensure the focused element's bottom
+                // is at least 240px above the container's bottom
+                const safeZone = 400;
+                const elBottomInContainer = elRect.bottom - containerRect.top;
+                const visibleHeight = containerRect.height - safeZone;
+                if (elBottomInContainer > visibleHeight) {
+                    // Scroll so the element top is near the top of the container
+                    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }
+            }, 100);
+        }
+    }, [chatboxFocused]);
 
     // O(1) table lookup by ID
     const tableById = useMemo(() => new Map(tables.map(t => [t.id, t])), [tables]);
@@ -2083,7 +2122,6 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
     if (hangingTables.length > 0) {
         hangingTables.forEach(lt => claimedTableIds.add(lt.id));
         let hangingChartCount = hangingTables.reduce((sum, lt) => sum + chartElements.filter(ce => ce.tableId === lt.id).length, 0);
-        let hangingMessageCount = hangingTables.reduce((sum, lt) => sum + agentActions.filter(a => a.tableId === lt.id && !a.hidden).length, 0);
         allThreadEntries.push({
             key: 'hanging-tables',
             groupId: 'hanging-tables',
@@ -2091,7 +2129,7 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
             threadIdx: -1,
             hideLabel: true,
         });
-        allThreadHeights.push(estimateThreadHeight(hangingTables.length, 0, hangingChartCount, hangingMessageCount));
+        allThreadHeights.push(estimateThreadHeight(hangingTables.length, 0, hangingChartCount));
     }
 
     // Regular threads: one per threaded leaf table
@@ -2139,7 +2177,6 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
 
         let newTriggerCount = triggers.filter(t => newTableIds.includes(t.resultTableId)).length;
         let chartCount = newTableIds.reduce((sum, tid) => sum + chartElements.filter(ce => ce.tableId === tid).length, 0);
-        let messageCount = newTableIds.reduce((sum, tid) => sum + agentActions.filter(a => a.tableId === tid && !a.hidden).length, 0);
 
         // +1 table and +1 trigger for the leaf table itself
         let totalTables = newTableIds.length + 1;
@@ -2186,7 +2223,7 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
             threadLabel,
             isSplitThread: isContinuation,
         });
-        allThreadHeights.push(estimateThreadHeight(totalTables, totalTriggers, chartCount, messageCount));
+        allThreadHeights.push(estimateThreadHeight(totalTables, totalTriggers, chartCount));
     });
 
     // Pre-compute usedTableIds for each entry (avoids quadratic recomputation in renderThreadEntry)
@@ -2257,34 +2294,23 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
             overflowY: 'auto',
             overflowX: 'hidden',
             position: 'relative',
-            display: 'flex',
-            flexDirection: 'row',
-            justifyContent: 'center',
             direction: 'ltr',
             height: 'calc(100% - 16px)',
-            gap: `${CARD_GAP}px`,
-            py: 1,
-            pl: `${PANEL_PADDING / 2}px`,
-            pr: 0,
             width: panelWidth,
         }}>
-            {/* First column: workspace panel + first batch of threads */}
-            <Box key="thread-column-0" sx={{
+            <Box sx={{
                 display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                gap: 0,
-                width: CARD_WIDTH,
-                flexShrink: 0,
+                flexDirection: 'row',
+                flexWrap: 'nowrap',
+                justifyContent: 'center',
+                gap: `${CARD_GAP}px`,
+                py: 1,
+                pb: chatboxFocused ? '180px' : 1,
+                pl: `${PANEL_PADDING / 2}px`,
+                pr: 0,
             }}>
-                {(columnLayout[0] || []).map((idx: number) => {
-                    const entry = allThreadEntries[idx];
-                    return entry ? renderThreadEntry(entry) : null;
-                })}
-            </Box>
-            {/* Remaining columns */}
-            {columnLayout.slice(1).map((columnIndices: number[], colIdx: number) => (
-                <Box key={`thread-column-${colIdx + 1}`} sx={{
+                {/* First column: workspace panel + first batch of threads */}
+                <Box key="thread-column-0" sx={{
                     display: 'flex',
                     flexDirection: 'column',
                     alignItems: 'center',
@@ -2292,12 +2318,28 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
                     width: CARD_WIDTH,
                     flexShrink: 0,
                 }}>
-                    {columnIndices.map((idx: number) => {
+                    {(columnLayout[0] || []).map((idx: number) => {
                         const entry = allThreadEntries[idx];
                         return entry ? renderThreadEntry(entry) : null;
                     })}
                 </Box>
-            ))}
+                {/* Remaining columns */}
+                {columnLayout.slice(1).map((columnIndices: number[], colIdx: number) => (
+                    <Box key={`thread-column-${colIdx + 1}`} sx={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        gap: 0,
+                        width: CARD_WIDTH,
+                        flexShrink: 0,
+                    }}>
+                        {columnIndices.map((idx: number) => {
+                            const entry = allThreadEntries[idx];
+                            return entry ? renderThreadEntry(entry) : null;
+                        })}
+                    </Box>
+                ))}
+            </Box>
         </Box>
     ) : null;
 

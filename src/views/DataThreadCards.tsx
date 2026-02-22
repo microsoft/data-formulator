@@ -5,7 +5,6 @@ import React, { memo } from 'react';
 
 import {
     Box,
-    Divider,
     Typography,
     Stack,
     Card,
@@ -13,7 +12,6 @@ import {
     Tooltip,
     ButtonGroup,
     useTheme,
-    CircularProgress,
 } from '@mui/material';
 
 import { dfActions } from '../app/dfSlice';
@@ -22,139 +20,10 @@ import { Chart, DictTable, Trigger } from "../components/ComponentType";
 import DeleteIcon from '@mui/icons-material/Delete';
 import { AnchorIcon } from '../icons';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
-import CloseIcon from '@mui/icons-material/Close';
-import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
-import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
-import CancelOutlinedIcon from '@mui/icons-material/CancelOutlined';
 
 import { TriggerCard } from './EncodingShelfCard';
 import { ComponentBorderStyle, shadow, transition } from '../app/tokens';
 
-
-// ─── Agent Status Box ────────────────────────────────────────────────────────
-
-export const AgentStatusBox = memo<{
-    tableId: string;
-    relevantAgentActions: any[];
-    dispatch: any;
-}>(({ tableId, relevantAgentActions, dispatch }) => {
-
-    let theme = useTheme();
-
-    let agentStatus = undefined;
-
-    let getAgentStatusColor = (status: string) => {
-        switch (status) {
-            case 'running':
-                return `${theme.palette.text.secondary} !important`;
-            case 'completed':
-                return `${theme.palette.success.main} !important`;
-            case 'failed':
-                return `${theme.palette.error.main} !important`;
-            case 'warning':
-                return `${theme.palette.warning.main} !important`;
-            default:
-                return `${theme.palette.text.secondary} !important`;
-        }
-    }
-
-    let currentActions = relevantAgentActions;
-
-    if (currentActions.some(a => a.status == 'running')) {
-        agentStatus = 'running';
-    } else if (currentActions.every(a => a.status == 'completed')) {
-        agentStatus = 'completed';
-    } else if (currentActions.every(a => a.status == 'failed')) {
-        agentStatus = 'failed';
-    } else {
-        agentStatus = 'warning';
-    }
-    
-    if (currentActions.length === 0) {
-        return null;
-    }
-
-    return (
-        <Box sx={{ padding: '0px 8px' }}>
-            {(
-                <Box sx={{ 
-                    py: 1, 
-                    display: 'flex', 
-                    alignItems: 'center', 
-                    justifyContent: 'left',
-                    '& .MuiSvgIcon-root, .MuiTypography-root': {
-                        fontSize: 10,
-                        color: getAgentStatusColor(agentStatus)
-                    },
-                }}>
-                    {agentStatus === 'running' && <CircularProgress size={10} sx={{ color: 'text.secondary' }} />}
-                    {agentStatus === 'completed' && <CheckCircleOutlineIcon />}
-                    {agentStatus === 'failed' && <CancelOutlinedIcon />}
-                    {agentStatus === 'warning' && <HelpOutlineIcon />}
-                    <Typography variant="body2" sx={{ 
-                        ml: 0.5, 
-                        fontSize: 10,
-                    }}>
-                        {agentStatus === 'warning' && 'hmm...'}
-                        {agentStatus === 'failed' && 'oops...'}
-                        {agentStatus === 'completed' && 'completed'}
-                        {agentStatus === 'running' && 'working...'}
-                    </Typography>
-                    <Tooltip title="Delete message">
-                        <IconButton
-                            className="delete-button"
-                            size="small"
-                            sx={{
-                                padding: '2px',
-                                ml: 'auto',
-                                transition: 'opacity 0.1s ease-in-out',
-                                '& .MuiSvgIcon-root': { fontSize: 12, color: 'darkgray !important' }
-                            }}
-                            onClick={(event) => {
-                                event.stopPropagation();
-                                dispatch(dfActions.deleteAgentWorkInProgress(relevantAgentActions[0].actionId));
-                            }}
-                        >
-                            <CloseIcon fontSize="small" />
-                        </IconButton>
-                    </Tooltip>
-                </Box>
-            )}
-            {agentStatus !== 'running' && currentActions.map((a, index, array) => {
-                let descriptions = String(a.description).split('\n');
-                return (
-                    <React.Fragment key={a.actionId + "-" + index}>
-                        <Box sx={{ 
-                            position: 'relative',
-                        }}>
-                            {descriptions.map((line: string, lineIndex: number) => (
-                                <React.Fragment key={lineIndex}>
-                                    <Typography variant="body2" sx={{ 
-                                        fontSize: 10, 
-                                        color: getAgentStatusColor(a.status),
-                                        whiteSpace: 'pre-wrap',
-                                        wordBreak: 'break-word'
-                                    }}>
-                                        {line}
-                                    </Typography>
-                                    {lineIndex < descriptions.length - 1 && <Divider sx={{ my: 0.5, }} />}
-                                </React.Fragment>
-                            ))}
-                        </Box>
-                        {index < array.length - 1 && array.length > 1 && (
-                            <Box sx={{ 
-                                ml: 1, 
-                                height: '1px', 
-                                backgroundColor: 'rgba(0, 0, 0, 0.2)', 
-                                my: 0.5 
-                            }} />
-                        )}
-                    </React.Fragment>
-                )
-            })}
-        </Box>
-    );
-});
 
 // ─── Chart Card ──────────────────────────────────────────────────────────────
 
@@ -213,7 +82,6 @@ export interface BuildTableCardProps {
     chartElements: { tableId: string, chartId: string, element: any }[];
     usedIntermediateTableIds: string[];
     highlightedTableIds: string[];
-    agentActions: any[];
     focusedTableId: string | undefined;
     focusedChartId: string | undefined;
     focusedChart: Chart | undefined;
@@ -229,7 +97,7 @@ export interface BuildTableCardProps {
 export let buildTableCard = (props: BuildTableCardProps) => {
     const {
         tableId, tables, charts, chartElements, usedIntermediateTableIds,
-        highlightedTableIds, agentActions, focusedTableId, focusedChartId, focusedChart,
+        highlightedTableIds, focusedTableId, focusedChartId, focusedChart,
         parentTable, tableIdList, collapsed, scrollRef, dispatch,
         handleOpenTableMenu, primaryBgColor,
     } = props;
@@ -334,24 +202,8 @@ export let buildTableCard = (props: BuildTableCardProps) => {
         </Card>
     </Box>
 
-    let relevantAgentActions = agentActions.filter(a => a.tableId == tableId).filter(a => a.hidden == false);
-
-    let agentActionBox = (
-        <AgentStatusBox 
-            tableId={tableId}
-            relevantAgentActions={relevantAgentActions}
-            dispatch={dispatch}
-        />
-    )
-
     return [
         regularTableBox,
         ...releventChartElements,
-        ...(relevantAgentActions.length > 0 ? [
-            <Box key={`table-agent-actions-box-${tableId}`}
-                sx={{ flex: 1, padding: '0px', minHeight: '0px' }}>
-                {agentActionBox}
-            </Box>
-        ] : [])
     ]
 }

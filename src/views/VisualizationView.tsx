@@ -1021,7 +1021,10 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                             in={!isDataStale} timeout={600}>    
                             <Box sx={{display: "flex", flexDirection: "column", flexShrink: 0, justifyContent: 'center', justifyItems: 'center', maxWidth: '100%'}} className="chart-box">
                                 {insightFresh && focusedChart.insight?.title && (
-                                    <Typography fontSize="small" sx={{ fontWeight: 600, textAlign: 'center', mb: 0.5, color: 'text.secondary' }}>
+                                    <Typography fontSize="small" sx={{
+                                        fontWeight: (focusedChart.encodingMap.column?.fieldID || focusedChart.encodingMap.row?.fieldID) ? 400 : 600,
+                                        textAlign: 'center', mb: 0.5, color: 'text.secondary',
+                                    }}>
                                         {focusedChart.insight.title}
                                     </Typography>
                                 )}

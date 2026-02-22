@@ -409,6 +409,7 @@ def explore_data_streaming():
             max_repair_attempts = content.get("max_repair_attempts", 1)
             agent_exploration_rules = content.get("agent_exploration_rules", "")
             agent_coding_rules = content.get("agent_coding_rules", "")
+            conversation_history = content.get("conversation_history", None)
 
             logger.info("== input tables ===>")
             for table in input_tables:
@@ -439,7 +440,8 @@ def explore_data_streaming():
                     max_iterations=max_iterations,
                     max_repair_attempts=max_repair_attempts,
                     agent_exploration_rules=agent_exploration_rules,
-                    agent_coding_rules=agent_coding_rules
+                    agent_coding_rules=agent_coding_rules,
+                    conversation_history=conversation_history
                 ):
                     response_data = { 
                         "token": token, 

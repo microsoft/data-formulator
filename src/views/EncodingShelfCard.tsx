@@ -41,6 +41,7 @@ import {
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 
 import React from 'react';
+import { useDragLayer } from 'react-dnd';
 import { ThinkingBufferEffect } from '../components/FunComponents';
 import { Channel, Chart, FieldItem, Trigger, duplicateChart } from "../components/ComponentType";
 
@@ -237,6 +238,18 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
 
     const [chartTypeMenuOpen, setChartTypeMenuOpen] = useState<boolean>(false);
     const [encodingHovered, setEncodingHovered] = useState<boolean>(false);
+
+    // Auto-expand encoding shelf when dragging a concept or operator card
+    const { isDraggingField } = useDragLayer((monitor) => ({
+        isDraggingField: monitor.isDragging() && 
+            (monitor.getItemType() === 'concept-card' || monitor.getItemType() === 'operator-card'),
+    }));
+
+    const shouldExpand = encodingHovered || isDraggingField;
+
+    // When no fields are assigned to any channel, show all channels expanded
+    const hasAnyField = Object.values(encodingMap).some(enc => enc?.fieldID);
+    const shouldExpandAll = !hasAnyField || shouldExpand;
     
 
     let handleUpdateChartType = (newChartType: string) => {
@@ -295,17 +308,18 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
             let occupiedChannels = channels.filter(ch => encodingMap[ch as Channel]?.fieldID);
             let unoccupiedChannels = channels.filter(ch => !encodingMap[ch as Channel]?.fieldID);
 
-            let hasVisibleContent = occupiedChannels.length > 0 || encodingHovered;
+            let hasVisibleContent = occupiedChannels.length > 0 || shouldExpandAll;
 
-            let component = <Box key={`encoding-group-box-${group}`} sx={{ mt: (group && encodingHovered) ? '6px' : 0 }}>
-                {occupiedChannels.map(channel => 
-                    <EncodingBox key={`shelf-${channel}`} channel={channel as Channel} chartId={chartId} tableId={currentTable.id} />
-                )}
-                <Collapse in={encodingHovered} timeout={200}>
-                    {unoccupiedChannels.map(channel => 
-                        <EncodingBox key={`shelf-${channel}`} channel={channel as Channel} chartId={chartId} tableId={currentTable.id} />
-                    )}
-                </Collapse>
+            let component = <Box key={`encoding-group-box-${group}`} sx={{ mt: (group && shouldExpandAll) ? '6px' : 0 }}>
+                {channels.map(channel => {
+                    const isOccupied = encodingMap[channel as Channel]?.fieldID;
+                    const box = <EncodingBox key={`shelf-${channel}`} channel={channel as Channel} chartId={chartId} tableId={currentTable.id} />;
+                    return isOccupied ? box : (
+                        <Collapse key={`collapse-${channel}`} in={shouldExpandAll} timeout={200}>
+                            {box}
+                        </Collapse>
+                    );
+                })}
             </Box>
             return component;
         });
@@ -896,6 +910,19 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
             display: 'flex', flexDirection: 'row', alignItems: 'center',
             justifyContent: 'flex-end',
         }}>
+            <Tooltip title={currentChartIdeas.length > 0 ? "Refresh ideas" : "Get ideas"}>
+                <span>
+                    <IconButton size="small"
+                        disabled={isLoadingIdeas}
+                        sx={{ p: 0.5, color: theme.palette.custom.textColor || theme.palette.custom.main,
+                            '&:hover': { backgroundColor: alpha(theme.palette.custom.main, 0.08) } }}
+                        onClick={() => getIdeasForVisualization()}>
+                        {isLoadingIdeas 
+                            ? <CircularProgress size={20} sx={{ color: theme.palette.custom.main }} />
+                            : <TipsAndUpdatesIcon sx={{ fontSize: 20 }} />}
+                    </IconButton>
+                </span>
+            </Tooltip>
             {trigger ? 
                 <Tooltip title={<Typography sx={{fontSize: 11}}>formulate and override <TableIcon sx={{width: 10, height: 10, marginBottom: '-1px'}}/>{trigger.resultTableId}</Typography>}>
                     <span>
@@ -924,21 +951,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                         </IconButton>
                     </span>
                 </Tooltip>
-            }
-            <Divider orientation="vertical" flexItem sx={{ mx: 0.5 }} />
-            <Tooltip title={currentChartIdeas.length > 0 ? "Refresh ideas" : "Get ideas"}>
-                <span>
-                    <IconButton size="small"
-                        disabled={isLoadingIdeas}
-                        sx={{ p: 0.5, color: theme.palette.custom.textColor || theme.palette.custom.main,
-                            '&:hover': { backgroundColor: alpha(theme.palette.custom.main, 0.08) } }}
-                        onClick={() => getIdeasForVisualization()}>
-                        {isLoadingIdeas 
-                            ? <CircularProgress size={20} sx={{ color: theme.palette.custom.main }} />
-                            : <TipsAndUpdatesIcon sx={{ fontSize: 20 }} />}
-                    </IconButton>
-                </span>
-            </Tooltip>
+            }           
         </Box>
     </Card>
 

@@ -77,6 +77,40 @@ async function renderHeadless(
     return { svg, pngDataUrl };
 }
 
+/**
+ * Scale a PNG data URL down to the given dimensions.
+ * Renders the full-size image onto a smaller canvas to produce a
+ * properly downscaled thumbnail that preserves the chart's visual
+ * appearance (avoiding Vega-Lite layout optimizations for small sizes).
+ */
+async function scalePngDown(
+    pngDataUrl: string,
+    targetWidth: number,
+    targetHeight: number,
+): Promise<string> {
+    const img = new Image();
+    await new Promise<void>((resolve, reject) => {
+        img.onload = () => resolve();
+        img.onerror = reject;
+        img.src = pngDataUrl;
+    });
+
+    // Compute scaled size that fits within target bounds while preserving aspect ratio
+    const scale = Math.min(targetWidth / img.width, targetHeight / img.height, 1);
+    const w = Math.round(img.width * scale);
+    const h = Math.round(img.height * scale);
+
+    const canvas = document.createElement('canvas');
+    canvas.width = w * 2;   // 2x for retina
+    canvas.height = h * 2;
+    const ctx = canvas.getContext('2d')!;
+    ctx.fillStyle = 'white';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+    return canvas.toDataURL('image/png');
+}
+
 export const ChartRenderService: FC = () => {
     const dispatch = useDispatch();
 
@@ -112,35 +146,10 @@ export const ChartRenderService: FC = () => {
             // Pre-aggregate for the encoding map
             visTableRows = prepVisTable(visTableRows, items, chart.encodingMap);
 
-            // --- Assemble thumbnail spec (small, no tooltips) ---
-            const thumbSpec = assembleVegaChart(
-                chart.chartType,
-                chart.encodingMap,
-                items,
-                visTableRows,
-                table.metadata,
-                THUMB_WIDTH,
-                THUMB_HEIGHT,
-                false,  // no tooltips
-                chart.config,
-                1,
-                maxStretchFactor,
-            );
-
-            if (!thumbSpec || thumbSpec === "Table") return;
-
-            // Thumbnail config: mimic old approach — keep everything but shrink it
-            // proportionally so the thumbnail looks like a miniature of the full chart.
-            thumbSpec['config'] = {
-                ...thumbSpec['config'],
-                "axis": { ...thumbSpec['config']?.axis, "labelLimit": 30 },
-                "axisX": { labelLimit: 20, title: null },
-                "header": { title: null },
-                "legend": { ...thumbSpec['config']?.legend, "symbolLimit": 5, "labelLimit": 30 },
-            };
-            thumbSpec['background'] = 'white';
-
             // --- Assemble full-size spec (with tooltips) ---
+            // We render at the default full size and scale down for the thumbnail,
+            // so the chart looks like a miniature of the real thing instead of a
+            // completely different chart due to Vega-Lite layout optimizations.
             const fullSpec = assembleVegaChart(
                 chart.chartType,
                 chart.encodingMap,
@@ -158,16 +167,20 @@ export const ChartRenderService: FC = () => {
             if (!fullSpec || fullSpec === "Table") return;
             fullSpec['background'] = 'white';
 
-            // --- Render headlessly ---
-            const [thumbResult, fullResult] = await Promise.all([
-                renderHeadless(thumbSpec),
-                renderHeadless(fullSpec),
-            ]);
+            // --- Render headlessly (single full-size render) ---
+            const fullResult = await renderHeadless(fullSpec);
+
+            // Scale the full-size PNG down to thumbnail dimensions
+            const thumbnailPng = await scalePngDown(
+                fullResult.pngDataUrl,
+                THUMB_WIDTH,
+                THUMB_HEIGHT,
+            );
 
             // --- Store in cache ---
             const entry: ChartCacheEntry = {
                 svg: fullResult.svg,
-                thumbnailDataUrl: thumbResult.pngDataUrl,
+                thumbnailDataUrl: thumbnailPng,
                 specKey: cacheKey,
             };
             setCachedChart(chart.id, entry);
@@ -175,7 +188,7 @@ export const ChartRenderService: FC = () => {
             // --- Dispatch thumbnail to Redux for DataThread ---
             dispatch(dfActions.updateChartThumbnail({
                 chartId: chart.id,
-                thumbnail: thumbResult.pngDataUrl,
+                thumbnail: thumbnailPng,
             }));
 
         } catch (err) {

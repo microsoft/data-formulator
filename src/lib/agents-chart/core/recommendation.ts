@@ -262,12 +262,19 @@ export function adaptChannels(
 }
 
 /**
- * Recommendation-based adaptation: re-recommend using the currently-assigned
- * fields so the target chart's field-type preferences take effect.
+ * Recommendation-based adaptation: run the target chart type's recommendation
+ * engine with existing fields marked as "preferred".  The recommendation logic
+ * applies its normal type-matching (quantitative, categorical, temporal, etc.)
+ * but, when multiple candidates match, prefers fields that were already in use.
+ * Preferred fields also bypass heuristic filters like isLikelyIdentifierOrRank
+ * since the user intentionally assigned them.
  *
- * Step 1 — Run recommendation restricted to existing fields only.
- *          This naturally places fields optimally (e.g. Year→x for Line).
- * Step 2 — Fill any remaining empty channels from ALL available fields.
+ * Step 1 — Run recommendation with ALL fields present but existing fields
+ *          marked as preferred.  This lets the engine reshuffle fields into
+ *          their best-fitting channels for the target type while preferring
+ *          the user's current selections.
+ * Step 2 — Fill any remaining empty channels from ALL available fields
+ *          (without preference bias) so the chart is as complete as possible.
  */
 function adaptViaRecommendation(
     targetType: string,
@@ -278,39 +285,45 @@ function adaptViaRecommendation(
     recommendFn: RecommendFn,
 ): Record<string, string> {
     const existingFields = new Set(Object.values(encodings).filter(Boolean));
-
-    // Step 1: recommend using only the currently-assigned fields
-    const restrictedData = data.map(row => {
-        const r: Record<string, any> = {};
-        for (const f of existingFields) {
-            if (f in row) r[f] = row[f];
-        }
-        return r;
-    });
-    const restrictedST: Record<string, string> = {};
-    for (const f of existingFields) {
-        if (semanticTypes[f]) restrictedST[f] = semanticTypes[f];
-    }
-    const recommended = recommendFn(
-        targetType,
-        buildTableView(restrictedData, restrictedST),
-    );
-
     const result: Record<string, string> = {};
     const usedFields = new Set<string>();
+
+    // Step 0: Preserve facet channels (column, row) from existing encodings.
+    // Then filter data to a single facet group so downstream checks like
+    // isValidLineSeriesData see the data as it would appear within one facet.
+    const FACET_CHANNELS = ['column', 'row'];
+    let facetedData = data;
+    for (const ch of FACET_CHANNELS) {
+        const field = encodings[ch];
+        if (field && targetChannels.includes(ch)) {
+            result[ch] = field;
+            usedFields.add(field);
+            // Filter data to the first facet group value
+            if (facetedData.length > 0) {
+                const firstVal = facetedData[0][field];
+                facetedData = facetedData.filter(row => row[field] === firstVal);
+            }
+        }
+    }
+
+    // Step 1: recommend with existing fields as preferred, using facet-filtered data
+    const tv = buildTableView(facetedData, semanticTypes);
+    tv.preferredFields = existingFields;
+    const recommended = recommendFn(targetType, tv);
+
     for (const [ch, field] of Object.entries(recommended)) {
-        if (targetChannels.includes(ch)) {
+        if (targetChannels.includes(ch) && !usedFields.has(field) && !(ch in result)) {
             result[ch] = field;
             usedFields.add(field);
         }
     }
 
-    // Step 2: fill remaining empty channels from ALL available fields
+    // Step 2: fill remaining empty channels from ALL fields (no preference)
     const emptyChannels = targetChannels.filter(ch => !(ch in result));
     if (emptyChannels.length > 0) {
         const fullRec = recommendFn(
             targetType,
-            buildTableView(data, semanticTypes),
+            buildTableView(facetedData, semanticTypes),   // no preferredFields
         );
         for (const ch of emptyChannels) {
             if (fullRec[ch] && !usedFields.has(fullRec[ch])) {
@@ -411,6 +424,8 @@ export interface InternalTableView {
     fieldSemanticType: Record<string, string>;
     fieldLevels: Record<string, any[]>;
     rows: any[];
+    /** Fields the user has already assigned — preferred during pick(). */
+    preferredFields?: Set<string>;
 }
 
 /**
@@ -471,7 +486,7 @@ export function resolveAssignment(
     channelPrefs: { channel: string; pref: ChannelPrefFn }[],
 ): Record<string, string> {
     // Build the score matrix: scores[channelIdx][fieldIdx]
-    const candidates: string[] = tv.names.filter(n => !used.has(n) && !isLikelyIdentifierOrRank(n));
+    const candidates: string[] = tv.names.filter(n => !used.has(n) && (!isLikelyIdentifierOrRank(n) || tv.preferredFields?.has(n)));
     const C = channelPrefs.length;
     const F = candidates.length;
     if (F < C) return {};
@@ -595,13 +610,22 @@ export function pick(
         }
     }
     if (candidates.length === 0) return undefined;
+    // Prefer fields from the user's existing encodings when available
+    if (tv.preferredFields) {
+        const preferred = candidates.filter(n => tv.preferredFields!.has(n));
+        if (preferred.length > 0) {
+            const chosen = preferred[Math.floor(Math.random() * preferred.length)];
+            used.add(chosen);
+            return chosen;
+        }
+    }
     const chosen = candidates[Math.floor(Math.random() * candidates.length)];
     used.add(chosen);
     return chosen;
 }
 
 export const pickQuantitative = (tv: InternalTableView, u: Set<string>) =>
-    pick(tv, u, (name, ty, st) => isQuantitativeField(ty, st) && !isLikelyIdentifierOrRank(name));
+    pick(tv, u, (name, ty, st) => isQuantitativeField(ty, st) && (!isLikelyIdentifierOrRank(name) || !!tv.preferredFields?.has(name)));
 
 export const pickTemporal = (tv: InternalTableView, u: Set<string>) =>
     pick(tv, u, (_n, ty, st) => isTemporalField(ty, st));
@@ -619,12 +643,12 @@ export const pickGeo = (tv: InternalTableView, u: Set<string>) =>
     pick(tv, u, (_n, _ty, st) => isGeoType(st));
 
 export const pickDiscrete = (tv: InternalTableView, u: Set<string>) =>
-    pick(tv, u, (name, ty, st, card) => isDiscreteLike(ty, st, card) && !isLikelyIdentifierOrRank(name));
+    pick(tv, u, (name, ty, st, card) => isDiscreteLike(ty, st, card) && (!isLikelyIdentifierOrRank(name) || !!tv.preferredFields?.has(name)));
 
 export const pickLowCardDiscrete = (tv: InternalTableView, u: Set<string>, maxCard = 30) =>
     pick(tv, u, (name, ty, st, card) =>
         isDiscreteLike(ty, st, card, maxCard) && card > 0 && card <= maxCard
-        && !isLikelyIdentifierOrRank(name)
+        && (!isLikelyIdentifierOrRank(name) || !!tv.preferredFields?.has(name))
     );
 
 export const pickSeriesAxis = (tv: InternalTableView, u: Set<string>) =>
@@ -639,7 +663,7 @@ export function pickAllQuantitative(tv: InternalTableView, used: Set<string>): s
         if (used.has(name)) continue;
         const type = tv.fieldType[name] ?? 'nominal';
         const semanticType = tv.fieldSemanticType[name] ?? '';
-        if (isQuantitativeField(type, semanticType) && !isLikelyIdentifierOrRank(name)) {
+        if (isQuantitativeField(type, semanticType) && (!isLikelyIdentifierOrRank(name) || tv.preferredFields?.has(name))) {
             result.push(name);
         }
     }
@@ -684,10 +708,19 @@ export function pickValidGroupingField(
         const cardinality = tv.fieldLevels[name]?.length ?? 0;
         if (!isDiscreteLike(type, semanticType, cardinality, maxCard)) continue;
         if (cardinality <= 0 || cardinality > maxCard) continue;
-        if (isLikelyIdentifierOrRank(name)) continue;
+        if (isLikelyIdentifierOrRank(name) && !tv.preferredFields?.has(name)) continue;
         if (isValidGroupingField(tv, xField, name)) candidates.push(name);
     }
     if (candidates.length === 0) return undefined;
+    // Prefer fields from existing encodings
+    if (tv.preferredFields) {
+        const preferred = candidates.filter(n => tv.preferredFields!.has(n));
+        if (preferred.length > 0) {
+            const chosen = preferred[Math.floor(Math.random() * preferred.length)];
+            used.add(chosen);
+            return chosen;
+        }
+    }
     const chosen = candidates[Math.floor(Math.random() * candidates.length)];
     used.add(chosen);
     return chosen;
@@ -727,10 +760,19 @@ export function pickLineChartColorField(
         const cardinality = tv.fieldLevels[name]?.length ?? 0;
         if (!isDiscreteLike(type, semanticType, cardinality, maxCard)) continue;
         if (cardinality <= 0 || cardinality > maxCard) continue;
-        if (isLikelyIdentifierOrRank(name)) continue;
+        if (isLikelyIdentifierOrRank(name) && !tv.preferredFields?.has(name)) continue;
         if (isValidLineSeriesData(tv, xField, name)) candidates.push(name);
     }
     if (candidates.length === 0) return undefined;
+    // Prefer fields from existing encodings
+    if (tv.preferredFields) {
+        const preferred = candidates.filter(n => tv.preferredFields!.has(n));
+        if (preferred.length > 0) {
+            const chosen = preferred[Math.floor(Math.random() * preferred.length)];
+            used.add(chosen);
+            return chosen;
+        }
+    }
     const chosen = candidates[Math.floor(Math.random() * candidates.length)];
     used.add(chosen);
     return chosen;
@@ -761,7 +803,7 @@ export function pickBestGroupingField(
         const semanticType = tv.fieldSemanticType[name] ?? '';
         const cardinality = tv.fieldLevels[name]?.length ?? 0;
         if (!isDiscreteLike(type, semanticType, cardinality)) continue;
-        if (isLikelyIdentifierOrRank(name)) continue;
+        if (isLikelyIdentifierOrRank(name) && !tv.preferredFields?.has(name)) continue;
 
         const multiplicity = calculateMultiplicity(tv, xField, name);
         if (multiplicity < bestMultiplicity) {

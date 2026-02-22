@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import '../scss/App.scss';
 
 import { useDispatch, useSelector } from "react-redux"; /* code change */
@@ -211,8 +211,8 @@ export const DataFormulatorFC = ({ }) => {
     const CARD_WIDTH = 220;
     const CARD_GAP = 12;
     const COLUMN_WIDTH = CARD_WIDTH + CARD_GAP;
-    const PANEL_PADDING = 16;
-    const columnSize = (n: number) => n * COLUMN_WIDTH + PANEL_PADDING;
+    const PANEL_PADDING = 32 ;
+    const columnSize = (n: number) => n * COLUMN_WIDTH + (n == 1 ? 2  : 1) * PANEL_PADDING;
     const allotmentRef = useRef<AllotmentHandle>(null);
     const containerRef = useRef<HTMLDivElement>(null);
 
@@ -236,27 +236,67 @@ export const DataFormulatorFC = ({ }) => {
         }
     }, []);
 
+    // Compute thread count to decide preferred pane width:
+    // A "thread" is a leaf table's derivation chain displayed as a column.
+    const threadCount = useMemo(() => {
+        // A table is a "leaf" if no other non-anchored table derives from it
+        const hasNonAnchoredChild = new Set<string>();
+        tables.forEach(t => {
+            if (t.derive && !t.anchored) {
+                hasNonAnchoredChild.add(t.derive.trigger.tableId);
+            }
+        });
+        const leafTables = tables.filter(t => !hasNonAnchoredChild.has(t.id));
+        // Threads = leaf tables with derivation chains + 1 group for hanging (source) tables
+        const threaded = leafTables.filter(t => t.derive);
+        const hanging = leafTables.filter(t => !t.derive);
+        return threaded.length + (hanging.length > 0 ? 1 : 0);
+    }, [tables]);
+    const preferredColumns = threadCount <= 1 ? 1 : 2;
+
+    // Track previous thread count to auto-resize intelligently
+    const prevThreadCountRef = useRef(threadCount);
+    useEffect(() => {
+        const prev = prevThreadCountRef.current;
+        prevThreadCountRef.current = threadCount;
+        if (!allotmentRef.current || !containerRef.current) return;
+        const totalWidth = containerRef.current.clientWidth;
+        if (totalWidth <= 0) return;
+
+        if (prev <= 1 && threadCount > 1) {
+            // Case 1: was 1 thread, now 2+ → expand to 2 columns
+            const newSize = columnSize(2);
+            allotmentRef.current.resize([newSize, totalWidth - newSize]);
+        } else if (prev > 1 && threadCount <= 1) {
+            // Case 2: was 2+ threads, now 1 → shrink to 1 column
+            const newSize = columnSize(1);
+            allotmentRef.current.resize([newSize, totalWidth - newSize]);
+        }
+        // Case 3: was 2+ threads and still 2+ → don't change (respect user's manual setting)
+    }, [threadCount]);
+
     const fixedSplitPane = ( 
         <Box sx={{display: 'flex', flexDirection: 'row', height: '100%'}}>
-            <Box className="outer-allotment" sx={{
+            <Box ref={containerRef} className="outer-allotment" sx={{
                     margin: '4px 8px 4px 8px', backgroundColor: 'white',
                     display: 'flex', height: '100%', width: '100%', flexDirection: 'column',
                     overflow: 'hidden',
                     position: 'relative'}}>
                 <Allotment ref={allotmentRef} onDragEnd={snapToColumns} proportionalLayout={false}>
                     {tables.length > 0 ? (
-                        <Allotment.Pane minSize={columnSize(1)} preferredSize={columnSize(2)} maxSize={columnSize(3)} snap={false}>
+                        <Allotment.Pane minSize={columnSize(1)} preferredSize={columnSize(preferredColumns)} maxSize={columnSize(3)} snap={false}>
                             <DataThread sx={{
                                 display: 'flex', 
                                 flexDirection: 'column',
                                 overflow: 'hidden',
                                 alignContent: 'flex-start',
                                 height: '100%',
+                                mr: 0.5,
                             }}/>
                         </Allotment.Pane>
                     ) : null}
                     <Allotment.Pane minSize={300}>
-                        <Box sx={{ ...borderBoxStyle, height: '100%', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+                        <Box sx={{ ...borderBoxStyle, height: '100%', overflow: 'hidden', display: 'flex', flexDirection: 'column', boxSizing: 'border-box' }}>
                             {viewMode === 'editor' ? (
                                 visPane
                             ) : (
