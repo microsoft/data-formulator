@@ -212,7 +212,7 @@ export const DataFormulatorFC = ({ }) => {
     const CARD_GAP = 12;
     const COLUMN_WIDTH = CARD_WIDTH + CARD_GAP;
     const PANEL_PADDING = 32 ;
-    const columnSize = (n: number) => n * COLUMN_WIDTH + (n == 1 ? 2  : 1) * PANEL_PADDING;
+    const columnSize = (n: number) => n * COLUMN_WIDTH + 2 * PANEL_PADDING;
     const allotmentRef = useRef<AllotmentHandle>(null);
     const containerRef = useRef<HTMLDivElement>(null);
 

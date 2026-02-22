@@ -234,6 +234,7 @@ export const ChartRenderService: FC = () => {
                 table.rows.length,
                 table.contentHash,
                 table.id,
+                table.metadata,
             );
 
             const cached = getCachedChart(chart.id);

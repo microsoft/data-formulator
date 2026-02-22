@@ -96,6 +96,7 @@ export function computeCacheKey(
     tableRowCount: number,
     tableContentHash: string | undefined,
     tableId: string,
+    tableMetadata?: any,
 ): string {
     return JSON.stringify({
         chartType,
@@ -103,5 +104,6 @@ export function computeCacheKey(
         config: config || {},
         tableRowCount,
         tableContentHash: tableContentHash || tableId,
+        tableMetadata: tableMetadata || {},
     });
 }

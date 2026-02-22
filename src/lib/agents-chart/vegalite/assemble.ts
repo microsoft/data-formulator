@@ -222,6 +222,28 @@ export function assembleVegaLite(input: ChartAssemblyInput): any {
         canvasSize, semanticTypes, templateMarkType, chartTemplate,
     );
 
+    // --- Align sort/domain arrays to converted data types ---
+    // buildVLEncodings uses the original data, but the VL spec embeds
+    // post-conversion data (e.g. Year 1980 → "1980").  Re-map sort and
+    // scale.domain entries so VL can match them against data.values.
+    for (const enc of Object.values(resolvedEncodings)) {
+        const field = enc?.field;
+        if (!field) continue;
+        // Build a lookup from the converted (spec-embedded) data
+        const valMap = new Map<string, any>();
+        for (const r of values) {
+            const v = r[field];
+            if (v != null && !valMap.has(String(v))) valMap.set(String(v), v);
+        }
+        if (valMap.size === 0) continue;
+        const remap = (arr: any[]) => arr.map(v => {
+            const key = String(v);
+            return valMap.has(key) ? valMap.get(key) : v;
+        });
+        if (Array.isArray(enc.sort)) enc.sort = remap(enc.sort);
+        if (Array.isArray(enc.scale?.domain)) enc.scale.domain = remap(enc.scale.domain);
+    }
+
     // Detect x/y discrete counts inside template layers for layered specs
     const isDiscreteType = (t: string | undefined) => t === 'nominal' || t === 'ordinal';
     if (Array.isArray(chartTemplate.template?.layer)) {
