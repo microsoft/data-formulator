@@ -100,7 +100,7 @@
             embedIframe.contentWindow.document.close();
         });
         embedPromise.then((embedIframe) => {
-            embedIframe.contentWindow.postMessage({ actionName: 'setConfig', actionParams: { serverUrl: 'http://localhost:5000' } }, '*');
+            embedIframe.contentWindow.postMessage({ actionName: 'setConfig', actionParams: { serverUrl: 'http://localhost:5567' } }, '*');
             embedIframe.contentWindow.postMessage({ actionName: 'loadData', actionParams: { tableName: 'FabricTable', table } }, '*');
         });
 

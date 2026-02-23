@@ -16,6 +16,7 @@ from pathlib import Path
 from data_formulator.data_loader import DATA_LOADERS
 from data_formulator.auth import get_identity_id
 from data_formulator.datalake.workspace import Workspace
+from data_formulator.workspace_factory import get_workspace as _create_workspace
 from data_formulator.datalake.parquet_utils import sanitize_table_name as parquet_sanitize_table_name
 from data_formulator.datalake.file_manager import save_uploaded_file, is_supported_file
 from data_formulator.datalake.metadata import TableMetadata as DatalakeTableMetadata
@@ -32,7 +33,7 @@ tables_bp = Blueprint('tables', __name__, url_prefix='/api/tables')
 
 def _get_workspace():
     """Get workspace for the current identity."""
-    return Workspace(get_identity_id())
+    return _create_workspace(get_identity_id())
 
 
 # Row-count threshold above which we use DuckDB for parquet tables

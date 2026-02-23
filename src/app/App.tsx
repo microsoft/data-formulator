@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-import React, { FC, useEffect, useState } from 'react';
+import React, { FC, useCallback, useEffect, useState } from 'react';
 import '../scss/App.scss';
 
 import { useDispatch, useSelector } from "react-redux";
@@ -43,6 +43,8 @@ import {
     InputLabel,
     ListItemIcon,
     ListItemText,
+    CircularProgress,
+    LinearProgress,
 } from '@mui/material';
 
 
@@ -74,7 +76,9 @@ import UploadFileIcon from '@mui/icons-material/UploadFile';
 import DownloadIcon from '@mui/icons-material/Download';
 import SaveIcon from '@mui/icons-material/Save';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
+import RefreshIcon from '@mui/icons-material/Refresh';
 import { getUrls, fetchWithIdentity } from './utils';
+import { persistor } from './store';
 import { UnifiedDataUploadDialog } from '../views/UnifiedDataUploadDialog';
 import ChatIcon from '@mui/icons-material/Chat';
 import ArticleIcon from '@mui/icons-material/Article';
@@ -218,22 +222,29 @@ const SaveSessionDialog: React.FC<{open: boolean, onClose: () => void}> = ({open
 const LoadSessionDialog: React.FC<{open: boolean, onClose: () => void}> = ({open, onClose}) => {
     const [sessions, setSessions] = useState<{name: string, saved_at: string}[]>([]);
     const [loading, setLoading] = useState(false);
+    const [listLoading, setListLoading] = useState(false);
     const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
     const dispatch = useDispatch();
 
+    const fetchSessions = useCallback(async () => {
+        setListLoading(true);
+        try {
+            const res = await fetchWithIdentity(getUrls().SESSION_LIST);
+            const data = await res.json();
+            if (data.status === 'ok') setSessions(data.sessions);
+        } catch (e) { /* ignore */ }
+        setListLoading(false);
+    }, []);
+
     useEffect(() => {
         if (!open) return;
-        (async () => {
-            try {
-                const res = await fetchWithIdentity(getUrls().SESSION_LIST);
-                const data = await res.json();
-                if (data.status === 'ok') setSessions(data.sessions);
-            } catch (e) { /* ignore */ }
-        })();
-    }, [open]);
+        fetchSessions();
+    }, [open, fetchSessions]);
 
     const handleLoad = async (name: string) => {
         setLoading(true);
+        dispatch(dfActions.setSessionLoading({ loading: true, label: `Loading session "${name}"...` }));
+        onClose();
         try {
             const res = await fetchWithIdentity(getUrls().SESSION_LOAD, {
                 method: 'POST',
@@ -244,7 +255,6 @@ const LoadSessionDialog: React.FC<{open: boolean, onClose: () => void}> = ({open
             if (data.status === 'ok') {
                 dispatch(dfActions.loadState(data.state));
                 dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Session", type: "success", value: `Session "${name}" loaded` }));
-                onClose();
             } else {
                 dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Session", type: "error", value: data.message || 'Load failed' }));
             }
@@ -252,6 +262,7 @@ const LoadSessionDialog: React.FC<{open: boolean, onClose: () => void}> = ({open
             dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Session", type: "error", value: 'Failed to load session' }));
         }
         setLoading(false);
+        dispatch(dfActions.setSessionLoading({ loading: false }));
     };
 
     const handleDelete = async (name: string) => {
@@ -272,9 +283,21 @@ const LoadSessionDialog: React.FC<{open: boolean, onClose: () => void}> = ({open
 
     return (
         <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth>
-            <DialogTitle>Load Session</DialogTitle>
+            <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                Load Session
+                <Tooltip title="Refresh session list">
+                    <IconButton size="small" onClick={fetchSessions} disabled={listLoading}>
+                        {listLoading ? <CircularProgress size={18} /> : <RefreshIcon fontSize="small" />}
+                    </IconButton>
+                </Tooltip>
+            </DialogTitle>
             <DialogContent sx={{ px: 1 }}>
-                {sessions.length === 0 ? (
+                {listLoading && sessions.length === 0 ? (
+                    <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', py: 4, gap: 1.5 }}>
+                        <CircularProgress size={28} />
+                        <Typography variant="body2" color="text.secondary">Loading sessions...</Typography>
+                    </Box>
+                ) : sessions.length === 0 ? (
                     <DialogContentText sx={{ px: 1 }}>No saved sessions found.</DialogContentText>
                 ) : (
                     sessions.map(s => (
@@ -359,6 +382,7 @@ const SessionMenu: React.FC = () => {
 
     const handleLoadSession = async (name: string) => {
         closeMenu();
+        dispatch(dfActions.setSessionLoading({ loading: true, label: `Loading session "${name}"...` }));
         try {
             const res = await fetchWithIdentity(getUrls().SESSION_LOAD, {
                 method: 'POST',
@@ -375,6 +399,7 @@ const SessionMenu: React.FC = () => {
         } catch (e) {
             dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Session", type: "error", value: 'Failed to load session' }));
         }
+        dispatch(dfActions.setSessionLoading({ loading: false }));
     };
 
     const handleExport = async () => {
@@ -407,6 +432,7 @@ const SessionMenu: React.FC = () => {
         const file = event.target.files?.[0];
         if (!file) return;
         closeMenu();
+        dispatch(dfActions.setSessionLoading({ loading: true, label: `Importing session from ${file.name}...` }));
         try {
             const formData = new FormData();
             formData.append('file', file);
@@ -424,6 +450,7 @@ const SessionMenu: React.FC = () => {
         } catch (e) {
             dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Session", type: "error", value: 'Failed to import session' }));
         }
+        dispatch(dfActions.setSessionLoading({ loading: false }));
         if (importRef.current) importRef.current.value = '';
     };
 
@@ -501,7 +528,24 @@ const SessionMenu: React.FC = () => {
 
 const ResetDialog: React.FC = () => {
     const [open, setOpen] = useState(false);
+    const [exiting, setExiting] = useState(false);
     const dispatch = useDispatch();
+
+    const handleExit = async () => {
+        setExiting(true);
+        // Clear workspace on server first
+        try {
+            await fetchWithIdentity(getUrls().RESET_DB_FILE, { method: 'POST' });
+        } catch (e) {
+            console.warn('Failed to reset server workspace:', e);
+        }
+        dispatch(dfActions.resetState());
+
+        // Flush the reset state to IndexedDB so the persisted
+        // state matches (preserves models, config, agentRules).
+        await persistor.flush();
+        window.location.reload();
+    };
 
     return (
         <>
@@ -513,7 +557,8 @@ const ResetDialog: React.FC = () => {
             >
                 Exit
             </Button>
-            <Dialog onClose={() => setOpen(false)} open={open}>
+            <Dialog onClose={exiting ? undefined : () => setOpen(false)} open={open} 
+                sx={{ '& .MuiDialog-paper': { position: 'relative', overflow: 'hidden' } }}>
                 <DialogTitle sx={{ display: "flex", alignItems: "center" }}>Exit Session?</DialogTitle>
                 <DialogContent>
                     <DialogContentText>
@@ -522,27 +567,59 @@ const ResetDialog: React.FC = () => {
                 </DialogContent>
                 <DialogActions>
                     <Button 
-                        onClick={async () => { 
-                            // Clear workspace on server first
-                            try {
-                                await fetchWithIdentity(getUrls().RESET_DB_FILE, { method: 'POST' });
-                            } catch (e) {
-                                console.warn('Failed to reset server workspace:', e);
-                            }
-                            dispatch(dfActions.resetState()); 
-                            setOpen(false);
-                            
-                            // Add a delay to ensure the state has been reset before reloading
-                            setTimeout(() => {
-                                window.location.reload();
-                            }, 250); // 250ms should be enough for state update
-                        }} 
+                        disabled={exiting}
+                        onClick={handleExit}
                         endIcon={<PowerSettingsNewIcon />}
                     >
-                        exit session 
+                        Exit session
                     </Button>
-                    <Button onClick={() => setOpen(false)}>cancel</Button>
+                    <Button onClick={() => setOpen(false)} disabled={exiting}>cancel</Button>
                 </DialogActions>
+                {/* Cleaning overlay on top of dialog */}
+                {exiting && (
+                    <Box sx={{
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        backgroundColor: 'rgba(255, 255, 255, 0.92)',
+                        backdropFilter: 'blur(4px)',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 2,
+                        zIndex: 1,
+                        borderRadius: 'inherit',
+                    }}>
+                        <Typography sx={{
+                            fontSize: 36,
+                            animation: 'sweepBroom 1.2s ease-in-out infinite',
+                            '@keyframes sweepBroom': {
+                                '0%, 100%': {
+                                    transform: 'rotate(-15deg) translateX(0px)',
+                                },
+                                '25%': {
+                                    transform: 'rotate(-5deg) translateX(8px)',
+                                },
+                                '50%': {
+                                    transform: 'rotate(-15deg) translateX(0px)',
+                                },
+                                '75%': {
+                                    transform: 'rotate(-25deg) translateX(-8px)',
+                                },
+                            },
+                            transformOrigin: 'top center',
+                        }}>
+                            🧹
+                        </Typography>
+                        <Typography variant="body1" color="text.secondary" sx={{ fontWeight: 500 }}>
+                            Cleaning workspace...
+                        </Typography>
+                        <LinearProgress sx={{ width: 200, mt: 1, borderRadius: 1 }} />
+                    </Box>
+                )}
             </Dialog>
         </>
     );

@@ -81,120 +81,123 @@ class DockerSandbox(Sandbox):
             ``{'status': 'ok', 'content': DataFrame}``  on success, or
             ``{'status': 'error', 'content': str}``    on failure.
         """
-        workspace_path = str(workspace._path)
+        # Use local_dir() to materialise workspace files locally
+        # (no-op for local workspaces, downloads blobs for Azure).
+        with workspace.local_dir() as local_path:
+            workspace_path = str(local_path)
 
-        tmpdir = tempfile.mkdtemp(prefix="df_docker_")
-        output_dir = os.path.join(tmpdir, "outputs")
-        os.makedirs(output_dir, exist_ok=True)
+            tmpdir = tempfile.mkdtemp(prefix="df_docker_")
+            output_dir = os.path.join(tmpdir, "outputs")
+            os.makedirs(output_dir, exist_ok=True)
 
-        # ---- build wrapper script -----------------------------------------
-        output_parquet = f"/sandbox/outputs/{output_variable}.parquet"
-        wrapper_script = textwrap.dedent("""\
-            import warnings
-            warnings.filterwarnings('ignore')
+            # ---- build wrapper script -----------------------------------------
+            output_parquet = f"/sandbox/outputs/{output_variable}.parquet"
+            wrapper_script = textwrap.dedent("""\
+                import warnings
+                warnings.filterwarnings('ignore')
 
-            # --- user code ---
-            {user_code}
+                # --- user code ---
+                {user_code}
 
-            # --- serialise output ---
-            import pandas as _pd
-            _out = {output_variable}
-            if not isinstance(_out, _pd.DataFrame):
-                raise TypeError(
-                    '{output_variable} is not a DataFrame '
-                    f'(type: {{type(_out).__name__}})'
-                )
-            _out.to_parquet('{output_parquet}', index=False)
+                # --- serialise output ---
+                import pandas as _pd
+                _out = {output_variable}
+                if not isinstance(_out, _pd.DataFrame):
+                    raise TypeError(
+                        '{output_variable} is not a DataFrame '
+                        f'(type: {{type(_out).__name__}})'
+                    )
+                _out.to_parquet('{output_parquet}', index=False)
 
-            print("__DOCKER_SANDBOX_OK__")
-        """).format(
-            user_code=code,
-            output_variable=output_variable,
-            output_parquet=output_parquet,
-        )
-
-        script_path = os.path.join(tmpdir, "run.py")
-        with open(script_path, "w") as f:
-            f.write(wrapper_script)
-
-        # ---- assemble docker command --------------------------------------
-        docker_cmd: list[str] = [
-            "docker", "run",
-            "--rm",
-            "--memory", "512m",
-            "--cpus", "1",
-            "--pids-limit", "256",
-        ]
-
-        abs_ws = os.path.abspath(workspace_path)
-        docker_cmd += ["-v", f"{abs_ws}:/sandbox/workdir:ro"]
-        docker_cmd += ["-v", f"{output_dir}:/sandbox/outputs:rw"]
-        docker_cmd += ["-v", f"{script_path}:/sandbox/run.py:ro"]
-        docker_cmd += ["-w", "/sandbox/workdir"]
-        docker_cmd += [self.docker_image]
-        docker_cmd += ["python", "/sandbox/run.py"]
-
-        # ---- execute ------------------------------------------------------
-        try:
-            proc = subprocess.run(
-                docker_cmd,
-                capture_output=True,
-                timeout=self.timeout,
-                text=True,
+                print("__DOCKER_SANDBOX_OK__")
+            """).format(
+                user_code=code,
+                output_variable=output_variable,
+                output_parquet=output_parquet,
             )
-        except subprocess.TimeoutExpired:
-            self._cleanup(tmpdir)
-            return {
-                "status": "error",
-                "content": f"Docker sandbox execution timed out after {self.timeout}s",
-            }
-        except FileNotFoundError:
-            self._cleanup(tmpdir)
-            return {
-                "status": "error",
-                "content": (
-                    "Docker is not installed or not on the PATH. "
-                    "Install Docker to use the docker sandbox."
-                ),
-            }
-        except Exception as exc:
-            self._cleanup(tmpdir)
-            return {
-                "status": "error",
-                "content": f"Failed to start Docker container: {exc}",
-            }
 
-        stdout = proc.stdout or ""
-        stderr = proc.stderr or ""
+            script_path = os.path.join(tmpdir, "run.py")
+            with open(script_path, "w") as f:
+                f.write(wrapper_script)
 
-        if proc.returncode != 0 or "__DOCKER_SANDBOX_OK__" not in stdout:
+            # ---- assemble docker command --------------------------------------
+            docker_cmd: list[str] = [
+                "docker", "run",
+                "--rm",
+                "--memory", "512m",
+                "--cpus", "1",
+                "--pids-limit", "256",
+            ]
+
+            abs_ws = os.path.abspath(workspace_path)
+            docker_cmd += ["-v", f"{abs_ws}:/sandbox/workdir:ro"]
+            docker_cmd += ["-v", f"{output_dir}:/sandbox/outputs:rw"]
+            docker_cmd += ["-v", f"{script_path}:/sandbox/run.py:ro"]
+            docker_cmd += ["-w", "/sandbox/workdir"]
+            docker_cmd += [self.docker_image]
+            docker_cmd += ["python", "/sandbox/run.py"]
+
+            # ---- execute ------------------------------------------------------
+            try:
+                proc = subprocess.run(
+                    docker_cmd,
+                    capture_output=True,
+                    timeout=self.timeout,
+                    text=True,
+                )
+            except subprocess.TimeoutExpired:
+                self._cleanup(tmpdir)
+                return {
+                    "status": "error",
+                    "content": f"Docker sandbox execution timed out after {self.timeout}s",
+                }
+            except FileNotFoundError:
+                self._cleanup(tmpdir)
+                return {
+                    "status": "error",
+                    "content": (
+                        "Docker is not installed or not on the PATH. "
+                        "Install Docker to use the docker sandbox."
+                    ),
+                }
+            except Exception as exc:
+                self._cleanup(tmpdir)
+                return {
+                    "status": "error",
+                    "content": f"Failed to start Docker container: {exc}",
+                }
+
+            stdout = proc.stdout or ""
+            stderr = proc.stderr or ""
+
+            if proc.returncode != 0 or "__DOCKER_SANDBOX_OK__" not in stdout:
+                self._cleanup(tmpdir)
+                err_detail = stderr.strip() or stdout.strip() or "Unknown error"
+                return {
+                    "status": "error",
+                    "content": f"Docker sandbox execution failed:\n{err_detail}",
+                }
+
+            # ---- read back output ---------------------------------------------
+            parquet_out = os.path.join(output_dir, f"{output_variable}.parquet")
+            if not os.path.exists(parquet_out):
+                self._cleanup(tmpdir)
+                return {
+                    "status": "error",
+                    "content": f'Output variable "{output_variable}" was not produced',
+                }
+
+            try:
+                output_df = pd.read_parquet(parquet_out)
+            except Exception as exc:
+                self._cleanup(tmpdir)
+                return {
+                    "status": "error",
+                    "content": f"Failed to read output parquet: {exc}",
+                }
+
             self._cleanup(tmpdir)
-            err_detail = stderr.strip() or stdout.strip() or "Unknown error"
-            return {
-                "status": "error",
-                "content": f"Docker sandbox execution failed:\n{err_detail}",
-            }
-
-        # ---- read back output ---------------------------------------------
-        parquet_out = os.path.join(output_dir, f"{output_variable}.parquet")
-        if not os.path.exists(parquet_out):
-            self._cleanup(tmpdir)
-            return {
-                "status": "error",
-                "content": f'Output variable "{output_variable}" was not produced',
-            }
-
-        try:
-            output_df = pd.read_parquet(parquet_out)
-        except Exception as exc:
-            self._cleanup(tmpdir)
-            return {
-                "status": "error",
-                "content": f"Failed to read output parquet: {exc}",
-            }
-
-        self._cleanup(tmpdir)
-        return {"status": "ok", "content": output_df}
+            return {"status": "ok", "content": output_df}
 
     # ------------------------------------------------------------------
     # Internal helpers

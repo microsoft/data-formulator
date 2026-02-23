@@ -40,6 +40,7 @@ from data_formulator.datalake.workspace import (
     get_data_formulator_home,
     get_default_workspace_root,
 )
+from data_formulator.datalake.azure_blob_workspace import AzureBlobWorkspace
 
 # Metadata types and operations
 from data_formulator.datalake.metadata import (
@@ -73,6 +74,7 @@ __all__ = [
     # Workspace
     "Workspace",
     "WorkspaceWithTempData",
+    "AzureBlobWorkspace",
     "get_data_formulator_home",
     "get_default_workspace_root",
     # Metadata

@@ -104,7 +104,7 @@ Here are milestones that lead to the current design:
 - [02-12-2025] More models supported now!
   - Now supports OpenAI, Azure, Ollama, and Anthropic models (and more powered by [LiteLLM](https://github.com/BerriAI/litellm));
   - Models with strong code generation and instruction following capabilities are recommended (gpt-4o, claude-3-5-sonnet etc.);
-  - You can store API keys in `api-keys.env` to avoid typing them every time (see template `api-keys.env.template`).
+  - You can store API keys in `.env` to avoid typing them every time (copy `.env.template` to `.env` and fill in your keys).
   - Let us know which models you have good/bad experiences with, and what models you would like to see supported! [[comment here]](https://github.com/microsoft/data-formulator/issues/49)
 
 - [11-07-2024] Minor fun update: data visualization challenges!
@@ -149,7 +149,7 @@ Play with Data Formulator with one of the following options:
   python -m data_formulator
   ```
 
-  Data Formulator will be automatically opened in the browser at [http://localhost:5000](http://localhost:5000).
+  Data Formulator will be automatically opened in the browser at [http://localhost:5567](http://localhost:5567).
 
 - **Option 2: Install via pip**
   
@@ -163,7 +163,7 @@ Play with Data Formulator with one of the following options:
   python -m data_formulator
   ```
 
-  Data Formulator will be automatically opened in the browser at [http://localhost:5000](http://localhost:5000).
+  Data Formulator will be automatically opened in the browser at [http://localhost:5567](http://localhost:5567).
 
   *you can specify the port number (e.g., 8080) by `python -m data_formulator --port 8080` if the default port is occupied.*
 

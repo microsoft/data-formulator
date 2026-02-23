@@ -46,6 +46,7 @@ export interface ServerConfig {
     MAX_DISPLAY_ROWS: number;
     DATA_FORMULATOR_HOME?: string;
     DEV_MODE: boolean;
+    WORKSPACE_BACKEND: string; // 'local' | 'azure_blob'
 }
 
 export interface ModelConfig {
@@ -135,6 +136,10 @@ export interface DataFormulatorState {
 
     // Generated reports state
     generatedReports: GeneratedReport[];
+
+    // Session loading overlay
+    sessionLoading: boolean;
+    sessionLoadingLabel: string;
 }
 
 // Define the initial state using that type
@@ -168,11 +173,12 @@ const initialState: DataFormulatorState = {
 
     serverConfig: {
         DISABLE_DISPLAY_KEYS: false,
-        DISABLE_DATABASE: true, // disable database by default
+        DISABLE_DATABASE: false, // will be overridden by /api/app-config
         DISABLE_FILE_UPLOAD: false,
         PROJECT_FRONT_PAGE: false,
         MAX_DISPLAY_ROWS: 10000,
         DEV_MODE: false,
+        WORKSPACE_BACKEND: 'local',
     },
 
     config: {
@@ -191,7 +197,10 @@ const initialState: DataFormulatorState = {
     dataCleanBlocks: [],
     cleanInProgress: false,
 
-    generatedReports: []
+    generatedReports: [],
+
+    sessionLoading: false,
+    sessionLoadingLabel: '',
 }
 
 let getUnrefedDerivedTableIds = (state: DataFormulatorState) => {
@@ -408,12 +417,8 @@ export const dataFormulatorSlice = createSlice({
         resetState: (state) => {
             //state.table = undefined;
             
-            // state.modelSlots = {};
-            //state.agentRules = initialState.agentRules;
-            //state.config = initialState.config;
-            //state.dataLoaderConnectParams = initialState.dataLoaderConnectParams;
-
-            state.testedModels = [];
+            // Preserve: models, selectedModelId, testedModels, agentRules,
+            //           config, dataLoaderConnectParams, identity
 
             state.tables = [];
             state.charts = [];
@@ -441,6 +446,10 @@ export const dataFormulatorSlice = createSlice({
             state.generatedReports = [];
             // Redux Persist will handle persistence automatically
             
+        },
+        setSessionLoading: (state, action: PayloadAction<{loading: boolean, label?: string}>) => {
+            state.sessionLoading = action.payload.loading;
+            state.sessionLoadingLabel = action.payload.label || '';
         },
         loadState: (state, action: PayloadAction<any>) => {
             const saved = action.payload;
@@ -480,6 +489,8 @@ export const dataFormulatorSlice = createSlice({
                 chartSynthesisInProgress: [],
                 chartInsightInProgress: [],
                 cleanInProgress: false,
+                sessionLoading: false,
+                sessionLoadingLabel: '',
             };
         },
         updateAgentWorkInProgress: (state, action: PayloadAction<{actionId: string, tableId?: string, description: string, status: 'running' | 'completed' | 'warning' | 'failed', hidden: boolean, message?: { content: string, role: 'user' | 'thinking' | 'completion' | 'error' | 'clarify', sourceTable?: string, resultTable?: string }}>) => {

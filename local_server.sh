@@ -5,7 +5,7 @@
 # export http_proxy=http://127.0.0.1:7890
 # export https_proxy=http://127.0.0.1:7890
 
-export FLASK_RUN_PORT=5000
+export FLASK_RUN_PORT=5567
 
 # Use uv if available, otherwise fall back to python
 if command -v uv &> /dev/null; then

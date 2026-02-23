@@ -25,6 +25,7 @@ from data_formulator.agents.agent_data_rec import DataRecAgent
 from data_formulator.agents.agent_sort_data import SortDataAgent
 from data_formulator.auth import get_identity_id
 from data_formulator.datalake.workspace import Workspace, WorkspaceWithTempData
+from data_formulator.workspace_factory import get_workspace
 from data_formulator.agents.agent_data_load import DataLoadAgent
 from data_formulator.agents.agent_data_clean_stream import DataCleanAgentStream
 from data_formulator.agents.agent_code_explanation import CodeExplanationAgent
@@ -121,19 +122,30 @@ def check_available_models():
                 "api_version": api_version
             }
             
-            try:
-                client = get_client(model_config)
-                response = client.get_completion(
-                    messages=[
-                        {"role": "system", "content": "You are a helpful assistant."},
-                        {"role": "user", "content": "Respond 'I can hear you.' if you can hear me."},
-                    ]
-                )
-                
-                if "I can hear you." in response.choices[0].message.content:
-                    results.append(model_config)
-            except Exception as e:
-                print(f"Error testing {provider} model {model}: {e}")
+            # Retry with backoff — DefaultAzureCredential and other providers
+            # may need a moment to initialize on cold start.
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    client = get_client(model_config)
+                    response = client.get_completion(
+                        messages=[
+                            {"role": "system", "content": "You are a helpful assistant."},
+                            {"role": "user", "content": "Respond 'I can hear you.' if you can hear me."},
+                        ]
+                    )
+                    
+                    if "I can hear you." in response.choices[0].message.content:
+                        results.append(model_config)
+                    break  # success or non-matching response — don't retry
+                except Exception as e:
+                    if attempt < max_retries - 1:
+                        import time
+                        wait = 2 ** attempt  # 1s, 2s
+                        logger.warning(f"Retrying {provider}/{model} in {wait}s (attempt {attempt+1}/{max_retries}): {e}")
+                        time.sleep(wait)
+                    else:
+                        logger.error(f"Error testing {provider} model {model} after {max_retries} attempts: {e}")
                 
     return json.dumps(results)
 
@@ -209,7 +221,7 @@ def process_data_on_load_request():
         try:
             # Get workspace (needed for both virtual and in-memory tables)
             identity_id = get_identity_id()
-            workspace = Workspace(identity_id)
+            workspace = get_workspace(identity_id)
 
             # Check if input table is in workspace, if not add as temp data
             input_tables = [{"name": input_data.get("name"), "rows": input_data.get("rows", [])}]
@@ -347,7 +359,7 @@ def derive_data():
 
         try:
             identity_id = get_identity_id()
-            workspace = Workspace(identity_id)
+            workspace = get_workspace(identity_id)
             temp_data = get_temp_tables(workspace, input_tables)
             max_display_rows = current_app.config['CLI_ARGS']['max_display_rows']
 
@@ -522,7 +534,7 @@ def refine_data():
 
         try:
             identity_id = get_identity_id()
-            workspace = Workspace(identity_id)
+            workspace = get_workspace(identity_id)
             temp_data = get_temp_tables(workspace, input_tables)
             max_display_rows = current_app.config['CLI_ARGS']['max_display_rows']
 
@@ -570,7 +582,7 @@ def request_code_expl():
 
         # Get workspace and mount temp data
         identity_id = get_identity_id()
-        workspace = Workspace(identity_id)
+        workspace = get_workspace(identity_id)
         temp_data = get_temp_tables(workspace, input_tables)
 
         with WorkspaceWithTempData(workspace, temp_data) as workspace:
@@ -608,7 +620,7 @@ def request_chart_insight():
 
         # Get workspace
         identity_id = get_identity_id()
-        workspace = Workspace(identity_id)
+        workspace = get_workspace(identity_id)
         temp_data = get_temp_tables(workspace, input_tables)
 
         with WorkspaceWithTempData(workspace, temp_data) as workspace:
@@ -643,7 +655,7 @@ def get_recommendation_questions():
 
             input_tables = content.get("input_tables", [])
             identity_id = get_identity_id()
-            workspace = Workspace(identity_id)
+            workspace = get_workspace(identity_id)
 
             agent_exploration_rules = content.get("agent_exploration_rules", "")
             mode = content.get("mode", "interactive")
@@ -697,7 +709,7 @@ def generate_report_stream():
             charts = content.get("charts", [])
             style = content.get("style", "blog post")
             identity_id = get_identity_id()
-            workspace = Workspace(identity_id)
+            workspace = get_workspace(identity_id)
             temp_data = get_temp_tables(workspace, input_tables) if input_tables else None
 
             with WorkspaceWithTempData(workspace, temp_data) as workspace:
@@ -785,7 +797,7 @@ def refresh_derived_data():
         
         # Get workspace and mount temp data for tables not in workspace
         identity_id = get_identity_id()
-        workspace = Workspace(identity_id)
+        workspace = get_workspace(identity_id)
         temp_data = get_temp_tables(workspace, input_tables)
         
         # Get settings from app config

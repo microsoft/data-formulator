@@ -36,9 +36,6 @@ const THUMB_HEIGHT = 90;
 const FULL_WIDTH = 300;
 const FULL_HEIGHT = 300;
 
-/** Maximum rows to use for thumbnail rendering (matches DataThread's sampling) */
-const MAX_THUMBNAIL_ROWS = 1000;
-
 interface RenderJob {
     chart: Chart;
     table: DictTable;
@@ -135,13 +132,9 @@ export const ChartRenderService: FC = () => {
 
         try {
             // --- Prepare data (mirror MemoizedChartObject's pipeline) ---
-            let visTableRows: any[];
-            if (table.rows.length > MAX_THUMBNAIL_ROWS) {
-                // Use deterministic sampling (same seed) for stability
-                visTableRows = structuredClone(_.sampleSize(table.rows, MAX_THUMBNAIL_ROWS));
-            } else {
-                visTableRows = structuredClone(table.rows);
-            }
+            // Use all rows so the thumbnail faithfully matches the main chart's
+            // appearance (sort order, aggregation, overflow filtering, etc.).
+            let visTableRows: any[] = structuredClone(table.rows);
 
             // Pre-aggregate for the encoding map
             visTableRows = prepVisTable(visTableRows, items, chart.encodingMap);

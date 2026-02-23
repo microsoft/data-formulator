@@ -9,10 +9,16 @@ The workspace contains all their data files (uploaded and ingested)
 plus a workspace.yaml metadata file.
 """
 
+import io
+import json
 import os
+import re
 import shutil
 import logging
+import tempfile
 import time
+import zipfile
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
@@ -583,16 +589,197 @@ class Workspace:
             table_name, pa.Table.from_pandas(df), compression
         )
 
+    @contextmanager
+    def local_dir(self):
+        """Context manager yielding a local directory containing workspace files.
+
+        For local workspaces this simply yields ``self._path``.
+        Subclasses (e.g. Azure Blob) override this to download files to a
+        temporary directory that is cleaned up on exit.
+
+        Usage::
+
+            with workspace.local_dir() as wd:
+                subprocess.run(["python", "script.py"], cwd=wd)
+        """
+        yield self._path
+
+    def save_workspace_snapshot(self, dst: Path) -> None:
+        """Copy all workspace files (including metadata) to *dst* directory.
+
+        Used by session save / export to capture the full workspace state.
+        """
+        if self._path.exists() and any(self._path.iterdir()):
+            dst.mkdir(parents=True, exist_ok=True)
+            shutil.copytree(self._path, dst, dirs_exist_ok=True)
+
+    def restore_workspace_snapshot(self, src: Path) -> None:
+        """Replace all workspace files with the contents of *src* directory.
+
+        Used by session load / import to restore a previously saved workspace.
+        """
+        if self._path.exists():
+            shutil.rmtree(self._path)
+        self._path.mkdir(parents=True, exist_ok=True)
+        if src.exists():
+            shutil.copytree(src, self._path, dirs_exist_ok=True)
+
+    # ------------------------------------------------------------------
+    # Session management
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _sanitize_session_name(name: str) -> str:
+        """Produce a storage-safe session name."""
+        name = re.sub(r'[/\\:*?"<>|\x00-\x1f]', '_', name)
+        name = re.sub(r'\.{2,}', '.', name)
+        name = name.strip('. ')
+        return name or 'unnamed'
+
+    def _get_sessions_root(self) -> Path:
+        """Return the per-user sessions directory on local filesystem."""
+        p = get_data_formulator_home() / "sessions" / self._safe_id
+        p.mkdir(parents=True, exist_ok=True)
+        return p
+
+    def _session_dir(self, session_name: str) -> Path:
+        return self._get_sessions_root() / self._sanitize_session_name(session_name)
+
+    def save_session(self, session_name: str, state: dict) -> str:
+        """Save a session (state + workspace snapshot).
+
+        Returns the ISO timestamp of the save.
+        """
+        safe_name = self._sanitize_session_name(session_name)
+        sess_dir = self._session_dir(session_name)
+
+        # Wipe previous save with the same name
+        if sess_dir.exists():
+            shutil.rmtree(sess_dir)
+        sess_dir.mkdir(parents=True)
+
+        # 1. Workspace snapshot
+        self.save_workspace_snapshot(sess_dir / "workspace")
+
+        # 2. State JSON
+        (sess_dir / "state.json").write_text(
+            json.dumps(state, default=str), encoding="utf-8"
+        )
+
+        saved_at = datetime.now(timezone.utc).isoformat()
+        logger.info(f"Saved session '{safe_name}' for {self._identity_id}")
+        return saved_at
+
+    def load_session(self, session_name: str) -> dict | None:
+        """Load a session.  Restores workspace and returns the state dict.
+
+        Returns ``None`` if the session does not exist.
+        """
+        sess_dir = self._session_dir(session_name)
+        state_file = sess_dir / "state.json"
+        if not state_file.exists():
+            return None
+
+        # 1. Restore workspace
+        ws_saved = sess_dir / "workspace"
+        if ws_saved.exists():
+            self.restore_workspace_snapshot(ws_saved)
+
+        # 2. Return state
+        return json.loads(state_file.read_text(encoding="utf-8"))
+
+    def list_sessions(self) -> list[dict]:
+        """List saved sessions (newest first)."""
+        root = self._get_sessions_root()
+        sessions: list[dict] = []
+        if root.exists():
+            for child in sorted(root.iterdir()):
+                if not child.is_dir():
+                    continue
+                state_file = child / "state.json"
+                if not state_file.exists():
+                    continue
+                stat = state_file.stat()
+                sessions.append({
+                    "name": child.name,
+                    "saved_at": datetime.fromtimestamp(
+                        stat.st_mtime, tz=timezone.utc
+                    ).isoformat(),
+                })
+        sessions.sort(key=lambda s: s["saved_at"], reverse=True)
+        return sessions
+
+    def delete_session(self, session_name: str) -> bool:
+        """Delete a saved session.  Returns True if it existed."""
+        sess_dir = self._session_dir(session_name)
+        if not sess_dir.exists():
+            return False
+        shutil.rmtree(sess_dir)
+        logger.info(f"Deleted session '{session_name}' for {self._identity_id}")
+        return True
+
+    def export_session_zip(self, state: dict) -> io.BytesIO:
+        """Export current state + workspace as a .dfsession zip."""
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("state.json", json.dumps(state, default=str))
+            with tempfile.TemporaryDirectory(prefix="df_session_export_") as tmp_dir:
+                ws_snap = Path(tmp_dir) / "workspace"
+                self.save_workspace_snapshot(ws_snap)
+                if ws_snap.exists():
+                    for ws_file in ws_snap.rglob("*"):
+                        if ws_file.is_file():
+                            arcname = "workspace/" + str(ws_file.relative_to(ws_snap))
+                            zf.write(ws_file, arcname)
+        buf.seek(0)
+        return buf
+
+    def import_session_zip(self, zip_data: io.BytesIO) -> dict:
+        """Import a .dfsession zip.  Restores workspace, returns state dict.
+
+        Raises ``ValueError`` on invalid zip / missing state.json.
+        """
+        with zipfile.ZipFile(zip_data, "r") as zf:
+            if "state.json" not in zf.namelist():
+                raise ValueError("Invalid session file: missing state.json")
+
+            state = json.loads(zf.read("state.json"))
+
+            workspace_entries = [
+                n for n in zf.namelist()
+                if n.startswith("workspace/") and not n.endswith("/")
+            ]
+            if workspace_entries:
+                with tempfile.TemporaryDirectory(prefix="df_session_import_") as tmp_dir:
+                    ws_tmp = Path(tmp_dir) / "workspace"
+                    ws_tmp.mkdir(parents=True, exist_ok=True)
+                    for entry in workspace_entries:
+                        rel = entry[len("workspace/"):]
+                        dest = ws_tmp / rel
+                        dest.parent.mkdir(parents=True, exist_ok=True)
+                        dest.write_bytes(zf.read(entry))
+                    self.restore_workspace_snapshot(ws_tmp)
+
+        return state
+
     def __repr__(self) -> str:
         return f"Workspace(identity_id={self._identity_id!r}, path={self._path!r})"
 
 
-class WorkspaceWithTempData(Workspace):
+class WorkspaceWithTempData:
     """
-    A Workspace with an in-memory metadata overlay for temporary tables.
+    A Workspace wrapper with an in-memory metadata overlay for temporary tables.
 
-    Inherits from :class:`Workspace` so it is a drop-in replacement everywhere
-    a ``Workspace`` is expected.  Used as a context manager:
+    Delegates **all** attribute and method access to the wrapped workspace
+    via ``__getattr__``, ensuring the correct backend-specific implementations
+    (e.g. ``AzureBlobWorkspace.read_data_as_df``, ``local_dir``, etc.) are
+    always used.
+
+    Does **not** inherit from :class:`Workspace` — this is intentional so
+    that Python's MRO cannot short-circuit to base-class implementations
+    and skip subclass overrides on the wrapped workspace.
+
+    Used as a context manager:
 
     .. code-block:: python
 
@@ -600,26 +787,32 @@ class WorkspaceWithTempData(Workspace):
             ws.read_data_as_df("my_temp_table")  # works
 
     On enter:
-      - Writes each temp table as ``<name>.parquet`` in the workspace dir.
+      - Writes each temp table into the workspace via the workspace's own
+        ``write_parquet`` method (works for local *and* blob backends).
       - Overrides ``get_table_metadata`` / ``list_tables`` to resolve temp
         tables from a fast in-memory dict, without touching ``workspace.yaml``.
 
     On exit:
-      - Deletes the parquet files from disk.
+      - Deletes the temp parquet files via the workspace's own
+        ``delete_table`` / file deletion methods.
 
-    The original ``Workspace`` is never mutated.  Nesting is supported:
-    inner overlays delegate to outer overlays via ``_base``.
+    The original ``Workspace`` is never mutated (metadata is overlaid).
+    Nesting is supported: inner overlays delegate to outer overlays.
     """
 
     def __init__(self, workspace: Workspace, temp_data: Optional[list[dict[str, Any]]] = None):
-        # Shallow-copy all state from the base workspace.
-        # Deliberately skip Workspace.__init__ (no mkdir, no metadata init,
-        # no stale-file cleanup — those were already done on *workspace*).
-        self.__dict__.update(workspace.__dict__)
-        self._base = workspace  # delegate misses here (supports nesting)
-        self._temp_data = temp_data if temp_data else None
-        self._temp_files: list[Path] = []
-        self._overlay: dict[str, TableMetadata] = {}
+        # Do NOT call Workspace.__init__ — we delegate everything to _base.
+        # We also do NOT copy __dict__; instead __getattr__ proxies to _base.
+        object.__setattr__(self, '_base', workspace)
+        object.__setattr__(self, '_temp_data', temp_data if temp_data else None)
+        object.__setattr__(self, '_temp_table_names', [])
+        object.__setattr__(self, '_overlay', {})
+
+    # ---- proxy everything else to the real workspace -----------------------
+
+    def __getattr__(self, name: str) -> Any:
+        """Delegate attribute access to the wrapped workspace."""
+        return getattr(self._base, name)
 
     # ---- metadata overrides ------------------------------------------------
 
@@ -638,6 +831,14 @@ class WorkspaceWithTempData(Workspace):
                 names.append(name)
         return names
 
+    def read_data_as_df(self, table_name: str) -> pd.DataFrame:
+        """Read a table — temp overlay first, then delegate to base."""
+        safe = sanitize_table_name(table_name)
+        if table_name in self._overlay or safe in self._overlay:
+            # Temp table was written via base workspace; delegate read to it
+            return self._base.read_data_as_df(safe)
+        return self._base.read_data_as_df(table_name)
+
     # ---- context manager ---------------------------------------------------
 
     def __enter__(self) -> "WorkspaceWithTempData":
@@ -647,22 +848,20 @@ class WorkspaceWithTempData(Workspace):
         for item in self._temp_data:
             base_name = item.get("name", "table")
             safe_name = sanitize_table_name(base_name)
-            filename = f"{safe_name}.csv"
-            file_path = self._path / filename
 
             rows = item.get("rows", [])
             df = pd.DataFrame(rows) if rows else pd.DataFrame()
-            df.to_csv(file_path, index=False)
 
-            self._overlay[safe_name] = TableMetadata(
-                name=safe_name,
-                source_type="upload",
-                filename=filename,
-                file_type="csv",
-                created_at=datetime.now(),
-                row_count=len(df),
-            )
-            self._temp_files.append(file_path)
+            # Write through the base workspace (handles local *and* blob)
+            self._base.write_parquet(df, safe_name)
+
+            # Build an overlay entry so get_table_metadata resolves without
+            # touching the real workspace.yaml.
+            meta = self._base.get_table_metadata(safe_name)
+            if meta is not None:
+                self._overlay[safe_name] = meta
+
+            self._temp_table_names.append(safe_name)
             logger.debug(
                 f"Mounted temp table '{safe_name}' "
                 f"({len(df)} rows, in-memory metadata)"
@@ -671,11 +870,11 @@ class WorkspaceWithTempData(Workspace):
         return self
 
     def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
-        for file_path in self._temp_files:
+        for name in self._temp_table_names:
             try:
-                file_path.unlink(missing_ok=True)
+                self._base.delete_table(name)
             except Exception as e:
-                logger.warning(f"Failed to remove temp file {file_path}: {e}")
+                logger.warning(f"Failed to remove temp table {name}: {e}")
 
-        self._temp_files.clear()
+        self._temp_table_names.clear()
         self._overlay.clear()

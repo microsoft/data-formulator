@@ -25,6 +25,8 @@ import {
     Divider,
     useTheme,
     alpha,
+    CircularProgress,
+    Backdrop,
 } from '@mui/material';
 import { borderColor, shadow, radius } from '../app/tokens';
 
@@ -65,12 +67,18 @@ export const DataFormulatorFC = ({ }) => {
     const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
     const [uploadDialogInitialTab, setUploadDialogInitialTab] = useState<UploadTabType>('menu');
 
+    // Loading state for sessions (from Redux, shared with App.tsx)
+    const sessionLoading = useSelector((state: DataFormulatorState) => state.sessionLoading);
+    const sessionLoadingLabel = useSelector((state: DataFormulatorState) => state.sessionLoadingLabel);
+
     const openUploadDialog = (tab: UploadTabType) => {
         setUploadDialogInitialTab(tab);
         setUploadDialogOpen(true);
     };
 
     const handleLoadExampleSession = (session: ExampleSession) => {
+        dispatch(dfActions.setSessionLoading({ loading: true, label: `Loading ${session.title}...` }));
+
         dispatch(dfActions.addMessages({
             timestamp: Date.now(),
             type: 'info',
@@ -100,6 +108,9 @@ export const DataFormulatorFC = ({ }) => {
                     component: 'data formulator',
                     value: `Failed to load ${session.title}: ${error.message}`,
                 }));
+            })
+            .finally(() => {
+                dispatch(dfActions.setSessionLoading({ loading: false }));
             });
     };
 
@@ -388,6 +399,32 @@ export const DataFormulatorFC = ({ }) => {
                     onClose={() => setUploadDialogOpen(false)}
                     initialTab={uploadDialogInitialTab}
                 />
+                {/* Loading overlay for session loading */}
+                <Backdrop
+                    open={sessionLoading}
+                    sx={{
+                        position: 'absolute',
+                        zIndex: 999,
+                        backgroundColor: alpha(theme.palette.background.default, 0.85),
+                        backdropFilter: 'blur(4px)',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 2,
+                    }}
+                >
+                    <CircularProgress size={40} />
+                    <Typography variant="body1" color="text.secondary">
+                        {sessionLoadingLabel || 'Loading session...'}
+                    </Typography>
+                    <Button
+                        variant="text"
+                        size="small"
+                        onClick={() => dispatch(dfActions.setSessionLoading({ loading: false }))}
+                        sx={{ mt: 1, textTransform: 'none', color: 'text.secondary' }}
+                    >
+                        Cancel
+                    </Button>
+                </Backdrop>
                 {selectedModelId == undefined && (
                     <Box sx={{
                         position: 'absolute',

@@ -188,36 +188,37 @@ class LocalSandbox(Sandbox):
             ``{'status': 'ok', 'content': DataFrame}``  on success, or
             ``{'status': 'error', 'content': str}``    on failure.
         """
-        workspace_path = os.path.abspath(str(workspace._path))
+        with workspace.local_dir() as local_path:
+            workspace_path = os.path.abspath(str(local_path))
 
-        # Prepend a chdir so the script runs inside the workspace directory.
-        ws_escaped = workspace_path.replace("\\", "\\\\").replace("'", "\\'")
-        chdir_preamble = f"import os as _sandbox_os; _sandbox_os.chdir('{ws_escaped}')\n"
-        code_with_chdir = chdir_preamble + code
+            # Prepend a chdir so the script runs inside the workspace directory.
+            ws_escaped = workspace_path.replace("\\", "\\\\").replace("'", "\\'")
+            chdir_preamble = f"import os as _sandbox_os; _sandbox_os.chdir('{ws_escaped}')\n"
+            code_with_chdir = chdir_preamble + code
 
-        try:
-            allowed_objects = {output_variable: None}
-            result = self._run_in_warm_subprocess(code_with_chdir, allowed_objects)
+            try:
+                allowed_objects = {output_variable: None}
+                result = self._run_in_warm_subprocess(code_with_chdir, allowed_objects)
 
-            if result["status"] == "ok":
-                output_df = result["allowed_objects"][output_variable]
-                if not isinstance(output_df, pd.DataFrame):
-                    return {
-                        "status": "error",
-                        "content": (
-                            f'Output variable "{output_variable}" is not a '
-                            f"DataFrame (type: {type(output_df).__name__})"
-                        ),
-                    }
-                return {"status": "ok", "content": output_df}
-            else:
-                return result
+                if result["status"] == "ok":
+                    output_df = result["allowed_objects"][output_variable]
+                    if not isinstance(output_df, pd.DataFrame):
+                        return {
+                            "status": "error",
+                            "content": (
+                                f'Output variable "{output_variable}" is not a '
+                                f"DataFrame (type: {type(output_df).__name__})"
+                            ),
+                        }
+                    return {"status": "ok", "content": output_df}
+                else:
+                    return result
 
-        except Exception as e:
-            return {
-                "status": "error",
-                "content": f"Error during execution setup: {type(e).__name__} - {e}",
-            }
+            except Exception as e:
+                return {
+                    "status": "error",
+                    "content": f"Error during execution setup: {type(e).__name__} - {e}",
+                }
 
     # ------------------------------------------------------------------
     # Warm subprocess execution (persistent worker pool)

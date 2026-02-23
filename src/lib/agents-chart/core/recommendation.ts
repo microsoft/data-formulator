@@ -254,7 +254,7 @@ export function adaptChannels(
 ): Record<string, string> {
     // Recommendation-based adaptation when data is available
     if (data && data.length > 0) {
-        return adaptViaRecommendation(targetType, targetChannels, encodings, data, semanticTypes ?? {}, recommendFn ?? getRecommendation);
+        return adaptViaRecommendation(sourceType, targetType, targetChannels, encodings, data, semanticTypes ?? {}, recommendFn ?? getRecommendation);
     }
 
     // Fallback: structural role-based adaptation
@@ -262,21 +262,23 @@ export function adaptChannels(
 }
 
 /**
- * Recommendation-based adaptation: run the target chart type's recommendation
- * engine with existing fields marked as "preferred".  The recommendation logic
- * applies its normal type-matching (quantitative, categorical, temporal, etc.)
- * but, when multiple candidates match, prefers fields that were already in use.
- * Preferred fields also bypass heuristic filters like isLikelyIdentifierOrRank
- * since the user intentionally assigned them.
+ * Edit-distance-based adaptation: find the minimum-cost mapping from existing
+ * field→channel assignments to target chart channels.
  *
- * Step 1 — Run recommendation with ALL fields present but existing fields
- *          marked as preferred.  This lets the engine reshuffle fields into
- *          their best-fitting channels for the target type while preferring
- *          the user's current selections.
- * Step 2 — Fill any remaining empty channels from ALL available fields
- *          (without preference bias) so the chart is as complete as possible.
+ * Cost model:
+ *   0    — field stays in the same channel (compatible type)
+ *   0.5  — field moves to a channel with the same semantic role
+ *            (e.g., color→group — both "series" role)
+ *   1    — field moves to a channel with a different but compatible role
+ *   1.5  — field is dropped (not assigned to any target channel)
+ *            (slightly above move-cost so we prefer keeping fields when tied)
+ *   ∞    — field type is incompatible with target channel
+ *
+ * After the minimum-cost assignment, remaining empty target channels are
+ * filled via the recommendation engine.
  */
 function adaptViaRecommendation(
+    sourceType: string,
     targetType: string,
     targetChannels: string[],
     encodings: Record<string, string>,
@@ -284,21 +286,17 @@ function adaptViaRecommendation(
     semanticTypes: Record<string, string>,
     recommendFn: RecommendFn,
 ): Record<string, string> {
-    const existingFields = new Set(Object.values(encodings).filter(Boolean));
-    const result: Record<string, string> = {};
-    const usedFields = new Set<string>();
-
-    // Step 0: Preserve facet channels (column, row) from existing encodings.
-    // Then filter data to a single facet group so downstream checks like
-    // isValidLineSeriesData see the data as it would appear within one facet.
+    // --- Pre-process: handle facet channels and filter data ---
     const FACET_CHANNELS = ['column', 'row'];
     let facetedData = data;
+    const prePinned: Record<string, string> = {};
+    const prePinnedFields = new Set<string>();
+
     for (const ch of FACET_CHANNELS) {
         const field = encodings[ch];
         if (field && targetChannels.includes(ch)) {
-            result[ch] = field;
-            usedFields.add(field);
-            // Filter data to the first facet group value
+            prePinned[ch] = field;
+            prePinnedFields.add(field);
             if (facetedData.length > 0) {
                 const firstVal = facetedData[0][field];
                 facetedData = facetedData.filter(row => row[field] === firstVal);
@@ -306,29 +304,102 @@ function adaptViaRecommendation(
         }
     }
 
-    // Step 1: recommend with existing fields as preferred, using facet-filtered data
     const tv = buildTableView(facetedData, semanticTypes);
-    tv.preferredFields = existingFields;
-    const recommended = recommendFn(targetType, tv);
 
-    for (const [ch, field] of Object.entries(recommended)) {
-        if (targetChannels.includes(ch) && !usedFields.has(field) && !(ch in result)) {
-            result[ch] = field;
-            usedFields.add(field);
+    // --- Type compatibility check ---
+    const isFieldCompatibleWithRole = (role: SemanticRole, field: string): boolean => {
+        const ft = tv.fieldType[field] ?? 'nominal';
+        const st = tv.fieldSemanticType[field] ?? '';
+        const card = tv.fieldLevels[field]?.length ?? 0;
+        switch (role) {
+            case 'category':  return isDiscreteLike(ft, st, card);
+            case 'measure':   return isQuantitativeField(ft, st);
+            case 'series':    return isDiscreteLike(ft, st, card);
+            case 'geo':       return isGeoCoordinateType(st) || ft === 'quantitative';
+            case 'facetCol':  case 'facetRow': return isDiscreteLike(ft, st, card);
+            case 'auxiliary':  return true;
+            default:          return true;
         }
+    };
+
+    // --- Cost function for assigning field (from srcCh) to targetCh ---
+    const assignCost = (srcCh: string, field: string, targetCh: string): number => {
+        const targetRole = getChannelRole(targetType, targetCh);
+        if (!isFieldCompatibleWithRole(targetRole, field)) return Infinity;
+
+        // Same channel name → free
+        if (srcCh === targetCh) return 0;
+
+        // Same semantic role (e.g., color→group, both "series") → small cost
+        const srcRole = getChannelRole(sourceType, srcCh);
+        if (srcRole === targetRole) return 0.5;
+
+        // Different role but type-compatible → higher cost
+        return 1;
+    };
+
+    const COST_DROP = 1.5;  // slightly above move cost to prefer keeping fields
+
+    // --- Collect source entries (excluding pre-pinned facets) ---
+    const entries = Object.entries(encodings)
+        .filter(([ch, f]) => f && !FACET_CHANNELS.includes(ch) && !prePinnedFields.has(f));
+
+    // Available target channels (exclude pre-pinned ones)
+    const availableTargets = targetChannels.filter(ch => !(ch in prePinned));
+
+    // --- Solve minimum-cost assignment via branch-and-bound ---
+    // With typically ≤5 fields and ≤8 channels, this is instant.
+    let bestCost = Infinity;
+    let bestAssignment: Record<string, string> = {};
+
+    const usedTargets = new Set<string>();
+
+    function solve(
+        idx: number,
+        currentCost: number,
+        assignment: Record<string, string>,
+    ): void {
+        if (currentCost >= bestCost) return;  // prune
+
+        if (idx === entries.length) {
+            bestCost = currentCost;
+            bestAssignment = { ...assignment };
+            return;
+        }
+
+        const [srcCh, field] = entries[idx];
+
+        // Option A: assign to each available target channel
+        for (const tch of availableTargets) {
+            if (usedTargets.has(tch)) continue;
+            const cost = assignCost(srcCh, field, tch);
+            if (cost === Infinity) continue;
+
+            usedTargets.add(tch);
+            assignment[tch] = field;
+            solve(idx + 1, currentCost + cost, assignment);
+            delete assignment[tch];
+            usedTargets.delete(tch);
+        }
+
+        // Option B: drop the field
+        solve(idx + 1, currentCost + COST_DROP, assignment);
     }
 
-    // Step 2: fill remaining empty channels from ALL fields (no preference)
+    solve(0, 0, {});
+
+    // --- Merge pre-pinned facets + solver result ---
+    const result: Record<string, string> = { ...prePinned, ...bestAssignment };
+    const usedFields = new Set(Object.values(result));
+
+    // --- Fill remaining empty channels via recommendation ---
     const emptyChannels = targetChannels.filter(ch => !(ch in result));
     if (emptyChannels.length > 0) {
-        const fullRec = recommendFn(
-            targetType,
-            buildTableView(facetedData, semanticTypes),   // no preferredFields
-        );
+        const rec = recommendFn(targetType, buildTableView(facetedData, semanticTypes));
         for (const ch of emptyChannels) {
-            if (fullRec[ch] && !usedFields.has(fullRec[ch])) {
-                result[ch] = fullRec[ch];
-                usedFields.add(fullRec[ch]);
+            if (rec[ch] && !usedFields.has(rec[ch])) {
+                result[ch] = rec[ch];
+                usedFields.add(rec[ch]);
             }
         }
     }

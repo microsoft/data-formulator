@@ -44,9 +44,8 @@ class CustomJSONEncoder(json.JSONEncoder):
 
 app.json_encoder = CustomJSONEncoder
 
-# Load env files early
-load_dotenv(os.path.join(APP_ROOT, "..", "..", 'api-keys.env'))
-load_dotenv(os.path.join(APP_ROOT, 'api-keys.env'))
+# Load env files early.
+load_dotenv(os.path.join(APP_ROOT, "..", "..", '.env'))
 load_dotenv(os.path.join(APP_ROOT, '.env'))
 
 # Default config from env (can be overridden by CLI args)
@@ -59,6 +58,10 @@ app.config['CLI_ARGS'] = {
     'max_display_rows': int(os.environ.get('MAX_DISPLAY_ROWS', '10000')),
     'data_dir': os.environ.get('DATA_FORMULATOR_HOME', None),
     'dev': os.environ.get('DEV_MODE', 'false').lower() == 'true',
+    'workspace_backend': os.environ.get('WORKSPACE_BACKEND', 'local'),
+    'azure_blob_connection_string': os.environ.get('AZURE_BLOB_CONNECTION_STRING', None),
+    'azure_blob_account_url': os.environ.get('AZURE_BLOB_ACCOUNT_URL', None),
+    'azure_blob_container': os.environ.get('AZURE_BLOB_CONTAINER', 'data-formulator'),
 }
 
 # Get logger for this module (logging config moved to run_app function)
@@ -154,18 +157,21 @@ def get_app_config():
         "PROJECT_FRONT_PAGE": args['project_front_page'],
         "MAX_DISPLAY_ROWS": args['max_display_rows'],
         "DEV_MODE": args.get('dev', False),
+        "WORKSPACE_BACKEND": args.get('workspace_backend', 'local'),
     }
 
     if not args['disable_database']:
-        from data_formulator.datalake.workspace import get_data_formulator_home
-        config["DATA_FORMULATOR_HOME"] = str(get_data_formulator_home())
+        workspace_backend = args.get('workspace_backend', 'local')
+        if workspace_backend != 'azure_blob':
+            from data_formulator.datalake.workspace import get_data_formulator_home
+            config["DATA_FORMULATOR_HOME"] = str(get_data_formulator_home())
 
     return flask.jsonify(config)
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Data Formulator")
-    parser.add_argument("-p", "--port", type=int, default=5000, help="The port number you want to use")
+    parser.add_argument("-p", "--port", type=int, default=5567, help="The port number you want to use")
     parser.add_argument("--sandbox", type=str, default=os.environ.get('SANDBOX', 'local'),
         choices=['local', 'docker'],
         help="Python code execution backend: 'local' (default, isolated subprocess with audit hooks), "
@@ -186,6 +192,20 @@ def parse_args() -> argparse.Namespace:
         help="Data Formulator home directory for workspaces and sessions (default: ~/.data_formulator)")
     parser.add_argument("--dev", action='store_true', default=False,
         help="Launch the app in development mode (prevents the app from opening the browser automatically)")
+    parser.add_argument("--workspace-backend", type=str,
+        default=os.environ.get('WORKSPACE_BACKEND', 'local'),
+        choices=['local', 'azure_blob'],
+        help="Workspace storage backend: 'local' (default, filesystem) or 'azure_blob' (Azure Blob Storage)")
+    parser.add_argument("--azure-blob-connection-string", type=str,
+        default=os.environ.get('AZURE_BLOB_CONNECTION_STRING'),
+        help="Azure Blob Storage connection string (mutually exclusive with --azure-blob-account-url)")
+    parser.add_argument("--azure-blob-account-url", type=str,
+        default=os.environ.get('AZURE_BLOB_ACCOUNT_URL'),
+        help="Azure Blob Storage account URL for Entra ID auth, e.g. https://<account>.blob.core.windows.net "
+             "(uses DefaultAzureCredential; mutually exclusive with --azure-blob-connection-string)")
+    parser.add_argument("--azure-blob-container", type=str,
+        default=os.environ.get('AZURE_BLOB_CONTAINER', 'data-formulator'),
+        help="Azure Blob Storage container name (default: data-formulator)")
     return parser.parse_args()
 
 
@@ -205,6 +225,10 @@ def run_app():
         'max_display_rows': args.max_display_rows,
         'data_dir': args.data_dir,
         'dev': args.dev,
+        'workspace_backend': args.workspace_backend,
+        'azure_blob_connection_string': args.azure_blob_connection_string,
+        'azure_blob_account_url': args.azure_blob_account_url,
+        'azure_blob_container': args.azure_blob_container,
     }
     
     # Register blueprints (this is where heavy imports happen)

@@ -20,7 +20,7 @@ uv run data_formulator --dev   # Run backend only (for frontend development)
 ```
 
 **Which command to use:**
-- **End users / testing the full app**: `uv run data_formulator` - starts server and opens browser to http://localhost:5000
+- **End users / testing the full app**: `uv run data_formulator` - starts server and opens browser to http://localhost:5567
 - **Frontend development**: `uv run data_formulator --dev` - starts backend server only, then run `yarn start` separately for the Vite dev server on http://localhost:5173
 
 ### Option 2: With pip (fallback)
@@ -36,25 +36,12 @@ uv run data_formulator --dev   # Run backend only (for frontend development)
     ```bash
     pip install -r requirements.txt
     ```
-- **Configure environment variable (optional)s**
-    - copy `api-keys.env.example` to `api-keys.env` and add your API keys.
-        - required fields for different providers are different, please refer to the [LiteLLM setup](https://docs.litellm.ai/docs#litellm-python-sdk) guide for more details.
-            - currently only endpoint, model, api_key, api_base, api_version are supported.
-        - this helps data formulator to automatically load the API keys when you run the app, so you don't need to set the API keys in the app UI.
-
-    - set `.env` to configure server properties:
-        - copy `.env.template` to `.env`
-        - configure settings as needed:
-            - DISABLE_DISPLAY_KEYS: if true, API keys will not be shown in the frontend
-            - SANDBOX: code execution backend — `local` (default) or `docker` (see [Sandbox](#sandbox) section below)
-            - External database settings (when USE_EXTERNAL_DB=true):
-                - DB_NAME: name to refer to this database connection
-                - DB_TYPE: mysql or postgresql (currently only these two are supported)
-                - DB_HOST: database host address
-                - DB_PORT: database port
-                - DB_DATABASE: database name
-                - DB_USER: database username
-                - DB_PASSWORD: database password
+- **Configure environment variables (optional)**
+    - copy `.env.template` to `.env` and fill in your values:
+        - **API keys**: set `{PROVIDER}_ENABLED=true`, `{PROVIDER}_API_KEY=...`, and `{PROVIDER}_MODELS=...` for each LLM provider you want to use. See the [LiteLLM setup](https://docs.litellm.ai/docs#litellm-python-sdk) guide for provider-specific fields.
+        - **Server settings**: `DISABLE_DISPLAY_KEYS`, `SANDBOX`, etc.
+        - **Azure Blob workspace** (optional): see [Azure Blob Storage Workspace](#azure-blob-storage-workspace) below.
+    - this lets Data Formulator automatically load API keys at startup so you don't need to enter them in the UI.
 
 
 - **Run the app**
@@ -131,7 +118,7 @@ uv run data_formulator --dev   # Run backend only (for frontend development)
     python -m data_formulator
     ```
 
-    Open [http://localhost:5000](http://localhost:5000) to view it in the browser.
+    Open [http://localhost:5567](http://localhost:5567) to view it in the browser.
 
 
 ## Sandbox
@@ -158,6 +145,143 @@ docker build -t data-formulator-sandbox -f py-src/data_formulator/sandbox/Docker
 ```
 
 Source: [`py-src/data_formulator/sandbox/`](py-src/data_formulator/sandbox/)
+
+
+## Azure Blob Storage Workspace
+
+By default, workspace data (uploaded files, parquet tables, metadata) is stored on the **local filesystem** under `~/.data_formulator/workspaces/`. For cloud deployments you can switch to **Azure Blob Storage** so all workspace data lives in a blob container instead.
+
+### Quick start (local dev with connection string)
+
+1. **Install extra dependencies:**
+
+   ```bash
+   pip install azure-storage-blob
+   # or with uv:
+   uv pip install azure-storage-blob
+   ```
+
+2. **Create a storage account & container** (one-time setup):
+
+   ```bash
+   az storage account create -n <account> -g <resource-group> -l eastus --sku Standard_LRS
+   az storage container create -n data-formulator --account-name <account>
+   ```
+
+3. **Get the connection string:**
+
+   ```bash
+   az storage account show-connection-string -n <account> -g <resource-group> -o tsv
+   ```
+
+4. **Add to `.env`:**
+
+   ```env
+   WORKSPACE_BACKEND=azure_blob
+   AZURE_BLOB_CONNECTION_STRING=DefaultEndpointsProtocol=https;AccountName=...
+   # AZURE_BLOB_CONTAINER=data-formulator   # default, change if needed
+   ```
+
+5. **Run normally:**
+
+   ```bash
+   uv run data_formulator --dev
+   ```
+
+   Or pass as CLI flags:
+
+   ```bash
+   data_formulator --workspace-backend azure_blob \
+     --azure-blob-connection-string "DefaultEndpointsProtocol=https;AccountName=..."
+   ```
+
+### Production setup with Entra ID (no secrets)
+
+In production (Azure App Service, AKS, etc.) you can authenticate the app to blob storage via **Managed Identity** instead of a connection string. This eliminates secrets entirely.
+
+1. **Install extra dependencies:**
+
+   ```bash
+   pip install azure-storage-blob azure-identity
+   ```
+
+2. **Assign a role to the app's Managed Identity:**
+
+   ```bash
+   # Get the App Service's principal ID
+   PRINCIPAL_ID=$(az webapp identity show -n <app-name> -g <rg> --query principalId -o tsv)
+
+   # Grant it "Storage Blob Data Contributor" on the storage account
+   az role assignment create \
+     --assignee "$PRINCIPAL_ID" \
+     --role "Storage Blob Data Contributor" \
+     --scope "/subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.Storage/storageAccounts/<account>"
+   ```
+
+3. **Set environment variables** (no secrets needed):
+
+   ```env
+   WORKSPACE_BACKEND=azure_blob
+   AZURE_BLOB_ACCOUNT_URL=https://<account>.blob.core.windows.net
+   # AZURE_BLOB_CONTAINER=data-formulator
+   ```
+
+   The app uses [`DefaultAzureCredential`](https://learn.microsoft.com/python/api/azure-identity/azure.identity.defaultazurecredential), which automatically picks up the Managed Identity.
+
+4. **For local development** with the same Entra ID path, log in with the Azure CLI:
+
+   ```bash
+   az login
+   # Grant your user the same "Storage Blob Data Contributor" role
+   az role assignment create \
+     --assignee "<your-email@example.com>" \
+     --role "Storage Blob Data Contributor" \
+     --scope "/subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.Storage/storageAccounts/<account>"
+   ```
+
+   Then set:
+
+   ```env
+   WORKSPACE_BACKEND=azure_blob
+   AZURE_BLOB_ACCOUNT_URL=https://<account>.blob.core.windows.net
+   ```
+
+   `DefaultAzureCredential` will use your `az login` session.
+
+### Authentication methods summary
+
+| Method | Env var | When to use |
+|--------|---------|-------------|
+| **Connection string** | `AZURE_BLOB_CONNECTION_STRING` | Local dev, quick tests |
+| **Entra ID (Managed Identity)** | `AZURE_BLOB_ACCOUNT_URL` | Azure App Service, AKS — no secrets |
+| **Entra ID (az login)** | `AZURE_BLOB_ACCOUNT_URL` | Local dev without secrets |
+| **Entra ID (service principal)** | `AZURE_BLOB_ACCOUNT_URL` + `AZURE_CLIENT_ID` / `AZURE_TENANT_ID` / `AZURE_CLIENT_SECRET` | CI/CD pipelines |
+
+If both `AZURE_BLOB_CONNECTION_STRING` and `AZURE_BLOB_ACCOUNT_URL` are set, the connection string takes precedence.
+
+### Blob layout
+
+All workspace data is stored under `<datalake_root>/<sanitized_identity_id>/` inside the container:
+
+```
+data-formulator/                          ← container
+  workspaces/                             ← datalake_root (default)
+    browser_550e8400.../                  ← anonymous user workspace
+      workspace.yaml
+      sales_data.parquet
+    user_alice_example_com/               ← authenticated user workspace
+      workspace.yaml
+      quarterly_report.parquet
+```
+
+### CLI flags reference
+
+| Flag | Env var | Default | Description |
+|------|---------|---------|-------------|
+| `--workspace-backend` | `WORKSPACE_BACKEND` | `local` | `local` or `azure_blob` |
+| `--azure-blob-connection-string` | `AZURE_BLOB_CONNECTION_STRING` | — | Shared-key connection string |
+| `--azure-blob-account-url` | `AZURE_BLOB_ACCOUNT_URL` | — | Account URL for Entra ID auth |
+| `--azure-blob-container` | `AZURE_BLOB_CONTAINER` | `data-formulator` | Blob container name |
 
 
 ## Security Considerations for Production Deployment

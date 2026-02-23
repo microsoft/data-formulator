@@ -281,10 +281,12 @@ export const loadTable = createAsyncThunk<
         // Notify user about truncation
         if (truncated && originalRowCount) {
             const diskDisabled = state.serverConfig?.DISABLE_DATABASE;
+            const workspaceBackend = state.serverConfig?.WORKSPACE_BACKEND;
+            const storageLabel = workspaceBackend === 'azure_blob' ? 'Azure' : 'Disk';
             const baseMsg = `Table "${finalTable.displayId || finalTable.id}" was truncated from ${originalRowCount.toLocaleString()} to ${frontendRowLimit.toLocaleString()} rows (browser limit).`;
             const installHint = diskDisabled
                 ? ` To load the full dataset, install Data Formulator locally and use disk storage.`
-                : ` To load the full dataset, switch to "Disk" storage mode.`;
+                : ` To load the full dataset, switch to "${storageLabel}" storage mode.`;
             dispatch(dfActions.addMessages({
                 timestamp: Date.now(),
                 type: 'warning',

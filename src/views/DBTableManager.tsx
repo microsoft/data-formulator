@@ -320,12 +320,26 @@ export const DBManagerPane: React.FC<{
                     width: '100%', 
                     height: '100%', 
                     display: 'flex', 
+                    flexDirection: 'column',
                     alignItems: 'center', 
                     justifyContent: 'center',
-                    backgroundColor: 'rgba(255, 255, 255, 0.7)',
-                    zIndex: 1000
+                    backgroundColor: 'rgba(255, 255, 255, 0.85)',
+                    backdropFilter: 'blur(4px)',
+                    zIndex: 1000,
+                    gap: 2,
                 }}>
                     <CircularProgress size={60} thickness={5} />
+                    <Typography variant="body2" color="text.secondary">
+                        Uploading data...
+                    </Typography>
+                    <Button
+                        variant="text"
+                        size="small"
+                        onClick={() => setIsUploading(false)}
+                        sx={{ mt: 1, textTransform: 'none', color: 'text.secondary' }}
+                    >
+                        Cancel
+                    </Button>
                 </Box>
             )}
             

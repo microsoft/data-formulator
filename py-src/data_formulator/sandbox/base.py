@@ -40,7 +40,7 @@ class Sandbox(ABC):
             :class:`pandas.DataFrame`.
         workspace
             A :class:`~data_formulator.datalake.workspace.Workspace`
-            instance.  The sandbox reads ``workspace._path`` to set up
+            instance.  The sandbox uses ``workspace.local_dir()`` to set up
             the execution environment.
         output_variable : str
             Name of the variable in *code* that holds the result.

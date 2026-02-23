@@ -13,6 +13,7 @@ import {
     CircularProgress,
     Card,
     ClickAwayListener,
+    LinearProgress,
 } from '@mui/material';
 
 import { useDispatch, useSelector } from 'react-redux';
@@ -26,19 +27,73 @@ import SendIcon from '@mui/icons-material/Send';
 import CloseIcon from '@mui/icons-material/Close';
 import AddIcon from '@mui/icons-material/Add';
 import TipsAndUpdatesIcon from '@mui/icons-material/TipsAndUpdates';
-import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import CancelOutlinedIcon from '@mui/icons-material/CancelOutlined';
-import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
-import ChatOutlinedIcon from '@mui/icons-material/ChatOutlined';
-import PrecisionManufacturingOutlinedIcon from '@mui/icons-material/PrecisionManufacturingOutlined';
+import PersonOutlineIcon from '@mui/icons-material/PersonOutline';
+import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
 import TableRowsOutlinedIcon from '@mui/icons-material/TableRowsOutlined';
-import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
+
 import RefreshIcon from '@mui/icons-material/Refresh';
 import ClearIcon from '@mui/icons-material/Clear';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import { renderTextWithEmphasis } from './EncodingShelfCard';
 import { UnifiedDataUploadDialog } from './UnifiedDataUploadDialog';
 import { ThinkingBufferEffect } from '../components/FunComponents';
+import { Theme } from '@mui/material/styles';
+
+const AgentWorkingOverlay: FC<{ relevantAgentActions: any[]; theme: Theme }> = ({ relevantAgentActions, theme }) => {
+    const runningAction = relevantAgentActions.find(a => a.status === 'running');
+    const latestMessage = runningAction?.description || 'thinking...';
+    return (
+        <Box sx={{
+            position: 'absolute',
+            top: 0, left: 0, right: 0, bottom: 0,
+            backgroundColor: alpha(theme.palette.background.paper, 0.88),
+            backdropFilter: 'blur(3px)',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 0.5,
+            zIndex: 2,
+            borderRadius: 'inherit',
+            px: 2,
+            overflow: 'hidden',
+        }}>
+            <Box sx={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 1 }}>
+                <Typography sx={{
+                    fontSize: 10,
+                    animation: 'agentWriting 1.2s ease-in-out infinite',
+                    '@keyframes agentWriting': {
+                        '0%, 100%': { transform: 'rotate(-15deg) translate(0, 0)' },
+                        '25%': { transform: 'rotate(-8deg) translate(2px, 1px)' },
+                        '50%': { transform: 'rotate(-15deg) translate(0, 0)' },
+                        '75%': { transform: 'rotate(-20deg) translate(-2px, 1px)' },
+                    },
+                    transformOrigin: 'bottom right',
+                }}>
+                    ✏️
+                </Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500, fontSize: 10 }}>
+                    Agent is working...
+                </Typography>
+            </Box>
+            <Typography variant="caption" sx={{
+                color: 'text.disabled',
+                fontSize: 10,
+                textAlign: 'center',
+                display: '-webkit-box',
+                WebkitLineClamp: 3,
+                WebkitBoxOrient: 'vertical',
+                overflow: 'hidden',
+                lineHeight: 1.3,
+                wordBreak: 'break-word',
+            }}>
+                {latestMessage}
+            </Typography>
+            <LinearProgress sx={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 2, borderRadius: '0 0 8px 8px' }} />
+        </Box>
+    );
+};
 
 export const SimpleChartRecBox: FC<{ onExpandedChange?: (expanded: boolean) => void }> = function ({ onExpandedChange }) {
 
@@ -62,6 +117,9 @@ export const SimpleChartRecBox: FC<{ onExpandedChange?: (expanded: boolean) => v
     const [isLoadingIdeas, setIsLoadingIdeas] = useState(false);
     const [thinkingBuffer, setThinkingBuffer] = useState('');
     const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
+    const [panelHeight, setPanelHeight] = useState(180);
+    const [isDragging, setIsDragging] = useState(false);
+    const dragRef = useRef<{ startY: number; startHeight: number } | null>(null);
 
     // Notify parent when formulating state changes
     useEffect(() => {
@@ -518,7 +576,7 @@ export const SimpleChartRecBox: FC<{ onExpandedChange?: (expanded: boolean) => v
             borderWidth: 1.5,
             borderColor: isChatFormulating ? alpha(theme.palette.action.disabled, 0.2) : alpha(theme.palette.primary.main, 0.5),
             borderRadius: '8px',
-            overflow: 'visible',
+            overflow: isChatFormulating ? 'hidden' : 'visible',
             flexShrink: 0,
             position: 'relative',
             zIndex: expanded ? 11 : 0,
@@ -618,7 +676,7 @@ export const SimpleChartRecBox: FC<{ onExpandedChange?: (expanded: boolean) => v
                             <span>
                                 <IconButton
                                     size="small"
-                                    sx={{ p: 0.5, color: theme.palette.warning.main }}
+                                    sx={{ p: 0.5, color: theme.palette.custom.main }}
                                     disabled={!focusedTableId || isLoadingIdeas}
                                     onClick={() => { 
                                         if (ideas.length > 0) {
@@ -651,6 +709,13 @@ export const SimpleChartRecBox: FC<{ onExpandedChange?: (expanded: boolean) => v
                 )}
                 </Box>
             </Box>
+            {/* Agent working overlay */}
+            {isChatFormulating && (
+                <AgentWorkingOverlay 
+                    relevantAgentActions={relevantAgentActions}
+                    theme={theme}
+                />
+            )}
         </Card>
     );
 
@@ -674,10 +739,10 @@ export const SimpleChartRecBox: FC<{ onExpandedChange?: (expanded: boolean) => v
                     left: 0,
                     right: 0,
                     pointerEvents: expanded ? 'auto' : 'none',
-                    maxHeight: (expanded && (ideas.length > 0 || isLoadingIdeas || hasThreadContent)) ? '180px' : '0px',
+                    maxHeight: (expanded && (ideas.length > 0 || isLoadingIdeas || hasThreadContent)) ? `${panelHeight}px` : '0px',
                     opacity: (expanded && (ideas.length > 0 || isLoadingIdeas || hasThreadContent)) ? 1 : 0,
                     transform: (expanded && (ideas.length > 0 || isLoadingIdeas || hasThreadContent)) ? 'translateY(0)' : 'translateY(8px)',
-                    transition: 'max-height 0.3s cubic-bezier(0.4,0,0.2,1), opacity 0.2s ease, transform 0.25s ease',
+                    transition: dragRef.current ? 'none' : 'max-height 0.3s cubic-bezier(0.4,0,0.2,1), opacity 0.2s ease, transform 0.25s ease',
                     overflow: 'hidden',
                     display: 'flex',
                     flexDirection: 'column',
@@ -687,6 +752,43 @@ export const SimpleChartRecBox: FC<{ onExpandedChange?: (expanded: boolean) => v
                     boxShadow: expanded ? '0 -4px 20px rgba(0,0,0,0.12)' : 'none',
                     border: expanded ? `1px solid ${theme.palette.divider}` : 'none',
                 }}>
+                    {/* Draggable top edge handle */}
+                    <Box
+                        sx={{
+                            height: 8,
+                            flexShrink: 0,
+                            cursor: 'ns-resize',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            '&:hover > div': { backgroundColor: alpha(theme.palette.text.secondary, 0.4) },
+                        }}
+                        onMouseDown={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            dragRef.current = { startY: e.clientY, startHeight: panelHeight };
+                            setIsDragging(true);
+                            const onMouseMove = (ev: MouseEvent) => {
+                                ev.preventDefault();
+                                if (!dragRef.current) return;
+                                const delta = dragRef.current.startY - ev.clientY;
+                                const newHeight = Math.max(100, Math.min(600, dragRef.current.startHeight + delta));
+                                setPanelHeight(newHeight);
+                            };
+                            const onMouseUp = (ev: MouseEvent) => {
+                                ev.preventDefault();
+                                ev.stopPropagation();
+                                dragRef.current = null;
+                                setIsDragging(false);
+                                document.removeEventListener('mousemove', onMouseMove);
+                                document.removeEventListener('mouseup', onMouseUp);
+                            };
+                            document.addEventListener('mousemove', onMouseMove);
+                            document.addEventListener('mouseup', onMouseUp);
+                        }}
+                    >
+                        <Box sx={{ width: 32, height: 3, borderRadius: 1.5, backgroundColor: alpha(theme.palette.text.disabled, 0.25), transition: 'background-color 0.15s' }} />
+                    </Box>
                     {/* Floating collapse button */}
                     <IconButton
                         size="small"
@@ -714,39 +816,8 @@ export const SimpleChartRecBox: FC<{ onExpandedChange?: (expanded: boolean) => v
                         flexDirection: 'column',
                         gap: '6px',
                     }}>
-                        {/* When ideas exist, show current table label instead of full thread history */}
-                        {ideas.length > 0 && focusedTableId && (
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: '4px', py: '4px' }}>
-                                <TableRowsOutlinedIcon sx={{ fontSize: 11, color: theme.palette.primary.main }} />
-                                <Typography sx={{ fontSize: 10, color: theme.palette.primary.main }}>
-                                    {currentTable?.displayId || focusedTableId}
-                                </Typography>
-                                {!isLoadingIdeas && (
-                                    <>
-                                        <Tooltip title="Clear ideas">
-                                            <IconButton
-                                                size="small"
-                                                onClick={() => setIdeas([])}
-                                                sx={{ p: '2px', color: theme.palette.text.secondary, '&:hover': { color: theme.palette.error.main } }}
-                                            >
-                                                <ClearIcon sx={{ fontSize: 13 }} />
-                                            </IconButton>
-                                        </Tooltip>
-                                        <Tooltip title="Regenerate ideas">
-                                            <IconButton
-                                                size="small"
-                                                onClick={() => getIdeasFromAgent()}
-                                                sx={{ p: '2px', color: theme.palette.text.secondary, '&:hover': { color: theme.palette.primary.main } }}
-                                            >
-                                                <RefreshIcon sx={{ fontSize: 13 }} />
-                                            </IconButton>
-                                        </Tooltip>
-                                    </>
-                                )}
-                            </Box>
-                        )}
-                        {/* Timeline-style thread messages (hidden when ideas are shown) */}
-                        {ideas.length === 0 && allThreadMessages.map((msg, idx) => {
+                        {/* Timeline-style thread messages (always shown when present) */}
+                        {allThreadMessages.map((msg, idx) => {
                             const isLast = idx === allThreadMessages.length - 1;
                             const TIMELINE_W = 14;
                             const TIMELINE_GAP = '6px';
@@ -754,24 +825,30 @@ export const SimpleChartRecBox: FC<{ onExpandedChange?: (expanded: boolean) => v
                             // Determine timeline icon for each role
                             const primaryColor = theme.palette.primary.main;
                             const customColor = theme.palette.custom?.main || theme.palette.warning.main;
+                            // Skip source-table and result-table — they're rendered inline as quotes
+                            if (msg.role === 'source-table' || msg.role === 'result-table') return null;
+
+                            // Find adjacent table references to embed as quotes
+                            const prevMsg = idx > 0 ? allThreadMessages[idx - 1] : null;
+                            const nextMsg2 = idx < allThreadMessages.length - 1 ? allThreadMessages[idx + 1] : null;
+                            const sourceTableRef = (msg.role === 'user' && prevMsg?.role === 'source-table') ? prevMsg.content : null;
+                            const resultTableRef = (msg.role === 'thinking' && nextMsg2?.role === 'result-table') ? nextMsg2.content : null;
+
                             const getTimelineIcon = () => {
                                 if (msg.isRunning) {
                                     return <CircularProgress size={10} thickness={5} sx={{ color: customColor }} />;
                                 }
                                 switch (msg.role) {
-                                    case 'source-table':
-                                    case 'result-table':
-                                        return <TableRowsOutlinedIcon sx={{ fontSize: 11, color: primaryColor }} />;
                                     case 'user':
-                                        return <ChatOutlinedIcon sx={{ fontSize: 12, color: primaryColor }} />;
+                                        return <PersonOutlineIcon sx={{ fontSize: 12, color: primaryColor }} />;
                                     case 'thinking':
-                                        return <PrecisionManufacturingOutlinedIcon sx={{ fontSize: 11, color: customColor }} />;
+                                        return <SmartToyOutlinedIcon sx={{ fontSize: 11, color: customColor }} />;
                                     case 'completion':
-                                        return <CheckCircleOutlineIcon sx={{ fontSize: 12, color: theme.palette.success.main }} />;
+                                        return <SmartToyOutlinedIcon sx={{ fontSize: 11, color: theme.palette.success.main }} />;
                                     case 'error':
-                                        return <ErrorOutlineIcon sx={{ fontSize: 11, color: theme.palette.error.main }} />;
+                                        return <SmartToyOutlinedIcon sx={{ fontSize: 11, color: theme.palette.error.main }} />;
                                     case 'clarify':
-                                        return <HelpOutlineIcon sx={{ fontSize: 11, color: theme.palette.warning.main }} />;
+                                        return <SmartToyOutlinedIcon sx={{ fontSize: 11, color: theme.palette.warning.main }} />;
                                     default:
                                         return <Box sx={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: 'rgba(0,0,0,0.2)' }} />;
                                 }
@@ -781,43 +858,68 @@ export const SimpleChartRecBox: FC<{ onExpandedChange?: (expanded: boolean) => v
                                 : msg.role === 'clarify' ? alpha(theme.palette.warning.main, 0.3)
                                 : 'rgba(0,0,0,0.12)';
 
-                            const nextMsg = idx < allThreadMessages.length - 1 ? allThreadMessages[idx + 1] : null;
-                            const bottomLineColor = nextMsg
-                                ? (nextMsg.role === 'error' ? alpha(theme.palette.error.main, 0.2)
-                                    : nextMsg.role === 'clarify' ? alpha(theme.palette.warning.main, 0.3)
+                            // Find the next *visible* message (skipping table items) for bottom line color
+                            let nextVisibleMsg: ThreadItem | null = null;
+                            for (let j = idx + 1; j < allThreadMessages.length; j++) {
+                                if (allThreadMessages[j].role !== 'source-table' && allThreadMessages[j].role !== 'result-table') {
+                                    nextVisibleMsg = allThreadMessages[j];
+                                    break;
+                                }
+                            }
+                            const bottomLineColor = nextVisibleMsg
+                                ? (nextVisibleMsg.role === 'error' ? alpha(theme.palette.error.main, 0.2)
+                                    : nextVisibleMsg.role === 'clarify' ? alpha(theme.palette.warning.main, 0.3)
                                     : 'rgba(0,0,0,0.12)')
                                 : lineColor;
+
+                            // Determine if this is the first/last visible item for timeline lines
+                            let isFirstVisible = true;
+                            for (let j = 0; j < idx; j++) {
+                                if (allThreadMessages[j].role !== 'source-table' && allThreadMessages[j].role !== 'result-table') {
+                                    isFirstVisible = false;
+                                    break;
+                                }
+                            }
+                            const isLastVisible = nextVisibleMsg === null;
+
+                            const tableQuote = (tableId: string) => (
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: '3px', py: '1px' }}>
+                                    <TableRowsOutlinedIcon sx={{ fontSize: 10, color: theme.palette.text.disabled }} />
+                                    <Typography sx={{ fontSize: 9, color: theme.palette.text.disabled }}>
+                                        {tables.find(t => t.id === tableId)?.displayId || tableId}
+                                    </Typography>
+                                </Box>
+                            );
 
                             const renderContent = () => {
                                 if (msg.isRunning) {
                                     return <ThinkingBufferEffect text={msg.content || 'thinking...'} sx={{ width: '100%' }} />;
                                 }
                                 switch (msg.role) {
-                                    case 'source-table':
-                                    case 'result-table':
-                                        return (
-                                            <Typography sx={{ fontSize: 10, color: primaryColor }}>
-                                                {tables.find(t => t.id === msg.content)?.displayId || msg.content}
-                                            </Typography>
-                                        );
                                     case 'user':
                                         return (
-                                            <Typography component="div" sx={{ fontSize: 10, color: primaryColor,
-                                                fontStyle: 'italic',
-                                                whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                                                {msg.content}
-                                            </Typography>
+                                            <Box>
+                                                {sourceTableRef && tableQuote(sourceTableRef)}
+                                                <Typography component="div" sx={{ fontSize: 10, color: primaryColor,
+                                                    fontStyle: 'italic',
+                                                    whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                                                    {msg.content}
+                                                </Typography>
+                                            </Box>
                                         );
                                     case 'thinking':
                                         return (
-                                            <Typography component="div" sx={{ fontSize: 10, color: customColor,
-                                                whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                                                {renderTextWithEmphasis(msg.content, {
-                                                    borderRadius: '2px',
-                                                    fontSize: '10px',
-                                                    backgroundColor: alpha(customColor, 0.08),
-                                                })}
-                                            </Typography>
+                                            <Box>
+                                                <Typography component="div" sx={{ fontSize: 10, color: customColor,
+                                                    whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                                                    {renderTextWithEmphasis(msg.content, {
+                                                        borderRadius: '2px',
+                                                        fontSize: '10px',
+                                                        backgroundColor: alpha(customColor, 0.08),
+                                                    })}
+                                                </Typography>
+                                                {resultTableRef && tableQuote(resultTableRef)}
+                                            </Box>
                                         );
                                     case 'completion':
                                         return (
@@ -848,25 +950,17 @@ export const SimpleChartRecBox: FC<{ onExpandedChange?: (expanded: boolean) => v
                             return (
                                 <Box key={`thread-msg-${idx}`} sx={{
                                     display: 'flex', flexDirection: 'row', position: 'relative',
-                                    ...(msg.role === 'user' ? {
-                                        backgroundColor: alpha(theme.palette.primary.main, 0.12),
-                                        borderRadius: '4px',
-                                        mx: '-4px', px: '4px',
-                                    } : {})
                                 }}>
-                                    {/* Timeline column: top line → icon → bottom line */}
+                                    {/* Timeline column: icon at top, line extends down */}
                                     <Box sx={{
                                         width: TIMELINE_W, flexShrink: 0,
                                         display: 'flex', flexDirection: 'column', alignItems: 'center',
+                                        pt: '5px',
                                     }}>
-                                        {idx > 0
-                                            ? <Box sx={{ width: 0, flex: '1 1 0', minHeight: 2, borderLeft: `1px solid ${lineColor}` }} />
-                                            : <Box sx={{ flex: '1 1 0', minHeight: 2 }} />
-                                        }
                                         <Box sx={{ flexShrink: 0, zIndex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                             {getTimelineIcon()}
                                         </Box>
-                                        {!isLast
+                                        {!isLastVisible
                                             ? <Box sx={{ width: 0, flex: '1 1 0', minHeight: 2, borderLeft: `1px solid ${bottomLineColor}` }} />
                                             : <Box sx={{ flex: '1 1 0', minHeight: 2 }} />
                                         }
@@ -878,7 +972,7 @@ export const SimpleChartRecBox: FC<{ onExpandedChange?: (expanded: boolean) => v
                                 </Box>
                             );
                         })}
-                        {/* Idea suggestions */}
+                        {/* Idea suggestions section */}
                         {isLoadingIdeas && ideas.length === 0 ? (
                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 1 }}>
                                 <ThinkingBufferEffect text={thinkingBuffer.slice(-60) || 'thinking...'} sx={{ width: '100%' }} />
@@ -887,55 +981,103 @@ export const SimpleChartRecBox: FC<{ onExpandedChange?: (expanded: boolean) => v
                             <Typography variant="caption" sx={{ color: theme.palette.text.disabled, fontSize: 11 }}>
                                 Click 💡 to get exploration ideas for your data.
                             </Typography>
-                        ) : (
-                            ideas.map((idea, idx) => {
-                                const color = idea.difficulty === 'easy' ? theme.palette.success.main
-                                    : idea.difficulty === 'hard' ? theme.palette.warning.main
-                                    : theme.palette.primary.main;
-                                return (
-                                    <Box
-                                        key={idx}
-                                        sx={{
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            px: 1, py: 0.75,
-                                            borderRadius: '6px',
-                                            border: `1px solid ${alpha(color, 0.2)}`,
-                                            cursor: 'pointer',
-                                            transition: 'all 0.15s ease',
-                                            '&:hover': {
-                                                borderColor: alpha(color, 0.6),
-                                                background: alpha(color, 0.04),
-                                                transform: 'translateY(-1px)',
-                                            },
-                                        }}
-                                        onClick={() => {
-                                            setChatPrompt(idea.text);
-                                            exploreFromChat(idea.text);
-                                            setExpanded(false);
-                                        }}
-                                    >
-                                        <Typography component="div" sx={{ fontSize: '11px', lineHeight: 1.4, color }}>
-                                            {renderTextWithEmphasis(idea.goal, {
-                                                borderRadius: '0px',
-                                                borderBottom: `1px solid`,
-                                                borderColor: alpha(color, 0.4),
-                                                fontSize: '11px',
-                                                lineHeight: 1.4,
-                                                backgroundColor: alpha(color, 0.05),
-                                            })}
-                                        </Typography>
-                                    </Box>
-                                );
-                            })
-                        )}
-                        {isLoadingIdeas && thinkingBuffer && ideas.length > 0 && (
-                            <ThinkingBufferEffect text={thinkingBuffer.slice(-60)} sx={{ width: '100%' }} />
-                        )}
+                        ) : ideas.length > 0 ? (
+                            <Box sx={{
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: '5px',
+                                p: 0.75,
+                                borderRadius: '6px',
+                                backgroundColor: alpha(theme.palette.custom?.main || theme.palette.warning.main, 0.04),
+                            }}>
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                    <TipsAndUpdatesIcon sx={{ fontSize: 12, color: theme.palette.custom?.main || theme.palette.warning.main }} />
+                                    <Typography sx={{ fontSize: 10, fontWeight: 600, color: theme.palette.custom?.main || theme.palette.warning.main, flex: 1 }}>
+                                        Ideas
+                                    </Typography>
+                                    {!isLoadingIdeas && (
+                                        <>
+                                            <Tooltip title="Regenerate ideas">
+                                                <IconButton
+                                                    size="small"
+                                                    onClick={() => getIdeasFromAgent()}
+                                                    sx={{ p: '2px', color: theme.palette.text.secondary, '&:hover': { color: theme.palette.primary.main } }}
+                                                >
+                                                    <RefreshIcon sx={{ fontSize: 13 }} />
+                                                </IconButton>
+                                            </Tooltip>
+                                            <Tooltip title="Clear ideas">
+                                                <IconButton
+                                                    size="small"
+                                                    onClick={() => setIdeas([])}
+                                                    sx={{ p: '2px', color: theme.palette.text.secondary, '&:hover': { color: theme.palette.error.main } }}
+                                                >
+                                                    <ClearIcon sx={{ fontSize: 13 }} />
+                                                </IconButton>
+                                            </Tooltip>
+                                        </>
+                                    )}
+                                </Box>
+                                {ideas.map((idea, idx) => {
+                                    const color = idea.difficulty === 'easy' ? theme.palette.success.main
+                                        : idea.difficulty === 'hard' ? theme.palette.warning.main
+                                        : theme.palette.primary.main;
+                                    return (
+                                        <Box
+                                            key={idx}
+                                            sx={{
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                px: 1, py: 0.5,
+                                                borderRadius: '5px',
+                                                backgroundColor: theme.palette.background.paper,
+                                                border: `1px solid ${alpha(color, 0.18)}`,
+                                                cursor: 'pointer',
+                                                transition: 'all 0.15s ease',
+                                                '&:hover': {
+                                                    borderColor: alpha(color, 0.6),
+                                                    background: alpha(color, 0.06),
+                                                    transform: 'translateY(-1px)',
+                                                },
+                                            }}
+                                            onClick={() => {
+                                                setChatPrompt(idea.text);
+                                                exploreFromChat(idea.text);
+                                                setExpanded(false);
+                                            }}
+                                        >
+                                            <Typography component="div" sx={{ fontSize: '11px', lineHeight: 1.4, color }}>
+                                                {renderTextWithEmphasis(idea.goal, {
+                                                    borderRadius: '0px',
+                                                    borderBottom: `1px solid`,
+                                                    borderColor: alpha(color, 0.4),
+                                                    fontSize: '11px',
+                                                    lineHeight: 1.4,
+                                                    backgroundColor: alpha(color, 0.05),
+                                                })}
+                                            </Typography>
+                                        </Box>
+                                    );
+                                })}
+                                {isLoadingIdeas && thinkingBuffer && (
+                                    <ThinkingBufferEffect text={thinkingBuffer.slice(-60)} sx={{ width: '100%' }} />
+                                )}
+                            </Box>
+                        ) : null}
 
                     </Box>
                 </Box>
             </Box>
+            {/* Full-viewport overlay during drag to capture all pointer events */}
+            {isDragging && (
+                <Box sx={{
+                    position: 'fixed',
+                    top: 0, left: 0, right: 0, bottom: 0,
+                    zIndex: 9999,
+                    cursor: 'ns-resize',
+                    userSelect: 'none',
+                }} />
+            )}
             {/* The input box always at the bottom */}
             {inputBox}
             <UnifiedDataUploadDialog

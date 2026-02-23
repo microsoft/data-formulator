@@ -32,6 +32,8 @@ import ExploreIcon from '@mui/icons-material/Explore';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import Paper from '@mui/material/Paper';
+import CircularProgress from '@mui/material/CircularProgress';
+import Backdrop from '@mui/material/Backdrop';
 
 import { useDispatch, useSelector } from 'react-redux';
 import { DataFormulatorState, dfActions, fetchFieldSemanticType } from '../app/dfSlice';
@@ -51,6 +53,7 @@ import {
     Switch,
 } from '@mui/material';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
+import CloudIcon from '@mui/icons-material/Cloud';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import LanguageIcon from '@mui/icons-material/Language';
 
@@ -496,6 +499,10 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
 
     // Sample datasets state
     const [datasetPreviews, setDatasetPreviews] = useState<DatasetMetadata[]>([]);
+
+    // Loading state for dataset loading
+    const [datasetLoading, setDatasetLoading] = useState<boolean>(false);
+    const [datasetLoadingLabel, setDatasetLoadingLabel] = useState<string>('');
 
     // Constants
     const MAX_DISPLAY_LINES = 20;
@@ -1017,14 +1024,19 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                             <ToggleButton value="disk" disabled={diskPersistenceDisabled}>
                                 <Tooltip title={diskPersistenceDisabled
                                     ? 'Install Data Formulator locally to unlock analysis for large datasets'
-                                    : `Data stored in workspace on disk (supports large tables)`} placement="bottom">
+                                    : serverConfig.WORKSPACE_BACKEND === 'azure_blob'
+                                        ? 'Data stored in Azure Blob Storage (supports large tables)'
+                                        : 'Data stored in workspace on disk (supports large tables)'} placement="bottom">
                                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                        <FolderOpenIcon sx={{ fontSize: 14 }} /> Disk
+                                        {serverConfig.WORKSPACE_BACKEND === 'azure_blob'
+                                            ? <><CloudIcon sx={{ fontSize: 14 }} /> Azure</>
+                                            : <><FolderOpenIcon sx={{ fontSize: 14 }} /> Disk</>}
                                     </Box>
                                 </Tooltip>
                             </ToggleButton>
                         </ToggleButtonGroup>
-                        {storeOnServer && !diskPersistenceDisabled && serverConfig.DATA_FORMULATOR_HOME && (
+                        {storeOnServer && !diskPersistenceDisabled && serverConfig.DATA_FORMULATOR_HOME
+                            && serverConfig.WORKSPACE_BACKEND !== 'azure_blob' && (
                             <Tooltip title={`Open workspace: ${serverConfig.DATA_FORMULATOR_HOME}`} placement="bottom">
                                 <IconButton
                                     size="small"
@@ -1529,44 +1541,53 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                         <DatasetSelectionView 
                         datasets={datasetPreviews} 
                         hideRowNum
-                        handleSelectDataset={(dataset) => {
+                        handleSelectDataset={async (dataset) => {
                             // Check if this is a live dataset
                             const isLiveDataset = dataset.live === true;
                             
-                            for (let table of dataset.tables) {
-                                // For live datasets with relative URLs, construct full URL
-                                let fullUrl = table.url;
-                                if (table.url.startsWith('/')) {
-                                    fullUrl = window.location.origin + table.url;
-                                }
-                                
-                                fetch(fullUrl)
-                                    .then(res => res.text())
-                                    .then(textData => {
-                                        let tableName = table.url.split("/").pop()?.split(".")[0]?.split("?")[0] || 'table-' + Date.now().toString().substring(0, 8);
-                                        let dictTable;
-                                        if (table.format == "csv") {
-                                            dictTable = createTableFromText(tableName, textData);
-                                        } else if (table.format == "json") {
-                                            dictTable = createTableFromFromObjectArray(tableName, JSON.parse(textData), true);
-                                        } 
-                                        if (dictTable) {
-                                            // For live datasets, set up as stream source with auto-refresh
-                                            if (isLiveDataset) {
-                                                dictTable.source = { 
-                                                    type: 'stream', 
-                                                    url: fullUrl,
-                                                    autoRefresh: true,
-                                                    refreshIntervalSeconds: dataset.refreshIntervalSeconds || 60,
-                                                    lastRefreshed: Date.now()
-                                                };
-                                            } else {
-                                                // Regular example data
-                                                dictTable.source = { type: 'example', url: table.url };
-                                            }
-                                            dispatch(loadTable({ table: dictTable, storeOnServer }));
+                            setDatasetLoading(true);
+                            setDatasetLoadingLabel(`Loading ${dataset.name}...`);
+                            
+                            try {
+                                const loadPromises = dataset.tables.map(async (table) => {
+                                    // For live datasets with relative URLs, construct full URL
+                                    let fullUrl = table.url;
+                                    if (table.url.startsWith('/')) {
+                                        fullUrl = window.location.origin + table.url;
+                                    }
+                                    
+                                    const res = await fetch(fullUrl);
+                                    const textData = await res.text();
+                                    let tableName = table.url.split("/").pop()?.split(".")[0]?.split("?")[0] || 'table-' + Date.now().toString().substring(0, 8);
+                                    let dictTable;
+                                    if (table.format == "csv") {
+                                        dictTable = createTableFromText(tableName, textData);
+                                    } else if (table.format == "json") {
+                                        dictTable = createTableFromFromObjectArray(tableName, JSON.parse(textData), true);
+                                    } 
+                                    if (dictTable) {
+                                        // For live datasets, set up as stream source with auto-refresh
+                                        if (isLiveDataset) {
+                                            dictTable.source = { 
+                                                type: 'stream', 
+                                                url: fullUrl,
+                                                autoRefresh: true,
+                                                refreshIntervalSeconds: dataset.refreshIntervalSeconds || 60,
+                                                lastRefreshed: Date.now()
+                                            };
+                                        } else {
+                                            // Regular example data
+                                            dictTable.source = { type: 'example', url: table.url };
                                         }
-                                    });
+                                        await dispatch(loadTable({ table: dictTable, storeOnServer }));
+                                    }
+                                });
+                                await Promise.all(loadPromises);
+                            } catch (error) {
+                                console.error('Failed to load dataset:', error);
+                            } finally {
+                                setDatasetLoading(false);
+                                setDatasetLoadingLabel('');
                             }
                             handleClose();
                         }}
@@ -1575,6 +1596,33 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                 </TabPanel>
 
             </DialogContent>
+
+            {/* Loading overlay for dataset loading */}
+            <Backdrop
+                open={datasetLoading}
+                sx={{
+                    position: 'absolute',
+                    zIndex: (theme) => theme.zIndex.drawer + 1,
+                    backgroundColor: 'rgba(255, 255, 255, 0.85)',
+                    backdropFilter: 'blur(4px)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 2,
+                }}
+            >
+                <CircularProgress size={36} />
+                <Typography variant="body2" color="text.secondary">
+                    {datasetLoadingLabel || 'Loading data...'}
+                </Typography>
+                <Button
+                    variant="text"
+                    size="small"
+                    onClick={() => { setDatasetLoading(false); setDatasetLoadingLabel(''); }}
+                    sx={{ mt: 1, textTransform: 'none', color: 'text.secondary' }}
+                >
+                    Cancel
+                </Button>
+            </Backdrop>
         </Dialog>
     );
 };
