@@ -170,20 +170,21 @@ export let buildTableCard = (props: BuildTableCardProps) => {
             onClick={() => {
                 dispatch(dfActions.setFocused({ type: 'table', tableId }));
             }}>
-            <Box sx={{ margin: '0px', display: 'flex' }}>
-                <Stack direction="row" sx={{ marginLeft: 0.5, marginRight: 'auto', fontSize: 12 }} alignItems="center" gap={"2px"}>
-                    <Box sx={{ margin: '4px 8px 4px 2px', display: 'flex', alignItems: 'center' }}>
+            <Box sx={{ margin: '0px', display: 'flex', minWidth: 0 }}>
+                <Stack direction="row" sx={{ marginLeft: 0.5, marginRight: 'auto', fontSize: 12, flex: 1, minWidth: 0, overflow: 'hidden' }} alignItems="center" gap={"2px"}>
+                    <Box sx={{ margin: '4px 8px 4px 2px', display: 'flex', alignItems: 'center', minWidth: 0, flex: 1 }}>
                         <Typography fontSize="inherit" sx={{
-                            textAlign: 'center',
                             color: 'text.primary', 
                             fontWeight: 500,
-                            maxWidth: 160,
-                            wordWrap: 'break-word',
-                            whiteSpace: 'normal'
+                            display: '-webkit-box',
+                            WebkitLineClamp: 2,
+                            WebkitBoxOrient: 'vertical',
+                            overflow: 'hidden',
+                            wordBreak: 'break-all',
                         }}>{table?.displayId || tableId}</Typography>
                     </Box>
                 </Stack>
-                <ButtonGroup aria-label="Basic button group" variant="text" sx={{ textAlign: 'end', margin: "auto 2px auto auto" }}>
+                <ButtonGroup aria-label="Basic button group" variant="text" sx={{ textAlign: 'end', margin: "auto 2px auto auto", flexShrink: 0 }}>
                     <Tooltip key="create-chart-btn-tooltip" title="create chart">
                         <IconButton className="create-chart-btn" color="primary" aria-label="create chart" size="small" sx={{ padding: 0.25, '&:hover': {
                             transform: 'scale(1.2)',

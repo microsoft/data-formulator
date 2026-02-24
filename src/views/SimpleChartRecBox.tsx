@@ -139,6 +139,25 @@ export const SimpleChartRecBox: FC<{ onExpandedChange?: (expanded: boolean) => v
         onExpandedChange?.(expanded || isChatFormulating);
     }, [isChatFormulating]);
 
+    // On mount, clean up any stale "running" agent actions left over from a page refresh.
+    // The streaming connection is lost on refresh, so these will never complete.
+    // Only add the "interrupted" message to the last stale action per thread to avoid duplicates.
+    useEffect(() => {
+        const staleRunning = agentActions.filter(a => a.status === 'running');
+        if (staleRunning.length === 0) return;
+        // The last stale action gets the visible message; others are silently marked warning
+        const lastStale = staleRunning[staleRunning.length - 1];
+        for (const action of staleRunning) {
+            dispatch(dfActions.updateAgentWorkInProgress({
+                actionId: action.actionId,
+                description: action === lastStale ? 'Interrupted by page refresh' : action.description,
+                status: 'warning',
+                hidden: false,
+                ...(action === lastStale ? { message: { content: 'Interrupted by page refresh', role: 'clarify' } } : {}),
+            }));
+        }
+    }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
     const inputCardRef = useRef<HTMLDivElement>(null);
     const threadScrollRef = useRef<HTMLDivElement>(null);
     const [inputCardHeight, setInputCardHeight] = useState(0);
@@ -485,7 +504,7 @@ export const SimpleChartRecBox: FC<{ onExpandedChange?: (expanded: boolean) => v
 
                 let triggerChart = generateFreshChart(actionTables[0].id, 'Auto') as Chart;
                 triggerChart.source = 'trigger';
-                if (candidateTable.derive?.trigger) {
+                if (candidateTable.derive) {
                     candidateTable.derive.trigger.chart = triggerChart;
                 }
 
@@ -600,24 +619,43 @@ dispatch(dfActions.updateAgentWorkInProgress({ actionId, description: errorMessa
         }
     }, []);
 
+    const gradientBorder = `linear-gradient(135deg, ${alpha(theme.palette.primary.main, 0.6)}, ${alpha(theme.palette.secondary.main, 0.55)})`;
+    const workingBorder = `linear-gradient(135deg, ${alpha(theme.palette.primary.main, 0.3)}, ${alpha(theme.palette.secondary.main, 0.25)})`;
+
     const inputBox = (
         <Card ref={inputCardRef} variant="outlined" sx={{
             display: 'flex', flexDirection: 'column',
             mx: 1, mb: 1, mt: 0.5,
             px: 1, pt: 0.5, pb: 0.25,
-            borderWidth: 1.5,
-            borderColor: isChatFormulating ? alpha(theme.palette.action.disabled, 0.2) : alpha(theme.palette.primary.main, 0.5),
             borderRadius: '8px',
+            border: 'none',
+            outline: 'none',
+            position: 'relative',
             overflow: isChatFormulating ? 'hidden' : 'visible',
             flexShrink: 0,
-            position: 'relative',
             zIndex: expanded ? 11 : 0,
             cursor: !expanded ? 'pointer' : undefined,
-            transition: 'box-shadow 0.2s ease, background-color 0.2s ease, border-color 0.2s ease',
+            transition: 'box-shadow 0.2s ease, background-color 0.2s ease',
             ...(isChatFormulating ? { backgroundColor: alpha(theme.palette.action.disabledBackground, 0.06) } : {}),
             '&:hover': !expanded ? {
-                boxShadow: `0 0 0 1px ${alpha(theme.palette.primary.main, 0.3)}`,
+                boxShadow: `0 0 6px 1px ${alpha(theme.palette.primary.main, 0.2)}, 0 0 0 1.5px ${alpha(theme.palette.primary.main, 0.25)}`,
             } : {},
+            // Gradient border via pseudo-element (works with border-radius)
+            '&::before': {
+                content: '""',
+                position: 'absolute',
+                inset: 0,
+                borderRadius: 'inherit',
+                padding: '1.5px',
+                background: isChatFormulating 
+                    ? workingBorder 
+                    : gradientBorder,
+                WebkitMask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
+                WebkitMaskComposite: 'xor',
+                maskComposite: 'exclude',
+                pointerEvents: 'none',
+                zIndex: 3,
+            },
         }}
             onClick={(e) => {
                 if (!expanded) {
@@ -642,6 +680,10 @@ dispatch(dfActions.updateAgentWorkInProgress({ actionId, description: errorMessa
                 }}
                 onChange={(event: any) => { if (!isChatFormulating) setChatPrompt(event.target.value); }}
                 onKeyDown={(event: any) => {
+                    if (event.key === 'Tab' && !event.shiftKey && chatPrompt.trim() === '' && !isChatFormulating) {
+                        event.preventDefault();
+                        setChatPrompt('help me suggest some exploration directions from this thread');
+                    }
                     if (event.key === 'Enter' && !event.shiftKey) {
                         event.preventDefault();
                         if (chatPrompt.trim().length > 0 && !isChatFormulating) {
@@ -678,7 +720,7 @@ dispatch(dfActions.updateAgentWorkInProgress({ actionId, description: errorMessa
                     input: { readOnly: isChatFormulating },
                 }}
                 value={chatPrompt}
-                placeholder={"explore a new direction"}
+                placeholder={"Ask agent to explore a new direction"}
                 fullWidth
                 multiline
                 minRows={2}
@@ -708,7 +750,7 @@ dispatch(dfActions.updateAgentWorkInProgress({ actionId, description: errorMessa
                             <span>
                                 <IconButton
                                     size="small"
-                                    sx={{ p: 0.5, color: theme.palette.custom.main }}
+                                    sx={{ p: 0.5, color: theme.palette.secondary.main }}
                                     disabled={!focusedTableId || isLoadingIdeas}
                                     onClick={() => { 
                                         if (ideas.length > 0) {
@@ -859,7 +901,7 @@ dispatch(dfActions.updateAgentWorkInProgress({ actionId, description: errorMessa
 
                             // Determine timeline icon for each role
                             const primaryColor = theme.palette.primary.main;
-                            const customColor = theme.palette.custom?.main || theme.palette.warning.main;
+                            const customColor = theme.palette.secondary.main;
                             // Skip source-table and result-table — they're rendered inline as quotes
                             if (msg.role === 'source-table' || msg.role === 'result-table') return null;
 
@@ -1023,11 +1065,11 @@ dispatch(dfActions.updateAgentWorkInProgress({ actionId, description: errorMessa
                                 gap: '5px',
                                 p: 0.75,
                                 borderRadius: '6px',
-                                backgroundColor: alpha(theme.palette.custom?.main || theme.palette.warning.main, 0.04),
+                                backgroundColor: alpha(theme.palette.secondary.main, 0.04),
                             }}>
                                 <Box sx={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                    <TipsAndUpdatesIcon sx={{ fontSize: 12, color: theme.palette.custom?.main || theme.palette.warning.main }} />
-                                    <Typography sx={{ fontSize: 10, fontWeight: 600, color: theme.palette.custom?.main || theme.palette.warning.main, flex: 1 }}>
+                                    <TipsAndUpdatesIcon sx={{ fontSize: 12, color: theme.palette.secondary.main }} />
+                                    <Typography sx={{ fontSize: 10, fontWeight: 600, color: theme.palette.secondary.main, flex: 1 }}>
                                         Ideas
                                     </Typography>
                                     {!isLoadingIdeas && (

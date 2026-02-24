@@ -3,7 +3,7 @@
 
 import { FC, useEffect, useState } from 'react'
 import { useSelector, useDispatch } from 'react-redux'
-import { DataFormulatorState, dfActions, dfSelectors, fetchCodeExpl, fetchChartInsight, fetchFieldSemanticType, generateFreshChart } from '../app/dfSlice';
+import { DataFormulatorState, dfActions, dfSelectors, generateFreshChart } from '../app/dfSlice';
 
 import embed from 'vega-embed';
 
@@ -48,9 +48,9 @@ import { Channel, Chart, FieldItem, Trigger, duplicateChart } from "../component
 import _ from 'lodash';
 
 import '../scss/EncodingShelf.scss';
-import { createDictTable, DictTable } from "../components/ComponentType";
+import { DictTable } from "../components/ComponentType";
 
-import { getUrls, resolveChartFields, getTriggers, assembleVegaChart, resolveRecommendedChart, fetchWithIdentity } from '../app/utils';
+import { resolveChartFields, assembleVegaChart, resolveRecommendedChart } from '../app/utils';
 import { EncodingBox } from './EncodingBox';
 
 import { channelGroups, CHART_TEMPLATES, getChartChannels, getChartTemplate } from '../components/ChartTemplates';
@@ -62,7 +62,7 @@ import CheckIcon from '@mui/icons-material/Check';
 import { ThinkingBanner } from './DataThread';
 
 import { AppDispatch } from '../app/store';
-import { borderColor, radius } from '../app/tokens';
+import { borderColor, radius, transition } from '../app/tokens';
 
 import DeleteIcon from '@mui/icons-material/Delete';
 import CloseIcon from '@mui/icons-material/Close';
@@ -70,6 +70,7 @@ import CloseIcon from '@mui/icons-material/Close';
 import TipsAndUpdatesIcon from '@mui/icons-material/TipsAndUpdates';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import { IdeaChip } from './ChartRecBox';
+import { useFormulateData } from '../app/useFormulateData';
 
 // Property and state of an encoding shelf
 export interface EncodingShelfCardProps { 
@@ -235,6 +236,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
     let encodingMap = chart?.encodingMap;
 
     const dispatch = useDispatch<AppDispatch>();
+    const { streamIdeas, formulateData } = useFormulateData();
 
     const [chartTypeMenuOpen, setChartTypeMenuOpen] = useState<boolean>(false);
     const [encodingHovered, setEncodingHovered] = useState<boolean>(false);
@@ -350,138 +352,24 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
     ];
 
     let getIdeasForVisualization = async () => {
-        if (!currentTable || isLoadingIdeas) {
-            return;
-        }
+        if (!currentTable || isLoadingIdeas) return;
 
-        setIsLoadingIdeas(true);
-        setThinkingBuffer("");
-        setIdeas([]);
+        let chartAvailable = checkChartAvailability(chart, conceptShelfItems, currentTable.rows);
+        let currentChartPng = chartAvailable ? await vegaLiteSpecToPng(assembleVegaChart(
+            chart.chartType, chart.encodingMap, activeFields, currentTable.rows,
+            currentTable.metadata, 100, 80, false, chart.config)) : undefined;
 
-        try {
-            // Build exploration thread from current table to root
-            let explorationThread: any[] = [];
-            
-            // If current table is derived, build the exploration thread
-            if (currentTable.derive && !currentTable.anchored) {
-                let triggers = getTriggers(currentTable, tables);
-                
-                // Build exploration thread with all derived tables in the chain
-                explorationThread = triggers
-                    .map(trigger => ({
-                        name: trigger.resultTableId,
-                        rows: tables.find(t2 => t2.id === trigger.resultTableId)?.rows,
-                        description: `Derive from ${tables.find(t2 => t2.id === trigger.resultTableId)?.derive?.source} with instruction: ${trigger.instruction}`,
-                    }));
-            }
-
-            let chartAvailable = checkChartAvailability(chart, conceptShelfItems, currentTable.rows);
-            let currentChartPng = chartAvailable ? await vegaLiteSpecToPng(assembleVegaChart(chart.chartType, chart.encodingMap, activeFields, currentTable.rows, currentTable.metadata, 100, 80, false, chart.config)) : undefined;
-
-            let actionTables = actionTableIds.map(id => tables.find(t => t.id == id) as DictTable);
-
-            const token = String(Date.now());
-            const messageBody = JSON.stringify({
-                token: token,
-                model: activeModel,
-                input_tables: actionTables.map(t => ({
-                    name: t.virtual?.tableId || t.id.replace(/\.[^/.]+$/, ""),
-                    rows: t.rows,
-                    attached_metadata: t.attachedMetadata,
-                })),
-                exploration_thread: explorationThread,
-                current_data_sample: currentTable.rows.slice(0, 10),
-                current_chart: currentChartPng,
-                mode: 'interactive',
-                agent_exploration_rules: agentRules.exploration
-            });
-
-            const engine = getUrls().GET_RECOMMENDATION_QUESTIONS;
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
-
-            const response = await fetchWithIdentity(engine, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: messageBody,
-                signal: controller.signal
-            });
-
-            clearTimeout(timeoutId);
-
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-
-            // Use streaming reader instead of response.json()
-            const reader = response.body?.getReader();
-            if (!reader) {
-                throw new Error('No response body reader available');
-            }
-
-            const decoder = new TextDecoder();
-
-            let lines: string[] = [];
-            let buffer = '';
-
-            let updateState = (lines: string[]) => {
-
-                let dataBlocks = lines
-                    .map(line => {
-                        try { return JSON.parse(line.trim()); } catch (e) { return null; }})
-                    .filter(block => block != null);
-
-                let questions = dataBlocks.filter(block => block.type == "question").map(block => ({
-                    text: block.text,
-                    goal: block.goal,
-                    difficulty: block.difficulty,
-                    tag: block.tag
-                }));
-
-                setIdeas(questions);
-            }
-
-            try {
-                while (true) {
-                    const { done, value } = await reader.read();
-
-                    if (done) { break; }
-
-                    buffer += decoder.decode(value, { stream: true });
-                    let newLines = buffer.split('data: ').filter(line => line.trim() !== "");
-
-                    buffer = newLines.pop() || '';
-                    if (newLines.length > 0) {
-                        lines.push(...newLines);
-                        updateState(lines);
-                    }
-                    setThinkingBuffer(buffer.replace(/^data: /, ""));
-                }
-            } finally {
-                reader.releaseLock();
-            }
-
-            lines.push(buffer);
-            updateState(lines);
-
-            // Process the final result
-            if (lines.length == 0) {
-                throw new Error('No valid results returned from agent');
-            }
-        } catch (error) {
-            dispatch(dfActions.addMessages({
-                "timestamp": Date.now(),
-                "type": "error",
-                "component": "encoding shelf",
-                "value": "Failed to get ideas from the exploration agent. Please try again.",
-                "detail": error instanceof Error ? error.message : 'Unknown error'
-            }));
-        } finally {
-            setIsLoadingIdeas(false);
-        }
-    }   
+        await streamIdeas({
+            actionTableIds,
+            currentTable,
+            onIdeas: setIdeas,
+            onThinkingBuffer: setThinkingBuffer,
+            onLoadingChange: setIsLoadingIdeas,
+            currentChartImage: currentChartPng,
+            currentDataSample: currentTable.rows.slice(0, 10),
+            filterByType: true,
+        });
+    }
 
     // Function to handle idea chip click
     const handleIdeaClick = (ideaText: string) => {
@@ -497,44 +385,32 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
         overrideTableId?: string,
     ) => {
 
-        if (actionTableIds.length == 0) {
-            return;
-        }
+        if (actionTableIds.length == 0) return;
 
-        let actionTables = actionTableIds.map(id => tables.find(t => t.id == id) as DictTable);
-
+        // Short-circuit: if all fields exist in source table, just reference it
         if (currentTable.derive == undefined && instruction == "" && 
                 (activeFields.length > 0 && activeCustomFields.length == 0) && 
                 tables.some(t => t.derive == undefined && 
                 activeFields.every(f => currentTable.names.includes(f.name)))) {
-
-            // if there is no additional fields, directly generate
             let tempTable = getDataTable(chart, tables, allCharts, conceptShelfItems, true);
-            dispatch(dfActions.updateTableRef({chartId: chartId, tableRef: tempTable.id}))
-
-            //dispatch(dfActions.resetDerivedTables([])); //([{code: "", data: inputData.rows}]));
+            dispatch(dfActions.updateTableRef({chartId: chartId, tableRef: tempTable.id}));
             dispatch(dfActions.changeChartRunningStatus({chartId, status: true}));
-            // a fake function to give the feel that synthesizer is running
             setTimeout(function(){
                 dispatch(dfActions.changeChartRunningStatus({chartId, status: false}));
                 dispatch(dfActions.clearUnReferencedTables());
             }, 400);
-            return
+            return;
         }
 
         dispatch(dfActions.clearUnReferencedTables());
-        
+
         let fieldNamesStr = activeFields.map(f => f.name).reduce(
-            (a: string, b: string, i, array) => a + (i == 0 ? "" : (i < array.length - 1 ? ', ' : ' and ')) + b, "")
-
-        let chartType = chart.chartType;
-
-        let token = String(Date.now());
+            (a: string, b: string, i, array) => a + (i == 0 ? "" : (i < array.length - 1 ? ', ' : ' and ')) + b, "");
 
         // Build chart visualization context
         let chartComplete = checkChartAvailability(chart, conceptShelfItems, currentTable.rows);
         let chartSpec = (mode == 'formulate' && Object.keys(activeSimpleEncodings).length > 0) ? {
-            chart_type: chartType,
+            chart_type: chart.chartType,
             encodings: activeSimpleEncodings,
             ...(chart.config ? { config: chart.config } : {})
         } : undefined;
@@ -547,320 +423,88 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
             ));
         }
 
-        // current_visualization: chart is complete (image optional + spec)
-        // expected_visualization: chart is incomplete (spec only)
         let currentVisualization = (chartComplete && chartSpec) ? {
             chart_spec: chartSpec,
             ...(currentChartImage ? { chart_image: currentChartImage } : {})
         } : undefined;
         let expectedVisualization = (!chartComplete && chartSpec) ? { chart_spec: chartSpec } : undefined;
 
-        // if nothing is specified, just a formulation from the beginning
-        let messageBody = JSON.stringify({
-            token: token,
+        let triggerChartSpec = duplicateChart(chart);
+        triggerChartSpec.source = "trigger";
+
+        formulateData({
+            instruction,
             mode,
-            input_tables: actionTables.map(t => {
-                return { 
-                    name: t.virtual?.tableId || t.id.replace(/\.[^/.]+$/ , ""), 
-                    rows: t.rows, 
-                    attached_metadata: t.attachedMetadata,
-                }}),
-            extra_prompt: instruction,
-            model: activeModel,
-            agent_coding_rules: agentRules.coding,
-            current_visualization: currentVisualization,
-            expected_visualization: expectedVisualization,
-        })
-
-        let engine = getUrls().DERIVE_DATA;
-
-        if (currentTable.derive?.dialog && !currentTable.anchored) {
-            if (mode === 'ideate') {
-                // Ideate mode: start fresh with prior dialog as additional context
-                messageBody = JSON.stringify({
-                    token: token,
-                    mode,
-                    input_tables: actionTables.map(t => ({
-                        name: t.virtual?.tableId || t.id.replace(/\.[^/.]+$/ , ""),
-                        rows: t.rows,
-                        attached_metadata: t.attachedMetadata,
-                    })),
-                    extra_prompt: instruction,
-                    model: activeModel,
-                    additional_messages: currentTable.derive.dialog,
-                    agent_coding_rules: agentRules.coding,
-                    current_visualization: currentVisualization,
-                    expected_visualization: expectedVisualization,
-                });
-                engine = getUrls().DERIVE_DATA;
-            } else {
-                // Refine mode: continue the existing dialog
-                messageBody = JSON.stringify({
-                    token: token,
-                    mode,
-                    input_tables: actionTables.map(t => ({
-                        name: t.virtual?.tableId || t.id.replace(/\.[^/.]+$/ , ""),
-                        rows: t.rows,
-                        attached_metadata: t.attachedMetadata,
-                    })),
-                    dialog: currentTable.derive.dialog,
-                    latest_data_sample: currentTable.rows.slice(0, 10),
-                    new_instruction: instruction,
-                    model: activeModel,
-                    agent_coding_rules: agentRules.coding,
-                    current_visualization: currentVisualization,
-                    expected_visualization: expectedVisualization,
-                });
-                engine = getUrls().REFINE_DATA;
-            }
-        }
-
-        let message = {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: messageBody,
-        };
-
-        dispatch(dfActions.changeChartRunningStatus({chartId, status: true}));
-
-        // timeout the request after 30 seconds
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), config.formulateTimeoutSeconds * 1000);
-    
-        fetchWithIdentity(engine, {...message, signal: controller.signal })
-            .then((response: Response) => {
-                if (!response.ok) {
-                    return response.text().then(text => {
-                        try {
-                            const errorData = JSON.parse(text);
-                            throw new Error(errorData.error_message || errorData.error || `Server error (${response.status})`);
-                        } catch (parseError) {
-                            if (parseError instanceof SyntaxError) {
-                                throw new Error(`Server error (${response.status}): The server returned an unexpected response.`);
-                            }
-                            throw parseError;
+            actionTableIds,
+            currentTable,
+            overrideTableId,
+            currentVisualization,
+            expectedVisualization,
+            triggerChart: triggerChartSpec,
+            createChart: ({ candidateTable, refinedGoal, currentConcepts }) => {
+                let needToCreateNewChart = true;
+                let focusedChartId: string | undefined;
+                
+                if (mode != "ideate" && chart.chartType != "Auto" && overrideTableId != undefined && 
+                    allCharts.filter(c => c.source == "user").find(c => c.tableRef == overrideTableId)) {
+                    let chartsFromOverrideTable = allCharts.filter(c => c.source == "user" && c.tableRef == overrideTableId);
+                    let chartsWithSameEncoding = chartsFromOverrideTable.filter(c => {
+                        let getSimpliedChartEnc = (ch: Chart) => {
+                            return ch.chartType + ":" + Object.entries(ch.encodingMap)
+                                .filter(([channel, enc]) => enc.fieldID != undefined)
+                                .map(([channel, enc]) => `${channel}:${enc.fieldID}:${enc.aggregate}:${enc.sortOrder}:${enc.sortBy}:${enc.scheme}`)
+                                .join(";");
                         }
+                        return getSimpliedChartEnc(c) == getSimpliedChartEnc(triggerChartSpec);
                     });
-                }
-                return response.json();
-            })
-            .then((data) => {
-                
-                dispatch(dfActions.changeChartRunningStatus({chartId, status: false}))
-
-                if (data.status === "error" && data.error_message) {
-                    dispatch(dfActions.addMessages({
-                        "timestamp": Date.now(),
-                        "component": "chart builder",
-                        "type": "error",
-                        "value": `Data formulation failed: ${data.error_message}`,
-                    }));
-                } else if (data.results && data.results.length > 0) {
-                    if (data["token"] == token) {
-                        let candidates = data["results"].filter((item: any) => {
-                            return item["status"] == "ok"  
-                        });
-
-                        if (candidates.length == 0) {
-                            let errorMessage = data.results[0].content;
-                            let code = data.results[0].code;
-
-                            dispatch(dfActions.addMessages({
-                                "timestamp": Date.now(),
-                                "type": "error",
-                                "component": "chart builder",
-                                "value": `Data formulation failed, please try again.`,
-                                "code": code,
-                                "detail": errorMessage
-                            }));
-                        } else {
-
-                            let candidate = candidates[0];
-                            let code = candidate["code"];
-                            let rows = candidate["content"]["rows"];
-                            let dialog = candidate["dialog"];
-                            let refinedGoal = candidate['refined_goal']
-                            let displayInstruction = refinedGoal["display_instruction"];
-
-                            // determine the table id for the new table
-                            let candidateTableId;
-                            if (overrideTableId) {
-                                candidateTableId = overrideTableId;
-                            } else {
-                                if (candidate["content"]["virtual"] != null) {
-                                    candidateTableId = candidate["content"]["virtual"]["table_name"];
-                                } else {
-                                    let genTableId = () => {
-                                        let tableSuffix = Number.parseInt((Date.now() - Math.floor(Math.random() * 10000)).toString().slice(-2));
-                                        let tableId = `table-${tableSuffix}`
-                                        while (tables.find(t => t.id == tableId) != undefined) {
-                                            tableSuffix = tableSuffix + 1;
-                                            tableId = `table-${tableSuffix}`
-                                        }
-                                        return tableId;
-                                    }
-                                    candidateTableId = genTableId();
-                                }
-                            }
-
-                            // PART 1: handle triggers
-                            // add the intermediate chart that will be referred by triggers
-
-                            let triggerChartSpec = duplicateChart(chart);
-                            triggerChartSpec.source = "trigger";
-
-                            let currentTrigger: Trigger =  { 
-                                tableId: currentTable.id, 
-                                instruction: instruction, 
-                                displayInstruction: displayInstruction,
-                                chart: triggerChartSpec,
-                                resultTableId: candidateTableId
-                            }
-                        
-                            // PART 2: create new table (or override table)
-                            let candidateTable = createDictTable(
-                                candidateTableId, 
-                                rows, 
-                                { 
-                                    code: code,
-                                    outputVariable: refinedGoal['output_variable'] || 'result_df',
-                                    source: actionTableIds, 
-                                    dialog: dialog, 
-                                    trigger: currentTrigger 
-                                }
-                            )
-                            if (candidate["content"]["virtual"] != null) {
-                                candidateTable.virtual = {
-                                    tableId: candidate["content"]["virtual"]["table_name"],
-                                    rowCount: candidate["content"]["virtual"]["row_count"]
-                                };
-                            }
-
-                            if (overrideTableId) {
-                                dispatch(dfActions.overrideDerivedTables(candidateTable));
-                            } else {
-                                dispatch(dfActions.insertDerivedTables(candidateTable));
-                            }
-                            let names = candidateTable.names;
-                            let missingNames = names.filter(name => !conceptShelfItems.some(field => field.name == name));
-                
-                            let conceptsToAdd = missingNames.map((name) => {
-                                return {
-                                    id: `concept-${name}-${Date.now()}`, 
-                                    name: name, 
-                                    source: "custom", 
-                                    tableRef: "custom", 
-                                } as FieldItem
-                            })
-                            dispatch(dfActions.addConceptItems(conceptsToAdd));
-
-                            dispatch(fetchFieldSemanticType(candidateTable));
-                            dispatch(fetchCodeExpl(candidateTable));
-
-                            // concepts from the current table
-                            let currentConcepts = [...conceptShelfItems.filter(c => names.includes(c.name)), ...conceptsToAdd];
-
-                            // PART 3: create new charts if necessary
-                            let needToCreateNewChart = true;
-                            let focusedChartId: string | undefined;
-                            
-                            // different override strategy -- only override if there exists a chart that share the exact same encoding fields as the planned new chart.
-                            if (mode != "ideate" && chart.chartType != "Auto" &&  overrideTableId != undefined && allCharts.filter(c => c.source == "user").find(c => c.tableRef == overrideTableId)) {
-                                let chartsFromOverrideTable = allCharts.filter(c => c.source == "user" && c.tableRef == overrideTableId);
-                                let chartsWithSameEncoding = chartsFromOverrideTable.filter(c => {
-                                    let getSimpliedChartEnc = (chart: Chart) => {
-                                        return chart.chartType + ":" + Object.entries(chart.encodingMap).filter(([channel, enc]) => enc.fieldID != undefined).map(([channel, enc]) => {
-                                            return `${channel}:${enc.fieldID}:${enc.aggregate}:${enc.sortOrder}:${enc.sortBy}:${enc.scheme}`;
-                                        }).join(";");
-                                    }
-                                    return getSimpliedChartEnc(c) == getSimpliedChartEnc(triggerChartSpec);
-                                });
-                                if (chartsWithSameEncoding.length > 0) {
-                                    // find the chart to set as focus
-                                    focusedChartId = chartsWithSameEncoding[0].id;
-                                    dispatch(dfActions.setFocused({ type: 'chart', chartId: focusedChartId }));
-                                    needToCreateNewChart = false;
-                                }
-                            }
-                            
-                            if (needToCreateNewChart) {
-                                let newChart : Chart; 
-                                if (mode == "ideate" || chart.chartType == "Auto") {
-                                    newChart = resolveRecommendedChart(refinedGoal, currentConcepts, candidateTable);
-
-                                } else if (chart.chartType == "Table") {
-                                    newChart = generateFreshChart(candidateTable.id, 'Table')
-                                } else {
-                                    newChart = structuredClone(chart) as Chart;
-                                    newChart.source = "user";
-                                    newChart.id = `chart-${Date.now()- Math.floor(Math.random() * 10000)}`;
-                                    newChart.saved = false;
-                                    newChart.tableRef = candidateTable.id;
-                                    let chartEncodings = refinedGoal['chart']?.['encodings'] || refinedGoal['chart_encodings'] || {};
-                                    newChart = resolveChartFields(newChart, currentConcepts, chartEncodings, candidateTable);
-                                }   
-                                
-                                focusedChartId = newChart.id;
-                                dispatch(dfActions.addAndFocusChart(newChart));
-                            }
-
-                            // Auto-generate chart insight after rendering
-                            if (focusedChartId) {
-                                const insightChartId = focusedChartId;
-                                setTimeout(() => {
-                                    dispatch(fetchChartInsight({ chartId: insightChartId, tableId: candidateTable.id }) as any);
-                                }, 1500);
-                            }
-
-                            // PART 4: clean up
-                            if (chart.chartType == "Table" || chart.chartType == "Auto" || (existsWorkingTable == false)) {
-                                dispatch(dfActions.deleteChartById(chartId));
-                            }
-                            dispatch(dfActions.clearUnReferencedTables());
-                            dispatch(dfActions.clearUnReferencedCustomConcepts());
-                            dispatch(dfActions.setFocused({ type: 'chart', chartId: focusedChartId as string }));
-
-                            dispatch(dfActions.addMessages({
-                                "timestamp": Date.now(),
-                                "component": "chart builder",
-                                "type": "success",
-                                "value": `Data formulation for ${fieldNamesStr} succeeded.`
-                            }));
-                        }
+                    if (chartsWithSameEncoding.length > 0) {
+                        focusedChartId = chartsWithSameEncoding[0].id;
+                        dispatch(dfActions.setFocused({ type: 'chart', chartId: focusedChartId }));
+                        needToCreateNewChart = false;
                     }
-                } else {
-                    // TODO: add warnings to show the user
-                    dispatch(dfActions.addMessages({
-                        "timestamp": Date.now(),
-                        "component": "chart builder",
-                        "type": "error",
-                        "value": "No result is returned from the data formulation agent. Please try again."
-                    }));
                 }
-            }).catch((error) => {
+                
+                if (needToCreateNewChart) {
+                    let newChart: Chart;
+                    if (mode == "ideate" || chart.chartType == "Auto") {
+                        newChart = resolveRecommendedChart(refinedGoal, currentConcepts, candidateTable);
+                    } else if (chart.chartType == "Table") {
+                        newChart = generateFreshChart(candidateTable.id, 'Table');
+                    } else {
+                        newChart = structuredClone(chart) as Chart;
+                        newChart.source = "user";
+                        newChart.id = `chart-${Date.now() - Math.floor(Math.random() * 10000)}`;
+                        newChart.saved = false;
+                        newChart.tableRef = candidateTable.id;
+                        let chartEncodings = refinedGoal['chart']?.['encodings'] || refinedGoal['chart_encodings'] || {};
+                        newChart = resolveChartFields(newChart, currentConcepts, chartEncodings, candidateTable);
+                    }
+                    focusedChartId = newChart.id;
+                    dispatch(dfActions.addAndFocusChart(newChart));
+                }
+                return focusedChartId;
+            },
+            onStarted: () => {
+                dispatch(dfActions.changeChartRunningStatus({chartId, status: true}));
+            },
+            onSuccess: ({ focusedChartId }) => {
+                if (chart.chartType == "Table" || chart.chartType == "Auto" || (existsWorkingTable == false)) {
+                    dispatch(dfActions.deleteChartById(chartId));
+                }
+                dispatch(dfActions.clearUnReferencedTables());
+                dispatch(dfActions.clearUnReferencedCustomConcepts());
+                dispatch(dfActions.setFocused({ type: 'chart', chartId: focusedChartId as string }));
+                dispatch(dfActions.addMessages({
+                    "timestamp": Date.now(),
+                    "component": "chart builder",
+                    "type": "success",
+                    "value": `Data formulation for ${fieldNamesStr} succeeded.`
+                }));
+            },
+            onFinally: () => {
                 dispatch(dfActions.changeChartRunningStatus({chartId, status: false}));
-                // Check if the error was caused by the AbortController
-                if (error.name === 'AbortError') {
-                    dispatch(dfActions.addMessages({
-                        "timestamp": Date.now(),
-                        "component": "chart builder",
-                        "type": "error",
-                        "value": `Data formulation timed out after ${config.formulateTimeoutSeconds} seconds. Consider breaking down the task, using a different model or prompt, or increasing the timeout limit.`,
-                        "detail": "Request exceeded timeout limit"
-                    }));
-                } else {
-                    console.error(error);
-                    dispatch(dfActions.addMessages({
-                        "timestamp": Date.now(),
-                        "component": "chart builder",
-                        "type": "error",
-                        "value": `Data formulation failed, please try again.`,
-                        "detail": error.message
-                    }));
-                }
-            });
+            },
+        });
     }
 
 
@@ -870,11 +514,20 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
     let formulateInputBox = <Card key='text-input-boxes' variant='outlined' sx={{
         display: 'flex', flexDirection: 'column',
         px: 1, pt: 0.5, pb: 0.25,
-        borderWidth: 1.5,
-        borderColor: alpha(theme.palette.primary.main, 0.5),
+        borderWidth: 1,
+        borderColor: alpha(theme.palette.text.primary, 0.2),
         borderRadius: '8px',
         overflow: 'visible',
         flexShrink: 0,
+        transition: transition.fast,
+        '&:hover': {
+            borderWidth: 1,
+            borderColor: alpha(theme.palette.primary.main, 0.6),
+        },
+        '&:focus-within': {
+            borderWidth: 1,
+            borderColor: alpha(theme.palette.primary.main, 0.8),
+        },
     }}>
         <TextField
             variant="standard"

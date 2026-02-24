@@ -4,7 +4,7 @@
 import { FC, useEffect, useState, useRef } from 'react'
 import { transition } from '../app/tokens';
 import { useSelector, useDispatch } from 'react-redux'
-import { DataFormulatorState, dfActions, dfSelectors, fetchCodeExpl, fetchChartInsight, fetchFieldSemanticType, generateFreshChart } from '../app/dfSlice';
+import { DataFormulatorState, dfActions, generateFreshChart } from '../app/dfSlice';
 
 import { AppDispatch } from '../app/store';
 
@@ -18,7 +18,6 @@ import {
     SxProps,
     LinearProgress,
     CircularProgress,
-    Divider,
     alpha,
     useTheme,
     Theme,
@@ -26,12 +25,12 @@ import {
 
 import React from 'react';
 
-import { Chart, FieldItem } from "../components/ComponentType";
+import { Chart } from "../components/ComponentType";
 
 import '../scss/EncodingShelf.scss';
-import { createDictTable, DictTable } from "../components/ComponentType";
 
-import { getUrls, getTriggers, resolveRecommendedChart, fetchWithIdentity } from '../app/utils';
+import { resolveRecommendedChart } from '../app/utils';
+import { useFormulateData } from '../app/useFormulateData';
 
 import { AgentIcon as PrecisionManufacturing } from '../icons';
 import TipsAndUpdatesIcon from '@mui/icons-material/TipsAndUpdates';
@@ -118,10 +117,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
 
     // reference to states
     const tables = useSelector((state: DataFormulatorState) => state.tables);
-    const config = useSelector((state: DataFormulatorState) => state.config);
-    const agentRules = useSelector((state: DataFormulatorState) => state.agentRules);
-    const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
-    const activeModel = useSelector(dfSelectors.getActiveModel);
+    const { streamIdeas, formulateData } = useFormulateData();
 
     const focusNextChartRef = useRef<boolean>(true);
     
@@ -158,131 +154,17 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
 
     // Function to get ideas from the interactive explore agent
     const getIdeasFromAgent = async (startQuestion?: string) => {
-        if (!currentTable || isLoadingIdeas) {
-            return;
-        }
+        if (!currentTable || isLoadingIdeas) return;
 
-        setIsLoadingIdeas(true);
+        await streamIdeas({
+            actionTableIds: selectedTableIds,
+            currentTable,
+            onIdeas: setIdeas,
+            onThinkingBuffer: setThinkingBuffer,
+            onLoadingChange: setIsLoadingIdeas,
+            startQuestion,
+        });
         setThinkingBuffer("");
-        setIdeas([]);
-
-        try {
-            // Determine the root table and derived tables context
-            let explorationThread: any[] = [];
-            let sourceTables = selectedTableIds.map(id => tables.find(t => t.id === id) as DictTable);
-
-            // If current table is derived, find the root table and build exploration thread
-            if (currentTable.derive && !currentTable.anchored) {
-                // Find the root table (anchored or not derived)
-                let triggers = getTriggers(currentTable, tables);
-                
-                // Build exploration thread with all derived tables in the chain
-                explorationThread = triggers
-                    .map(trigger => ({
-                        name: trigger.resultTableId,
-                        rows: tables.find(t2 => t2.id === trigger.resultTableId)?.rows,
-                        description: `Derive from ${tables.find(t2 => t2.id === trigger.resultTableId)?.derive?.source} with instruction: ${trigger.instruction}`,
-                    }));
-            }
-
-            const messageBody = JSON.stringify({
-                token: String(Date.now()),
-                model: activeModel,
-                start_question: startQuestion,
-                mode: 'interactive',
-                input_tables: sourceTables.map(t => ({
-                    name: t.virtual?.tableId || t.id.replace(/\.[^/.]+$/, ""),
-                    rows: t.rows,
-                    attached_metadata: t.attachedMetadata
-                })),
-                exploration_thread: explorationThread,
-                agent_exploration_rules: agentRules.exploration
-            });
-
-            const engine = getUrls().GET_RECOMMENDATION_QUESTIONS;
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), config.formulateTimeoutSeconds * 1000); 
-
-            const response = await fetchWithIdentity(engine, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: messageBody,
-                signal: controller.signal
-            });
-
-            clearTimeout(timeoutId);
-
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-
-            // Use streaming reader instead of response.json()
-            const reader = response.body?.getReader();
-            if (!reader) {
-                throw new Error('No response body reader available');
-            }
-
-            const decoder = new TextDecoder();
-
-            let lines: string[] = [];
-            let buffer = '';
-
-            let updateState = (lines: string[]) => {
-                let dataBlocks = lines
-                    .map(line => {
-                        try { return JSON.parse(line.trim()); } catch (e) { return null; }})
-                    .filter(block => block != null);
-
-                let questions = dataBlocks.map(block => ({
-                    text: block.text,
-                    goal: block.goal,
-                    difficulty: block.difficulty,
-                    tag: block.tag
-                }));
-                setIdeas(questions);
-            }
-
-            try {
-                while (true) {
-                    const { done, value } = await reader.read();
-
-                    if (done) { break; }
-
-                    buffer += decoder.decode(value, { stream: true });
-                    let newLines = buffer.split('data: ').filter(line => line.trim() !== "");
-                    buffer = newLines.pop() || '';
-                    if (newLines.length > 0) {
-                        lines.push(...newLines);
-                        updateState(lines);
-                    }
-                    setThinkingBuffer(buffer.replace(/^data: /, ""));
-                }
-            } finally {
-                reader.releaseLock();
-            }
-
-            lines.push(buffer);
-            updateState(lines);
-
-            // Process the final result
-            if (lines.length == 0) {
-                throw new Error('No valid results returned from agent');
-            }
-        } catch (error) {
-            console.error('Error getting ideas from agent:', error);
-            dispatch(dfActions.addMessages({
-                "timestamp": Date.now(),
-                "type": "error",
-                "component": "chart builder",
-                "value": "Failed to get ideas from the exploration agent. Please try again.",
-                "detail": error instanceof Error ? error.message : 'Unknown error'
-            }));
-        } finally {
-            setIsLoadingIdeas(false);
-            setThinkingBuffer("");
-        }
     };
 
     useEffect(() => {
@@ -309,15 +191,9 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
             return;
         }
 
-        let originateChartId: string;
-
         if (placeHolderChartId) {
-            //dispatch(dfActions.updateChartType({chartType: "Auto", chartId: placeHolderChartId}));
             dispatch(dfActions.changeChartRunningStatus({chartId: placeHolderChartId, status: true}));
-            originateChartId = placeHolderChartId;
-        } 
-
-        const actionTables = selectedTableIds.map(id => tables.find(t => t.id === id) as DictTable);
+        }
 
         const actionId = `deriveDataFromNL_${String(Date.now())}`;
         dispatch(dfActions.updateAgentWorkInProgress({actionId: actionId, tableId: tableId, description: instruction, status: 'running', hidden: false,
@@ -335,325 +211,97 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
             return;
         }
 
-        // Generate table ID
-        const genTableId = () => {
-            let tableSuffix = Number.parseInt((Date.now() - Math.floor(Math.random() * 10000)).toString().slice(-6));
-            let tableId = `table-${tableSuffix}`;
-            while (tables.find(t => t.id === tableId) !== undefined) {
-                tableSuffix = tableSuffix + 1;
-                tableId = `table-${tableSuffix}`;
-            }
-            return tableId;
-        };
+        let refChart = generateFreshChart(tableId, 'Auto') as Chart;
+        refChart.source = 'trigger';
 
-        setIsFormulating(true);
-
-        const token = String(Date.now());
-        let messageBody = JSON.stringify({
-            token: token,
+        formulateData({
+            instruction,
             mode: 'formulate',
-            input_tables: actionTables.map(t => ({
-                name: t.virtual?.tableId || t.id.replace(/\.[^/.]+$/, ""),
-                rows: t.rows,
-                attached_metadata: t.attachedMetadata
-            })),
-
-            extra_prompt: instruction,
-            model: activeModel,
-            agent_coding_rules: agentRules.coding
-        });
-        let engine = getUrls().DERIVE_DATA;
-        
-        if (currentTable && currentTable.derive?.dialog && !currentTable.anchored) {
-            let sourceTableIds = currentTable.derive?.source;
-
-            let startNewDialog = (!sourceTableIds.every(id => selectedTableIds.includes(id)) || 
-                !selectedTableIds.every(id => sourceTableIds.includes(id)));
-
-            // Compare if source and base table IDs are different
-            if (startNewDialog) {
-
-                let additionalMessages = currentTable.derive.dialog;
-
-                // in this case, because table ids has changed, we need to use the additional messages and reformulate
-                messageBody = JSON.stringify({
-                    token: token,
-                    mode: 'formulate',
-                    input_tables: actionTables.map(t => {
-                        return { 
-                            name: t.virtual?.tableId || t.id.replace(/\.[^/.]+$/ , ""), 
-                            rows: t.rows, 
-                            attached_metadata: t.attachedMetadata 
-                        }}),
-
-                    extra_prompt: instruction,
-                    model: activeModel,
-                    additional_messages: additionalMessages,
-                    agent_coding_rules: agentRules.coding
-                });
-                engine = getUrls().DERIVE_DATA;
-            } else {
-                messageBody = JSON.stringify({
-                    token: token,
-                    mode: 'formulate',
-                    input_tables: actionTables.map(t => {
-                        return { 
-                            name: t.virtual?.tableId || t.id.replace(/\.[^/.]+$/ , ""), 
-                            rows: t.rows, 
-                            attached_metadata: t.attachedMetadata 
-                        }}),
-                    
-                    dialog: currentTable.derive?.dialog,
-                    latest_data_sample: currentTable.rows.slice(0, 10),
-                    new_instruction: instruction,
-                    model: activeModel,
-                    agent_coding_rules: agentRules.coding
-                })
-                engine = getUrls().REFINE_DATA;
-            } 
-        }
-        
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), config.formulateTimeoutSeconds * 1000);
-
-        fetchWithIdentity(engine, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
+            actionTableIds: selectedTableIds,
+            currentTable: currentTable!,
+            triggerChart: refChart,
+            createChart: ({ candidateTable, refinedGoal, currentConcepts }) => {
+                let newChart = resolveRecommendedChart(refinedGoal, currentConcepts, candidateTable);
+                dispatch(dfActions.addChart(newChart));
+                if (focusNextChartRef.current || AUTO_FOCUS_NEW_CHART) {
+                    focusNextChartRef.current = false;
+                    dispatch(dfActions.setFocused({ type: 'chart', chartId: newChart.id }));
+                }
+                return newChart.id;
             },
-            body: messageBody,
-            signal: controller.signal
-        })
-        .then((response) => {
-            if (!response.ok) {
-                return response.text().then(text => {
-                    try {
-                        const errorData = JSON.parse(text);
-                        throw new Error(errorData.error_message || errorData.error || `Server error (${response.status})`);
-                    } catch (parseError) {
-                        if (parseError instanceof SyntaxError) {
-                            throw new Error(`Server error (${response.status}): The server returned an unexpected response.`);
-                        }
-                        throw parseError;
-                    }
-                });
-            }
-            return response.json();
-        })
-        .then((data) => {
-            setIsFormulating(false);
-
-            dispatch(dfActions.changeChartRunningStatus({chartId: originateChartId, status: false}));
-
-            if (data.status === "error" && data.error_message) {
+            onStarted: () => {
+                setIsFormulating(true);
+            },
+            onSuccess: ({ displayInstruction }) => {
                 dispatch(dfActions.addMessages({
                     "timestamp": Date.now(),
                     "component": "chart builder",
-                    "type": "error",
-                    "value": `Data formulation failed: ${data.error_message}`,
+                    "type": "success",
+                    "value": `Data formulation: "${displayInstruction}"`
                 }));
-                dispatch(dfActions.deleteAgentWorkInProgress(actionId));
-            } else if (data.results && data.results.length > 0) {
-                if (data["token"] === token) {
-                    const candidates = data["results"].filter((item: any) => item["status"] === "ok");
-
-                    if (candidates.length === 0) {
-                        const errorMessage = data.results[0].content;
-                        const code = data.results[0].code;
-
-                        dispatch(dfActions.addMessages({
-                            "timestamp": Date.now(),
-                            "type": "error",
-                            "component": "chart builder",
-                            "value": `Data formulation failed, please try again.`,
-                            "code": code,
-                            "detail": errorMessage
-                        }));
-                    } else {
-                        const candidate = candidates[0];
-                        const code = candidate["code"];
-                        const rows = candidate["content"]["rows"];
-                        const dialog = candidate["dialog"];
-                        const refinedGoal = candidate['refined_goal'];
-                        const displayInstruction = refinedGoal['display_instruction'];
-
-                        const candidateTableId = candidate["content"]["virtual"] 
-                            ? candidate["content"]["virtual"]["table_name"] 
-                            : genTableId();
-
-                        // Create new table
-                        const candidateTable = createDictTable(
-                            candidateTableId,
-                            rows,
-                            undefined // No derive info for ChartRecBox - it's NL-driven without triggers
-                        );
-
-                        let refChart = generateFreshChart(tableId, 'Auto') as Chart;
-                        refChart.source = 'trigger';
-                        
-                        // Add derive info manually since ChartRecBox doesn't use triggers
-                        candidateTable.derive = {
-                            code: code,
-                            outputVariable: refinedGoal['output_variable'] || 'result_df',
-                            source: selectedTableIds,
-                            dialog: dialog,
-                            trigger: {
-                                tableId: tableId,
-                                instruction: instruction,
-                                displayInstruction: displayInstruction,
-                                chart: refChart, // No upfront chart reference
-                                resultTableId: candidateTableId
-                            }
-                        };
-
-                        if (candidate["content"]["virtual"] != null) {
-                            candidateTable.virtual = {
-                                tableId: candidate["content"]["virtual"]["table_name"],
-                                rowCount: candidate["content"]["virtual"]["row_count"]
-                            };
-                        }
-
-                        dispatch(dfActions.insertDerivedTables(candidateTable));
-
-                        // Add missing concept items
-                        const names = candidateTable.names;
-                        const missingNames = names.filter(name => 
-                            !conceptShelfItems.some(field => field.name === name)
-                        );
-
-                        const conceptsToAdd = missingNames.map((name) => ({
-                            id: `concept-${name}-${Date.now()}`,
-                            name: name,
-                            source: "custom",
-                            tableRef: "custom",
-                        } as FieldItem));
-
-                        dispatch(dfActions.addConceptItems(conceptsToAdd));
-                        dispatch(fetchFieldSemanticType(candidateTable));
-                        dispatch(fetchCodeExpl(candidateTable));
-
-                        // Create proper chart based on refined goal
-                        const currentConcepts = [...conceptShelfItems.filter(c => names.includes(c.name)), ...conceptsToAdd];
-                        
-                        let newChart = resolveRecommendedChart(refinedGoal, currentConcepts, candidateTable);
-
-                        dispatch(dfActions.addChart(newChart));
-                        // Create and focus the new chart directly
-                        if (focusNextChartRef.current || AUTO_FOCUS_NEW_CHART) {
-                            focusNextChartRef.current = false;  // Immediate, synchronous update
-                            dispatch(dfActions.setFocused({ type: 'chart', chartId: newChart.id }));
-                        }
-
-                        // Auto-generate chart insight after rendering
-                        setTimeout(() => {
-                            dispatch(fetchChartInsight({ chartId: newChart.id, tableId: candidateTable.id }) as any);
-                        }, 1500);
-
-                        dispatch(dfActions.addMessages({
-                            "timestamp": Date.now(),
-                            "component": "chart builder",
-                            "type": "success",
-                            "value": `Data formulation: "${displayInstruction}"`
-                        }));
-
-                        // Clear the prompt after successful formulation
-                        setPrompt("");
-                    }
+                setPrompt("");
+            },
+            onFinally: () => {
+                setIsFormulating(false);
+                if (placeHolderChartId) {
+                    dispatch(dfActions.changeChartRunningStatus({chartId: placeHolderChartId, status: false}));
                 }
                 dispatch(dfActions.deleteAgentWorkInProgress(actionId));
-            } else {
-                dispatch(dfActions.addMessages({
-                    "timestamp": Date.now(),
-                    "component": "chart builder", 
-                    "type": "error",
-                    "value": "No result is returned from the data formulation agent. Please try again."
-                }));
-                
-                setIsFormulating(false);
-                dispatch(dfActions.deleteAgentWorkInProgress(actionId));
-            }
-        })
-        .catch((error) => {
-            setIsFormulating(false);
-            dispatch(dfActions.changeChartRunningStatus({chartId: originateChartId, status: false}));   
-
-            if (error.name === 'AbortError') {
-                dispatch(dfActions.addMessages({
-                    "timestamp": Date.now(),
-                    "component": "chart builder",
-                    "type": "error", 
-                    "value": `Data formulation timed out after ${config.formulateTimeoutSeconds} seconds. Consider breaking down the task, using a different model or prompt, or increasing the timeout limit.`,
-                    "detail": "Request exceeded timeout limit"
-                }));
-                dispatch(dfActions.deleteAgentWorkInProgress(actionId));
-            } else {
-                dispatch(dfActions.addMessages({
-                    "timestamp": Date.now(),
-                    "component": "chart builder",
-                    "type": "error",
-                    "value": `Data formulation failed, please try again.`,
-                    "detail": error.message
-                }));
-                dispatch(dfActions.deleteAgentWorkInProgress(actionId));
-            }
+            },
         });
     };
 
     return (
         <Box sx={{ maxWidth: "600px", display: 'flex', flexDirection: 'column', ...sx }}>
             <Card variant='outlined' sx={{ 
-                px: 2, 
+                px: 1, 
+                pt: 0.5,
+                pb: 0.25,
                 display: 'flex', 
                 flexDirection: 'column',
-                gap: 1,
+                gap: 0.5,
                 position: 'relative',
                 borderWidth: 1.5,
-                borderColor: alpha(modeColor, 0.8),
+                borderColor: alpha(theme.palette.text.primary, 0.15),
+                borderRadius: '8px',
+                overflow: 'visible',
+                transition: transition.fast,
+                '&:hover': {
+                    borderColor: alpha(theme.palette.primary.main, 0.7),
+                },
+                '&:focus-within': {
+                    borderColor: alpha(theme.palette.primary.main, 0.8),
+                },
             }}>
                 {isFormulating && (
                     <LinearProgress 
                         sx={{ 
                             position: 'absolute',
-                            top: 0,
+                            bottom: 0,
                             left: 0,
                             right: 0,
                             zIndex: 1000,
-                            height: '4px',
-                            backgroundColor: alpha(modeColor, 0.2),
+                            height: '2px',
+                            borderRadius: '0 0 8px 8px',
+                            backgroundColor: alpha(modeColor, 0.15),
                             '& .MuiLinearProgress-bar': {
                                 backgroundColor: modeColor
                             }
                         }} 
                     />
                 )}
-                <Box sx={{ display: 'flex', flexDirection: 'row', gap: 1, alignItems: 'flex-end' }}>
+                <Box sx={{ display: 'flex', flexDirection: 'row', gap: 0.5, alignItems: 'flex-end' }}>
                     <TextField
                         variant="standard"
                         sx={{
                             flex: 1,
-                            "& .MuiInputLabel-root": { fontSize: '14px' },
-                            "& .MuiInputLabel-root.Mui-focused": { 
-                                color: modeColor
-                            },
-                            "& .MuiInput-input": { fontSize: '14px' },
-                            "& .MuiInput-underline:before": {
-                                borderBottom: 'none',
-                            },
-                            "& .MuiInput-underline:hover:not(.Mui-disabled):before": {
-                                borderBottom: 'none',
-                            },
-                            "& .MuiInput-underline:not(.Mui-disabled):before": {
-                                borderBottom: 'none',
-                            },
-                            "& .MuiInput-underline.Mui-disabled:before": {
-                                borderBottom: 'none',
-                            },
-                            "& .MuiInput-underline.Mui-disabled:after": {
-                                borderBottom: 'none',
-                            },
-                            "& .MuiInput-underline:after": {
-                                borderBottom: 'none',
-                            }
+                            "& .MuiInput-input": { fontSize: '14px', lineHeight: 1.5 },
+                            "& .MuiInput-underline:before": { borderBottom: 'none' },
+                            "& .MuiInput-underline:hover:not(.Mui-disabled):before": { borderBottom: 'none' },
+                            "& .MuiInput-underline:not(.Mui-disabled):before": { borderBottom: 'none' },
+                            "& .MuiInput-underline.Mui-disabled:before": { borderBottom: 'none' },
+                            "& .MuiInput-underline.Mui-disabled:after": { borderBottom: 'none' },
+                            "& .MuiInput-underline:after": { borderBottom: 'none' },
                         }}
                         disabled={isFormulating || isLoadingIdeas}
                         onChange={(event) => setPrompt(event.target.value)}
@@ -661,28 +309,58 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                         slotProps={{
                             inputLabel: { shrink: true },
                             input: {
-                                endAdornment: <Tooltip title="Generate chart from description">
-                                    <span>
-                                        <IconButton 
-                                            size="medium"
-                                            disabled={isFormulating || isLoadingIdeas || !currentTable || prompt.trim() === ""}
-                                            sx={{
-                                                color: modeColor,
-                                                '&:hover': {
-                                                    backgroundColor: alpha(modeColor, 0.08)
-                                                }
-                                            }}
-                                            onClick={() => { 
-                                                focusNextChartRef.current = true;
-                                                deriveDataFromNL(prompt.trim());
-                                            }}
-                                        >
-                                            {isFormulating ? <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
-                                                <CircularProgress size={24} sx={{ color: modeColor }} />
-                                            </Box> : <PrecisionManufacturing sx={{fontSize: 24}} />}
-                                        </IconButton>
-                                    </span>
-                                </Tooltip>
+                                endAdornment: <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.25, flexShrink: 0 }}>
+                                    <Tooltip title={ideas.length > 0 ? "Refresh ideas" : "Get ideas"}>
+                                        <span>
+                                            <IconButton 
+                                                size="medium"
+                                                disabled={isFormulating || isLoadingIdeas || !currentTable}
+                                                sx={{
+                                                    p: 0.5,
+                                                    color: modeColor,
+                                                    '&:hover': {
+                                                        backgroundColor: alpha(modeColor, 0.08)
+                                                    }
+                                                }}
+                                                onClick={() => getIdeasFromAgent()}
+                                            >
+                                                {isLoadingIdeas ? 
+                                                    <CircularProgress size={24} sx={{ color: modeColor }} />
+                                                    : <TipsAndUpdatesIcon sx={{
+                                                        fontSize: 24,
+                                                        animation: ideas.length == 0 ? 'colorWipe 5s ease-in-out infinite' : 'none',
+                                                        '@keyframes colorWipe': {
+                                                            '0%, 90%': { scale: 1 },
+                                                            '95%': { scale: 1.2 },
+                                                            '100%': { scale: 1 },
+                                                        },
+                                                    }} />}
+                                            </IconButton>
+                                        </span>
+                                    </Tooltip>
+                                    <Tooltip title="Generate chart from description">
+                                        <span>
+                                            <IconButton 
+                                                size="medium"
+                                                disabled={isFormulating || isLoadingIdeas || !currentTable || prompt.trim() === ""}
+                                                sx={{
+                                                    color: modeColor,
+                                                    '&:hover': {
+                                                        backgroundColor: alpha(modeColor, 0.08)
+                                                    }
+                                                }}
+                                                onClick={() => { 
+                                                    focusNextChartRef.current = true;
+                                                    deriveDataFromNL(prompt.trim());
+                                                }}
+                                            >
+                                                {isFormulating ? <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
+                                                    <CircularProgress size={24} sx={{ color: modeColor }} />
+                                                </Box> : <PrecisionManufacturing sx={{fontSize: 24}} />}
+                                            </IconButton>
+                                        </span>
+                                    </Tooltip>
+                                </Box>
                             }
                         }}
                         value={prompt}
@@ -690,47 +368,8 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                         fullWidth
                         multiline
                         maxRows={4}
-                        minRows={2}
+                        minRows={1}
                     />
-                    {<Divider orientation="vertical" flexItem />}
-                    {<Box sx={{display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 0.5, my: 1}}>
-                        <Typography sx={{ fontSize: 10, color: "text.secondary", marginBottom: 0.5 }}>
-                            ideas?
-                        </Typography>
-                        <Tooltip title="Get some ideas!">   
-                            <span>
-                                <IconButton 
-                                    size="medium"
-                                    disabled={isFormulating || isLoadingIdeas || !currentTable}
-                                    sx={{
-                                        color: modeColor,
-                                        '&:hover': {
-                                            backgroundColor: alpha(modeColor, 0.08)
-                                        }
-                                    }}
-                                    onClick={() => getIdeasFromAgent()}
-                                >
-                                    {isLoadingIdeas ? <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
-                                        <CircularProgress size={24} sx={{ color: modeColor }} />
-                                    </Box> : <TipsAndUpdatesIcon sx={{
-                                        fontSize: 24,
-                                        animation: ideas.length == 0 ? 'colorWipe 5s ease-in-out infinite' : 'none',
-                                        '@keyframes colorWipe': {
-                                            '0%, 90%': {
-                                                scale: 1,
-                                            },
-                                            '95%': {
-                                                scale: 1.2,
-                                            },
-                                            '100%': {
-                                                scale: 1,
-                                            },
-                                        },
-                                    }} />}
-                                </IconButton>
-                            </span>
-                        </Tooltip>
-                    </Box>}
                 </Box>
             </Card>
             {(ideas.length > 0 || thinkingBuffer) && (
