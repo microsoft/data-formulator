@@ -159,7 +159,10 @@ class Workspace:
             self._root = Path(root_dir)
         
         # Workspace path is root / sanitized_identity_id
-        self._path = self._root / self._safe_id
+        # Use os.path.basename as a final guard to ensure the safe_id is
+        # treated as a single path component (recognised by static analysis
+        # tools such as CodeQL as a path-traversal sanitiser).
+        self._path = self._root / os.path.basename(self._safe_id)
 
         # Verify the constructed path hasn't escaped the root directory
         resolved = self._path.resolve()
@@ -656,7 +659,7 @@ class Workspace:
 
     def _get_sessions_root(self) -> Path:
         """Return the per-user sessions directory on local filesystem."""
-        p = get_data_formulator_home() / "sessions" / self._safe_id
+        p = get_data_formulator_home() / "sessions" / os.path.basename(self._safe_id)
         p.mkdir(parents=True, exist_ok=True)
         return p
 
