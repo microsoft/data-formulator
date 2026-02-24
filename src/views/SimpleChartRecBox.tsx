@@ -14,6 +14,7 @@ import {
     Card,
     ClickAwayListener,
     LinearProgress,
+    Button,
 } from '@mui/material';
 
 import { useDispatch, useSelector } from 'react-redux';
@@ -28,6 +29,7 @@ import CloseIcon from '@mui/icons-material/Close';
 import AddIcon from '@mui/icons-material/Add';
 import TipsAndUpdatesIcon from '@mui/icons-material/TipsAndUpdates';
 import CancelOutlinedIcon from '@mui/icons-material/CancelOutlined';
+import StopCircleOutlinedIcon from '@mui/icons-material/StopCircleOutlined';
 import PersonOutlineIcon from '@mui/icons-material/PersonOutline';
 import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
 import TableRowsOutlinedIcon from '@mui/icons-material/TableRowsOutlined';
@@ -40,7 +42,7 @@ import { UnifiedDataUploadDialog } from './UnifiedDataUploadDialog';
 import { ThinkingBufferEffect } from '../components/FunComponents';
 import { Theme } from '@mui/material/styles';
 
-const AgentWorkingOverlay: FC<{ relevantAgentActions: any[]; theme: Theme }> = ({ relevantAgentActions, theme }) => {
+const AgentWorkingOverlay: FC<{ relevantAgentActions: any[]; theme: Theme; onCancel?: () => void }> = ({ relevantAgentActions, theme, onCancel }) => {
     const runningAction = relevantAgentActions.find(a => a.status === 'running');
     const latestMessage = runningAction?.description || 'thinking...';
     return (
@@ -76,6 +78,15 @@ const AgentWorkingOverlay: FC<{ relevantAgentActions: any[]; theme: Theme }> = (
                 <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500, fontSize: 10 }}>
                     Agent is working...
                 </Typography>
+                {onCancel && (
+                    <IconButton
+                        size="small"
+                        onClick={onCancel}
+                        sx={{ p: 0, width: 16, height: 16, color: theme.palette.warning.main }}
+                    >
+                        <StopCircleOutlinedIcon sx={{ fontSize: 14 }} />
+                    </IconButton>
+                )}
             </Box>
             <Typography variant="caption" sx={{
                 color: 'text.disabled',
@@ -120,6 +131,7 @@ export const SimpleChartRecBox: FC<{ onExpandedChange?: (expanded: boolean) => v
     const [panelHeight, setPanelHeight] = useState(180);
     const [isDragging, setIsDragging] = useState(false);
     const dragRef = useRef<{ startY: number; startHeight: number } | null>(null);
+    const agentAbortRef = useRef<AbortController | null>(null);
 
     // Notify parent when formulating state changes
     useEffect(() => {
@@ -385,6 +397,7 @@ export const SimpleChartRecBox: FC<{ onExpandedChange?: (expanded: boolean) => v
         });
 
         const controller = new AbortController();
+        agentAbortRef.current = controller;
         const timeoutId = setTimeout(() => controller.abort(), config.formulateTimeoutSeconds * 6 * 1000);
 
         let allResults: any[] = [];
@@ -495,6 +508,7 @@ export const SimpleChartRecBox: FC<{ onExpandedChange?: (expanded: boolean) => v
             if (isCompleted) return;
             isCompleted = true;
             setIsChatFormulating(false);
+            agentAbortRef.current = null;
             clearTimeout(timeoutId);
 
             const completionResult = allResults.find((r: any) => r.type === "completion");
@@ -561,12 +575,21 @@ export const SimpleChartRecBox: FC<{ onExpandedChange?: (expanded: boolean) => v
         })
         .catch((error) => {
             setIsChatFormulating(false);
+            agentAbortRef.current = null;
             clearTimeout(timeoutId);
-            const errorMessage = error.name === 'AbortError' ? "Exploration timed out" : `Exploration failed: ${error.message}`;
-            dispatch(dfActions.updateAgentWorkInProgress({ actionId, description: errorMessage, status: 'failed', hidden: false,
-                message: { content: errorMessage, role: 'error' } }));
+            const isCancelled = error.name === 'AbortError' && !isCompleted;
+            const errorMessage = isCancelled ? "Exploration cancelled" : error.name === 'AbortError' ? "Exploration timed out" : `Exploration failed: ${error.message}`;
+dispatch(dfActions.updateAgentWorkInProgress({ actionId, description: errorMessage, status: isCancelled ? 'warning' : 'failed', hidden: false,
+                    message: { content: errorMessage, role: isCancelled ? 'clarify' : 'error' } }));
         });
     }, [focusedTableId, tables, activeModel, agentRules, config, conceptShelfItems, dispatch]);
+
+    const cancelAgent = useCallback(() => {
+        if (agentAbortRef.current) {
+            agentAbortRef.current.abort();
+            agentAbortRef.current = null;
+        }
+    }, []);
 
     const inputBox = (
         <Card ref={inputCardRef} variant="outlined" sx={{
@@ -714,6 +737,7 @@ export const SimpleChartRecBox: FC<{ onExpandedChange?: (expanded: boolean) => v
                 <AgentWorkingOverlay 
                     relevantAgentActions={relevantAgentActions}
                     theme={theme}
+                    onCancel={cancelAgent}
                 />
             )}
         </Card>

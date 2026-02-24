@@ -684,9 +684,13 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                 }
             });
         } else {
-            // All rows available locally — sample in-memory
-            let rowSample = _.sampleSize(table.rows, sampleSize);
-            const clonedRows = structuredClone(rowSample);
+            // All rows available locally — use in-memory data
+            // When sample size covers all rows, preserve original order
+            // (_.sampleSize shuffles, which destroys data-driven sort order)
+            const rowsToUse = sampleSize >= table.rows.length
+                ? table.rows
+                : _.sampleSize(table.rows, sampleSize);
+            const clonedRows = structuredClone(rowsToUse);
             const versionId = computeVersionId();
             setVisTableRows(clonedRows);
             setVisTableTotalRowCount(table.rows.length);
