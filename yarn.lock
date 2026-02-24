@@ -5036,7 +5036,7 @@ vega-format@^2.1.0, vega-format@~2.1.0:
 
 vega-functions@^6.1.0, vega-functions@~6.1.0:
   version "6.1.1"
-  resolved "https://registry.npmjs.org/vega-functions/-/vega-functions-6.1.1.tgz"
+  resolved "https://registry.yarnpkg.com/vega-functions/-/vega-functions-6.1.1.tgz#5d4e9746aadde2b3b70d8da3e6338892d05cd9d2"
   integrity sha512-Due6jP0y0FfsGMTrHnzUGnEwXPu7VwE+9relfo+LjL/tRPYnnKqwWvzt7n9JkeBuZqjkgYjMzm/WucNn6Hkw5A==
   dependencies:
     d3-array "^3.2.4"
