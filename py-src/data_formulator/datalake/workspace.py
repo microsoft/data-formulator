@@ -198,6 +198,8 @@ class Workspace:
         Replaces potentially problematic characters with underscores.
         Raises ``ValueError`` if the result is empty or too long.
         """
+        from werkzeug.utils import secure_filename
+
         # Replace colons, slashes, and other special characters
         safe_chars = []
         for char in identity_id:
@@ -210,6 +212,12 @@ class Workspace:
             raise ValueError("identity_id sanitized to empty string")
         if len(result) > 256:
             raise ValueError("identity_id too long after sanitization")
+        # Apply secure_filename as a final step; this is recognised by
+        # static-analysis tools (e.g. CodeQL) as a path-injection sanitiser
+        # and guarantees the value is a single safe filename component.
+        result = secure_filename(result)
+        if not result:
+            raise ValueError("identity_id sanitized to empty string")
         return result
     
     def _init_metadata(self) -> None:
