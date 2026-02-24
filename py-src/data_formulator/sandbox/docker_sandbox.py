@@ -179,7 +179,18 @@ class DockerSandbox(Sandbox):
                 }
 
             # ---- read back output ---------------------------------------------
-            parquet_out = os.path.join(output_dir, f"{output_variable}.parquet")
+            # Defensive: ensure the filename stays inside output_dir even if
+            # output_variable somehow contains path separators.
+            safe_name = os.path.basename(output_variable)
+            parquet_out = os.path.join(output_dir, f"{safe_name}.parquet")
+            if not os.path.realpath(parquet_out).startswith(
+                os.path.realpath(output_dir) + os.sep
+            ):
+                self._cleanup(tmpdir)
+                return {
+                    "status": "error",
+                    "content": "Invalid output_variable: path traversal detected",
+                }
             if not os.path.exists(parquet_out):
                 self._cleanup(tmpdir)
                 return {

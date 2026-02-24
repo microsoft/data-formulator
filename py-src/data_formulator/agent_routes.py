@@ -788,6 +788,15 @@ def refresh_derived_data():
                 "status": "error",
                 "message": "No output_variable provided"
             }), 400
+
+        # output_variable is interpolated into generated Python code and used
+        # to construct file paths inside the sandbox.  Restrict it to valid
+        # Python identifiers to prevent code-injection and path-traversal.
+        if not output_variable.isidentifier():
+            return jsonify({
+                "status": "error",
+                "message": "output_variable must be a valid Python identifier"
+            }), 400
             
         if virtual and not output_table_name:
             return jsonify({

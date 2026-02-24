@@ -161,6 +161,18 @@ class Workspace:
         # Workspace path is root / sanitized_identity_id
         self._path = self._root / self._safe_id
 
+        # Verify the constructed path hasn't escaped the root directory
+        resolved = self._path.resolve()
+        root_resolved = self._root.resolve()
+        if not str(resolved).startswith(str(root_resolved) + os.sep) and resolved != root_resolved:
+            raise ValueError(
+                f"Path traversal detected: workspace path escapes root directory"
+            )
+        if resolved == root_resolved:
+            raise ValueError(
+                "identity_id must not resolve to the workspace root itself"
+            )
+
         # Ensure workspace directory exists
         self._path.mkdir(parents=True, exist_ok=True)
 
@@ -181,6 +193,7 @@ class Workspace:
         Sanitize identity_id for use as a directory name.
         
         Replaces potentially problematic characters with underscores.
+        Raises ``ValueError`` if the result is empty or too long.
         """
         # Replace colons, slashes, and other special characters
         safe_chars = []
@@ -189,7 +202,12 @@ class Workspace:
                 safe_chars.append(char)
             else:
                 safe_chars.append('_')
-        return ''.join(safe_chars)
+        result = ''.join(safe_chars).strip('_')
+        if not result:
+            raise ValueError("identity_id sanitized to empty string")
+        if len(result) > 256:
+            raise ValueError("identity_id too long after sanitization")
+        return result
     
     def _init_metadata(self) -> None:
         """Initialize a new workspace with empty metadata."""
