@@ -2,8 +2,9 @@
 // Licensed under the MIT License.
 
 import { FC, useEffect, useState, useRef } from 'react'
+import { transition } from '../app/tokens';
 import { useSelector, useDispatch } from 'react-redux'
-import { DataFormulatorState, dfActions, dfSelectors, fetchCodeExpl, fetchFieldSemanticType, generateFreshChart } from '../app/dfSlice';
+import { DataFormulatorState, dfActions, dfSelectors, fetchCodeExpl, fetchChartInsight, fetchFieldSemanticType, generateFreshChart } from '../app/dfSlice';
 
 import { AppDispatch } from '../app/store';
 
@@ -43,13 +44,12 @@ import _ from 'lodash';
 import '../scss/EncodingShelf.scss';
 import { createDictTable, DictTable } from "../components/ComponentType";
 
-import { getUrls, getTriggers, resolveRecommendedChart } from '../app/utils';
+import { getUrls, getTriggers, resolveRecommendedChart, fetchWithIdentity } from '../app/utils';
 
 import AddIcon from '@mui/icons-material/Add';
-import PrecisionManufacturing from '@mui/icons-material/PrecisionManufacturing';
+import { AgentIcon as PrecisionManufacturing } from '../icons';
 import SmartToyIcon from '@mui/icons-material/SmartToy';
 import TouchAppIcon from '@mui/icons-material/TouchApp';
-import { Type } from '../data/types';
 import CloseIcon from '@mui/icons-material/Close';
 import EmojiEventsIcon from '@mui/icons-material/EmojiEvents';
 import TipsAndUpdatesIcon from '@mui/icons-material/TipsAndUpdates';
@@ -68,111 +68,6 @@ export interface ChartRecBoxProps {
     placeHolderChartId?: string;
     sx?: SxProps;
 }
-
-// Table selector component for ChartRecBox
-const NLTableSelector: FC<{
-    selectedTableIds: string[],
-    tables: DictTable[],
-    updateSelectedTableIds: (tableIds: string[]) => void,
-    requiredTableIds?: string[]
-}> = ({ selectedTableIds, tables, updateSelectedTableIds, requiredTableIds = [] }) => {
-    const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
-    const open = Boolean(anchorEl);
-
-    const handleClick = (event: React.MouseEvent<HTMLElement>) => {
-        setAnchorEl(event.currentTarget);
-    };
-
-    const handleClose = () => {
-        setAnchorEl(null);
-    };
-
-    const handleTableSelect = (table: DictTable) => {
-        if (!selectedTableIds.includes(table.id)) {
-            updateSelectedTableIds([...selectedTableIds, table.id]);
-        }
-        handleClose();
-    };
-
-    return (
-        <Box sx={{ 
-            display: 'flex',
-            flexWrap: 'wrap',
-            gap: '2px',
-            padding: '4px',
-            marginBottom: 0.5,
-        }}>
-            {selectedTableIds.map((tableId) => {
-                const isRequired = requiredTableIds.includes(tableId);
-                return (
-                    <Chip
-                        key={tableId}
-                        label={tables.find(t => t.id == tableId)?.displayId}
-                        size="small"
-                        sx={{
-                            height: 16,
-                            fontSize: '10px',
-                            borderRadius: '2px',
-                            bgcolor: isRequired ? 'rgba(25, 118, 210, 0.2)' : 'rgba(25, 118, 210, 0.1)',
-                            color: 'rgba(0, 0, 0, 0.7)',
-                            '& .MuiChip-label': {
-                                pl: '4px',
-                                pr: '6px'
-                            }
-                        }}
-                        deleteIcon={isRequired ? undefined : <CloseIcon sx={{ fontSize: '8px', width: '12px', height: '12px' }} />}
-                        onDelete={isRequired ? undefined : () => updateSelectedTableIds(selectedTableIds.filter(id => id !== tableId))}
-                    />
-                );
-            })}
-            <Tooltip title="select tables for data formulation">
-                <IconButton
-                    size="small"
-                    onClick={handleClick}
-                    sx={{ 
-                        width: 16,
-                        height: 16,
-                        fontSize: '10px',
-                        padding: 0
-                    }}
-                >
-                    <AddIcon fontSize="inherit" />
-                </IconButton>
-            </Tooltip>
-            <Menu
-                anchorEl={anchorEl}
-                open={open}
-                onClose={handleClose}
-            >
-                {tables
-                    .filter(t => t.derive === undefined || t.anchored)
-                    .map((table) => {
-                        const isSelected = selectedTableIds.includes(table.id);
-                        const isRequired = requiredTableIds.includes(table.id);
-                        return (
-                            <MenuItem 
-                                disabled={isSelected}
-                                key={table.id}
-                                onClick={() => handleTableSelect(table)}
-                                sx={{ 
-                                    fontSize: '12px',
-                                    display: 'flex',
-                                    justifyContent: 'space-between',
-                                    alignItems: 'center'
-                                }}
-                            >
-                                {table.displayId}
-                                {isRequired && <Typography sx={{ fontSize: '10px', color: 'text.secondary' }}>(required)</Typography>}
-                            </MenuItem>
-                        );
-                    })
-                }
-            </Menu>
-        </Box>
-    );
-};
-
-
 
 export const IdeaChip: FC<{
     mini?: boolean,
@@ -220,7 +115,7 @@ export const IdeaChip: FC<{
                 height: 'auto',
                 borderRadius: 2,
                 border: `1px solid ${alpha(styleColor, 0.2)}`,
-                transition: 'all 0.1s ease-in-out',
+                transition: transition.fast,
                 backgroundColor: alpha(theme.palette.background.paper, 0.9),
                 cursor: disabled ? 'default' : 'pointer',
                 opacity: disabled ? 0.6 : 1,
@@ -286,7 +181,7 @@ export const AgentIdeaChip: FC<{
                 height: 'auto',
                 borderRadius: 2,
                 border: `1px solid ${alpha(styleColor, 0.2)}`,
-                transition: 'all 0.1s ease-in-out',
+                transition: transition.fast,
                 backgroundColor: alpha(theme.palette.background.paper, 0.9),
                 cursor: disabled ? 'default' : 'pointer',
                 opacity: disabled ? 0.6 : 1,
@@ -356,18 +251,16 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
     // Use the provided tableId and find additional available tables for multi-table operations
     const currentTable = tables.find(t => t.id === tableId);
 
-    const availableTables = tables.filter(t => t.derive === undefined || t.anchored);
-    const [additionalTableIds, setAdditionalTableIds] = useState<string[]>([]);
-
-    // Combine the main tableId with additional selected tables
-    const selectedTableIds = currentTable?.derive ? [...currentTable.derive.source, ...additionalTableIds] : [tableId, ...additionalTableIds];
-
-    const handleTableSelectionChange = (newTableIds: string[]) => {
-        // Filter out the main tableId since it's always included
-        const additionalIds = newTableIds.filter(id => id !== tableId);
-        setAdditionalTableIds(additionalIds);
-    };
-
+    // All root/anchored tables, with current source tables ordered first for context priority
+    const rootTables = tables.filter(t => t.derive === undefined || t.anchored);
+    const priorityIds = (currentTable?.derive && !currentTable.anchored)
+        ? currentTable.derive.source
+        : [tableId];
+    let selectedTableIds = [
+        ...priorityIds.filter(id => rootTables.some(t => t.id === id)),
+        ...rootTables.map(t => t.id).filter(id => !priorityIds.includes(id))
+    ];
+    
     // Function to get a question from the list with cycling
     const getQuestion = (): string => {
         return mode === "agent" ? "let's explore something interesting about the data" : "show something interesting about the data";
@@ -402,7 +295,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                     .map(trigger => ({
                         name: trigger.resultTableId,
                         rows: tables.find(t2 => t2.id === trigger.resultTableId)?.rows,
-                        description: `Derive from ${trigger.sourceTableIds} with instruction: ${trigger.instruction}`,
+                        description: `Derive from ${tables.find(t2 => t2.id === trigger.resultTableId)?.derive?.source} with instruction: ${trigger.instruction}`,
                     }));
             }
 
@@ -416,7 +309,6 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                     rows: t.rows,
                     attached_metadata: t.attachedMetadata
                 })),
-                language: currentTable.virtual ? "sql" : "python",
                 exploration_thread: explorationThread,
                 agent_exploration_rules: agentRules.exploration
             });
@@ -425,7 +317,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), config.formulateTimeoutSeconds * 1000); 
 
-            const response = await fetch(engine, {
+            const response = await fetchWithIdentity(engine, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -570,7 +462,8 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
         const actionTables = selectedTableIds.map(id => tables.find(t => t.id === id) as DictTable);
 
         const actionId = `deriveDataFromNL_${String(Date.now())}`;
-        dispatch(dfActions.updateAgentWorkInProgress({actionId: actionId, tableId: tableId, description: instruction, status: 'running', hidden: false}));
+        dispatch(dfActions.updateAgentWorkInProgress({actionId: actionId, tableId: tableId, description: instruction, status: 'running', hidden: false,
+            message: { content: instruction, role: 'user', sourceTable: tableId }}));
 
         // Validate table selection
         const firstTableId = selectedTableIds[0];
@@ -606,15 +499,10 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                 rows: t.rows,
                 attached_metadata: t.attachedMetadata
             })),
-            
-            chart_type: "",
-            chart_encodings: {},
 
             extra_prompt: instruction,
             model: activeModel,
-            max_repair_attempts: config.maxRepairAttempts,
-            agent_coding_rules: agentRules.coding,
-            language: actionTables.some(t => t.virtual) ? "sql" : "python"
+            agent_coding_rules: agentRules.coding
         });
         let engine = getUrls().DERIVE_DATA;
         
@@ -639,15 +527,11 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                             rows: t.rows, 
                             attached_metadata: t.attachedMetadata 
                         }}),
-                    chart_type: "",
-                    chart_encodings: {},
 
                     extra_prompt: instruction,
                     model: activeModel,
                     additional_messages: additionalMessages,
-                    max_repair_attempts: config.maxRepairAttempts,
-                    agent_coding_rules: agentRules.coding,
-                    language: actionTables.some(t => t.virtual) ? "sql" : "python"
+                    agent_coding_rules: agentRules.coding
                 });
                 engine = getUrls().DERIVE_DATA;
             } else {
@@ -660,17 +544,12 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                             rows: t.rows, 
                             attached_metadata: t.attachedMetadata 
                         }}),
-                        
-                    chart_type: "",
-                    chart_encodings: {},
                     
                     dialog: currentTable.derive?.dialog,
                     latest_data_sample: currentTable.rows.slice(0, 10),
                     new_instruction: instruction,
                     model: activeModel,
-                    max_repair_attempts: config.maxRepairAttempts,
-                    agent_coding_rules: agentRules.coding,
-                    language: actionTables.some(t => t.virtual) ? "sql" : "python"
+                    agent_coding_rules: agentRules.coding
                 })
                 engine = getUrls().REFINE_DATA;
             } 
@@ -679,7 +558,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), config.formulateTimeoutSeconds * 1000);
 
-        fetch(engine, {
+        fetchWithIdentity(engine, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -687,13 +566,36 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
             body: messageBody,
             signal: controller.signal
         })
-        .then((response) => response.json())
+        .then((response) => {
+            if (!response.ok) {
+                return response.text().then(text => {
+                    try {
+                        const errorData = JSON.parse(text);
+                        throw new Error(errorData.error_message || errorData.error || `Server error (${response.status})`);
+                    } catch (parseError) {
+                        if (parseError instanceof SyntaxError) {
+                            throw new Error(`Server error (${response.status}): The server returned an unexpected response.`);
+                        }
+                        throw parseError;
+                    }
+                });
+            }
+            return response.json();
+        })
         .then((data) => {
             setIsFormulating(false);
 
             dispatch(dfActions.changeChartRunningStatus({chartId: originateChartId, status: false}));
 
-            if (data.results.length > 0) {
+            if (data.status === "error" && data.error_message) {
+                dispatch(dfActions.addMessages({
+                    "timestamp": Date.now(),
+                    "component": "chart builder",
+                    "type": "error",
+                    "value": `Data formulation failed: ${data.error_message}`,
+                }));
+                dispatch(dfActions.deleteAgentWorkInProgress(actionId));
+            } else if (data.results && data.results.length > 0) {
                 if (data["token"] === token) {
                     const candidates = data["results"].filter((item: any) => item["status"] === "ok");
 
@@ -734,11 +636,11 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                         // Add derive info manually since ChartRecBox doesn't use triggers
                         candidateTable.derive = {
                             code: code,
+                            outputVariable: refinedGoal['output_variable'] || 'result_df',
                             source: selectedTableIds,
                             dialog: dialog,
                             trigger: {
                                 tableId: tableId,
-                                sourceTableIds: selectedTableIds,
                                 instruction: instruction,
                                 displayInstruction: displayInstruction,
                                 chart: refChart, // No upfront chart reference
@@ -764,11 +666,8 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                         const conceptsToAdd = missingNames.map((name) => ({
                             id: `concept-${name}-${Date.now()}`,
                             name: name,
-                            type: "auto" as Type,
-                            description: "",
                             source: "custom",
                             tableRef: "custom",
-                            temporary: true,
                         } as FieldItem));
 
                         dispatch(dfActions.addConceptItems(conceptsToAdd));
@@ -784,9 +683,13 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                         // Create and focus the new chart directly
                         if (focusNextChartRef.current || AUTO_FOCUS_NEW_CHART) {
                             focusNextChartRef.current = false;  // Immediate, synchronous update
-                            dispatch(dfActions.setFocusedChart(newChart.id));
-                            dispatch(dfActions.setFocusedTable(candidateTable.id));
+                            dispatch(dfActions.setFocused({ type: 'chart', chartId: newChart.id }));
                         }
+
+                        // Auto-generate chart insight after rendering
+                        setTimeout(() => {
+                            dispatch(fetchChartInsight({ chartId: newChart.id, tableId: candidateTable.id }) as any);
+                        }, 1500);
 
                         dispatch(dfActions.addMessages({
                             "timestamp": Date.now(),
@@ -853,7 +756,8 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
         }
 
         setIsFormulating(true);
-        dispatch(dfActions.updateAgentWorkInProgress({actionId: actionId, tableId: tableId, description: initialPlan[0], status: 'running', hidden: false}));
+        dispatch(dfActions.updateAgentWorkInProgress({actionId: actionId, tableId: tableId, description: initialPlan[0], status: 'running', hidden: false,
+            message: { content: initialPlan[0], role: 'user', sourceTable: tableId }}));
 
         let actionTables = selectedTableIds.map(id => tables.find(t => t.id === id) as DictTable);
 
@@ -868,10 +772,8 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
             initial_plan: initialPlan,
             model: activeModel,
             max_iterations: 3,
-            max_repair_attempts: config.maxRepairAttempts,
             agent_exploration_rules: agentRules.exploration,
-            agent_coding_rules: agentRules.coding,
-            language: actionTables.some(t => t.virtual) ? "sql" : "python",
+            agent_coding_rules: agentRules.coding
         });
         
         const controller = new AbortController();
@@ -899,7 +801,8 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
         const processStreamingResult = (result: any) => {
 
             if (result.type === "planning") {
-                dispatch(dfActions.updateAgentWorkInProgress({actionId: actionId, description: result.content.message, status: 'running', hidden: false}));
+                dispatch(dfActions.updateAgentWorkInProgress({actionId: actionId, description: result.content.message, status: 'running', hidden: false,
+                    message: { content: result.content.message, role: 'thinking' }}));
             }
 
             if (result.type === "data_transformation" && result.status === "success") {
@@ -938,11 +841,11 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                 // Add derive info manually for exploration results
                 candidateTable.derive = {
                     code: code || `# Exploration step ${createdTables.length + 1}`,
+                    outputVariable: refinedGoal?.output_variable || 'result_df',
                     source: selectedTableIds,
                     dialog: dialog || [],
                     trigger: {
                         tableId: triggerTableId,
-                        sourceTableIds: selectedTableIds,
                         instruction: question,
                         displayInstruction: displayInstruction,
                         chart: undefined, // Will be set after chart creation
@@ -959,7 +862,8 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
 
                 createdTables.push(candidateTable);
 
-                dispatch(dfActions.updateAgentWorkInProgress({actionId: actionId, tableId: candidateTable.id, description: '', status: 'running', hidden: false}));
+                dispatch(dfActions.updateAgentWorkInProgress({actionId: actionId, tableId: candidateTable.id, description: displayInstruction, status: 'running', hidden: false,
+                    message: { content: displayInstruction, role: 'thinking', resultTable: candidateTable.id }}));
 
                 // Add missing concept items for this table
                 const names = candidateTable.names;
@@ -971,11 +875,8 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                 const conceptsToAdd = missingNames.map((name) => ({
                     id: `concept-${name}-${Date.now()}-${Math.random()}`,
                     name: name,
-                    type: "auto" as Type,
-                    description: "",
                     source: "custom",
                     tableRef: "custom",
-                    temporary: true,
                 } as FieldItem));
 
                 allNewConcepts.push(...conceptsToAdd);
@@ -998,8 +899,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                     dispatch(dfActions.addChart(newChart));
                     if (focusNextChartRef.current || AUTO_FOCUS_NEW_CHART) {
                         focusNextChartRef.current = false;  // Immediate, synchronous update
-                        dispatch(dfActions.setFocusedChart(newChart.id));
-                        dispatch(dfActions.setFocusedTable(candidateTable.id));
+                        dispatch(dfActions.setFocused({ type: 'chart', chartId: newChart.id }));
                     }
                 }
                 
@@ -1011,6 +911,14 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                 dispatch(dfActions.insertDerivedTables(candidateTable));
                 dispatch(fetchFieldSemanticType(candidateTable));
                 dispatch(fetchCodeExpl(candidateTable));
+
+                // Auto-generate chart insight after rendering
+                if (createdCharts.length > 0) {
+                    const lastChart = createdCharts[createdCharts.length - 1];
+                    setTimeout(() => {
+                        dispatch(fetchChartInsight({ chartId: lastChart.id, tableId: candidateTable.id }) as any);
+                    }, 1500);
+                }
 
                 // Show progress message
                 dispatch(dfActions.addMessages({
@@ -1041,7 +949,8 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                 let status : "running" | "completed" | "warning" | "failed" = completionResult.status === "success" ? "completed" : "warning";
 
                 dispatch(dfActions.updateAgentWorkInProgress({
-                    actionId: actionId, description: summary, status: status, hidden: false
+                    actionId: actionId, description: summary, status: status, hidden: false,
+                    message: { content: summary, role: 'completion' }
                 }));
 
                 let completionMessage = `Data exploration completed.`;
@@ -1056,7 +965,8 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                 // Clear the prompt after successful exploration
                 setPrompt("");
             } else {
-                dispatch(dfActions.updateAgentWorkInProgress({actionId: actionId, description: "The agent got lost in the data.", status: 'warning', hidden: false}));
+                dispatch(dfActions.updateAgentWorkInProgress({actionId: actionId, description: "The agent got lost in the data.", status: 'warning', hidden: false,
+                    message: { content: "The agent got lost in the data.", role: 'clarify' }}));
 
                 dispatch(dfActions.addMessages({
                     "timestamp": Date.now(),
@@ -1067,7 +977,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
             }
         };
 
-        fetch(getUrls().EXPLORE_DATA_STREAMING, {
+        fetchWithIdentity(getUrls().EXPLORE_DATA_STREAMING, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', },
             body: messageBody,
@@ -1122,7 +1032,8 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                                         clearTimeout(timeoutId);
                                         
                                         // Clean up the inprogress thinking when streaming fails
-                                        dispatch(dfActions.updateAgentWorkInProgress({actionId: actionId, description: data.error_message || "Error during data exploration", status: 'failed', hidden: false}));
+                                        dispatch(dfActions.updateAgentWorkInProgress({actionId: actionId, description: data.error_message || "Error during data exploration", status: 'failed', hidden: false,
+                                            message: { content: data.error_message || "Error during data exploration", role: 'error' }}));
                                         
                                         dispatch(dfActions.addMessages({
                                             "timestamp": Date.now(),
@@ -1149,7 +1060,8 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
             
             // Clean up the inprogress thinking when network errors occur
             const errorMessage = error.name === 'AbortError' ? "Data exploration timed out" : `Data exploration failed: ${error.message}`;
-            dispatch(dfActions.updateAgentWorkInProgress({actionId: actionId, description: errorMessage, status: 'failed', hidden: false}));
+            dispatch(dfActions.updateAgentWorkInProgress({actionId: actionId, description: errorMessage, status: 'failed', hidden: false,
+                message: { content: errorMessage, role: 'error' }}));
             
             if (error.name === 'AbortError') {
                 dispatch(dfActions.addMessages({
@@ -1171,9 +1083,6 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
         });
     };
 
-    const showTableSelector = availableTables.length > 1 && currentTable;
-
-    
     return (
         <Box sx={{ maxWidth: "600px", display: 'flex', flexDirection: 'column', ...sx }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -1238,17 +1147,6 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                         }} 
                     />
                 )}
-                {showTableSelector && (
-                    <Box>
-                        <NLTableSelector
-                            selectedTableIds={selectedTableIds}
-                            tables={availableTables}
-                            updateSelectedTableIds={handleTableSelectionChange}
-                            requiredTableIds={[tableId]}
-                        />
-                    </Box>
-                )}
-
                 <Box sx={{ display: 'flex', flexDirection: 'row', gap: 1, alignItems: 'flex-end' }}>
                     <TextField
                         variant="standard"
@@ -1268,7 +1166,10 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                             "& .MuiInput-underline:not(.Mui-disabled):before": {
                                 borderBottom: 'none',
                             },
-                            "& .MuiInput-underline:(.Mui-disabled):before": {
+                            "& .MuiInput-underline.Mui-disabled:before": {
+                                borderBottom: 'none',
+                            },
+                            "& .MuiInput-underline.Mui-disabled:after": {
                                 borderBottom: 'none',
                             },
                             "& .MuiInput-underline:after": {

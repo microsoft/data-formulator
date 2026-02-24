@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <!-- Lollipop 1: blue -->
+  <line x1="72" y1="216" x2="72" y2="100" stroke="#363636" stroke-width="4" stroke-linecap="round"/>
+  <circle cx="72" cy="100" r="12" fill="#76c6ff" stroke="#363636" stroke-width="2"/>
+  <!-- Lollipop 2: gray -->
+  <line x1="120" y1="216" x2="120" y2="65" stroke="#363636" stroke-width="4" stroke-linecap="round"/>
+  <circle cx="120" cy="65" r="12" fill="#B8B8B8" stroke="#363636" stroke-width="2"/>
+  <!-- Lollipop 3: blue -->
+  <line x1="168" y1="216" x2="168" y2="140" stroke="#363636" stroke-width="4" stroke-linecap="round"/>
+  <circle cx="168" cy="140" r="12" fill="#76c6ff" stroke="#363636" stroke-width="2"/>
+  <!-- Lollipop 4: gray -->
+  <line x1="216" y1="216" x2="216" y2="85" stroke="#363636" stroke-width="4" stroke-linecap="round"/>
+  <circle cx="216" cy="85" r="12" fill="#B8B8B8" stroke="#363636" stroke-width="2"/>
+  <!-- Y-axis -->
+  <line x1="48" y1="28" x2="48" y2="220" stroke="#363636" stroke-width="4" stroke-linecap="round"/>
+  <!-- X-axis -->
+  <line x1="44" y1="216" x2="240" y2="216" stroke="#363636" stroke-width="4" stroke-linecap="round"/>
+</svg>

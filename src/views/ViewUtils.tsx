@@ -4,7 +4,7 @@
 import React from "react";
 import ts from "typescript";
 import { runCodeOnInputListsInVM } from "../app/utils";
-import { ConceptTransformation, FieldItem } from "../components/ComponentType";
+import { FieldItem } from "../components/ComponentType";
 import { Type } from "../data/types";
 import { BooleanIcon, NumericalIcon, StringIcon, DateIcon, UnknownIcon } from '../icons';
 
@@ -22,8 +22,6 @@ export const groupConceptItems = (conceptShelfItems: FieldItem[], tables: DictTa
             group = tables.find(t => t.id == f.tableRef)?.displayId || f.tableRef;
         } else if (f.source == "custom") {
             group = "new fields"
-        } else if (f.source == "derived") {
-            group = tables.find(t => t.id == f.tableRef)?.displayId || f.tableRef;
         }
         return {group, field: f}
     });

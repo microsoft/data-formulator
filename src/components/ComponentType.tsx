@@ -2,15 +2,8 @@
 // Licensed under the MIT License.
 
 import { Type } from '../data/types';
-import { CHANNEL_LIST } from "../components/ChartTemplates"
+import { channels, type ChartTemplateDef } from '../lib/agents-chart';
 import { inferTypeFromValueArray } from '../data/utils';
-
-
-export interface ConceptTransformation {
-    parentIDs: string[],
-    description: string,
-    code: string
-}
 
 export type FieldSource = "custom" | "original";
 
@@ -19,7 +12,7 @@ export interface FieldItem {
     name: string;
 
     source: FieldSource;
-    tableRef: string; // which table it belongs to, it matters when it's an original field or a derived field
+    tableRef: string; // which table it belongs to
 }
 
 export const duplicateField = (field: FieldItem) => {
@@ -34,12 +27,9 @@ export const duplicateField = (field: FieldItem) => {
 export interface Trigger {
     tableId: string, // on which table this action is triggered
 
-    sourceTableIds: string[], // which tables are used in the trigger
-
     chart?: Chart, // what's the intented chart from the user when running formulation
     instruction: string,
     displayInstruction: string, // the short instruction that will be displayed to the user
-
 
     resultTableId: string,
 }
@@ -70,6 +60,37 @@ export interface DataCleanBlock {
     dialogItem?: any; // Store the dialog item from the model response
 }
 
+// Data source types for tracking where data originated
+export type DataSourceType = 'paste' | 'file' | 'url' | 'stream' | 'database' | 'example' | 'extract';
+
+// Configuration for data source refresh behavior
+// Note: For database sources, connection details are stored in DuckDB backend,
+// not in the frontend. Frontend only manages refresh timing/toggle.
+export interface DataSourceConfig {
+    type: DataSourceType;
+    
+    // For URL/stream sources - the URL to fetch data from
+    url?: string;
+    
+    // Refresh interval in seconds (used for streams and database auto-refresh)
+    refreshIntervalSeconds?: number;
+    
+    // For database sources - the DuckDB table name (backend knows how to refresh it)
+    databaseTable?: string;
+    
+    // Whether auto-refresh is enabled (frontend controls this for all source types)
+    autoRefresh?: boolean;
+    
+    // Last refresh timestamp
+    lastRefreshed?: number;
+    
+    // Original file name (for file uploads)
+    fileName?: string;
+    
+    // Whether this table can be refreshed (backend has connection info)
+    canRefresh?: boolean;
+}
+
 export interface DictTable {
     id: string; // name/id of the table
     displayId: string; // display id of the table 
@@ -85,6 +106,7 @@ export interface DictTable {
     derive?: { // how is this table derived
         source: string[], // which tables are this table computed from
         code: string,
+        outputVariable: string, // the Python variable name containing the result DataFrame (required)
         explanation?: {
             code: string, // explanation of the code
             concepts: {
@@ -106,16 +128,31 @@ export interface DictTable {
     anchored: boolean; // whether this table is anchored as a persistent table used to derive other tables
     createdBy: 'user' | 'agent'; // whether this table is created by the user or the agent
     attachedMetadata: string; // a string of attached metadata explaining what the table is about (used for prompt)
+    
+    // New field: tracks the source of the data and refresh configuration
+    source?: DataSourceConfig;
+    
+    // Content hash for detecting data changes during refresh
+    // Used to avoid unnecessary derived table recalculations when data hasn't changed
+    contentHash?: string;
 }
 
 export function createDictTable(
     id: string, rows: any[], 
-    derive: {code: string, explanation?: {code: string, concepts: {field: string, explanation: string}[]}, source: string[], dialog: any[], 
-             trigger: Trigger} | undefined = undefined,
+    derive: {
+        code: string, outputVariable: string, 
+        explanation?: {
+            code: string, 
+            concepts: {field: string, explanation: string}[]}, 
+            source: string[], 
+            dialog: any[], 
+            trigger: Trigger
+        } | undefined = undefined,
     virtual: {tableId: string, rowCount: number} | undefined = undefined,
     anchored: boolean = false,
     createdBy: 'user' | 'agent' = 'user', // by default, all tables are created by the user
-    attachedMetadata: string = ''
+    attachedMetadata: string = '',
+    source: DataSourceConfig | undefined = undefined,
 ) : DictTable {
     
     let names = Object.keys(rows[0])
@@ -137,8 +174,15 @@ export function createDictTable(
         virtual,
         anchored,
         createdBy,
-        attachedMetadata
+        attachedMetadata,
+        source,
     }
+}
+
+export interface ChartInsight {
+    title: string;
+    takeaways: string[];
+    key: string;  // "chartType|sortedFieldIds" — used to detect staleness
 }
 
 export type Chart = { 
@@ -148,7 +192,18 @@ export type Chart = {
     tableRef: string, 
     saved: boolean,
     source: "user" | "trigger",
-    unread: boolean,
+    config?: Record<string, any>,  // additional chart properties defined by the chart template
+    thumbnail?: string,  // PNG data URL for thumbnail display (managed by ChartRenderService, not persisted)
+    insight?: ChartInsight,  // AI-generated insight about the visualization
+}
+
+/** Compute a string key for insight invalidation: chartType|sortedFieldIds */
+export function computeInsightKey(chart: Chart): string {
+    const fieldIds = Object.values(chart.encodingMap)
+        .map(enc => enc.fieldID)
+        .filter((id): id is string => !!id)
+        .sort();
+    return `${chart.chartType}|${fieldIds.join(',')}`;
 }
 
 export let duplicateChart = (chart: Chart) : Chart => {
@@ -159,7 +214,7 @@ export let duplicateChart = (chart: Chart) : Chart => {
         tableRef: chart.tableRef,
         saved: false,
         source: chart.source,
-        unread: false,
+        config: chart.config ? JSON.parse(JSON.stringify(chart.config)) : undefined,
     }
 }
 
@@ -171,42 +226,28 @@ export interface EncodingItem {
     fieldID?: string, // the fieldID
     dtype?: "quantitative" | "nominal" | "ordinal" | "temporal",
     aggregate?: AggrOp,
-    stack?: "layered" | "zero" | "center" | "normalize",
     //sort?: "ascending" | "descending" | string,
     sortOrder?: "ascending" | "descending", // 
     sortBy?: undefined | string, // what values are used to sort the encoding
     scheme?: string
 }
 
-export type ChartTemplate = {
-    chart: string,
-    icon: any,
-    template: any,
-    channels: string[],
-    paths: { [key: string]: (string | number)[] | (string | number)[][]; },
-    postProcessor?: (vgSpec: any, table: any[]) => any
+
+
+/**
+ * ChartTemplate extends the library's ChartTemplateDef with a UI icon.
+ * The library definition is icon-free for reusability; this type adds
+ * the React element used in the Data Formulator UI.
+ */
+export type ChartTemplate = ChartTemplateDef & {
+    icon: any;
 }
 
 export const AGGR_OP_LIST = ["count", "sum", "average"] as const
-//export const MARK_TYPE_LIST = ['circle', 'bar', 'line', 'area', 'point', 'arc'] as const; //'text', 
-// export const MARK_TYPE_LIST = ['circle', 'bar', 'line', 'area', 'point', 'rect', 'rule', 'square', 'tick', 'arc', 'geo-us-states', 'geo-point'] as const; //'text', 
 
 export type AggrOp = typeof AGGR_OP_LIST[number];
-export type Channel = typeof CHANNEL_LIST[number];
+export type Channel = typeof channels[number];
 
-
-// export const markToChannels = (mark: string) => {
-//     let channels = [];
-//     if (mark == "rect" || mark == "area") {
-//         channels = ["x", "y", "x2", "y2", "color", "column", "row"];
-//     } else if ( mark == "geo-point" ) {
-//         channels = ["latitude", "longitude", "color",  "opacity", "size", "column", "row"];
-//     } else if ( mark == "geo-us-states") {
-//         channels = ["id", "color", "opacity", "row", "column"];
-//     } else if (mark == "arc") {
-//         channels = ["theta", "radius", "color", "column", "row"];
-//     } else {
-//         channels = ["x", "y", "color", "opacity", "size", "shape", "column", "row"];
-//     } 
-//     return channels;
-// }
+export interface EncodingDropResult {
+    channel: Channel
+}

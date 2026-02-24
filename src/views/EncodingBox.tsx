@@ -41,16 +41,14 @@ import CategoryIcon from '@mui/icons-material/Category';
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
 import QuestionMarkIcon from '@mui/icons-material/QuestionMark';
 
-import { FieldItem, Channel, EncodingItem, AggrOp, AGGR_OP_LIST, 
-        ConceptTransformation, Chart, duplicateField } from "../components/ComponentType";
-import { EncodingDropResult } from "../views/ConceptShelf";
+import { FieldItem, Channel, EncodingItem, AggrOp, Chart, EncodingDropResult } from "../components/ComponentType";
 
 import _ from 'lodash';
 
 import '../scss/EncodingShelf.scss';
 import AnimateHeight from 'react-animate-height';
 import { getIconFromDtype, getIconFromType, groupConceptItems } from './ViewUtils';
-import { getUrls } from '../app/utils';
+import { getUrls, fetchWithIdentity } from '../app/utils';
 import { Type } from '../data/types';
 
 
@@ -94,14 +92,9 @@ export const LittleConceptCard: FC<LittleConceptCardProps> = function LittleConc
     let backgroundColor = alpha(theme.palette.primary.main, 0.05);
 
     if (field.source == "original") {
-        //fieldClass += "encoding-active-item-original"
         backgroundColor = alpha(theme.palette.primary.main, 0.05);
     } else if (field.source == "custom") {
-        //fieldClass += "encoding-active-item-custom"
         backgroundColor = alpha(theme.palette.custom.main, 0.05);
-    } else if (field.source == "derived") {
-        //fieldClass += "encoding-active-item-derived";
-        backgroundColor = alpha(theme.palette.derived.main, 0.05);
     }
 
     return (
@@ -284,31 +277,9 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
         </FormControl>
     ];
 
-    let stackOpt = (chart.chartType == "bar" || chart.chartType == "area") && (channel == "x" || channel == "y") ? [
-        <FormLabel key={`enc-box-${channel}-stack-label`} sx={{ fontSize: "inherit" }} id="normalized-option-radio-buttons-group" >Stack</FormLabel>,
-        <FormControl
-            key={`enc-box-${channel}-stack-form-control`}
-            sx={{
-                paddingBottom: "2px", '& .MuiTypography-root': { fontSize: "inherit" }, flexDirection: "row",
-                '& .MuiFormLabel-root': { fontSize: "inherit" }
-            }}>
-            <RadioGroup
-                row
-                aria-labelledby="normalized-option-radio-buttons-group"
-                name="normalized-option-radio-buttons-group"
-                value={encoding.stack || "default"}
-                sx={{ width: 160 }}
-                onChange={(event) => { updateEncProp("stack", event.target.value == "default" ? undefined : event.target.value); }}
-            >
-                {radioLabel("default", "default", `stack-default`)}
-                {radioLabel("layered", "layered", `stack-layered`)}
-                {radioLabel("center", "center", `stack-center`)}
-                {radioLabel("normalize", "normalize", `stack-normalize`)}
-            </RadioGroup>
-        </FormControl>
-    ] : [];
+    let stackOpt: any[] = [];
 
-    let domainItems = field ? activeTable?.rows.map(row => row[field?.name]) : [];
+    let domainItems = (field && activeTable) ? activeTable.rows.map(row => row[field!.name]) : [];
     domainItems = [...new Set(domainItems)];
 
     let autoSortEnabled = field && fieldMetadata?.type == Type.String && domainItems.length < 200;
@@ -327,7 +298,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
             }),
         };
 
-        fetch(getUrls().SORT_DATA_URL, message)
+        fetchWithIdentity(getUrls().SORT_DATA_URL, message)
             .then((response) => response.json())
             .then((data) => {
                 setAutoSortInferRunning(false);
@@ -541,9 +512,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
         sx={{  backgroundColor: optBackgroundColor, width: field == undefined ? "100%" : "auto" }}
         onDelete={() => updateEncProp("aggregate", undefined)} color="default" //deleteIcon={<RemoveIcon />}
         label={encoding.aggregate == "average" ? "avg" : encoding.aggregate} size="small" />) : "";
-    let normalizedDisplay = encoding.stack ? (<Chip key="normalized-display" className="encoding-prop-chip" //deleteIcon={<RemoveIcon />} 
-        color="default" sx={{  backgroundColor: optBackgroundColor }}
-        label={"⌸"} size="small" onDelete={() => updateEncProp("stack", undefined)} />) : "";
+    let normalizedDisplay = "";
     
     let handleSelectOption = (option: string) => {
         if (conceptShelfItems.map(f => f.name).includes(option)) {
@@ -554,8 +523,8 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
                 console.log("nothing happens")
             } else {
                 let newConept = {
-                    id: `concept-${Date.now()}`, name: option, type: "auto" as Type, 
-                    description: "", source: "custom", tableRef: "custom",
+                    id: `concept-${Date.now()}`, name: option,
+                    source: "custom", tableRef: "custom",
                 } as FieldItem;
                 dispatch(dfActions.updateConceptItems(newConept));
                 updateEncProp("fieldID", newConept.id);
@@ -689,8 +658,6 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
                     backgroundColor = theme.palette.primary.light;
                 } else if (fieldItem.source == "custom") {
                     backgroundColor = theme.palette.custom.main;
-                } else if (fieldItem.source == "derived") {
-                    backgroundColor = theme.palette.derived.main;
                 }
 
                 // Add overlay logic similar to ConceptCard - make fields not in focused table more transparent
@@ -822,14 +789,14 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
         >
             <Box sx={{ display: 'flex', flexDirection: "column", alignItems: 'flex-start', width: "100%", marginBottom: "4px" }}
                 component="form" className="channel-shelf-box encoding-item">
-                <Card sx={{ width: "100%", boxShadow: editMode ? "0 2px 2px 0 rgb(0 0 0 / 20%), 0 2px 2px 0 rgb(0 0 0 / 19%)" : "" }} variant="outlined">
+                <Card sx={{ width: "100%" }} variant="outlined">
                     <Box ref={drop} className="channel-encoded-field">
                         <IconButton //className="encoding-shelf-action-button"
                             onClick={() => { setEditMode(!editMode) }} color="default"
                             aria-label="axis settings" component="span"
                             size="small" sx={{
                                 padding: "0px", borderRadius: 0, textAlign: "left", fontSize: "inherit", height: "auto",
-                                position: "relative", borderRight: "1px solid lightgray", width: '64px', backgroundColor: "rgba(0,0,0,0.01)",
+                                position: "relative", borderRight: "1px solid lightgray", width: '64px', 
                                 display: "flex", justifyContent: "space-between"
                             }}>
                             <Typography variant="caption" component="span" sx={{ padding: "0px 0px 0px 6px" }}>{channelDisplay}</Typography>

@@ -204,35 +204,47 @@ export const loadBinaryDataWrapper = async (title: string, arrayBuffer: ArrayBuf
         // Create tables for each sheet
         const tables: DictTable[] = [];
         
-        workbook.eachSheet((worksheet, sheetId) => {
-            const jsonData: any[] = [];
-            
-            // Get the first row as headers
-            const headerRow = worksheet.getRow(1);
-            const headers: string[] = [];
-            headerRow.eachCell((cell, colNumber) => {
-                headers[colNumber - 1] = cell.value?.toString() || `Column${colNumber}`;
-            });
-            
-            // Process data rows (skip header row)
-            worksheet.eachRow((row, rowNumber) => {
-                if (rowNumber === 1) return; // Skip header row
-                
-                const rowData: any = {};
-                row.eachCell((cell, colNumber) => {
-                    const header = headers[colNumber - 1] || `Column${colNumber}`;
-                    rowData[header] = cell.value;
+        workbook.eachSheet((worksheet) => {
+            try {
+                const jsonData: any[] = [];
+
+                // Get the first row as headers
+                const headerRow = worksheet.getRow(1);
+                const headers: string[] = [];
+                headerRow.eachCell((cell, colNumber) => {
+                    headers[colNumber - 1] = cell.value?.toString() || `Column${colNumber}`;
                 });
-                
-                // Only add row if it has data
-                if (Object.keys(rowData).length > 0) {
-                    jsonData.push(rowData);
+
+                if (headers.length === 0) {
+                    return;
                 }
-            });
-            
-            // Create a table from the JSON data with sheet name included in the title
-            const sheetTable = createTableFromFromObjectArray(`${title}-${worksheet.name}`, jsonData, true);
-            tables.push(sheetTable);
+
+                // Process data rows (skip header row)
+                worksheet.eachRow((row, rowNumber) => {
+                    if (rowNumber === 1) return; // Skip header row
+
+                    const rowData: any = {};
+                    row.eachCell((cell, colNumber) => {
+                        const header = headers[colNumber - 1] || `Column${colNumber}`;
+                        rowData[header] = cell.value;
+                    });
+
+                    // Only add row if it has data
+                    if (Object.keys(rowData).length > 0) {
+                        jsonData.push(rowData);
+                    }
+                });
+
+                if (jsonData.length === 0) {
+                    return;
+                }
+
+                // Create a table from the JSON data with sheet name included in the title
+                const sheetTable = createTableFromFromObjectArray(`${title}-${worksheet.name}`, jsonData, true);
+                tables.push(sheetTable);
+            } catch (error) {
+                console.error(`Error processing sheet ${worksheet.name}:`, error);
+            }
         });
         
         return tables;

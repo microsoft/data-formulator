@@ -171,11 +171,12 @@ export const convertToChartifact = (reportMarkdown: string, reportStyle: string,
                     conceptShelfItems,
                     processedRows,
                     chartTable.metadata,
-                    30,
-                    true,
                     config.defaultChartWidth,
                     config.defaultChartHeight,
-                    true
+                    true,
+                    chart.config,
+                    1,
+                    config.maxStretchFactor,
                 );
 
                 // Convert the spec to use named data source

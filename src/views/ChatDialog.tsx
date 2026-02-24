@@ -2,6 +2,7 @@
 // Licensed under the MIT License.
 
 import { FC, useRef, useEffect } from 'react'
+import { radius } from '../app/tokens';
 import { Divider } from "@mui/material";
 import {
 		Card,
@@ -146,8 +147,19 @@ export const ChatDialog: FC<ChatDialogProps> = function ChatDialog({code, dialog
                 {dialog.filter(entry => entry["role"] != 'system').map((chatEntry, idx) => {
 
                     let role = chatEntry['role'];
-                    let message : any = chatEntry['content'] as string;
+                    let content : any = chatEntry['content'];
                     const isUser = role === 'user';
+
+                    // Handle multimodal content (array with text + image_url objects)
+                    let message: string;
+                    if (Array.isArray(content)) {
+                        message = content
+                            .filter((part: any) => part.type === 'text')
+                            .map((part: any) => part.text)
+                            .join('\n');
+                    } else {
+                        message = content as string;
+                    }
 
                     message = message.trimEnd();
 
@@ -161,7 +173,7 @@ export const ChatDialog: FC<ChatDialogProps> = function ChatDialog({code, dialog
                             backgroundColor: isUser ? alpha(theme.palette.primary.main, 0.05) : alpha(theme.palette.custom.main, 0.05),
                             border: isUser ? "1px solid" : "1px solid",
                             borderColor: isUser ? alpha(theme.palette.primary.main, 0.2) : alpha(theme.palette.custom.main, 0.2),
-                            borderRadius: 2,
+                            borderRadius: radius.md,
                         }}>
                         <CardContent sx={{display: "flex", flexDirection: "column", flexGrow: 1, padding: '8px 12px', paddingBottom: '8px !important'}}>
                             <Typography sx={{ 
@@ -196,7 +208,7 @@ export const ChatDialog: FC<ChatDialogProps> = function ChatDialog({code, dialog
             open={open}
             key="chat-dialog-dialog"
         >
-            <DialogTitle><Typography>Dialog with Agents</Typography></DialogTitle>
+            <DialogTitle><Typography>Agent Log</Typography></DialogTitle>
             <DialogContent ref={dialogContentRef} sx={{overflowY: "auto", overflowX: "hidden"}} dividers>
                 {body}
             </DialogContent>

@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <!-- Row 1 (top, narrowest) -->
+  <rect x="100" y="40" width="38" height="34" fill="#B8B8B8"/>
+  <rect x="138" y="40" width="34" height="34" fill="#76c6ff"/>
+  <rect x="100" y="40" width="72" height="34" fill="none" stroke="#363636" stroke-width="2"/>
+  <line x1="138" y1="40" x2="138" y2="74" stroke="#363636" stroke-width="2"/>
+
+  <!-- Row 2 -->
+  <rect x="68" y="82" width="70" height="34" fill="#B8B8B8"/>
+  <rect x="138" y="82" width="62" height="34" fill="#76c6ff"/>
+  <rect x="68" y="82" width="132" height="34" fill="none" stroke="#363636" stroke-width="2"/>
+  <line x1="138" y1="82" x2="138" y2="116" stroke="#363636" stroke-width="2"/>
+
+  <!-- Row 3 -->
+  <rect x="42" y="124" width="96" height="34" fill="#B8B8B8"/>
+  <rect x="138" y="124" width="84" height="34" fill="#76c6ff"/>
+  <rect x="42" y="124" width="180" height="34" fill="none" stroke="#363636" stroke-width="2"/>
+  <line x1="138" y1="124" x2="138" y2="158" stroke="#363636" stroke-width="2"/>
+
+  <!-- Row 4 (bottom, widest) -->
+  <rect x="30" y="166" width="108" height="34" fill="#B8B8B8"/>
+  <rect x="138" y="166" width="98" height="34" fill="#76c6ff"/>
+  <rect x="30" y="166" width="206" height="34" fill="none" stroke="#363636" stroke-width="2"/>
+  <line x1="138" y1="166" x2="138" y2="200" stroke="#363636" stroke-width="2"/>
+
+  <!-- X-axis -->
+  <line x1="20" y1="216" x2="240" y2="216" stroke="#363636" stroke-width="4" stroke-linecap="round"/>
+</svg>

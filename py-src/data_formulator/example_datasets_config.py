@@ -413,7 +413,7 @@ SPX,65,SPX,US,O/LA/LV/PL/S,B,2007 Aug,-,SpaceX,SpaceX,"Hawthorne, California",-,
 1974-063,2442268.64,1974-08-09,1974,Thor Burner 2A,,DMSP Block 5C F-1,US,US,O,state'''
             }
         ]
-    }
+    },
 ]
 
 

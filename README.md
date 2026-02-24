@@ -11,7 +11,7 @@
 <p align="center">
   <a href="https://data-formulator.ai"><img src="https://img.shields.io/badge/🚀_Try_Online_Demo-data--formulator.ai-F59E0B?style=for-the-badge" alt="Try Online Demo"></a>
   &nbsp;
-  <a href="#get-started"><img src="https://img.shields.io/badge/💻_Install_Locally-pip_install-3776AB?style=for-the-badge" alt="Install Locally"></a>
+  <a href="#get-started"><img src="https://img.shields.io/badge/💻_Install_Locally-uvx_|_pip-3776AB?style=for-the-badge" alt="Install Locally"></a>
 </p>
 
 <p align="center">
@@ -32,6 +32,13 @@ https://github.com/user-attachments/assets/8ca57b68-4d7a-42cb-bcce-43f8b1681ce2 
 
 
 ## News 🔥🔥🔥
+[01-31-2025] **uv support** — Faster installation with uv
+-  🚀 **Install with uv**: Data Formulator now supports installation via [uv](https://docs.astral.sh/uv/), the ultra-fast Python package manager. Get started in seconds with `uvx data_formulator` or `uv pip install data_formulator`.
+
+[01-25-2025] **Data Formulator 0.6** — Real-time insights from live data
+-  ⚡ **Connect to live data**: Connect to URLs and databases with automatic refresh intervals. Visualizations update automatically as your data changes to provide you live insights. [Demo: track international space station position speed live](https://github.com/microsoft/data-formulator/releases/tag/0.6)
+-  🎨 **UI Updates**: Unified UI for data loading; direct drag-and-drop fields from the data table to update visualization designs.
+
 [12-08-2025] **Data Formulator 0.5.1** — Connect more, visualize more, move faster
 - 🔌 **Community data loaders**: Google BigQuery, MySQL, Postgres, MongoDB
 - 📊 **New chart types**: US Map & Pie Chart (more to be added soon)
@@ -41,10 +48,7 @@ https://github.com/user-attachments/assets/8ca57b68-4d7a-42cb-bcce-43f8b1681ce2 
 [11-07-2025] Data Formulator 0.5: Vibe with your data, in control
 
 - 📊 **Load (almost) any data**: load structured data, extract data from screenshots, from messy text blocks, or connect to databases.
-- 🤖 **Explore data with AI agents**: 
-  - In agent mode, provide a high-level goal and ask agents to explore data for you.
-  - To stay in control, directly interact with agents: ask for recommendations or specify chart designs with UI + NL inputs, and AI agents will formulate data to realize your design.
-  - Use data threads to control branching exploration paths: backtrack, branch, or follow up.
+- 🤖 **Explore data with AI agents**: Use agent mode for hands-off exploration, or stay in control in interactive mode.
 - ✅ **Verify AI generated results**: interact with charts and inspect data, formulas, explanations, and code.
 - 📝 **Create reports to share insights**: choose charts you want to share, and ask agents to create reports grounded in data formulated throughout exploration.
 
@@ -100,7 +104,7 @@ Here are milestones that lead to the current design:
 - [02-12-2025] More models supported now!
   - Now supports OpenAI, Azure, Ollama, and Anthropic models (and more powered by [LiteLLM](https://github.com/BerriAI/litellm));
   - Models with strong code generation and instruction following capabilities are recommended (gpt-4o, claude-3-5-sonnet etc.);
-  - You can store API keys in `api-keys.env` to avoid typing them every time (see template `api-keys.env.template`).
+  - You can store API keys in `.env` to avoid typing them every time (copy `.env.template` to `.env` and fill in your keys).
   - Let us know which models you have good/bad experiences with, and what models you would like to see supported! [[comment here]](https://github.com/microsoft/data-formulator/issues/49)
 
 - [11-07-2024] Minor fun update: data visualization challenges!
@@ -126,9 +130,30 @@ Data Formulator enables analysts to iteratively explore and visualize data. Star
 
 Play with Data Formulator with one of the following options:
 
-- **Option 1: Install via Python PIP**
+- **Option 1: Install via uv (recommended)**
   
-  Use Python PIP for an easy setup experience, running locally (recommend: install it in a virtual environment).
+  [uv](https://docs.astral.sh/uv/) is an extremely fast Python package manager. If you have uv installed, you can run Data Formulator directly without any setup:
+  
+  ```bash
+  # Run data formulator directly (no install needed)
+  uvx data_formulator
+  ```
+
+  Or install it in a project/virtual environment:
+  
+  ```bash
+  # Install data_formulator
+  uv pip install data_formulator
+
+  # Run data formulator
+  python -m data_formulator
+  ```
+
+  Data Formulator will be automatically opened in the browser at [http://localhost:5567](http://localhost:5567).
+
+- **Option 2: Install via pip**
+  
+  Use pip for installation (recommend: install it in a virtual environment).
   
   ```bash
   # install data_formulator
@@ -138,17 +163,17 @@ Play with Data Formulator with one of the following options:
   python -m data_formulator
   ```
 
-  Data Formulator will be automatically opened in the browser at [http://localhost:5000](http://localhost:5000).
+  Data Formulator will be automatically opened in the browser at [http://localhost:5567](http://localhost:5567).
 
   *you can specify the port number (e.g., 8080) by `python -m data_formulator --port 8080` if the default port is occupied.*
 
-- **Option 2: Codespaces (5 minutes)**
+- **Option 3: Codespaces (5 minutes)**
   
   You can also run Data Formulator in Codespaces; we have everything pre-configured. For more details, see [CODESPACES.md](CODESPACES.md).
   
   [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/microsoft/data-formulator?quickstart=1)
 
-- **Option 3: Working in the developer mode**
+- **Option 4: Working in the developer mode**
   
   You can build Data Formulator locally if you prefer full control over your development environment and develop your own version on top. For detailed instructions, refer to [DEVELOPMENT.md](DEVELOPMENT.md).
 

@@ -7,6 +7,7 @@ from data_formulator.data_loader.azure_blob_data_loader import AzureBlobDataLoad
 from data_formulator.data_loader.postgresql_data_loader import PostgreSQLDataLoader
 from data_formulator.data_loader.mongodb_data_loader import MongoDBDataLoader
 from data_formulator.data_loader.bigquery_data_loader import BigQueryDataLoader
+from data_formulator.data_loader.athena_data_loader import AthenaDataLoader
 
 DATA_LOADERS = {
     "mysql": MySQLDataLoader,
@@ -16,7 +17,19 @@ DATA_LOADERS = {
     "azure_blob": AzureBlobDataLoader,
     "postgresql": PostgreSQLDataLoader,
     "mongodb": MongoDBDataLoader,
-    "bigquery": BigQueryDataLoader
+    "bigquery": BigQueryDataLoader,
+    "athena": AthenaDataLoader
 }
 
-__all__ = ["ExternalDataLoader", "MySQLDataLoader", "MSSQLDataLoader", "KustoDataLoader", "S3DataLoader", "AzureBlobDataLoader","PostgreSQLDataLoader", "MongoDBDataLoader", "BigQueryDataLoader", "DATA_LOADERS"]
+__all__ = [
+    "ExternalDataLoader", 
+    "MySQLDataLoader", 
+    "MSSQLDataLoader", 
+    "KustoDataLoader", 
+    "S3DataLoader", 
+    "AzureBlobDataLoader", 
+    "PostgreSQLDataLoader", 
+    "MongoDBDataLoader", 
+    "BigQueryDataLoader",
+    "AthenaDataLoader", 
+    "DATA_LOADERS"]

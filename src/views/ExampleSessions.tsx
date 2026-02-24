@@ -11,6 +11,7 @@ import {
     alpha,
     useTheme,
 } from '@mui/material';
+import { StreamIcon } from '../icons';
 
 // Example session data for pre-built sessions
 export interface ExampleSession {
@@ -19,22 +20,33 @@ export interface ExampleSession {
     description: string;
     previewImage: string;
     dataFile: string;
+    live: boolean;
 }
 
 export const exampleSessions: ExampleSession[] = [
+    {
+        id: 'stock-prices-live',
+        title: 'Stock Prices (Live)',
+        description: 'Live stock prices for different companies',
+        previewImage: '/screenshot-stock-price-live-thumbnail.webp',
+        dataFile: '/df_stock_prices_live.json',
+        live: true,
+    },
     {
         id: 'gas-prices',
         title: 'Gas Prices',
         description: 'Weekly gas prices across different grades and formulations',
         previewImage: '/gas_prices-thumbnail.webp',
         dataFile: '/df_gas_prices.json',
+        live: false,
     },
     {
         id: 'global-energy',
         title: 'Global Energy',
         description: 'Explore global energy consumption and CO2 emissions data',
         previewImage: '/global_energy-thumbnail.webp',
-        dataFile: '/df_global_energy.json',
+        dataFile: '/df_global_energy.json', 
+        live: false,
     },
     {
         id: 'movies',
@@ -42,6 +54,7 @@ export const exampleSessions: ExampleSession[] = [
         description: 'Analyze movie performance, budgets, and ratings data',
         previewImage: '/movies-thumbnail.webp',
         dataFile: '/df_movies.json',
+        live: false,
     },
     {
         id: 'unemployment',
@@ -49,6 +62,7 @@ export const exampleSessions: ExampleSession[] = [
         description: 'Unemployment rates across different industries over time',
         previewImage: '/unemployment-thumbnail.webp',
         dataFile: '/df_unemployment.json',
+        live: false,
     }
 ];
 
@@ -66,7 +80,7 @@ export const ExampleSessionCard: React.FC<{
                 cursor: disabled ? 'default' : 'pointer',
                 '&:hover': disabled ? {} : {
                     transform: 'translateY(-2px)',
-                    borderColor: alpha(theme.palette.primary.main, 0.4),
+                    borderColor: session.live ? alpha(theme.palette.secondary.main, 0.4) : alpha(theme.palette.primary.main, 0.4),
                 },
             }}
             onClick={disabled ? undefined : onClick}
@@ -111,7 +125,7 @@ export const ExampleSessionCard: React.FC<{
                             overflow: 'hidden'
                         }}
                     >
-                        <span style={{textDecoration: 'underline'}}>{session.title}:</span> {session.description}
+                        {session.live && <StreamIcon sx={{ fontSize: 10, color: 'success.main' }} />} <span style={{textDecoration: 'underline'}}>{session.title}:</span> {session.description}
                     </Typography>
                 </Box>
             </CardContent>
