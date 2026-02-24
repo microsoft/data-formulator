@@ -660,10 +660,14 @@ class Workspace:
     @staticmethod
     def _sanitize_session_name(name: str) -> str:
         """Produce a storage-safe session name."""
+        from werkzeug.utils import secure_filename
+
         name = re.sub(r'[/\\:*?"<>|\x00-\x1f]', '_', name)
         name = re.sub(r'\.{2,}', '.', name)
         name = name.strip('. ')
-        return name or 'unnamed'
+        # secure_filename is recognised by CodeQL as a path-injection
+        # sanitiser, ensuring the taint chain is broken.
+        return secure_filename(name) or 'unnamed'
 
     def _get_sessions_root(self) -> Path:
         """Return the per-user sessions directory on local filesystem."""
