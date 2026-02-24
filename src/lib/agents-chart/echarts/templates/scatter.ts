@@ -10,7 +10,7 @@
  */
 
 import { ChartTemplateDef } from '../../core/types';
-import { DEFAULT_COLORS } from './utils';
+import { DEFAULT_COLORS, groupBy, getCategoryOrder, extractCategories } from './utils';
 
 /** Compute a reasonable scatter symbolSize based on canvas area and point count. */
 function computeSymbolSize(width: number, height: number, pointCount: number): number {
@@ -34,8 +34,88 @@ export const ecScatterPlotDef: ChartTemplateDef = {
         const xField = channelSemantics.x?.field;
         const yField = channelSemantics.y?.field;
         const colorField = channelSemantics.color?.field;
+        const sizeField = channelSemantics.size?.field;
+        const sizeRange = (ctx.resolvedEncodings as any)?.size?.sizeRange as [number, number] | undefined;
+        const sizeType = channelSemantics.size?.type;
 
         if (!xField || !yField) return;
+
+        // ECharts symbolSize is pixel diameter; buildECEncodings outputs sizeRange in pixels [4, 28]
+        const EC_SIZE_MIN = 4;
+        const EC_SIZE_MAX = 50;
+        let rangeMin = Math.max(EC_SIZE_MIN, Math.min(EC_SIZE_MAX, sizeRange?.[0] ?? 6));
+        let rangeMaxClamped = Math.max(EC_SIZE_MIN, Math.min(EC_SIZE_MAX, sizeRange?.[1] ?? 20));
+        rangeMaxClamped = Math.max(rangeMin, rangeMaxClamped);
+        // Fallback: ensure a visible spread if sizeRange was degenerate
+        if (rangeMaxClamped <= rangeMin) {
+            rangeMin = EC_SIZE_MIN;
+            rangeMaxClamped = EC_SIZE_MAX;
+        }
+
+        // VL: ordinal/nominal (Rank, Level, etc.) → ordered domain, map by index. Quantitative/temporal with many unique values → sqrt scale.
+        // When resolved type is quantitative but unique count is small (e.g. 4 levels), treat as discrete priority levels → ordinal by index.
+        // If type is missing/wrong but data are 2–12 discrete non-numeric levels (e.g. "Low","Medium","High","Critical"), treat as ordinal.
+        const sizeUniqueCount = sizeField && table.length > 0
+            ? new Set(table.map((r: any) => String(r[sizeField]))).size
+            : 0;
+        const sizeValuesSample = sizeField && table.length > 0
+            ? table.slice(0, 50).map((r: any) => r[sizeField]).filter((v: any) => v != null)
+            : [];
+        const allSizeValuesNumeric = sizeValuesSample.length > 0 && sizeValuesSample.every((v: any) => !isNaN(Number(v)) && String(v).trim() !== '');
+        const useOrdinalSize =
+            sizeType === 'ordinal' ||
+            sizeType === 'nominal' ||
+            (sizeType === 'quantitative' && sizeUniqueCount >= 2 && sizeUniqueCount <= 12) ||
+            (sizeField && sizeUniqueCount >= 2 && sizeUniqueCount <= 12 && !allSizeValuesNumeric);
+
+        let scaleSize: (raw: number | string | null | undefined) => number;
+        let sizeOrderForLegend: string[] | undefined;
+
+        if (useOrdinalSize && sizeField) {
+            // Discrete levels (Rank, Level, etc.): ordered domain → size by index (VL ordinal scale).
+            // VL: sort = ordinalSortOrder when set, else sort = null → domain order = data encounter order.
+            // We align: getCategoryOrder(ctx, 'size') when present; otherwise extractCategories(..., undefined)
+            // preserves first-occurrence order, matching VL.
+            const sizeOrder = extractCategories(table, sizeField, getCategoryOrder(ctx, 'size'));
+            sizeOrderForLegend = sizeOrder;
+            const orderMap = new Map<string, number>(sizeOrder.map((val, i) => [String(val), i]));
+            const n = sizeOrder.length;
+            scaleSize = (raw: number | string | null | undefined): number => {
+                if (raw == null) return rangeMin;
+                const key = String(raw);
+                const index = orderMap.get(key);
+                if (index === undefined) return rangeMin;
+                const t = n > 1 ? index / (n - 1) : 0;
+                return Math.round(rangeMin + t * (rangeMaxClamped - rangeMin));
+            };
+        } else if (sizeField) {
+            // Continuous quantitative/temporal: sqrt scale over numeric domain
+            const vals = table
+                .map((r: any) => r[sizeField])
+                .map((v: any) => (v != null ? Number(v) : NaN))
+                .filter((v: number) => !isNaN(v));
+            const sizeMin = vals.length ? Math.min(...vals) : 0;
+            const sizeMax = vals.length ? Math.max(...vals) : 1;
+            scaleSize = (raw: number | string | null | undefined): number => {
+                const v = raw != null ? Number(raw) : NaN;
+                if (isNaN(v)) return rangeMin;
+                let t: number;
+                if (sizeMax === sizeMin) t = 0.5;
+                else {
+                    const sqrtMin = Math.sqrt(Math.max(0, sizeMin));
+                    const sqrtMax = Math.sqrt(Math.max(0, sizeMax));
+                    const sqrtV = Math.sqrt(Math.max(0, v));
+                    t = (sqrtV - sqrtMin) / (sqrtMax - sqrtMin);
+                }
+                t = Math.max(0, Math.min(1, t));
+                return Math.round(rangeMin + t * (rangeMaxClamped - rangeMin));
+            };
+        } else {
+            scaleSize = () => rangeMin;
+        }
+
+        // When ordinal size has a discrete order, use visualMap so ECharts shows a size legend (like VL).
+        const useVisualMapForSize = sizeOrderForLegend && sizeOrderForLegend.length > 0;
 
         // ECharts scatter uses direct data arrays
         const option: any = {
@@ -55,6 +135,28 @@ export const ecScatterPlotDef: ChartTemplateDef = {
             series: [],
         };
 
+        if (useVisualMapForSize && sizeField) {
+            option.visualMap = [
+                {
+                    type: 'piecewise',
+                    show: true,
+                    dimension: 2,
+                    pieces: sizeOrderForLegend!.map((name) => ({
+                        value: name,
+                        symbolSize: scaleSize(name),
+                    })),
+                    orient: 'vertical',
+                    right: 10,
+                    top: 'center',
+                    itemGap: 8,
+                    itemSymbol: 'circle',
+                    formatter: (value: string) => value,
+                    // title is the size channel field (e.g. Level)
+                    title: sizeField,
+                },
+            ];
+        }
+
         // Apply zero-baseline decisions
         // ECharts: scale=true means "data-fit, don't force zero"
         //          scale=false (default) means "include zero"
@@ -68,37 +170,173 @@ export const ecScatterPlotDef: ChartTemplateDef = {
         // Opacity from chart properties
         const opacity = chartProperties?.opacity ?? 1;
 
-        if (colorField) {
-            // Multi-series: group by color field
+        const pointData = (row: any) =>
+            sizeField != null
+                ? [row[xField], row[yField], row[sizeField]]
+                : [row[xField], row[yField]];
+
+        // Palette from resolvedEncodings (scheme) or fallback to DEFAULT_COLORS
+        const colorPalette = (ctx.resolvedEncodings as any)?.color?.colorPalette
+            ?? (ctx.resolvedEncodings as any)?.group?.colorPalette
+            ?? DEFAULT_COLORS;
+        const legendOpts = (ctx.resolvedEncodings as any)?.color ?? (ctx.resolvedEncodings as any)?.group;
+        const colorType = channelSemantics.color?.type ?? (ctx.resolvedEncodings as any)?.color?.type;
+        const isContinuousColor = colorField && (colorType === 'quantitative' || colorType === 'temporal');
+
+        if (isContinuousColor) {
+            // VL: color type quantitative/temporal → continuous color scale (e.g. scheme "greens"); one series + visualMap
+            const colorDim = sizeField != null ? 3 : 2; // data: [x, y, size?, colorVal]
+            const pointDataWithColor = (row: any) => {
+                const x = row[xField];
+                const y = row[yField];
+                const c = row[colorField] != null ? Number(row[colorField]) : NaN;
+                if (sizeField != null) return [x, y, row[sizeField], c];
+                return [x, y, c];
+            };
+            const colorVals = table
+                .map((r: any) => r[colorField] != null ? Number(r[colorField]) : NaN)
+                .filter((v: number) => !isNaN(v));
+            const colorMin = colorVals.length ? Math.min(...colorVals) : 0;
+            const colorMax = colorVals.length ? Math.max(...colorVals) : 1;
+            const scheme = (ctx.encodings as any)?.color?.scheme ?? '';
+            const greensRange = ['#f7fcf5', '#c7e9c0', '#41ab5d', '#006d2c', '#00441b'];
+            // Light color = small value (min); dark = max. Greens already light→dark; for palette use [last, first] so min gets the lighter end.
+            const inRange = /green/i.test(scheme)
+                ? greensRange
+                : colorPalette.length >= 2
+                    ? [colorPalette[colorPalette.length - 1], colorPalette[0]]
+                    : greensRange;
+            // Layout: use same % for visualMap and value labels so they stay aligned at any container size
+            const VM_BAR_RIGHT = 50;
+            const VM_VAL_RIGHT = 28;
+            const VM_TITLE_TOP = 10;
+            const VM_FONT_SIZE = 10;
+            const REF_H = 400;
+            const VM_BAR_TOP_PX = 24;
+            const VM_BAR_BOTTOM_PX = 40;
+            const VM_TOP_PCT = ((VM_BAR_TOP_PX / REF_H) * 100).toFixed(1) + '%';
+            const VM_BOTTOM_PCT = ((VM_BAR_BOTTOM_PX / REF_H) * 100).toFixed(1) + '%';
+            // Use visualMap's built-in text for max/min so labels are positioned by ECharts and align with the bar.
+            // text[0] = high (top), text[1] = low (bottom) per ContinuousView.
+            const colorVisualMap = {
+                type: 'continuous' as const,
+                min: colorMin,
+                max: colorMax,
+                dimension: colorDim,
+                inRange: { color: inRange },
+                orient: 'vertical',
+                right: VM_BAR_RIGHT,
+                top: VM_TOP_PCT,
+                bottom: VM_BOTTOM_PCT,
+                padding: 0,
+                itemGap: 0,
+                text: [String(colorMax), String(colorMin)] as [string, string],
+                textStyle: { fontSize: VM_FONT_SIZE },
+                show: true,
+                seriesIndex: 0,
+                name: colorField,
+            };
+            if (option.visualMap) {
+                (option.visualMap as any[]).push(colorVisualMap);
+            } else {
+                option.visualMap = colorVisualMap;
+            }
+            option._visualMapWidth = 70;
+            // Only the title is custom graphic; max/min come from visualMap.text above.
+            const vmGraphics: any[] = [
+                {
+                    type: 'text' as const,
+                    right: VM_BAR_RIGHT,
+                    top: VM_TITLE_TOP,
+                    z: 100,
+                    style: {
+                        text: colorField,
+                        fontSize: 11,
+                        fontWeight: 'bold',
+                        fill: '#333',
+                        textAlign: 'right',
+                    },
+                },
+            ];
+            const existingGraphic = option.graphic;
+            option.graphic = Array.isArray(existingGraphic)
+                ? [...existingGraphic, ...vmGraphics]
+                : existingGraphic
+                    ? [existingGraphic, ...vmGraphics]
+                    : vmGraphics;
+            const data = table.map((row: any) => pointDataWithColor(row));
+            const seriesOpt: any = {
+                type: 'scatter',
+                data,
+                itemStyle: { opacity },
+            };
+            if (sizeField != null && !useVisualMapForSize) {
+                seriesOpt.symbolSize = (value: number[] | number) => scaleSize(Array.isArray(value) ? value[2] : value);
+            }
+            option.series.push(seriesOpt);
+        } else if (colorField) {
+            // Categorical color: one series per category, legend with category names
+            const colorOrder = extractCategories(table, colorField, getCategoryOrder(ctx, 'color'));
             const groups = new Map<string, number[][]>();
             for (const row of table) {
                 const key = String(row[colorField] ?? '');
                 if (!groups.has(key)) groups.set(key, []);
-                groups.get(key)!.push([row[xField], row[yField]]);
+                groups.get(key)!.push(pointData(row) as number[]);
             }
 
-            option.legend = { data: [...groups.keys()] };
-            let colorIdx = 0;
-            for (const [name, data] of groups) {
-                option.series.push({
+            const legendNames = colorOrder.length > 0 ? colorOrder : [...groups.keys()];
+            const hasSizeBySeries = sizeField != null && !useVisualMapForSize;
+            option.legend = {
+                data: legendNames.map((name) => {
+                    const data = groups.get(name) ?? [];
+                    if (!hasSizeBySeries || data.length === 0) return name;
+                    const sizes = data.map((d: number[]) => (d.length >= 3 ? scaleSize(d[2]) : rangeMin));
+                    sizes.sort((a, b) => a - b);
+                    const medianSize = sizes[Math.floor(sizes.length / 2)] ?? rangeMin;
+                    return { name, symbolSize: medianSize, itemStyle: { symbolSize: medianSize } };
+                }),
+                show: true,
+            };
+            option._legendTitle = colorField;
+            if (legendOpts?.legendSymbolSize != null && !hasSizeBySeries) {
+                option.legend.itemWidth = legendOpts.legendSymbolSize;
+                option.legend.itemHeight = legendOpts.legendSymbolSize;
+                option.legend.itemGap = 8;
+            }
+            if (legendOpts?.legendLabelFontSize != null) {
+                option.legend.textStyle = option.legend.textStyle ?? {};
+                option.legend.textStyle.fontSize = legendOpts.legendLabelFontSize;
+            }
+
+            legendNames.forEach((name) => {
+                const data = groups.get(name) ?? [];
+                if (data.length === 0) return;
+                const colorIdx = colorOrder.indexOf(name);
+                const seriesOpt: any = {
                     name,
                     type: 'scatter',
                     data,
                     itemStyle: {
-                        color: DEFAULT_COLORS[colorIdx % DEFAULT_COLORS.length],
+                        color: colorPalette[colorIdx % colorPalette.length],
                         opacity,
                     },
-                });
-                colorIdx++;
-            }
+                };
+                if (hasSizeBySeries) {
+                    seriesOpt.symbolSize = (value: number[] | number) => scaleSize(Array.isArray(value) ? value[2] : value);
+                }
+                option.series.push(seriesOpt);
+            });
         } else {
-            // Single series
-            const data = table.map(row => [row[xField], row[yField]]);
-            option.series.push({
+            const data = table.map((row: any) => pointData(row));
+            const seriesOpt: any = {
                 type: 'scatter',
                 data,
                 itemStyle: { opacity },
-            });
+            };
+            if (sizeField != null && !useVisualMapForSize) {
+                seriesOpt.symbolSize = (value: number[] | number) => scaleSize(Array.isArray(value) ? value[2] : value);
+            }
+            option.series.push(seriesOpt);
         }
 
         // Write the ECharts option into the spec object
@@ -112,6 +350,11 @@ export const ecScatterPlotDef: ChartTemplateDef = {
     ],
     postProcess: (option, ctx) => {
         if (!option.series || !Array.isArray(option.series)) return;
+        // When visualMap controls symbolSize (e.g. ordinal size legend), do not override series.symbolSize
+        const visualMapControlsSize = Array.isArray(option.visualMap) && option.visualMap.some(
+            (vm: any) => vm.type === 'piecewise' && Array.isArray(vm.pieces) && vm.pieces.some((p: any) => p.symbolSize != null),
+        );
+        if (visualMapControlsSize) return;
         const w = option._width || ctx.canvasSize.width;
         const h = option._height || ctx.canvasSize.height;
         const pointCount = ctx.table.length;
@@ -121,5 +364,95 @@ export const ecScatterPlotDef: ChartTemplateDef = {
                 series.symbolSize = size;
             }
         }
+    },
+};
+
+/** Simple linear regression: slope and intercept (mirror vegalite Linear Regression). */
+function linearRegression(data: number[][]): { slope: number; intercept: number; xMin: number; xMax: number } {
+    const n = data.length;
+    if (n === 0) return { slope: 0, intercept: 0, xMin: 0, xMax: 0 };
+    let sumX = 0, sumY = 0, sumXY = 0, sumXX = 0;
+    let xMin = data[0][0], xMax = data[0][0];
+    for (const [x, y] of data) {
+        sumX += x;
+        sumY += y;
+        sumXY += x * y;
+        sumXX += x * x;
+        if (x < xMin) xMin = x;
+        if (x > xMax) xMax = x;
+    }
+    const slope = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX) || 0;
+    const intercept = (sumY - slope * sumX) / n;
+    return { slope, intercept, xMin, xMax };
+}
+
+/**
+ * Linear Regression — scatter + trend line (mirror vegalite/templates/scatter.ts linearRegressionDef).
+ */
+export const ecLinearRegressionDef: ChartTemplateDef = {
+    chart: 'Linear Regression',
+    template: { mark: 'circle', encoding: {} },
+    channels: ['x', 'y', 'size', 'color', 'column', 'row'],
+    markCognitiveChannel: 'position',
+    instantiate: (spec, ctx) => {
+        const { channelSemantics, table, chartProperties } = ctx;
+        const xField = channelSemantics.x?.field;
+        const yField = channelSemantics.y?.field;
+        const colorField = channelSemantics.color?.field;
+
+        if (!xField || !yField) return;
+
+        const option: any = {
+            tooltip: { trigger: 'item' },
+            xAxis: { type: 'value', name: xField, nameLocation: 'middle', nameGap: 30 },
+            yAxis: { type: 'value', name: yField, nameLocation: 'middle', nameGap: 40 },
+            series: [],
+        };
+
+        if (channelSemantics.x?.zero) option.xAxis.scale = !channelSemantics.x.zero.zero;
+        if (channelSemantics.y?.zero) option.yAxis.scale = !channelSemantics.y.zero.zero;
+
+        const opacity = chartProperties?.opacity ?? 1;
+
+        if (colorField) {
+            const groups = groupBy(table, colorField);
+            option.legend = { data: [...groups.keys()] };
+            let colorIdx = 0;
+            for (const [name, rows] of groups) {
+                const data = rows.map((r: any) => [r[xField], r[yField]]);
+                const reg = linearRegression(data);
+                const lineData = [[reg.xMin, reg.slope * reg.xMin + reg.intercept], [reg.xMax, reg.slope * reg.xMax + reg.intercept]];
+                option.series.push({
+                    name,
+                    type: 'scatter',
+                    data,
+                    itemStyle: { color: DEFAULT_COLORS[colorIdx % DEFAULT_COLORS.length], opacity },
+                });
+                option.series.push({
+                    name: `${name} (trend)`,
+                    type: 'line',
+                    data: lineData,
+                    showSymbol: false,
+                    lineStyle: { color: DEFAULT_COLORS[colorIdx % DEFAULT_COLORS.length], width: 2 },
+                });
+                colorIdx++;
+            }
+        } else {
+            const data = table.map((r: any) => [r[xField], r[yField]]);
+            const reg = linearRegression(data);
+            const lineData = [[reg.xMin, reg.slope * reg.xMin + reg.intercept], [reg.xMax, reg.slope * reg.xMax + reg.intercept]];
+            option.series.push({ type: 'scatter', data, itemStyle: { opacity } });
+            option.series.push({
+                name: 'Trend',
+                type: 'line',
+                data: lineData,
+                showSymbol: false,
+                lineStyle: { color: '#ee6666', width: 2 },
+            });
+        }
+
+        Object.assign(spec, option);
+        delete spec.mark;
+        delete spec.encoding;
     },
 };

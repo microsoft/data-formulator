@@ -190,23 +190,30 @@ export const GALLERY_SECTIONS: GallerySection[] = [
         label: 'ECharts Backend',
         description: 'Same inputs through ECharts backend — compare series-based output vs VL encoding-based output',
         entries: [
-            'ECharts: Scatter',
-            'ECharts: Line',
-            'ECharts: Bar',
-            'ECharts: Stacked Bar',
-            'ECharts: Grouped Bar',
-            'ECharts: Area',
-            'ECharts: Pie',
-            'ECharts: Heatmap',
-            'ECharts: Histogram',
-            'ECharts: Boxplot',
-            'ECharts: Radar',
-            'ECharts: Candlestick',
-            'ECharts: Streamgraph',
+            // VegaLite 同款（同一批 test case 用 VL+EC 双端渲染）
+            'Scatter Plot', 'Linear Regression', 'Bar Chart', 'Stacked Bar Chart',
+            'Grouped Bar Chart', 'Histogram', 'Heatmap', 'Line Chart', 'Dotted Line Chart',
+            'Boxplot', 'Pie Chart', 'Ranged Dot Plot', 'Area Chart', 'Streamgraph',
+            'Lollipop Chart', 'Density Plot', 'Bump Chart', 'Candlestick Chart', 'Waterfall Chart',
+            'Strip Plot', 'Radar Chart', 'Pyramid Chart', 'Rose Chart',
+            // ECharts 专属（Facet、Gauge、Funnel、Treemap、Sunburst、Sankey、Stress）
+            // 'ECharts: Scatter',      // 同 VegaLite 同款 Scatter Plot
+            // 'ECharts: Line',         // 同 VegaLite 同款 Line Chart
+            // 'ECharts: Bar',          // 同 VegaLite 同款 Bar Chart
+            // 'ECharts: Stacked Bar',  // 同 VegaLite 同款 Stacked Bar Chart
+            // 'ECharts: Grouped Bar',  // 同 VegaLite 同款 Grouped Bar Chart
+            // 'ECharts: Area',         // 同 VegaLite 同款 Area Chart
+            // 'ECharts: Pie',          // 同 VegaLite 同款 Pie Chart
+            // 'ECharts: Heatmap',      // 同 VegaLite 同款 Heatmap
+            // 'ECharts: Histogram',    // 同 VegaLite 同款 Histogram
+            // 'ECharts: Boxplot',      // 同 VegaLite 同款 Boxplot
+            // 'ECharts: Radar',        // 同 VegaLite 同款 Radar Chart
+            // 'ECharts: Candlestick',  // 同 VegaLite 同款 Candlestick Chart
+            // 'ECharts: Streamgraph',  // 同 VegaLite 同款 Streamgraph
+            // 'ECharts: Rose',         // 同 VegaLite 同款 Rose Chart
             'ECharts: Facet Small',
             'ECharts: Facet Wrap',
             'ECharts: Facet Clip',
-            'ECharts: Rose',
             'ECharts: Gauge',
             'ECharts: Funnel',
             'ECharts: Treemap',

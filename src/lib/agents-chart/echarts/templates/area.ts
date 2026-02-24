@@ -10,7 +10,7 @@
  */
 
 import { ChartTemplateDef, ChartPropertyDef } from '../../core/types';
-import { extractCategories, groupBy, DEFAULT_COLORS } from './utils';
+import { extractCategories, groupBy, DEFAULT_COLORS, getCategoryOrder } from './utils';
 
 const isDiscrete = (type: string | undefined) => type === 'nominal' || type === 'ordinal';
 
@@ -35,7 +35,7 @@ export const ecAreaChartDef: ChartTemplateDef = {
         const xIsDiscrete = isDiscrete(xCS.type);
         const xIsTemporal = xCS.type === 'temporal';
         const categories = xIsDiscrete
-            ? extractCategories(table, xField, xCS.ordinalSortOrder)
+            ? extractCategories(table, xField, getCategoryOrder(ctx, 'x'))
             : undefined;
 
         const option: any = {

@@ -8,6 +8,15 @@
 
 import type { ChannelSemantics, InstantiateContext } from '../../core/types';
 
+/**
+ * Get canonical category order for a channel (from buildECEncodings or channelSemantics).
+ * Use when calling extractCategories so sort order is consistent across templates.
+ */
+export function getCategoryOrder(ctx: InstantiateContext, channel: string): string[] | undefined {
+    return (ctx.resolvedEncodings as any)?.[channel]?.ordinalSortOrder
+        ?? ctx.channelSemantics?.[channel]?.ordinalSortOrder;
+}
+
 // Re-export circumference-pressure functions from core (shared with VL backend)
 export {
     computeCircumferencePressure,

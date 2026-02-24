@@ -10,7 +10,7 @@
  */
 
 import { ChartTemplateDef, ChartPropertyDef } from '../../core/types';
-import { extractCategories, groupBy, DEFAULT_COLORS } from './utils';
+import { extractCategories, groupBy, DEFAULT_COLORS, getCategoryOrder } from './utils';
 
 const isDiscrete = (type: string | undefined) => type === 'nominal' || type === 'ordinal';
 
@@ -48,7 +48,7 @@ export const ecLineChartDef: ChartTemplateDef = {
         const xIsTemporal = xCS.type === 'temporal';
 
         // Build x-axis categories for discrete/temporal axes
-        const categories = xIsDiscrete ? extractCategories(table, xField, xCS.ordinalSortOrder) : undefined;
+        const categories = xIsDiscrete ? extractCategories(table, xField, getCategoryOrder(ctx, 'x')) : undefined;
 
         const option: any = {
             tooltip: {
@@ -159,3 +159,186 @@ function buildCategoryAlignedData(
     }
     return categories.map(cat => map.get(cat) ?? null);
 }
+
+/** RANK_SEMANTIC_TYPES: used to detect rank axis for Bump Chart (mirror vegalite/templates/bump.ts). */
+const RANK_SEMANTIC_TYPES = new Set(['Rank', 'Index', 'Score', 'Rating', 'Level']);
+
+/**
+ * Dotted Line Chart — same as Line Chart with showSymbol and dashed line (mirror vegalite Dotted Line).
+ */
+export const ecDottedLineChartDef: ChartTemplateDef = {
+    chart: 'Dotted Line Chart',
+    template: { mark: 'line', encoding: {} },
+    channels: ['x', 'y', 'color', 'opacity', 'column', 'row'],
+    markCognitiveChannel: 'position',
+    declareLayoutMode: () => ({
+        paramOverrides: { continuousMarkCrossSection: { x: 100, y: 20, seriesCountAxis: 'auto' } },
+    }),
+    instantiate: (spec, ctx) => {
+        const { channelSemantics, table, chartProperties } = ctx;
+        const xCS = channelSemantics.x;
+        const yCS = channelSemantics.y;
+        const colorField = channelSemantics.color?.field;
+
+        if (!xCS?.field || !yCS?.field) return;
+        const xField = xCS.field;
+        const yField = yCS.field;
+
+        const xIsDiscrete = isDiscrete(xCS.type);
+        const xIsTemporal = xCS.type === 'temporal';
+        const categories = xIsDiscrete ? extractCategories(table, xField, getCategoryOrder(ctx, 'x')) : undefined;
+
+        const option: any = {
+            tooltip: { trigger: 'axis' },
+            xAxis: {
+                type: xIsDiscrete ? 'category' : xIsTemporal ? 'time' : 'value',
+                name: xField,
+                nameLocation: 'middle',
+                nameGap: 30,
+                ...(categories ? { data: categories } : {}),
+            },
+            yAxis: {
+                type: 'value',
+                name: yField,
+                nameLocation: 'middle',
+                nameGap: 40,
+            },
+            series: [],
+        };
+
+        if (channelSemantics.y?.zero) {
+            option.yAxis.scale = !channelSemantics.y.zero.zero;
+        }
+
+        const interpolate = chartProperties?.interpolate;
+        const smooth = interpolate === 'monotone' || interpolate === 'basis' ||
+                        interpolate === 'cardinal' || interpolate === 'catmull-rom';
+
+        const baseSeriesOpt = {
+            showSymbol: true,
+            symbol: 'circle',
+            symbolSize: 6,
+            lineStyle: { type: 'dashed' as const },
+            smooth: !!smooth,
+        };
+
+        if (colorField) {
+            const groups = groupBy(table, colorField);
+            option.legend = { data: [...groups.keys()] };
+            let colorIdx = 0;
+            for (const [name, rows] of groups) {
+                const seriesData = xIsDiscrete
+                    ? buildCategoryAlignedData(rows, xField, yField, categories!)
+                    : rows.map(r => [r[xField], r[yField]]);
+                option.series.push({
+                    name,
+                    type: 'line',
+                    data: seriesData,
+                    ...baseSeriesOpt,
+                    itemStyle: { color: DEFAULT_COLORS[colorIdx % DEFAULT_COLORS.length] },
+                });
+                colorIdx++;
+            }
+        } else {
+            const seriesData = xIsDiscrete
+                ? categories!.map(cat => {
+                    const row = table.find(r => String(r[xField]) === cat);
+                    return row ? row[yField] : null;
+                })
+                : table.map(r => [r[xField], r[yField]]);
+            option.series.push({ type: 'line', data: seriesData, ...baseSeriesOpt });
+        }
+
+        Object.assign(spec, option);
+        delete spec.mark;
+        delete spec.encoding;
+    },
+};
+
+/**
+ * Bump Chart — line with points, rank axis reversed when y is rank-like (mirror vegalite/templates/bump.ts).
+ */
+export const ecBumpChartDef: ChartTemplateDef = {
+    chart: 'Bump Chart',
+    template: { mark: 'line', encoding: {} },
+    channels: ['x', 'y', 'color', 'detail', 'column', 'row'],
+    markCognitiveChannel: 'position',
+    declareLayoutMode: () => ({
+        paramOverrides: { continuousMarkCrossSection: { x: 80, y: 20, seriesCountAxis: 'auto' } },
+    }),
+    instantiate: (spec, ctx) => {
+        const { channelSemantics, table, semanticTypes } = ctx;
+        const xCS = channelSemantics.x;
+        const yCS = channelSemantics.y;
+        const colorField = channelSemantics.color?.field;
+
+        if (!xCS?.field || !yCS?.field) return;
+        const xField = xCS.field;
+        const yField = yCS.field;
+
+        const ySemType = semanticTypes?.[yField] || '';
+        const xSemType = semanticTypes?.[xField] || '';
+        const yIsRank = RANK_SEMANTIC_TYPES.has(ySemType);
+        const xIsRank = RANK_SEMANTIC_TYPES.has(xSemType);
+        const rankOnY = yIsRank && !xIsRank;
+        const rankOnX = xIsRank && !yIsRank;
+
+        const xIsDiscrete = isDiscrete(xCS.type);
+        const categories = xIsDiscrete ? extractCategories(table, xField, getCategoryOrder(ctx, 'x')) : undefined;
+
+        const option: any = {
+            tooltip: { trigger: 'axis' },
+            xAxis: {
+                type: xIsDiscrete ? 'category' : 'value',
+                name: xField,
+                nameLocation: 'middle',
+                nameGap: 30,
+                ...(categories ? { data: categories } : {}),
+            },
+            yAxis: {
+                type: 'value',
+                name: yField,
+                nameLocation: 'middle',
+                nameGap: 40,
+                inverse: !!rankOnY,
+            },
+            series: [],
+        };
+
+        const baseSeriesOpt = { showSymbol: true, symbolSize: 6, smooth: true };
+
+        if (colorField) {
+            const groups = groupBy(table, colorField);
+            option.legend = { data: [...groups.keys()] };
+            let colorIdx = 0;
+            for (const [name, rows] of groups) {
+                const seriesData = xIsDiscrete
+                    ? buildCategoryAlignedData(rows, xField, yField, categories!)
+                    : (rankOnX ? [...rows].sort((a, b) => Number(a[xField]) - Number(b[xField])) : rows)
+                        .map(r => [r[xField], r[yField]]);
+                option.series.push({
+                    name,
+                    type: 'line',
+                    data: seriesData,
+                    ...baseSeriesOpt,
+                    itemStyle: { color: DEFAULT_COLORS[colorIdx % DEFAULT_COLORS.length] },
+                });
+                colorIdx++;
+            }
+        } else {
+            let rows = table;
+            if (rankOnX) rows = [...rows].sort((a, b) => Number(a[xField]) - Number(b[xField]));
+            const seriesData = xIsDiscrete
+                ? categories!.map(cat => {
+                    const row = rows.find(r => String(r[xField]) === cat);
+                    return row ? row[yField] : null;
+                })
+                : rows.map(r => [r[xField], r[yField]]);
+            option.series.push({ type: 'line', data: seriesData, ...baseSeriesOpt });
+        }
+
+        Object.assign(spec, option);
+        delete spec.mark;
+        delete spec.encoding;
+    },
+};

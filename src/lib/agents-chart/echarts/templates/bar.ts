@@ -14,7 +14,7 @@
 
 import { ChartTemplateDef, ChartPropertyDef } from '../../core/types';
 import {
-    extractCategories, groupBy, detectAxes, DEFAULT_COLORS,
+    extractCategories, groupBy, detectAxes, DEFAULT_COLORS, getCategoryOrder,
 } from './utils';
 import {
     detectBandedAxisFromSemantics, detectBandedAxisForceDiscrete,
@@ -71,7 +71,7 @@ export const ecBarChartDef: ChartTemplateDef = {
         if (!catField || !valField) return;
 
         const catCS = channelSemantics[categoryAxis];
-        const categories = extractCategories(table, catField, catCS?.ordinalSortOrder);
+        const categories = extractCategories(table, catField, getCategoryOrder(ctx, categoryAxis));
         const values = buildCategoryValues(table, catField, valField, categories);
 
         const isHorizontal = categoryAxis === 'y';
@@ -127,7 +127,7 @@ export const ecStackedBarChartDef: ChartTemplateDef = {
         if (!catField || !valField) return;
 
         const catCS = channelSemantics[categoryAxis];
-        const categories = extractCategories(table, catField, catCS?.ordinalSortOrder);
+        const categories = extractCategories(table, catField, getCategoryOrder(ctx, categoryAxis));
         const isHorizontal = categoryAxis === 'y';
 
         const option: any = {
@@ -220,7 +220,7 @@ export const ecGroupedBarChartDef: ChartTemplateDef = {
         if (!catField || !valField) return;
 
         const catCS = channelSemantics[categoryAxis];
-        const categories = extractCategories(table, catField, catCS?.ordinalSortOrder);
+        const categories = extractCategories(table, catField, getCategoryOrder(ctx, categoryAxis));
         const isHorizontal = categoryAxis === 'y';
 
         const option: any = {
