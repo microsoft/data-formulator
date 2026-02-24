@@ -42,6 +42,7 @@ from data_formulator.datalake.metadata import (
     TableMetadata,
     METADATA_FILENAME,
 )
+from werkzeug.utils import secure_filename
 from data_formulator.datalake.parquet_utils import (
     sanitize_table_name,
     get_arrow_column_info,
@@ -205,7 +206,9 @@ class AzureBlobWorkspace(Workspace):
             will not work — use :meth:`read_data_as_df`,
             :meth:`download_file`, or :meth:`_temp_local_copy` instead.
         """
-        safe_filename = Path(filename).name
+        safe_filename = secure_filename(filename)
+        if not safe_filename:
+            raise ValueError(f"Invalid filename: {filename!r}")
         return self._blob_name(safe_filename)
 
     def file_exists(self, filename: str) -> bool:

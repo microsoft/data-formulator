@@ -20,6 +20,7 @@ import { Chart, DictTable, Trigger } from "../components/ComponentType";
 import DeleteIcon from '@mui/icons-material/Delete';
 import { AnchorIcon } from '../icons';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
+import AddchartIcon from '@mui/icons-material/Addchart';
 
 import { TriggerCard } from './EncodingShelfCard';
 import { ComponentBorderStyle, shadow, transition } from '../app/tokens';
@@ -183,6 +184,19 @@ export let buildTableCard = (props: BuildTableCardProps) => {
                     </Box>
                 </Stack>
                 <ButtonGroup aria-label="Basic button group" variant="text" sx={{ textAlign: 'end', margin: "auto 2px auto auto" }}>
+                    <Tooltip key="create-chart-btn-tooltip" title="create chart">
+                        <IconButton className="create-chart-btn" color="primary" aria-label="create chart" size="small" sx={{ padding: 0.25, '&:hover': {
+                            transform: 'scale(1.2)',
+                            transition: transition.fast
+                            } }}
+                            onClick={(event) => {
+                                event.stopPropagation();
+                                dispatch(dfActions.setFocused({ type: 'table', tableId }));
+                            }}
+                        >
+                            <AddchartIcon fontSize="small" sx={{ fontSize: 16 }} />
+                        </IconButton>
+                    </Tooltip>
                     <Tooltip key="more-options-btn-tooltip" title="more options">
                         <IconButton className="more-options-btn" color="primary" aria-label="more options" size="small" sx={{ padding: 0.25, '&:hover': {
                             transform: 'scale(1.2)',

@@ -78,16 +78,16 @@ const AgentWorkingOverlay: FC<{ relevantAgentActions: any[]; theme: Theme; onCan
                 <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500, fontSize: 10 }}>
                     Agent is working...
                 </Typography>
-                {onCancel && (
-                    <IconButton
-                        size="small"
-                        onClick={onCancel}
-                        sx={{ p: 0, width: 16, height: 16, color: theme.palette.warning.main }}
-                    >
-                        <StopCircleOutlinedIcon sx={{ fontSize: 14 }} />
-                    </IconButton>
-                )}
             </Box>
+            {onCancel && (
+                <IconButton
+                    size="small"
+                    onClick={onCancel}
+                    sx={{ position: 'absolute', bottom: 6, right: 6, p: 1.5, width: 16, height: 16, color: theme.palette.warning.main }}
+                >
+                    <StopCircleOutlinedIcon sx={{ fontSize: 14 }} />
+                </IconButton>
+            )}
             <Typography variant="caption" sx={{
                 color: 'text.disabled',
                 fontSize: 10,
@@ -132,6 +132,7 @@ export const SimpleChartRecBox: FC<{ onExpandedChange?: (expanded: boolean) => v
     const [isDragging, setIsDragging] = useState(false);
     const dragRef = useRef<{ startY: number; startHeight: number } | null>(null);
     const agentAbortRef = useRef<AbortController | null>(null);
+    const ideasAbortRef = useRef<AbortController | null>(null);
 
     // Notify parent when formulating state changes
     useEffect(() => {
@@ -163,6 +164,12 @@ export const SimpleChartRecBox: FC<{ onExpandedChange?: (expanded: boolean) => v
         const chart = charts.find(c => c.id === chartId);
         return chart?.tableRef;
     }, [focusedId, charts])();
+
+    // Clear ideas when focused table changes — ideas are scoped per table
+    useEffect(() => {
+        setIdeas([]);
+        setIsLoadingIdeas(false);
+    }, [focusedTableId]);
 
     // Root tables and priority ordering for API calls
     const rootTables = tables.filter(t => t.derive === undefined || t.anchored);
@@ -279,6 +286,7 @@ export const SimpleChartRecBox: FC<{ onExpandedChange?: (expanded: boolean) => v
             });
 
             const controller = new AbortController();
+            ideasAbortRef.current = controller;
             const timeoutId = setTimeout(() => controller.abort(), config.formulateTimeoutSeconds * 1000);
 
             const response = await fetchWithIdentity(getUrls().GET_RECOMMENDATION_QUESTIONS, {
@@ -328,6 +336,7 @@ export const SimpleChartRecBox: FC<{ onExpandedChange?: (expanded: boolean) => v
         } finally {
             setIsLoadingIdeas(false);
             setThinkingBuffer('');
+            ideasAbortRef.current = null;
         }
     }, [currentTable, isLoadingIdeas, selectedTableIds, tables, activeModel, agentRules, config, dispatch]);
 
@@ -476,7 +485,7 @@ export const SimpleChartRecBox: FC<{ onExpandedChange?: (expanded: boolean) => v
 
                 let triggerChart = generateFreshChart(actionTables[0].id, 'Auto') as Chart;
                 triggerChart.source = 'trigger';
-                if (candidateTable.derive) {
+                if (candidateTable.derive?.trigger) {
                     candidateTable.derive.trigger.chart = triggerChart;
                 }
 
@@ -733,11 +742,13 @@ dispatch(dfActions.updateAgentWorkInProgress({ actionId, description: errorMessa
                 </Box>
             </Box>
             {/* Agent working overlay */}
-            {isChatFormulating && (
+            {(isChatFormulating || isLoadingIdeas) && (
                 <AgentWorkingOverlay 
-                    relevantAgentActions={relevantAgentActions}
+                    relevantAgentActions={isLoadingIdeas && !isChatFormulating 
+                        ? [{ status: 'running', description: 'Generating exploration ideas...' }] 
+                        : relevantAgentActions}
                     theme={theme}
-                    onCancel={cancelAgent}
+                    onCancel={isLoadingIdeas && !isChatFormulating ? () => { ideasAbortRef.current?.abort(); ideasAbortRef.current = null; setIsLoadingIdeas(false); setIdeas([]); } : cancelAgent}
                 />
             )}
         </Card>

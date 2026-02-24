@@ -43,6 +43,7 @@ from data_formulator.datalake.parquet_utils import (
     sanitize_dataframe_for_arrow,
     DEFAULT_COMPRESSION,
 )
+from werkzeug.utils import secure_filename
 
 logger = logging.getLogger(__name__)
 
@@ -159,10 +160,7 @@ class Workspace:
             self._root = Path(root_dir)
         
         # Workspace path is root / sanitized_identity_id
-        # Use os.path.basename as a final guard to ensure the safe_id is
-        # treated as a single path component (recognised by static analysis
-        # tools such as CodeQL as a path-traversal sanitiser).
-        self._path = self._root / os.path.basename(self._safe_id)
+        self._path = self._root / self._safe_id
 
         # Verify the constructed path hasn't escaped the root directory
         resolved = self._path.resolve()
@@ -195,27 +193,12 @@ class Workspace:
         """
         Sanitize identity_id for use as a directory name.
         
-        Replaces potentially problematic characters with underscores.
+        Uses ``secure_filename`` to produce a safe single-component name.
         Raises ``ValueError`` if the result is empty or too long.
         """
-        from werkzeug.utils import secure_filename
-
-        # Replace colons, slashes, and other special characters
-        safe_chars = []
-        for char in identity_id:
-            if char.isalnum() or char in ('_', '-'):
-                safe_chars.append(char)
-            else:
-                safe_chars.append('_')
-        result = ''.join(safe_chars).strip('_')
-        if not result:
-            raise ValueError("identity_id sanitized to empty string")
-        if len(result) > 256:
-            raise ValueError("identity_id too long after sanitization")
-        # Apply secure_filename as a final step; this is recognised by
-        # static-analysis tools (e.g. CodeQL) as a path-injection sanitiser
-        # and guarantees the value is a single safe filename component.
-        result = secure_filename(result)
+        if len(identity_id) > 256:
+            raise ValueError("identity_id too long")
+        result = secure_filename(identity_id)
         if not result:
             raise ValueError("identity_id sanitized to empty string")
         return result
@@ -236,8 +219,10 @@ class Workspace:
         Returns:
             Full path to the file
         """
-        # Prevent directory traversal attacks
-        safe_filename = Path(filename).name
+        # secure_filename strips path separators and ".." components.
+        safe_filename = secure_filename(filename)
+        if not safe_filename:
+            raise ValueError(f"Invalid filename: {filename!r}")
         return self._path / safe_filename
     
     def file_exists(self, filename: str) -> bool:
@@ -660,18 +645,11 @@ class Workspace:
     @staticmethod
     def _sanitize_session_name(name: str) -> str:
         """Produce a storage-safe session name."""
-        from werkzeug.utils import secure_filename
-
-        name = re.sub(r'[/\\:*?"<>|\x00-\x1f]', '_', name)
-        name = re.sub(r'\.{2,}', '.', name)
-        name = name.strip('. ')
-        # secure_filename is recognised by CodeQL as a path-injection
-        # sanitiser, ensuring the taint chain is broken.
         return secure_filename(name) or 'unnamed'
 
     def _get_sessions_root(self) -> Path:
         """Return the per-user sessions directory on local filesystem."""
-        p = get_data_formulator_home() / "sessions" / os.path.basename(self._safe_id)
+        p = get_data_formulator_home() / "sessions" / self._safe_id
         p.mkdir(parents=True, exist_ok=True)
         return p
 
@@ -788,7 +766,13 @@ class Workspace:
                     ws_tmp.mkdir(parents=True, exist_ok=True)
                     for entry in workspace_entries:
                         rel = entry[len("workspace/"):]
-                        dest = ws_tmp / rel
+                        # Guard against zip-slip: secure_filename strips
+                        # path separators and ".." components, and is
+                        # recognised by CodeQL as a path-injection sanitiser.
+                        safe_rel = secure_filename(rel)
+                        if not safe_rel:
+                            continue  # skip entries that sanitise to empty
+                        dest = ws_tmp / safe_rel
                         dest.parent.mkdir(parents=True, exist_ok=True)
                         dest.write_bytes(zf.read(entry))
                     self.restore_workspace_snapshot(ws_tmp)

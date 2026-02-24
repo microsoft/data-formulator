@@ -19,6 +19,7 @@ import tempfile
 import textwrap
 
 import pandas as pd
+from werkzeug.utils import secure_filename
 
 from .base import Sandbox
 
@@ -181,16 +182,14 @@ class DockerSandbox(Sandbox):
             # ---- read back output ---------------------------------------------
             # Defensive: ensure the filename stays inside output_dir even if
             # output_variable somehow contains path separators.
-            safe_name = os.path.basename(output_variable)
-            parquet_out = os.path.join(output_dir, f"{safe_name}.parquet")
-            if not os.path.realpath(parquet_out).startswith(
-                os.path.realpath(output_dir) + os.sep
-            ):
+            safe_name = secure_filename(output_variable)
+            if not safe_name:
                 self._cleanup(tmpdir)
                 return {
                     "status": "error",
-                    "content": "Invalid output_variable: path traversal detected",
+                    "content": "Invalid output_variable",
                 }
+            parquet_out = os.path.join(output_dir, f"{safe_name}.parquet")
             if not os.path.exists(parquet_out):
                 self._cleanup(tmpdir)
                 return {

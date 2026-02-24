@@ -37,7 +37,6 @@ import { DndProvider } from 'react-dnd'
 import { HTML5Backend } from 'react-dnd-html5-backend'
 import { toolName } from '../app/App';
 import { DataThread } from './DataThread';
-import { ChartRecBox } from './ChartRecBox';
 
 import dfLogo from '../assets/df-logo.png';
 import exampleImageTable from "../assets/example-image-table.png";
@@ -271,20 +270,38 @@ export const DataFormulatorFC = ({ }) => {
         const prev = prevThreadCountRef.current;
         prevThreadCountRef.current = threadCount;
         if (!allotmentRef.current || !containerRef.current) return;
+        // When there are no tables the first Allotment.Pane is unmounted,
+        // so the Allotment only has one child – calling resize with two
+        // sizes would crash (accessing .minimumSize on an undefined pane).
+        if (tables.length === 0) return;
         const totalWidth = containerRef.current.clientWidth;
         if (totalWidth <= 0) return;
 
+        let newSize: number | null = null;
         if (prev <= 1 && threadCount > 1) {
             // Case 1: was 1 thread, now 2+ → expand to 2 columns
-            const newSize = columnSize(2);
-            allotmentRef.current.resize([newSize, totalWidth - newSize]);
+            newSize = columnSize(2);
         } else if (prev > 1 && threadCount <= 1) {
             // Case 2: was 2+ threads, now 1 → shrink to 1 column
-            const newSize = columnSize(1);
-            allotmentRef.current.resize([newSize, totalWidth - newSize]);
+            newSize = columnSize(1);
         }
         // Case 3: was 2+ threads and still 2+ → don't change (respect user's manual setting)
-    }, [threadCount]);
+
+        if (newSize !== null) {
+            // Defer resize to the next animation frame so the Allotment has
+            // re-rendered its pane children before we call resize.
+            const finalSize = newSize;
+            const rafId = requestAnimationFrame(() => {
+                try {
+                    const w = containerRef.current?.clientWidth ?? totalWidth;
+                    allotmentRef.current?.resize([finalSize, w - finalSize]);
+                } catch {
+                    // Allotment pane structure may not yet match; ignore.
+                }
+            });
+            return () => cancelAnimationFrame(rafId);
+        }
+    }, [threadCount, tables.length]);
 
     const fixedSplitPane = ( 
         <Box sx={{display: 'flex', flexDirection: 'row', height: '100%'}}>
