@@ -4,7 +4,6 @@
 import json
 
 from data_formulator.agents.agent_utils import extract_json_objects, generate_data_summary
-from data_formulator.agents.agent_sql_data_transform import  sanitize_table_name, get_sql_table_statistics_str
 
 import logging
 
@@ -45,8 +44,7 @@ Writing style rules:
     - "blog post": "blog post", -- a blogpost that is published on a blog platform
     - "social post": "social post", -- a social post that is published on a social media platform (should be shorter than a blog post)
     - "executive summary": "executive summary", -- a summary of the report for executives, with more formal language and more details, and more bullet points
-    - "short note": "short note", -- a short note that is published on a social media platform, with no more than 300 characters in total, and there should be no more than 3 short sentences.
-
+    - "live report": "live report", -- a live report is designed for user to monitor the data and visualization live (like a dashboard), thus, don't interpret the visualization as of now since data will change, instead describe what each chart is designed for and hint what the user should look for as data get updated.
 The report should be lightweight, and respect facts in the data. Do not make up any facts or make judgements about the data.
 The report should be based off the data and visualizations provided by the user, do not make up any facts or make judgements about the data.
 Output markdown directly, do not need to include any other text.
@@ -54,20 +52,12 @@ Output markdown directly, do not need to include any other text.
 
 class ReportGenAgent(object):
 
-    def __init__(self, client, conn):
+    def __init__(self, client, workspace):
         self.client = client
-        self.conn = conn
+        self.workspace = workspace
 
     def get_data_summary(self, input_tables):
-        if self.conn:
-            data_summary = ""
-            for table in input_tables:
-                table_name = sanitize_table_name(table['name'])
-                table_summary_str = get_sql_table_statistics_str(self.conn, table_name)
-                data_summary += f"[TABLE {table_name}]\n\n{table_summary_str}\n\n"
-        else:
-            data_summary = generate_data_summary(input_tables)
-        return data_summary
+        return generate_data_summary(input_tables, self.workspace)
 
     def stream(self, input_tables, charts=[], style="blog post"):
         """derive a new concept based on the raw input data
@@ -82,7 +72,7 @@ class ReportGenAgent(object):
                     "chart_url": ... // base64 encoded image
                 }
             ]
-            - style (str): the style of the report, can be "blog post" or "social post" or "executive summary" or "short note"
+            - style (str): the style of the report, can be "blog post" or "social post" or "executive summary" or "live report"
         Returns:
             generator: the result of the agent
         """

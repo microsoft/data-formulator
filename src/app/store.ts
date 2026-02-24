@@ -4,7 +4,7 @@
 import { configureStore } from '@reduxjs/toolkit'
 import { dataFormulatorReducer } from './dfSlice';
 
-import { persistReducer } from 'redux-persist'
+import { persistReducer, persistStore } from 'redux-persist'
 import localforage from 'localforage';
 
 export type AppDispatch = typeof store.dispatch
@@ -12,7 +12,8 @@ export type AppDispatch = typeof store.dispatch
 const persistConfig = {
     key: 'root',
     //storage,
-    storage: localforage
+    storage: localforage,
+    blacklist: ['serverConfig'],  // Always fetch fresh from /api/app-config
 }
 
 const persistedReducer = persistReducer(persistConfig, dataFormulatorReducer)
@@ -25,4 +26,9 @@ let store = configureStore({
     }),
 })
 
+export const persistor = persistStore(store);
+
 export default store;
+
+// Export store instance for use in utilities
+export { store };

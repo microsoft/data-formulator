@@ -77,9 +77,9 @@ Output only extract tables, no other text should be included. Format:
 
 ```json
 {
-    "name": "...", // suggest a descriptive, meaningful but short name for this dataset, no more than 3 words, if there are duplicate names, add a suffix -1, -2, etc. (e.g., "sales-2024", "customer-survey", "weather-forecast")
+    "name": "...", // suggest a descriptive, meaningful but short name for this dataset, no more than 5 words, if there are duplicate names, add a suffix -1, -2, etc. (e.g., "sales-2024", "us-customer-survey-2024", "seattle-weather-forecast")
     "type": "csv" | "image_url",
-    "context": "..." // a short paragraph describing the context of the table -- what is the table about? Any additional information that helps the user understand the table. (no more than 50 words)
+    "context": "..." // a paragraph summarizing the original source document or image this table was extracted from. Include: what the document is about, its main topic, any relevant background, and what the table represents within that context. This summary will be used by downstream agents to understand the data, so be descriptive and informative. (around 50-100 words)
 }
 ```
 

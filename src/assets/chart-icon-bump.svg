@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <!-- Bump Chart icon: 4 lines crossing ranks across 4 time points -->
+
+  <!-- Line 1 (blue): rank 1 → 1 → 3 → 2 -->
+  <polyline points="68,46 120,46 176,134 228,90"
+            fill="none" stroke="#4a8acb" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Line 2 (gray): rank 2 → 4 → 1 → 1 -->
+  <polyline points="68,90 120,178 176,46 228,46"
+            fill="none" stroke="#7a7a7a" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Line 3 (dark blue): rank 3 → 2 → 4 → 3 -->
+  <polyline points="68,134 120,90 176,178 228,134"
+            fill="none" stroke="#3d7ebf" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Line 4 (light gray): rank 4 → 3 → 2 → 4 -->
+  <polyline points="68,178 120,134 176,90 228,178"
+            fill="none" stroke="#a8a8a8" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Dots -->
+  <circle cx="68"  cy="46"  r="8" fill="#76c6ff" stroke="#363636" stroke-width="2"/>
+  <circle cx="120" cy="46"  r="8" fill="#76c6ff" stroke="#363636" stroke-width="2"/>
+  <circle cx="176" cy="134" r="8" fill="#76c6ff" stroke="#363636" stroke-width="2"/>
+  <circle cx="228" cy="90"  r="8" fill="#76c6ff" stroke="#363636" stroke-width="2"/>
+
+  <circle cx="68"  cy="90"  r="8" fill="#B8B8B8" stroke="#363636" stroke-width="2"/>
+  <circle cx="120" cy="178" r="8" fill="#B8B8B8" stroke="#363636" stroke-width="2"/>
+  <circle cx="176" cy="46"  r="8" fill="#B8B8B8" stroke="#363636" stroke-width="2"/>
+  <circle cx="228" cy="46"  r="8" fill="#B8B8B8" stroke="#363636" stroke-width="2"/>
+
+  <circle cx="68"  cy="134" r="8" fill="#5ba8e0" stroke="#363636" stroke-width="2"/>
+  <circle cx="120" cy="90"  r="8" fill="#5ba8e0" stroke="#363636" stroke-width="2"/>
+  <circle cx="176" cy="178" r="8" fill="#5ba8e0" stroke="#363636" stroke-width="2"/>
+  <circle cx="228" cy="134" r="8" fill="#5ba8e0" stroke="#363636" stroke-width="2"/>
+
+  <circle cx="68"  cy="178" r="8" fill="#d0d0d0" stroke="#363636" stroke-width="2"/>
+  <circle cx="120" cy="134" r="8" fill="#d0d0d0" stroke="#363636" stroke-width="2"/>
+  <circle cx="176" cy="90"  r="8" fill="#d0d0d0" stroke="#363636" stroke-width="2"/>
+  <circle cx="228" cy="178" r="8" fill="#d0d0d0" stroke="#363636" stroke-width="2"/>
+
+  <!-- Y axis -->
+  <line x1="48" y1="28" x2="48" y2="220" stroke="#363636" stroke-width="4" stroke-linecap="round"/>
+  <!-- X axis -->
+  <line x1="44" y1="216" x2="240" y2="216" stroke="#363636" stroke-width="4" stroke-linecap="round"/>
+</svg>

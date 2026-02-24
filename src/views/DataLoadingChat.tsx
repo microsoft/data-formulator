@@ -4,15 +4,15 @@
 import * as React from 'react';
 import { useEffect, useRef, useState } from 'react';
 
-import { Box, Button, Divider, IconButton, Typography, Dialog, DialogTitle, DialogContent, Tooltip, CircularProgress } from '@mui/material';
-import RestartAltIcon from '@mui/icons-material/RestartAlt';
-import CloseIcon from '@mui/icons-material/Close';
+import { Box, Button, Divider, IconButton, Typography, Tooltip, CircularProgress, alpha, useTheme } from '@mui/material';
+import { borderColor, transition, radius } from '../app/tokens';
 
 
 import { useDispatch, useSelector } from 'react-redux';
 import { AppDispatch } from '../app/store';
 import { DataFormulatorState, dfActions, fetchFieldSemanticType } from '../app/dfSlice';
 import { createTableFromText } from '../data/utils';
+import { loadTable } from '../app/tableThunks';
 import { createOrderedThreadBlocks, DataLoadingInputBox, DataPreviewBox, SingleDataCleanThreadView } from './DataLoadingThread';
 
 
@@ -31,8 +31,8 @@ const getUniqueTableName = (baseName: string, existingNames: Set<string>): strin
     return uniqueName;
 };
 
-export const DataLoadingChat: React.FC = () => {
-
+export const DataLoadingChat: React.FC<{storeOnServer?: boolean}> = ({storeOnServer = true}) => {
+    const theme = useTheme();
     const dispatch = useDispatch<AppDispatch>();
     const inputBoxRef = useRef<(() => void) | null>(null);
     const abortControllerRef = useRef<AbortController | null>(null);
@@ -52,13 +52,13 @@ export const DataLoadingChat: React.FC = () => {
     let threadsComponent = dataCleanBlocksThread.map((thread, i) => {
         return <SingleDataCleanThreadView key={`data-clean-thread-${i}`} thread={thread} sx={{
             backgroundColor: 'white', 
-            borderRadius: 2,
+            borderRadius: radius.md,
             padding: 1,
             flex:  'none',
             display: 'flex',
             flexDirection: 'column',
             height: 'fit-content',
-            transition: 'all 0.3s ease',
+            transition: transition.fast,
         }} />
     })
 
@@ -84,16 +84,10 @@ export const DataLoadingChat: React.FC = () => {
         const unique = getUniqueTableName(base, existingNames);
         const table = createTableFromText(unique, selectedTable.content.value, selectedTable.context);
         if (table) {
-            dispatch(dfActions.loadTable(table));
-            dispatch(fetchFieldSemanticType(table));
+            const tableWithSource = { ...table, source: { type: 'extract' as const } };
+            dispatch(loadTable({ table: tableWithSource, storeOnServer }));
         }
     };
-
-    if (!existOutputBlocks && !streamingContent) {
-        return <Box sx={{ width: 'calc(100% - 32px)', borderRadius: 2, px: 2 }}>
-            <DataLoadingInputBox maxLines={24} onStreamingContentUpdate={setStreamingContent} abortControllerRef={abortControllerRef} />
-        </Box>
-    }
 
     const thinkingBanner = (
         <Box sx={{ 
@@ -140,210 +134,238 @@ export const DataLoadingChat: React.FC = () => {
         </Box>
     );
 
-    
-    let chatCard = (
-        <Box sx={{ width: (existOutputBlocks || streamingContent) ? '960px' : '640px', minHeight: 400,
-                display: 'flex', flexDirection: 'row', borderRadius: 2 }}>
-            
-            {/* Left: Chat panel */}
-            <Box
-                sx={{
-                    width: 240,
+    // Empty state - centered layout similar to upload dialog
+    if (!existOutputBlocks && !streamingContent) {
+        return (
+            <Box sx={{ 
+                width: '100%', 
+                height: '100%', 
+                display: 'flex', 
+                justifyContent: 'center', 
+                alignItems: 'center',
+                p: 2,
+                boxSizing: 'border-box'
+            }}>
+                <Box sx={{ 
+                    width: '100%',
+                    maxWidth: 720,
                     display: 'flex',
                     flexDirection: 'column',
-                    padding: 1,
-                    position: 'relative'
-                }}
-            >
-                <Box sx={{ flex: 1,  display: 'flex', flexDirection: 'column', minHeight: '480px', 
-                    overflowY: 'auto', overflowX: 'hidden' }}>
-                    {threadsComponent}
+                    gap: 2,
+                }}>
+                    <DataLoadingInputBox 
+                        maxLines={24} 
+                        onStreamingContentUpdate={setStreamingContent} 
+                        abortControllerRef={abortControllerRef} 
+                    />
                 </Box>
-                <DataLoadingInputBox ref={inputBoxRef} maxLines={4} onStreamingContentUpdate={setStreamingContent} abortControllerRef={abortControllerRef} />
             </Box>
+        );
+    }
 
-            <Divider orientation="vertical" flexItem sx={{m: 2, color: 'divider'}} />
-
-            {streamingContent && (
-                <Box
-                    sx={{
-                        flex: 1.4,
-                        minWidth: 480,
-                        maxWidth: 640,
+    // Main layout with sidebar (similar to DBTablePane)
+    return (
+        <Box sx={{ 
+            display: 'flex', 
+            flexDirection: 'column', 
+            bgcolor: 'white', 
+            flex: 1, 
+            overflow: 'hidden', 
+            height: '100%',
+            width: '100%'
+        }}>
+            <Box sx={{ 
+                display: 'flex', 
+                flexDirection: 'row', 
+                flex: 1, 
+                overflow: 'hidden', 
+                minHeight: 0, 
+                height: '100%' 
+            }}>
+                {/* Left sidebar - Thread list (similar to DBTablePane) */}
+                <Box sx={{ 
+                    display: 'flex', 
+                    flexDirection: 'column', 
+                    width: 240, 
+                    minWidth: 240, 
+                    maxWidth: 240, 
+                    overflow: 'hidden', 
+                    height: '100%',
+                    borderRight: `1px solid ${borderColor.view}`
+                }}>
+                    <Box sx={{ 
                         display: 'flex',
                         flexDirection: 'column',
-                        padding: 1
-                    }}
-                >
-                    {thinkingBanner}
-                    <Typography variant="body2" color="text.secondary" 
-                        sx={{ mt: 4, fontSize: '11px', whiteSpace: 'pre-wrap', overflow: 'clip', maxHeight: '600px', overflowY: 'auto' }}>
-                        {streamingContent.trim()}
-                    </Typography>
-                </Box>
-            )}
-
-            {/* Right: Data preview panel */}
-            {(existOutputBlocks && !streamingContent) && (
-                <Box
-                    sx={{
-                        flex: 1.4,
-                        minWidth: 480,
-                        display: 'flex',
-                        flexDirection: 'column',
-                        padding: 1
-                    }}
-                >
-                    
-                    <Typography 
-                        sx={{ 
-                            fontSize: 14, 
-                            marginBottom: 1,
-                            fontWeight: 500,
-                            color: 'text.primary',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 0.5
-                        }}
-                        gutterBottom
-                    >
-                        {selectedTable && (
-                            <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-                                {selectedTable?.name}
-                            </Typography>
-                        )}
-                    </Typography>
-                    
-                    <Box 
-                        sx={{
-                            display: 'flex',
-                            flexDirection: 'column',
-                            flex: 1,
-                            gap: 1,
-                            overflow: 'hidden'
-                        }}
-                    >
-                        {selectedTable ? (
-                            <DataPreviewBox />
+                        overflowY: 'auto',
+                        overflowX: 'hidden',
+                        flex: 1,
+                        minHeight: 0,
+                        height: '100%',
+                        position: 'relative',
+                        overscrollBehavior: 'contain',
+                        px: 0.5,
+                        pt: 1
+                    }}>
+                        {threadsComponent.length > 0 ? (
+                            threadsComponent
                         ) : (
-                            <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', mt: 4, fontSize: '11px' }}>
-                                No data available
+                            <Typography variant="caption" sx={{ 
+                                color: "text.disabled", 
+                                px: 2, 
+                                py: 0.5, 
+                                fontStyle: "italic",
+                                textAlign: 'center'
+                            }}>
+                                No extraction threads yet
                             </Typography>
                         )}
-
-                        {/* Bottom submit bar */}
-                        <Box sx={{ mt: 'auto', pt: 1, display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 1, 
-                            '& .MuiButton-root': { textTransform: 'none' } }}>
-                            <Button
-                                variant="contained"
-                                sx={{  }}
-                                onClick={() => {
-                                    if (inputBoxRef.current) {
-                                        inputBoxRef.current();
-                                    }
-                                }}
-                                disabled={!selectedTable || selectedTable.content.type !== 'image_url' || cleanInProgress}
-                                size="small"
-                            >
-                                Extract data from image
-                            </Button>
-                            <Button
-                                variant="contained"
-                                sx={{ ml: 'auto' }}
-                                onClick={handleUpload}
-                                disabled={!selectedTable || selectedTable.content.type !== 'csv'}
-                                size="small"
-                            >
-                                Load table
-                            </Button>
-                        </Box>
+                    </Box>
+                    <Box sx={{ 
+                        borderTop: `1px solid ${borderColor.divider}`,
+                        p: 1
+                    }}>
+                        <DataLoadingInputBox 
+                            ref={inputBoxRef} 
+                            maxLines={4} 
+                            onStreamingContentUpdate={setStreamingContent} 
+                            abortControllerRef={abortControllerRef} 
+                        />
                     </Box>
                 </Box>
-            )}
+
+                {/* Right content area */}
+                <Box sx={{ 
+                    flex: 1, 
+                    overflow: 'hidden', 
+                    minWidth: 0, 
+                    minHeight: 0, 
+                    height: '100%', 
+                    position: 'relative',
+                    display: 'flex',
+                    flexDirection: 'column'
+                }}>
+                    {streamingContent ? (
+                        <Box
+                            sx={{
+                                display: 'flex',
+                                flexDirection: 'column',
+                                padding: 2,
+                                height: '100%',
+                                overflow: 'auto'
+                            }}
+                        >
+                            {thinkingBanner}
+                            <Typography 
+                                variant="body2" 
+                                color="text.secondary" 
+                                sx={{ 
+                                    mt: 2, 
+                                    fontSize: '11px', 
+                                    whiteSpace: 'pre-wrap', 
+                                    overflow: 'clip', 
+                                    maxHeight: '100%', 
+                                    overflowY: 'auto' 
+                                }}
+                            >
+                                {streamingContent.trim()}
+                            </Typography>
+                        </Box>
+                    ) : existOutputBlocks ? (
+                        <Box
+                            sx={{
+                                display: 'flex',
+                                flexDirection: 'column',
+                                padding: 2,
+                                height: '100%',
+                                overflow: 'hidden'
+                            }}
+                        >
+                            {selectedTable && (
+                                <Typography 
+                                    sx={{ 
+                                        fontSize: 14, 
+                                        marginBottom: 1,
+                                        fontWeight: 500,
+                                        color: 'text.primary',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: 0.5
+                                    }}
+                                    gutterBottom
+                                >
+                                    {selectedTable?.name}
+                                </Typography>
+                            )}
+                            
+                            <Box 
+                                sx={{
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    flex: 1,
+                                    gap: 1,
+                                    overflow: 'hidden',
+                                    minHeight: 0
+                                }}
+                            >
+                                {selectedTable ? (
+                                    <Box sx={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
+                                        <DataPreviewBox />
+                                    </Box>
+                                ) : (
+                                    <Box sx={{ 
+                                        display: 'flex', 
+                                        alignItems: 'center', 
+                                        justifyContent: 'center',
+                                        flex: 1,
+                                        minHeight: 0
+                                    }}>
+                                        <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', fontSize: '11px' }}>
+                                            Select a table from the left to preview
+                                        </Typography>
+                                    </Box>
+                                )}
+
+                                {/* Bottom submit bar */}
+                                {selectedTable && (
+                                    <Box sx={{ 
+                                        mt: 'auto', 
+                                        pt: 1, 
+                                        display: 'flex', 
+                                        flexDirection: 'row', 
+                                        alignItems: 'center', 
+                                        gap: 1, 
+                                        borderTop: `1px solid ${borderColor.divider}`,
+                                        '& .MuiButton-root': { textTransform: 'none' } 
+                                    }}>
+                                        <Button
+                                            variant="contained"
+                                            onClick={() => {
+                                                if (inputBoxRef.current) {
+                                                    inputBoxRef.current();
+                                                }
+                                            }}
+                                            disabled={!selectedTable || selectedTable.content.type !== 'image_url' || cleanInProgress}
+                                            size="small"
+                                        >
+                                            Extract data from image
+                                        </Button>
+                                        <Button
+                                            variant="contained"
+                                            sx={{ ml: 'auto' }}
+                                            onClick={handleUpload}
+                                            disabled={!selectedTable || selectedTable.content.type !== 'csv'}
+                                            size="small"
+                                        >
+                                            Load table
+                                        </Button>
+                                    </Box>
+                                )}
+                            </Box>
+                        </Box>
+                    ) : null}
+                </Box>
+            </Box>
         </Box>
     );
-
-    return chatCard;
 };
-
-export interface DataLoadingChatDialogProps {
-    buttonElement?: any;
-    disabled?: boolean;
-    onOpen?: () => void;
-    // Controlled mode props
-    open?: boolean;
-    onClose?: () => void;
-}
-
-export const DataLoadingChatDialog: React.FC<DataLoadingChatDialogProps> = ({ 
-    buttonElement, 
-    disabled = false, 
-    onOpen,
-    open: controlledOpen,
-    onClose,
-}) => {
-    const [internalOpen, setInternalOpen] = useState<boolean>(false);
-    const dispatch = useDispatch<AppDispatch>();
-    const dataCleanBlocks = useSelector((state: DataFormulatorState) => state.dataCleanBlocks);
-
-    // Support both controlled and uncontrolled modes
-    const isControlled = controlledOpen !== undefined;
-    const dialogOpen = isControlled ? controlledOpen : internalOpen;
-    const setDialogOpen = isControlled 
-        ? (open: boolean) => { if (!open && onClose) onClose(); }
-        : setInternalOpen;
-
-    return (
-        <>
-            {buttonElement && (
-                <Button 
-                    sx={{fontSize: "inherit"}} 
-                    variant="text" 
-                    color="primary" 
-                    disabled={disabled}
-                    onClick={() => {
-                        setDialogOpen(true);
-                        onOpen?.();
-                    }}
-                >
-                    {buttonElement}
-                </Button>
-            )}
-            <Dialog 
-                key="data-loading-chat-dialog" 
-                onClose={() => setDialogOpen(false)} 
-                open={dialogOpen}
-                sx={{ '& .MuiDialog-paper': { maxWidth: '100%', maxHeight: 840, minWidth: 800 } }}
-            >
-                <DialogTitle sx={{display: "flex"}}>
-                    Extract Data
-                    {dataCleanBlocks.length > 0 && <Tooltip title="Reset dialog">  
-                        <IconButton size="small" color='warning' 
-                            sx={{
-                            '&:hover': {  transform: 'rotate(180deg)', 
-                                        transition: 'transform 0.4s cubic-bezier(0.4, 0, 0.2, 1)' } }} onClick={() => {
-                                            dispatch(dfActions.resetDataCleanBlocks());
-                                        }}>
-                            <RestartAltIcon fontSize="small" />
-                        </IconButton>
-                    </Tooltip>}
-                    <IconButton
-                        sx={{marginLeft: "auto"}}
-                        edge="start"
-                        size="small"
-                        color="inherit"
-                        onClick={() => setDialogOpen(false)}
-                        aria-label="close"
-                    >
-                        <CloseIcon fontSize="inherit"/>
-                    </IconButton>
-                </DialogTitle>
-                <DialogContent sx={{overflowX: "hidden", padding: 1}}>
-                    <DataLoadingChat />
-                </DialogContent>
-            </Dialog>
-        </>
-    );
-};
-
 

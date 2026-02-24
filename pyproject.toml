@@ -4,9 +4,9 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "data_formulator"
-version = "0.5.1"
+version = "0.6"
 
-requires-python = ">=3.9"
+requires-python = ">=3.11"
 authors = [
   {name = "Chenglong Wang", email = "chenglong.wang@microsoft.com"},
   {name = "Dan Marshall", email = "danmar@microsoft.com"},
@@ -20,22 +20,22 @@ classifiers = [
   "Programming Language :: Python"
 ]
 
-dependencies = [  
-    "jupyter",  
-    "pandas",  
-    "flask",  
-    "flask-cors",  
-    "openai",  
-    "python-dotenv",  
+dependencies = [
+    "jupyter",
+    "pandas",
+    "flask",
+    "flask-cors",
+    "flask-limiter",
+    "openai",
+    "python-dotenv",
     "vega_datasets",
     "litellm",
     "duckdb",
-    "numpy",                    
-    "vl-convert-python", 
+    "numpy",
+    "vl-convert-python",
     "backoff",
     "beautifulsoup4",
     "scikit-learn",
-
     "azure-identity",
     "azure-kusto-data",
     "azure-keyvault-secrets",
@@ -46,7 +46,10 @@ dependencies = [
     "boto3",
     "pymysql",
     "pyodbc",
-    "pymongo"
+    "pymongo",
+    "yfinance",
+    "connectorx>=0.4.5",
+    "pyarrow>=23.0.0",
 ]
 
 [project.urls]
@@ -60,3 +63,8 @@ include-package-data = true
 
 [project.scripts]
 data_formulator = "data_formulator:run_app"
+
+[tool.uv]
+dev-dependencies = [
+    "build",
+]

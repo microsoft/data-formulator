@@ -2,6 +2,7 @@
 // Licensed under the MIT License.
 
 import React, { FC, useState, useRef, useEffect, memo, useMemo } from 'react';
+import { borderColor, shadow, transition, radius } from '../app/tokens';
 import {
     Box,
     Button,
@@ -40,17 +41,17 @@ import html2canvas from 'html2canvas';
 import { useDispatch, useSelector } from 'react-redux';
 import { DataFormulatorState, dfActions, dfSelectors, GeneratedReport } from '../app/dfSlice';
 import { Message } from './MessageSnackbar';
-import { getUrls, assembleVegaChart, getTriggers, prepVisTable } from '../app/utils';
+import { getUrls, assembleVegaChart, getTriggers, prepVisTable, fetchWithIdentity } from '../app/utils';
 import { MuiMarkdown, getOverrides } from 'mui-markdown';
 import embed from 'vega-embed';
 import { getDataTable } from './VisualizationView';
 import { DictTable } from '../components/ComponentType';
 import { AppDispatch } from '../app/store';
-import TableRowsIcon from '@mui/icons-material/TableRows';
 import { Collapse } from '@mui/material';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import { convertToChartifact, openChartifactViewer } from './ChartifactDialog';
+import { StreamIcon } from '../icons';
 
 // Typography constants
 const FONT_FAMILY_SYSTEM = '-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, "Apple Color Emoji", Arial, sans-serif, "Segoe UI Emoji", "Segoe UI Symbol"';
@@ -127,27 +128,27 @@ const notionStyleMarkdownOverrides = {
     li: { component: Typography, props: { component: 'li', variant: 'body1',
         sx: { ...BODY_TEXT_BASE, mb: 0.5 } } },
     blockquote: { component: Box, props: { sx: { 
-        borderLeft: '3px solid', borderColor: 'rgba(0, 0, 0, 0.15)', pl: 2.5, py: 1, my: 2.5,
+        borderLeft: '3px solid', borderColor: borderColor.component, pl: 2.5, py: 1, my: 2.5,
         fontFamily: FONT_FAMILY_SERIF, fontStyle: 'italic', color: COLOR_MUTED, fontSize: '1rem', lineHeight: 1.7 
     } } },
     pre: { component: Paper, props: { elevation: 0, sx: { 
         backgroundColor: COLOR_BG_LIGHT, p: 2, borderRadius: '4px', overflow: 'auto', my: 2, 
-        border: '1px solid', borderColor: 'rgba(0, 0, 0, 0.08)',
+        border: `1px solid ${borderColor.divider}`,
         '& code': { 
             backgroundColor: 'transparent !important', padding: '0 !important', fontSize: '0.8125rem',
             fontFamily: FONT_FAMILY_MONO, lineHeight: 1.7, color: COLOR_BODY
         } 
     } } },
     table: { component: TableContainer, props: { component: Paper, elevation: 0,
-        sx: { my: 2, border: '1px solid', borderColor: 'divider' } } },
+        sx: { my: 2, border: `1px solid ${borderColor.divider}` } } },
     thead: { component: TableHead, props: { sx: { backgroundColor: COLOR_BG_LIGHT } } },
     tbody: { component: TableBody },
     tr: { component: TableRow },
     th: { component: TableCell, props: { sx: { 
-        ...TABLE_CELL_BASE, fontWeight: 600, borderBottom: '2px solid', borderColor: 'divider'
+        ...TABLE_CELL_BASE, fontWeight: 600, borderBottom: `2px solid ${borderColor.divider}`
     } } },
     td: { component: TableCell, props: { sx: { 
-        ...TABLE_CELL_BASE, borderBottom: '1px solid', borderColor: 'divider', lineHeight: 1.6 
+        ...TABLE_CELL_BASE, borderBottom: `1px solid ${borderColor.divider}`, lineHeight: 1.6 
     } } },
     hr: { component: Divider, props: { sx: { my: 3 } } }
 } as any;
@@ -223,7 +224,9 @@ export const ReportView: FC = () => {
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
     const config = useSelector((state: DataFormulatorState) => state.config);
     const allGeneratedReports = useSelector(dfSelectors.getAllGeneratedReports);
-    const focusedChartId = useSelector((state: DataFormulatorState) => state.focusedChartId);
+    const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
+    const focusedId = useSelector((state: DataFormulatorState) => state.focusedId);
+    const focusedChartId = focusedId?.type === 'chart' ? focusedId.chartId : undefined;
     const theme = useTheme();
 
     const [selectedChartIds, setSelectedChartIds] = useState<Set<string>>(new Set(focusedChartId ? [focusedChartId] : []));
@@ -231,13 +234,13 @@ export const ReportView: FC = () => {
     const [isLoadingPreviews, setIsLoadingPreviews] = useState(false);
     const [isGenerating, setIsGenerating] = useState(false);
     const [error, setError] = useState<string>('');
-    const [style, setStyle] = useState<string>('short note');
+    const [style, setStyle] = useState<string>('social post');
     const [mode, setMode] = useState<'compose' | 'post'>(allGeneratedReports.length > 0 ? 'post' : 'compose');
 
     // Local state for current report
     const [currentReportId, setCurrentReportId] = useState<string | undefined>(undefined);
     const [generatedReport, setGeneratedReport] = useState<string>('');
-    const [generatedStyle, setGeneratedStyle] = useState<string>('short note');
+    const [generatedStyle, setGeneratedStyle] = useState<string>('social post');
     const [cachedReportImages, setCachedReportImages] = useState<Record<string, { url: string; width: number; height: number }>>({});
     const [shareButtonSuccess, setShareButtonSuccess] = useState(false);
     const [hideTableOfContents, setHideTableOfContents] = useState(false);
@@ -368,6 +371,67 @@ export const ReportView: FC = () => {
         }
     }, [currentReportId]);
 
+    // Auto-refresh chart images when underlying table data changes
+    // This enables real-time chart updates in reports when data is streaming
+    const tableRowSignaturesRef = useRef<Map<string, string>>(new Map());
+    
+    useEffect(() => {
+        if (!currentReportId || mode !== 'post') return;
+        
+        const currentReport = allGeneratedReports.find(r => r.id === currentReportId);
+        if (!currentReport) return;
+        
+        // Get all tables referenced by the report's charts
+        const reportChartIds = currentReport.selectedChartIds;
+        const affectedTableIds = new Set<string>();
+        
+        reportChartIds.forEach(chartId => {
+            const chart = charts.find(c => c.id === chartId);
+            if (chart) {
+                affectedTableIds.add(chart.tableRef);
+            }
+        });
+        
+        // Check if any affected tables have changed
+        let hasChanges = false;
+        affectedTableIds.forEach(tableId => {
+            const table = tables.find(t => t.id === tableId);
+            if (table) {
+                // Use contentHash if available (set by state management), otherwise fallback to lightweight rowCount
+                // This avoids expensive JSON.stringify operations on every table change during streaming updates
+                const signature = table.contentHash || `${table.rows.length}`;
+                
+                const prevSignature = tableRowSignaturesRef.current.get(tableId);
+                if (prevSignature && prevSignature !== signature) {
+                    hasChanges = true;
+                }
+                tableRowSignaturesRef.current.set(tableId, signature);
+            }
+        });
+        
+        // If data changed, regenerate chart images for the report
+        if (hasChanges) {
+            
+            reportChartIds.forEach(chartId => {
+                const chart = charts.find(c => c.id === chartId);
+                if (!chart) return;
+                
+                const chartTable = tables.find(t => t.id === chart.tableRef);
+                if (!chartTable) return;
+                
+                if (chart.chartType === 'Table' || chart.chartType === '?') {
+                    return;
+                }
+                
+                getChartImageFromVega(chart, chartTable).then(({ blobUrl, width, height }) => {
+                    if (blobUrl) {
+                        updateCachedReportImages(chart.id, blobUrl, width, height);
+                    }
+                });
+            });
+        }
+    }, [tables, currentReportId, mode, allGeneratedReports, charts]);
+
 
     
     // Sort charts based on data thread ordering
@@ -419,45 +483,32 @@ export const ReportView: FC = () => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []); // Only cleanup on unmount, not when images change
 
-    // Generate preview images for all charts
+    // Use existing thumbnails from ChartRenderService instead of re-rendering
     useEffect(() => {
-        const generatePreviews = async () => {
-            setIsLoadingPreviews(true);
-            const newPreviewImages = new Map<string, { url: string; width: number; height: number }>();
+        const newPreviewImages = new Map<string, { url: string; width: number; height: number }>();
 
-            // Clean up old preview images
-            previewImages.forEach(({ url }) => {
-                if (url.startsWith('blob:')) {
-                    URL.revokeObjectURL(url);
-                }
-            });
+        // Clean up old blob URLs
+        previewImages.forEach(({ url }) => {
+            if (url.startsWith('blob:')) {
+                URL.revokeObjectURL(url);
+            }
+        });
 
-            await Promise.all(
-                sortedCharts.map(async (chart) => {
-                    try {
-                        const chartTable = tables.find(t => t.id === chart.tableRef);
-                        if (!chartTable || chart.chartType === 'Table' || chart.chartType === '?' || chart.chartType === 'Auto') {
-                            return;
-                        }
-
-                        const { blobUrl, width, height } = await getChartImageFromVega(chart, chartTable);
-                        if (blobUrl) {
-                            newPreviewImages.set(chart.id, { url: blobUrl, width, height });
-                        }
-                    } catch (error) {
-                        console.warn(`Failed to generate preview for chart ${chart.id}:`, error);
-                    }
-                })
-            );
-
-            setPreviewImages(newPreviewImages);
-            setIsLoadingPreviews(false);
-        };
-
-        if (sortedCharts.length > 0) {
-            generatePreviews();
+        for (const chart of sortedCharts) {
+            if (chart.chartType === 'Table' || chart.chartType === '?' || chart.chartType === 'Auto') continue;
+            if (chart.thumbnail) {
+                // Use the pre-rendered thumbnail from ChartRenderService
+                newPreviewImages.set(chart.id, {
+                    url: chart.thumbnail,
+                    width: config.defaultChartWidth,
+                    height: config.defaultChartHeight,
+                });
+            }
         }
-    }, [sortedCharts, tables, conceptShelfItems, config]);
+
+        setPreviewImages(newPreviewImages);
+        setIsLoadingPreviews(false);
+    }, [sortedCharts, config]);
 
     const toggleChartSelection = (chartId: string) => {
         const newSelection = new Set(selectedChartIds);
@@ -499,11 +550,12 @@ export const ReportView: FC = () => {
                 conceptShelfItems,
                 processedRows,
                 chartTable.metadata,
-                30,
-                true,
                 config.defaultChartWidth,
                 config.defaultChartHeight,
-                true
+                true,
+                chart.config,
+                1,
+                config.maxStretchFactor,
             );
 
             // Create a temporary container for embedding
@@ -612,11 +664,26 @@ export const ReportView: FC = () => {
                 throw new Error('No model selected');
             }
 
-            const inputTables = tables.filter(t => t.anchored).map(table => ({
-                name: table.id,
-                rows: table.rows,
-                attached_metadata: table.attachedMetadata
-            }));
+            const maxRows = serverConfig.MAX_DISPLAY_ROWS;
+
+            const inputTables = tables.filter(t => t.anchored).map(table => {
+                const rows = table.rows.length > maxRows ? table.rows.slice(0, maxRows) : table.rows;
+                return {
+                    name: table.id,
+                    rows,
+                    attached_metadata: table.attachedMetadata
+                };
+            });
+
+            // Check if any table data was truncated
+            const truncatedTables = tables.filter(t => t.anchored).filter(t => {
+                const totalRows = t.virtual?.rowCount || t.rows.length;
+                return totalRows > maxRows;
+            });
+            const truncationNote = truncatedTables.length > 0
+                ? `\n\nNote: Some tables were truncated to ${maxRows.toLocaleString()} rows for this report. ` +
+                  `Tables affected: ${truncatedTables.map(t => `"${t.displayId || t.id}" (${(t.virtual?.rowCount || t.rows.length).toLocaleString()} total rows)`).join(', ')}.`
+                : '';
 
 
             const selectedCharts = await Promise.all(
@@ -643,7 +710,7 @@ export const ReportView: FC = () => {
                         code: chartTable.derive?.code || '',
                         chart_data: {
                             name: chartTable.id,
-                            rows: chartTable.rows
+                            rows: chartTable.rows.length > maxRows ? chartTable.rows.slice(0, maxRows) : chartTable.rows
                         },
                         chart_url: dataUrl // use data_url to send to the agent
                     };
@@ -656,11 +723,10 @@ export const ReportView: FC = () => {
                 model: model,
                 input_tables: inputTables,
                 charts: validCharts,
-                style: style,
-                language: tables.some(t => t.virtual) ? "sql" : "python"
+                style: style + truncationNote
             };
 
-            const response = await fetch(getUrls().GENERATE_REPORT_STREAM, {
+            const response = await fetchWithIdentity(getUrls().GENERATE_REPORT_STREAM, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(requestBody)
@@ -734,7 +800,7 @@ export const ReportView: FC = () => {
                 // No reports left, clear the view and go back to compose mode
                 setCurrentReportId(undefined);
                 setGeneratedReport('');
-                setGeneratedStyle('short note');
+                setGeneratedStyle('social post');
                 setMode('compose');
             }
         }
@@ -788,13 +854,13 @@ export const ReportView: FC = () => {
                                 backgroundColor: 'rgba(255, 255, 255, 0.9)',
                                 backdropFilter: 'blur(12px)',
                                 border: '1px solid',
-                                borderColor: 'rgba(0, 0, 0, 0.08)',
-                                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.06)',
+                                borderColor: borderColor.view,
+                                boxShadow: shadow.lg,
                                 '&:hover': {
                                     backgroundColor: 'rgba(255, 255, 255, 0.95)',
-                                    borderColor: 'rgba(0, 0, 0, 0.12)',
-                                    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)',
-                                    transition: 'all 0.2s ease-in-out'
+                                    borderColor: borderColor.view,
+                                    boxShadow: shadow.xl,
+                                    transition: transition.normal
                                 },
                                 '.MuiTypography-root': {
                                     fontSize: '1rem',
@@ -832,7 +898,7 @@ export const ReportView: FC = () => {
                                 }}
                             >
                                 {[
-                                    { value: 'short note', label: 'short note' },
+                                    { value: 'live report', label: 'live report' },
                                     { value: 'blog post', label: 'blog post' },
                                     { value: 'social post', label: 'social post' },
                                     { value: 'executive summary', label: 'executive summary' },
@@ -848,7 +914,7 @@ export const ReportView: FC = () => {
                                             minWidth: 'auto'
                                         }}
                                     >
-                                        {option.label}
+                                        {option.value === 'live report' ? <StreamIcon sx={{ fontSize: 16, mr: 1 }} /> : <></>} {option.label}
                                     </ToggleButton>
                                 ))}
                             </ToggleButtonGroup>
@@ -939,10 +1005,10 @@ export const ReportView: FC = () => {
                                                 cursor: 'pointer', position: 'relative', overflow: 'hidden',
                                                 backgroundColor: selectedChartIds.has(chart.id) ? alpha(theme.palette.primary.main, 0.08) : 'background.paper',
                                                 border:  selectedChartIds.has(chart.id) ? '2px solid' : '1px solid', 
-                                                borderColor: selectedChartIds.has(chart.id) ? 'primary.main' : 'divider',
+                                                borderColor: selectedChartIds.has(chart.id) ? 'primary.main' : borderColor.divider,
                                                 '&:hover': { 
                                                     backgroundColor: 'action.hover', boxShadow: 3,
-                                                    transform: 'translateY(-2px)', transition: 'all 0.2s ease-in-out'
+                                                    transform: 'translateY(-2px)', transition: transition.normal
                                                 },
                                             }}
                                             onClick={() => toggleChartSelection(chart.id)}
@@ -1018,8 +1084,7 @@ export const ReportView: FC = () => {
                                 display: 'flex',
                                 overflowY: 'auto',
                                 flexDirection: 'column',
-                                borderRight: 1,
-                                borderColor: 'divider',
+                                borderRight: `1px solid ${borderColor.view}`,
                                 height: 'fit-content',
                                 background: alpha(theme.palette.background.paper, 0.9),
                             }}>

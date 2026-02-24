@@ -3,9 +3,7 @@
 
 import json
 import keyword
-import pandas as pd
 import numpy as np
-
 import re
 
 def string_to_py_varname(var_str): 
@@ -149,34 +147,6 @@ def extract_json_objects(text):
     return json_objects  
 
 
-def insert_candidates(code, table, dialog, candidate_groups):
-    """ Try to insert a candidate into existing candidate groups
-    Args:
-        code: code candidate
-        table: json records table
-        candidate_groups: current candidate group
-    Returns:
-        a boolean flag incidate whether new_group_created
-    """
-    table_headers = sorted(table[0].keys())
-    t_hash = table_hash([{c: r[c] for c in table_headers} for r in table])
-    if t_hash in candidate_groups:
-        candidate_groups[t_hash].append({"code": code, "content": table, "dialog": dialog})
-        new_group_created = False
-    else:
-        candidate_groups[t_hash] = [{"code": code, "content": table, "dialog": dialog}]
-        new_group_created = True
-    return new_group_created
-
-def dedup_data_transform_candidates(candidates):
-    """each candidate is a tuple of {status: ..., code: ..., data: ..., dialog: ...},
-    this function extracts candidates that are 'ok', and removes uncessary duplicates"""
-    candidate_groups = {}
-    for candidate in candidates:
-        insert_candidates(candidate["code"], candidate['data'], candidate['dialog'], candidate_groups)
-    return [items[0] for _, items in candidate_groups.items()]
-
-
 def get_field_summary(field_name, df, field_sample_size, max_val_chars=100):
     # Convert lists to strings to make them hashable
     def make_hashable(val):
@@ -215,33 +185,89 @@ def get_field_summary(field_name, df, field_sample_size, max_val_chars=100):
 
     return f"{field_name} -- type: {df[field_name].dtype}, values: {val_str}"
 
-def generate_data_summary(input_tables, include_data_samples=True, field_sample_size=7, max_val_chars=140):
-    
-    def assemble_table_summary(input_table, idx):
-        table_id = f'table{idx+1}'
-        name = string_to_py_varname(input_table["name"])
-        rows = input_table["rows"]
-        description = input_table.get("attached_metadata", "")
-        
-        df = pd.DataFrame(rows)
-        fields_summary = '\n'.join(['\t*' + get_field_summary(fname, df, field_sample_size, max_val_chars)  for fname in list(df.columns.values)])
+def generate_data_summary(
+    input_tables,
+    workspace,
+    include_data_samples=True,
+    field_sample_size=7,
+    row_sample_size=5,
+    max_val_chars=140,
+    table_name_prefix="Table"
+):
+    """
+    Generate a natural, well-organized summary of input tables by reading workspace parquet files.
 
-        fields_section = f'## fields\n{fields_summary}\n\n'
-        sample_section = f'## sample\n{pd.DataFrame(rows[:5]).to_string()}\n......\n\n' if include_data_samples else ''
-        description_section = f'## description\n{description}\n\n' if description else ''
+    All tables (including temp tables) should be in the workspace before calling this function.
+    Use WorkspaceWithTempData context manager to mount temp tables to workspace.
 
-        summary_str = f'''# {table_id} ({name})\n\n{description_section}{fields_section}{sample_section}'''
-        return summary_str
+    Organization approach:
+    - Each table is clearly separated with a header
+    - Information flows logically: Overview → Schema → Examples
+    - Consistent section ordering for better readability
+    - Shows filename for workspace tables
 
-    table_summaries = [assemble_table_summary(input_table, i) for i, input_table in enumerate(input_tables)]
-    
-    # Join with newline (extracted from f-string for Python 3.9/3.10 compatibility)
-    joined_summaries = '\n'.join(table_summaries)
-    
-    full_summary = f'''Here are our datasets, here are their summaries and samples:
+    Args:
+        input_tables: list of dicts with 'name' key
+        workspace: Workspace instance with all tables mounted (including temp data)
+        include_data_samples: whether to include sample data
+        field_sample_size: number of example values per field
+        row_sample_size: number of sample rows to show
+        max_val_chars: max characters per value
+        table_name_prefix: prefix for table headers
 
-{joined_summaries}
-'''
+    Returns:
+        Formatted string summary of all tables
+    """
+    def assemble_table_summary(table, idx):
+        table_name = table['name']
+        description = table.get("attached_metadata", "")
 
-    return full_summary
+        # Read data into DataFrame (handles parquet, csv, excel, json, etc.)
+        df = workspace.read_data_as_df(table_name)
+
+        # Get filename for display (LLM uses this to generate read_parquet/read_csv calls)
+        data_file_path = workspace.get_relative_data_file_path(table_name)
+
+        num_rows = len(df)
+        num_cols = len(df.columns)
+
+        # Build sections in logical order: Overview → Description → Schema → Examples
+        sections = []
+
+        # 1. Table Header with basic stats
+        header = f"## {table_name_prefix} {idx + 1}: {table_name}"
+        if num_rows > 0:
+            header += f" ({num_rows:,} rows × {num_cols} columns)"
+        sections.append(header)
+        sections.append(f"- **file path:** `{data_file_path}`")
+        sections.append("")  # Empty line for spacing
+
+        # 2. Description (if available) - provides context first
+        if description:
+            sections.append(f"### Description\n{description}\n")
+
+        # 3. Schema/Fields - core structure information
+        fields_summary = '\n'.join([
+            '  - ' + get_field_summary(fname, df, field_sample_size, max_val_chars)
+            for fname in df.columns
+        ])
+        sections.append(f"### Schema ({num_cols} fields)\n{fields_summary}\n")
+
+        # 4. Sample data (if requested) - concrete examples last
+        if include_data_samples and num_rows > 0:
+            sample_df = df.head(row_sample_size)
+            sections.append(
+                f"### Sample Data (first {min(row_sample_size, num_rows)} rows)\n"
+                f"```\n{sample_df.to_string()}\n```\n"
+            )
+
+        return '\n'.join(sections)
+
+    # Build summaries for all tables
+    table_summaries = [assemble_table_summary(table, i) for i, table in enumerate(input_tables)]
+
+    # Join with visual separators
+    separator = "\n" + "─" * 60 + "\n\n"
+    return separator.join(table_summaries)
+
 

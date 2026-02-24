@@ -6,31 +6,34 @@ import logging
 import pandas as pd
 
 from data_formulator.agents.agent_utils import extract_json_objects, generate_data_summary
-from data_formulator.agents.agent_sql_data_transform import get_sql_table_statistics_str, sanitize_table_name
 
 logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = '''You are a data exploration expert who suggests interesting questions to help users explore their datasets.
 
-Given a dataset (or a thread of datasets that have been explored), your task is to suggest 4 exploration questions (unless the user explicitly asks for the number of questions), that users can follow to gain insights from their data.
-* the user may provide you current explorations they have done, including:
-    - a thread of exploration questions they have explored
-    - the latest data sample they are viewing
-    - the current chart they are viewing
-* when the exploration context is provided, make your suggestion based on the context as well as the original dataset; otherwise leverage the original dataset to suggest questions.
+This prompt contains the following sections:
+- [DATASETS] section: available datasets the user is working with.
+- [EXPLORATION THREAD] section (optional): sequence of datasets that have been explored in the order they were created, and what questions are asked to create them. These tables are all created from tables in the [DATASETS] section.
+- [CURRENT DATA] section (optional): latest data sample the user is viewing, and the visualization they are looking at at the moment.
+- [START QUESTION] section (optional): start question from previous exploration steps for context
+
+Your task is to suggest 4 exploration questions (unless the user explicitly asks for the number of questions), that users can follow to gain insights from their data.
+When the exploration context is provided, make your suggestion based on the context as well as the original datasets; otherwise leverage the original datasets to suggest questions.
 
 Guidelines for question suggestions:
-1. Suggest interesting analytical questions that are not obvious that can uncover nontrivial insights
-2. Use a diverse language style to display the questions (can be questions, statements etc)
-3. If there are multiple datasets in a thread, consider relationships between them
+1. Suggest interesting analytical questions that can uncover new insights from the data.
+2. Use a diverse language style to display the questions (can be questions, statements etc).
+3. If there are multiple datasets in a thread, consider relationships between them.
 4. CONCISENESS: the questions should be concise and to the point
-5. QUESTION: the question should be a new question based on the thread of exploration:
-    - either a followup question, or a new question that is related to the thread
+5. QUESTION: the question should be a new question based on the exploration thread:
+    - if no exploration thread is provided, start with a high-level overview question that directly visualizes the data to give the user a sense of the data.
+    - either a followup question, or a new question that is related to the exploration thread
         - if the current data is rich, you can ask a followup question to further explore the dataset;
         - if the current data is already specialized to answer the previous question, you can ask a new question that is related to the thread but not related to the previous question in the thread, leverage earlier exploration data to ask questions that can expand the exploration horizon
     - do not repeat questions that have already been explored in the thread
     - do not suggest questions that are not related to the thread (e.g. questions that are completely unrelated to the exploration direction in the thread)
     - do not naively follow up if the question is already too low-level when previous iterations have already come into a small subset of the data (suggest new related areas related to the metric / attributes etc)
+    - leverage other datasets in the [DATASETS] section to suggest questions that are related to the exploration thread.
 6. DIVERSITY: the questions should be diverse in difficulty (easy / medium / hard) and the four questions should cover different aspects of the data analysis to expand the user's horizon
     - simple questions should be short -- single sentence exploratory questions
     - medium questions can be 1-2 sentences exploratory questions
@@ -59,15 +62,17 @@ data: {"type": "question", "text": ..., "goal": ..., "difficulty": ..., "tag": .
 
 SYSTEM_PROMPT_AGENT = '''You are a data exploration expert to help users explore their datasets.
 
+This prompt contains the following sections:
+- [DATASETS] section: available datasets the user is working with.
+- [EXPLORATION THREAD] section (optional): sequence of datasets that have been explored in the order they were created, and what questions are asked to create them. These tables are all created from tables in the [DATASETS] section.
+- [CURRENT DATA] section (optional): latest data sample the user is viewing, and the visualization they are looking at at the moment.
+- [START QUESTION] section (optional): start question from previous exploration steps for context
+
 Given a dataset (or a thread of datasets that have been explored), your task is to suggest 4 exploration questions (unless the user explicitly asks for the number of questions), that users can follow to gain insights from their data.
-* the user may provide you current explorations they have done, including:
-    - a thread of exploration questions they have explored
-    - the latest data sample they are viewing
-    - the current chart they are viewing
-* when the exploration context is provided, make your suggestion based on the context as well as the original dataset; otherwise leverage the original dataset to suggest questions.
+When the exploration context is provided, make your suggestion based on the context as well as the original datasets; otherwise leverage the original datasets to suggest questions.
 
 Guidelines for question suggestions:
-1. Suggest a list of question_groups of interesting analytical questions that are not obvious that can uncover nontrivial insights.
+1. Suggest a list of question_groups of interesting analytical questions that can uncover new insights from the data.
 2. Use a diverse language style to display the questions (can be questions, statements etc)
 3. If there are multiple datasets in a thread, consider relationships between them
 4. CONCISENESS: the questions should be concise and to the point
@@ -80,6 +85,7 @@ Guidelines for question suggestions:
         - hard questions should introduce some new analysis concept but still make it concise
     - if suitable, include a group of questions that are related to statistical analysis: forecasting, regression, or clustering.
 6. QUESTIONS WITHIN A QUESTION GROUP:
+    - if the user doesn't provide an exploration thread, start with a high-level overview question that directly visualizes the data to give the user a sense of the data.
     - raise new questions that are related to the user's goal, do not repeat questions that have already been explored in the context provided to you.
     - if the user provides a start question, suggested questions should be related to the start question.
     - the questions should progressively dive deeper into the data, building on top of the previous question.
@@ -108,21 +114,10 @@ data: {"questions": [...], "goal": ..., "difficulty": ...}
 
 class InteractiveExploreAgent(object):
 
-    def __init__(self, client, agent_exploration_rules="", db_conn=None):
+    def __init__(self, client, workspace, agent_exploration_rules=""):
         self.client = client
         self.agent_exploration_rules = agent_exploration_rules
-        self.db_conn = db_conn
-
-    def get_data_summary(self, input_tables):
-        if self.db_conn:
-            data_summary = ""
-            for table in input_tables:
-                table_name = sanitize_table_name(table['name'])
-                table_summary_str = get_sql_table_statistics_str(self.db_conn, table_name)
-                data_summary += f"[TABLE {table_name}]\n\n{table_summary_str}\n\n"
-        else:
-            data_summary = generate_data_summary(input_tables, include_data_samples=False)
-        return data_summary
+        self.workspace = workspace  # when set (SQL/datalake mode), use parquet tables for summary
 
     def run(self, input_tables, start_question=None, exploration_thread=None, 
                   current_data_sample=None, current_chart=None, mode='interactive'):
@@ -141,22 +136,25 @@ class InteractiveExploreAgent(object):
         """
         
         # Generate data summary
-        data_summary = self.get_data_summary(input_tables)
+        data_summary = generate_data_summary(input_tables, self.workspace)
         
         # Build context including exploration thread if available
-        context = f"[DATASET]\n\n{data_summary}"
+        context = f"[DATASETS] These are the datasets the user is working with:\n\n{data_summary}"
         
         if exploration_thread:
-            thread_summary = "Tables in this exploration thread:\n"
-            for i, table in enumerate(exploration_thread, 1):
-                table_name = table.get('name', f'Table {i}')
-                data_summary = self.get_data_summary([{'name': table_name, 'rows': table.get('rows', [])}])
-                table_description = table.get('description', 'No description available')
-                thread_summary += f"{i}. {table_name}: {table_description} \n\n{data_summary}\n\n"
-            context += f"\n\n[EXPLORATION THREAD]\n\n{thread_summary}"
+            thread_summary = generate_data_summary(
+                [{
+                    'name': table.get('name', f'Table {i}'), 
+                    'rows': table.get('rows', []), 
+                    'attached_metadata': table.get('description', ''),
+                } for i, table in enumerate(exploration_thread, 1)],
+                self.workspace,
+                table_name_prefix="Thread Table"
+            )
+            context += f"\n\n[EXPLORATION THREAD] These are the sequence of tables the user created in this exploration thread, in the order they were created, and what questions are asked to create them:\n\n{thread_summary}"
 
         if current_data_sample:
-            context += f"\n\n[CURRENT DATA SAMPLE]\n\n{pd.DataFrame(current_data_sample).head(10).to_string()}"
+            context += f"\n\n[CURRENT DATA SAMPLE] This is the current data sample the user is viewing, and the visualization they are looking at at the moment is shown below:\n\n{pd.DataFrame(current_data_sample).head(10).to_string()}"
 
         if start_question:
             context += f"\n\n[START QUESTION]\n\n{start_question}"

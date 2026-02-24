@@ -1,17 +1,20 @@
 import json
+import logging
+from typing import Any
 
 import pandas as pd
-import duckdb
+import pyarrow as pa
+import connectorx as cx
 
-from data_formulator.data_loader.external_data_loader import ExternalDataLoader, sanitize_table_name
+from data_formulator.data_loader.external_data_loader import ExternalDataLoader
 
-from typing import Dict, Any, List, Optional
-from data_formulator.security import validate_sql_query
+logger = logging.getLogger(__name__)
+
 
 class PostgreSQLDataLoader(ExternalDataLoader):
 
     @staticmethod
-    def list_params()  -> List[Dict[str, Any]]:
+    def list_params() -> list[dict[str, Any]]:
         params_list = [
             {"name": "user", "type": "string", "required": True, "default": "postgres", "description": "PostgreSQL username"}, 
             {"name": "password", "type": "string", "required": False, "default": "", "description": "leave blank for no password"}, 
@@ -23,94 +26,197 @@ class PostgreSQLDataLoader(ExternalDataLoader):
 
     @staticmethod
     def auth_instructions() -> str:
-        return "Provide your PostgreSQL connection details. The user must have SELECT permissions on the tables you want to access."
+        return """**Example:** user: `postgres` · host: `localhost` · port: `5432` · database: `mydb`
 
-    def __init__(self, params: Dict[str, Any], duck_db_conn: duckdb.DuckDBPyConnection):
+**Local setup:** Ensure PostgreSQL is running — `brew services list` (macOS) or `systemctl status postgresql` (Linux). Leave password blank if none is set.
+
+**Remote setup:** Get host, port, username, and password from your database administrator. The user must have SELECT permissions on the tables you want to access.
+
+**Troubleshooting:** Test with `psql -U <user> -h <host> -p <port> -d <database>`"""
+
+    def __init__(self, params: dict[str, Any]):
         self.params = params
-        self.duck_db_conn = duck_db_conn
-        
-        # Get params as-is from frontend
-        host = self.params.get('host', '')
-        port = self.params.get('port', '') or '5432'  # Only port has a sensible default
-        user = self.params.get('user', '')
-        database = self.params.get('database', '')
-        password = self.params.get('password', '')
-        
-        # Validate required params
-        if not host:
+
+        self.host = self.params.get("host", "")
+        self.port = self.params.get("port", "") or "5432"
+        self.user = self.params.get("user", "")
+        self.database = self.params.get("database", "")
+        self.password = self.params.get("password", "")
+
+        if not self.host:
             raise ValueError("PostgreSQL host is required")
-        if not user:
+        if not self.user:
             raise ValueError("PostgreSQL user is required")
-        if not database:
+        if not self.database:
             raise ValueError("PostgreSQL database is required")
-        
-        # Create a sanitized version for logging (excludes password)
-        sanitized_attach_string = f"host={host} port={port} user={user} dbname={database}"
-        
-        try:
-            # Install and load the Postgres extension
-            self.duck_db_conn.install_extension("postgres")
-            self.duck_db_conn.load_extension("postgres")
-            
-            # Prepare the connection string for Postgres
-            # Note: attach_string contains sensitive credentials - do not log it
-            password_part = f" password={password}" if password else ""
-            attach_string = f"host={host} port={port} user={user}{password_part} dbname={database}"
-            
-            # Detach existing postgres connection if it exists 
-            try:
-                self.duck_db_conn.execute("DETACH mypostgresdb;")
-            except:
-                pass  # Ignore if connection doesn't exist
 
-            # Register Postgres connection
-            self.duck_db_conn.execute(f"ATTACH '{attach_string}' AS mypostgresdb (TYPE postgres);")
-            print(f"Successfully connected to PostgreSQL database: {database}")
-            
+        # Build connection URL for connectorx: postgresql://user:password@host:port/database
+        # - Use explicit empty password (user:@host) so the URL parser sees user vs password correctly.
+        # - Use 127.0.0.1 when host is localhost to force IPv4 TCP and avoid IPv6 ::1 connection issues.
+        host_for_url = "127.0.0.1" if (self.host or "").strip().lower() == "localhost" else self.host
+        if self.password:
+            self.connection_url = f"postgresql://{self.user}:{self.password}@{host_for_url}:{self.port}/{self.database}"
+        else:
+            self.connection_url = f"postgresql://{self.user}:@{host_for_url}:{self.port}/{self.database}"
+
+        try:
+            cx.read_sql(self.connection_url, "SELECT 1", return_type="arrow")
         except Exception as e:
-            # Log error with sanitized connection string to avoid exposing password
-            error_type = type(e).__name__
-            print(f"Failed to connect to PostgreSQL ({sanitized_attach_string}): {error_type}")
-            raise ValueError(f"Failed to connect to PostgreSQL database '{database}' on host '{host}': {error_type}")
+            logger.error(f"Failed to connect to PostgreSQL (postgresql://{self.user}:***@{self.host}:{self.port}/{self.database}): {e}")
+            raise ValueError(f"Failed to connect to PostgreSQL database '{self.database}' on host '{self.host}': {e}") from e
+        logger.info(f"Successfully connected to PostgreSQL: postgresql://{self.user}:***@{self.host}:{self.port}/{self.database}")
 
-    def list_tables(self):
+    # PostgreSQL types that connectorx cannot handle natively
+    _CX_SPATIAL_TYPES = {'geometry', 'geography'}  # PostGIS types → ST_AsText()
+    _CX_OTHER_UNSUPPORTED = {'box', 'circle', 'line', 'lseg', 'path', 'point',
+                              'polygon', 'bit', 'bit varying', 'xml', 'tsvector', 'tsquery'}
+    _CX_UNSUPPORTED_TYPES = _CX_SPATIAL_TYPES | _CX_OTHER_UNSUPPORTED
+
+    def _safe_select_list(self, schema: str, table_name: str) -> str:
+        """Build a SELECT column list that converts unsupported types to text.
+        Uses ST_AsText() for PostGIS types, ::text for others.
+        Returns '*' if no unsupported columns are found."""
         try:
-            # Query tables through DuckDB's attached PostgreSQL connection
-            tables_df = self.duck_db_conn.execute("""
+            columns_query = f"""
+                SELECT column_name, udt_name
+                FROM information_schema.columns
+                WHERE table_schema = '{schema}' AND table_name = '{table_name}'
+                ORDER BY ordinal_position
+            """
+            cols_arrow = cx.read_sql(self.connection_url, columns_query, return_type="arrow")
+            cols_df = cols_arrow.to_pandas()
+            has_unsupported = any(r['udt_name'].lower() in self._CX_UNSUPPORTED_TYPES for _, r in cols_df.iterrows())
+            if not has_unsupported:
+                return "*"
+            parts = []
+            for _, r in cols_df.iterrows():
+                col, dtype = r['column_name'], r['udt_name'].lower()
+                if dtype in self._CX_SPATIAL_TYPES:
+                    parts.append(f'ST_AsText("{col}") AS "{col}"')
+                elif dtype in self._CX_OTHER_UNSUPPORTED:
+                    parts.append(f'"{col}"::text AS "{col}"')
+                else:
+                    parts.append(f'"{col}"')
+            return ', '.join(parts)
+        except Exception:
+            return "*"
+
+    def fetch_data_as_arrow(
+        self,
+        source_table: str,
+        size: int = 1000000,
+        sort_columns: list[str] | None = None,
+        sort_order: str = 'asc'
+    ) -> pa.Table:
+        """
+        Fetch data from PostgreSQL as a PyArrow Table using connectorx.
+        
+        connectorx provides extremely fast Arrow-native data access,
+        typically 2-10x faster than pandas-based approaches.
+        """
+        if not source_table:
+            raise ValueError("source_table must be provided")
+        
+        # Handle table names like "mypostgresdb.schema.table" -> "schema.table"
+        table_ref = source_table
+        if source_table.startswith("mypostgresdb."):
+            table_ref = source_table[len("mypostgresdb."):]
+        # Build safe column list for the resolved schema.table
+        if '.' in table_ref:
+            s, t = table_ref.split('.', 1)
+            col_list = self._safe_select_list(s.strip('"'), t.strip('"'))
+        else:
+            col_list = self._safe_select_list('public', table_ref.strip('"'))
+        base_query = f"SELECT {col_list} FROM {table_ref}"
+        
+        # Add ORDER BY if sort columns specified
+        order_by_clause = ""
+        if sort_columns and len(sort_columns) > 0:
+            order_direction = "DESC" if sort_order == 'desc' else "ASC"
+            sanitized_cols = [f'"{col}" {order_direction}' for col in sort_columns]
+            order_by_clause = f" ORDER BY {', '.join(sanitized_cols)}"
+        
+        # Build full query with limit
+        query = f"{base_query}{order_by_clause} LIMIT {size}"
+        
+        logger.info(f"Executing PostgreSQL query via connectorx: {query[:200]}...")
+        
+        # Execute with connectorx - returns Arrow table directly
+        arrow_table = cx.read_sql(self.connection_url, query, return_type="arrow")
+        
+        logger.info(f"Fetched {arrow_table.num_rows} rows from PostgreSQL [Arrow-native]")
+        
+        return arrow_table
+
+    def list_tables(self, table_filter: str | None = None) -> list[dict[str, Any]]:
+        """List available tables from PostgreSQL."""
+        return self._list_tables_connectorx(table_filter)
+
+    def _list_tables_connectorx(self, table_filter: str | None = None) -> list[dict[str, Any]]:
+        """List tables using connectorx."""
+        try:
+            # Query tables from information_schema
+            query = """
                 SELECT table_schema as schemaname, table_name as tablename 
-                FROM mypostgresdb.information_schema.tables 
+                FROM information_schema.tables 
                 WHERE table_schema NOT IN ('information_schema', 'pg_catalog', 'pg_toast') 
                 AND table_schema NOT LIKE '%_intern%' 
                 AND table_schema NOT LIKE '%timescaledb%'
                 AND table_name NOT LIKE '%/%'
                 AND table_type = 'BASE TABLE'
                 ORDER BY table_schema, table_name
-            """).fetch_df()
+            """
+            tables_arrow = cx.read_sql(self.connection_url, query, return_type="arrow")
+            tables_df = tables_arrow.to_pandas()
             
-            print(f"Found tables: {tables_df}")
-
+            logger.info(f"Found {len(tables_df)} tables")
+            
             results = []
             
-            for schema, table_name in tables_df.values:
-                full_table_name = f"mypostgresdb.{schema}.{table_name}"
-
+            for _, row in tables_df.iterrows():
+                schema = row['schemaname']
+                table_name = row['tablename']
+                full_table_name = f"{schema}.{table_name}"
+                
+                # Apply filter if provided
+                if table_filter and table_filter.lower() not in full_table_name.lower():
+                    continue
+                
                 try:
-                    # Get column information using DuckDB's DESCRIBE
-                    columns_df = self.duck_db_conn.execute(f"DESCRIBE {full_table_name}").df()
+                    # Get column information
+                    columns_query = f"""
+                        SELECT column_name, data_type 
+                        FROM information_schema.columns 
+                        WHERE table_schema = '{schema}' AND table_name = '{table_name}'
+                        ORDER BY ordinal_position
+                    """
+                    columns_arrow = cx.read_sql(self.connection_url, columns_query, return_type="arrow")
+                    columns_df = columns_arrow.to_pandas()
                     columns = [{
-                        'name': row['column_name'],
-                        'type': row['column_type']
-                    } for _, row in columns_df.iterrows()]
+                        'name': col_row['column_name'],
+                        'type': col_row['data_type']
+                    } for _, col_row in columns_df.iterrows()]
+                    
+                    # Build safe column list (casts unsupported types to TEXT)
+                    col_list = self._safe_select_list(schema, table_name)
                     
                     # Get sample data
-                    sample_df = self.duck_db_conn.execute(f"SELECT * FROM {full_table_name} LIMIT 10").df()
-                    sample_rows = json.loads(sample_df.to_json(orient="records"))
+                    sample_rows = []
+                    sample_query = f'SELECT {col_list} FROM "{schema}"."{table_name}" LIMIT 10'
+                    try:
+                        sample_arrow = cx.read_sql(self.connection_url, sample_query, return_type="arrow")
+                        sample_df = sample_arrow.to_pandas()
+                        sample_rows = json.loads(sample_df.to_json(orient="records"))
+                    except Exception as sample_err:
+                        logger.warning(f"Could not sample {full_table_name}: {sample_err}")
                     
                     # Get row count
-                    row_count = self.duck_db_conn.execute(f"SELECT COUNT(*) FROM {full_table_name}").fetchone()[0]
-
+                    count_query = f'SELECT COUNT(*) as cnt FROM "{schema}"."{table_name}"'
+                    count_arrow = cx.read_sql(self.connection_url, count_query, return_type="arrow")
+                    row_count = count_arrow.to_pandas()['cnt'].iloc[0]
+                    
                     table_metadata = {
-                        "row_count": row_count,
+                        "row_count": int(row_count),
                         "columns": columns,
                         "sample_rows": sample_rows
                     }
@@ -121,42 +227,11 @@ class PostgreSQLDataLoader(ExternalDataLoader):
                     })
                     
                 except Exception as e:
-                    print(f"Error processing table {full_table_name}: {e}")
+                    logger.warning(f"Error processing table {full_table_name}: {e}")
                     continue
-                    
-            return results
             
+            return results
+
         except Exception as e:
-            print(f"Error listing tables: {e}")
+            logger.error(f"Error listing tables: {e}")
             return []
-
-    def ingest_data(self, table_name: str, name_as: Optional[str] = None, size: int = 1000000):
-        # Create table in the main DuckDB database from Postgres data
-        if name_as is None:
-            name_as = table_name.split('.')[-1]
-
-        name_as = sanitize_table_name(name_as)
-
-        self.duck_db_conn.execute(f"""
-            CREATE OR REPLACE TABLE main.{name_as} AS 
-            SELECT * FROM {table_name} 
-            LIMIT {size}
-        """)
-
-    def view_query_sample(self, query: str) -> List[Dict[str, Any]]:
-        result, error_message = validate_sql_query(query)
-        if not result:
-            raise ValueError(error_message)
-        
-        return json.loads(self.duck_db_conn.execute(query).df().head(10).to_json(orient="records"))
-
-    def ingest_data_from_query(self, query: str, name_as: str) -> pd.DataFrame:
-        # Execute the query and get results as a DataFrame
-        result, error_message = validate_sql_query(query)
-        if not result:
-            raise ValueError(error_message)
-        
-        df = self.duck_db_conn.execute(query).df()
-        # Use the base class's method to ingest the DataFrame
-        self.ingest_df_to_duckdb(df, sanitize_table_name(name_as))
-        return df

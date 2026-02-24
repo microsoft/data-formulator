@@ -6,7 +6,6 @@ import logging
 import base64
 
 from data_formulator.agents.agent_utils import extract_json_objects, generate_data_summary
-from data_formulator.agents.agent_sql_data_transform import get_sql_table_statistics_str, sanitize_table_name
 
 logger = logging.getLogger(__name__)
 
@@ -95,10 +94,10 @@ Guidelines:
 
 class ExplorationAgent(object):
 
-    def __init__(self, client, agent_exploration_rules="", db_conn=None):
+    def __init__(self, client, workspace, agent_exploration_rules=""):
         self.agent_exploration_rules = agent_exploration_rules
         self.client = client
-        self.db_conn = db_conn
+        self.workspace = workspace
 
     def process_gpt_response(self, messages, response):
         """Process GPT response to extract exploration plan"""
@@ -150,15 +149,7 @@ class ExplorationAgent(object):
             return {"type": "text", "text": "The visualization is not available."}
 
     def get_data_summary(self, input_tables):
-        if self.db_conn:
-            data_summary = ""
-            for table in input_tables:
-                table_name = sanitize_table_name(table['name'])
-                table_summary_str = get_sql_table_statistics_str(self.db_conn, table_name)
-                data_summary += f"[TABLE {table_name}]\n\n{table_summary_str}\n\n"
-        else:
-            data_summary = generate_data_summary(input_tables)
-        return data_summary
+        return generate_data_summary(input_tables, workspace=self.workspace)
             
     def suggest_followup(self, input_tables, completed_steps: list[dict], next_steps: list[str]):
         """
