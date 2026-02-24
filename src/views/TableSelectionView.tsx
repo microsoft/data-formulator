@@ -157,6 +157,7 @@ export const DatasetSelectionView: React.FC<DatasetSelectionViewProps> = functio
                                     maxRows={12}
                                     compact={false}
                                     showPreviewLabel={false}
+                                    hideRowCount={hideRowNum}
                                 />
                             </Box>
                             <Box sx={{display: 'flex', justifyContent: 'center', mt: 2}} >
