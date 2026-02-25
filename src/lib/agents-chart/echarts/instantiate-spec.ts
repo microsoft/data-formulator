@@ -261,10 +261,15 @@ export function ecApplyLayoutToSpec(
     const CANVAS_BUFFER = 16;
     const LEGEND_GAP = 12; // gap between plot and legend/visualMap so they don't overlap
     const VISUALMAP_GAP = 18; // extra gap between plot and visualMap bar when only visualMap (no legend)
+    const VISUALMAP_RIGHT_OFFSET = 10; // must match scatter (and other templates) visualMap right position
     const legendWidth = (hasLegend ? (option._legendWidth || 120) : 20);
     const visualMapWidth = (option._visualMapWidth as number) || 0;
     if (visualMapWidth) delete option._visualMapWidth;
-    const rightMargin = isDualLegend ? 20 : (hasLegend ? legendWidth : (hasVisualMap ? visualMapWidth + VISUALMAP_GAP : 20)) + LEGEND_GAP;
+    // When dual legend (segment at bottom + size/color bar on right), reserve right space so plot does not overlap visualMap
+    const rightMargin =
+        isDualLegend
+            ? (hasVisualMap ? VISUALMAP_RIGHT_OFFSET + visualMapWidth + VISUALMAP_GAP : 10)
+            : (hasLegend ? legendWidth : (hasVisualMap ? visualMapWidth + VISUALMAP_GAP : 10)) + LEGEND_GAP;
     const bottomLegendExtra = isDualLegend ? 30 : 0;
     const gridMargin = {
         left: (hasYTitle ? 70 : 50) + CANVAS_BUFFER,
@@ -516,8 +521,9 @@ function formatCategoryTemporal(value: string, d3Format: string): string {
 /**
  * Format a numeric timestamp using a d3-style format string.
  * Used for 'value' axes that hold temporal data (timestamps).
+ * Exported for scatter (temporal color visualMap labels).
  */
-function formatTimestamp(val: number, d3Format: string): string {
+export function formatTimestamp(val: number, d3Format: string): string {
     const d = new Date(val);
     const pad = (n: number) => n < 10 ? '0' + n : String(n);
     return d3Format

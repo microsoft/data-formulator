@@ -10,6 +10,7 @@
  */
 
 import { ChartTemplateDef } from '../../core/types';
+import { formatTimestamp } from '../instantiate-spec';
 import { DEFAULT_COLORS, groupBy, getCategoryOrder, extractCategories } from './utils';
 
 /** Compute a reasonable scatter symbolSize based on canvas area and point count. */
@@ -70,6 +71,9 @@ export const ecScatterPlotDef: ChartTemplateDef = {
 
         let scaleSize: (raw: number | string | null | undefined) => number;
         let sizeOrderForLegend: string[] | undefined;
+        /** For quantitative size: data domain for size legend (VL-style). */
+        let sizeDomainMin: number | undefined;
+        let sizeDomainMax: number | undefined;
 
         if (useOrdinalSize && sizeField) {
             // Discrete levels (Rank, Level, etc.): ordered domain → size by index (VL ordinal scale).
@@ -89,13 +93,15 @@ export const ecScatterPlotDef: ChartTemplateDef = {
                 return Math.round(rangeMin + t * (rangeMaxClamped - rangeMin));
             };
         } else if (sizeField) {
-            // Continuous quantitative/temporal: sqrt scale over numeric domain
+            // Continuous quantitative/temporal: sqrt scale over numeric domain (VL size scale type: sqrt, zero: true).
             const vals = table
                 .map((r: any) => r[sizeField])
                 .map((v: any) => (v != null ? Number(v) : NaN))
                 .filter((v: number) => !isNaN(v));
             const sizeMin = vals.length ? Math.min(...vals) : 0;
             const sizeMax = vals.length ? Math.max(...vals) : 1;
+            sizeDomainMin = sizeMin;
+            sizeDomainMax = sizeMax;
             scaleSize = (raw: number | string | null | undefined): number => {
                 const v = raw != null ? Number(raw) : NaN;
                 if (isNaN(v)) return rangeMin;
@@ -114,8 +120,10 @@ export const ecScatterPlotDef: ChartTemplateDef = {
             scaleSize = () => rangeMin;
         }
 
-        // When ordinal size has a discrete order, use visualMap so ECharts shows a size legend (like VL).
-        const useVisualMapForSize = sizeOrderForLegend && sizeOrderForLegend.length > 0;
+        // When ordinal size has a discrete order, use piecewise visualMap; when quantity, use continuous visualMap (scatter-aqi-color style).
+        const usePiecewiseSizeVisualMap = sizeOrderForLegend && sizeOrderForLegend.length > 0 && sizeField;
+        const useContinuousSizeVisualMap = sizeField != null && sizeDomainMin !== undefined && sizeDomainMax !== undefined;
+        const useVisualMapForSize = usePiecewiseSizeVisualMap || useContinuousSizeVisualMap;
 
         // ECharts scatter uses direct data arrays
         const option: any = {
@@ -135,11 +143,12 @@ export const ecScatterPlotDef: ChartTemplateDef = {
             series: [],
         };
 
-        if (useVisualMapForSize && sizeField) {
+        if (usePiecewiseSizeVisualMap) {
+            // Piecewise visualMap maps dimension 2 to symbolSize; hide default UI and use custom graphic legend (Vega-Lite style: different sized circles, label on the right).
             option.visualMap = [
                 {
                     type: 'piecewise',
-                    show: true,
+                    show: false,
                     dimension: 2,
                     pieces: sizeOrderForLegend!.map((name) => ({
                         value: name,
@@ -151,8 +160,125 @@ export const ecScatterPlotDef: ChartTemplateDef = {
                     itemGap: 8,
                     itemSymbol: 'circle',
                     formatter: (value: string) => value,
-                    // title is the size channel field (e.g. Level)
                     title: sizeField,
+                },
+            ];
+            option._visualMapWidth = 88;
+            // One group for the whole legend; all coordinates use left/top so text aligns left
+            const ordLegendRight = 28;
+            const ordGap = 8;
+            const ordRowGap = 6;
+            const ordFontSize = 10;
+            const ordTitleHeight = 20;
+            const ordLabelWidth = 44;
+            const canvasH = ctx.canvasSize?.height ?? 300;
+            const maxCircleR = Math.max(...sizeOrderForLegend!.map((name) => scaleSize(name) / 2));
+            const legendWidth = ordLabelWidth + ordGap + 2 * maxCircleR;
+            const scatterColor = (ctx.resolvedEncodings as any)?.color?.colorPalette?.[0] ?? DEFAULT_COLORS[0];
+            const rowHeights = sizeOrderForLegend!.map((name) => Math.max(scaleSize(name), 16) + ordRowGap);
+            const totalLegendHeight = ordTitleHeight + rowHeights.reduce((a, b) => a + b, 0);
+            const ordLegendTop = Math.max(10, (canvasH - totalLegendHeight) / 2);
+            const legendChildren: any[] = [
+                {
+                    type: 'text' as const,
+                    left: 0,
+                    top: 0,
+                    style: {
+                        text: sizeField,
+                        fontSize: 11,
+                        fontWeight: 'bold',
+                        fill: '#333',
+                        textAlign: 'left',
+                    },
+                },
+            ];
+            let rowTop = ordTitleHeight;
+            for (let i = 0; i < sizeOrderForLegend!.length; i++) {
+                const name = sizeOrderForLegend![i];
+                const r = scaleSize(name) / 2;
+                const rowH = rowHeights[i];
+                const circleTop = rowTop + (rowH - scaleSize(name)) / 2;
+                const textTop = rowTop + (rowH - ordFontSize) / 2;
+                legendChildren.push({
+                    type: 'circle' as const,
+                    left: maxCircleR - r,
+                    top: circleTop - r,
+                    shape: { cx: r, cy: r, r },
+                    style: { fill: scatterColor },
+                });
+                legendChildren.push({
+                    type: 'text' as const,
+                    left: 2 * maxCircleR + ordGap,
+                    top: textTop,
+                    style: {
+                        text: name,
+                        fontSize: ordFontSize,
+                        fill: '#333',
+                        textAlign: 'left',
+                    },
+                });
+                rowTop += rowH;
+            }
+            const ordLegendGraphic = {
+                type: 'group' as const,
+                right: ordLegendRight,
+                top: ordLegendTop,
+                width: legendWidth,
+                z: 100,
+                children: legendChildren,
+            };
+            const existingGraphic = option.graphic;
+            option.graphic = Array.isArray(existingGraphic)
+                ? [...existingGraphic, ordLegendGraphic]
+                : existingGraphic
+                    ? [existingGraphic, ordLegendGraphic]
+                    : [ordLegendGraphic];
+        } else if (useContinuousSizeVisualMap) {
+            // Quantity size: continuous visualMap (scatter-aqi-color style), inRange.symbolSize maps dimension to size.
+            // Enforce a minimum spread so circles are visibly different (ECharts maps data linearly to [min, max]).
+            const SIZE_SPREAD_MIN = 20;
+            const sizeMaxForMap = Math.max(rangeMaxClamped, rangeMin + SIZE_SPREAD_MIN);
+            const fmtSize = (v: number) => (Number.isInteger(v) ? String(v) : v.toFixed(1));
+            const sizeVisualMap = {
+                type: 'continuous' as const,
+                show: true,
+                min: sizeDomainMin!,
+                max: sizeDomainMax!,
+                dimension: 2,
+                inRange: { symbolSize: [rangeMin, sizeMaxForMap] as [number, number] },
+                orient: 'vertical',
+                right: 50,
+                top: '6.0%',
+                bottom: '10.0%',
+                padding: 0,
+                itemGap: 0,
+                text: [fmtSize(sizeDomainMax!), fmtSize(sizeDomainMin!)] as [string, string],
+                textStyle: { fontSize: 10 },
+                seriesIndex: 0,
+                name: sizeField,
+            };
+            if (option.visualMap) {
+                (option.visualMap as any[]).push(sizeVisualMap);
+            } else {
+                option.visualMap = [sizeVisualMap];
+            }
+            option._visualMapWidth = 70;
+            option.graphic = option.graphic || [];
+            const existingGraphic = Array.isArray(option.graphic) ? option.graphic : [option.graphic];
+            option.graphic = [
+                ...existingGraphic,
+                {
+                    type: 'text' as const,
+                    right: 50,
+                    top: 10,
+                    z: 100,
+                    style: {
+                        text: sizeField,
+                        fontSize: 11,
+                        fontWeight: 'bold',
+                        fill: '#333',
+                        textAlign: 'right',
+                    },
                 },
             ];
         }
@@ -181,30 +307,35 @@ export const ecScatterPlotDef: ChartTemplateDef = {
             ?? DEFAULT_COLORS;
         const legendOpts = (ctx.resolvedEncodings as any)?.color ?? (ctx.resolvedEncodings as any)?.group;
         const colorType = channelSemantics.color?.type ?? (ctx.resolvedEncodings as any)?.color?.type;
+        const isTemporalColor = colorField && colorType === 'temporal';
         const isContinuousColor = colorField && (colorType === 'quantitative' || colorType === 'temporal');
 
         if (isContinuousColor) {
-            // VL: color type quantitative/temporal → continuous color scale (e.g. scheme "greens"); one series + visualMap
+            // VL: color type quantitative → numeric scale; temporal → timestamp scale (mirror VL type "temporal" + legend format "%b %d, %Y").
             const colorDim = sizeField != null ? 3 : 2; // data: [x, y, size?, colorVal]
+            const toColorVal = isTemporalColor
+                ? (v: any) => (v != null ? new Date(v).getTime() : NaN)
+                : (v: any) => (v != null ? Number(v) : NaN);
             const pointDataWithColor = (row: any) => {
                 const x = row[xField];
                 const y = row[yField];
-                const c = row[colorField] != null ? Number(row[colorField]) : NaN;
+                const c = toColorVal(row[colorField]);
                 if (sizeField != null) return [x, y, row[sizeField], c];
                 return [x, y, c];
             };
             const colorVals = table
-                .map((r: any) => r[colorField] != null ? Number(r[colorField]) : NaN)
+                .map((r: any) => toColorVal(r[colorField]))
                 .filter((v: number) => !isNaN(v));
-            const colorMin = colorVals.length ? Math.min(...colorVals) : 0;
-            const colorMax = colorVals.length ? Math.max(...colorVals) : 1;
+            const colorMin = colorVals.length ? Math.min(...colorVals) : (isTemporalColor ? Date.now() : 0);
+            const colorMax = colorVals.length ? Math.max(...colorVals) : (isTemporalColor ? Date.now() : 1);
             const scheme = (ctx.encodings as any)?.color?.scheme ?? '';
             const greensRange = ['#f7fcf5', '#c7e9c0', '#41ab5d', '#006d2c', '#00441b'];
-            // Light color = small value (min); dark = max. Greens already light→dark; for palette use [last, first] so min gets the lighter end.
+            // Continuous colormap: 2-color gradient (min→max), like Vega-Lite sequential scale.
+            // Temporal and quantitative both use [light, dark] so the bar looks like a single colormap.
             const inRange = /green/i.test(scheme)
                 ? greensRange
                 : colorPalette.length >= 2
-                    ? [colorPalette[colorPalette.length - 1], colorPalette[0]]
+                    ? [colorPalette[colorPalette.length - 1], colorPalette[0]]  // light → dark
                     : greensRange;
             // Layout: use same % for visualMap and value labels so they stay aligned at any container size
             const VM_BAR_RIGHT = 50;
@@ -216,6 +347,9 @@ export const ecScatterPlotDef: ChartTemplateDef = {
             const VM_BAR_BOTTOM_PX = 40;
             const VM_TOP_PCT = ((VM_BAR_TOP_PX / REF_H) * 100).toFixed(1) + '%';
             const VM_BOTTOM_PCT = ((VM_BAR_BOTTOM_PX / REF_H) * 100).toFixed(1) + '%';
+            const temporalFormat = channelSemantics.color?.temporalFormat ?? '%b %d, %Y';
+            const formatColorLabel = (val: number) =>
+                isTemporalColor ? formatTimestamp(val, temporalFormat) : String(val);
             // Use visualMap's built-in text for max/min so labels are positioned by ECharts and align with the bar.
             // text[0] = high (top), text[1] = low (bottom) per ContinuousView.
             const colorVisualMap = {
@@ -230,7 +364,8 @@ export const ecScatterPlotDef: ChartTemplateDef = {
                 bottom: VM_BOTTOM_PCT,
                 padding: 0,
                 itemGap: 0,
-                text: [String(colorMax), String(colorMin)] as [string, string],
+                text: [formatColorLabel(colorMax), formatColorLabel(colorMin)] as [string, string],
+                formatter: formatColorLabel,
                 textStyle: { fontSize: VM_FONT_SIZE },
                 show: true,
                 seriesIndex: 0,
@@ -335,8 +470,64 @@ export const ecScatterPlotDef: ChartTemplateDef = {
             };
             if (sizeField != null && !useVisualMapForSize) {
                 seriesOpt.symbolSize = (value: number[] | number) => scaleSize(Array.isArray(value) ? value[2] : value);
+            } else if (useContinuousSizeVisualMap && sizeDomainMin !== undefined && sizeDomainMax !== undefined) {
+                // Apply same linear mapping as visualMap so circles are sized correctly (visualMap may not drive symbolSize in all environments)
+                const SIZE_SPREAD_MIN = 20;
+                const sizeSpread = Math.max(rangeMaxClamped - rangeMin, SIZE_SPREAD_MIN);
+                const sizeMaxMapped = rangeMin + sizeSpread;
+                seriesOpt.symbolSize = (value: number[] | number) => {
+                    const v = Array.isArray(value) ? value[2] : value;
+                    const num = Number(v);
+                    if (v == null || isNaN(num)) return rangeMin;
+                    const span = sizeDomainMax! - sizeDomainMin!;
+                    const t = span <= 0 ? 0.5 : Math.max(0, Math.min(1, (num - sizeDomainMin!) / span));
+                    return Math.round(rangeMin + t * (sizeMaxMapped - rangeMin));
+                };
             }
             option.series.push(seriesOpt);
+        }
+
+        // Tooltip: show all encodings (Vega-Lite style) — x, y, size, color/segment
+        const xName = option.xAxis?.name ?? xField ?? 'X';
+        const yName = option.yAxis?.name ?? yField ?? 'Y';
+        const sizeName = sizeField ?? null;
+        const colorName = colorField ?? null;
+        const temporalFormat = channelSemantics.color?.temporalFormat ?? '%b %d, %Y';
+        const fmtNum = (v: unknown) => {
+            if (v == null) return '';
+            const n = Number(v);
+            return isNaN(n) ? String(v) : (Number.isInteger(n) ? String(n) : n.toFixed(1));
+        };
+        const fmtColorVal = (v: unknown) => {
+            if (v == null) return '';
+            if (isTemporalColor) return formatTimestamp(Number(v), temporalFormat);
+            return fmtNum(v);
+        };
+        option.tooltip = option.tooltip ?? {};
+        option.tooltip.formatter = (params: any) => {
+            if (!params?.data) return '';
+            const d = Array.isArray(params.data) ? params.data : [params.data];
+            const parts: string[] = [];
+            parts.push(`${xName}: ${fmtNum(d[0])}`);
+            parts.push(`${yName}: ${fmtNum(d[1])}`);
+            if (sizeName != null && d[2] !== undefined) parts.push(`${sizeName}: ${fmtNum(d[2])}`);
+            if (colorName != null) {
+                const colorVal = isContinuousColor ? d[sizeField != null ? 3 : 2] : params.seriesName;
+                parts.push(`${colorName}: ${isContinuousColor ? fmtColorVal(colorVal) : (colorVal ?? '')}`);
+            }
+            return parts.join('<br/>');
+        };
+
+        // When there are multiple series (e.g. categorical color), size visualMap must apply to all of them
+        const vmList = Array.isArray(option.visualMap) ? option.visualMap : (option.visualMap ? [option.visualMap] : []);
+        const seriesCount = option.series?.length ?? 0;
+        if (seriesCount > 1) {
+            const allIndices = option.series!.map((_: any, i: number) => i);
+            for (const vm of vmList) {
+                if (vm.type === 'continuous' && vm.inRange?.symbolSize != null) {
+                    vm.seriesIndex = allIndices;
+                }
+            }
         }
 
         // Write the ECharts option into the spec object
@@ -350,9 +541,12 @@ export const ecScatterPlotDef: ChartTemplateDef = {
     ],
     postProcess: (option, ctx) => {
         if (!option.series || !Array.isArray(option.series)) return;
-        // When visualMap controls symbolSize (e.g. ordinal size legend), do not override series.symbolSize
-        const visualMapControlsSize = Array.isArray(option.visualMap) && option.visualMap.some(
-            (vm: any) => vm.type === 'piecewise' && Array.isArray(vm.pieces) && vm.pieces.some((p: any) => p.symbolSize != null),
+        // When visualMap controls symbolSize (piecewise ordinal or continuous quantity), do not override series.symbolSize
+        const vmList = Array.isArray(option.visualMap) ? option.visualMap : (option.visualMap ? [option.visualMap] : []);
+        const visualMapControlsSize = vmList.some(
+            (vm: any) =>
+                (vm.type === 'piecewise' && Array.isArray(vm.pieces) && vm.pieces.some((p: any) => p.symbolSize != null))
+                || (vm.type === 'continuous' && vm.inRange?.symbolSize != null),
         );
         if (visualMapControlsSize) return;
         const w = option._width || ctx.canvasSize.width;
@@ -360,7 +554,11 @@ export const ecScatterPlotDef: ChartTemplateDef = {
         const pointCount = ctx.table.length;
         const size = computeSymbolSize(w, h, pointCount);
         for (const series of option.series) {
-            if (series.type === 'scatter' && series.symbolSize == null) {
+            if (series.type !== 'scatter') continue;
+            // Series has size encoding (data is [x, y, size]): keep template-set symbolSize function, do not override
+            const hasSizeEncoding = series.data?.length && Array.isArray(series.data[0]) && (series.data[0] as number[]).length >= 3;
+            if (hasSizeEncoding) continue;
+            if (series.symbolSize == null) {
                 series.symbolSize = size;
             }
         }
