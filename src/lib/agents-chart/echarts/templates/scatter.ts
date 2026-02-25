@@ -43,7 +43,7 @@ export const ecScatterPlotDef: ChartTemplateDef = {
 
         // ECharts symbolSize is pixel diameter; buildECEncodings outputs sizeRange in pixels [4, 28]
         const EC_SIZE_MIN = 4;
-        const EC_SIZE_MAX = 50;
+        const EC_SIZE_MAX = 30;
         let rangeMin = Math.max(EC_SIZE_MIN, Math.min(EC_SIZE_MAX, sizeRange?.[0] ?? 6));
         let rangeMaxClamped = Math.max(EC_SIZE_MIN, Math.min(EC_SIZE_MAX, sizeRange?.[1] ?? 20));
         rangeMaxClamped = Math.max(rangeMin, rangeMaxClamped);
@@ -329,16 +329,19 @@ export const ecScatterPlotDef: ChartTemplateDef = {
             const colorMin = colorVals.length ? Math.min(...colorVals) : (isTemporalColor ? Date.now() : 0);
             const colorMax = colorVals.length ? Math.max(...colorVals) : (isTemporalColor ? Date.now() : 1);
             const scheme = (ctx.encodings as any)?.color?.scheme ?? '';
+            // Default visualMap color bar: gray gradient (light → dark)
+            const defaultGrayRange = ['#f5f5f5', '#e0e0e0', '#9e9e9e', '#616161', '#424242'];
             const greensRange = ['#f7fcf5', '#c7e9c0', '#41ab5d', '#006d2c', '#00441b'];
-            // Continuous colormap: 2-color gradient (min→max), like Vega-Lite sequential scale.
-            // Temporal and quantitative both use [light, dark] so the bar looks like a single colormap.
+            // Continuous colormap: default gray; optional scheme override (e.g. green) or palette.
             const inRange = /green/i.test(scheme)
                 ? greensRange
                 : colorPalette.length >= 2
                     ? [colorPalette[colorPalette.length - 1], colorPalette[0]]  // light → dark
-                    : greensRange;
-            // Layout: use same % for visualMap and value labels so they stay aligned at any container size
+                    : defaultGrayRange;
+            // Layout: when both size and color visualMap exist, place them side by side (size right, color left)
             const VM_BAR_RIGHT = 50;
+            const VM_BAR_WIDTH = 70;
+            const VM_GAP = 16;
             const VM_VAL_RIGHT = 28;
             const VM_TITLE_TOP = 10;
             const VM_FONT_SIZE = 10;
@@ -347,6 +350,9 @@ export const ecScatterPlotDef: ChartTemplateDef = {
             const VM_BAR_BOTTOM_PX = 40;
             const VM_TOP_PCT = ((VM_BAR_TOP_PX / REF_H) * 100).toFixed(1) + '%';
             const VM_BOTTOM_PCT = ((VM_BAR_BOTTOM_PX / REF_H) * 100).toFixed(1) + '%';
+            const hasSizeVisualMap = option.visualMap && Array.isArray(option.visualMap)
+                && option.visualMap.some((vm: any) => vm.inRange?.symbolSize != null);
+            const colorBarRight = hasSizeVisualMap ? VM_BAR_RIGHT + VM_BAR_WIDTH + VM_GAP : VM_BAR_RIGHT;
             const temporalFormat = channelSemantics.color?.temporalFormat ?? '%b %d, %Y';
             const formatColorLabel = (val: number) =>
                 isTemporalColor ? formatTimestamp(val, temporalFormat) : String(val);
@@ -359,7 +365,7 @@ export const ecScatterPlotDef: ChartTemplateDef = {
                 dimension: colorDim,
                 inRange: { color: inRange },
                 orient: 'vertical',
-                right: VM_BAR_RIGHT,
+                right: colorBarRight,
                 top: VM_TOP_PCT,
                 bottom: VM_BOTTOM_PCT,
                 padding: 0,
@@ -376,12 +382,12 @@ export const ecScatterPlotDef: ChartTemplateDef = {
             } else {
                 option.visualMap = colorVisualMap;
             }
-            option._visualMapWidth = 70;
+            option._visualMapWidth = hasSizeVisualMap ? VM_BAR_WIDTH + VM_GAP + VM_BAR_WIDTH : VM_BAR_WIDTH;
             // Only the title is custom graphic; max/min come from visualMap.text above.
             const vmGraphics: any[] = [
                 {
                     type: 'text' as const,
-                    right: VM_BAR_RIGHT,
+                    right: colorBarRight,
                     top: VM_TITLE_TOP,
                     z: 100,
                     style: {
