@@ -470,6 +470,7 @@ export const SimpleChartRecBox: FC<{ onExpandedChange?: (expanded: boolean) => v
                 const candidateTable = createDictTable(candidateTableId, rows, undefined);
                 candidateTable.derive = {
                     code: code || `# Exploration step ${createdTables.length + 1}`,
+                    codeSignature: result.content?.result?.code_signature, // HMAC from server
                     outputVariable: refinedGoal?.output_variable || 'result_df',
                     source: selectedTableIds,
                     dialog: dialog || [],

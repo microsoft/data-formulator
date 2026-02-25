@@ -496,7 +496,19 @@ export function useDerivedTableRefresh() {
             }
 
             // Python-derived tables — re-run the transformation code
-            const { source: sourceTableIds, code } = derivedTable.derive;
+            const { source: sourceTableIds, code, codeSignature } = derivedTable.derive;
+
+            // Security: refuse to send code without a valid server signature
+            if (!codeSignature) {
+                console.warn(`[DerivedRefresh] Table "${derivedTable.id}" has no code signature — skipping refresh (code may predate signing)`);
+                dispatch(dfActions.addMessages({
+                    timestamp: Date.now(),
+                    component: 'Data Refresh',
+                    type: 'warning',
+                    value: `Cannot refresh "${derivedTable.displayId || derivedTable.id}": missing code signature. Re-derive the table to obtain a signed version.`
+                }));
+                return null;
+            }
 
             console.log(`[DerivedRefresh] Looking for source tables: ${sourceTableIds.join(', ')}`);
             
@@ -521,6 +533,7 @@ export function useDerivedTableRefresh() {
             const requestBody: any = {
                 input_tables: inputTables,
                 code: code,
+                code_signature: codeSignature, // HMAC proof that server generated this code
                 output_variable: derivedTable.derive?.outputVariable || 'result_df',
                 virtual: !!derivedTable.virtual?.tableId,
                 output_table_name: derivedTable.virtual?.tableId

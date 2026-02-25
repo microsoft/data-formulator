@@ -112,6 +112,19 @@ class AzureBlobWorkspace(Workspace):
         self._root = None  # type: ignore[assignment]
         self._path = None  # type: ignore[assignment]
 
+        # --- in-memory metadata cache ----------------------------------------
+        # Avoids re-downloading workspace.yaml on every method call.
+        # Invalidated automatically by save_metadata() and cleanup().
+        self._metadata_cache: Optional[WorkspaceMetadata] = None
+
+        # --- blob data cache -------------------------------------------------
+        # Caches downloaded blob bytes keyed by filename.  Avoids repeated
+        # downloads of the same data file within one request (e.g.
+        # analyze_table calls run_parquet_sql once per column, each of
+        # which would otherwise re-download the entire parquet blob).
+        # Invalidated per-file on upload/delete, cleared on cleanup.
+        self._blob_data_cache: dict[str, bytes] = {}
+
         # --- metadata --------------------------------------------------------
         if not self._blob_exists(METADATA_FILENAME):
             self._init_metadata()
@@ -144,28 +157,61 @@ class AzureBlobWorkspace(Workspace):
         """Upload *data* to blob.  Returns size in bytes."""
         raw = data.encode("utf-8") if isinstance(data, str) else data
         self._get_blob(filename).upload_blob(raw, overwrite=overwrite)
+        # Invalidate cached copy of this file
+        self._blob_data_cache.pop(filename, None)
+        if hasattr(self, "_temp_file_cache") and filename in self._temp_file_cache:
+            self._temp_file_cache.pop(filename).unlink(missing_ok=True)
         return len(raw)
 
     def _download_bytes(self, filename: str) -> bytes:
-        return self._get_blob(filename).download_blob().readall()
+        cached = self._blob_data_cache.get(filename)
+        if cached is not None:
+            return cached
+        data = self._get_blob(filename).download_blob().readall()
+        self._blob_data_cache[filename] = data
+        return data
 
     def _delete_blob(self, filename: str) -> None:
         self._get_blob(filename).delete_blob()
+        self._blob_data_cache.pop(filename, None)
+        if hasattr(self, "_temp_file_cache") and filename in self._temp_file_cache:
+            self._temp_file_cache.pop(filename).unlink(missing_ok=True)
 
     @contextmanager
     def _temp_local_copy(self, filename: str):
-        """Download a blob to a temporary local file, yield its path, then
-        clean up.  Used for libraries that require a real filesystem path
-        (DuckDB, ``pq.ParquetFile``, etc.)."""
-        data = self._download_bytes(filename)
-        suffix = Path(filename).suffix
-        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+        """Yield a local file path containing the blob's data.
+
+        The file is cached on disk for the lifetime of this workspace
+        instance so that repeated calls (e.g. ``run_parquet_sql`` once
+        per column in ``analyze_table``) don't re-write the temp file.
+        The cache is keyed by filename and cleaned up when the instance
+        is garbage-collected or when :meth:`cleanup` is called.
+        """
+        if not hasattr(self, "_temp_file_cache"):
+            self._temp_file_cache: dict[str, Path] = {}
+
+        tmp_path = self._temp_file_cache.get(filename)
+        if tmp_path is None or not tmp_path.exists():
+            data = self._download_bytes(filename)
+            suffix = Path(filename).suffix
+            tmp = tempfile.NamedTemporaryFile(suffix=suffix, delete=False)
             tmp.write(data)
+            tmp.close()
             tmp_path = Path(tmp.name)
-        try:
-            yield tmp_path
-        finally:
-            tmp_path.unlink(missing_ok=True)
+            self._temp_file_cache[filename] = tmp_path
+
+        yield tmp_path
+        # Don't delete — reused across calls, cleaned up on GC / cleanup()
+
+    def _cleanup_temp_files(self) -> None:
+        """Remove all cached temp files from disk."""
+        for path in getattr(self, "_temp_file_cache", {}).values():
+            path.unlink(missing_ok=True)
+        if hasattr(self, "_temp_file_cache"):
+            self._temp_file_cache.clear()
+
+    def __del__(self) -> None:
+        self._cleanup_temp_files()
 
     # ------------------------------------------------------------------
     # Metadata overrides
@@ -177,11 +223,14 @@ class AzureBlobWorkspace(Workspace):
         logger.info("Initialized new workspace metadata in blob: %s", self._prefix)
 
     def get_metadata(self) -> WorkspaceMetadata:
+        if self._metadata_cache is not None:
+            return self._metadata_cache
         raw = self._download_bytes(METADATA_FILENAME)
         parsed = yaml.safe_load(raw)
         if parsed is None:
             raise ValueError("Metadata blob parsed to None")
-        return WorkspaceMetadata.from_dict(parsed)
+        self._metadata_cache = WorkspaceMetadata.from_dict(parsed)
+        return self._metadata_cache
 
     def save_metadata(self, metadata: WorkspaceMetadata) -> None:
         metadata.updated_at = datetime.now(timezone.utc)
@@ -192,6 +241,12 @@ class AzureBlobWorkspace(Workspace):
             sort_keys=False,
         )
         self._upload_bytes(METADATA_FILENAME, content)
+        # Update the cache with the just-saved metadata
+        self._metadata_cache = metadata
+
+    def invalidate_metadata_cache(self) -> None:
+        """Force the next get_metadata() to re-read from blob storage."""
+        self._metadata_cache = None
 
     # ------------------------------------------------------------------
     # File / table operations
@@ -233,6 +288,9 @@ class AzureBlobWorkspace(Workspace):
         """Delete **all** blobs under this workspace's prefix."""
         for blob in self._container.list_blobs(name_starts_with=self._prefix):
             self._container.delete_blob(blob.name)
+        self._metadata_cache = None
+        self._blob_data_cache.clear()
+        self._cleanup_temp_files()
         logger.info("Cleaned up blob workspace %s", self._safe_id)
 
     # ------------------------------------------------------------------
@@ -510,6 +568,10 @@ class AzureBlobWorkspace(Workspace):
         # Ensure metadata exists even if snapshot didn't include it
         if not self._blob_exists(METADATA_FILENAME):
             self._init_metadata()
+        # Invalidate caches since metadata and data were replaced from snapshot
+        self._metadata_cache = None
+        self._blob_data_cache.clear()
+        self._cleanup_temp_files()
 
     # ------------------------------------------------------------------
     # Session management (blob-backed)
@@ -582,6 +644,11 @@ class AzureBlobWorkspace(Workspace):
                 )
             if not self._blob_exists(METADATA_FILENAME):
                 self._init_metadata()
+
+        # Invalidate caches since workspace blobs were replaced
+        self._metadata_cache = None
+        self._blob_data_cache.clear()
+        self._cleanup_temp_files()
 
         return json.loads(raw)
 
@@ -656,6 +723,10 @@ class AzureBlobWorkspace(Workspace):
                     self._upload_bytes(rel, zf.read(entry))
                 if not self._blob_exists(METADATA_FILENAME):
                     self._init_metadata()
+                # Invalidate caches since workspace blobs were replaced
+                self._metadata_cache = None
+                self._blob_data_cache.clear()
+                self._cleanup_temp_files()
 
         return state
 

@@ -921,7 +921,7 @@ let SingleThreadGroupView: FC<{
         if (derivedTables.length === 0) return;
         
         const refreshPromises = derivedTables
-            .filter(dt => dt.derive && dt.derive.code)
+            .filter(dt => dt.derive && dt.derive.code && dt.derive.codeSignature)
             .map(async (derivedTable) => {
                 const parentTableData = derivedTable.derive!.source.map(sourceId => {
                     const sourceTable = tables.find(t => t.id === sourceId);
@@ -939,6 +939,7 @@ let SingleThreadGroupView: FC<{
                     const requestBody: any = {
                         input_tables: parentTableData,
                         code: derivedTable.derive!.code,
+                        code_signature: derivedTable.derive!.codeSignature, // HMAC proof
                         output_variable: derivedTable.derive!.outputVariable || 'result_df',
                         virtual: !!derivedTable.virtual?.tableId,
                         output_table_name: derivedTable.virtual?.tableId

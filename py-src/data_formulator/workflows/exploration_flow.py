@@ -11,6 +11,7 @@ from data_formulator.agents.client_utils import Client
 from data_formulator.datalake.workspace import WorkspaceWithTempData, Workspace
 from data_formulator.workspace_factory import get_workspace
 from data_formulator.workflows.create_vl_plots import assemble_vegailte_chart, spec_to_base64, coerce_field_type, resolve_field_type
+from data_formulator.code_signing import sign_result
 
 logger = logging.getLogger(__name__)
 
@@ -210,6 +211,8 @@ def run_exploration_flow_streaming(
 
             # Extract transformation result
             transform_result = transformation_results[0]
+            # Sign the code so the frontend can prove authenticity on refresh
+            sign_result(transform_result)
             transformed_data = transform_result['content']
             refined_goal = transform_result.get('refined_goal', {})
             code = transform_result.get('code', '')
