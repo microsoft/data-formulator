@@ -1,5 +1,6 @@
 import json
 import logging
+import struct
 from typing import Dict, Any, Optional, List
 
 import duckdb
@@ -10,6 +11,12 @@ try:
     PYODBC_AVAILABLE = True
 except ImportError:
     PYODBC_AVAILABLE = False
+
+try:
+    from azure.identity import DefaultAzureCredential
+    AZURE_IDENTITY_AVAILABLE = True
+except ImportError:
+    AZURE_IDENTITY_AVAILABLE = False
 
 from data_formulator.data_loader.external_data_loader import ExternalDataLoader, sanitize_table_name
 from data_formulator.security import validate_sql_query
@@ -84,6 +91,13 @@ class MSSQLDataLoader(ExternalDataLoader):
                 "default": "30",
                 "description": "Connection timeout in seconds",
             },
+            {
+                "name": "use_entra",
+                "type": "boolean",
+                "required": False,
+                "default": False,
+                "description": "Use Entra ID authentication (true/false)",
+            },
         ]
         return params_list
 
@@ -119,7 +133,12 @@ SQL Server Connection Instructions:
 4. Authentication Methods:
    - Windows Authentication: Leave user/password empty (recommended for local development)
    - SQL Server Authentication: Provide username and password
-   - Azure AD Authentication: Use appropriate connection parameters
+   - Entra ID (Azure AD) Authentication: Set use_entra=True and leave user/password empty.
+     Requires: pip install azure-identity
+     Uses DefaultAzureCredential, which supports Azure CLI login (az login),
+     managed identity, environment variables, and other credential sources.
+     The access token is obtained for scope 'https://database.windows.net/.default'
+     and passed to the ODBC driver via SQL_COPT_SS_ACCESS_TOKEN.
 
 5. Connection Examples:
    - Local default instance: server='localhost' or server='.'
@@ -157,6 +176,17 @@ SQL Server Connection Instructions:
 
         self.params = params
         self.duck_db_conn = duck_db_conn
+
+        # Build Entra ID token struct if requested
+        self.use_entra = bool(self.params.get("use_entra", False))
+        self.token_struct = None
+        if self.use_entra:
+            if not AZURE_IDENTITY_AVAILABLE:
+                raise ImportError(
+                    "azure-identity is required for Entra ID authentication. "
+                    "Install with: pip install azure-identity"
+                )
+            self.token_struct = self._acquire_entra_token()
 
         # Build connection string for pyodbc
         self.connection_string = self._build_connection_string()
@@ -196,15 +226,18 @@ SQL Server Connection Instructions:
         conn_parts.append(f"DATABASE={database}")
 
         # Authentication
-        user = self.params.get("user", "").strip()
-        password = self.params.get("password", "").strip()
+        # When using Entra ID, no auth fields go in the connection string;
+        # the token is passed via attrs_before on pyodbc.connect().
+        if not self.use_entra:
+            user = self.params.get("user", "").strip()
+            password = self.params.get("password", "").strip()
 
-        if user:
-            conn_parts.append(f"UID={user}")
-            conn_parts.append(f"PWD={password}")
-        else:
-            # Use Windows Authentication
-            conn_parts.append("Trusted_Connection=yes")
+            if user:
+                conn_parts.append(f"UID={user}")
+                conn_parts.append(f"PWD={password}")
+            else:
+                # Use Windows Authentication
+                conn_parts.append("Trusted_Connection=yes")
 
         # Connection settings
         encrypt = self.params.get("encrypt", "yes")
@@ -217,10 +250,31 @@ SQL Server Connection Instructions:
 
         return ";".join(conn_parts)
 
+    def _acquire_entra_token(self) -> bytes:
+        """Acquire an Entra ID access token and pack it for the ODBC driver.
+
+        Returns the token as a packed struct suitable for pyodbc's
+        SQL_COPT_SS_ACCESS_TOKEN (attribute 1256).
+        """
+        creds = DefaultAzureCredential(additionally_allowed_tenants=["*"])
+        access_token = creds.get_token("https://database.windows.net/.default").token
+        token_bytes = access_token.encode("utf-16-le")
+        return struct.pack(f"<I{len(token_bytes)}s", len(token_bytes), token_bytes)
+
+    # SQL_COPT_SS_ACCESS_TOKEN constant used by pyodbc for token-based auth
+    _SQL_COPT_SS_ACCESS_TOKEN = 1256
+
+    def _connect(self, **kwargs) -> pyodbc.Connection:
+        """Open a pyodbc connection, using Entra token auth when configured."""
+        connect_kwargs = dict(kwargs)
+        if self.token_struct is not None:
+            connect_kwargs["attrs_before"] = {self._SQL_COPT_SS_ACCESS_TOKEN: self.token_struct}
+        return pyodbc.connect(self.connection_string, **connect_kwargs)
+
     def _test_connection(self):
         """Test the SQL Server connection"""
         try:
-            with pyodbc.connect(self.connection_string, timeout=10) as conn:
+            with self._connect(timeout=10) as conn:
                 cursor = conn.cursor()
                 cursor.execute("SELECT @@VERSION")
                 version = cursor.fetchone()[0]
@@ -232,7 +286,7 @@ SQL Server Connection Instructions:
     def _execute_query(self, query: str) -> pd.DataFrame:
         """Execute a query and return results as DataFrame"""
         try:
-            with pyodbc.connect(self.connection_string) as conn:
+            with self._connect() as conn:
                 return pd.read_sql(query, conn)
         except Exception as e:
             log.error(f"Failed to execute query: {e}")
