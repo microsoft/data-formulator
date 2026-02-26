@@ -366,8 +366,8 @@ export function ecApplyLayoutToSpec(
     if (option.xAxis && layout.xLabel) {
         if (!option.xAxis.axisLabel) option.xAxis.axisLabel = {};
 
-        // ECharts uses degrees (positive = counter-clockwise)
-        if (layout.xLabel.labelAngle && layout.xLabel.labelAngle !== 0) {
+        // ECharts uses degrees (positive = counter-clockwise). Don't override category axis rotate (template set it for scatter).
+        if (layout.xLabel.labelAngle && layout.xLabel.labelAngle !== 0 && option.xAxis.type !== 'category') {
             option.xAxis.axisLabel.rotate = -layout.xLabel.labelAngle;  // VL convention → EC convention
         }
 
@@ -390,7 +390,8 @@ export function ecApplyLayoutToSpec(
     if (option.yAxis && layout.yLabel) {
         if (!option.yAxis.axisLabel) option.yAxis.axisLabel = {};
 
-        if (layout.yLabel.labelAngle && layout.yLabel.labelAngle !== 0) {
+        // Don't override category axis rotate — scatter keeps y labels horizontal (0) to avoid overlap.
+        if (layout.yLabel.labelAngle && layout.yLabel.labelAngle !== 0 && option.yAxis.type !== 'category') {
             option.yAxis.axisLabel.rotate = -layout.yLabel.labelAngle;
         }
         if (layout.yLabel.fontSize) {

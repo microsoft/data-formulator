@@ -125,21 +125,43 @@ export const ecScatterPlotDef: ChartTemplateDef = {
         const useContinuousSizeVisualMap = sizeField != null && sizeDomainMin !== undefined && sizeDomainMax !== undefined;
         const useVisualMapForSize = usePiecewiseSizeVisualMap || useContinuousSizeVisualMap;
 
+        // X/Y can be value (quantitative/temporal) or category (nominal/ordinal) — align with VL
+        const xType = channelSemantics.x?.type;
+        const yType = channelSemantics.y?.type;
+        const xIsCategorical = xType === 'nominal' || xType === 'ordinal';
+        const yIsCategorical = yType === 'nominal' || yType === 'ordinal';
+        const xCategories = xIsCategorical ? extractCategories(table, xField, getCategoryOrder(ctx, 'x')) : [];
+        const yCategories = yIsCategorical ? extractCategories(table, yField, getCategoryOrder(ctx, 'y')) : [];
+        const xCategoryToIndex = new Map<string, number>(xCategories.map((c, i) => [String(c), i]));
+        const yCategoryToIndex = new Map<string, number>(yCategories.map((c, i) => [String(c), i]));
+
         // ECharts scatter uses direct data arrays
         const option: any = {
             tooltip: { trigger: 'item' },
-            xAxis: {
-                type: 'value',
-                name: xField,
-                nameLocation: 'middle',
-                nameGap: 30,
-            },
-            yAxis: {
-                type: 'value',
-                name: yField,
-                nameLocation: 'middle',
-                nameGap: 40,
-            },
+            xAxis: xIsCategorical
+                ? {
+                    type: 'category',
+                    data: xCategories,
+                    name: xField,
+                    nameLocation: 'middle',
+                    nameGap: 30,
+                    axisLabel: { interval: 0, rotate: 90 },
+                    axisTick: { show: true, alignWithLabel: true },
+                    axisLine: { show: true },
+                }
+                : { type: 'value', name: xField, nameLocation: 'middle', nameGap: 30 },
+            yAxis: yIsCategorical
+                ? {
+                    type: 'category',
+                    data: yCategories,
+                    name: yField,
+                    nameLocation: 'middle',
+                    nameGap: 40,
+                    axisLabel: { interval: 0, rotate: 0 },
+                    axisTick: { show: true, alignWithLabel: true },
+                    axisLine: { show: true },
+                }
+                : { type: 'value', name: yField, nameLocation: 'middle', nameGap: 40 },
             series: [],
         };
 
@@ -248,7 +270,7 @@ export const ecScatterPlotDef: ChartTemplateDef = {
                 inRange: { symbolSize: [rangeMin, sizeMaxForMap] as [number, number] },
                 orient: 'vertical',
                 right: 50,
-                top: '6.0%',
+                top: '10.0%',
                 bottom: '10.0%',
                 padding: 0,
                 itemGap: 0,
@@ -283,23 +305,25 @@ export const ecScatterPlotDef: ChartTemplateDef = {
             ];
         }
 
-        // Apply zero-baseline decisions
+        // Apply zero-baseline decisions (only for value axes)
         // ECharts: scale=true means "data-fit, don't force zero"
         //          scale=false (default) means "include zero"
-        if (channelSemantics.x?.zero) {
+        if (!xIsCategorical && channelSemantics.x?.zero) {
             option.xAxis.scale = !channelSemantics.x.zero.zero;
         }
-        if (channelSemantics.y?.zero) {
+        if (!yIsCategorical && channelSemantics.y?.zero) {
             option.yAxis.scale = !channelSemantics.y.zero.zero;
         }
 
         // Opacity from chart properties
         const opacity = chartProperties?.opacity ?? 1;
 
+        const xVal = (row: any) => xIsCategorical ? (xCategoryToIndex.get(String(row[xField] ?? '')) ?? 0) : row[xField];
+        const yVal = (row: any) => yIsCategorical ? (yCategoryToIndex.get(String(row[yField] ?? '')) ?? 0) : row[yField];
         const pointData = (row: any) =>
             sizeField != null
-                ? [row[xField], row[yField], row[sizeField]]
-                : [row[xField], row[yField]];
+                ? [xVal(row), yVal(row), row[sizeField]]
+                : [xVal(row), yVal(row)];
 
         // Palette from resolvedEncodings (scheme) or fallback to DEFAULT_COLORS
         const colorPalette = (ctx.resolvedEncodings as any)?.color?.colorPalette
@@ -317,8 +341,8 @@ export const ecScatterPlotDef: ChartTemplateDef = {
                 ? (v: any) => (v != null ? new Date(v).getTime() : NaN)
                 : (v: any) => (v != null ? Number(v) : NaN);
             const pointDataWithColor = (row: any) => {
-                const x = row[xField];
-                const y = row[yField];
+                const x = xVal(row);
+                const y = yVal(row);
                 const c = toColorVal(row[colorField]);
                 if (sizeField != null) return [x, y, row[sizeField], c];
                 return [x, y, c];
@@ -346,7 +370,7 @@ export const ecScatterPlotDef: ChartTemplateDef = {
             const VM_TITLE_TOP = 10;
             const VM_FONT_SIZE = 10;
             const REF_H = 400;
-            const VM_BAR_TOP_PX = 24;
+            const VM_BAR_TOP_PX = 40;
             const VM_BAR_BOTTOM_PX = 40;
             const VM_TOP_PCT = ((VM_BAR_TOP_PX / REF_H) * 100).toFixed(1) + '%';
             const VM_BOTTOM_PCT = ((VM_BAR_BOTTOM_PX / REF_H) * 100).toFixed(1) + '%';
@@ -514,8 +538,10 @@ export const ecScatterPlotDef: ChartTemplateDef = {
             if (!params?.data) return '';
             const d = Array.isArray(params.data) ? params.data : [params.data];
             const parts: string[] = [];
-            parts.push(`${xName}: ${fmtNum(d[0])}`);
-            parts.push(`${yName}: ${fmtNum(d[1])}`);
+            const xDisplay = xIsCategorical ? (xCategories[Number(d[0])] ?? String(d[0])) : fmtNum(d[0]);
+            const yDisplay = yIsCategorical ? (yCategories[Number(d[1])] ?? String(d[1])) : fmtNum(d[1]);
+            parts.push(`${xName}: ${xDisplay}`);
+            parts.push(`${yName}: ${yDisplay}`);
             if (sizeName != null && d[2] !== undefined) parts.push(`${sizeName}: ${fmtNum(d[2])}`);
             if (colorName != null) {
                 const colorVal = isContinuousColor ? d[sizeField != null ? 3 : 2] : params.seriesName;
