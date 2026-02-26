@@ -161,6 +161,14 @@ export function detectAxes(
     if (yCS && isDiscrete(yCS.type)) {
         return { categoryAxis: 'y', valueAxis: 'x' };
     }
+    // x quantitative + y temporal → horizontal bars (VL: x=bar length, y=dates)
+    if (xCS?.type === 'quantitative' && yCS?.type === 'temporal') {
+        return { categoryAxis: 'y', valueAxis: 'x' };
+    }
+    // x temporal + y quantitative → vertical bars (VL: x=dates, y=bar length)
+    if (xCS?.type === 'temporal' && yCS?.type === 'quantitative') {
+        return { categoryAxis: 'x', valueAxis: 'y' };
+    }
     // Default: x is category
     return { categoryAxis: 'x', valueAxis: 'y' };
 }

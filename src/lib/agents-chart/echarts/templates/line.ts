@@ -69,6 +69,7 @@ export const ecLineChartDef: ChartTemplateDef = {
             },
             series: [],
         };
+        option._encodingTooltip = { trigger: 'axis', categoryLabel: xField, valueLabel: yField };
 
         // Apply zero-baseline
         // ECharts: scale=true means "data-fit", scale=false means "include zero"
@@ -205,6 +206,7 @@ export const ecDottedLineChartDef: ChartTemplateDef = {
             },
             series: [],
         };
+        option._encodingTooltip = { trigger: 'axis', categoryLabel: xField, valueLabel: yField };
 
         if (channelSemantics.y?.zero) {
             option.yAxis.scale = !channelSemantics.y.zero.zero;
@@ -304,6 +306,7 @@ export const ecBumpChartDef: ChartTemplateDef = {
             },
             series: [],
         };
+        option._encodingTooltip = { trigger: 'axis', categoryLabel: xField, valueLabel: yField };
 
         const baseSeriesOpt = { showSymbol: true, symbolSize: 6, smooth: true };
 

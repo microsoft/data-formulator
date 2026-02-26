@@ -50,6 +50,7 @@ export const ecDensityPlotDef: ChartTemplateDef = {
             yAxis: { type: 'value', name: 'Density', nameLocation: 'middle', nameGap: 40 },
             series: [],
         };
+        option._encodingTooltip = { trigger: 'axis', categoryLabel: xField, valueLabel: 'Density' };
 
         if (colorField) {
             const groups = groupBy(table, colorField);

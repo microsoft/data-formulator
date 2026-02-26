@@ -141,8 +141,9 @@ export function assembleECharts(input: ChartAssemblyInput): any {
         effectiveOptions.facetGap = 14;   // reference at 400px canvas
     }
 
+    // Default true so that _encodingTooltip is applied and all charts get encoding-style tooltips
     const {
-        addTooltips: addTooltipsOpt = false,
+        addTooltips: addTooltipsOpt = true,
     } = effectiveOptions;
 
     // ═══════════════════════════════════════════════════════════════════════

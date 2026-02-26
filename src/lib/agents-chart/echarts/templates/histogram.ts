@@ -83,6 +83,7 @@ export const ecHistogramDef: ChartTemplateDef = {
                     },
                 }],
             };
+            option._encodingTooltip = { trigger: 'axis', categoryLabel: xField, valueLabel: 'Count' };
 
             Object.assign(spec, option);
         } else {
@@ -148,6 +149,7 @@ export const ecHistogramDef: ChartTemplateDef = {
                 },
                 series,
             };
+            option._encodingTooltip = { trigger: 'axis', categoryLabel: xField, valueLabel: 'Count' };
 
             Object.assign(spec, option);
         }

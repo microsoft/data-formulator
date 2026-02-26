@@ -517,38 +517,32 @@ export const ecScatterPlotDef: ChartTemplateDef = {
             option.series.push(seriesOpt);
         }
 
-        // Tooltip: show all encodings (Vega-Lite style) — x, y, size, color/segment
+        // Tooltip: use shared encoding-style formatter (same as bar/line/pie) via _encodingTooltip
         const xName = option.xAxis?.name ?? xField ?? 'X';
         const yName = option.yAxis?.name ?? yField ?? 'Y';
         const sizeName = sizeField ?? null;
         const colorName = colorField ?? null;
         const temporalFormat = channelSemantics.color?.temporalFormat ?? '%b %d, %Y';
-        const fmtNum = (v: unknown) => {
-            if (v == null) return '';
-            const n = Number(v);
-            return isNaN(n) ? String(v) : (Number.isInteger(n) ? String(n) : n.toFixed(1));
-        };
-        const fmtColorVal = (v: unknown) => {
-            if (v == null) return '';
-            if (isTemporalColor) return formatTimestamp(Number(v), temporalFormat);
-            return fmtNum(v);
-        };
-        option.tooltip = option.tooltip ?? {};
-        option.tooltip.formatter = (params: any) => {
-            if (!params?.data) return '';
-            const d = Array.isArray(params.data) ? params.data : [params.data];
-            const parts: string[] = [];
-            const xDisplay = xIsCategorical ? (xCategories[Number(d[0])] ?? String(d[0])) : fmtNum(d[0]);
-            const yDisplay = yIsCategorical ? (yCategories[Number(d[1])] ?? String(d[1])) : fmtNum(d[1]);
-            parts.push(`${xName}: ${xDisplay}`);
-            parts.push(`${yName}: ${yDisplay}`);
-            if (sizeName != null && d[2] !== undefined) parts.push(`${sizeName}: ${fmtNum(d[2])}`);
-            if (colorName != null) {
-                const colorVal = isContinuousColor ? d[sizeField != null ? 3 : 2] : params.seriesName;
-                parts.push(`${colorName}: ${isContinuousColor ? fmtColorVal(colorVal) : (colorVal ?? '')}`);
+        const tooltipParts: Array<{ from: string; index?: number; label: string; format?: string; temporalFormat?: string; categoryNames?: string[] }> = [
+            { from: 'data', index: 0, label: xName, format: xIsCategorical ? 'category' : 'number', categoryNames: xIsCategorical ? xCategories : undefined },
+            { from: 'data', index: 1, label: yName, format: yIsCategorical ? 'category' : 'number', categoryNames: yIsCategorical ? yCategories : undefined },
+        ];
+        if (sizeName != null) tooltipParts.push({ from: 'data', index: 2, label: sizeName, format: 'number' });
+        if (colorName != null) {
+            if (isContinuousColor) {
+                tooltipParts.push({
+                    from: 'data',
+                    index: sizeField != null ? 3 : 2,
+                    label: colorName,
+                    format: isTemporalColor ? 'temporal' : 'number',
+                    temporalFormat,
+                });
+            } else {
+                tooltipParts.push({ from: 'series', label: colorName });
             }
-            return parts.join('<br/>');
-        };
+        }
+        option.tooltip = option.tooltip ?? {};
+        option._encodingTooltip = { trigger: 'item', parts: tooltipParts };
 
         // When there are multiple series (e.g. categorical color), size visualMap must apply to all of them
         const vmList = Array.isArray(option.visualMap) ? option.visualMap : (option.visualMap ? [option.visualMap] : []);
@@ -647,6 +641,7 @@ export const ecLinearRegressionDef: ChartTemplateDef = {
         if (colorField) {
             const groups = groupBy(table, colorField);
             option.legend = { data: [...groups.keys()] };
+            option._legendTitle = colorField;
             let colorIdx = 0;
             for (const [name, rows] of groups) {
                 const data = rows.map((r: any) => [r[xField], r[yField]]);
@@ -680,6 +675,15 @@ export const ecLinearRegressionDef: ChartTemplateDef = {
                 lineStyle: { color: '#ee6666', width: 2 },
             });
         }
+
+        const xName = option.xAxis?.name ?? xField ?? 'X';
+        const yName = option.yAxis?.name ?? yField ?? 'Y';
+        const tooltipParts: Array<{ from: string; index?: number; label: string; format?: string }> = [
+            { from: 'data', index: 0, label: xName, format: 'number' },
+            { from: 'data', index: 1, label: yName, format: 'number' },
+        ];
+        if (colorField) tooltipParts.push({ from: 'series', label: colorField });
+        option._encodingTooltip = { trigger: 'item', parts: tooltipParts };
 
         Object.assign(spec, option);
         delete spec.mark;

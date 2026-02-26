@@ -95,10 +95,16 @@ export const ecPieChartDef: ChartTemplateDef = {
                 (canvasH - 40) / 2 * radiusFraction)));
         const outerRadius = `${outerRadiusPx}px`;
 
+        const categoryLabel = colorField ?? 'Category';
+        const valueLabel = sizeField ?? 'Value';
         const option: any = {
-            tooltip: {
+            tooltip: { trigger: 'item' },
+            _encodingTooltip: {
                 trigger: 'item',
-                formatter: '{b}: {c} ({d}%)',
+                parts: [
+                    { from: 'name', label: categoryLabel },
+                    { from: 'value', label: valueLabel, format: 'number' },
+                ],
             },
             series: [{
                 type: 'pie',

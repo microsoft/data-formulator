@@ -84,11 +84,14 @@ export function ecApplyLayoutToSpec(
 
     // ── Banded continuous axis domain (e.g. heatmap) ──────────────────────
     // Half-step padding so edge cells are not clipped.
+    // Only apply to value axes — category/time axes (e.g. bar with temporal
+    // categories) should not receive numeric min/max, otherwise ECharts will
+    // window the category index range and hide all bars.
     for (const axis of ['x', 'y'] as const) {
         const bandedCount = axis === 'x' ? layout.xContinuousAsDiscrete : layout.yContinuousAsDiscrete;
         if (bandedCount <= 1) continue;
         const axisObj = option[`${axis}Axis`];
-        if (!axisObj || axisObj.min != null) continue;
+        if (!axisObj || axisObj.type !== 'value' || axisObj.min != null) continue;
         const cs = channelSemantics[axis];
         if (!cs?.field || (cs.type !== 'quantitative' && cs.type !== 'temporal')) continue;
         const isTemporal = cs.type === 'temporal';
@@ -539,14 +542,92 @@ export function formatTimestamp(val: number, d3Format: string): string {
         .replace(/%S/g, pad(d.getSeconds()));
 }
 
+function fmtNumForTooltip(v: unknown): string {
+    if (v == null) return '';
+    const n = Number(v);
+    return isNaN(n) ? String(v) : (Number.isInteger(n) ? String(n) : n.toFixed(1));
+}
+
+/**
+ * Build a single encoding-style tooltip formatter from _encodingTooltip.
+ * Supports item trigger (parts from data/series) and axis trigger (category + series values).
+ */
+function buildEncodingTooltipFormatter(option: any): ((params: any) => string) | null {
+    const enc = option._encodingTooltip as any;
+    if (!enc) return null;
+
+    if (enc.trigger === 'axis' && enc.categoryLabel != null) {
+        const categoryLabel = enc.categoryLabel;
+        const valueLabel = enc.valueLabel ?? 'Value';
+        return (params: any) => {
+            const list = Array.isArray(params) ? params : [params];
+            if (list.length === 0) return '';
+            const p = list[0];
+            const cat = p.axisValue ?? p.name ?? '';
+            const parts = [`${categoryLabel}: ${cat}`];
+            for (const item of list) {
+                const name = item.seriesName ?? valueLabel;
+                const val = item.value != null ? item.value : (Array.isArray(item.data) ? item.data[item.dataIndex] : item.data);
+                parts.push(`${name}: ${fmtNumForTooltip(val)}`);
+            }
+            return parts.join('<br/>');
+        };
+    }
+
+    const parts = enc.parts as Array<{ from: string; index?: number; label: string; format?: string; temporalFormat?: string; categoryNames?: string[] }>;
+    if (!parts || !Array.isArray(parts) || parts.length === 0) return null;
+
+    return (params: any) => {
+        if (params == null) return '';
+        const d = Array.isArray(params.data) ? params.data : (params.data != null ? [params.data] : []);
+        const out: string[] = [];
+        for (const p of parts) {
+            let val: unknown;
+            if (p.from === 'series') {
+                val = params.seriesName ?? params.name;
+            } else if (p.from === 'name') {
+                val = params.name;
+            } else if (p.from === 'value') {
+                val = params.value;
+            } else {
+                const idx = p.index ?? 0;
+                val = d[idx];
+                if (val != null && typeof val === 'object' && 'value' in val) val = (val as any).value;
+            }
+            if (val == null && p.from !== 'series' && p.from !== 'name') continue;
+            let str: string;
+            if (p.format === 'temporal') {
+                str = formatTimestamp(Number(val), p.temporalFormat ?? '%b %d, %Y');
+            } else if (p.format === 'category' && p.categoryNames) {
+                const i = Number(val);
+                str = Number.isInteger(i) && p.categoryNames[i] != null ? p.categoryNames[i] : String(val ?? '');
+            } else if (p.format === 'number' || (p.from === 'data' && p.format !== 'category')) {
+                str = fmtNumForTooltip(val);
+            } else {
+                str = String(val ?? '');
+            }
+            out.push(`${p.label}: ${str}`);
+        }
+        return out.join('<br/>');
+    };
+}
+
 /**
  * Apply tooltips to an ECharts option.
  * ECharts tooltip is typically configured at the top level.
+ * When option._encodingTooltip is set, a Vega-Lite–style formatter (label: value per encoding) is applied.
  */
 export function ecApplyTooltips(option: any): void {
     if (!option.tooltip) {
         option.tooltip = {};
     }
+
+    const encodingFormatter = buildEncodingTooltipFormatter(option);
+    if (encodingFormatter) {
+        delete option._encodingTooltip;
+        option.tooltip.formatter = encodingFormatter;
+    }
+
     // Ensure trigger is set
     if (!option.tooltip.trigger) {
         const hasScatter = option.series?.some((s: any) => s.type === 'scatter');

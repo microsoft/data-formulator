@@ -56,6 +56,7 @@ export const ecAreaChartDef: ChartTemplateDef = {
             },
             series: [],
         };
+        option._encodingTooltip = { trigger: 'axis', categoryLabel: xField, valueLabel: yField };
 
         // ECharts: scale=true means "data-fit", scale=false means "include zero"
         if (channelSemantics.y?.zero) {
