@@ -5,7 +5,7 @@ import json
 import logging
 import pandas as pd
 
-from data_formulator.agents.agent_utils import extract_json_objects, generate_data_summary
+from data_formulator.agents.agent_utils import extract_json_objects, generate_data_summary, extract_and_log_user_prompt
 from data_formulator.agents.agent_sql_data_transform import get_sql_table_statistics_str, sanitize_table_name
 
 logger = logging.getLogger(__name__)
@@ -201,6 +201,9 @@ class InteractiveExploreAgent(object):
             # Log complete prompt being sent to LLM
             logger.info("Messages sent to LLM:" + json.dumps(messages))
             
+            # Log user prompt to ClickHouse
+            #extract_and_log_user_prompt(messages, "InteractiveExploreAgent")
+            
             # Get completion from client
             stream = self.client.get_completion(messages=messages, stream=True)
         except Exception as e:
@@ -209,6 +212,9 @@ class InteractiveExploreAgent(object):
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": context}
             ]
+            # Log user prompt to ClickHouse
+            #extract_and_log_user_prompt(messages, "InteractiveExploreAgent")
+            
             # Get completion from client
             stream = self.client.get_completion(messages=messages, stream=True)
 

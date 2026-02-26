@@ -2,7 +2,7 @@
 # Licensed under the MIT License.
 
 import json
-from data_formulator.agents.agent_utils import generate_data_summary, extract_json_objects, extract_code_from_gpt_response
+from data_formulator.agents.agent_utils import generate_data_summary, extract_json_objects, extract_code_from_gpt_response, extract_and_log_user_prompt
 
 import logging
 
@@ -187,6 +187,9 @@ class CodeExplanationAgent(object):
 
         messages = [{"role":"system", "content": SYSTEM_PROMPT},
                     {"role":"user","content": user_query}]
+        
+        # Log user prompt to ClickHouse
+        #extract_and_log_user_prompt(messages, "CodeExplanationAgent")
         
         response = self.client.get_completion(messages = messages)
 

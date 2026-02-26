@@ -18,7 +18,7 @@ function getMsalInstance(): PublicClientApplication | null {
     }
   } else {
     console.warn(
-      "MSAL not initialized: insecure context or crypto unavailable"
+      "MSAL not initialized: insecure context or crypto unavailable",
     );
     msalInstance = null;
   }

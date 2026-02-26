@@ -34,6 +34,7 @@ from data_formulator.agents.agent_code_explanation import CodeExplanationAgent
 from data_formulator.agents.agent_query_completion import QueryCompletionAgent
 from data_formulator.agents.agent_interactive_explore import InteractiveExploreAgent
 from data_formulator.agents.agent_report_gen import ReportGenAgent
+from data_formulator.agents.agent_utils import log_prompt_to_clickhouse
 from data_formulator.agents.client_utils import Client
 
 from data_formulator.db_manager import db_manager
@@ -684,6 +685,50 @@ def get_recommendation_questions():
         headers={ 'Access-Control-Allow-Origin': '*',  }
     )
     return response
+
+
+@agent_bp.route('/log-user-prompt', methods=['POST'])
+def log_user_prompt_endpoint():
+    """
+    Endpoint to log user prompt from frontend
+    Expected body: {
+        "user_prompt": "user's question or instruction",
+        "agent_name": "name of the agent/component calling this",
+        "mode": "interactive or agent or other mode"
+    }
+    """
+    try:
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({"error": "No data provided"}), 400
+        
+        user_prompt = data.get("user_prompt", "")
+        agent_name = data.get("agent_name", "UnknownAgent")
+        mode = data.get("mode", "unknown")
+        
+        if not user_prompt or user_prompt.strip() == "":
+            return jsonify({"error": "user_prompt cannot be empty"}), 400
+        
+        # Get user_id from session if available
+        user_id = session.get("username")
+        if not user_id:
+            user_id = os.environ.get("USER_ID", os.environ.get("USERNAME", "SYSTEM"))
+        
+        # Log prompt to ClickHouse with agent name and mode
+        log_prompt_to_clickhouse(
+            agent_name=f"{agent_name}_{mode}",
+            prompt_text=user_prompt,
+            user_id=user_id
+        )
+        
+        logger.info(f"✅ Logged user prompt - Agent: {agent_name}, Mode: {mode}, User: {user_id}")
+        
+        return jsonify({"status": "success", "message": "Prompt logged successfully"}), 200
+        
+    except Exception as e:
+        logger.error(f"❌ Error logging user prompt: {e}")
+        return jsonify({"error": str(e)}), 500
 
 @agent_bp.route('/generate-report-stream', methods=['GET', 'POST'])
 def generate_report_stream():

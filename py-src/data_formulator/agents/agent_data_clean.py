@@ -1,7 +1,7 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
 
-from data_formulator.agents.agent_utils import extract_json_objects
+from data_formulator.agents.agent_utils import extract_json_objects, extract_and_log_user_prompt
 from data_formulator.agents.web_utils import download_html_content
 
 import logging
@@ -146,6 +146,9 @@ class DataCleanAgent(object):
             *[message for message in dialog if message['role'] != 'system'],
             user_prompt
         ]
+        
+        # Log user prompt to ClickHouse
+        #extract_and_log_user_prompt(messages, "DataCleanAgent")
         
         ###### the part that calls open_ai
         response = self.client.get_completion(messages = messages)

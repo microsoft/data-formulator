@@ -1,0 +1,20 @@
+[Unit]
+Description=Oracle to ClickHouse Data Sync Service
+After=network.target
+StartLimitIntervalSec=600
+StartLimitBurst=3
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/path/to/script/directory
+ExecStart=/usr/bin/python3 /path/to/script/directory/sync_oracle_to_clickhouse.py
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=oracle-clickhouse-sync
+
+# Restart policy for failure
+OnFailure=oracle-clickhouse-sync-failure.service
+
+[Install]
+WantedBy=multi-user.target

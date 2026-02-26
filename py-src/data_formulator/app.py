@@ -41,6 +41,7 @@ from data_formulator.auth_routes import auth_bp
 from data_formulator.export_routes import export_bp
 from data_formulator.dashboard_routes import dashboard_bp
 from data_formulator.chatbot_routes import chatbot_bp
+from data_formulator.production_routes import production_bp
 from data_formulator.db_manager import db_manager
 from data_formulator.example_datasets_config import EXAMPLE_DATASETS
 
@@ -106,6 +107,7 @@ app.register_blueprint(auth_bp)
 app.register_blueprint(export_bp)
 app.register_blueprint(dashboard_bp)
 app.register_blueprint(chatbot_bp)
+app.register_blueprint(production_bp)
 
 # Get logger for this module (logging config moved to run_app function)
 logger = logging.getLogger(__name__)

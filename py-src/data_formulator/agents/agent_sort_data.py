@@ -2,7 +2,7 @@
 # Licensed under the MIT License.
 
 import json
-from data_formulator.agents.agent_utils import extract_json_objects
+from data_formulator.agents.agent_utils import extract_json_objects, extract_and_log_user_prompt
 
 import logging
 
@@ -81,6 +81,9 @@ class SortDataAgent(object):
 
         messages = [{"role":"system", "content": SYSTEM_PROMPT},
                     {"role":"user","content": user_query}]
+        
+        # Log user prompt to ClickHouse
+        #extract_and_log_user_prompt(messages, "SortDataAgent")
         
         ###### the part that calls open_ai
         response = self.client.get_completion(messages = messages)

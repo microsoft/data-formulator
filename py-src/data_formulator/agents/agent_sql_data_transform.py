@@ -5,7 +5,7 @@ import json
 import random
 import string
 
-from data_formulator.agents.agent_utils import extract_json_objects, extract_code_from_gpt_response
+from data_formulator.agents.agent_utils import extract_json_objects, extract_code_from_gpt_response, log_prompt_to_clickhouse, extract_and_log_user_prompt
 import pandas as pd
 
 import logging 
@@ -331,6 +331,9 @@ class SQLDataTransformationAgent(object):
         messages = [{"role":"system", "content": self.system_prompt},
                     *filtered_prev_messages,
                     {"role":"user","content": user_query}]
+        
+        # Log user prompt to ClickHouse
+        #extract_and_log_user_prompt(messages, "SQLDataTransformationAgent")
         
         # Log complete prompt being sent to LLM
         logger.info("\n" + "="*80)

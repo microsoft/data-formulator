@@ -86,7 +86,7 @@ export function usePrevious<T>(value: T): T | undefined {
 export function runCodeOnInputListsInVM(
   code: string,
   inputTupleList: any[][],
-  mode: "faster" | "safer"
+  mode: "faster" | "safer",
 ): [any[], any][] {
   // inputList is a list of testInputs, each item can be an arg or a list of args (if the function takes more than one argument)
   "use strict";
@@ -106,7 +106,7 @@ export function runCodeOnInputListsInVM(
         //console.log(`let func = ${jsCode}; let outputs = inputList.map(arg => func(arg));`);
         vm.runInNewContext(
           `let func = ${jsCode}; outputs = inputTupleList.map(args => func(...args));`,
-          context
+          context,
         );
         ioPairs = inputTupleList.map((args, i) => [args, context.outputs[i]]);
         return ioPairs;
@@ -141,7 +141,7 @@ export function runCodeOnInputListsInVM(
 
 export function extractFieldsFromEncodingMap(
   encodingMap: EncodingMap,
-  allFields: FieldItem[]
+  allFields: FieldItem[],
 ) {
   let aggregateFields: [string | undefined, string][] = [];
   let groupByFields: string[] = [];
@@ -165,11 +165,11 @@ export function extractFieldsFromEncodingMap(
 export function prepVisTable(
   table: any[],
   allFields: FieldItem[],
-  encodingMap: EncodingMap
+  encodingMap: EncodingMap,
 ) {
   let { aggregateFields, groupByFields } = extractFieldsFromEncodingMap(
     encodingMap,
-    allFields
+    allFields,
   );
 
   let processedTable = [...table];
@@ -182,7 +182,7 @@ export function prepVisTable(
     if (groupByFields.length > 0) {
       grouped = d3.flatGroup(
         processedTable,
-        ...groupByFields.map((field) => (d: any) => d[field])
+        ...groupByFields.map((field) => (d: any) => d[field]),
       );
     } else {
       grouped = [["_default", processedTable]];
@@ -197,7 +197,7 @@ export function prepVisTable(
       return {
         // Add group by fields
         ...Object.fromEntries(
-          groupByFields.map((field, i) => [field, groupValues[i]])
+          groupByFields.map((field, i) => [field, groupValues[i]]),
         ),
         // Add aggregations
         ...(aggregateFields.some(([_, type]) => type === "count")
@@ -222,7 +222,7 @@ export function prepVisTable(
                 fieldName + suffix,
                 aggFunc ? aggFunc(values) : undefined,
               ];
-            })
+            }),
         ),
       };
     });
@@ -246,7 +246,7 @@ export const assembleVegaChart = (
   addTooltips: boolean = false,
   qcLimitsMode?: boolean,
   chartWidth?: number,
-  chartHeight?: number
+  chartHeight?: number,
 ) => {
   if (chartType == "Table") {
     return ["Table", undefined];
@@ -258,7 +258,7 @@ export const assembleVegaChart = (
   // Handle undefined chart template - return Table as fallback
   if (!chartTemplate || !chartTemplate.template) {
     console.warn(
-      `Chart template not found for chart type: ${chartType}. Falling back to Table.`
+      `Chart template not found for chart type: ${chartType}. Falling back to Table.`,
     );
     return ["Table", undefined];
   }
@@ -293,7 +293,7 @@ export const assembleVegaChart = (
       if (fieldMetadata != undefined) {
         encodingObj["type"] = getDType(
           fieldMetadata.type,
-          workingTable.map((r) => r[field.name])
+          workingTable.map((r) => r[field.name]),
         );
         if (
           fieldMetadata.semanticType == "Date" ||
@@ -475,7 +475,7 @@ export const assembleVegaChart = (
           let colorField = encodingMap.color?.fieldID
             ? _.find(
                 conceptShelfItems,
-                (f) => f.id === encodingMap.color.fieldID
+                (f) => f.id === encodingMap.color.fieldID,
               )
             : undefined;
           let colorFieldType = undefined;
@@ -484,7 +484,7 @@ export const assembleVegaChart = (
             if (colorFieldMetadata) {
               colorFieldType = getDType(
                 colorFieldMetadata.type,
-                workingTable.map((r) => r[colorField.name])
+                workingTable.map((r) => r[colorField.name]),
               );
             }
           }
@@ -498,7 +498,7 @@ export const assembleVegaChart = (
             const oppositeChannel = channel === "x" ? "y" : "x";
             const oppositeField = _.find(
               conceptShelfItems,
-              (f) => f.id === encodingMap[oppositeChannel]?.fieldID
+              (f) => f.id === encodingMap[oppositeChannel]?.fieldID,
             );
             if (oppositeField) {
               const oppositeFieldMetadata = tableMetadata[oppositeField.name];
@@ -506,7 +506,7 @@ export const assembleVegaChart = (
                 oppositeFieldMetadata &&
                 getDType(
                   oppositeFieldMetadata.type,
-                  workingTable.map((r) => r[oppositeField.name])
+                  workingTable.map((r) => r[oppositeField.name]),
                 ) === "quantitative"
               ) {
                 encodingObj["sort"] = `-${oppositeChannel}`;
@@ -534,7 +534,7 @@ export const assembleVegaChart = (
           if (
             fieldMetadata &&
             ["Duration", "Range", "Percentage"].includes(
-              fieldMetadata.semanticType
+              fieldMetadata.semanticType,
             ) &&
             encodingObj.type == "nominal"
           ) {
@@ -601,7 +601,7 @@ export const assembleVegaChart = (
       workingTable,
       qcLimitsMode,
       chartWidth || defaultChartWidth,
-      chartHeight || defaultChartHeight
+      chartHeight || defaultChartHeight,
     );
   }
 
@@ -614,7 +614,7 @@ export const assembleVegaChart = (
         tableMetadata[k] &&
         (tableMetadata[k].type == "date" ||
           tableMetadata[k].semanticType == "Year" ||
-          tableMetadata[k].semanticType == "Decade")
+          tableMetadata[k].semanticType == "Decade"),
     );
     if (temporalKeys.length > 0) {
       values = values.map((r: any) => {
@@ -659,7 +659,7 @@ export const assembleVegaChart = (
       const fieldOriginalType = fieldMetadata
         ? getDType(
             fieldMetadata.type,
-            workingTable.map((r) => r[fieldName])
+            workingTable.map((r) => r[fieldName]),
           )
         : "nominal";
 
@@ -756,12 +756,12 @@ export const assembleVegaChart = (
               if (valueAggregates.has(fieldValue)) {
                 valueAggregates.set(
                   fieldValue,
-                  aggregateOp(valueAggregates.get(fieldValue)!, sortValue)
+                  aggregateOp(valueAggregates.get(fieldValue)!, sortValue),
                 );
               } else {
                 valueAggregates.set(
                   fieldValue,
-                  aggregateOp(initialValue, sortValue)
+                  aggregateOp(initialValue, sortValue),
                 );
               }
             }
@@ -771,7 +771,7 @@ export const assembleVegaChart = (
               ([value, sortValue]) => ({
                 value,
                 sortValue,
-              })
+              }),
             );
 
             // Use efficient top-K selection
@@ -780,14 +780,14 @@ export const assembleVegaChart = (
                 .sort((a, b) =>
                   isDescending
                     ? b.sortValue - a.sortValue
-                    : a.sortValue - b.sortValue
+                    : a.sortValue - b.sortValue,
                 )
                 .map((v) => v.value);
             } else {
               // For large datasets, use partial sort (more efficient than full sort)
               const compareFn = (
                 a: { value: string; sortValue: number },
-                b: { value: string; sortValue: number }
+                b: { value: string; sortValue: number },
               ) =>
                 isDescending
                   ? b.sortValue - a.sortValue
@@ -822,7 +822,7 @@ export const assembleVegaChart = (
         const placeholder = `...${omittedCount} items omitted`;
         if (channel != "color") {
           values = values.filter((row: any) =>
-            valuesToKeep.includes(row[fieldName])
+            valuesToKeep.includes(row[fieldName]),
           );
         }
 
@@ -970,9 +970,9 @@ export const assembleVegaChart = (
       defaultStepSize,
       Math.floor(
         (facetRescaleFactor * defaultChartHeight * 2) /
-          Math.max(xTotalNominalCount, yTotalNominalCount)
-      )
-    )
+          Math.max(xTotalNominalCount, yTotalNominalCount),
+      ),
+    ),
   );
 
   vgObj["config"] = {
@@ -1022,7 +1022,7 @@ export const adaptChart = (chart: Chart, targetTemplate: ChartTemplate) => {
   let discardedChannels = Object.entries(chart.encodingMap).filter(
     ([ch, enc]) => {
       return !targetTemplate.channels.includes(ch) && enc.fieldID != undefined;
-    }
+    },
   );
 
   let newEncodingMap = Object.assign(
@@ -1032,20 +1032,20 @@ export const adaptChart = (chart: Chart, targetTemplate: ChartTemplate) => {
         ? chart.encodingMap[channel as Channel]
         : { channel: channel, bin: false };
       return { [channel]: encoding };
-    })
+    }),
   ) as EncodingMap;
 
   // for channels that will be discarded, find another way to adapt it
   for (let [ch, enc] of discardedChannels) {
     let otherChannelsFromSameGroup = (
       Object.entries(ChannelGroups).find(([grp, channelList]) =>
-        channelList.includes(ch)
+        channelList.includes(ch),
       ) as [string, string[]]
     )[1];
     let candChannels = targetTemplate.channels.filter(
       (c) =>
         otherChannelsFromSameGroup.includes(c) &&
-        newEncodingMap[c as Channel].fieldID == undefined
+        newEncodingMap[c as Channel].fieldID == undefined,
     );
     if (candChannels.length > 0) {
       newEncodingMap[candChannels[0] as Channel] = enc;
@@ -1062,7 +1062,7 @@ export const adaptChart = (chart: Chart, targetTemplate: ChartTemplate) => {
 export const resolveRecommendedChart = (
   refinedGoal: any,
   allFields: FieldItem[],
-  table: DictTable
+  table: DictTable,
 ) => {
   let rawChartType = refinedGoal["chart_type"];
   let chartEncodings = refinedGoal["chart_encodings"];
@@ -1116,11 +1116,13 @@ export const resolveChartFields = (
   chart: Chart,
   allFields: FieldItem[],
   chartEncodings: { [key: string]: string },
-  table: DictTable
+  table: DictTable,
 ) => {
   // Get the keys that should be present after this update
   const newEncodingKeys = new Set(
-    Object.keys(chartEncodings).map((key) => (key === "facet" ? "column" : key))
+    Object.keys(chartEncodings).map((key) =>
+      key === "facet" ? "column" : key,
+    ),
   );
 
   // Remove encodings that are no longer in chartEncodings

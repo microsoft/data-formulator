@@ -170,7 +170,7 @@ class QCDataLoader(ExternalDataLoader):
         
         # Convert VALUE column to numeric if possible (for QC data with mixed types)
         if 'VALUE' in df.columns:
-            df['VALUE'] = pd.to_numeric(df['VALUE'], errors='ignore')
+            df['VALUE'] = pd.to_numeric(df['VALUE'], errors='coerce')
         
         self.ingest_df_to_duckdb(df, sanitize_table_name(name_as))
         return df

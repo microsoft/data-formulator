@@ -53,6 +53,7 @@ import {
 
 import PowerSettingsNewIcon from "@mui/icons-material/PowerSettingsNew";
 import ClearIcon from "@mui/icons-material/Clear";
+import ImageIcon from "@mui/icons-material/Image";
 
 import { DataFormulatorFC } from "../views/DataFormulator";
 import { DashboardView } from "../views/Dashboard";
@@ -71,7 +72,10 @@ import { AppDispatch } from "./store";
 // import dfLogo from "../assets/df-logo.png";
 import dfLogo from "../assets/gdis-logo.png";
 import { ModelSelectionButton } from "../views/ModelSelectionDialog";
-import { TableCopyDialogV2 } from "../views/TableSelectionView";
+import {
+  TableCopyDialogV2,
+  DatasetSelectionDialog,
+} from "../views/TableSelectionView";
 import { TableUploadDialog } from "../views/TableSelectionView";
 import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
 import ContentPasteIcon from "@mui/icons-material/ContentPaste";
@@ -82,6 +86,7 @@ import {
   handleDBDownload,
 } from "../views/DBTableManager";
 import CloudQueueIcon from "@mui/icons-material/CloudQueue";
+import CategoryIcon from "@mui/icons-material/Category";
 import { getUrls } from "./utils";
 import { DataLoadingChatDialog } from "../views/DataLoadingChat";
 import ChatIcon from "@mui/icons-material/Chat";
@@ -132,7 +137,7 @@ export const ImportStateButton: React.FC<{}> = ({}) => {
   const inputRef = React.useRef<HTMLInputElement>(null);
 
   const handleFileUpload = (
-    event: React.ChangeEvent<HTMLInputElement>
+    event: React.ChangeEvent<HTMLInputElement>,
   ): void => {
     const files = event.target.files;
     if (files) {
@@ -179,7 +184,7 @@ export const ImportStateButton: React.FC<{}> = ({}) => {
 
 export const ExportStateButton: React.FC<{}> = ({}) => {
   const sessionId = useSelector(
-    (state: DataFormulatorState) => state.sessionId
+    (state: DataFormulatorState) => state.sessionId,
   );
   const tables = useSelector((state: DataFormulatorState) => state.tables);
   const fullStateJson = useSelector((state: DataFormulatorState) => {
@@ -214,7 +219,7 @@ export const ExportStateButton: React.FC<{}> = ({}) => {
           function download(
             content: string,
             fileName: string,
-            contentType: string
+            contentType: string,
           ) {
             let a = document.createElement("a");
             let file = new Blob([content], { type: contentType });
@@ -226,7 +231,7 @@ export const ExportStateButton: React.FC<{}> = ({}) => {
           download(
             fullStateJson,
             `df_state_${firstTableName}_${sessionId?.slice(0, 4)}.json`,
-            "text/plain"
+            "text/plain",
           );
         }}
         startIcon={<DownloadIcon />}
@@ -243,90 +248,503 @@ export const toolName = "GDIS AI Agent";
 
 export interface AppFCProps {}
 
+// Database Button Component
+const DatabaseButton: React.FC<{ onClose: () => void }> = ({ onClose }) => (
+  <DBTableSelectionDialog
+    buttonElement={
+      <Button
+        variant="outlined"
+        sx={{
+          textTransform: "none",
+          height: "140px",
+          width: "120px",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 1,
+          p: 2,
+        }}
+      >
+        <Box sx={{ fontSize: 40, flexShrink: 0 }}>
+          <CloudQueueIcon sx={{ fontSize: 40 }} />
+        </Box>
+        <Box
+          sx={{
+            textAlign: "center",
+            display: "flex",
+            flexDirection: "column",
+            gap: 0.5,
+            minHeight: "48px",
+            justifyContent: "center",
+          }}
+        >
+          <Typography variant="body2" sx={{ fontWeight: 600, lineHeight: 1.2 }}>
+            Database
+          </Typography>
+        </Box>
+      </Button>
+    }
+  />
+);
+
+// Clean Data Button Component
+const CleanDataButton: React.FC<{ onClose: () => void }> = ({ onClose }) => (
+  <DataLoadingChatDialog
+    buttonElement={
+      <Button
+        variant="outlined"
+        sx={{
+          textTransform: "none",
+          height: "140px",
+          width: "120px",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 1,
+          p: 2,
+        }}
+      >
+        <Box sx={{ fontSize: 40, flexShrink: 0 }}>
+          <ImageIcon sx={{ fontSize: 40 }} />
+        </Box>
+        <Box
+          sx={{
+            textAlign: "center",
+            display: "flex",
+            flexDirection: "column",
+            gap: 0.5,
+            minHeight: "48px",
+            justifyContent: "center",
+          }}
+        >
+          <Typography variant="body2" sx={{ fontWeight: 600, lineHeight: 1.2 }}>
+            Clean Data
+          </Typography>
+          <Typography
+            variant="caption"
+            color="text.secondary"
+            sx={{ lineHeight: 1.2, fontSize: "0.7rem" }}
+          >
+            (image/messy)
+          </Typography>
+        </Box>
+      </Button>
+    }
+  />
+);
+
+// Upload File Button Component
+const UploadFileButton: React.FC<{ onClose: () => void }> = ({ onClose }) => (
+  <TableUploadDialog
+    buttonElement={
+      <Button
+        variant="outlined"
+        sx={{
+          textTransform: "none",
+          height: "140px",
+          width: "120px",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 1,
+          p: 2,
+        }}
+      >
+        <Box sx={{ fontSize: 40, flexShrink: 0 }}>📁</Box>
+        <Box
+          sx={{
+            textAlign: "center",
+            display: "flex",
+            flexDirection: "column",
+            gap: 0.5,
+            minHeight: "48px",
+            justifyContent: "center",
+          }}
+        >
+          <Typography variant="body2" sx={{ fontWeight: 600, lineHeight: 1.2 }}>
+            Upload File
+          </Typography>
+          <Typography
+            variant="caption"
+            color="text.secondary"
+            sx={{ lineHeight: 1.2, fontSize: "0.7rem" }}
+          >
+            (csv/tsv/json)
+          </Typography>
+        </Box>
+      </Button>
+    }
+    disabled={false}
+  />
+);
+
+// Paste Data Button Component
+const PasteDataButton: React.FC<{ onClose: () => void }> = ({ onClose }) => (
+  <TableCopyDialogV2
+    buttonElement={
+      <Button
+        variant="outlined"
+        sx={{
+          textTransform: "none",
+          height: "140px",
+          width: "120px",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 1,
+          p: 2,
+        }}
+      >
+        <Box sx={{ fontSize: 40, flexShrink: 0 }}>📋</Box>
+        <Box
+          sx={{
+            textAlign: "center",
+            display: "flex",
+            flexDirection: "column",
+            gap: 0.5,
+            minHeight: "48px",
+            justifyContent: "center",
+          }}
+        >
+          <Typography variant="body2" sx={{ fontWeight: 600, lineHeight: 1.2 }}>
+            Paste Data
+          </Typography>
+          <Typography
+            variant="caption"
+            color="text.secondary"
+            sx={{ lineHeight: 1.2, fontSize: "0.7rem" }}
+          >
+            (csv/tsv)
+          </Typography>
+        </Box>
+      </Button>
+    }
+    disabled={false}
+  />
+);
+
+// Example Data Button Component
+const ExampleDataButton: React.FC<{ onClose: () => void }> = ({ onClose }) => (
+  <DatasetSelectionDialog
+    buttonElement={
+      <Button
+        variant="outlined"
+        sx={{
+          textTransform: "none",
+          height: "140px",
+          width: "120px",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 1,
+          p: 2,
+        }}
+      >
+        <Box sx={{ fontSize: 40, flexShrink: 0 }}>📊</Box>
+        <Box
+          sx={{
+            textAlign: "center",
+            display: "flex",
+            flexDirection: "column",
+            gap: 0.5,
+            minHeight: "48px",
+            justifyContent: "center",
+          }}
+        >
+          <Typography variant="body2" sx={{ fontWeight: 600, lineHeight: 1.2 }}>
+            Example Data
+          </Typography>
+        </Box>
+      </Button>
+    }
+  />
+);
+
 // Extract menu components into separate components to prevent full app re-renders
 const TableMenu: React.FC = () => {
-  const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
-  const open = Boolean(anchorEl);
+  const [open, setOpen] = useState(false);
+  const dbButtonRef = React.useRef<HTMLButtonElement>(null);
+  const cleanDataButtonRef = React.useRef<HTMLButtonElement>(null);
+  const uploadButtonRef = React.useRef<HTMLButtonElement>(null);
+  const pasteButtonRef = React.useRef<HTMLButtonElement>(null);
+  const exampleButtonRef = React.useRef<HTMLButtonElement>(null);
+
+  const handleOpenDialog = (buttonRef: React.RefObject<HTMLButtonElement>) => {
+    setOpen(false);
+    setTimeout(() => {
+      buttonRef.current?.click();
+    }, 50);
+  };
 
   return (
     <>
       <Button
         variant="text"
-        onClick={(e) => setAnchorEl(e.currentTarget)}
+        onClick={() => setOpen(true)}
         endIcon={<KeyboardArrowDownIcon />}
-        aria-controls={open ? "add-table-menu" : undefined}
-        aria-haspopup="true"
-        aria-expanded={open ? "true" : undefined}
         sx={{ textTransform: "none" }}
       >
         Data
       </Button>
-      <Menu
-        id="add-table-menu"
-        anchorEl={anchorEl}
+      <Dialog
         open={open}
-        onClose={() => setAnchorEl(null)}
-        slotProps={{
-          paper: { sx: { py: "4px", px: "8px" } },
-        }}
-        aria-labelledby="add-table-button"
-        sx={{
-          "& .MuiMenuItem-root": { padding: 0, margin: 0 },
-          "& .MuiTypography-root": {
-            fontSize: 14,
-            display: "flex",
-            alignItems: "center",
-            textTransform: "none",
-            gap: 1,
-          },
-        }}
+        onClose={() => setOpen(false)}
+        maxWidth="sm"
+        fullWidth
       >
-        <MenuItem onClick={(e) => {}}>
-          <DBTableSelectionDialog
-            buttonElement={
-              <Typography fontSize="inherit" sx={{}}>
-                <CloudQueueIcon fontSize="inherit" /> Database
-              </Typography>
-            }
-          />
-        </MenuItem>
-        <MenuItem onClick={(e) => {}}>
-          <DataLoadingChatDialog
-            buttonElement={
-              <Typography fontSize="inherit" sx={{}}>
-                clean data{" "}
-                <span style={{ fontSize: "11px" }}>(image/messy text)</span>
-              </Typography>
-            }
-          />
-        </MenuItem>
-        <MenuItem
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-          }}
-        >
-          <TableCopyDialogV2
-            buttonElement={
-              <Typography sx={{}}>
-                paste data <span style={{ fontSize: "11px" }}>(csv/tsv)</span>
-              </Typography>
-            }
-            disabled={false}
-          />
-        </MenuItem>
-        <MenuItem onClick={(e) => {}}>
-          <TableUploadDialog
-            buttonElement={
-              <Typography sx={{}}>
-                upload data file{" "}
-                <span style={{ fontSize: "11px" }}>(csv/tsv/json)</span>
-              </Typography>
-            }
-            disabled={false}
-          />
-        </MenuItem>
-      </Menu>
+        <DialogTitle sx={{ display: "flex", alignItems: "center" }}>
+          Data Loader
+        </DialogTitle>
+        <DialogContent>
+          <Box
+            sx={{
+              display: "flex",
+              flexWrap: "wrap",
+              gap: 2,
+              py: 2,
+              justifyContent: "center",
+              alignItems: "flex-start",
+            }}
+          >
+            <Button
+              variant="outlined"
+              onClick={() => handleOpenDialog(dbButtonRef)}
+              sx={{
+                textTransform: "none",
+                height: "140px",
+                width: "120px",
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 1,
+                p: 2,
+              }}
+            >
+              <Box sx={{ fontSize: 40, flexShrink: 0 }}>
+                <CloudQueueIcon sx={{ fontSize: 40 }} />
+              </Box>
+              <Box
+                sx={{
+                  textAlign: "center",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 0.5,
+                  minHeight: "48px",
+                  justifyContent: "center",
+                }}
+              >
+                <Typography
+                  variant="body2"
+                  sx={{ fontWeight: 600, lineHeight: 1.2 }}
+                >
+                  Database
+                </Typography>
+              </Box>
+            </Button>
+
+            <Button
+              variant="outlined"
+              onClick={() => handleOpenDialog(cleanDataButtonRef)}
+              sx={{
+                textTransform: "none",
+                height: "140px",
+                width: "120px",
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 1,
+                p: 2,
+              }}
+            >
+              <Box sx={{ fontSize: 40, flexShrink: 0 }}>
+                <ImageIcon sx={{ fontSize: 40 }} />
+              </Box>
+              <Box
+                sx={{
+                  textAlign: "center",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 0.5,
+                  minHeight: "48px",
+                  justifyContent: "center",
+                }}
+              >
+                <Typography
+                  variant="body2"
+                  sx={{ fontWeight: 600, lineHeight: 1.2 }}
+                >
+                  Clean Data
+                </Typography>
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{ lineHeight: 1.2, fontSize: "0.7rem" }}
+                >
+                  (image/messy)
+                </Typography>
+              </Box>
+            </Button>
+
+            <Button
+              variant="outlined"
+              onClick={() => handleOpenDialog(uploadButtonRef)}
+              sx={{
+                textTransform: "none",
+                height: "140px",
+                width: "120px",
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 1,
+                p: 2,
+              }}
+            >
+              <Box sx={{ fontSize: 40, flexShrink: 0 }}>📁</Box>
+              <Box
+                sx={{
+                  textAlign: "center",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 0.5,
+                  minHeight: "48px",
+                  justifyContent: "center",
+                }}
+              >
+                <Typography
+                  variant="body2"
+                  sx={{ fontWeight: 600, lineHeight: 1.2 }}
+                >
+                  Upload File
+                </Typography>
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{ lineHeight: 1.2, fontSize: "0.7rem" }}
+                >
+                  (csv/tsv/json)
+                </Typography>
+              </Box>
+            </Button>
+
+            <Button
+              variant="outlined"
+              onClick={() => handleOpenDialog(pasteButtonRef)}
+              sx={{
+                textTransform: "none",
+                height: "140px",
+                width: "120px",
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 1,
+                p: 2,
+              }}
+            >
+              <Box sx={{ fontSize: 40, flexShrink: 0 }}>📋</Box>
+              <Box
+                sx={{
+                  textAlign: "center",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 0.5,
+                  minHeight: "48px",
+                  justifyContent: "center",
+                }}
+              >
+                <Typography
+                  variant="body2"
+                  sx={{ fontWeight: 600, lineHeight: 1.2 }}
+                >
+                  Paste Data
+                </Typography>
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{ lineHeight: 1.2, fontSize: "0.7rem" }}
+                >
+                  (csv/tsv)
+                </Typography>
+              </Box>
+            </Button>
+
+            <Button
+              variant="outlined"
+              onClick={() => handleOpenDialog(exampleButtonRef)}
+              sx={{
+                textTransform: "none",
+                height: "140px",
+                width: "120px",
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 1,
+                p: 2,
+              }}
+            >
+              <Box sx={{ fontSize: 40, flexShrink: 0 }}>📊</Box>
+              <Box
+                sx={{
+                  textAlign: "center",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 0.5,
+                  minHeight: "48px",
+                  justifyContent: "center",
+                }}
+              >
+                <Typography
+                  variant="body2"
+                  sx={{ fontWeight: 600, lineHeight: 1.2 }}
+                >
+                  Example Data
+                </Typography>
+              </Box>
+            </Button>
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setOpen(false)}>Close</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Render dialog components outside the main modal with hidden buttons */}
+      <div style={{ display: "none" }}>
+        <DBTableSelectionDialog
+          buttonElement={<button ref={dbButtonRef}>Open DB Dialog</button>}
+        />
+        <DataLoadingChatDialog
+          buttonElement={
+            <button ref={cleanDataButtonRef}>Open Clean Data Dialog</button>
+          }
+        />
+        <TableUploadDialog
+          buttonElement={
+            <button ref={uploadButtonRef}>Open Upload Dialog</button>
+          }
+          disabled={false}
+        />
+        <TableCopyDialogV2
+          buttonElement={
+            <button ref={pasteButtonRef}>Open Paste Dialog</button>
+          }
+          disabled={false}
+        />
+        <DatasetSelectionDialog
+          buttonElement={
+            <button ref={exampleButtonRef}>Open Example Dialog</button>
+          }
+        />
+      </div>
     </>
   );
 };
@@ -335,7 +753,7 @@ const SessionMenu: React.FC = () => {
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const open = Boolean(anchorEl);
   const sessionId = useSelector(
-    (state: DataFormulatorState) => state.sessionId
+    (state: DataFormulatorState) => state.sessionId,
   );
   const tables = useSelector((state: DataFormulatorState) => state.tables);
   const theme = useTheme();
@@ -445,7 +863,7 @@ const SessionMenu: React.FC = () => {
                         component: "DB Manager",
                         type: "success",
                         value: "Database imported successfully",
-                      })
+                      }),
                     );
                   } else {
                     dispatch(
@@ -454,7 +872,7 @@ const SessionMenu: React.FC = () => {
                         component: "DB Manager",
                         type: "error",
                         value: data.message || "Import failed",
-                      })
+                      }),
                     );
                   }
                 } catch (error) {
@@ -464,7 +882,7 @@ const SessionMenu: React.FC = () => {
                       component: "DB Manager",
                       type: "error",
                       value: "Import failed",
-                    })
+                    }),
                   );
                 }
                 e.target.value = "";
@@ -530,17 +948,17 @@ const ConfigDialog: React.FC = () => {
   const config = useSelector((state: DataFormulatorState) => state.config);
 
   const [formulateTimeoutSeconds, setFormulateTimeoutSeconds] = useState(
-    config.formulateTimeoutSeconds
+    config.formulateTimeoutSeconds,
   );
   const [maxRepairAttempts, setMaxRepairAttempts] = useState(
-    config.maxRepairAttempts
+    config.maxRepairAttempts,
   );
 
   const [defaultChartWidth, setDefaultChartWidth] = useState(
-    config.defaultChartWidth
+    config.defaultChartWidth,
   );
   const [defaultChartHeight, setDefaultChartHeight] = useState(
-    config.defaultChartHeight
+    config.defaultChartHeight,
   );
 
   // Add check for changes
@@ -754,7 +1172,7 @@ const ConfigDialog: React.FC = () => {
                   maxRepairAttempts,
                   defaultChartWidth,
                   defaultChartHeight,
-                })
+                }),
               );
               setOpen(false);
             }}
@@ -771,13 +1189,13 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
   const dispatch = useDispatch<AppDispatch>();
   const viewMode = useSelector((state: DataFormulatorState) => state.viewMode);
   const generatedReports = useSelector(
-    (state: DataFormulatorState) => state.generatedReports
+    (state: DataFormulatorState) => state.generatedReports,
   );
   const focusedTableId = useSelector(
-    (state: DataFormulatorState) => state.focusedTableId
+    (state: DataFormulatorState) => state.focusedTableId,
   );
   const serverConfig = useSelector(
-    (state: DataFormulatorState) => state.serverConfig
+    (state: DataFormulatorState) => state.serverConfig,
   );
 
   useEffect(() => {
@@ -1037,7 +1455,7 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
                           "&.Mui-selected": {
                             backgroundColor: alpha(
                               theme.palette.primary.main,
-                              0.1
+                              0.1,
                             ),
                             color: theme.palette.primary.main,
                           },
@@ -1106,6 +1524,7 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
                 )}
                 <Typography
                   fontSize="inherit"
+                  component="div"
                   sx={{ display: "flex", alignItems: "center", gap: 1 }}
                 >
                   <TableMenu />
@@ -1115,6 +1534,7 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
             ) : null}
             <Typography
               fontSize="inherit"
+              component="div"
               sx={{ display: "flex", alignItems: "center", gap: 1 }}
             >
               <SessionMenu />

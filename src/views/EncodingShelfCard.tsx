@@ -14,6 +14,7 @@ import {
 } from "../app/dfSlice";
 
 import embed from "vega-embed";
+import { logUserPrompt } from "../utils/promptLogger";
 
 import {
   Box,
@@ -104,14 +105,14 @@ export interface EncodingShelfCardProps {
 let selectBaseTables = (
   activeFields: FieldItem[],
   currentTable: DictTable,
-  tables: DictTable[]
+  tables: DictTable[],
 ): DictTable[] => {
   let baseTables = [];
 
   // if the current table is derived from other tables, then we need to add those tables to the base tables
   if (currentTable.derive && !currentTable.anchored) {
     baseTables = currentTable.derive.source.map(
-      (t) => tables.find((t2) => t2.id == t) as DictTable
+      (t) => tables.find((t2) => t2.id == t) as DictTable,
     );
   } else {
     baseTables.push(currentTable);
@@ -124,7 +125,7 @@ let selectBaseTables = (
     // find what are other tables that was used to derive the active fields
     let relevantTableIds = [
       ...new Set(
-        activeFields.filter((t) => t.source != "custom").map((t) => t.tableRef)
+        activeFields.filter((t) => t.source != "custom").map((t) => t.tableRef),
       ),
     ];
     // find all tables that contains the active original fields
@@ -132,8 +133,8 @@ let selectBaseTables = (
 
     baseTables.push(
       ...tablesToAdd.filter(
-        (t) => !baseTables.map((t2) => t2.id).includes(t.id)
-      )
+        (t) => !baseTables.map((t2) => t2.id).includes(t.id),
+      ),
     );
   }
 
@@ -143,7 +144,7 @@ let selectBaseTables = (
 // Add this utility function before the TriggerCard component
 export const renderTextWithEmphasis = (
   text: string,
-  highlightChipSx?: SxProps<Theme>
+  highlightChipSx?: SxProps<Theme>,
 ) => {
   text = text.replace(/_/g, "_\u200B");
   // Split the prompt by ** patterns and create an array of text and highlighted segments
@@ -182,7 +183,7 @@ export const TriggerCard: FC<{
   let theme = useTheme();
 
   let fieldItems = useSelector(
-    (state: DataFormulatorState) => state.conceptShelfItems
+    (state: DataFormulatorState) => state.conceptShelfItems,
   );
 
   const dispatch = useDispatch<AppDispatch>();
@@ -207,7 +208,7 @@ export const TriggerCard: FC<{
       })
       .map(([channel, encoding], index) => {
         let field = fieldItems.find(
-          (f) => f.id == encoding.fieldID
+          (f) => f.id == encoding.fieldID,
         ) as FieldItem;
         return field.name;
       });
@@ -218,7 +219,7 @@ export const TriggerCard: FC<{
       })
       .map(([channel, encoding], index) => {
         let field = fieldItems.find(
-          (f) => f.id == encoding.fieldID
+          (f) => f.id == encoding.fieldID,
         ) as FieldItem;
         return [
           index > 0 ? "⨉" : "",
@@ -376,7 +377,7 @@ const UserActionTableSelector: FC<{
   let actionTableIds = [
     ...requiredActionTableIds,
     ...userSelectedActionTableIds.filter(
-      (id) => !requiredActionTableIds.includes(id)
+      (id) => !requiredActionTableIds.includes(id),
     ),
   ];
 
@@ -438,7 +439,7 @@ const UserActionTableSelector: FC<{
                 ? undefined
                 : () =>
                     updateUserSelectedActionTableIds(
-                      actionTableIds.filter((id) => id !== tableId)
+                      actionTableIds.filter((id) => id !== tableId),
                     )
             }
           />
@@ -493,7 +494,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({
   const tables = useSelector((state: DataFormulatorState) => state.tables);
   const config = useSelector((state: DataFormulatorState) => state.config);
   const agentRules = useSelector(
-    (state: DataFormulatorState) => state.agentRules
+    (state: DataFormulatorState) => state.agentRules,
   );
   let existMultiplePossibleBaseTables =
     tables.filter((t) => t.derive == undefined || t.anchored).length > 1;
@@ -512,10 +513,10 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({
   let [prompt, setPrompt] = useState<string>(trigger?.instruction || "");
   const [qcLimitsMode, setQcLimitsMode] = useState(chart.qcLimitsMode || false);
   const [chartWidth, setChartWidth] = useState(
-    chart.chartWidth || config.defaultChartWidth
+    chart.chartWidth || config.defaultChartWidth,
   );
   const [chartHeight, setChartHeight] = useState(
-    chart.chartHeight || config.defaultChartHeight
+    chart.chartHeight || config.defaultChartHeight,
   );
 
   useEffect(() => {
@@ -541,7 +542,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({
   };
 
   const conceptShelfItems = useSelector(
-    (state: DataFormulatorState) => state.conceptShelfItems
+    (state: DataFormulatorState) => state.conceptShelfItems,
   );
 
   let currentTable = getDataTable(chart, tables, allCharts, conceptShelfItems);
@@ -550,7 +551,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({
   let isChartAvailable = checkChartAvailability(
     chart,
     conceptShelfItems,
-    currentTable.rows
+    currentTable.rows,
   );
 
   // Add this state
@@ -590,7 +591,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({
       text: string;
       goal: string;
       difficulty: "easy" | "medium" | "hard";
-    }[]
+    }[],
   ) => {
     setChartState((prev) => ({
       ...prev,
@@ -631,7 +632,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({
 
   let encodingBoxGroups = Object.entries(ChannelGroups)
     .filter(([group, channelList]) =>
-      channelList.some((ch) => Object.keys(encodingMap).includes(ch))
+      channelList.some((ch) => Object.keys(encodingMap).includes(ch)),
     )
     .map(([group, channelList]) => {
       let component = (
@@ -667,22 +668,22 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({
     .map((enc) => enc.fieldID)
     .filter(
       (fieldId) =>
-        fieldId && conceptShelfItems.map((f) => f.id).includes(fieldId)
+        fieldId && conceptShelfItems.map((f) => f.id).includes(fieldId),
     )
     .map(
-      (fieldId) => conceptShelfItems.find((f) => f.id == fieldId) as FieldItem
+      (fieldId) => conceptShelfItems.find((f) => f.id == fieldId) as FieldItem,
     );
   let activeSimpleEncodings: { [key: string]: string } = {};
   for (let channel of getChartChannels(chart.chartType)) {
     if (chart.encodingMap[channel as Channel]?.fieldID) {
       activeSimpleEncodings[channel] = activeFields.find(
-        (f) => f.id == chart.encodingMap[channel as Channel].fieldID
+        (f) => f.id == chart.encodingMap[channel as Channel].fieldID,
       )?.name as string;
     }
   }
 
   let activeCustomFields = activeFields.filter(
-    (field) => field.source == "custom"
+    (field) => field.source == "custom",
   );
 
   // check if the current table contains all fields already exists a table that fullfills the user's specification
@@ -695,12 +696,12 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({
   let requiredActionTables = selectBaseTables(
     activeFields,
     currentTable,
-    tables
+    tables,
   );
   let actionTableIds = [
     ...requiredActionTables.map((t) => t.id),
     ...userSelectedActionTableIds.filter(
-      (id) => !requiredActionTables.map((t) => t.id).includes(id)
+      (id) => !requiredActionTables.map((t) => t.id).includes(id),
     ),
   ];
 
@@ -738,7 +739,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({
       let chartAvailable = checkChartAvailability(
         chart,
         conceptShelfItems,
-        currentTable.rows
+        currentTable.rows,
       );
       let currentChartPng = chartAvailable
         ? await vegaLiteSpecToPng(
@@ -753,8 +754,8 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({
               100,
               80,
               false,
-              chart.qcLimitsMode || false
-            )
+              chart.qcLimitsMode || false,
+            ),
           )
         : undefined;
 
@@ -872,7 +873,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({
           value:
             "Failed to get ideas from the exploration agent. Please try again.",
           detail: error instanceof Error ? error.message : "Unknown error",
-        })
+        }),
       );
     } finally {
       setIsLoadingIdeas(false);
@@ -881,6 +882,9 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({
 
   // Function to handle idea chip click
   const handleIdeaClick = (ideaText: string) => {
+    // Log user prompt to backend
+    logUserPrompt(ideaText, "EncodingShelfCard", "ideate");
+
     setIdeateMode(true);
     setPrompt(ideaText);
     // Automatically start the data formulation process
@@ -890,14 +894,18 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({
   let deriveNewData = (
     instruction: string,
     mode: "formulate" | "ideate" = "formulate",
-    overrideTableId?: string
+    overrideTableId?: string,
   ) => {
+    if (instruction.trim().length > 0) {
+      // Log user prompt to backend
+      logUserPrompt(instruction, "EncodingShelfCard", mode);
+    }
     if (actionTableIds.length == 0) {
       return;
     }
 
     let actionTables = actionTableIds.map(
-      (id) => tables.find((t) => t.id == id) as DictTable
+      (id) => tables.find((t) => t.id == id) as DictTable,
     );
 
     if (
@@ -908,7 +916,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({
       tables.some(
         (t) =>
           t.derive == undefined &&
-          activeFields.every((f) => currentTable.names.includes(f.name))
+          activeFields.every((f) => currentTable.names.includes(f.name)),
       )
     ) {
       // if there is no additional fields, directly generate
@@ -917,10 +925,10 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({
         tables,
         allCharts,
         conceptShelfItems,
-        true
+        true,
       );
       dispatch(
-        dfActions.updateTableRef({ chartId: chartId, tableRef: tempTable.id })
+        dfActions.updateTableRef({ chartId: chartId, tableRef: tempTable.id }),
       );
 
       //dispatch(dfActions.resetDerivedTables([])); //([{code: "", data: inputData.rows}]));
@@ -928,7 +936,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({
       // a fake function to give the feel that synthesizer is running
       setTimeout(function () {
         dispatch(
-          dfActions.changeChartRunningStatus({ chartId, status: false })
+          dfActions.changeChartRunningStatus({ chartId, status: false }),
         );
         dispatch(dfActions.clearUnReferencedTables());
       }, 400);
@@ -942,7 +950,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({
       .reduce(
         (a: string, b: string, i, array) =>
           a + (i == 0 ? "" : i < array.length - 1 ? ", " : " and ") + b,
-        ""
+        "",
       );
 
     let chartType = chart.chartType;
@@ -1045,14 +1053,14 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({
     const controller = new AbortController();
     const timeoutId = setTimeout(
       () => controller.abort(),
-      config.formulateTimeoutSeconds * 1000
+      config.formulateTimeoutSeconds * 1000,
     );
 
     fetch(engine, { ...message, signal: controller.signal })
       .then((response) => response.json())
       .then((data) => {
         dispatch(
-          dfActions.changeChartRunningStatus({ chartId, status: false })
+          dfActions.changeChartRunningStatus({ chartId, status: false }),
         );
 
         if (data.results.length > 0) {
@@ -1073,7 +1081,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({
                   value: `Data formulation failed, please try again.`,
                   code: code,
                   detail: errorMessage,
-                })
+                }),
               );
             } else {
               let candidate = candidates[0];
@@ -1096,7 +1104,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({
                     let tableSuffix = Number.parseInt(
                       (Date.now() - Math.floor(Math.random() * 10000))
                         .toString()
-                        .slice(-2)
+                        .slice(-2),
                     );
                     let tableId = `table-${tableSuffix}`;
                     while (tables.find((t) => t.id == tableId) != undefined) {
@@ -1145,7 +1153,8 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({
               }
               let names = candidateTable.names;
               let missingNames = names.filter(
-                (name) => !conceptShelfItems.some((field) => field.name == name)
+                (name) =>
+                  !conceptShelfItems.some((field) => field.name == name),
               );
 
               let conceptsToAdd = missingNames.map((name) => {
@@ -1183,7 +1192,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({
                   .find((c) => c.tableRef == overrideTableId)
               ) {
                 let chartsFromOverrideTable = allCharts.filter(
-                  (c) => c.source == "user" && c.tableRef == overrideTableId
+                  (c) => c.source == "user" && c.tableRef == overrideTableId,
                 );
                 let chartsWithSameEncoding = chartsFromOverrideTable.filter(
                   (c) => {
@@ -1203,12 +1212,12 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({
                       getSimpliedChartEnc(c) ==
                       getSimpliedChartEnc(triggerChartSpec)
                     );
-                  }
+                  },
                 );
                 if (chartsWithSameEncoding.length > 0) {
                   // find the chart to set as focus
                   dispatch(
-                    dfActions.setFocusedChart(chartsWithSameEncoding[0].id)
+                    dfActions.setFocusedChart(chartsWithSameEncoding[0].id),
                   );
                   needToCreateNewChart = false;
                 }
@@ -1220,7 +1229,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({
                   newChart = resolveRecommendedChart(
                     refinedGoal,
                     currentConcepts,
-                    candidateTable
+                    candidateTable,
                   );
                 } else if (chart.chartType == "Table") {
                   newChart = generateFreshChart(candidateTable.id, "Table");
@@ -1236,7 +1245,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({
                     newChart,
                     currentConcepts,
                     refinedGoal["chart_encodings"],
-                    candidateTable
+                    candidateTable,
                   );
                 }
 
@@ -1261,7 +1270,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({
                   component: "chart builder",
                   type: "success",
                   value: `Data formulation for ${fieldNamesStr} succeeded.`,
-                })
+                }),
               );
             }
           }
@@ -1274,13 +1283,13 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({
               type: "error",
               value:
                 "No result is returned from the data formulation agent. Please try again.",
-            })
+            }),
           );
         }
       })
       .catch((error) => {
         dispatch(
-          dfActions.changeChartRunningStatus({ chartId, status: false })
+          dfActions.changeChartRunningStatus({ chartId, status: false }),
         );
         // Check if the error was caused by the AbortController
         if (error.name === "AbortError") {
@@ -1291,7 +1300,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({
               type: "error",
               value: `Data formulation timed out after ${config.formulateTimeoutSeconds} seconds. Consider breaking down the task, using a different model or prompt, or increasing the timeout limit.`,
               detail: "Request exceeded timeout limit",
-            })
+            }),
           );
         } else {
           console.error(error);
@@ -1302,7 +1311,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({
               type: "error",
               value: `Data formulation failed, please try again.`,
               detail: error.message,
-            })
+            }),
           );
         }
       });
@@ -1380,7 +1389,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({
                   deriveNewData(
                     trigger.instruction,
                     "formulate",
-                    trigger.resultTableId
+                    trigger.resultTableId,
                   );
                 }}
               >
@@ -1790,14 +1799,14 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({
             size="small"
             onClick={() => {
               dispatch(
-                dfActions.updateChartQcLimitsMode({ chartId, qcLimitsMode })
+                dfActions.updateChartQcLimitsMode({ chartId, qcLimitsMode }),
               );
               dispatch(
                 dfActions.updateChartDimensions({
                   chartId,
                   width: chartWidth,
                   height: chartHeight,
-                })
+                }),
               );
               dispatch(dfActions.applyAllPendingEncodings());
             }}
@@ -1933,7 +1942,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({
 const vegaLiteSpecToPng = async (
   spec: any,
   scale: number = 2.0,
-  quality: number = 1.0
+  quality: number = 1.0,
 ): Promise<string | null> => {
   try {
     // Create a temporary container
@@ -1971,7 +1980,7 @@ const vegaLiteSpecToPng = async (
 // Alternative method using toImageURL for even better quality
 const vegaLiteSpecToPngWithImageURL = async (
   spec: any,
-  scale: number = 2.0
+  scale: number = 2.0,
 ): Promise<string | null> => {
   try {
     // Create a temporary container

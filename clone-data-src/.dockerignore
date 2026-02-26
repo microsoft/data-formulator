@@ -1,0 +1,14 @@
+.git
+.gitignore
+__pycache__
+*.pyc
+*.pyo
+*.egg-info
+.DS_Store
+.idea
+.vscode
+*.log
+logs/
+.env
+.env.local
+*.bak

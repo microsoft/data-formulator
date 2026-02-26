@@ -1,0 +1,8 @@
+[Unit]
+Description=Failure handler for Oracle to ClickHouse Sync
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh -c 'echo "Oracle-ClickHouse sync failed. Check logs with: journalctl -u oracle-clickhouse-sync -n 50" | mail -s "Sync Failure Alert" admin@example.com'
+StandardOutput=journal
+StandardError=journal

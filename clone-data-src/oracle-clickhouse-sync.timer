@@ -1,0 +1,12 @@
+[Unit]
+Description=Oracle to ClickHouse Daily Sync Timer (runs at 2:00 AM)
+Requires=oracle-clickhouse-sync.service
+
+[Timer]
+# Run every day at 2:00 AM
+OnCalendar=*-*-* 02:00:00
+Persistent=true
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target

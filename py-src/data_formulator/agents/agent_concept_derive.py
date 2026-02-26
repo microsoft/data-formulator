@@ -8,7 +8,7 @@ import pandas as pd
 APP_ROOT = os.path.abspath('..')
 sys.path.append(os.path.abspath(APP_ROOT))
 
-from data_formulator.agents.agent_utils import generate_data_summary, field_name_to_ts_variable_name, extract_code_from_gpt_response, infer_ts_datatype
+from data_formulator.agents.agent_utils import generate_data_summary, field_name_to_ts_variable_name, extract_code_from_gpt_response, extract_and_log_user_prompt, infer_ts_datatype
 
 import logging
 
@@ -187,6 +187,9 @@ class ConceptDeriveAgent(object):
 
         messages = [{"role":"system", "content": SYSTEM_PROMPT},
                     {"role":"user","content": user_query}]
+        
+        # Log user prompt to ClickHouse
+        #extract_and_log_user_prompt(messages, "ConceptDeriveAgent")
         
         ###### the part that calls open_ai
         response = self.client.get_completion(messages = messages)

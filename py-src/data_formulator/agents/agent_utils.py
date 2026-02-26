@@ -7,6 +7,13 @@ import pandas as pd
 import numpy as np
 
 import re
+import os
+import uuid
+import logging
+from datetime import datetime
+from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 def string_to_py_varname(var_str): 
     var_name = re.sub(r'\W|^(?=\d)', '_', var_str)
@@ -245,3 +252,85 @@ def generate_data_summary(input_tables, include_data_samples=True, field_sample_
 
     return full_summary
 
+
+def log_prompt_to_clickhouse(agent_name: str, prompt_text: str, user_id: Optional[str] = None):
+    """
+    Log user prompt to ClickHouse AI_AGENT_PROMPT_LOG table.
+    
+    Args:
+        agent_name: Name of the agent
+        prompt_text: The user prompt text
+        user_id: Optional user ID (defaults to Flask session, environment variable, or "SYSTEM")
+    """
+    try:
+        from clickhouse_connect import get_client
+        
+        # Get user_id from parameter, Flask session, environment, or default
+        if user_id is None:
+            try:
+                from flask import session
+                user_id = session.get("user_id")
+            except (ImportError, RuntimeError):
+                user_id = None
+            
+            # Fallback to environment variables if no session user_id
+            if not user_id:
+                user_id = os.environ.get("USER_ID", os.environ.get("USERNAME", "SYSTEM"))
+        
+        # ClickHouse connection parameters
+        ch_host = os.environ.get("CH_HOST", "172.19.16.23")
+        ch_port = int(os.environ.get("CH_PORT", "8123"))
+        ch_user = os.environ.get("CH_USER", "admin")
+        ch_password = os.environ.get("CH_PASSWORD", "1fEQlaBivOpYXzw#")
+        ch_db = os.environ.get("CH_DB", "QC_DATA")
+        
+        # Connect to ClickHouse
+        client = get_client(
+            host=ch_host,
+            port=ch_port,
+            username=ch_user,
+            password=ch_password,
+            database=ch_db
+        )
+        
+        # Prepare data
+        oid = str(uuid.uuid4())
+        lastupdate = datetime.now()
+        
+        # Insert into ClickHouse
+        insert_query = f"""
+        INSERT INTO {ch_db}.AI_AGENT_PROMPT_LOG 
+        (OID, USER_ID, AGENT_NAME, PROMPT_TEXT, LASTUPDATE)
+        VALUES
+        """
+        
+        # Using parametrized query to escape special characters
+        client.insert(
+            table=f"{ch_db}.AI_AGENT_PROMPT_LOG",
+            data=[[oid, user_id, agent_name, prompt_text, lastupdate]],
+            column_names=["OID", "USER_ID", "AGENT_NAME", "PROMPT_TEXT", "LASTUPDATE"]
+        )
+        
+        logger.info(f"✅ Logged prompt to ClickHouse - Agent: {agent_name}, User: {user_id}, OID: {oid}")
+        
+    except Exception as e:
+        logger.error(f"❌ Failed to log prompt to ClickHouse: {e}")
+        # Don't raise exception - logging should not break the main flow
+
+
+def extract_and_log_user_prompt(messages: list, agent_name: str, user_id: Optional[str] = None):
+    """
+    Extract user prompt from messages and log to ClickHouse.
+    
+    Args:
+        messages: List of message dicts with 'role' and 'content'
+        agent_name: Name of the agent
+        user_id: Optional user ID
+    """
+    for msg in messages:
+        if msg.get("role") == "user":
+            prompt_text = msg.get("content", "")
+            if prompt_text:
+                log_prompt_to_clickhouse(agent_name, prompt_text, user_id)
+                return prompt_text
+    return None

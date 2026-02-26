@@ -672,6 +672,9 @@ def sanitize_db_error_message(error: Exception) -> Tuple[str, int]:
     # Convert error to string
     error_msg = str(error)
     
+    # Log full traceback for debugging server issues
+    logger.debug(f"Full exception details: {traceback.format_exc()}")
+    
     # Define patterns for known safe errors
     safe_error_patterns = {
         # Database table errors
@@ -690,12 +693,21 @@ def sanitize_db_error_message(error: Exception) -> Tuple[str, int]:
         # Data loader errors
         r"Entity ID": (error_msg, 500),
         r"session_id": ("session_id not found, please refresh the page", 500),
+        r"Need a DataFrame with at least one column": ("Data not found", 404),
+        
+        # Connection errors
+        r"Connection.*refused": ("Connection refused - server unavailable", 503),
+        r"Connection.*timeout": ("Connection timeout - server unavailable", 503),
     }
     
     # Check if error matches any safe pattern
     for pattern, (safe_msg, status_code) in safe_error_patterns.items():
         if re.search(pattern, error_msg, re.IGNORECASE):
-            return safe_msg, status_code
+            try:
+                return safe_msg, int(status_code)
+            except (ValueError, TypeError) as e:
+                logger.error(f"Invalid status code '{status_code}': {e}")
+                return safe_msg, 500
             
     # Log the full error for debugging
     logger.error(f"Unexpected error occurred: {error_msg}")
@@ -836,13 +848,17 @@ def data_loader_ingest_data_from_query():
         data_loader_params = data.get('data_loader_params')
         query = data.get('query')
         name_as = data.get('name_as')
+        
+        logger.info(f"Ingesting data from loader: {data_loader_type}, name_as: {name_as}")
 
         if data_loader_type not in DATA_LOADERS:
             return jsonify({"status": "error", "message": f"Invalid data loader type. Must be one of: {', '.join(DATA_LOADERS.keys())}"}), 400
 
         with db_manager.connection(session['session_id']) as duck_db_conn:
             data_loader = DATA_LOADERS[data_loader_type](data_loader_params, duck_db_conn)
+            logger.info(f"Data loader initialized: {data_loader_type}")
             data_loader.ingest_data_from_query(query, name_as)
+            logger.info(f"Data ingested successfully for: {name_as}")
 
             return jsonify({
                 "status": "success",
@@ -851,6 +867,7 @@ def data_loader_ingest_data_from_query():
 
     except Exception as e:
         logger.error(f"Error ingesting data from data loader: {str(e)}")
+        logger.error(f"Error traceback: {traceback.format_exc()}")
         safe_msg, status_code = sanitize_db_error_message(e)
         return jsonify({
             "status": "error", 

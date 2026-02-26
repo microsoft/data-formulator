@@ -3,7 +3,7 @@
 
 import json
 
-from data_formulator.agents.agent_utils import extract_json_objects, generate_data_summary
+from data_formulator.agents.agent_utils import extract_json_objects, generate_data_summary, extract_and_log_user_prompt
 from data_formulator.agents.agent_sql_data_transform import  sanitize_table_name, get_sql_table_statistics_str
 
 import logging
@@ -142,6 +142,9 @@ class ReportGenAgent(object):
             system_message, 
             user_prompt
         ]
+        
+        # Log user prompt to ClickHouse
+        #extract_and_log_user_prompt(messages, "ReportGenAgent")
         
         ###### the part that calls open_ai
         stream = self.client.get_completion(messages = messages, stream=True)

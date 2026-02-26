@@ -187,7 +187,7 @@ export const DatasetSelectionView: React.FC<DatasetSelectionViewProps> =
               let t = createTableFromFromObjectArray(
                 table.table_name,
                 table.sample,
-                true
+                true,
               );
               let maxDisplayRows = dataset.tables.length > 1 ? 5 : 9;
               if (t.rows.length < maxDisplayRows) {
@@ -359,14 +359,27 @@ export const DatasetSelectionDialog: React.FC<{ buttonElement: any }> =
 
     return (
       <>
-        <Button
-          sx={{ fontSize: "inherit" }}
+        <Box
           onClick={() => {
             setTableDialogOpen(true);
           }}
+          sx={{
+            cursor: "pointer",
+            display: "inline-block",
+            color: "primary.main",
+            fontSize: "inherit",
+            fontWeight: 500,
+            textTransform: "none",
+            padding: "6px 16px",
+            borderRadius: "4px",
+            transition: "background-color 0.2s",
+            "&:hover": {
+              backgroundColor: "rgba(25, 118, 210, 0.04)",
+            },
+          }}
         >
           {buttonElement}
-        </Button>
+        </Box>
         <Dialog
           key="sample-dataset-selection-dialog"
           onClose={() => {
@@ -416,7 +429,7 @@ export const DatasetSelectionDialog: React.FC<{ buttonElement: any }> =
                         dictTable = createTableFromFromObjectArray(
                           tableName,
                           JSON.parse(textData),
-                          true
+                          true,
                         );
                       }
                       if (dictTable) {
@@ -440,7 +453,7 @@ export interface TableUploadDialogProps {
 
 const getUniqueTableName = (
   baseName: string,
-  existingNames: Set<string>
+  existingNames: Set<string>,
 ): string => {
   let uniqueName = baseName;
   let counter = 1;
@@ -458,11 +471,11 @@ export const TableUploadDialog: React.FC<TableUploadDialogProps> = ({
   const dispatch = useDispatch<AppDispatch>();
   const inputRef = React.useRef<HTMLInputElement>(null);
   const existingTables = useSelector(
-    (state: DataFormulatorState) => state.tables
+    (state: DataFormulatorState) => state.tables,
   );
   const existingNames = new Set(existingTables.map((t) => t.id));
   const serverConfig = useSelector(
-    (state: DataFormulatorState) => state.serverConfig
+    (state: DataFormulatorState) => state.serverConfig,
   );
 
   let handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>): void => {
@@ -493,7 +506,7 @@ export const TableUploadDialog: React.FC<TableUploadDialogProps> = ({
                   file.size /
                   (1024 * 1024)
                 ).toFixed(2)}MB), upload it via DATABASE option instead.`,
-              })
+              }),
             );
             continue; // Skip this file and process the next one
           }
@@ -521,7 +534,7 @@ export const TableUploadDialog: React.FC<TableUploadDialogProps> = ({
               try {
                 let tables = await loadBinaryDataWrapper(
                   uniqueName,
-                  arrayBuffer
+                  arrayBuffer,
                 );
                 for (let table of tables) {
                   dispatch(dfActions.loadTable(table));
@@ -534,7 +547,7 @@ export const TableUploadDialog: React.FC<TableUploadDialogProps> = ({
                       type: "error",
                       component: "data loader",
                       value: `Failed to parse Excel file ${file.name}. Please check the file format.`,
-                    })
+                    }),
                   );
                 }
               } catch (error) {
@@ -545,7 +558,7 @@ export const TableUploadDialog: React.FC<TableUploadDialogProps> = ({
                     type: "error",
                     component: "data loader",
                     value: `Failed to parse Excel file ${file.name}. Please check the file format.`,
-                  })
+                  }),
                 );
               }
             }
@@ -559,7 +572,7 @@ export const TableUploadDialog: React.FC<TableUploadDialogProps> = ({
               type: "error",
               component: "data loader",
               value: `Unsupported file format: ${file.name}. Please use CSV, TSV, JSON, or Excel files.`,
-            })
+            }),
           );
         }
       }
@@ -585,7 +598,7 @@ export const TableUploadDialog: React.FC<TableUploadDialogProps> = ({
       <Tooltip
         title={
           serverConfig.DISABLE_FILE_UPLOAD ? (
-            <Typography sx={{ fontSize: "11px" }}>
+            <Box sx={{ fontSize: "11px" }}>
               {/* Install GDIS AI Agent locally to enable file upload.{" "}
               <br />
               Link:{" "}
@@ -598,28 +611,41 @@ export const TableUploadDialog: React.FC<TableUploadDialogProps> = ({
               >
                 https://github.com/microsoft/data-formulator
               </Link> */}
-            </Typography>
+            </Box>
           ) : (
             ""
           )
         }
         placement="top"
       >
-        <span
-          style={{
-            cursor: serverConfig.DISABLE_FILE_UPLOAD ? "help" : "pointer",
+        <Box
+          onClick={() => inputRef.current?.click()}
+          sx={{
+            cursor:
+              disabled || serverConfig.DISABLE_FILE_UPLOAD
+                ? "not-allowed"
+                : "pointer",
+            display: "inline-block",
+            opacity: disabled || serverConfig.DISABLE_FILE_UPLOAD ? 0.5 : 1,
+            pointerEvents:
+              disabled || serverConfig.DISABLE_FILE_UPLOAD ? "none" : "auto",
+            color: "primary.main",
+            fontSize: "inherit",
+            fontWeight: 500,
+            textTransform: "none",
+            padding: "6px 16px",
+            borderRadius: "4px",
+            transition: "background-color 0.2s",
+            "&:hover": {
+              backgroundColor:
+                disabled || serverConfig.DISABLE_FILE_UPLOAD
+                  ? "transparent"
+                  : "rgba(25, 118, 210, 0.04)",
+            },
           }}
         >
-          <Button
-            sx={{ fontSize: "inherit" }}
-            variant="text"
-            color="primary"
-            disabled={disabled || serverConfig.DISABLE_FILE_UPLOAD}
-            onClick={() => inputRef.current?.click()}
-          >
-            {buttonElement}
-          </Button>
-        </span>
+          {buttonElement}
+        </Box>
       </Tooltip>
     </>
   );
@@ -659,7 +685,7 @@ export const TableURLDialog: React.FC<TableURLDialogProps> = ({
           table = createTableFromFromObjectArray(
             tableName || "dataset",
             jsonContent,
-            true
+            true,
           );
         } catch (error) {
           table = createTableFromText(tableName || "dataset", content);
@@ -763,17 +789,31 @@ export const TableURLDialog: React.FC<TableURLDialogProps> = ({
 
   return (
     <>
-      <Button
-        sx={{ fontSize: "inherit" }}
-        variant="text"
-        color="primary"
-        disabled={disabled}
+      <Box
         onClick={() => {
           setDialogOpen(true);
         }}
+        sx={{
+          cursor: disabled ? "not-allowed" : "pointer",
+          display: "inline-block",
+          opacity: disabled ? 0.5 : 1,
+          pointerEvents: disabled ? "none" : "auto",
+          color: "primary.main",
+          fontSize: "inherit",
+          fontWeight: 500,
+          textTransform: "none",
+          padding: "6px 16px",
+          borderRadius: "4px",
+          transition: "background-color 0.2s",
+          "&:hover": {
+            backgroundColor: disabled
+              ? "transparent"
+              : "rgba(25, 118, 210, 0.04)",
+          },
+        }}
       >
         {buttonElement}
-      </Button>
+      </Box>
       {dialog}
     </>
   );
@@ -787,7 +827,7 @@ export const TableCopyDialogV2: React.FC<TableCopyDialogProps> = ({
 
   const [tableContent, setTableContent] = useState<string>("");
   const [tableContentType, setTableContentType] = useState<"text" | "image">(
-    "text"
+    "text",
   );
 
   const [cleaningInProgress, setCleaningInProgress] = useState<boolean>(false);
@@ -805,7 +845,7 @@ export const TableCopyDialogV2: React.FC<TableCopyDialogProps> = ({
 
   const dispatch = useDispatch<AppDispatch>();
   const existingTables = useSelector(
-    (state: DataFormulatorState) => state.tables
+    (state: DataFormulatorState) => state.tables,
   );
   const existingNames = new Set(existingTables.map((t) => t.id));
 
@@ -866,7 +906,7 @@ export const TableCopyDialogV2: React.FC<TableCopyDialogProps> = ({
         setDisplayContent(newContent);
       }
     },
-    [showFullContent, dispatch, MAX_CONTENT_SIZE]
+    [showFullContent, dispatch, MAX_CONTENT_SIZE],
   );
 
   // Toggle between preview and full content
@@ -1079,7 +1119,7 @@ export const TableCopyDialogV2: React.FC<TableCopyDialogProps> = ({
           title={
             isOverSizeLimit
               ? `Content exceeds ${(MAX_CONTENT_SIZE / (1024 * 1024)).toFixed(
-                  0
+                  0,
                 )}MB size limit`
               : ""
           }
@@ -1110,17 +1150,31 @@ export const TableCopyDialogV2: React.FC<TableCopyDialogProps> = ({
 
   return (
     <>
-      <Button
-        sx={{ fontSize: "inherit" }}
-        variant="text"
-        color="primary"
-        disabled={disabled}
+      <Box
         onClick={() => {
           setDialogOpen(true);
         }}
+        sx={{
+          cursor: disabled ? "not-allowed" : "pointer",
+          display: "inline-block",
+          opacity: disabled ? 0.5 : 1,
+          pointerEvents: disabled ? "none" : "auto",
+          color: "primary.main",
+          fontSize: "inherit",
+          fontWeight: 500,
+          textTransform: "none",
+          padding: "6px 16px",
+          borderRadius: "4px",
+          transition: "background-color 0.2s",
+          "&:hover": {
+            backgroundColor: disabled
+              ? "transparent"
+              : "rgba(25, 118, 210, 0.04)",
+          },
+        }}
       >
         {buttonElement}
-      </Button>
+      </Box>
       {dialog}
     </>
   );

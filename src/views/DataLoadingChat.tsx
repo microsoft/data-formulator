@@ -43,7 +43,7 @@ const generateDefaultName = (seed: string) => {
 
 const getUniqueTableName = (
   baseName: string,
-  existingNames: Set<string>
+  existingNames: Set<string>,
 ): string => {
   let uniqueName = baseName;
   let counter = 1;
@@ -66,16 +66,16 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({
   const abortControllerRef = useRef<AbortController | null>(null);
 
   const cleanInProgress = useSelector(
-    (state: DataFormulatorState) => state.cleanInProgress
+    (state: DataFormulatorState) => state.cleanInProgress,
   );
   const existingTables = useSelector(
-    (state: DataFormulatorState) => state.tables
+    (state: DataFormulatorState) => state.tables,
   );
   const dataCleanBlocks = useSelector(
-    (state: DataFormulatorState) => state.dataCleanBlocks
+    (state: DataFormulatorState) => state.dataCleanBlocks,
   );
   const focusedDataCleanBlockId = useSelector(
-    (state: DataFormulatorState) => state.focusedDataCleanBlockId
+    (state: DataFormulatorState) => state.focusedDataCleanBlockId,
   );
 
   const [streamingContent, setStreamingContent] = useState("");
@@ -108,7 +108,7 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({
   const selectedTable = (() => {
     if (focusedDataCleanBlockId) {
       let block = dataCleanBlocks.find(
-        (block) => block.id === focusedDataCleanBlockId.blockId
+        (block) => block.id === focusedDataCleanBlockId.blockId,
       );
       if (block) {
         return block.items?.[focusedDataCleanBlockId.itemId];
@@ -131,7 +131,7 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({
     const table = createTableFromText(
       unique,
       selectedTable.content.value,
-      selectedTable.context
+      selectedTable.context,
     );
     if (table) {
       dispatch(dfActions.loadTable(table));
@@ -396,20 +396,34 @@ export const DataLoadingChatDialog: React.FC<DataLoadingChatDialogProps> = ({
   const [dialogOpen, setDialogOpen] = useState<boolean>(false);
   const dispatch = useDispatch<AppDispatch>();
   const dataCleanBlocks = useSelector(
-    (state: DataFormulatorState) => state.dataCleanBlocks
+    (state: DataFormulatorState) => state.dataCleanBlocks,
   );
 
   return (
     <>
-      <Button
-        sx={{ fontSize: "inherit" }}
-        variant="text"
-        color="primary"
-        disabled={disabled}
+      <Box
         onClick={() => setDialogOpen(true)}
+        sx={{
+          cursor: disabled ? "not-allowed" : "pointer",
+          display: "inline-block",
+          opacity: disabled ? 0.5 : 1,
+          pointerEvents: disabled ? "none" : "auto",
+          color: "primary.main",
+          fontSize: "inherit",
+          fontWeight: 500,
+          textTransform: "none",
+          padding: "6px 16px",
+          borderRadius: "4px",
+          transition: "background-color 0.2s",
+          "&:hover": {
+            backgroundColor: disabled
+              ? "transparent"
+              : "rgba(25, 118, 210, 0.04)",
+          },
+        }}
       >
         {buttonElement}
-      </Button>
+      </Box>
       <Dialog
         key="data-loading-chat-dialog"
         onClose={() => setDialogOpen(false)}

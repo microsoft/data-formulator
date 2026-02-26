@@ -3,7 +3,7 @@
 
 import json
 
-from data_formulator.agents.agent_utils import extract_json_objects, generate_data_summary
+from data_formulator.agents.agent_utils import extract_json_objects, generate_data_summary, extract_and_log_user_prompt
 from data_formulator.agents.agent_sql_data_transform import  sanitize_table_name, get_sql_table_statistics_str
 
 import logging
@@ -157,9 +157,11 @@ class DataLoadAgent(object):
         user_query = f"[DATA]\n\n{data_summary}\n\n[OUTPUT]"
 
         logger.info(user_query)
-
         messages = [{"role":"system", "content": SYSTEM_PROMPT},
                     {"role":"user","content": user_query}]
+        
+        # Log user prompt to ClickHouse
+        #extract_and_log_user_prompt(messages, "DataLoadAgent")
         
         response = self.client.get_completion(messages = messages)
 

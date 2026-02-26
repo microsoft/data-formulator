@@ -4,7 +4,7 @@
 import json
 import pandas as pd
 
-from data_formulator.agents.agent_utils import extract_json_objects, generate_data_summary, extract_code_from_gpt_response
+from data_formulator.agents.agent_utils import extract_json_objects, generate_data_summary, extract_code_from_gpt_response, extract_and_log_user_prompt
 import data_formulator.py_sandbox as py_sandbox
 
 import traceback
@@ -316,6 +316,9 @@ class PythonDataRecAgent(object):
                     *filtered_prev_messages,
                     {"role":"user","content": user_query}]
         
+        # Log user prompt to ClickHouse
+        #extract_and_log_user_prompt(messages, "PythonDataRecAgent")
+        
         response = self.client.get_completion(messages = messages)
         
         return self.process_gpt_response(input_tables, messages, response)
@@ -336,6 +339,9 @@ class PythonDataRecAgent(object):
                     {"role":"user", 
                     "content": f"This is the result from the latest python code:\n\n{sample_data_str}\n\nUpdate the code above based on the following instruction:\n\n{new_instruction}"}]
 
+        # Log user prompt to ClickHouse
+        #extract_and_log_user_prompt(messages, "PythonDataRecAgent")
+        
         response = self.client.get_completion(messages = messages)
 
         return self.process_gpt_response(input_tables, messages, response)

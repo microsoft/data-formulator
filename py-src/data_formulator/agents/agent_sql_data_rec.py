@@ -3,7 +3,7 @@
 
 import json
 
-from data_formulator.agents.agent_utils import extract_json_objects, extract_code_from_gpt_response
+from data_formulator.agents.agent_utils import extract_json_objects, extract_code_from_gpt_response, extract_and_log_user_prompt
 from data_formulator.agents.agent_sql_data_transform import get_sql_table_statistics_str, sanitize_table_name
 from data_formulator.agents.qc_chart_config import (
     get_full_qc_chart_rules, 
@@ -559,6 +559,9 @@ class SQLDataRecAgent(object):
         
         logger.info("Messages sent to LLM:" + json.dumps(messages))
         
+        # Log user prompt to ClickHouse
+        #extract_and_log_user_prompt(messages, "SQLDataRecAgent")
+        
         response = self.client.get_completion(messages = messages)
         
         return self.process_gpt_response(input_tables, messages, response)
@@ -579,6 +582,9 @@ class SQLDataRecAgent(object):
                     {"role":"user", 
                     "content": f"This is the result from the latest sql query:\n\n{sample_data_str}\n\nUpdate the sql query above based on the following instruction:\n\n{new_instruction}"}]
 
+        # Log user prompt to ClickHouse
+        #extract_and_log_user_prompt(messages, "SQLDataRecAgent")
+        
         response = self.client.get_completion(messages = messages)
 
         return self.process_gpt_response(input_tables, messages, response)

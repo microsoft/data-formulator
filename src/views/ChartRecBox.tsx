@@ -13,6 +13,7 @@ import {
 } from "../app/dfSlice";
 
 import { AppDispatch } from "../app/store";
+import { logUserPrompt } from "../utils/promptLogger";
 
 import {
   Box,
@@ -148,7 +149,7 @@ const NLTableSelector: FC<{
                 ? undefined
                 : () =>
                     updateSelectedTableIds(
-                      selectedTableIds.filter((id) => id !== tableId)
+                      selectedTableIds.filter((id) => id !== tableId),
                     )
             }
           />
@@ -394,10 +395,10 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
   const tables = useSelector((state: DataFormulatorState) => state.tables);
   const config = useSelector((state: DataFormulatorState) => state.config);
   const agentRules = useSelector(
-    (state: DataFormulatorState) => state.agentRules
+    (state: DataFormulatorState) => state.agentRules,
   );
   const conceptShelfItems = useSelector(
-    (state: DataFormulatorState) => state.conceptShelfItems
+    (state: DataFormulatorState) => state.conceptShelfItems,
   );
   const activeModel = useSelector(dfSelectors.getActiveModel);
 
@@ -412,7 +413,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
       : "interactive";
 
   const [mode, setMode] = useState<"agent" | "interactive">(
-    preferredMode as "agent" | "interactive"
+    preferredMode as "agent" | "interactive",
   );
 
   const focusNextChartRef = useRef<boolean>(true);
@@ -455,7 +456,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
   const currentTable = tables.find((t) => t.id === tableId);
 
   const availableTables = tables.filter(
-    (t) => t.derive === undefined || t.anchored
+    (t) => t.derive === undefined || t.anchored,
   );
   const [additionalTableIds, setAdditionalTableIds] = useState<string[]>([]);
 
@@ -481,7 +482,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
   const getIdeasFromAgent = async (
     mode: "interactive" | "agent",
     startQuestion?: string,
-    autoRunFirstIdea: boolean = false
+    autoRunFirstIdea: boolean = false,
   ) => {
     if (!currentTable || isLoadingIdeas) {
       return;
@@ -499,7 +500,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
       // Determine the root table and derived tables context
       let explorationThread: any[] = [];
       let sourceTables = selectedTableIds.map(
-        (id) => tables.find((t) => t.id === id) as DictTable
+        (id) => tables.find((t) => t.id === id) as DictTable,
       );
 
       // If current table is derived, find the root table and build exploration thread
@@ -534,7 +535,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
       const controller = new AbortController();
       const timeoutId = setTimeout(
         () => controller.abort(),
-        config.formulateTimeoutSeconds * 1000
+        config.formulateTimeoutSeconds * 1000,
       );
 
       const response = await fetch(engine, {
@@ -653,7 +654,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
           value:
             "Failed to get ideas from the exploration agent. Please try again.",
           detail: error instanceof Error ? error.message : "Unknown error",
-        })
+        }),
       );
     } finally {
       setIsLoadingIdeas(false);
@@ -692,6 +693,9 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
       return;
     }
 
+    // Log user prompt to backend
+    logUserPrompt(instruction, "ChartRecBox", "interactive");
+
     let originateChartId: string;
 
     if (placeHolderChartId) {
@@ -700,13 +704,13 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
         dfActions.changeChartRunningStatus({
           chartId: placeHolderChartId,
           status: true,
-        })
+        }),
       );
       originateChartId = placeHolderChartId;
     }
 
     const actionTables = selectedTableIds.map(
-      (id) => tables.find((t) => t.id === id) as DictTable
+      (id) => tables.find((t) => t.id === id) as DictTable,
     );
 
     const actionId = `deriveDataFromNL_${String(Date.now())}`;
@@ -717,7 +721,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
         description: instruction,
         status: "running",
         hidden: false,
-      })
+      }),
     );
 
     // Validate table selection
@@ -729,7 +733,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
           type: "error",
           component: "chart builder",
           value: "No table selected for data formulation.",
-        })
+        }),
       );
       return;
     }
@@ -737,7 +741,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
     // Generate table ID
     const genTableId = () => {
       let tableSuffix = Number.parseInt(
-        (Date.now() - Math.floor(Math.random() * 10000)).toString().slice(-6)
+        (Date.now() - Math.floor(Math.random() * 10000)).toString().slice(-6),
       );
       let tableId = `table-${tableSuffix}`;
       while (tables.find((t) => t.id === tableId) !== undefined) {
@@ -833,7 +837,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
     const controller = new AbortController();
     const timeoutId = setTimeout(
       () => controller.abort(),
-      config.formulateTimeoutSeconds * 1000
+      config.formulateTimeoutSeconds * 1000,
     );
 
     fetch(engine, {
@@ -852,13 +856,13 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
           dfActions.changeChartRunningStatus({
             chartId: originateChartId,
             status: false,
-          })
+          }),
         );
 
         if (data.results.length > 0) {
           if (data["token"] === token) {
             const candidates = data["results"].filter(
-              (item: any) => item["status"] === "ok"
+              (item: any) => item["status"] === "ok",
             );
 
             if (candidates.length === 0) {
@@ -873,7 +877,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
                   value: `Data formulation failed, please try again.`,
                   code: code,
                   detail: errorMessage,
-                })
+                }),
               );
             } else {
               const candidate = candidates[0];
@@ -891,7 +895,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
               const candidateTable = createDictTable(
                 candidateTableId,
                 rows,
-                undefined // No derive info for ChartRecBox - it's NL-driven without triggers
+                undefined, // No derive info for ChartRecBox - it's NL-driven without triggers
               );
 
               let refChart = generateFreshChart(tableId, "Auto") as Chart;
@@ -925,7 +929,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
               const names = candidateTable.names;
               const missingNames = names.filter(
                 (name) =>
-                  !conceptShelfItems.some((field) => field.name === name)
+                  !conceptShelfItems.some((field) => field.name === name),
               );
 
               const conceptsToAdd = missingNames.map(
@@ -938,7 +942,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
                     source: "custom",
                     tableRef: "custom",
                     temporary: true,
-                  } as FieldItem)
+                  } as FieldItem),
               );
 
               dispatch(dfActions.addConceptItems(conceptsToAdd));
@@ -954,7 +958,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
               let newChart = resolveRecommendedChart(
                 refinedGoal,
                 currentConcepts,
-                candidateTable
+                candidateTable,
               );
 
               dispatch(dfActions.addChart(newChart));
@@ -971,7 +975,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
                   component: "chart builder",
                   type: "success",
                   value: `Data formulation: "${displayInstruction}"`,
-                })
+                }),
               );
 
               // Clear the prompt after successful formulation
@@ -987,7 +991,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
               type: "error",
               value:
                 "No result is returned from the data formulation agent. Please try again.",
-            })
+            }),
           );
 
           setIsFormulating(false);
@@ -1000,7 +1004,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
           dfActions.changeChartRunningStatus({
             chartId: originateChartId,
             status: false,
-          })
+          }),
         );
 
         if (error.name === "AbortError") {
@@ -1011,7 +1015,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
               type: "error",
               value: `Data formulation timed out after ${config.formulateTimeoutSeconds} seconds. Consider breaking down the task, using a different model or prompt, or increasing the timeout limit.`,
               detail: "Request exceeded timeout limit",
-            })
+            }),
           );
           dispatch(dfActions.deleteAgentWorkInProgress(actionId));
         } else {
@@ -1022,7 +1026,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
               type: "error",
               value: `Data formulation failed, please try again.`,
               detail: error.message,
-            })
+            }),
           );
           dispatch(dfActions.deleteAgentWorkInProgress(actionId));
         }
@@ -1030,10 +1034,13 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
   };
 
   const exploreDataFromNLWithStartingQuestion = (startingQuestion: string) => {
+    // Log user prompt to backend
+    logUserPrompt(startingQuestion, "ChartRecBox", "agent");
+
     getIdeasFromAgent(
       "agent",
       `starting question: ${startingQuestion}\n\n generate only one question group that contains a deepdive question with 3 steps based on the starting question`,
-      true
+      true,
     );
   };
 
@@ -1058,11 +1065,11 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
         description: initialPlan[0],
         status: "running",
         hidden: false,
-      })
+      }),
     );
 
     let actionTables = selectedTableIds.map(
-      (id) => tables.find((t) => t.id === id) as DictTable
+      (id) => tables.find((t) => t.id === id) as DictTable,
     );
 
     const token = String(Date.now());
@@ -1085,7 +1092,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
     const controller = new AbortController();
     const timeoutId = setTimeout(
       () => controller.abort(),
-      config.formulateTimeoutSeconds * 6 * 1000
+      config.formulateTimeoutSeconds * 6 * 1000,
     );
 
     // State for accumulating streaming results
@@ -1098,7 +1105,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
     // Generate table ID helper
     const genTableId = () => {
       let tableSuffix = Number.parseInt(
-        (Date.now() - Math.floor(Math.random() * 10000)).toString().slice(-6)
+        (Date.now() - Math.floor(Math.random() * 10000)).toString().slice(-6),
       );
       let tableId = `table-${tableSuffix}`;
       while (tables.find((t) => t.id === tableId) !== undefined) {
@@ -1117,7 +1124,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
             description: result.content.message,
             status: "running",
             hidden: false,
-          })
+          }),
         );
       }
 
@@ -1163,7 +1170,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
         const candidateTable = createDictTable(
           candidateTableId,
           rows,
-          undefined // No derive info initially
+          undefined, // No derive info initially
         );
 
         // Add derive info manually for exploration results
@@ -1197,7 +1204,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
             description: "",
             status: "running",
             hidden: false,
-          })
+          }),
         );
 
         // Add missing concept items for this table
@@ -1205,7 +1212,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
         const missingNames = names.filter(
           (name) =>
             !conceptShelfItems.some((field) => field.name === name) &&
-            !allNewConcepts.some((concept) => concept.name === name)
+            !allNewConcepts.some((concept) => concept.name === name),
         );
 
         const conceptsToAdd = missingNames.map(
@@ -1218,7 +1225,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
               source: "custom",
               tableRef: "custom",
               temporary: true,
-            } as FieldItem)
+            } as FieldItem),
         );
 
         allNewConcepts.push(...conceptsToAdd);
@@ -1226,7 +1233,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
         // Create trigger chart for derive info
         let triggerChart = generateFreshChart(
           actionTables[0].id,
-          "Auto"
+          "Auto",
         ) as Chart;
         triggerChart.source = "trigger";
 
@@ -1245,7 +1252,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
           let newChart = resolveRecommendedChart(
             refinedGoal,
             currentConcepts,
-            candidateTable
+            candidateTable,
           );
           createdCharts.push(newChart);
 
@@ -1273,7 +1280,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
             component: "chart builder",
             type: "info",
             value: `Exploration step ${createdTables.length} completed: ${displayInstruction}`,
-          })
+          }),
         );
       }
     };
@@ -1289,7 +1296,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
       clearTimeout(timeoutId);
 
       const completionResult = allResults.find(
-        (result: any) => result.type === "completion"
+        (result: any) => result.type === "completion",
       );
 
       console.log("completionResult", completionResult);
@@ -1305,7 +1312,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
             description: summary,
             status: status,
             hidden: false,
-          })
+          }),
         );
 
         let completionMessage = `Data exploration completed.`;
@@ -1316,7 +1323,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
             component: "chart builder",
             type: "success",
             value: completionMessage,
-          })
+          }),
         );
 
         // Clear the prompt after successful exploration
@@ -1328,7 +1335,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
             description: "The agent got lost in the data.",
             status: "warning",
             hidden: false,
-          })
+          }),
         );
 
         dispatch(
@@ -1337,7 +1344,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
             component: "chart builder",
             type: "error",
             value: "The agent got lost in the data. Please try again.",
-          })
+          }),
         );
       }
     };
@@ -1419,7 +1426,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
                             "Error during data exploration",
                           status: "failed",
                           hidden: false,
-                        })
+                        }),
                       );
 
                       dispatch(
@@ -1430,7 +1437,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
                           value:
                             data.error_message ||
                             "Error during data exploration. Please try again.",
-                        })
+                        }),
                       );
                       return;
                     }
@@ -1438,7 +1445,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
                 } catch (parseError) {
                   console.warn(
                     "Failed to parse streaming response:",
-                    parseError
+                    parseError,
                   );
                 }
               }
@@ -1463,7 +1470,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
             description: errorMessage,
             status: "failed",
             hidden: false,
-          })
+          }),
         );
 
         if (error.name === "AbortError") {
@@ -1474,7 +1481,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
               type: "error",
               value: "Data exploration timed out. Please try again.",
               detail: error.message,
-            })
+            }),
           );
         } else {
           dispatch(
@@ -1484,7 +1491,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
               type: "error",
               value: `Data exploration failed: ${error.message}`,
               detail: error.message,
-            })
+            }),
           );
         }
       });
@@ -1571,7 +1578,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
             "100%": {
               boxShadow: `0 0 10px 0 ${alpha(
                 modeColorMap["agent"],
-                0.3
+                0.3,
               )}, 0 0 10px 0 ${alpha(modeColorMap["agent"], 0.3)}`,
             },
           },
@@ -1582,7 +1589,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
             "100%": {
               boxShadow: `0 0 10px 0 ${alpha(
                 modeColorMap["interactive"],
-                0.3
+                0.3,
               )}, 0 0 10px 0 ${alpha(modeColorMap["interactive"], 0.3)}`,
             },
           },
@@ -1668,7 +1675,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
                           focusNextChartRef.current = true;
                           if (mode === "agent") {
                             exploreDataFromNLWithStartingQuestion(
-                              prompt.trim()
+                              prompt.trim(),
                             );
                           } else {
                             deriveDataFromNL(prompt.trim());

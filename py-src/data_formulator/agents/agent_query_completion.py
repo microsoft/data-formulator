@@ -3,7 +3,7 @@
 
 import json
 
-from data_formulator.agents.agent_utils import extract_json_objects
+from data_formulator.agents.agent_utils import extract_json_objects, extract_and_log_user_prompt
 import re
 import logging
 
@@ -57,9 +57,11 @@ class QueryCompletionAgent(object):
         user_query = f"[DATA SOURCE]\n\n{json.dumps(data_source_metadata, indent=2)}\n\n[USER INPUTS]\n\n{query}\n\n"
 
         logger.info(user_query)
-
         messages = [{"role":"system", "content": SYSTEM_PROMPT},
                     {"role":"user","content": user_query}]
+        
+        # Log user prompt to ClickHouse
+        #extract_and_log_user_prompt(messages, "QueryCompletionAgent")
         
         ###### the part that calls open_ai
         response = self.client.get_completion(messages = messages)

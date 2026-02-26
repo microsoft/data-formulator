@@ -61,7 +61,7 @@ export const DataFormulatorFC = ({}) => {
   const tables = useSelector((state: DataFormulatorState) => state.tables);
   const models = useSelector((state: DataFormulatorState) => state.models);
   const modelSlots = useSelector(
-    (state: DataFormulatorState) => state.modelSlots
+    (state: DataFormulatorState) => state.modelSlots,
   );
   const viewMode = useSelector((state: DataFormulatorState) => state.viewMode);
   const theme = useTheme();
@@ -72,7 +72,7 @@ export const DataFormulatorFC = ({}) => {
       (slotType) =>
         state.modelSlots[slotType] !== undefined &&
         state.testedModels.find((t) => t.id == state.modelSlots[slotType])
-          ?.status != "error"
+          ?.status != "error",
     );
   });
 
@@ -85,7 +85,7 @@ export const DataFormulatorFC = ({}) => {
         type: "info",
         component: "data formulator",
         value: `Loading example session: ${session.title}`,
-      })
+      }),
     );
 
     // Load the complete state from the JSON file
@@ -101,7 +101,7 @@ export const DataFormulatorFC = ({}) => {
             type: "success",
             component: "data formulator",
             value: `Successfully loaded ${session.title}`,
-          })
+          }),
         );
       })
       .catch((error) => {
@@ -112,7 +112,7 @@ export const DataFormulatorFC = ({}) => {
             type: "error",
             component: "data formulator",
             value: `Failed to load ${session.title}: ${error.message}`,
-          })
+          }),
         );
       });
   };
@@ -151,10 +151,10 @@ export const DataFormulatorFC = ({}) => {
   useEffect(() => {
     const findWorkingModel = async () => {
       let assignedModels = models.filter((m) =>
-        Object.values(modelSlots).includes(m.id)
+        Object.values(modelSlots).includes(m.id),
       );
       let unassignedModels = models.filter(
-        (m) => !Object.values(modelSlots).includes(m.id)
+        (m) => !Object.values(modelSlots).includes(m.id),
       );
 
       // Test assigned models in parallel for faster loading
@@ -173,7 +173,7 @@ export const DataFormulatorFC = ({}) => {
               id: model.id,
               status,
               message: data["message"] || "",
-            })
+            }),
           );
           return { model, status };
         } catch (error) {
@@ -182,7 +182,7 @@ export const DataFormulatorFC = ({}) => {
               id: model.id,
               status: "error",
               message: (error as Error).message || "Failed to test model",
-            })
+            }),
           );
           return { model, status: "error" };
         }
@@ -206,7 +206,7 @@ export const DataFormulatorFC = ({}) => {
               id: model.id,
               status,
               message: data["message"] || "",
-            })
+            }),
           );
           if (status == "ok") break;
         } catch (error) {
@@ -215,7 +215,7 @@ export const DataFormulatorFC = ({}) => {
               id: model.id,
               status: "error",
               message: (error as Error).message || "Failed to test model",
-            })
+            }),
           );
         }
       }
@@ -421,11 +421,11 @@ Totals (7 entries)	5	5	5	15
             background: `
                 linear-gradient(90deg, ${alpha(
                   theme.palette.text.secondary,
-                  0.02
+                  0.02,
                 )} 1px, transparent 1px),
                 linear-gradient(0deg, ${alpha(
                   theme.palette.text.secondary,
-                  0.02
+                  0.02,
                 )} 1px, transparent 1px)
             `,
             backgroundSize: "16px 16px",
@@ -458,11 +458,11 @@ Totals (7 entries)	5	5	5	15
             background: `
                     linear-gradient(90deg, ${alpha(
                       theme.palette.text.secondary,
-                      0.02
+                      0.02,
                     )} 1px, transparent 1px),
                     linear-gradient(0deg, ${alpha(
                       theme.palette.text.secondary,
-                      0.02
+                      0.02,
                     )} 1px, transparent 1px)
                 `,
             backgroundSize: "16px 16px",
@@ -484,6 +484,7 @@ Totals (7 entries)	5	5	5	15
           </Divider>
           <Typography
             variant="h4"
+            component="div"
             sx={{ mx: "auto", width: 1080, fontSize: 24 }}
           >
             <DataLoadingChatDialog
@@ -622,11 +623,11 @@ Totals (7 entries)	5	5	5	15
             background: `
                  linear-gradient(90deg, ${alpha(
                    theme.palette.text.secondary,
-                   0.02
+                   0.02,
                  )} 1px, transparent 1px),
                  linear-gradient(0deg, ${alpha(
                    theme.palette.text.secondary,
-                   0.02
+                   0.02,
                  )} 1px, transparent 1px)
                 `,
             backgroundSize: "16px 16px",

@@ -1,0 +1,38 @@
+services:
+  sync-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: dpd-qc-sync
+    restart: always
+    environment:
+      # Oracle connection string
+      ORACLE_CONNECTION_STRING: ${ORACLE_CONNECTION_STRING:-User Id=weboutput;Password=weboutputpwd;Data Source=(DESCRIPTION=(ADDRESS_LIST=(ADDRESS=(PROTOCOL=TCP)(HOST=172.25.9.40)(PORT=1521)))(CONNECT_DATA=(SERVICE_NAME=HOYAV3)));}
+      
+      # ClickHouse connection parameters
+      CH_HOST: ${CH_HOST:-172.19.16.23}
+      CH_PORT: ${CH_PORT:-8123}
+      CH_USER: ${CH_USER:-admin}
+      CH_PASSWORD: ${CH_PASSWORD:-1fEQlaBivOpYXzw#}
+      CH_DB: ${CH_DB:-QC_DATA}
+    
+    # Tuỳ chọn: gắn volume để lưu logs
+    volumes:
+      - ./logs:/app/logs
+    
+    # Tuỳ chọn: giới hạn CPU và memory
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 1G
+        reservations:
+          cpus: '1'
+          memory: 512M
+    
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"

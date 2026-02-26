@@ -51,5 +51,6 @@ services:
       timeout: 10s
       retries: 3
 
-# Optional: define network (default bridge is fine)
-networks: {}
+networks:
+  mynet:
+    external: true

@@ -4,7 +4,7 @@
 import time
 import json
 
-from data_formulator.agents.agent_utils import generate_data_summary, extract_code_from_gpt_response
+from data_formulator.agents.agent_utils import generate_data_summary, extract_code_from_gpt_response, extract_and_log_user_prompt
 import data_formulator.py_sandbox as py_sandbox
 
 import traceback
@@ -113,6 +113,10 @@ class PyConceptDeriveAgent(object):
                     {"role":"user","content": user_query}]
         
         time_start = time.time()
+        
+        # Log user prompt to ClickHouse
+        #extract_and_log_user_prompt(messages, "PyConceptDeriveAgent")
+        
         ###### the part that calls open_ai
         response = self.client.get_completion(messages = messages)
         time_end = time.time()

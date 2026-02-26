@@ -2,6 +2,8 @@ docker build -f Dockerfile.backend -t df-backend .
 
 docker build -f Dockerfile.frontend -t df-frontend --build-arg VITE_REDIRECT_URI="https://172.19.16.22:8001" --build-arg VITE_API_HOST="172.19.16.22" --build-arg VITE_API_PORT="8000" .
 
+docker build -f Dockerfile.frontend -t df-frontend --build-arg VITE_API_HOST="backend" --build-arg VITE_API_PORT="8000" .
+
 # save
 
 docker save df-backend | ssh administrator@172.19.16.22 docker load

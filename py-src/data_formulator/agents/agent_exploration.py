@@ -5,7 +5,7 @@ import json
 import logging
 import base64
 
-from data_formulator.agents.agent_utils import extract_json_objects, generate_data_summary
+from data_formulator.agents.agent_utils import extract_json_objects, generate_data_summary, extract_and_log_user_prompt
 from data_formulator.agents.agent_sql_data_transform import get_sql_table_statistics_str, sanitize_table_name
 
 logger = logging.getLogger(__name__)
@@ -205,6 +205,9 @@ class ExplorationAgent(object):
         
         messages.append({"role": "user", "content": f"[NEXT STEPS]\n\n{json.dumps(next_steps, indent=4)}"})
 
+        # Log user prompt to ClickHouse
+        #extract_and_log_user_prompt(messages, "ExplorationAgent")
+        
         response = self.client.get_completion(messages)
         
         return self.process_gpt_response(messages, response)
