@@ -292,7 +292,7 @@ SQL Server Connection Instructions:
             log.error(f"Failed to execute query: {e}")
             raise
 
-    def list_tables(self):
+    def list_tables(self, table_filter: str = None):
         """List all tables and views from SQL Server database"""
         try:
             # Query SQL Server system tables to get table and view information
@@ -313,6 +313,11 @@ SQL Server Connection Instructions:
             for _, row in tables_df.iterrows():
                 schema = row["TABLE_SCHEMA"]
                 table_name = row["TABLE_NAME"]
+
+                # Apply table filter early to skip expensive metadata queries
+                if table_filter and table_filter.lower() not in table_name.lower():
+                    continue
+
                 table_type = row.get("TABLE_TYPE", "BASE TABLE")
                 full_table_name = f"{schema}.{table_name}"
 
