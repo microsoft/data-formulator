@@ -1190,7 +1190,8 @@ export const DataLoaderForm: React.FC<{
                 <TableHead>
                     <TableRow sx={{ '& .MuiTableCell-root': { fontSize: 12 } }}>
                         <TableCell> </TableCell>
-                        <TableCell>Table Name</TableCell>
+                        <TableCell>Name</TableCell>
+                        <TableCell>Type</TableCell>
                         <TableCell>Columns</TableCell>
                         <TableCell align="right">Import Options</TableCell>
                     </TableRow>
@@ -1221,6 +1222,23 @@ export const DataLoaderForm: React.FC<{
                                 {tableName} <Typography variant="caption" sx={{color: "text.secondary"}} fontSize={10}>
                                     ({metadata.row_count > 0 ? `${metadata.row_count} rows × ` : ""}{metadata.columns.length} cols)
                                 </Typography>
+                            </TableCell>
+                            <TableCell sx={{width: 60}}>
+                                {metadata.object_type === 'view' ? (
+                                    <Tooltip title="View">
+                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                            <ViewIcon sx={{ color: 'info.main', width: 14, height: 14 }} />
+                                            <Typography variant="caption" sx={{ fontSize: 10, color: 'info.main' }}>view</Typography>
+                                        </Box>
+                                    </Tooltip>
+                                ) : (
+                                    <Tooltip title="Table">
+                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                            <TableIcon sx={{ color: 'text.secondary', width: 14, height: 14 }} />
+                                            <Typography variant="caption" sx={{ fontSize: 10, color: 'text.secondary' }}>table</Typography>
+                                        </Box>
+                                    </Tooltip>
+                                )}
                             </TableCell>
                             <TableCell sx={{maxWidth: 400}}>
                                 {metadata.columns.map((column: any) => (
@@ -1316,7 +1334,7 @@ export const DataLoaderForm: React.FC<{
                             </TableCell>
                         </TableRow>,
                         <TableRow key={`${tableName}-sample`}>
-                            <TableCell colSpan={4} sx={{ paddingBottom: 0, paddingTop: 0, px: 0, maxWidth: 800, overflowX: "auto", 
+                            <TableCell colSpan={5} sx={{ paddingBottom: 0, paddingTop: 0, px: 0, maxWidth: 800, overflowX: "auto", 
                                             borderBottom: displaySamples[tableName] ? '1px solid rgba(0, 0, 0, 0.1)' : 'none' }}>
                             <Collapse in={displaySamples[tableName]} timeout="auto" unmountOnExit>
                                 <Card variant="outlined" sx={{ ml: 5, my: 1}}>
@@ -1554,7 +1572,7 @@ export const DataLoaderForm: React.FC<{
                         });
                 }}
             >
-                Import Selected Tables to Local DuckDB ({selectedTables.length})
+                Import Selected Tables/Views to Local DuckDB ({selectedTables.length})
             </Button>
         </Box>
     ]
@@ -1564,7 +1582,7 @@ export const DataLoaderForm: React.FC<{
     return (
         <Box sx={{p: 0}}>
             <Typography sx={{fontSize: 16, flex: 1}}>
-                Import tables from <Typography component="span" sx={{ fontSize: 'inherit', color: 'secondary.main', fontWeight: 'bold'}}>{dataLoaderType}</Typography>
+                Import tables and views from <Typography component="span" sx={{ fontSize: 'inherit', color: 'secondary.main', fontWeight: 'bold'}}>{dataLoaderType}</Typography>
             </Typography>
             {isConnecting && <Box sx={{
                 position: "absolute", top: 0, left: 0, width: "100%", height: "100%", 

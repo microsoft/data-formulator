@@ -293,18 +293,18 @@ SQL Server Connection Instructions:
             raise
 
     def list_tables(self):
-        """List all tables from SQL Server database"""
+        """List all tables and views from SQL Server database"""
         try:
-            # Query SQL Server system tables to get table information
+            # Query SQL Server system tables to get table and view information
             tables_query = """
                 SELECT 
                     TABLE_SCHEMA, 
                     TABLE_NAME,
                     TABLE_TYPE
                 FROM INFORMATION_SCHEMA.TABLES 
-                WHERE TABLE_TYPE = 'BASE TABLE' 
+                WHERE TABLE_TYPE IN ('BASE TABLE', 'VIEW') 
                 AND TABLE_SCHEMA NOT IN ('sys', 'INFORMATION_SCHEMA')
-                ORDER BY TABLE_SCHEMA, TABLE_NAME
+                ORDER BY TABLE_TYPE, TABLE_SCHEMA, TABLE_NAME
             """
 
             tables_df = self._execute_query(tables_query)
@@ -416,6 +416,7 @@ SQL Server Connection Instructions:
                         "columns": columns,
                         "sample_rows": sample_rows,
                         "table_type": table_type,
+                        "object_type": "view" if table_type == "VIEW" else "table",
                     }
 
                     results.append({"name": full_table_name, "metadata": table_metadata})
@@ -431,6 +432,7 @@ SQL Server Connection Instructions:
                                 "columns": [],
                                 "sample_rows": [],
                                 "table_type": table_type,
+                                "object_type": "view" if table_type == "VIEW" else "table",
                             },
                         }
                     )
