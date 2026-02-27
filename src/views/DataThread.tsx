@@ -52,7 +52,7 @@ import { checkChartAvailability, generateChartSkeleton, getDataTable } from './V
 import AttachFileIcon from '@mui/icons-material/AttachFile';
 import EditIcon from '@mui/icons-material/Edit';
 import RefreshIcon from '@mui/icons-material/Refresh';
-import ChatBubbleOutlineIcon from '@mui/icons-material/ChatBubbleOutline';
+import ForumOutlinedIcon from '@mui/icons-material/ForumOutlined';
 import AddIcon from '@mui/icons-material/Add';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
@@ -74,9 +74,13 @@ import { buildChartCard, buildTriggerCard, buildTableCard, BuildTableCardProps }
 import { UnifiedDataUploadDialog } from './UnifiedDataUploadDialog';
 import { AgentRulesDialog } from './AgentRulesDialog';
 import RuleIcon from '@mui/icons-material/Rule';
+import AccountTreeIcon from '@mui/icons-material/AccountTree';
+import HourglassEmptyIcon from '@mui/icons-material/HourglassEmpty';
+import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 
 import { ViewBorderStyle, transition, radius, borderColor } from '../app/tokens';
 import { SimpleChartRecBox } from './SimpleChartRecBox';
+import { ChatThreadView } from './ChatThreadView';
 
 
 export const ThinkingBanner = (message: string, sx?: SxProps) => (
@@ -727,6 +731,29 @@ const WorkspacePanel: FC<{
     );
 };
 
+/** A status message that collapses to a single line on click, and expands back on click. */
+const CollapsibleStatusMessage: FC<{ text: string; color: string }> = ({ text, color }) => {
+    const [collapsed, setCollapsed] = useState(true);
+    return (
+        <Typography
+            variant="body2"
+            onClick={(e) => { e.stopPropagation(); setCollapsed(prev => !prev); }}
+            sx={{
+                fontSize: 10, color, px: 1, py: 0.5, cursor: 'pointer',
+                '&:hover': { textDecoration: 'underline', textDecorationStyle: 'dotted' },
+                ...(collapsed ? {
+                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                    maxWidth: '100%',
+                } : {
+                    whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+                }),
+            }}
+        >
+            {text}
+        </Typography>
+    );
+};
+
 let SingleThreadGroupView: FC<{
     scrollRef: any,
     threadIdx: number,
@@ -791,9 +818,42 @@ let SingleThreadGroupView: FC<{
 
     // Pre-index running agent table IDs for O(1) lookup
     const runningAgentTableIds = useMemo(() => {
-        const ids = new Set<string>();
+        const ids = new Map<string, typeof agentActions[0]>();
         for (const a of agentActions) {
-            if (!a.hidden && a.status === 'running') ids.add(a.tableId);
+            if (!a.hidden && a.status === 'running') {
+                // Find the last table created in the chain so far
+                const lastResultTableId = a.messages
+                    ?.filter(m => m.resultTableId)
+                    .pop()?.resultTableId;
+                ids.set(lastResultTableId || a.originTableId, a);
+            }
+        }
+        return ids;
+    }, [agentActions]);
+
+    // Pre-index tables with pending clarification
+    const clarifyAgentTableIds = useMemo(() => {
+        const ids = new Map<string, typeof agentActions[0]>();
+        for (const a of agentActions) {
+            if (!a.hidden && a.pendingClarification) {
+                const lastResultTableId = a.pendingClarification.lastCreatedTableId
+                    || a.messages?.filter(m => m.resultTableId).pop()?.resultTableId;
+                ids.set(lastResultTableId || a.originTableId, a);
+            }
+        }
+        return ids;
+    }, [agentActions]);
+
+    // Pre-index tables with completed agent actions
+    const completedAgentTableIds = useMemo(() => {
+        const ids = new Map<string, typeof agentActions[0]>();
+        for (const a of agentActions) {
+            if (!a.hidden && (a.status === 'completed' || a.status === 'warning' || a.status === 'failed') && !a.pendingClarification) {
+                const lastResultTableId = a.messages
+                    ?.filter(m => m.resultTableId)
+                    .pop()?.resultTableId;
+                ids.set(lastResultTableId || a.originTableId, a);
+            }
         }
         return ids;
     }, [agentActions]);
@@ -1062,7 +1122,7 @@ let SingleThreadGroupView: FC<{
     });
 
     // Build a flat sequence of timeline items: [trigger, table, charts, trigger, table, charts, ...]
-    let timelineItems: { key: string; element: React.ReactNode; type: 'used-table' | 'trigger' | 'table' | 'chart' | 'leaf-trigger' | 'leaf-table'; highlighted: boolean; tableId?: string; chartType?: string; isRunning?: boolean }[] = [];
+    let timelineItems: { key: string; element: React.ReactNode; type: 'used-table' | 'trigger' | 'table' | 'chart' | 'leaf-trigger' | 'leaf-table'; highlighted: boolean; tableId?: string; chartType?: string; isRunning?: boolean; isClarifying?: boolean; isCompleted?: boolean }[] = [];
 
     // Add used (shared) tables at the top
     // Only show the immediate parent + "..." for further ancestors
@@ -1152,7 +1212,7 @@ let SingleThreadGroupView: FC<{
 
         // If an agent is running on this table, add a "working..." indicator
         if (runningAgentTableIds.has(tableId)) {
-            const runningAction = agentActions.find(a => a.tableId === tableId && a.status === 'running' && !a.hidden);
+            const runningAction = runningAgentTableIds.get(tableId);
             const message = runningAction?.description || 'working...';
             timelineItems.push({
                 key: `agent-running-${tableId}`,
@@ -1161,6 +1221,27 @@ let SingleThreadGroupView: FC<{
                 isRunning: true,
                 element: ThinkingBanner(message, { px: 1, py: 0.5 }),
             });
+        } else if (clarifyAgentTableIds.has(tableId)) {
+            timelineItems.push({
+                key: `agent-clarify-${tableId}`,
+                type: 'chart',
+                highlighted: isHighlighted,
+                isClarifying: true,
+                element: <Typography variant="body2" sx={{ fontSize: 10, color: theme.palette.warning.main, px: 1, py: 0.5 }}>waiting for clarification...</Typography>,
+            });
+        } else if (completedAgentTableIds.has(tableId)) {
+            const completedAction = completedAgentTableIds.get(tableId);
+            const completionMsg = completedAction?.messages?.filter(m => m.role === 'completion').pop();
+            if (completionMsg) {
+                const color = completedAction?.status === 'failed' ? theme.palette.error.main : theme.palette.success.main;
+                timelineItems.push({
+                    key: `agent-completed-${tableId}`,
+                    type: 'chart',
+                    highlighted: isHighlighted,
+                    isCompleted: true,
+                    element: <CollapsibleStatusMessage text={typeof completionMsg.content === 'string' ? completionMsg.content : String(completionMsg.content)} color={color} />,
+                });
+            }
         }
     });
 
@@ -1202,7 +1283,7 @@ let SingleThreadGroupView: FC<{
 
         // If an agent is running on this leaf table, add a "working..." indicator
         if (runningAgentTableIds.has(lt.id)) {
-            const runningAction = agentActions.find(a => a.tableId === lt.id && a.status === 'running' && !a.hidden);
+            const runningAction = runningAgentTableIds.get(lt.id);
             const message = runningAction?.description || 'working...';
             timelineItems.push({
                 key: `agent-running-${lt.id}`,
@@ -1211,6 +1292,27 @@ let SingleThreadGroupView: FC<{
                 isRunning: true,
                 element: ThinkingBanner(message, { px: 1, py: 0.5 }),
             });
+        } else if (clarifyAgentTableIds.has(lt.id)) {
+            timelineItems.push({
+                key: `agent-clarify-${lt.id}`,
+                type: 'chart',
+                highlighted: highlightedTableIds.includes(lt.id),
+                isClarifying: true,
+                element: <Typography variant="body2" sx={{ fontSize: 10, color: theme.palette.warning.main, px: 1, py: 0.5 }}>waiting for clarification...</Typography>,
+            });
+        } else if (completedAgentTableIds.has(lt.id)) {
+            const completedAction = completedAgentTableIds.get(lt.id);
+            const completionMsg = completedAction?.messages?.filter(m => m.role === 'completion').pop();
+            if (completionMsg) {
+                const color = completedAction?.status === 'failed' ? theme.palette.error.main : theme.palette.success.main;
+                timelineItems.push({
+                    key: `agent-completed-${lt.id}`,
+                    type: 'chart',
+                    highlighted: highlightedTableIds.includes(lt.id),
+                    isCompleted: true,
+                    element: <CollapsibleStatusMessage text={typeof completionMsg.content === 'string' ? completionMsg.content : String(completionMsg.content)} color={color} />,
+                });
+            }
         }
     });
 
@@ -1229,6 +1331,16 @@ let SingleThreadGroupView: FC<{
         // For running agent items, show a spinner instead of a dot
         if (item.isRunning) {
             return <CircularProgress size={12} thickness={5} sx={{ color: theme.palette.primary.main }} />;
+        }
+
+        // For clarification items, show an hourglass icon
+        if (item.isClarifying) {
+            return <HourglassEmptyIcon sx={{ width: 12, height: 12, color: theme.palette.warning.main }} />;
+        }
+
+        // For completed items, show a checkmark icon
+        if (item.isCompleted) {
+            return <CheckCircleOutlineIcon sx={{ width: 12, height: 12, color: theme.palette.success.main }} />;
         }
 
         // For table items, show a type-specific icon instead of a dot
@@ -1896,7 +2008,9 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
     const [expandedColumns, setExpandedColumns] = useState(false);
     const [containerWidth, setContainerWidth] = useState(0);
     const [chatboxFocused, setChatboxFocused] = useState(false);
+    const [chatMode, setChatMode] = useState(false);
 
+    // Re-attach ResizeObserver whenever chatMode changes (containerRef moves to a different element)
     useEffect(() => {
         const el = containerRef.current;
         if (!el) return;
@@ -1907,7 +2021,7 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
         });
         ro.observe(el);
         return () => ro.disconnect();
-    }, []);
+    }, [chatMode]);
 
     const theme = useTheme();
 
@@ -2243,10 +2357,10 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
     const availableHeight = containerRef.current?.clientHeight ?? 600;
     const hasMultipleThreads = allThreadEntries.length > 1;
 
-    const CARD_WIDTH = 220;
     const CARD_GAP = 12; // padding + spacing between cards in a column
-    const COLUMN_WIDTH = CARD_WIDTH + CARD_GAP;
     const PANEL_PADDING = 16;
+    const CARD_WIDTH = 220;
+    const COLUMN_WIDTH = CARD_WIDTH + CARD_GAP;
 
     // Determine how many columns fit in the available container width (1-3)
     const fittableColumns = Math.max(1, Math.min(3, Math.floor((containerWidth - PANEL_PADDING) / COLUMN_WIDTH)));
@@ -2346,16 +2460,37 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
 
     return (
         <Box className="data-thread" sx={{ ...sx, position: 'relative', display: 'flex', flexDirection: 'column' }}>
-            <Box ref={containerRef} sx={{
-                    overflow: 'hidden', 
-                    direction: 'rtl', 
-                    display: 'block', 
-                    flex: 1,
-                    minHeight: 0,
-                }}>
-                {view}
+            {/* Mode toggle button — floats on top-right corner */}
+            <Box sx={{ position: 'absolute', top: 4, right: 16, zIndex: 5 }}>
+                <Tooltip title={chatMode ? 'Switch to thread view' : 'Switch to chat view'}>
+                    <IconButton
+                        size="small"
+                        onClick={() => setChatMode(m => !m)}
+                        sx={{ p: 0.5, color: theme.palette.text.secondary,
+                            backgroundColor: alpha(theme.palette.action.selected, 0.04),
+                            borderRadius: '6px',
+                            '&:hover': { color: theme.palette.primary.main, backgroundColor: alpha(theme.palette.primary.main, 0.08) } }}
+                    >
+                        {chatMode ? <AccountTreeIcon sx={{ fontSize: 18 }} /> : <ForumOutlinedIcon sx={{ fontSize: 18 }} />}
+                    </IconButton>
+                </Tooltip>
             </Box>
-            <SimpleChartRecBox onExpandedChange={setChatboxFocused} />
+            {chatMode ? (
+                <Box ref={containerRef} sx={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+                    <ChatThreadView />
+                </Box>
+            ) : (
+                <Box ref={containerRef} sx={{
+                        overflow: 'hidden', 
+                        direction: 'rtl', 
+                        display: 'block', 
+                        flex: 1,
+                        minHeight: 0,
+                    }}>
+                    {view}
+                </Box>
+            )}
+            <SimpleChartRecBox />
         </Box>
     );
 }

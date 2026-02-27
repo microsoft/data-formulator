@@ -196,8 +196,8 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
         }
 
         const actionId = `deriveDataFromNL_${String(Date.now())}`;
-        dispatch(dfActions.updateAgentWorkInProgress({actionId: actionId, tableId: tableId, description: instruction, status: 'running', hidden: false,
-            message: { content: instruction, role: 'user', sourceTable: tableId }}));
+        dispatch(dfActions.updateAgentWorkInProgress({actionId: actionId, originTableId: tableId, description: instruction, status: 'running', hidden: false,
+            message: { content: instruction, role: 'user', observeTableId: tableId }}));
 
         // Validate table selection
         const firstTableId = selectedTableIds[0];
@@ -232,21 +232,30 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
             onStarted: () => {
                 setIsFormulating(true);
             },
-            onSuccess: ({ displayInstruction }) => {
+            onSuccess: ({ displayInstruction, candidateTable }) => {
                 dispatch(dfActions.addMessages({
                     "timestamp": Date.now(),
                     "component": "chart builder",
                     "type": "success",
                     "value": `Data formulation: "${displayInstruction}"`
                 }));
+                dispatch(dfActions.updateAgentWorkInProgress({
+                    actionId, description: displayInstruction || instruction, status: 'completed', hidden: false,
+                    message: { content: displayInstruction || instruction, role: 'action', resultTableId: candidateTable.id }
+                }));
                 setPrompt("");
+            },
+            onError: () => {
+                dispatch(dfActions.updateAgentWorkInProgress({
+                    actionId, description: instruction, status: 'failed', hidden: false,
+                    message: { content: 'Data formulation failed.', role: 'error' }
+                }));
             },
             onFinally: () => {
                 setIsFormulating(false);
                 if (placeHolderChartId) {
                     dispatch(dfActions.changeChartRunningStatus({chartId: placeHolderChartId, status: false}));
                 }
-                dispatch(dfActions.deleteAgentWorkInProgress(actionId));
             },
         });
     };

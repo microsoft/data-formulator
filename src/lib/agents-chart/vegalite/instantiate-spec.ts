@@ -104,6 +104,9 @@ export function vlApplyLayoutToSpec(
             .filter(enc => enc.type === 'quantitative');
 
         for (const enc of targets) {
+            // Skip binned encodings — the bin axis represents data values,
+            // not bar length, so zero-baseline is inappropriate (e.g. histograms).
+            if (enc.bin) continue;
             if (!enc.scale) enc.scale = {};
             if (enc.scale.zero !== undefined) continue;
             if (enc.scale.domain && Array.isArray(enc.scale.domain)) continue;
@@ -212,6 +215,9 @@ export function vlApplyLayoutToSpec(
 
         const enc = vgObj.encoding?.[axis] || vgObj.spec?.encoding?.[axis];
         if (!enc) continue;
+
+        // Skip binned encodings — VL handles bin domain automatically
+        if (enc.bin) continue;
 
         const isTemporal = enc.type === 'temporal';
         const isContinuous = enc.type === 'quantitative' || isTemporal;

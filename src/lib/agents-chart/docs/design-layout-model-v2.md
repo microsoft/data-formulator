@@ -760,7 +760,7 @@ replace Phase 2 — Phases 0 and 1 remain unchanged.
         // C: VL spec construction (after layout)
         defaultBuildEncodings(spec, encodings, context);
         // C: Chart property application (after layout)
-        if (config?.cornerRadius) { spec.mark.cornerRadiusEnd = cr; }
+        if (config?.cornerRadius) { spec.mark.cornerRadius = cr; }
     },
     postProcessing: adjustBarMarks,  // D: Mark sizing (after layout)
 }
@@ -784,7 +784,7 @@ replace Phase 2 — Phases 0 and 1 remain unchanged.
         defaultBuildEncodings(spec, context.channelSemantics);
         // C: Chart property application
         const cr = context.chartProperties?.cornerRadius;
-        if (cr > 0) { spec.mark.cornerRadiusEnd = cr; }
+        if (cr > 0) { spec.mark.cornerRadius = cr; }
         // D: Mark sizing (previously postProcessing)
         adjustBarMarks(spec, context.layout);
     },

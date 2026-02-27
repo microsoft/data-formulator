@@ -346,6 +346,7 @@ const VegaChartRenderer: FC<{
         if (cached && cached.specKey === specKey) {
             setSvgContent(cached.svg);
             setAssembledSpec(cached.spec);
+            onSpecReady?.(cached.spec);
             return;
         }
 

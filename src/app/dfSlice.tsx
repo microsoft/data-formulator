@@ -122,12 +122,13 @@ export interface DataFormulatorState {
     // which table is the agent working on
     agentActions: {
         actionId: string, 
-        tableId: string, 
+        originTableId: string, // the table the user was focused on when they triggered this action sequence
         description: string, 
         status: 'running' | 'completed' | 'warning' | 'failed',
         lastUpdate: number, // the time the action is last updated
         hidden: boolean, // whether the action is hidden
-        messages: { content: string, role: 'user' | 'thinking' | 'completion' | 'error' | 'clarify', sourceTable?: string, resultTable?: string, timestamp: number }[] // accumulated messages from this action
+        messages: { content: string, role: 'user' | 'thinking' | 'action' | 'completion' | 'error' | 'clarify', observeTableId?: string, resultTableId?: string, timestamp: number }[], // accumulated messages from this action
+        pendingClarification?: { trajectory: any[], completedStepCount: number, lastCreatedTableId: string | null } | null, // stored when agent asks for clarification, cleared on resume/cancel
     }[];
 
     // Data cleaning dialog state
@@ -493,7 +494,7 @@ export const dataFormulatorSlice = createSlice({
                 sessionLoadingLabel: '',
             };
         },
-        updateAgentWorkInProgress: (state, action: PayloadAction<{actionId: string, tableId?: string, description: string, status: 'running' | 'completed' | 'warning' | 'failed', hidden: boolean, message?: { content: string, role: 'user' | 'thinking' | 'completion' | 'error' | 'clarify', sourceTable?: string, resultTable?: string }}>) => {
+        updateAgentWorkInProgress: (state, action: PayloadAction<{actionId: string, originTableId?: string, description: string, status: 'running' | 'completed' | 'warning' | 'failed', hidden: boolean, message?: { content: string, role: 'user' | 'thinking' | 'action' | 'completion' | 'error' | 'clarify', observeTableId?: string, resultTableId?: string }, pendingClarification?: { trajectory: any[], completedStepCount: number, lastCreatedTableId: string | null } | null }>) => {
             const now = Date.now();
             if (state.agentActions.some(a => a.actionId == action.payload.actionId)) {
                 state.agentActions = state.agentActions.map(a => {
@@ -508,7 +509,7 @@ export const dataFormulatorSlice = createSlice({
                 const messages = action.payload.message 
                     ? [{ ...action.payload.message, timestamp: now }] 
                     : [];
-                state.agentActions = [...state.agentActions, {...action.payload, tableId: action.payload.tableId || "", lastUpdate: now, hidden: action.payload.hidden, messages}];
+                state.agentActions = [...state.agentActions, {...action.payload, originTableId: action.payload.originTableId || "", lastUpdate: now, hidden: action.payload.hidden, messages}];
             }
         },
         deleteAgentWorkInProgress: (state, action: PayloadAction<string>) => {
@@ -609,6 +610,19 @@ export const dataFormulatorSlice = createSlice({
             // Delete charts that refer to this table
             let chartIdsToDelete = state.charts.filter(c => c.tableRef == tableId).map(c => c.id);
             deleteChartsRoutine(state, chartIdsToDelete);
+
+            // Clean up agent actions: remove non-running actions whose originTableId is the deleted table
+            // AND whose resultTableIds all point to tables that no longer exist
+            const survivingTableIds = new Set(state.tables.map(t => t.id));
+            state.agentActions = state.agentActions.filter(a => {
+                if (a.status === 'running') return true; // never remove running actions
+                if (a.originTableId !== tableId) return true; // not related to deleted table
+                // Keep if any resultTableId still exists in surviving tables
+                const resultTableIds = a.messages
+                    ?.filter(m => m.resultTableId)
+                    .map(m => m.resultTableId!) ?? [];
+                return resultTableIds.some(id => survivingTableIds.has(id));
+            });
 
             // If the deleted table was focused, reset focus
             if (state.focusedId?.type === 'table' && state.focusedId.tableId === tableId) {

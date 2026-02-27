@@ -36,6 +36,7 @@ from data_formulator.agents.agent_report_gen import ReportGenAgent
 from data_formulator.agents.client_utils import Client
 
 from data_formulator.workflows.exploration_flow import run_exploration_flow_streaming
+from data_formulator.agents.data_agent import DataAgent
 
 # Get logger for this module (logging config done in app.py)
 logger = logging.getLogger(__name__)
@@ -503,6 +504,131 @@ def explore_data_streaming():
             'Access-Control-Allow-Origin': '*',
             'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
             'Access-Control-Allow-Headers': 'Content-Type'
+        }
+    )
+    return response
+
+
+@agent_bp.route('/data-agent-streaming', methods=['GET', 'POST'])
+def data_agent_streaming():
+    """Autonomous data exploration agent endpoint (SWE-agent style).
+
+    Accepts a user question, runs the DataAgent observe-think-act loop,
+    and streams events back as newline-delimited JSON.
+
+    To resume after a clarification, the client sends:
+        - trajectory: the trajectory list returned in the clarify event
+        - clarification_response: the user's answer (string)
+    The server appends the answer to the trajectory and continues the loop.
+    """
+    def generate():
+        if request.is_json:
+            logger.setLevel(logging.INFO)
+            logger.info("# data-agent-streaming request")
+
+            content = request.get_json()
+            token = content.get("token", "")
+
+            input_tables = content["input_tables"]
+            user_question = content.get("user_question", "")
+            max_iterations = content.get("max_iterations", 5)
+            max_repair_attempts = content.get("max_repair_attempts", 1)
+            agent_exploration_rules = content.get("agent_exploration_rules", "")
+            agent_coding_rules = content.get("agent_coding_rules", "")
+            conversation_history = content.get("conversation_history", None)
+
+            # Stateless resume: client sends back the trajectory + user answer
+            resume_trajectory = content.get("trajectory", None)
+            clarification_response = content.get("clarification_response", None)
+            completed_step_count = content.get("completed_step_count", 0)
+
+            logger.info("== input tables ===>")
+            for table in input_tables:
+                logger.info(f"===> Table: {table['name']} (first 5 rows)")
+                logger.info(table['rows'][:5])
+
+            logger.info(f"== user question ===> {user_question}")
+
+            client = get_client(content['model'])
+            identity_id = get_identity_id()
+
+            if not identity_id:
+                yield json.dumps({
+                    "token": token,
+                    "status": "error",
+                    "result": {"type": "error", "error_message": "Identity ID required"},
+                }) + '\n'
+                return
+
+            workspace = get_workspace(identity_id)
+            temp_data = get_temp_tables(workspace, input_tables) if input_tables else None
+
+            try:
+                with WorkspaceWithTempData(workspace, temp_data) as ws:
+                    agent = DataAgent(
+                        client=client,
+                        workspace=ws,
+                        agent_exploration_rules=agent_exploration_rules,
+                        agent_coding_rules=agent_coding_rules,
+                        max_iterations=max_iterations,
+                        max_repair_attempts=max_repair_attempts,
+                    )
+
+                    # Build trajectory for resume or fresh start
+                    trajectory = None
+                    if resume_trajectory and clarification_response:
+                        # Append the user's clarification to the saved trajectory
+                        trajectory = list(resume_trajectory)
+                        trajectory.append({
+                            "role": "user",
+                            "content": f"[USER CLARIFICATION]\n\n{clarification_response}",
+                        })
+                        logger.info(f"== resuming with clarification ===> {clarification_response}")
+
+                    for event in agent.run(
+                        input_tables=input_tables,
+                        user_question=user_question,
+                        conversation_history=conversation_history,
+                        trajectory=trajectory,
+                        completed_step_count=completed_step_count,
+                    ):
+                        yield json.dumps({
+                            "token": token,
+                            "status": "ok",
+                            "result": event,
+                        }) + '\n'
+
+                        # Stop streaming after terminal events
+                        if event.get("type") in ("completion", "clarify"):
+                            break
+
+            except Exception as e:
+                logger.error(f"Error in data-agent-streaming: {e}")
+                logger.error(traceback.format_exc())
+                yield json.dumps({
+                    "token": token,
+                    "status": "error",
+                    "result": None,
+                    "error_message": sanitize_model_error(str(e)),
+                }) + '\n'
+
+            logger.setLevel(logging.WARNING)
+
+        else:
+            yield json.dumps({
+                "token": "",
+                "status": "error",
+                "result": None,
+                "error_message": "Invalid request format",
+            }) + '\n'
+
+    response = Response(
+        stream_with_context(generate()),
+        mimetype='application/json',
+        headers={
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type',
         }
     )
     return response

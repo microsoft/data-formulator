@@ -123,7 +123,21 @@ export function assembleVegaLite(input: ChartAssemblyInput): any {
             const binnedAxes: Record<string, boolean | { maxbins?: number }> = {};
             for (const axis of ['x', 'y']) {
                 if (templateEnc[axis]?.bin) {
-                    binnedAxes[axis] = templateEnc[axis].bin;
+                    // Use chartProperties.binCount when available so layout
+                    // sizing matches the actual number of bins rendered.
+                    const propBins = chartProperties?.binCount;
+                    if (propBins != null) {
+                        binnedAxes[axis] = { maxbins: propBins };
+                    } else if (typeof templateEnc[axis].bin === 'object' && templateEnc[axis].bin.maxbins) {
+                        binnedAxes[axis] = templateEnc[axis].bin;
+                    } else {
+                        // Find the template's default binCount from its property definitions
+                        const binPropDef = chartTemplate.properties?.find(
+                            (p: any) => p.key === 'binCount'
+                        );
+                        const defaultBins = binPropDef?.defaultValue ?? 10;
+                        binnedAxes[axis] = { maxbins: defaultBins };
+                    }
                 }
             }
             if (Object.keys(binnedAxes).length > 0) {

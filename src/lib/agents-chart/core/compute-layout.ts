@@ -207,8 +207,9 @@ export function computeLayout(
         let count: number;
         if (isBinned) {
             const binDef = declaration.binnedAxes![axis];
+            // Default to 10 bins (Vega-Lite's default maxbins)
             count = typeof binDef === 'object' && binDef.maxbins
-                ? binDef.maxbins : 6;
+                ? binDef.maxbins : 10;
         } else {
             count = new Set(table.map((r: any) => r[cs.field])).size;
         }

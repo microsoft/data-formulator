@@ -730,7 +730,7 @@ def _apply_chart_config(spec: dict, chart_type: str, config: dict):
         corner_radius = config.get("cornerRadius")
         if corner_radius is not None:
             _ensure_mark_obj(spec)
-            spec["mark"]["cornerRadiusEnd"] = int(corner_radius)
+            spec["mark"]["cornerRadius"] = int(corner_radius)
     
     elif chart_type == "line":
         interpolate = config.get("interpolate")

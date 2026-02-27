@@ -12,7 +12,6 @@ import {
     TextField,
     CircularProgress,
     Card,
-    ClickAwayListener,
     LinearProgress,
     Button,
 } from '@mui/material';
@@ -30,16 +29,12 @@ import AddIcon from '@mui/icons-material/Add';
 import TipsAndUpdatesIcon from '@mui/icons-material/TipsAndUpdates';
 import CancelOutlinedIcon from '@mui/icons-material/CancelOutlined';
 import StopCircleOutlinedIcon from '@mui/icons-material/StopCircleOutlined';
-import PersonOutlineIcon from '@mui/icons-material/PersonOutline';
 import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
-import TableRowsOutlinedIcon from '@mui/icons-material/TableRowsOutlined';
 
 import RefreshIcon from '@mui/icons-material/Refresh';
 import ClearIcon from '@mui/icons-material/Clear';
-import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import { renderTextWithEmphasis } from './EncodingShelfCard';
 import { UnifiedDataUploadDialog } from './UnifiedDataUploadDialog';
-import { ThinkingBufferEffect } from '../components/FunComponents';
 import { Theme } from '@mui/material/styles';
 
 const AgentWorkingOverlay: FC<{ relevantAgentActions: any[]; theme: Theme; onCancel?: () => void }> = ({ relevantAgentActions, theme, onCancel }) => {
@@ -106,7 +101,7 @@ const AgentWorkingOverlay: FC<{ relevantAgentActions: any[]; theme: Theme; onCan
     );
 };
 
-export const SimpleChartRecBox: FC<{ onExpandedChange?: (expanded: boolean) => void }> = function ({ onExpandedChange }) {
+export const SimpleChartRecBox: FC = function () {
 
     const tables = useSelector((state: DataFormulatorState) => state.tables);
     const focusedId = useSelector((state: DataFormulatorState) => state.focusedId);
@@ -122,28 +117,22 @@ export const SimpleChartRecBox: FC<{ onExpandedChange?: (expanded: boolean) => v
 
     const [chatPrompt, setChatPrompt] = useState("");
     const [isChatFormulating, setIsChatFormulating] = useState(false);
-    const [expanded, setExpandedRaw] = useState(false);
-    const setExpanded = useCallback((v: boolean) => { setExpandedRaw(v); onExpandedChange?.(v || isChatFormulating); }, [onExpandedChange, isChatFormulating]);
     const [ideas, setIdeas] = useState<{text: string, goal: string, difficulty: 'easy' | 'medium' | 'hard'}[]>([]);
     const [isLoadingIdeas, setIsLoadingIdeas] = useState(false);
     const [thinkingBuffer, setThinkingBuffer] = useState('');
     const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
-    const [panelHeight, setPanelHeight] = useState(180);
-    const [isDragging, setIsDragging] = useState(false);
-    const dragRef = useRef<{ startY: number; startHeight: number } | null>(null);
     const agentAbortRef = useRef<AbortController | null>(null);
     const ideasAbortRef = useRef<AbortController | null>(null);
 
-    // Notify parent when formulating state changes
-    useEffect(() => {
-        onExpandedChange?.(expanded || isChatFormulating);
-    }, [isChatFormulating]);
+    // pendingClarification is now derived from Redux (stored on the agentAction itself)
+    // so it persists when user clicks away and comes back.
 
     // On mount, clean up any stale "running" agent actions left over from a page refresh.
     // The streaming connection is lost on refresh, so these will never complete.
-    // Only add the "interrupted" message to the last stale action per thread to avoid duplicates.
+    // Only mark actions whose lastUpdate predates the current page load as stale.
     useEffect(() => {
-        const staleRunning = agentActions.filter(a => a.status === 'running');
+        const pageLoadTime = performance.timeOrigin; // ms timestamp of when the page was loaded
+        const staleRunning = agentActions.filter(a => a.status === 'running' && a.lastUpdate < pageLoadTime);
         if (staleRunning.length === 0) return;
         // The last stale action gets the visible message; others are silently marked warning
         const lastStale = staleRunning[staleRunning.length - 1];
@@ -159,22 +148,6 @@ export const SimpleChartRecBox: FC<{ onExpandedChange?: (expanded: boolean) => v
     }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
     const inputCardRef = useRef<HTMLDivElement>(null);
-    const threadScrollRef = useRef<HTMLDivElement>(null);
-    const [inputCardHeight, setInputCardHeight] = useState(0);
-
-    // Track input card height so the dialog panel sits above it
-    useEffect(() => {
-        const el = inputCardRef.current;
-        if (!el) return;
-        const ro = new ResizeObserver((entries) => {
-            for (const entry of entries) {
-                // total height including margin: element height + mb(1)=8 + mt(0.5)=4
-                setInputCardHeight(entry.borderBoxSize?.[0]?.blockSize ?? entry.contentRect.height);
-            }
-        });
-        ro.observe(el);
-        return () => ro.disconnect();
-    }, []);
 
     const focusedTableId = useCallback(() => {
         if (!focusedId) return undefined;
@@ -223,60 +196,51 @@ export const SimpleChartRecBox: FC<{ onExpandedChange?: (expanded: boolean) => v
     }, [focusedTableId, tables]);
 
     // Agent actions relevant to all tables in this thread, sorted by creation time
+    // Agent actions relevant to the focused table's thread.
+    // An action is relevant if:
+    //  - its originTableId is in the ancestor chain, AND
+    //  - it produced a table in the ancestor chain (resultTableId ∈ threadTableIds),
+    //    OR is still running, OR the focused table is the originTableId itself.
     const relevantAgentActions = React.useMemo(() => {
         if (threadTableIds.size === 0) return [];
         return agentActions
-            .filter(a => threadTableIds.has(a.tableId) && !a.hidden)
+            .filter(a => {
+                if (a.hidden) return false;
+                if (!threadTableIds.has(a.originTableId)) return false;
+                // Include if still running or waiting for clarification (live progress)
+                if (a.status === 'running' || a.status === 'warning') return true;
+                // Include if any message produced a table in the ancestor chain
+                if (a.messages?.some(m => m.resultTableId && threadTableIds.has(m.resultTableId))) return true;
+                // Include if the focused table IS the origin (user is at the starting table)
+                if (focusedTableId === a.originTableId) return true;
+                return false;
+            })
             .sort((a, b) => (a.messages?.[0]?.timestamp || a.lastUpdate) - (b.messages?.[0]?.timestamp || b.lastUpdate));
-    }, [agentActions, threadTableIds]);
-
-    // Flatten all messages from all relevant agent actions for display,
-    // expanding sourceTable/resultTable into separate timeline items
-    type ThreadItem = { content: string; role: 'user' | 'thinking' | 'completion' | 'error' | 'clarify' | 'source-table' | 'result-table'; timestamp: number; actionId: string; isRunning: boolean };
-    const allThreadMessages = React.useMemo((): ThreadItem[] => {
-        const items: ThreadItem[] = [];
-        for (const action of relevantAgentActions) {
-            if (action.messages && action.messages.length > 0) {
-                for (const m of action.messages) {
-                    // Insert source-table item only for the very first action in the thread
-                    if (m.sourceTable && items.length === 0) {
-                        items.push({ content: m.sourceTable, role: 'source-table', timestamp: m.timestamp, actionId: action.actionId, isRunning: false });
-                    }
-                    // The message itself
-                    items.push({ content: m.content, role: m.role, timestamp: m.timestamp, actionId: action.actionId, isRunning: false });
-                    // Insert result-table item after thinking message
-                    if (m.resultTable) {
-                        items.push({ content: m.resultTable, role: 'result-table', timestamp: m.timestamp, actionId: action.actionId, isRunning: false });
-                    }
-                }
-            }
-            // If it's currently running and the description isn't already in messages, show live status
-            if (action.status === 'running') {
-                const lastMsg = action.messages?.[action.messages.length - 1];
-                if (!lastMsg || lastMsg.content !== action.description) {
-                    items.push({ content: action.description || 'thinking...', role: 'thinking', timestamp: action.lastUpdate, actionId: action.actionId, isRunning: true });
-                }
-            }
-        }
-        return items;
-    }, [relevantAgentActions]);
+    }, [agentActions, threadTableIds, focusedTableId]);
 
     const hasRunningAgent = relevantAgentActions.some(a => a.status === 'running');
-    const hasThreadContent = allThreadMessages.length > 0;
 
-    // Auto-scroll thread panel to bottom when new messages arrive
-    useEffect(() => {
-        if (threadScrollRef.current && allThreadMessages.length > 0) {
-            threadScrollRef.current.scrollTop = threadScrollRef.current.scrollHeight;
-        }
-    }, [allThreadMessages.length]);
+    // Derive pending clarification from the current thread's relevant actions (stored in Redux)
+    const pendingClarification = React.useMemo(() => {
+        const action = relevantAgentActions.find(a => a.pendingClarification);
+        if (!action || !action.pendingClarification) return null;
+        return { ...action.pendingClarification, actionId: action.actionId };
+    }, [relevantAgentActions]);
+
+    // Extract the clarification question text from the last 'clarify' message
+    const clarificationQuestion = React.useMemo(() => {
+        if (!pendingClarification) return null;
+        const action = agentActions.find(a => a.actionId === pendingClarification.actionId);
+        if (!action?.messages) return null;
+        const clarifyMsgs = action.messages.filter(m => m.role === 'clarify');
+        return clarifyMsgs.length > 0 ? clarifyMsgs[clarifyMsgs.length - 1].content : null;
+    }, [pendingClarification, agentActions]);
 
     const getIdeasFromAgent = useCallback(async () => {
         if (!currentTable || isLoadingIdeas) return;
         setIsLoadingIdeas(true);
         setIdeas([]);
         setThinkingBuffer('');
-        setExpanded(true);
 
         try {
             let explorationThread: any[] = [];
@@ -359,7 +323,12 @@ export const SimpleChartRecBox: FC<{ onExpandedChange?: (expanded: boolean) => v
         }
     }, [currentTable, isLoadingIdeas, selectedTableIds, tables, activeModel, agentRules, config, dispatch]);
 
-    const exploreFromChat = useCallback((prompt: string) => {
+    const exploreFromChat = useCallback((prompt: string, clarificationContext?: {
+        trajectory: any[];
+        completedStepCount: number;
+        actionId: string;
+        lastCreatedTableId: string | null;
+    }) => {
         if (!focusedTableId || prompt.trim() === "") return;
 
         const rootTables = tables.filter(t => t.derive === undefined || t.anchored);
@@ -373,56 +342,65 @@ export const SimpleChartRecBox: FC<{ onExpandedChange?: (expanded: boolean) => v
         ];
         if (selectedTableIds.length === 0) return;
 
-        const actionId = `exploreDataFromNL_${String(Date.now())}`;
+        const isResume = !!clarificationContext;
+        const actionId = isResume ? clarificationContext!.actionId : `exploreDataFromNL_${String(Date.now())}`;
         const actionTables = selectedTableIds.map(id => tables.find(t => t.id === id) as DictTable);
 
         setIsChatFormulating(true);
-        // User instruction with source table context
-        const sourceTableName = currentTable?.id || focusedTableId;
-        dispatch(dfActions.updateAgentWorkInProgress({ actionId, tableId: focusedTableId, description: prompt, status: 'running', hidden: false,
-            message: { content: prompt, role: 'user', sourceTable: sourceTableName } }));
 
-        // Build exploration thread from derivation chain for API context
-        let explorationThread: any[] = [];
-        if (currentTable?.derive && !currentTable.anchored) {
-            const triggers = getTriggers(currentTable, tables);
-            explorationThread = triggers.map(trigger => ({
-                name: trigger.resultTableId,
-                rows: tables.find(t2 => t2.id === trigger.resultTableId)?.rows,
-                description: `Derive from ${tables.find(t2 => t2.id === trigger.resultTableId)?.derive?.source} with instruction: ${trigger.instruction}`,
-            }));
+        if (isResume) {
+            // Show user's clarification reply in the thread; clear pendingClarification in Redux
+            dispatch(dfActions.updateAgentWorkInProgress({ actionId, description: prompt, status: 'running', hidden: false,
+                    message: { content: prompt, role: 'user' }, pendingClarification: null }));
+        } else {
+            // User instruction with source table context
+            dispatch(dfActions.updateAgentWorkInProgress({ actionId, originTableId: focusedTableId, description: prompt, status: 'running', hidden: false,
+                message: { content: prompt, role: 'user' } }));
         }
 
-        // Collect previous conversation messages for context
-        const conversationHistory: { role: string; content: string }[] = [];
-        for (const action of relevantAgentActions) {
-            if (action.messages) {
-                for (const m of action.messages) {
-                    if (m.role === 'user') {
-                        conversationHistory.push({ role: 'user', content: m.content });
-                    } else if (m.role === 'thinking' || m.role === 'completion') {
-                        conversationHistory.push({ role: 'assistant', content: m.content });
+        // Collect previous conversation messages for context (only for fresh starts)
+        let conversationHistory: { role: string; content: string }[] | undefined = undefined;
+        if (!isResume) {
+            const history: { role: string; content: string }[] = [];
+            for (const action of relevantAgentActions) {
+                if (action.messages) {
+                    for (const m of action.messages) {
+                        if (m.role === 'user') {
+                            history.push({ role: 'user', content: m.content });
+                        } else if (m.role === 'thinking' || m.role === 'completion') {
+                            history.push({ role: 'assistant', content: m.content });
+                        }
                     }
                 }
             }
+            if (history.length > 0) conversationHistory = history;
         }
 
         const token = String(Date.now());
-        const messageBody = JSON.stringify({
+        const requestBody: any = {
             token,
             input_tables: actionTables.map(t => ({
                 name: t.virtual?.tableId || t.id.replace(/\.[^/.]+$/, ""),
                 rows: t.rows,
                 attached_metadata: t.attachedMetadata
             })),
-            initial_plan: [prompt],
-            exploration_thread: explorationThread.length > 0 ? explorationThread : undefined,
-            conversation_history: conversationHistory.length > 0 ? conversationHistory : undefined,
             model: activeModel,
-            max_iterations: 3,
+            max_iterations: 5,
             agent_exploration_rules: agentRules.exploration,
             agent_coding_rules: agentRules.coding
-        });
+        };
+
+        if (isResume) {
+            // Stateless resume: send back trajectory + user answer
+            requestBody.trajectory = clarificationContext!.trajectory;
+            requestBody.clarification_response = prompt;
+            requestBody.completed_step_count = clarificationContext!.completedStepCount;
+        } else {
+            requestBody.user_question = prompt;
+            if (conversationHistory) requestBody.conversation_history = conversationHistory;
+        }
+
+        const messageBody = JSON.stringify(requestBody);
 
         const controller = new AbortController();
         agentAbortRef.current = controller;
@@ -433,6 +411,7 @@ export const SimpleChartRecBox: FC<{ onExpandedChange?: (expanded: boolean) => v
         let createdCharts: Chart[] = [];
         let allNewConcepts: FieldItem[] = [];
         let isCompleted = false;
+        let lastCreatedTableId: string | null = isResume ? clarificationContext!.lastCreatedTableId : null;
 
         const genTableId = () => {
             let tableSuffix = Number.parseInt((Date.now() - Math.floor(Math.random() * 10000)).toString().slice(-6));
@@ -445,11 +424,15 @@ export const SimpleChartRecBox: FC<{ onExpandedChange?: (expanded: boolean) => v
         };
 
         const processStreamingResult = (result: any) => {
-            if (result.type === "planning") {
-                dispatch(dfActions.updateAgentWorkInProgress({ actionId, description: result.content.message, status: 'running', hidden: false,
-                    message: { content: result.content.message, role: 'thinking' } }));
+            // Agent thinking / choosing next action
+            if (result.type === "action" && result.action === "visualize") {
+                const thinkingMsg = result.thought || "Thinking...";
+                const currentObserveId = lastCreatedTableId || focusedTableId;
+                dispatch(dfActions.updateAgentWorkInProgress({ actionId, description: thinkingMsg, status: 'running', hidden: false,
+                    message: { content: thinkingMsg, role: 'thinking', observeTableId: currentObserveId } }));
             }
-            if (result.type === "data_transformation" && result.status === "success") {
+            // Visualization result (same shape as old data_transformation)
+            if (result.type === "result" && result.status === "success") {
                 const transformResult = result.content.result;
                 if (!transformResult || transformResult.status !== 'ok') return;
 
@@ -464,13 +447,13 @@ export const SimpleChartRecBox: FC<{ onExpandedChange?: (expanded: boolean) => v
                 const candidateTableId = transformedData.virtual?.table_name || genTableId();
                 const displayInstruction = refinedGoal?.display_instruction || `Exploration step ${createdTables.length + 1}: ${question}`;
 
-                const isFirstIteration = createdTables.length === 0;
-                const triggerTableId = isFirstIteration ? focusedTableId! : createdTables[createdTables.length - 1].id;
+                // Chain from last created table, or focused table if first
+                const triggerTableId = lastCreatedTableId || focusedTableId!;
 
                 const candidateTable = createDictTable(candidateTableId, rows, undefined);
                 candidateTable.derive = {
                     code: code || `# Exploration step ${createdTables.length + 1}`,
-                    codeSignature: result.content?.result?.code_signature, // HMAC from server
+                    codeSignature: result.content?.result?.code_signature,
                     outputVariable: refinedGoal?.output_variable || 'result_df',
                     source: selectedTableIds,
                     dialog: dialog || [],
@@ -486,9 +469,11 @@ export const SimpleChartRecBox: FC<{ onExpandedChange?: (expanded: boolean) => v
                     candidateTable.virtual = { tableId: transformedData.virtual.table_name, rowCount: transformedData.virtual.row_count };
                 }
                 createdTables.push(candidateTable);
-                // Agent's generated instruction with result table
-                dispatch(dfActions.updateAgentWorkInProgress({ actionId, tableId: candidateTable.id, description: displayInstruction, status: 'running', hidden: false,
-                    message: { content: displayInstruction, role: 'thinking', resultTable: candidateTableId } }));
+                const observedTableId = lastCreatedTableId || focusedTableId; // table the agent was looking at before this step
+                lastCreatedTableId = candidateTableId;
+
+                dispatch(dfActions.updateAgentWorkInProgress({ actionId, description: displayInstruction, status: 'running', hidden: false,
+                    message: { content: displayInstruction, role: 'action', observeTableId: observedTableId, resultTableId: candidateTableId } }));
 
                 const names = candidateTable.names;
                 const missingNames = names.filter(name =>
@@ -509,13 +494,13 @@ export const SimpleChartRecBox: FC<{ onExpandedChange?: (expanded: boolean) => v
                     candidateTable.derive.trigger.chart = triggerChart;
                 }
 
-                if (refinedGoal) {
-                    const currentConcepts = [...conceptShelfItems.filter(c => names.includes(c.name)), ...allNewConcepts, ...conceptsToAdd];
-                    let newChart = resolveRecommendedChart(refinedGoal, currentConcepts, candidateTable);
-                    createdCharts.push(newChart);
-                    dispatch(dfActions.addChart(newChart));
-                    dispatch(dfActions.setFocused({ type: 'chart', chartId: newChart.id }));
-                }
+                // DataRecAgent always returns a refined_goal (with chart info),
+                // so we can rely on it to create the chart for every step.
+                const currentConcepts = [...conceptShelfItems.filter(c => names.includes(c.name)), ...allNewConcepts, ...conceptsToAdd];
+                let newChart = resolveRecommendedChart(refinedGoal, currentConcepts, candidateTable);
+                createdCharts.push(newChart);
+                dispatch(dfActions.addChart(newChart));
+                dispatch(dfActions.setFocused({ type: 'chart', chartId: newChart.id }));
 
                 if (conceptsToAdd.length > 0) {
                     dispatch(dfActions.addConceptItems(conceptsToAdd));
@@ -531,6 +516,23 @@ export const SimpleChartRecBox: FC<{ onExpandedChange?: (expanded: boolean) => v
                     }, 1500);
                 }
             }
+            // Agent asks for clarification — pause and let user respond
+            if (result.type === "clarify") {
+                const clarifyMsg = result.message || "Could you clarify?";
+                dispatch(dfActions.updateAgentWorkInProgress({ actionId, description: clarifyMsg, status: 'warning', hidden: false,
+                    message: { content: clarifyMsg, role: 'clarify' },
+                    pendingClarification: {
+                        trajectory: result.trajectory || [],
+                        completedStepCount: result.completed_step_count || 0,
+                        lastCreatedTableId,
+                    }
+                }));
+                setIsChatFormulating(false);
+                agentAbortRef.current = null;
+                clearTimeout(timeoutId);
+                setChatPrompt("");
+                isCompleted = true; // prevent handleCompletion from firing
+            }
         };
 
         const handleCompletion = () => {
@@ -542,7 +544,7 @@ export const SimpleChartRecBox: FC<{ onExpandedChange?: (expanded: boolean) => v
 
             const completionResult = allResults.find((r: any) => r.type === "completion");
             if (completionResult) {
-                const summary = completionResult.content.message || "";
+                const summary = completionResult.content.summary || completionResult.content.message || "";
                 const status: "completed" | "warning" = completionResult.status === "success" ? "completed" : "warning";
                 dispatch(dfActions.updateAgentWorkInProgress({ actionId, description: summary, status, hidden: false,
                     message: { content: summary, role: 'completion' } }));
@@ -553,7 +555,7 @@ export const SimpleChartRecBox: FC<{ onExpandedChange?: (expanded: boolean) => v
             }
         };
 
-        fetchWithIdentity(getUrls().EXPLORE_DATA_STREAMING, {
+        fetchWithIdentity(getUrls().DATA_AGENT_STREAMING, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: messageBody,
@@ -583,7 +585,7 @@ export const SimpleChartRecBox: FC<{ onExpandedChange?: (expanded: boolean) => v
                                     if (data.status === "ok" && data.result) {
                                         allResults.push(data.result);
                                         processStreamingResult(data.result);
-                                        if (data.result.type === "completion") { handleCompletion(); return; }
+                                        if (data.result.type === "completion" || data.result.type === "clarify") { handleCompletion(); return; }
                                     } else if (data.status === "error") {
                                         setIsChatFormulating(false);
                                         clearTimeout(timeoutId);
@@ -608,17 +610,28 @@ export const SimpleChartRecBox: FC<{ onExpandedChange?: (expanded: boolean) => v
             clearTimeout(timeoutId);
             const isCancelled = error.name === 'AbortError' && !isCompleted;
             const errorMessage = isCancelled ? "Exploration cancelled" : error.name === 'AbortError' ? "Exploration timed out" : `Exploration failed: ${error.message}`;
-dispatch(dfActions.updateAgentWorkInProgress({ actionId, description: errorMessage, status: isCancelled ? 'warning' : 'failed', hidden: false,
+            dispatch(dfActions.updateAgentWorkInProgress({ actionId, description: errorMessage, status: isCancelled ? 'warning' : 'failed', hidden: false,
                     message: { content: errorMessage, role: isCancelled ? 'clarify' : 'error' } }));
         });
-    }, [focusedTableId, tables, activeModel, agentRules, config, conceptShelfItems, dispatch]);
+    }, [focusedTableId, tables, activeModel, agentRules, config, conceptShelfItems, dispatch, relevantAgentActions]);
 
     const cancelAgent = useCallback(() => {
         if (agentAbortRef.current) {
             agentAbortRef.current.abort();
             agentAbortRef.current = null;
         }
-    }, []);
+        // Also dismiss any pending clarification
+        if (pendingClarification) {
+            dispatch(dfActions.updateAgentWorkInProgress({
+                actionId: pendingClarification.actionId,
+                description: "Conversation ended by user.",
+                status: 'completed',
+                hidden: false,
+                message: { content: "Conversation ended by user.", role: 'completion' },
+                pendingClarification: null,
+            }));
+        }
+    }, [pendingClarification, dispatch]);
 
     const gradientBorder = `linear-gradient(135deg, ${alpha(theme.palette.primary.main, 0.6)}, ${alpha(theme.palette.secondary.main, 0.55)})`;
     const workingBorder = `linear-gradient(135deg, ${alpha(theme.palette.primary.main, 0.3)}, ${alpha(theme.palette.secondary.main, 0.25)})`;
@@ -634,13 +647,8 @@ dispatch(dfActions.updateAgentWorkInProgress({ actionId, description: errorMessa
             position: 'relative',
             overflow: isChatFormulating ? 'hidden' : 'visible',
             flexShrink: 0,
-            zIndex: expanded ? 11 : 0,
-            cursor: !expanded ? 'pointer' : undefined,
             transition: 'box-shadow 0.2s ease, background-color 0.2s ease',
             ...(isChatFormulating ? { backgroundColor: alpha(theme.palette.action.disabledBackground, 0.06) } : {}),
-            '&:hover': !expanded ? {
-                boxShadow: `0 0 6px 1px ${alpha(theme.palette.primary.main, 0.2)}, 0 0 0 1.5px ${alpha(theme.palette.primary.main, 0.25)}`,
-            } : {},
             // Gradient border via pseudo-element (works with border-radius)
             '&::before': {
                 content: '""',
@@ -658,14 +666,76 @@ dispatch(dfActions.updateAgentWorkInProgress({ actionId, description: errorMessa
                 zIndex: 3,
             },
         }}
-            onClick={(e) => {
-                if (!expanded) {
-                    const target = e.target as HTMLElement;
-                    if (target.closest('input, textarea, button, .MuiIconButton-root')) return;
-                    setExpanded(true);
-                }
-            }}
         >
+            {/* Show clarification question above input when agent is asking */}
+            {clarificationQuestion && pendingClarification && !isChatFormulating && (
+                <Box sx={{
+                    display: 'flex', alignItems: 'flex-start', gap: '6px',
+                    px: 0.5, py: '6px',
+                    borderBottom: `1px solid ${alpha(theme.palette.warning.main, 0.2)}`,
+                    backgroundColor: alpha(theme.palette.warning.main, 0.05),
+                    borderRadius: '8px 8px 0 0',
+                    mx: '-8px', mt: '-4px', mb: '4px', px: '12px', pt: '8px', pb: '6px',
+                }}>
+                    <SmartToyOutlinedIcon sx={{ fontSize: 14, color: theme.palette.warning.main, mt: '1px', flexShrink: 0 }} />
+                    <Typography sx={{ fontSize: 12, color: theme.palette.text.primary, lineHeight: 1.5, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                        {clarificationQuestion}
+                    </Typography>
+                </Box>
+            )}
+            {/* Idea chips inline */}
+            {ideas.length > 0 && !isChatFormulating && (
+                <Box sx={{
+                    display: 'flex', flexDirection: 'column', gap: '4px',
+                    borderBottom: `1px solid ${alpha(theme.palette.secondary.main, 0.15)}`,
+                    backgroundColor: alpha(theme.palette.secondary.main, 0.03),
+                    borderRadius: clarificationQuestion ? 0 : '8px 8px 0 0',
+                    mx: '-8px', mt: clarificationQuestion ? 0 : '-4px', mb: '4px', px: '10px', pt: '6px', pb: '6px',
+                }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: '4px', mb: '2px' }}>
+                        <TipsAndUpdatesIcon sx={{ fontSize: 12, color: theme.palette.secondary.main }} />
+                        <Typography sx={{ fontSize: 11, fontWeight: 600, color: theme.palette.secondary.main, flex: 1 }}>Ideas</Typography>
+                        <Tooltip title="Regenerate ideas">
+                            <IconButton size="small" onClick={() => getIdeasFromAgent()}
+                                sx={{ p: '2px', color: theme.palette.text.secondary, '&:hover': { color: theme.palette.primary.main } }}>
+                                <RefreshIcon sx={{ fontSize: 12 }} />
+                            </IconButton>
+                        </Tooltip>
+                        <Tooltip title="Clear ideas">
+                            <IconButton size="small" onClick={() => setIdeas([])}
+                                sx={{ p: '2px', color: theme.palette.text.secondary, '&:hover': { color: theme.palette.error.main } }}>
+                                <ClearIcon sx={{ fontSize: 12 }} />
+                            </IconButton>
+                        </Tooltip>
+                    </Box>
+                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                        {ideas.map((idea, idx) => {
+                            const color = idea.difficulty === 'easy' ? theme.palette.success.main
+                                : idea.difficulty === 'hard' ? theme.palette.warning.main
+                                : theme.palette.primary.main;
+                            return (
+                                <Box key={idx} sx={{
+                                    px: '6px', py: '3px',
+                                    borderRadius: '4px',
+                                    border: `1px solid ${alpha(color, 0.2)}`,
+                                    backgroundColor: alpha(color, 0.04),
+                                    cursor: 'pointer',
+                                    transition: 'all 0.15s ease',
+                                    '&:hover': { borderColor: alpha(color, 0.6), backgroundColor: alpha(color, 0.08) },
+                                }} onClick={() => { setChatPrompt(idea.text); exploreFromChat(idea.text); }}>
+                                    <Typography component="div" sx={{ fontSize: 10, lineHeight: 1.3, color }}>
+                                        {renderTextWithEmphasis(idea.goal, {
+                                            borderRadius: '0px', borderBottom: '1px solid',
+                                            borderColor: alpha(color, 0.4), fontSize: '10px', lineHeight: 1.3,
+                                            backgroundColor: alpha(color, 0.05),
+                                        })}
+                                    </Typography>
+                                </Box>
+                            );
+                        })}
+                    </Box>
+                </Box>
+            )}
             <TextField
                 variant="standard"
                 sx={{
@@ -688,12 +758,15 @@ dispatch(dfActions.updateAgentWorkInProgress({ actionId, description: errorMessa
                     if (event.key === 'Enter' && !event.shiftKey) {
                         event.preventDefault();
                         if (chatPrompt.trim().length > 0 && !isChatFormulating) {
-                            exploreFromChat(chatPrompt);
+                            if (pendingClarification) {
+                                exploreFromChat(chatPrompt, pendingClarification);
+                            } else {
+                                exploreFromChat(chatPrompt);
+                            }
                         }
                     }
                 }}
                 onFocus={() => {
-                    if (!expanded) setExpanded(true);
                     // Scroll to the focused table card, positioning it near the bottom of the visible area
                     const el = document.querySelector('.data-thread-card.selected-card') as HTMLElement | null;
                     if (el) {
@@ -721,7 +794,7 @@ dispatch(dfActions.updateAgentWorkInProgress({ actionId, description: errorMessa
                     input: { readOnly: isChatFormulating },
                 }}
                 value={chatPrompt}
-                placeholder={"Ask agent to explore a new direction"}
+                placeholder={pendingClarification ? "Reply to agent's question..." : "Ask agent to explore a new direction"}
                 fullWidth
                 multiline
                 minRows={2}
@@ -755,7 +828,7 @@ dispatch(dfActions.updateAgentWorkInProgress({ actionId, description: errorMessa
                                     disabled={!focusedTableId || isLoadingIdeas}
                                     onClick={() => { 
                                         if (ideas.length > 0) {
-                                            setExpanded(true);
+                                            setIdeas([]);
                                         } else {
                                             getIdeasFromAgent(); 
                                         }
@@ -767,14 +840,31 @@ dispatch(dfActions.updateAgentWorkInProgress({ actionId, description: errorMessa
                                 </IconButton>
                             </span>
                         </Tooltip>
-                        <Tooltip title="Explore">
+                        {pendingClarification && !isChatFormulating && (
+                            <Tooltip title="End conversation">
+                                <IconButton
+                                    size="small"
+                                    sx={{ p: 0.5, color: theme.palette.warning.main }}
+                                    onClick={() => cancelAgent()}
+                                >
+                                    <StopCircleOutlinedIcon sx={{ fontSize: 18 }} />
+                                </IconButton>
+                            </Tooltip>
+                        )}
+                        <Tooltip title={pendingClarification ? "Send reply" : "Explore"}>
                             <span>
                                 <IconButton
                                     size="small"
                                     color="primary"
                                     sx={{ p: 0.5 }}
                                     disabled={chatPrompt.trim().length === 0 || !focusedTableId}
-                                    onClick={() => { exploreFromChat(chatPrompt); }}
+                                    onClick={() => {
+                                        if (pendingClarification) {
+                                            exploreFromChat(chatPrompt, pendingClarification);
+                                        } else {
+                                            exploreFromChat(chatPrompt);
+                                        }
+                                    }}
                                 >
                                     <SendIcon sx={{ fontSize: 18 }} />
                                 </IconButton>
@@ -798,365 +888,8 @@ dispatch(dfActions.updateAgentWorkInProgress({ actionId, description: errorMessa
     );
 
     return (
-        <ClickAwayListener onClickAway={() => { if (expanded) setExpanded(false); }}>
         <Box>
-            {/* Overlay that expands upward from the input box */}
-            <Box sx={{
-                position: 'absolute',
-                bottom: 0,
-                left: 0,
-                right: 0,
-                top: 0,
-                pointerEvents: 'none',
-                zIndex: expanded ? 10 : -1,
-            }}>
-                {/* Dialog panel — anchored above the input card, slides up */}
-                <Box sx={{
-                    position: 'absolute',
-                    bottom: `${inputCardHeight + 12}px`,
-                    left: 0,
-                    right: 0,
-                    pointerEvents: expanded ? 'auto' : 'none',
-                    maxHeight: (expanded && (ideas.length > 0 || isLoadingIdeas || hasThreadContent)) ? `${panelHeight}px` : '0px',
-                    opacity: (expanded && (ideas.length > 0 || isLoadingIdeas || hasThreadContent)) ? 1 : 0,
-                    transform: (expanded && (ideas.length > 0 || isLoadingIdeas || hasThreadContent)) ? 'translateY(0)' : 'translateY(8px)',
-                    transition: dragRef.current ? 'none' : 'max-height 0.3s cubic-bezier(0.4,0,0.2,1), opacity 0.2s ease, transform 0.25s ease',
-                    overflow: 'hidden',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    mx: 1,
-                    borderRadius: '8px',
-                    background: theme.palette.background.paper,
-                    boxShadow: expanded ? '0 -4px 20px rgba(0,0,0,0.12)' : 'none',
-                    border: expanded ? `1px solid ${theme.palette.divider}` : 'none',
-                }}>
-                    {/* Draggable top edge handle */}
-                    <Box
-                        sx={{
-                            height: 8,
-                            flexShrink: 0,
-                            cursor: 'ns-resize',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            '&:hover > div': { backgroundColor: alpha(theme.palette.text.secondary, 0.4) },
-                        }}
-                        onMouseDown={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            dragRef.current = { startY: e.clientY, startHeight: panelHeight };
-                            setIsDragging(true);
-                            const onMouseMove = (ev: MouseEvent) => {
-                                ev.preventDefault();
-                                if (!dragRef.current) return;
-                                const delta = dragRef.current.startY - ev.clientY;
-                                const newHeight = Math.max(100, Math.min(600, dragRef.current.startHeight + delta));
-                                setPanelHeight(newHeight);
-                            };
-                            const onMouseUp = (ev: MouseEvent) => {
-                                ev.preventDefault();
-                                ev.stopPropagation();
-                                dragRef.current = null;
-                                setIsDragging(false);
-                                document.removeEventListener('mousemove', onMouseMove);
-                                document.removeEventListener('mouseup', onMouseUp);
-                            };
-                            document.addEventListener('mousemove', onMouseMove);
-                            document.addEventListener('mouseup', onMouseUp);
-                        }}
-                    >
-                        <Box sx={{ width: 32, height: 3, borderRadius: 1.5, backgroundColor: alpha(theme.palette.text.disabled, 0.25), transition: 'background-color 0.15s' }} />
-                    </Box>
-                    {/* Floating collapse button */}
-                    <IconButton
-                        size="small"
-                        onClick={() => setExpanded(false)}
-                        sx={{
-                            position: 'absolute',
-                            top: 4,
-                            right: 4,
-                            zIndex: 1,
-                            width: 22,
-                            height: 22,
-                            background: alpha(theme.palette.background.paper, 0.85),
-                            '&:hover': { background: alpha(theme.palette.action.hover, 0.15) },
-                        }}
-                    >
-                        <KeyboardArrowDownIcon sx={{ fontSize: 16 }} />
-                    </IconButton>
-                    {/* Thread messages & Idea suggestions */}
-                    <Box ref={threadScrollRef} sx={{
-                        flex: 1,
-                        overflowY: 'auto',
-                        overflowX: 'hidden',
-                        px: 1, py: 0.5,
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: '6px',
-                    }}>
-                        {/* Timeline-style thread messages (always shown when present) */}
-                        {allThreadMessages.map((msg, idx) => {
-                            const isLast = idx === allThreadMessages.length - 1;
-                            const TIMELINE_W = 14;
-                            const TIMELINE_GAP = '6px';
-
-                            // Determine timeline icon for each role
-                            const primaryColor = theme.palette.primary.main;
-                            const customColor = theme.palette.secondary.main;
-                            // Skip source-table and result-table — they're rendered inline as quotes
-                            if (msg.role === 'source-table' || msg.role === 'result-table') return null;
-
-                            // Find adjacent table references to embed as quotes
-                            const prevMsg = idx > 0 ? allThreadMessages[idx - 1] : null;
-                            const nextMsg2 = idx < allThreadMessages.length - 1 ? allThreadMessages[idx + 1] : null;
-                            const sourceTableRef = (msg.role === 'user' && prevMsg?.role === 'source-table') ? prevMsg.content : null;
-                            const resultTableRef = (msg.role === 'thinking' && nextMsg2?.role === 'result-table') ? nextMsg2.content : null;
-
-                            const getTimelineIcon = () => {
-                                if (msg.isRunning) {
-                                    return <CircularProgress size={10} thickness={5} sx={{ color: customColor }} />;
-                                }
-                                switch (msg.role) {
-                                    case 'user':
-                                        return <PersonOutlineIcon sx={{ fontSize: 12, color: primaryColor }} />;
-                                    case 'thinking':
-                                        return <SmartToyOutlinedIcon sx={{ fontSize: 11, color: customColor }} />;
-                                    case 'completion':
-                                        return <SmartToyOutlinedIcon sx={{ fontSize: 11, color: theme.palette.success.main }} />;
-                                    case 'error':
-                                        return <SmartToyOutlinedIcon sx={{ fontSize: 11, color: theme.palette.error.main }} />;
-                                    case 'clarify':
-                                        return <SmartToyOutlinedIcon sx={{ fontSize: 11, color: theme.palette.warning.main }} />;
-                                    default:
-                                        return <Box sx={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: 'rgba(0,0,0,0.2)' }} />;
-                                }
-                            };
-
-                            const lineColor = msg.role === 'error' ? alpha(theme.palette.error.main, 0.2)
-                                : msg.role === 'clarify' ? alpha(theme.palette.warning.main, 0.3)
-                                : 'rgba(0,0,0,0.12)';
-
-                            // Find the next *visible* message (skipping table items) for bottom line color
-                            let nextVisibleMsg: ThreadItem | null = null;
-                            for (let j = idx + 1; j < allThreadMessages.length; j++) {
-                                if (allThreadMessages[j].role !== 'source-table' && allThreadMessages[j].role !== 'result-table') {
-                                    nextVisibleMsg = allThreadMessages[j];
-                                    break;
-                                }
-                            }
-                            const bottomLineColor = nextVisibleMsg
-                                ? (nextVisibleMsg.role === 'error' ? alpha(theme.palette.error.main, 0.2)
-                                    : nextVisibleMsg.role === 'clarify' ? alpha(theme.palette.warning.main, 0.3)
-                                    : 'rgba(0,0,0,0.12)')
-                                : lineColor;
-
-                            // Determine if this is the first/last visible item for timeline lines
-                            let isFirstVisible = true;
-                            for (let j = 0; j < idx; j++) {
-                                if (allThreadMessages[j].role !== 'source-table' && allThreadMessages[j].role !== 'result-table') {
-                                    isFirstVisible = false;
-                                    break;
-                                }
-                            }
-                            const isLastVisible = nextVisibleMsg === null;
-
-                            const tableQuote = (tableId: string) => (
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: '3px', py: '1px' }}>
-                                    <TableRowsOutlinedIcon sx={{ fontSize: 10, color: theme.palette.text.disabled }} />
-                                    <Typography sx={{ fontSize: 9, color: theme.palette.text.disabled }}>
-                                        {tables.find(t => t.id === tableId)?.displayId || tableId}
-                                    </Typography>
-                                </Box>
-                            );
-
-                            const renderContent = () => {
-                                if (msg.isRunning) {
-                                    return <ThinkingBufferEffect text={msg.content || 'thinking...'} sx={{ width: '100%' }} />;
-                                }
-                                switch (msg.role) {
-                                    case 'user':
-                                        return (
-                                            <Box>
-                                                {sourceTableRef && tableQuote(sourceTableRef)}
-                                                <Typography component="div" sx={{ fontSize: 10, color: primaryColor,
-                                                    fontStyle: 'italic',
-                                                    whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                                                    {msg.content}
-                                                </Typography>
-                                            </Box>
-                                        );
-                                    case 'thinking':
-                                        return (
-                                            <Box>
-                                                <Typography component="div" sx={{ fontSize: 10, color: customColor,
-                                                    whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                                                    {renderTextWithEmphasis(msg.content, {
-                                                        borderRadius: '2px',
-                                                        fontSize: '10px',
-                                                        backgroundColor: alpha(customColor, 0.08),
-                                                    })}
-                                                </Typography>
-                                                {resultTableRef && tableQuote(resultTableRef)}
-                                            </Box>
-                                        );
-                                    case 'completion':
-                                        return (
-                                            <Typography sx={{ fontSize: 10, color: theme.palette.success.main,
-                                                whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                                                {msg.content}
-                                            </Typography>
-                                        );
-                                    case 'error':
-                                        return (
-                                            <Typography sx={{ fontSize: 10, color: theme.palette.error.main,
-                                                whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                                                {msg.content}
-                                            </Typography>
-                                        );
-                                    case 'clarify':
-                                        return (
-                                            <Typography sx={{ fontSize: 10, color: theme.palette.warning.main,
-                                                whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                                                {msg.content}
-                                            </Typography>
-                                        );
-                                    default:
-                                        return null;
-                                }
-                            };
-
-                            return (
-                                <Box key={`thread-msg-${idx}`} sx={{
-                                    display: 'flex', flexDirection: 'row', position: 'relative',
-                                }}>
-                                    {/* Timeline column: icon at top, line extends down */}
-                                    <Box sx={{
-                                        width: TIMELINE_W, flexShrink: 0,
-                                        display: 'flex', flexDirection: 'column', alignItems: 'center',
-                                        pt: '5px',
-                                    }}>
-                                        <Box sx={{ flexShrink: 0, zIndex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                            {getTimelineIcon()}
-                                        </Box>
-                                        {!isLastVisible
-                                            ? <Box sx={{ width: 0, flex: '1 1 0', minHeight: 2, borderLeft: `1px solid ${bottomLineColor}` }} />
-                                            : <Box sx={{ flex: '1 1 0', minHeight: 2 }} />
-                                        }
-                                    </Box>
-                                    {/* Content column */}
-                                    <Box sx={{ flex: 1, minWidth: 0, py: '4px', pl: TIMELINE_GAP }}>
-                                        {renderContent()}
-                                    </Box>
-                                </Box>
-                            );
-                        })}
-                        {/* Idea suggestions section */}
-                        {isLoadingIdeas && ideas.length === 0 ? (
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 1 }}>
-                                <ThinkingBufferEffect text={thinkingBuffer.slice(-60) || 'thinking...'} sx={{ width: '100%' }} />
-                            </Box>
-                        ) : !hasThreadContent && ideas.length === 0 ? (
-                            <Typography variant="caption" sx={{ color: theme.palette.text.disabled, fontSize: 11 }}>
-                                Click 💡 to get exploration ideas for your data.
-                            </Typography>
-                        ) : ideas.length > 0 ? (
-                            <Box sx={{
-                                display: 'flex',
-                                flexDirection: 'column',
-                                gap: '5px',
-                                p: 0.75,
-                                borderRadius: '6px',
-                                backgroundColor: alpha(theme.palette.secondary.main, 0.04),
-                            }}>
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                    <TipsAndUpdatesIcon sx={{ fontSize: 12, color: theme.palette.secondary.main }} />
-                                    <Typography sx={{ fontSize: 10, fontWeight: 600, color: theme.palette.secondary.main, flex: 1 }}>
-                                        Ideas
-                                    </Typography>
-                                    {!isLoadingIdeas && (
-                                        <>
-                                            <Tooltip title="Regenerate ideas">
-                                                <IconButton
-                                                    size="small"
-                                                    onClick={() => getIdeasFromAgent()}
-                                                    sx={{ p: '2px', color: theme.palette.text.secondary, '&:hover': { color: theme.palette.primary.main } }}
-                                                >
-                                                    <RefreshIcon sx={{ fontSize: 13 }} />
-                                                </IconButton>
-                                            </Tooltip>
-                                            <Tooltip title="Clear ideas">
-                                                <IconButton
-                                                    size="small"
-                                                    onClick={() => setIdeas([])}
-                                                    sx={{ p: '2px', color: theme.palette.text.secondary, '&:hover': { color: theme.palette.error.main } }}
-                                                >
-                                                    <ClearIcon sx={{ fontSize: 13 }} />
-                                                </IconButton>
-                                            </Tooltip>
-                                        </>
-                                    )}
-                                </Box>
-                                {ideas.map((idea, idx) => {
-                                    const color = idea.difficulty === 'easy' ? theme.palette.success.main
-                                        : idea.difficulty === 'hard' ? theme.palette.warning.main
-                                        : theme.palette.primary.main;
-                                    return (
-                                        <Box
-                                            key={idx}
-                                            sx={{
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                px: 1, py: 0.5,
-                                                borderRadius: '5px',
-                                                backgroundColor: theme.palette.background.paper,
-                                                border: `1px solid ${alpha(color, 0.18)}`,
-                                                cursor: 'pointer',
-                                                transition: 'all 0.15s ease',
-                                                '&:hover': {
-                                                    borderColor: alpha(color, 0.6),
-                                                    background: alpha(color, 0.06),
-                                                    transform: 'translateY(-1px)',
-                                                },
-                                            }}
-                                            onClick={() => {
-                                                setChatPrompt(idea.text);
-                                                exploreFromChat(idea.text);
-                                                setExpanded(false);
-                                            }}
-                                        >
-                                            <Typography component="div" sx={{ fontSize: '11px', lineHeight: 1.4, color }}>
-                                                {renderTextWithEmphasis(idea.goal, {
-                                                    borderRadius: '0px',
-                                                    borderBottom: `1px solid`,
-                                                    borderColor: alpha(color, 0.4),
-                                                    fontSize: '11px',
-                                                    lineHeight: 1.4,
-                                                    backgroundColor: alpha(color, 0.05),
-                                                })}
-                                            </Typography>
-                                        </Box>
-                                    );
-                                })}
-                                {isLoadingIdeas && thinkingBuffer && (
-                                    <ThinkingBufferEffect text={thinkingBuffer.slice(-60)} sx={{ width: '100%' }} />
-                                )}
-                            </Box>
-                        ) : null}
-
-                    </Box>
-                </Box>
-            </Box>
-            {/* Full-viewport overlay during drag to capture all pointer events */}
-            {isDragging && (
-                <Box sx={{
-                    position: 'fixed',
-                    top: 0, left: 0, right: 0, bottom: 0,
-                    zIndex: 9999,
-                    cursor: 'ns-resize',
-                    userSelect: 'none',
-                }} />
-            )}
-            {/* The input box always at the bottom */}
+            {/* The input box */}
             {inputBox}
             <UnifiedDataUploadDialog
                 open={uploadDialogOpen}
@@ -1164,6 +897,5 @@ dispatch(dfActions.updateAgentWorkInProgress({ actionId, description: errorMessa
                 initialTab="menu"
             />
         </Box>
-        </ClickAwayListener>
     );
 };

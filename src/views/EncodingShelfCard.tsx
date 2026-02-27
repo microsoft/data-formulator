@@ -82,8 +82,11 @@ export interface EncodingShelfCardProps {
 
 
 // Add this utility function before the TriggerCard component
-export const renderTextWithEmphasis = (text: string, highlightChipSx?: SxProps<Theme>) => {
+export const renderTextWithEmphasis = (text: string | any, highlightChipSx?: SxProps<Theme>) => {
     
+    if (typeof text !== 'string') {
+        text = text == null ? '' : String(text);
+    }
     text = text.replace(/_/g, '_\u200B');
     // Split the prompt by ** patterns and create an array of text and highlighted segments
     const parts = text.split(/(\*\*.*?\*\*)/g);
@@ -220,9 +223,18 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
     const tables = useSelector((state: DataFormulatorState) => state.tables);
     const config = useSelector((state: DataFormulatorState) => state.config);
     const agentRules = useSelector((state: DataFormulatorState) => state.agentRules);
+    const focusedId = useSelector((state: DataFormulatorState) => state.focusedId);
 
     let activeModel = useSelector(dfSelectors.getActiveModel);
     let allCharts = useSelector(dfSelectors.getAllCharts);
+
+    // The table the user is currently looking at (from focused state)
+    const focusedTableId = (() => {
+        if (!focusedId) return undefined;
+        if (focusedId.type === 'table') return focusedId.tableId;
+        const focusedChart = allCharts.find(c => c.id === focusedId.chartId);
+        return focusedChart?.tableRef;
+    })();
 
     let chart = allCharts.find(c => c.id == chartId) as Chart;
     let trigger = chart.source == "trigger" ? tables.find(t => t.derive?.trigger?.chart?.id == chartId)?.derive?.trigger : undefined;
@@ -407,6 +419,14 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
         let fieldNamesStr = activeFields.map(f => f.name).reduce(
             (a: string, b: string, i, array) => a + (i == 0 ? "" : (i < array.length - 1 ? ', ' : ' and ')) + b, "");
 
+        const actionId = `deriveNewData_${String(Date.now())}`;
+        const originTableId = focusedTableId || currentTable.id;
+        const actionDescription = instruction || `Derive ${fieldNamesStr}`;
+        dispatch(dfActions.updateAgentWorkInProgress({
+            actionId, originTableId, description: actionDescription, status: 'running', hidden: false,
+            message: { content: actionDescription, role: 'user', observeTableId: originTableId }
+        }));
+
         // Build chart visualization context
         let chartComplete = checkChartAvailability(chart, conceptShelfItems, currentTable.rows);
         let chartSpec = (mode == 'formulate' && Object.keys(activeSimpleEncodings).length > 0) ? {
@@ -487,7 +507,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
             onStarted: () => {
                 dispatch(dfActions.changeChartRunningStatus({chartId, status: true}));
             },
-            onSuccess: ({ focusedChartId }) => {
+            onSuccess: ({ displayInstruction, candidateTable, focusedChartId }) => {
                 if (chart.chartType == "Table" || chart.chartType == "Auto" || (existsWorkingTable == false)) {
                     dispatch(dfActions.deleteChartById(chartId));
                 }
@@ -499,6 +519,16 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                     "component": "chart builder",
                     "type": "success",
                     "value": `Data formulation for ${fieldNamesStr} succeeded.`
+                }));
+                dispatch(dfActions.updateAgentWorkInProgress({
+                    actionId, description: displayInstruction || actionDescription, status: 'completed', hidden: false,
+                    message: { content: displayInstruction || actionDescription, role: 'action', resultTableId: candidateTable.id }
+                }));
+            },
+            onError: () => {
+                dispatch(dfActions.updateAgentWorkInProgress({
+                    actionId, description: actionDescription, status: 'failed', hidden: false,
+                    message: { content: 'Data formulation failed.', role: 'error' }
                 }));
             },
             onFinally: () => {
