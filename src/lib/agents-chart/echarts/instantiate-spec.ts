@@ -151,7 +151,13 @@ export function ecApplyLayoutToSpec(
         // If the template already fully positioned the legend (e.g. pie),
         // skip repositioning — detect by checking if orient was already set.
         const alreadyPositioned = option.legend.orient && (option.legend.right !== undefined || option.legend.left !== undefined);
-        const legendTitle = option._legendTitle as string | undefined;
+        // Derive a default legend title from semantics when templates don't set one explicitly.
+        let legendTitle = option._legendTitle as string | undefined;
+        if (legendTitle == null) {
+            const colorField = (channelSemantics as any)?.color?.field;
+            const groupField = (channelSemantics as any)?.group?.field;
+            legendTitle = colorField || groupField;
+        }
         if (legendTitle != null) delete option._legendTitle;
         if (!alreadyPositioned) {
             const rawLegendData = option.legend.data || [];
@@ -306,11 +312,22 @@ export function ecApplyLayoutToSpec(
         let plotWidth: number;
         let plotHeight: number;
 
-        if (xIsDiscrete && layout.xStepUnit !== 'group') {
-            const xItemCount = layout.xNominalCount || layout.xContinuousAsDiscrete || 0;
+        if (xIsDiscrete) {
+            // For grouped discrete axes (stepUnit='group'), layout.xNominalCount
+            // typically includes the group multiplier (categories × seriesCount).
+            // To mimic Vega-Lite's width:{step} behaviour (canvas grows with the
+            // number of *categories*), derive an approximate category count
+            // from the series when possible.
+            let xItemCount = layout.xNominalCount || layout.xContinuousAsDiscrete || 0;
+            if (layout.xStepUnit === 'group' && option.series && Array.isArray(option.series) && layout.xNominalCount > 0) {
+                const barSeriesCount = option.series.filter((s: any) => s.type === 'bar').length || option.series.length;
+                if (barSeriesCount > 0) {
+                    xItemCount = Math.max(1, Math.round(layout.xNominalCount / barSeriesCount));
+                }
+            }
             plotWidth = xItemCount > 0 ? layout.xStep * xItemCount : (layout.subplotWidth || canvasSize.width);
         } else {
-            // Continuous axis or group-stepped axis — subplotWidth is already correct
+            // Continuous axis — subplotWidth is already correct
             plotWidth = layout.subplotWidth || canvasSize.width;
         }
 
@@ -345,9 +362,10 @@ export function ecApplyLayoutToSpec(
                 const catGapPct = `${Math.round(bandPadding * 100)}%`;
 
                 if (!isStacked && (stepUnit === 'group' || barSeries.length > 1)) {
-                    // Grouped: each bar gets an equal share of the usable band
+                    // Grouped: each bar gets an equal share of the usable band.
+                    // Use (seriesCount + 1) so total bar width stays strictly inside the slot and bars不会互相挤压重叠.
                     const usableStep = step * (1 - bandPadding);
-                    const barW = Math.max(1, Math.floor(usableStep / barSeries.length));
+                    const barW = Math.max(1, Math.floor(usableStep / (barSeries.length + 1)));
                     for (const s of barSeries) {
                         s.barWidth = barW;
                         s.barGap = '0%';
@@ -443,6 +461,8 @@ export function ecApplyLayoutToSpec(
                 axisObj.axisLabel.formatter = convertTemporalFormat(cs.temporalFormat);
             }
             if (axisObj.type === 'value' && cs.type === 'temporal') {
+                // Bar (and similar) repurpose temporal channel as count → axis shows numbers, not dates
+                if (axisObj.name === 'Count') continue;
                 if (!axisObj.axisLabel) axisObj.axisLabel = {};
                 const fmt = cs.temporalFormat;
                 axisObj.axisLabel.formatter = (val: number) => formatTimestamp(val, fmt);
