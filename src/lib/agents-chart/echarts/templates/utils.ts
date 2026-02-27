@@ -8,6 +8,15 @@
 
 import type { ChannelSemantics, InstantiateContext } from '../../core/types';
 
+/**
+ * Get canonical category order for a channel (from buildECEncodings or channelSemantics).
+ * Use when calling extractCategories so sort order is consistent across templates.
+ */
+export function getCategoryOrder(ctx: InstantiateContext, channel: string): string[] | undefined {
+    return (ctx.resolvedEncodings as any)?.[channel]?.ordinalSortOrder
+        ?? ctx.channelSemantics?.[channel]?.ordinalSortOrder;
+}
+
 // Re-export circumference-pressure functions from core (shared with VL backend)
 export {
     computeCircumferencePressure,
@@ -151,6 +160,14 @@ export function detectAxes(
     // If y is discrete → y is category (horizontal bars)
     if (yCS && isDiscrete(yCS.type)) {
         return { categoryAxis: 'y', valueAxis: 'x' };
+    }
+    // x quantitative + y temporal → horizontal bars (VL: x=bar length, y=dates)
+    if (xCS?.type === 'quantitative' && yCS?.type === 'temporal') {
+        return { categoryAxis: 'y', valueAxis: 'x' };
+    }
+    // x temporal + y quantitative → vertical bars (VL: x=dates, y=bar length)
+    if (xCS?.type === 'temporal' && yCS?.type === 'quantitative') {
+        return { categoryAxis: 'x', valueAxis: 'y' };
     }
     // Default: x is category
     return { categoryAxis: 'x', valueAxis: 'y' };

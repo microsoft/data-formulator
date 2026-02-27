@@ -26,6 +26,16 @@ import type {
     InstantiateContext,
     ChartWarning,
 } from '../core/types';
+import { computePaddedDomain } from '../core/semantic-types';
+import { getVisCategory } from '../core/semantic-types';
+import {
+    looksLikeDateString,
+    analyzeTemporalField,
+    computeDataVotes,
+    pickBestLevel,
+    levelToFormat,
+    SEMANTIC_LEVEL,
+} from '../core/resolve-semantics';
 
 /**
  * Phase 2: Apply layout and semantic decisions to the ECharts option object.
@@ -47,6 +57,60 @@ export function ecApplyLayoutToSpec(
     // ── Axis-less chart types (pie, radar) ────────────────────────────────
     // These set their own _width/_height and need no grid/axis processing.
     const hasAxes = !!(option.xAxis || option.yAxis);
+
+    // ── Zero-baseline and domain padding (value axes) ───────────────────────
+    // Unify zero-baseline and domainPadFraction for all axis-based charts
+    // (including bar); VL does this in vlApplyLayoutToSpec.
+    for (const axis of ['x', 'y'] as const) {
+        const axisObj = option[`${axis}Axis`];
+        if (!axisObj || axisObj.type !== 'value') continue;
+        const cs = channelSemantics[axis];
+        if (!cs?.zero) continue;
+        const decision = cs.zero;
+        if (axisObj.scale === undefined) {
+            axisObj.scale = !decision.zero; // false = include zero, true = data-fit
+        }
+        if (!decision.zero && decision.domainPadFraction > 0 && cs.field) {
+            const numericValues = context.table
+                .map((r: any) => r[cs.field])
+                .filter((v: any) => v != null && typeof v === 'number' && !isNaN(v));
+            const padded = computePaddedDomain(numericValues, decision.domainPadFraction);
+            if (padded) {
+                axisObj.min = padded[0];
+                axisObj.max = padded[1];
+            }
+        }
+    }
+
+    // ── Banded continuous axis domain (e.g. heatmap) ──────────────────────
+    // Half-step padding so edge cells are not clipped.
+    // Only apply to value axes — category/time axes (e.g. bar with temporal
+    // categories) should not receive numeric min/max, otherwise ECharts will
+    // window the category index range and hide all bars.
+    for (const axis of ['x', 'y'] as const) {
+        const bandedCount = axis === 'x' ? layout.xContinuousAsDiscrete : layout.yContinuousAsDiscrete;
+        if (bandedCount <= 1) continue;
+        const axisObj = option[`${axis}Axis`];
+        if (!axisObj || axisObj.type !== 'value' || axisObj.min != null) continue;
+        const cs = channelSemantics[axis];
+        if (!cs?.field || (cs.type !== 'quantitative' && cs.type !== 'temporal')) continue;
+        const isTemporal = cs.type === 'temporal';
+        const numericVals = context.table
+            .map((r: any) => {
+                const raw = r[cs.field];
+                if (raw == null) return NaN;
+                return isTemporal ? +new Date(raw) : +raw;
+            })
+            .filter((v: number) => !isNaN(v));
+        if (numericVals.length <= 1) continue;
+        const minVal = Math.min(...numericVals);
+        const maxVal = Math.max(...numericVals);
+        const dataRange = maxVal - minVal;
+        if (dataRange === 0) continue;
+        const pad = dataRange / (bandedCount - 1) / 2;
+        axisObj.min = minVal - pad;
+        axisObj.max = maxVal + pad;
+    }
 
     // ── Axis title positioning ───────────────────────────────────────────
     // Ensure axis names are centered (VL default), not at the endpoint.
@@ -87,39 +151,97 @@ export function ecApplyLayoutToSpec(
         // If the template already fully positioned the legend (e.g. pie),
         // skip repositioning — detect by checking if orient was already set.
         const alreadyPositioned = option.legend.orient && (option.legend.right !== undefined || option.legend.left !== undefined);
+        const legendTitle = option._legendTitle as string | undefined;
+        if (legendTitle != null) delete option._legendTitle;
         if (!alreadyPositioned) {
-            const legendLabels: string[] = option.legend.data || [];
+            const rawLegendData = option.legend.data || [];
+            const legendLabels: string[] = rawLegendData.map((d: any) => typeof d === 'string' ? d : (d?.name ?? ''));
 
             if (isDualLegend) {
-                // Dual legend: move categorical legend to the bottom
+                const highCardinality = legendLabels.length >= 16;
                 option._legendWidth = 0; // no right-side space needed for the legend
                 option.legend = {
                     ...option.legend,
                     bottom: 0,
                     left: 'center',
                     orient: 'horizontal',
-                    textStyle: { fontSize: 11, ...(option.legend.textStyle || {}) },
+                    textStyle: {
+                        fontSize: highCardinality ? 8 : 11,
+                        ...(option.legend.textStyle || {}),
+                    },
                     ...(legendLabels.length > 10 ? { type: 'scroll' } : {}),
+                    ...(highCardinality ? { itemWidth: 12, itemHeight: 12 } : {}),
                 };
+                if (legendTitle != null) {
+                    const titleGraphic = {
+                        type: 'text' as const,
+                        bottom: 22,
+                        left: 'center',
+                        z: 100,
+                        style: {
+                            text: legendTitle,
+                            fontSize: 11,
+                            fontWeight: 'bold',
+                            fill: '#333',
+                            textAlign: 'center',
+                        },
+                    };
+                    const existing = option.graphic;
+                    option.graphic = Array.isArray(existing) ? [...existing, titleGraphic] : (existing ? [existing, titleGraphic] : [titleGraphic]);
+                }
             } else {
-                // Single legend: keep on the right (default)
-                const maxLabelLen = Math.max(...legendLabels.map((l: string) => (typeof l === 'string' ? l.length : 5)), 3);
-                const estimatedLabelWidth = Math.min(120, maxLabelLen * 7 + 30); // icon + text + padding
-                option._legendWidth = estimatedLabelWidth;
-
+                // Single legend: use left positioning so title and legend circles share the same left edge
+                const maxLabelLen = Math.max(...legendLabels.map((l: string) => l.length), 3);
+                const highCardinality = legendLabels.length >= 16;
+                const legendSymbolWidth = highCardinality ? 12 : 14;
+                const legendItemGap = 5;
+                const estimatedTextWidth = Math.min(120, maxLabelLen * 7 + 30);
+                option._legendWidth = legendSymbolWidth + legendItemGap + estimatedTextWidth;
+                const LEGEND_GAP = 12;
+                const CANVAS_BUFFER = 16;
+                const rightMarginPx = option._legendWidth + LEGEND_GAP + CANVAS_BUFFER;
+                const hasYTitle = !!option.yAxis?.name;
+                const gridLeft = (hasYTitle ? 70 : 50) + CANVAS_BUFFER;
+                // Use same effective width as later (plotWidth + grid.left + grid.right) so legend aligns with grid
+                const plotW = layout?.subplotWidth ?? canvasSize?.width ?? 400;
+                const effectiveChartWidth = plotW + gridLeft + rightMarginPx;
+                const legendLeftPx = Math.max(0, effectiveChartWidth - rightMarginPx);
                 option.legend = {
                     ...option.legend,
-                    top: 0,
-                    right: 10,
+                    top: legendTitle != null ? 20 : 0,
+                    left: legendLeftPx,
                     orient: option.legend.orient || 'vertical',
-                    textStyle: { fontSize: 11, ...(option.legend.textStyle || {}) },
+                    align: 'left', // icon on left, text on right
+                    textStyle: {
+                        fontSize: highCardinality ? 8 : 11,
+                        ...(option.legend.textStyle || {}),
+                    },
                     ...(legendLabels.length > 10 ? { type: 'scroll' } : {}),
+                    ...(highCardinality ? { itemWidth: 12, itemHeight: 12 } : {}),
                 };
+                if (legendTitle != null) {
+                    const titleGraphic = {
+                        type: 'text' as const,
+                        left: legendLeftPx,
+                        top: 4,
+                        z: 100,
+                        style: {
+                            text: legendTitle,
+                            fontSize: 11,
+                            fontWeight: 'bold',
+                            fill: '#333',
+                            textAlign: 'left',
+                        },
+                    };
+                    const existing = option.graphic;
+                    option.graphic = Array.isArray(existing) ? [...existing, titleGraphic] : (existing ? [existing, titleGraphic] : [titleGraphic]);
+                }
             }
         } else {
             // Already positioned — estimate width for grid margin
-            const legendLabels: string[] = option.legend.data || [];
-            const maxLabelLen = Math.max(...legendLabels.map((l: string) => (typeof l === 'string' ? l.length : 5)), 3);
+            const rawData = option.legend.data || [];
+            const legendLabels = rawData.map((d: any) => typeof d === 'string' ? d : (d?.name ?? ''));
+            const maxLabelLen = Math.max(...legendLabels.map((l: string) => l.length), 3);
             option._legendWidth = Math.min(150, maxLabelLen * 7 + 30);
         }
     }
@@ -140,14 +262,22 @@ export function ecApplyLayoutToSpec(
     // each grid margin keeps the plot area unchanged but gives breathing
     // room for axis labels / legends / ticks that extend to the canvas edge.
     const CANVAS_BUFFER = 16;
+    const LEGEND_GAP = 12; // gap between plot and legend/visualMap so they don't overlap
+    const VISUALMAP_GAP = 18; // extra gap between plot and visualMap bar when only visualMap (no legend)
+    const VISUALMAP_RIGHT_OFFSET = 10; // must match scatter (and other templates) visualMap right position
     const legendWidth = (hasLegend ? (option._legendWidth || 120) : 20);
-    // When dual legend moves the categorical legend to the bottom,
-    // we need extra bottom margin instead of right margin.
+    const visualMapWidth = (option._visualMapWidth as number) || 0;
+    if (visualMapWidth) delete option._visualMapWidth;
+    // When dual legend (segment at bottom + size/color bar on right), reserve right space so plot does not overlap visualMap
+    const rightMargin =
+        isDualLegend
+            ? (hasVisualMap ? VISUALMAP_RIGHT_OFFSET + visualMapWidth + VISUALMAP_GAP : 10)
+            : (hasLegend ? legendWidth : (hasVisualMap ? visualMapWidth + VISUALMAP_GAP : 10)) + LEGEND_GAP;
     const bottomLegendExtra = isDualLegend ? 30 : 0;
     const gridMargin = {
-        left:   (hasYTitle ? 70 : 50) + CANVAS_BUFFER,
-        right:  (isDualLegend ? 20 : legendWidth) + CANVAS_BUFFER,
-        top:    20 + CANVAS_BUFFER,
+        left: (hasYTitle ? 70 : 50) + CANVAS_BUFFER,
+        right: rightMargin + CANVAS_BUFFER,
+        top: 20 + CANVAS_BUFFER,
         bottom: (hasXTitle ? 45 : 30) + CANVAS_BUFFER + bottomLegendExtra,
     };
     if (hasAxes) {
@@ -239,8 +369,8 @@ export function ecApplyLayoutToSpec(
     if (option.xAxis && layout.xLabel) {
         if (!option.xAxis.axisLabel) option.xAxis.axisLabel = {};
 
-        // ECharts uses degrees (positive = counter-clockwise)
-        if (layout.xLabel.labelAngle && layout.xLabel.labelAngle !== 0) {
+        // ECharts uses degrees (positive = counter-clockwise). Don't override category axis rotate (template set it for scatter).
+        if (layout.xLabel.labelAngle && layout.xLabel.labelAngle !== 0 && option.xAxis.type !== 'category') {
             option.xAxis.axisLabel.rotate = -layout.xLabel.labelAngle;  // VL convention → EC convention
         }
 
@@ -263,7 +393,8 @@ export function ecApplyLayoutToSpec(
     if (option.yAxis && layout.yLabel) {
         if (!option.yAxis.axisLabel) option.yAxis.axisLabel = {};
 
-        if (layout.yLabel.labelAngle && layout.yLabel.labelAngle !== 0) {
+        // Don't override category axis rotate — scatter keeps y labels horizontal (0) to avoid overlap.
+        if (layout.yLabel.labelAngle && layout.yLabel.labelAngle !== 0 && option.yAxis.type !== 'category') {
             option.yAxis.axisLabel.rotate = -layout.yLabel.labelAngle;
         }
         if (layout.yLabel.fontSize) {
@@ -271,40 +402,65 @@ export function ecApplyLayoutToSpec(
         }
     }
 
-    // ── Temporal format ──────────────────────────────────────────────────
+    // ── Ordinal temporal: category axes with date-like labels ──────────────
+    // VL applyOrdinalTemporalFormat: format nominal/ordinal axis as dates when data looks like dates.
+    for (const axis of ['x', 'y'] as const) {
+        const axisObj = option[`${axis}Axis`];
+        if (!axisObj || axisObj.type !== 'category') continue;
+        const cs = channelSemantics[axis];
+        if (!cs?.field || (cs.type !== 'nominal' && cs.type !== 'ordinal')) continue;
+        const semanticType = context.semanticTypes[cs.field] || '';
+        if (getVisCategory(semanticType) !== 'temporal') continue;
+        const fieldVals = context.table.map((r: any) => r[cs.field]).filter((v: any) => v != null);
+        const datelikeCnt = fieldVals.filter((v: any) =>
+            typeof v !== 'string' || looksLikeDateString(String(v))
+        ).length;
+        if (datelikeCnt < fieldVals.length * 0.5) continue;
+        const analysis = analyzeTemporalField(fieldVals);
+        if (!analysis) continue;
+        const votes = computeDataVotes(analysis.same);
+        const semLevel = SEMANTIC_LEVEL[semanticType];
+        if (semLevel !== undefined) votes[semLevel] += 3;
+        const { level, score } = pickBestLevel(votes);
+        if (score < 5) continue;
+        const fmt = levelToFormat(level, analysis);
+        if (!fmt) continue;
+        if (!axisObj.axisLabel) axisObj.axisLabel = {};
+        const existingFormatter = axisObj.axisLabel.formatter;
+        axisObj.axisLabel.formatter = (value: string) => {
+            const formatted = formatCategoryTemporal(value, fmt);
+            return typeof existingFormatter === 'function' ? existingFormatter(formatted) : formatted;
+        };
+    }
+
+    // ── Temporal format (time / value axes) ──────────────────────────────
     for (const axis of ['x', 'y'] as const) {
         const cs = channelSemantics[axis];
         if (cs?.temporalFormat && option[`${axis}Axis`]) {
             const axisObj = option[`${axis}Axis`];
-            // Only apply temporal formatting to 'time' type axes.
-            // For 'category' axes the values are already display-ready strings
-            // (e.g. "2021", "Jan"); applying an ECharts template like {yyyy}
-            // to a category axis renders the literal text "{yyyy}".
             if (axisObj.type === 'time') {
                 if (!axisObj.axisLabel) axisObj.axisLabel = {};
                 axisObj.axisLabel.formatter = convertTemporalFormat(cs.temporalFormat);
             }
-            // For 'value' axes displaying timestamps, convert to a JS function
             if (axisObj.type === 'value' && cs.type === 'temporal') {
                 if (!axisObj.axisLabel) axisObj.axisLabel = {};
                 const fmt = cs.temporalFormat;
-                axisObj.axisLabel.formatter = (val: number) => {
-                    return formatTimestamp(val, fmt);
-                };
+                axisObj.axisLabel.formatter = (val: number) => formatTimestamp(val, fmt);
             }
         }
     }
 
     // ── Color scheme ─────────────────────────────────────────────────────
-    const colorCS = channelSemantics.color;
-    if (colorCS?.colorScheme) {
-        // ECharts uses option.color for categorical color arrays
-        // For now we rely on the DEFAULT_COLORS set by templates
-        // A full implementation would translate VL scheme names → EC palettes
+    // Use palette from buildECEncodings when present (VL scheme → EC hex array).
+    const colorPalette = context.resolvedEncodings?.color?.colorPalette
+        ?? context.resolvedEncodings?.group?.colorPalette;
+    if (colorPalette?.length) {
+        option.color = [...colorPalette];
     }
 
     // ── Overflow truncation markers ──────────────────────────────────────
     if (layout.truncations && layout.truncations.length > 0) {
+        const axisPlaceholders: Record<string, Set<string>> = { xAxis: new Set(), yAxis: new Set() };
         for (const trunc of layout.truncations) {
             warnings.push({
                 severity: 'warning',
@@ -313,11 +469,22 @@ export function ecApplyLayoutToSpec(
                 channel: trunc.channel,
                 field: trunc.field,
             });
-            // ECharts: append placeholder to category data
             const axisKey = trunc.channel === 'x' ? 'xAxis' : 'yAxis';
-            if (option[axisKey]?.data && Array.isArray(option[axisKey].data)) {
-                option[axisKey].data.push(trunc.placeholder);
+            if (trunc.channel === 'x' || trunc.channel === 'y') {
+                axisPlaceholders[axisKey].add(trunc.placeholder);
+                if (option[axisKey]?.data && Array.isArray(option[axisKey].data)) {
+                    option[axisKey].data.push(trunc.placeholder);
+                }
             }
+        }
+        // Grey styling for placeholder labels (VL labelColor equivalent)
+        for (const axisKey of ['xAxis', 'yAxis'] as const) {
+            const placeholders = axisPlaceholders[axisKey];
+            if (placeholders.size === 0 || !option[axisKey]) continue;
+            if (!option[axisKey].axisLabel) option[axisKey].axisLabel = {};
+            const existingColor = option[axisKey].axisLabel.color;
+            option[axisKey].axisLabel.color = (params: string) =>
+                placeholders.has(params) ? '#999999' : (typeof existingColor === 'function' ? existingColor(params) : (existingColor ?? '#000'));
         }
     }
 }
@@ -342,14 +509,25 @@ function convertTemporalFormat(d3Format: string): string {
         .replace(/%S/g, '{ss}');
 }
 
-const MONTH_ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-const MONTH_FULL = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const MONTH_FULL = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+/**
+ * Format a category-axis label as date when it parses as valid date.
+ * Used for ordinal temporal (nominal/ordinal channel with date-like strings).
+ */
+function formatCategoryTemporal(value: string, d3Format: string): string {
+    const d = new Date(value);
+    if (isNaN(d.getTime())) return value;
+    return formatTimestamp(d.getTime(), d3Format);
+}
 
 /**
  * Format a numeric timestamp using a d3-style format string.
  * Used for 'value' axes that hold temporal data (timestamps).
+ * Exported for scatter (temporal color visualMap labels).
  */
-function formatTimestamp(val: number, d3Format: string): string {
+export function formatTimestamp(val: number, d3Format: string): string {
     const d = new Date(val);
     const pad = (n: number) => n < 10 ? '0' + n : String(n);
     return d3Format
@@ -364,14 +542,92 @@ function formatTimestamp(val: number, d3Format: string): string {
         .replace(/%S/g, pad(d.getSeconds()));
 }
 
+function fmtNumForTooltip(v: unknown): string {
+    if (v == null) return '';
+    const n = Number(v);
+    return isNaN(n) ? String(v) : (Number.isInteger(n) ? String(n) : n.toFixed(1));
+}
+
+/**
+ * Build a single encoding-style tooltip formatter from _encodingTooltip.
+ * Supports item trigger (parts from data/series) and axis trigger (category + series values).
+ */
+function buildEncodingTooltipFormatter(option: any): ((params: any) => string) | null {
+    const enc = option._encodingTooltip as any;
+    if (!enc) return null;
+
+    if (enc.trigger === 'axis' && enc.categoryLabel != null) {
+        const categoryLabel = enc.categoryLabel;
+        const valueLabel = enc.valueLabel ?? 'Value';
+        return (params: any) => {
+            const list = Array.isArray(params) ? params : [params];
+            if (list.length === 0) return '';
+            const p = list[0];
+            const cat = p.axisValue ?? p.name ?? '';
+            const parts = [`${categoryLabel}: ${cat}`];
+            for (const item of list) {
+                const name = item.seriesName ?? valueLabel;
+                const val = item.value != null ? item.value : (Array.isArray(item.data) ? item.data[item.dataIndex] : item.data);
+                parts.push(`${name}: ${fmtNumForTooltip(val)}`);
+            }
+            return parts.join('<br/>');
+        };
+    }
+
+    const parts = enc.parts as Array<{ from: string; index?: number; label: string; format?: string; temporalFormat?: string; categoryNames?: string[] }>;
+    if (!parts || !Array.isArray(parts) || parts.length === 0) return null;
+
+    return (params: any) => {
+        if (params == null) return '';
+        const d = Array.isArray(params.data) ? params.data : (params.data != null ? [params.data] : []);
+        const out: string[] = [];
+        for (const p of parts) {
+            let val: unknown;
+            if (p.from === 'series') {
+                val = params.seriesName ?? params.name;
+            } else if (p.from === 'name') {
+                val = params.name;
+            } else if (p.from === 'value') {
+                val = params.value;
+            } else {
+                const idx = p.index ?? 0;
+                val = d[idx];
+                if (val != null && typeof val === 'object' && 'value' in val) val = (val as any).value;
+            }
+            if (val == null && p.from !== 'series' && p.from !== 'name') continue;
+            let str: string;
+            if (p.format === 'temporal') {
+                str = formatTimestamp(Number(val), p.temporalFormat ?? '%b %d, %Y');
+            } else if (p.format === 'category' && p.categoryNames) {
+                const i = Number(val);
+                str = Number.isInteger(i) && p.categoryNames[i] != null ? p.categoryNames[i] : String(val ?? '');
+            } else if (p.format === 'number' || (p.from === 'data' && p.format !== 'category')) {
+                str = fmtNumForTooltip(val);
+            } else {
+                str = String(val ?? '');
+            }
+            out.push(`${p.label}: ${str}`);
+        }
+        return out.join('<br/>');
+    };
+}
+
 /**
  * Apply tooltips to an ECharts option.
  * ECharts tooltip is typically configured at the top level.
+ * When option._encodingTooltip is set, a Vega-Lite–style formatter (label: value per encoding) is applied.
  */
 export function ecApplyTooltips(option: any): void {
     if (!option.tooltip) {
         option.tooltip = {};
     }
+
+    const encodingFormatter = buildEncodingTooltipFormatter(option);
+    if (encodingFormatter) {
+        delete option._encodingTooltip;
+        option.tooltip.formatter = encodingFormatter;
+    }
+
     // Ensure trigger is set
     if (!option.tooltip.trigger) {
         const hasScatter = option.series?.some((s: any) => s.type === 'scatter');

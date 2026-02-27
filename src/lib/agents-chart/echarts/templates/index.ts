@@ -9,9 +9,9 @@
  */
 
 import { ChartTemplateDef } from '../../core/types';
-import { ecScatterPlotDef } from './scatter';
+import { ecScatterPlotDef, ecLinearRegressionDef } from './scatter';
 import { ecBarChartDef, ecStackedBarChartDef, ecGroupedBarChartDef } from './bar';
-import { ecLineChartDef } from './line';
+import { ecLineChartDef, ecDottedLineChartDef, ecBumpChartDef } from './line';
 import { ecAreaChartDef } from './area';
 import { ecPieChartDef } from './pie';
 import { ecHeatmapDef } from './heatmap';
@@ -26,16 +26,25 @@ import { ecFunnelChartDef } from './funnel';
 import { ecTreemapDef } from './treemap';
 import { ecSunburstDef } from './sunburst';
 import { ecSankeyDef } from './sankey';
+import { ecLollipopChartDef } from './lollipop';
+import { ecStripPlotDef } from './jitter';
+import { ecWaterfallChartDef } from './waterfall';
+import { ecPyramidChartDef } from './pyramid';
+import { ecRangedDotPlotDef } from './ranged-dot';
+import { ecDensityPlotDef } from './density';
 
 /**
  * ECharts chart template definitions, grouped by category.
+ * Mirrors vegalite/templates/index.ts so VegaLite test cases can run through ECharts.
  */
 export const ecTemplateDefs: { [key: string]: ChartTemplateDef[] } = {
-    'Scatter & Point': [ecScatterPlotDef, ecBoxplotDef],
-    'Bar':             [ecBarChartDef, ecGroupedBarChartDef, ecStackedBarChartDef, ecHistogramDef, ecHeatmapDef],
-    'Line & Area':     [ecLineChartDef, ecAreaChartDef, ecStreamgraphDef],
+    'Scatter & Point': [ecScatterPlotDef, ecLinearRegressionDef, ecRangedDotPlotDef, ecBoxplotDef, ecStripPlotDef],
+    'Bar':             [ecBarChartDef, ecGroupedBarChartDef, ecStackedBarChartDef, ecHistogramDef, ecLollipopChartDef, ecPyramidChartDef, ecHeatmapDef],
+    'Line & Area':     [ecLineChartDef, ecDottedLineChartDef, ecBumpChartDef, ecAreaChartDef, ecStreamgraphDef],
     'Part-to-Whole':   [ecPieChartDef, ecFunnelChartDef, ecTreemapDef, ecSunburstDef],
+    'Statistical':     [ecDensityPlotDef],
     'Financial':       [ecCandlestickDef],
+    'Other':           [ecWaterfallChartDef],
     'Polar':           [ecRadarChartDef, ecRoseChartDef],
     'Indicator':       [ecGaugeChartDef],
     'Flow':            [ecSankeyDef],

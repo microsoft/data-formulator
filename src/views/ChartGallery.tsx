@@ -219,6 +219,51 @@ const VegaChart: React.FC<{ testCase: TestCase }> = React.memo(({ testCase }) =>
 // ============================================================================
 
 /**
+ * Build the shared input spec (same for VL and EC) for display.
+ * Returns a JSON-serializable object and a compact string.
+ */
+function buildSharedInputSpec(testCase: TestCase): { obj: Record<string, unknown>; compact: string } {
+    const encodings: Record<string, unknown> = {};
+    for (const [ch, ei] of Object.entries(testCase.encodingMap)) {
+        if (ei && (ei as any).fieldID) {
+            const entry: Record<string, unknown> = { field: (ei as any).fieldID };
+            if ((ei as any).dtype) entry.type = (ei as any).dtype;
+            if ((ei as any).aggregate) entry.aggregate = (ei as any).aggregate;
+            if ((ei as any).sortOrder) entry.sortOrder = (ei as any).sortOrder;
+            if ((ei as any).sortBy) entry.sortBy = (ei as any).sortBy;
+            if ((ei as any).scheme) entry.scheme = (ei as any).scheme;
+            encodings[ch] = entry;
+        }
+    }
+    const semanticTypes: Record<string, string> = {};
+    for (const [fieldName, meta] of Object.entries(testCase.metadata)) {
+        if (meta.semanticType) semanticTypes[fieldName] = meta.semanticType;
+    }
+    const obj: Record<string, unknown> = {
+        data: `[${testCase.data.length} rows]`,
+        semantic_types: semanticTypes,
+        chart_spec: {
+            chartType: testCase.chartType,
+            encodings,
+            ...(testCase.chartProperties && Object.keys(testCase.chartProperties).length > 0
+                ? { chartProperties: testCase.chartProperties } : {}),
+        },
+        ...(testCase.assembleOptions && Object.keys(testCase.assembleOptions || {}).length > 0
+            ? { options: testCase.assembleOptions } : {}),
+    };
+    const raw = JSON.stringify(obj, null, 2);
+    const compact = raw.replace(
+        /"(\w+)":\s*\{([^{}]+)\}/g,
+        (match, key, body) => {
+            if (!body.includes('"field"')) return match;
+            const single = body.replace(/\s*\n\s*/g, ' ').trim();
+            return `"${key}": { ${single} }`;
+        },
+    );
+    return { obj, compact };
+}
+
+/**
  * Convert a TestCase into a ChartAssemblyInput for assembleECharts.
  */
 function testCaseToEChartsInput(testCase: TestCase, canvasSize: { width: number; height: number }): ChartAssemblyInput {
@@ -369,6 +414,7 @@ const EChartsChart: React.FC<{ testCase: TestCase; canvasSize?: { width: number;
 // ============================================================================
 
 const DualChart: React.FC<{ testCase: TestCase }> = React.memo(({ testCase }) => {
+    const sharedSpec = useMemo(() => buildSharedInputSpec(testCase), [testCase]);
     return (
         <Paper
             elevation={1}
@@ -389,6 +435,14 @@ const DualChart: React.FC<{ testCase: TestCase }> = React.memo(({ testCase }) =>
                         sx={{ fontSize: 10, height: 20 }} />
                 ))}
             </Box>
+            <details style={{ marginBottom: 12 }}>
+                <summary style={{ cursor: 'pointer', fontSize: 11, color: '#666', fontWeight: 600 }}>
+                    Spec
+                </summary>
+                <pre style={{ fontSize: 10, maxHeight: 220, overflow: 'auto', background: '#f5f5f5', padding: 8, borderRadius: 4, marginTop: 4 }}>
+                    {sharedSpec.compact}
+                </pre>
+            </details>
             <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
                 {/* Vega-Lite side */}
                 <VegaChartInline testCase={testCase} />
@@ -837,15 +891,15 @@ const QuadChart: React.FC<{ testCase: TestCase }> = React.memo(({ testCase }) =>
 // Sub-page for a single chart type
 // ============================================================================
 
-const ChartTypeTestPanel: React.FC<{ chartGroup: string }> = ({ chartGroup }) => {
+const ChartTypeTestPanel: React.FC<{ chartGroup: string; sectionLabel?: string }> = ({ chartGroup, sectionLabel }) => {
     const tests = useMemo(() => {
         const gen = TEST_GENERATORS[chartGroup];
         return gen ? gen() : [];
     }, [chartGroup]);
 
-    const isEChartsGroup = chartGroup.startsWith('ECharts:');
     const isChartJsGroup = chartGroup.startsWith('Chart.js:');
     const isGoFishGroup = chartGroup.startsWith('GoFish');
+    const isEChartsSection = sectionLabel === 'ECharts Backend';
 
     if (tests.length === 0) {
         return (
@@ -861,10 +915,10 @@ const ChartTypeTestPanel: React.FC<{ chartGroup: string }> = ({ chartGroup }) =>
                 isGoFishGroup
                     ? <QuadChart key={`${chartGroup}-${i}`} testCase={tc} />
                     : isChartJsGroup
-                    ? <TripleChart key={`${chartGroup}-${i}`} testCase={tc} />
-                    : isEChartsGroup
-                    ? <DualChart key={`${chartGroup}-${i}`} testCase={tc} />
-                    : <VegaChart key={`${chartGroup}-${i}`} testCase={tc} />
+                        ? <TripleChart key={`${chartGroup}-${i}`} testCase={tc} />
+                        : isEChartsSection
+                            ? <DualChart key={`${chartGroup}-${i}`} testCase={tc} />
+                            : <VegaChart key={`${chartGroup}-${i}`} testCase={tc} />
             )}
         </Box>
     );
@@ -921,7 +975,7 @@ const ChartGallery: React.FC = () => {
 
             {/* Chart content */}
             <Box sx={{ flex: 1, overflow: 'auto', bgcolor: '#fafafa' }}>
-                <ChartTypeTestPanel chartGroup={activeCategoryName} />
+                <ChartTypeTestPanel chartGroup={activeCategoryName} sectionLabel={section?.label} />
             </Box>
         </Box>
     );
