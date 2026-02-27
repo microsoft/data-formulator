@@ -119,14 +119,23 @@ export function resolveEncodingType(
             }
         }
         case 'ordinal': {
-            // Guard: if numeric values are mostly fractional + high-cardinality,
-            // treat as quantitative (mis-classified continuous measure)
             const numericVals = fieldValues.filter(v => v != null && !isNaN(+v)).map(Number);
             if (numericVals.length > 0) {
                 const uniqueCount = new Set(numericVals).size;
                 const hasFractions = numericVals.some(v => v % 1 !== 0);
+
+                // Guard 1: fractional + high-cardinality → mis-classified continuous measure
                 if (hasFractions && uniqueCount > 20) {
                     cardinalityGuard = true;
+                    return { vlType: 'quantitative', visCategory, channelOverride, cardinalityGuard };
+                }
+
+                // Guard 2: integer ordinal with high cardinality on color/group →
+                // a discrete legend with 12+ entries is unreadable; promote to
+                // quantitative so VL renders a continuous gradient instead.
+                if (!hasFractions && uniqueCount > 12 && ['color', 'group'].includes(channel)) {
+                    cardinalityGuard = true;
+                    channelOverride = true;
                     return { vlType: 'quantitative', visCategory, channelOverride, cardinalityGuard };
                 }
             }
