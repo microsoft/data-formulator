@@ -93,13 +93,30 @@ export function resolveEncodingType(
                     return { vlType: 'ordinal', visCategory, channelOverride, cardinalityGuard };
                 }
             }
-            // Validate temporal parsing
+            // Validate temporal parsing.
+            // The visCategory is already 'temporal' (from semantic type or
+            // inference), so this is a safeguard — we sample a few values
+            // and require a minimum fraction to actually parse as dates.
+            //
+            // Threshold:
+            //   - mappedCategory != null → semantic type explicitly said
+            //     temporal, so we trust it more: require ≥ 30% to parse.
+            //   - mappedCategory == null → type was inferred from data,
+            //     less trusted: require ≥ 50% to parse.
             {
                 const sampleValues = data.map(r => r[fieldName]).slice(0, 15).filter((v: any) => v != null);
-                const isValidTemporal = sampleValues.length > 0 && sampleValues.some((val: any) => {
+                if (sampleValues.length === 0) {
+                    return { vlType: 'ordinal', visCategory, channelOverride: false, cardinalityGuard: false };
+                }
+
+                const looksTemporalValue = (val: any): boolean => {
                     if (val instanceof Date) return true;
                     if (typeof val === 'number') {
-                        if (val >= 1000 && val <= 3000) return true;
+                        // Year-like integers (narrowed from 1000–3000 to reduce
+                        // false positives on prices/counts)
+                        if (val >= 1500 && val <= 2200 && val % 1 === 0) return true;
+                        // Unix-ms timestamps: 86_400_000 (Jan 2, 1970) to
+                        // 4_200_000_000_000 (~year 2103)
                         if (val > 86400000 && val < 4200000000000) return true;
                         return false;
                     }
@@ -110,7 +127,13 @@ export function resolveEncodingType(
                         return !Number.isNaN(Date.parse(trimmed));
                     }
                     return false;
-                });
+                };
+
+                const passingCount = sampleValues.filter(looksTemporalValue).length;
+                // Stricter threshold when the type was inferred (not from
+                // an explicit semantic type mapping).
+                const minFraction = mappedCategory != null ? 0.3 : 0.5;
+                const isValidTemporal = passingCount / sampleValues.length >= minFraction;
 
                 if (!isValidTemporal) {
                     return { vlType: 'ordinal', visCategory, channelOverride: false, cardinalityGuard: false };
@@ -431,7 +454,9 @@ export function computeFacetLayout(
     baseHeight: number,
     params: FacetLayoutParams,
 ): FacetLayoutDecision {
-    const minContinuousSize = Math.max(10, 6);
+    // Minimum subplot dimension — use the caller-supplied parameter
+    // (default 60px) so subplots remain readable.
+    const minContinuousSize = params.minSubplotSize;
 
     let subplotWidth: number;
     if (facetCols > 1) {
