@@ -3,143 +3,154 @@
 
 """
 =============================================================================
-SEMANTIC TYPE SYSTEM
+SEMANTIC TYPE SYSTEM  (Python mirror of the TypeScript registry)
 =============================================================================
 
-Semantic types classify data fields for intelligent chart recommendations.
-Uses strings for flexibility and easy JSON serialization.
+The **source of truth** for semantic types lives in the TypeScript library:
+    src/lib/agents-chart/core/type-registry.ts
 
-DESIGN GOALS:
-1. Comprehensive: Cover common data types seen in real-world datasets
-2. Visualization-aware: Map to Vega-Lite encoding types (Q, O, N, T)
-3. Hierarchical: Support generalization via lattice structure
-4. Simple: Use strings with helper functions, no complex enums
+This file mirrors the registered types and provides:
+  1. String constants for every type in the TS TYPE_REGISTRY
+  2. Classification sets (measures, temporal, categorical, etc.)
+  3. Prompt generation for the DataLoadAgent LLM call
+  4. VL-type mapping + name-heuristic inference for create_vl_plots.py
+  5. Legacy compatibility list
 
+When a type is added/removed in the TS registry, update this file to match.
 =============================================================================
 """
 
 from typing import Dict, List, Optional, Set
 
 # ---------------------------------------------------------------------------
-# All Semantic Types (as string constants)
+# All Semantic Types  (must match TYPE_REGISTRY keys in type-registry.ts)
 # ---------------------------------------------------------------------------
 
-# TEMPORAL TYPES - Time-related concepts
+# TEMPORAL — DateTime
 DATETIME = "DateTime"       # Full date and time: "2024-01-15T14:30:00"
 DATE = "Date"               # Date only: "2024-01-15"
 TIME = "Time"               # Time only: "14:30:00"
 TIMESTAMP = "Timestamp"     # Unix timestamp (seconds or milliseconds since epoch)
 
+# TEMPORAL — DateGranule
 YEAR = "Year"               # "2024" (as a time unit, not a measure)
 QUARTER = "Quarter"         # "Q1", "Q2", "2024-Q1"
 MONTH = "Month"             # "January", "Jan", 1-12
 WEEK = "Week"               # "Week 1", 1-52
 DAY = "Day"                 # "Monday", "Mon", 1-31
 HOUR = "Hour"               # 0-23
-
 YEAR_MONTH = "YearMonth"    # "2024-01", "Jan 2024"
 YEAR_QUARTER = "YearQuarter"# "2024-Q1"
 YEAR_WEEK = "YearWeek"      # "2024-W01"
 DECADE = "Decade"           # "1990s", "2000s"
 
+# TEMPORAL — Duration
 DURATION = "Duration"       # Time span: "2 hours", "3 days", milliseconds
-TIME_RANGE = "TimeRange"    # Time interval: "9am-5pm", "2020-2024"
 
-# NUMERIC MEASURE TYPES - Continuous values for aggregation
-QUANTITY = "Quantity"       # Generic continuous measure
-COUNT = "Count"             # Discrete count of items
-AMOUNT = "Amount"           # Monetary or general amounts
-PRICE = "Price"             # Unit price
-REVENUE = "Revenue"         # Total revenue/sales
-COST = "Cost"               # Expenses/costs
-PERCENTAGE = "Percentage"   # 0-100% or 0-1 ratio
-RATE = "Rate"               # Rate of change, interest rate
-RATIO = "Ratio"             # Proportion between values
-DISTANCE = "Distance"       # Length, height, width
-AREA = "Area"               # Square units
-VOLUME = "Volume"           # Cubic units
-WEIGHT = "Weight"           # Mass
-TEMPERATURE = "Temperature" # Degrees
-SPEED = "Speed"             # Velocity
+# MEASURE — Amount
+AMOUNT = "Amount"           # Monetary or general amounts (additive)
+PRICE = "Price"             # Unit price (intensive — avg, not sum)
+REVENUE = "Revenue"         # Total revenue/sales (additive)
+COST = "Cost"               # Expenses/costs (additive)
 
-# NUMERIC DISCRETE TYPES - Numbers with ordinal/identifier meaning
+# MEASURE — Physical
+QUANTITY = "Quantity"        # Generic continuous measure (additive)
+TEMPERATURE = "Temperature" # Degrees — conditional diverging, arbitrary zero
+
+# MEASURE — Proportion
+PERCENTAGE = "Percentage"   # 0-100% or 0-1 ratio (intensive, bounded)
+
+# MEASURE — SignedMeasure
+PROFIT = "Profit"                       # Signed additive, conditional diverging
+PERCENTAGE_CHANGE = "PercentageChange"  # Signed intensive, conditional diverging
+SENTIMENT = "Sentiment"                 # Signed intensive, inherent diverging
+CORRELATION = "Correlation"             # Signed intensive, inherent diverging, bounded [-1,1]
+
+# MEASURE — GenericMeasure
+COUNT = "Count"             # Discrete count of items (additive)
+NUMBER = "Number"           # Generic number (measure fallback)
+
+# DISCRETE
 RANK = "Rank"               # Position in ordered list: 1st, 2nd, 3rd
-INDEX = "Index"             # Row number, sequence number
-ID = "ID"                   # Unique identifier (not for aggregation!)
 SCORE = "Score"             # Rating score: 1-5, 1-10, 0-100
 RATING = "Rating"           # Star rating, letter grade
-LEVEL = "Level"             # Discrete levels: 1, 2, 3
+INDEX = "Index"             # Row number, sequence number
 
-# GEOGRAPHIC TYPES - Location-based data
+# IDENTIFIER
+ID = "ID"                   # Unique identifier (not for aggregation!)
+
+# GEOGRAPHIC — GeoCoordinate
 LATITUDE = "Latitude"       # -90 to 90
 LONGITUDE = "Longitude"     # -180 to 180
-COORDINATES = "Coordinates" # Lat/Long pair
+
+# GEOGRAPHIC — GeoPlace
 COUNTRY = "Country"         # Country name or code
 STATE = "State"             # State/Province
 CITY = "City"               # City name
 REGION = "Region"           # Geographic region
 ADDRESS = "Address"         # Street address
 ZIP_CODE = "ZipCode"        # Postal code
-LOCATION = "Location"       # Generic location (fallback)
 
-# CATEGORICAL ENTITY TYPES - Named entities
+# CATEGORICAL — Entity
 PERSON_NAME = "PersonName"  # Full name, first/last name
-USERNAME = "Username"       # Account username
-EMAIL = "Email"             # Email address
 COMPANY = "Company"         # Company/Organization name
-BRAND = "Brand"             # Brand name
-DEPARTMENT = "Department"   # Organizational unit
 PRODUCT = "Product"         # Product name
-SKU = "SKU"                 # Product identifier
 CATEGORY = "Category"       # Product/item category
 NAME = "Name"               # Generic named entity (fallback)
 
-# CATEGORICAL CODED TYPES - Discrete categories/statuses
+# CATEGORICAL — Coded
 STATUS = "Status"           # State: "Active", "Pending", "Closed"
 TYPE = "Type"               # Type classification
 BOOLEAN = "Boolean"         # True/False, Yes/No
-BINARY = "Binary"           # Two-value categorical
-CODE = "Code"               # Coded value: "A", "B", "C"
+DIRECTION = "Direction"     # N, S, E, W — cyclic ordinal
 
-# BINNED/RANGE TYPES - Discretized continuous values
+# CATEGORICAL — Binned
 RANGE = "Range"             # Numeric range: "10000-20000", "<50", "50+"
 AGE_GROUP = "AgeGroup"      # Age range: "18-24", "25-34"
-BUCKET = "Bucket"           # Generic binned value
 
-# FALLBACK TYPES
+# FALLBACKS
 STRING = "String"           # Generic string (categorical fallback)
-NUMBER = "Number"           # Generic number (measure fallback)
 UNKNOWN = "Unknown"         # Cannot determine type
 
 
 # ---------------------------------------------------------------------------
-# All Semantic Types List (for prompt generation)
+# All Semantic Types List  (matches TYPE_REGISTRY key order)
 # ---------------------------------------------------------------------------
 
 ALL_SEMANTIC_TYPES: List[str] = [
-    # Temporal
+    # Temporal — DateTime
     DATETIME, DATE, TIME, TIMESTAMP,
+    # Temporal — DateGranule
     YEAR, QUARTER, MONTH, WEEK, DAY, HOUR,
     YEAR_MONTH, YEAR_QUARTER, YEAR_WEEK, DECADE,
-    DURATION, TIME_RANGE,
-    # Numeric measures
-    QUANTITY, COUNT, AMOUNT, PRICE, REVENUE, COST,
-    PERCENTAGE, RATE, RATIO,
-    DISTANCE, AREA, VOLUME, WEIGHT, TEMPERATURE, SPEED,
-    # Numeric discrete
-    RANK, INDEX, ID, SCORE, RATING, LEVEL,
-    # Geographic
-    LATITUDE, LONGITUDE, COORDINATES,
-    COUNTRY, STATE, CITY, REGION, ADDRESS, ZIP_CODE, LOCATION,
-    # Entity names
-    PERSON_NAME, USERNAME, EMAIL, COMPANY, BRAND, DEPARTMENT,
-    PRODUCT, SKU, CATEGORY, NAME,
-    # Coded
-    STATUS, TYPE, BOOLEAN, BINARY, CODE,
-    # Ranges
-    RANGE, AGE_GROUP, BUCKET,
+    # Temporal — Duration
+    DURATION,
+    # Measure — Amount
+    AMOUNT, PRICE, REVENUE, COST,
+    # Measure — Physical
+    QUANTITY, TEMPERATURE,
+    # Measure — Proportion
+    PERCENTAGE,
+    # Measure — SignedMeasure
+    PROFIT, PERCENTAGE_CHANGE, SENTIMENT, CORRELATION,
+    # Measure — GenericMeasure
+    COUNT, NUMBER,
+    # Discrete
+    RANK, SCORE, RATING, INDEX,
+    # Identifier
+    ID,
+    # Geographic — GeoCoordinate
+    LATITUDE, LONGITUDE,
+    # Geographic — GeoPlace
+    COUNTRY, STATE, CITY, REGION, ADDRESS, ZIP_CODE,
+    # Categorical — Entity
+    PERSON_NAME, COMPANY, PRODUCT, CATEGORY, NAME,
+    # Categorical — Coded
+    STATUS, TYPE, BOOLEAN, DIRECTION,
+    # Categorical — Binned
+    RANGE, AGE_GROUP,
     # Fallbacks
-    STRING, NUMBER, UNKNOWN,
+    STRING, UNKNOWN,
 ]
 
 
@@ -154,60 +165,67 @@ TIMESERIES_X_TYPES: Set[str] = {
 }
 
 MEASURE_TYPES: Set[str] = {
-    QUANTITY, COUNT, AMOUNT, PRICE, REVENUE, COST,
-    PERCENTAGE, RATE, RATIO,
-    DISTANCE, AREA, VOLUME, WEIGHT, TEMPERATURE, SPEED,
-    DURATION, NUMBER,
+    AMOUNT, PRICE, REVENUE, COST,
+    QUANTITY, TEMPERATURE,
+    PERCENTAGE,
+    PROFIT, PERCENTAGE_CHANGE, SENTIMENT, CORRELATION,
+    COUNT, NUMBER,
+    DURATION,
 }
 
 NON_MEASURE_NUMERIC_TYPES: Set[str] = {
-    RANK, INDEX, ID, SCORE, RATING, LEVEL,
+    RANK, INDEX, SCORE, RATING,
     YEAR, MONTH, DAY, HOUR,
     LATITUDE, LONGITUDE,
 }
 
 CATEGORICAL_TYPES: Set[str] = {
-    NAME, PERSON_NAME, USERNAME, EMAIL,
-    COMPANY, BRAND, DEPARTMENT, PRODUCT, CATEGORY,
-    STATUS, TYPE, BOOLEAN, BINARY, CODE,
-    LOCATION, COUNTRY, STATE, CITY, REGION,
-    RANGE, AGE_GROUP, BUCKET,
+    NAME, PERSON_NAME, COMPANY, PRODUCT, CATEGORY,
+    STATUS, TYPE, BOOLEAN, DIRECTION,
+    COUNTRY, STATE, CITY, REGION,
+    RANGE, AGE_GROUP,
     STRING,
 }
 
 ORDINAL_TYPES: Set[str] = {
     YEAR, QUARTER, MONTH, WEEK, DAY, HOUR, DECADE,
-    RANK, SCORE, RATING, LEVEL,
-    RANGE, AGE_GROUP, BUCKET, TIME_RANGE,
+    RANK, SCORE, RATING,
+    RANGE, AGE_GROUP,
+    DIRECTION,
 }
 
 GEO_TYPES: Set[str] = {
-    LATITUDE, LONGITUDE, COORDINATES,
-    LOCATION, COUNTRY, STATE, CITY, REGION, ADDRESS, ZIP_CODE,
+    LATITUDE, LONGITUDE,
+    COUNTRY, STATE, CITY, REGION, ADDRESS, ZIP_CODE,
+}
+
+SIGNED_MEASURE_TYPES: Set[str] = {
+    PROFIT, PERCENTAGE_CHANGE, SENTIMENT, CORRELATION,
 }
 
 
 # ---------------------------------------------------------------------------
-# Grouped by Category (for prompt generation)
+# Grouped by Category  (for prompt generation)
 # ---------------------------------------------------------------------------
 
 SEMANTIC_TYPE_CATEGORIES: Dict[str, List[str]] = {
     "Temporal (point-in-time)": [DATETIME, DATE, TIME, TIMESTAMP],
     "Temporal (granules)": [YEAR, QUARTER, MONTH, WEEK, DAY, HOUR],
     "Temporal (combined)": [YEAR_MONTH, YEAR_QUARTER, YEAR_WEEK, DECADE],
-    "Temporal (duration)": [DURATION, TIME_RANGE],
-    "Numeric measures": [
-        QUANTITY, COUNT, AMOUNT, PRICE, REVENUE, COST,
-        PERCENTAGE, RATE, RATIO,
-        DISTANCE, AREA, VOLUME, WEIGHT, TEMPERATURE, SPEED
-    ],
-    "Numeric discrete": [RANK, INDEX, ID, SCORE, RATING, LEVEL],
-    "Geographic coordinates": [LATITUDE, LONGITUDE, COORDINATES],
-    "Geographic locations": [COUNTRY, STATE, CITY, REGION, ADDRESS, ZIP_CODE, LOCATION],
-    "Entity names": [PERSON_NAME, USERNAME, EMAIL, COMPANY, BRAND, DEPARTMENT, PRODUCT, SKU, CATEGORY, NAME],
-    "Categorical codes": [STATUS, TYPE, BOOLEAN, BINARY, CODE],
-    "Binned ranges": [RANGE, AGE_GROUP, BUCKET],
-    "Fallback": [STRING, NUMBER, UNKNOWN],
+    "Temporal (duration)": [DURATION],
+    "Numeric measures (monetary)": [AMOUNT, PRICE, REVENUE, COST],
+    "Numeric measures (physical)": [QUANTITY, TEMPERATURE],
+    "Numeric measures (proportion)": [PERCENTAGE],
+    "Numeric measures (signed/diverging)": [PROFIT, PERCENTAGE_CHANGE, SENTIMENT, CORRELATION],
+    "Numeric measures (generic)": [COUNT, NUMBER],
+    "Numeric discrete": [RANK, INDEX, SCORE, RATING],
+    "Identifier": [ID],
+    "Geographic coordinates": [LATITUDE, LONGITUDE],
+    "Geographic locations": [COUNTRY, STATE, CITY, REGION, ADDRESS, ZIP_CODE],
+    "Entity names": [PERSON_NAME, COMPANY, PRODUCT, CATEGORY, NAME],
+    "Categorical codes": [STATUS, TYPE, BOOLEAN, DIRECTION],
+    "Binned ranges": [RANGE, AGE_GROUP],
+    "Fallback": [STRING, UNKNOWN],
 }
 
 
@@ -245,20 +263,25 @@ def is_non_measure_numeric(semantic_type: str) -> bool:
     return semantic_type in NON_MEASURE_NUMERIC_TYPES
 
 
+def is_signed_measure(semantic_type: str) -> bool:
+    """Check if a semantic type is a signed measure (can go negative)."""
+    return semantic_type in SIGNED_MEASURE_TYPES
+
+
 # ---------------------------------------------------------------------------
 # Prompt Generation
 # ---------------------------------------------------------------------------
 
 def generate_semantic_types_prompt() -> str:
     """Generate the semantic types section for the LLM prompt."""
-    
+
     lines = ["Semantic types to consider (grouped by category):"]
     lines.append("")
-    
+
     for category, types in SEMANTIC_TYPE_CATEGORIES.items():
         lines.append(f"  {category}:")
         lines.append(f"    {', '.join(types)}")
-    
+
     lines.append("")
     lines.append("Guidelines for choosing semantic types:")
     lines.append("")
@@ -268,45 +291,59 @@ def generate_semantic_types_prompt() -> str:
     lines.append("   - Use YearMonth, YearQuarter for combined temporal like '2024-01' or '2024-Q1'")
     lines.append("   - Use Year, Month, Day for discrete time units (even if stored as numbers)")
     lines.append("   - Use Duration for time spans (e.g., '2 hours', milliseconds)")
-    lines.append("   - Use TimeRange for intervals (e.g., '9am-5pm', '2020-2024')")
     lines.append("")
-    lines.append("2. NUMERIC MEASURE types (can be aggregated/averaged):")
-    lines.append("   - Use Quantity for generic continuous measures")
-    lines.append("   - Use specific types like Price, Revenue, Percentage when applicable")
+    lines.append("2. MONETARY MEASURE types:")
+    lines.append("   - Use Amount for generic monetary values")
+    lines.append("   - Use Price for per-unit prices (averaged, not summed)")
+    lines.append("   - Use Revenue/Cost for totals (summed)")
+    lines.append("   - Use Profit for values that can be negative (profit/loss)")
+    lines.append("")
+    lines.append("3. PHYSICAL / GENERIC MEASURE types:")
+    lines.append("   - Use Quantity for generic continuous measures (weight, distance, area, volume, speed, etc.)")
+    lines.append("   - Provide the 'unit' field for physical quantities (e.g., 'kg', 'km', '°C', 'mph')")
+    lines.append("   - Use Temperature for temperature values (has special diverging color behavior)")
     lines.append("   - Use Count for discrete counts of items")
+    lines.append("   - Use Number only when no more specific measure type applies")
     lines.append("")
-    lines.append("3. NUMERIC DISCRETE types (should NOT be aggregated):")
+    lines.append("4. PROPORTION & SIGNED MEASURE types:")
+    lines.append("   - Use Percentage for 0-100% or 0-1 ratios")
+    lines.append("   - Use PercentageChange for growth rates or % change (can be negative)")
+    lines.append("   - Use Sentiment for sentiment scores (inherently diverging around 0)")
+    lines.append("   - Use Correlation for correlation coefficients (bounded -1 to 1)")
+    lines.append("")
+    lines.append("5. NUMERIC DISCRETE types (should NOT be aggregated):")
     lines.append("   - Use Rank for positions (1st, 2nd, 3rd)")
     lines.append("   - Use ID for unique identifiers")
     lines.append("   - Use Score/Rating for evaluation scores (1-5, A-F)")
+    lines.append("   - For Score/Rating, provide 'intrinsic_domain' as [min, max] inferred from the data (e.g., [1, 10] if values range 1-10)")
     lines.append("   - IMPORTANT: A column named 'year' with values like 2020, 2021 is Year, not Number!")
     lines.append("")
-    lines.append("4. GEOGRAPHIC types:")
+    lines.append("6. GEOGRAPHIC types:")
     lines.append("   - Use Latitude/Longitude for coordinates")
     lines.append("   - Use Country, State, City for named locations")
-    lines.append("   - Use Location as fallback for any geographic entity")
     lines.append("")
-    lines.append("5. CATEGORICAL types:")
+    lines.append("7. CATEGORICAL types:")
     lines.append("   - Use specific entity types (PersonName, Company, Product) when applicable")
     lines.append("   - Use Category for classification fields")
     lines.append("   - Use Status for state/status fields ('Active', 'Pending')")
     lines.append("   - Use Boolean for true/false, yes/no fields")
+    lines.append("   - Use Direction for compass directions (N, S, E, W)")
     lines.append("")
-    lines.append("6. RANGE types:")
+    lines.append("8. RANGE types:")
     lines.append("   - Use Range for binned numeric values ('10000-20000', '<50', '50+')")
     lines.append("   - Use AgeGroup specifically for age ranges ('18-24', '25-34')")
     lines.append("")
-    lines.append("7. FALLBACK types:")
+    lines.append("9. FALLBACK types:")
     lines.append("   - Use String for generic text when no specific type applies")
-    lines.append("   - Use Number for generic numeric when no specific measure type applies")
-    
+    lines.append("   - Do NOT use generic names like 'Value', 'Data', etc. — pick the closest match above")
+
     return "\n".join(lines)
 
 
 # For backward compatibility with existing code
 LEGACY_SEMANTIC_TYPES = [
-    "Location", "Decade", "Year", "Month", "YearMonth", "Day", 
-    "Date", "Time", "DateTime", "TimeRange", "Range", "Duration", 
+    "Location", "Decade", "Year", "Month", "YearMonth", "Day",
+    "Date", "Time", "DateTime", "TimeRange", "Range", "Duration",
     "Name", "Percentage", "String", "Number"
 ]
 
@@ -324,43 +361,43 @@ VL_TYPE_MAP: Dict[str, str] = {
     # Temporal granules → ordinal
     "Quarter": "ordinal", "Month": "ordinal",
     "Week": "ordinal", "Day": "ordinal", "Hour": "ordinal", "Decade": "ordinal",
-    "TimeRange": "ordinal",
 
     # Duration → quantitative
     "Duration": "quantitative",
 
     # Measures → quantitative
-    "Quantity": "quantitative", "Count": "quantitative",
     "Amount": "quantitative", "Price": "quantitative", "Revenue": "quantitative", "Cost": "quantitative",
-    "Percentage": "quantitative", "Rate": "quantitative", "Ratio": "quantitative",
-    "Distance": "quantitative", "Area": "quantitative", "Volume": "quantitative",
-    "Weight": "quantitative", "Temperature": "quantitative", "Speed": "quantitative",
+    "Quantity": "quantitative", "Temperature": "quantitative",
+    "Percentage": "quantitative",
+    "Profit": "quantitative", "PercentageChange": "quantitative",
+    "Sentiment": "quantitative", "Correlation": "quantitative",
+    "Count": "quantitative", "Number": "quantitative",
 
-    # Discrete numerics → ordinal (except ID/Score/Rating which differ)
-    "Rank": "ordinal", "Index": "ordinal", "Score": "quantitative",
-    "Rating": "quantitative", "Level": "ordinal",
+    # Discrete numerics
+    "Rank": "ordinal", "Index": "ordinal",
+    "Score": "quantitative", "Rating": "quantitative",
     "ID": "nominal",
 
-    # Geographic coordinates → quantitative (for lat/lon encoding)
-    "Latitude": "quantitative", "Longitude": "quantitative", "Coordinates": "quantitative",
+    # Geographic coordinates → quantitative
+    "Latitude": "quantitative", "Longitude": "quantitative",
 
     # Geographic locations → nominal
-    "Location": "nominal", "Country": "nominal", "State": "nominal", "City": "nominal",
+    "Country": "nominal", "State": "nominal", "City": "nominal",
     "Region": "nominal", "Address": "nominal", "ZipCode": "nominal",
 
     # Entity names → nominal
-    "Name": "nominal", "PersonName": "nominal", "Username": "nominal", "Email": "nominal",
-    "Company": "nominal", "Brand": "nominal", "Department": "nominal",
-    "Product": "nominal", "SKU": "nominal", "Category": "nominal",
+    "Name": "nominal", "PersonName": "nominal",
+    "Company": "nominal", "Product": "nominal", "Category": "nominal",
 
-    # Coded → nominal
-    "Status": "nominal", "Type": "nominal", "Boolean": "nominal", "Binary": "nominal", "Code": "nominal",
+    # Coded → nominal (Direction can be ordinal but defaults nominal for VL)
+    "Status": "nominal", "Type": "nominal", "Boolean": "nominal",
+    "Direction": "nominal",
 
     # Ranges → ordinal
-    "Range": "ordinal", "AgeGroup": "ordinal", "Bucket": "ordinal",
+    "Range": "ordinal", "AgeGroup": "ordinal",
 
     # Fallbacks
-    "String": "nominal", "Number": "quantitative", "Unknown": "nominal",
+    "String": "nominal", "Unknown": "nominal",
 }
 
 
@@ -421,17 +458,17 @@ def infer_vl_type_from_name(column_name: str) -> Optional[str]:
     for pattern in _TEMPORAL_PATTERNS:
         if pattern.search(column_name):
             return 'temporal'
-    
+
     for pattern in _ORDINAL_PATTERNS:
         if pattern.search(column_name):
             return 'ordinal'
-    
+
     for pattern in _QUANT_PATTERNS:
         if pattern.search(column_name):
             return 'quantitative'
-    
+
     for pattern in _NOMINAL_PATTERNS:
         if pattern.search(column_name):
             return 'nominal'
-    
+
     return None

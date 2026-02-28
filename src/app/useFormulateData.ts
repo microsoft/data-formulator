@@ -384,6 +384,30 @@ export function useFormulateData() {
                 };
             }
 
+            // Bootstrap metadata from agent field_metadata (temporary until fetchFieldSemanticType completes)
+            const fieldMetadata = refinedGoal['field_metadata'];
+            if (fieldMetadata && typeof fieldMetadata === 'object') {
+                for (const [fieldName, meta] of Object.entries(fieldMetadata)) {
+                    if (!candidateTable.metadata[fieldName]) continue;
+                    if (typeof meta === 'string') {
+                        // Plain string format: { "field": "SemanticType" }
+                        candidateTable.metadata[fieldName].semanticType = meta;
+                    } else if (typeof meta === 'object' && meta !== null) {
+                        // Dict format: { "field": { "semantic_type": "...", "unit": "...", ... } }
+                        const m = meta as Record<string, any>;
+                        if (m['semantic_type']) {
+                            candidateTable.metadata[fieldName].semanticType = m['semantic_type'];
+                        }
+                        if (m['unit']) {
+                            candidateTable.metadata[fieldName].unit = m['unit'];
+                        }
+                        if (m['intrinsic_domain']) {
+                            candidateTable.metadata[fieldName].intrinsicDomain = m['intrinsic_domain'];
+                        }
+                    }
+                }
+            }
+
             // Insert or override table
             if (overrideTableId) {
                 dispatch(dfActions.overrideDerivedTables(candidateTable));

@@ -103,12 +103,40 @@ Concretely, you should first refine users' goal and then create a Python script 
         "encodings": {}, // object, map visual channels to output field names. Available channels depend on chart_type (see reference below).
         "config": {} // object (optional), chart styling options. Available options depend on chart_type (see reference below). Only include when there's a clear reason.
     },
+    "field_metadata": { // object, semantic type for each field used in chart encodings.
+        "<field_name>": "SemanticType" // string, one of the types from [SEMANTIC TYPE REFERENCE] below.
+    },
     "output_variable": "...", // string, the name of the Python variable containing the final result.
                         // Should be descriptive and informative (e.g., "sales_by_region", "monthly_revenue", "top_10_products"),
                         // not generic names like "result_df" or "output". Use snake_case.
     "reason": "..." // string, explain why this refinement is made
 }
 ```
+
+**[SEMANTIC TYPE REFERENCE]**
+
+Choose the most specific type for each encoding field.
+
+| Category | Types |
+|---|---|
+| Temporal | DateTime, Date, Time, Timestamp, Year, Quarter, Month, Week, Day, Hour, YearMonth, YearQuarter, YearWeek, Decade, Duration |
+| Monetary measures | Amount, Price, Revenue, Cost |
+| Physical measures | Quantity, Temperature |
+| Proportion | Percentage |
+| Signed/diverging | Profit, PercentageChange, Sentiment, Correlation |
+| Generic measures | Count, Number |
+| Discrete numeric | Rank, Score, Rating, Index |
+| Identifier | ID |
+| Geographic | Latitude, Longitude, Country, State, City, Region, Address, ZipCode |
+| Entity names | PersonName, Company, Product, Category, Name |
+| Coded categorical | Status, Type, Boolean, Direction |
+| Binned ranges | Range, AgeGroup |
+| Fallback | String, Unknown |
+
+Key guidelines:
+- Use **Revenue/Cost** for summed totals, **Price** for per-unit, **Profit** for signed.
+- Use **Temperature** for temperature (diverging behavior).
+- Use **Year** not Number for year columns.
 
 **[CHART TYPE REFERENCE]**
 
@@ -250,6 +278,11 @@ Here are 1 dataset with their summaries:
     "chart": {
         "chart_type": "point",
         "encodings": {"x": "Seattle Temperature", "y": "Atlanta Temperature", "color": "Warmer City"}
+    },
+    "field_metadata": {
+        "Seattle Temperature": "Temperature",
+        "Atlanta Temperature": "Temperature",
+        "Warmer City": "Category"
     },
     "output_variable": "city_temp_comparison",
     "reason": "To compare Seattle and Atlanta temperatures, we need to pivot the data to have separate temperature columns for each city, then compute which city is warmer."

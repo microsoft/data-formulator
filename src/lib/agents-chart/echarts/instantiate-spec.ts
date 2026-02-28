@@ -28,6 +28,7 @@ import type {
 } from '../core/types';
 import { computePaddedDomain } from '../core/semantic-types';
 import { getVisCategory } from '../core/semantic-types';
+import { toTypeString } from '../core/field-semantics';
 import {
     looksLikeDateString,
     analyzeTemporalField,
@@ -409,7 +410,7 @@ export function ecApplyLayoutToSpec(
         if (!axisObj || axisObj.type !== 'category') continue;
         const cs = channelSemantics[axis];
         if (!cs?.field || (cs.type !== 'nominal' && cs.type !== 'ordinal')) continue;
-        const semanticType = context.semanticTypes[cs.field] || '';
+        const semanticType = toTypeString(context.semanticTypes[cs.field]);
         if (getVisCategory(semanticType) !== 'temporal') continue;
         const fieldVals = context.table.map((r: any) => r[cs.field]).filter((v: any) => v != null);
         const datelikeCnt = fieldVals.filter((v: any) =>

@@ -6,8 +6,59 @@ import base64
 import logging
 
 from data_formulator.agents.semantic_types import infer_vl_type_from_name
+from data_formulator.workflows.chart_semantics import (
+    resolve_channel_semantics,
+    resolve_vl_type,
+    is_registered,
+    get_registry_entry,
+    ChannelSemantics,
+)
 
 logger = logging.getLogger(__name__)
+
+
+def field_metadata_to_semantic_types(
+    field_metadata: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    """Convert agent ``field_metadata`` to the ``semantic_types`` dict
+    expected by :func:`assemble_vegailte_chart`.
+
+    ``field_metadata`` comes from the LLM's ``refined_goal.field_metadata``
+    and has the shape::
+
+        {
+            "Revenue": {"semantic_type": "Revenue", "unit": "USD"},
+            "Month":   {"semantic_type": "Month"},
+        }
+
+    The returned dict maps field names to either a plain string
+    (the semantic type name) or a dict with ``type``, ``unit``,
+    and ``intrinsic_domain`` keys — exactly what ``assemble_vegailte_chart``
+    already accepts.
+    """
+    if not field_metadata:
+        return None
+
+    result: dict[str, Any] = {}
+    for field_name, meta in field_metadata.items():
+        if isinstance(meta, str):
+            result[field_name] = meta
+            continue
+        if not isinstance(meta, dict):
+            continue
+        sem_type = meta.get("semantic_type")
+        if not sem_type:
+            continue
+        extras = {}
+        if "unit" in meta and meta["unit"]:
+            extras["unit"] = meta["unit"]
+        if "intrinsic_domain" in meta and meta["intrinsic_domain"]:
+            extras["intrinsic_domain"] = meta["intrinsic_domain"]
+        if extras:
+            result[field_name] = {"type": sem_type, **extras}
+        else:
+            result[field_name] = sem_type
+    return result if result else None
 
 
 def resolve_field_type(
@@ -479,6 +530,7 @@ def assemble_vegailte_chart(
     encodings: dict[str, dict[str, str]],
     max_nominal_values: int = 68,
     config: dict | None = None,
+    semantic_types: dict[str, Any] | None = None,
 ) -> dict:
     """
     Assemble a Vega-Lite chart specification from a dataframe, chart type, and encodings.
@@ -491,10 +543,14 @@ def assemble_vegailte_chart(
       - Simple: {"x": {"field": "field1"}, "y": {"field": "field2"}}
       - With aggregation: {"x": {"field": "category"}, "y": {"field": "sales", "aggregate": "mean"}}
     - max_nominal_values: maximum number of values for nominal axes before truncating
+    - config: optional chart configuration (binCount, innerRadius, colorScheme, etc.)
+    - semantic_types: optional dict mapping field names to semantic type strings or
+      annotation dicts {"type": "Revenue", "unit": "USD", "intrinsic_domain": [0, 100]}
     
     Returns:
     - dict: Vega-Lite specification
     """
+    semantic_types = semantic_types or {}
     # Find the chart template
     template = get_chart_template(chart_type)
     if not template:
@@ -544,7 +600,9 @@ def assemble_vegailte_chart(
     # Add data to the spec (inline data from dataframe)
     table_data = df.to_dict('records')
     
-    # Apply encodings with sophisticated handling
+    # Resolve mark type for semantic decisions
+    mark_type = template["mark"]
+    # Apply encodings with semantic-aware handling
     for channel, encoding_input in encodings.items():
         # Parse encoding input (always a dict with "field" property)
         field_name = encoding_input.get("field")
@@ -554,6 +612,7 @@ def assemble_vegailte_chart(
             continue
             
         encoding_obj = {}
+        cs: ChannelSemantics | None = None  # channel semantics (when available)
         
         # Special scale configuration for radius
         if channel == "radius":
@@ -570,10 +629,35 @@ def assemble_vegailte_chart(
             encoding_obj["aggregate"] = aggregate_func
             encoding_obj["type"] = "quantitative"
         else:
-            # Regular field encoding
-            field_type = resolve_field_type(df[field_name], field_name)
-            encoding_obj["field"] = field_name
-            encoding_obj["type"] = field_type
+            # --- Resolve field type and semantics ---
+            field_values = df[field_name].dropna().tolist()
+            sem_annotation = semantic_types.get(field_name)
+            
+            # Extract semantic type string and optional metadata
+            sem_type = ''
+            sem_unit = None
+            sem_domain = None
+            if isinstance(sem_annotation, str):
+                sem_type = sem_annotation
+            elif isinstance(sem_annotation, dict):
+                sem_type = sem_annotation.get('type', sem_annotation.get('semantic_type', ''))
+                sem_unit = sem_annotation.get('unit')
+                raw_domain = sem_annotation.get('intrinsic_domain')
+                if isinstance(raw_domain, (list, tuple)) and len(raw_domain) == 2:
+                    sem_domain = (raw_domain[0], raw_domain[1])
+            
+            # Use semantic-aware type resolution when available, else fall back
+            if sem_type and is_registered(sem_type):
+                cs = resolve_channel_semantics(
+                    field_name, sem_type, channel, mark_type,
+                    field_values, unit=sem_unit, intrinsic_domain=sem_domain,
+                )
+                encoding_obj["field"] = field_name
+                encoding_obj["type"] = cs.vl_type
+            else:
+                field_type = resolve_field_type(df[field_name], field_name)
+                encoding_obj["field"] = field_name
+                encoding_obj["type"] = field_type
             
             # Special handling for year/date fields
             if pd.api.types.is_datetime64_any_dtype(df[field_name]):
@@ -586,23 +670,16 @@ def assemble_vegailte_chart(
             # bar x must be nominal, heatmap x/y must be nominal, etc.)
             encoding_obj["type"] = coerce_field_type(chart_type, channel, encoding_obj["type"])
         
-        # Scale configurations for quantitative line charts
-        if (encoding_obj["type"] == "quantitative" and 
-            "line" in chart_type.lower() and 
-            channel == "x"):
-            encoding_obj["scale"] = {"nice": False}
-        
-        # Special handling for nominal color encoding
-        if encoding_obj["type"] == "nominal" and channel == "color":
-            unique_values = df[field_name].unique()
-            
-            # Large color palettes
-            if len(unique_values) >= 16:
-                encoding_obj["scale"] = {"scheme": "tableau20"}
-                encoding_obj["legend"] = {
-                    "symbolSize": 12,
-                    "labelFontSize": 8
-                }
+        # ── Apply semantic enhancements when available ─────────────────────
+        if cs:
+            _apply_semantic_encoding(encoding_obj, cs, channel, chart_type, config)
+        else:
+            # Legacy fallback: basic color handling
+            if encoding_obj.get("type") == "nominal" and channel == "color":
+                unique_values = df[field_name].unique()
+                if len(unique_values) >= 16:
+                    encoding_obj["scale"] = {"scheme": "tableau20"}
+                    encoding_obj["legend"] = {"symbolSize": 12, "labelFontSize": 8}
         
         # For map charts, encodings go into the second layer
         if chart_type in ("worldmap", "usmap"):
@@ -684,6 +761,9 @@ def assemble_vegailte_chart(
                         "value": "#000000"
                     }
     
+    # Apply spec quality improvements (null handling, tooltips, sizing, etc.)
+    table_data = _apply_spec_quality(spec, table_data, df, chart_type)
+
     # Convert temporal fields to strings for Vega-Lite
     for row in table_data:
         for col in df.columns:
@@ -692,6 +772,247 @@ def assemble_vegailte_chart(
     
     spec["data"] = {"values": table_data}
     return spec
+
+
+def _apply_semantic_encoding(
+    encoding_obj: dict,
+    cs: ChannelSemantics,
+    channel: str,
+    chart_type: str,
+    config: dict | None,
+) -> None:
+    """
+    Apply semantic-aware enhancements to a VL encoding object.
+
+    Reads resolved ChannelSemantics (from chart_semantics.py) and applies:
+      - Axis/label number formatting  ($, %, unit suffixes)
+      - Color scheme selection (diverging / sequential / categorical)
+      - Zero-baseline and domain padding
+      - Domain constraints (intrinsic domain merging)
+      - Ordinal sort order (months, days, quarters)
+      - Temporal format
+      - Scale type (log)
+      - Tick constraints (integer-only, exact ticks)
+      - Reversed axis
+      - Line interpolation
+    """
+    vl_type = encoding_obj.get("type", "nominal")
+
+    # --- Number formatting (axis format + tooltip title suffix) ---
+    if cs.format and cs.format.pattern and channel in ('x', 'y', 'color', 'size', 'theta'):
+        fmt = cs.format
+        # Build VL axis/legend format from the d3-format spec
+        if fmt.pattern:
+            # Percentage formats work natively in d3
+            if '%' in fmt.pattern:
+                encoding_obj.setdefault("axis" if channel in ('x', 'y') else "legend", {})["format"] = fmt.pattern
+            elif fmt.prefix or fmt.suffix:
+                # VL doesn't natively support prefix/suffix in d3-format,
+                # so we use formatType: '' and formatCustom approach, or just set
+                # the format pattern and let abbreviation handle large values.
+                encoding_obj.setdefault("axis" if channel in ('x', 'y') else "legend", {})["format"] = fmt.pattern
+            else:
+                encoding_obj.setdefault("axis" if channel in ('x', 'y') else "legend", {})["format"] = fmt.pattern
+
+        # Axis title with prefix/suffix for clarity
+        if (fmt.prefix or fmt.suffix) and "title" not in encoding_obj:
+            title = encoding_obj.get("field", "")
+            if fmt.prefix and fmt.suffix:
+                title = f"{title} ({fmt.prefix}…{fmt.suffix.strip()})"
+            elif fmt.prefix:
+                title = f"{title} ({fmt.prefix})"
+            elif fmt.suffix:
+                title = f"{title} ({fmt.suffix.strip()})"
+            encoding_obj["title"] = title
+
+    # --- Color scheme ---
+    if channel in ('color', 'group') and cs.color_scheme:
+        csr = cs.color_scheme
+        # Don't override user-provided colorScheme from config
+        config_scheme = (config or {}).get("colorScheme") if chart_type == "heatmap" else None
+        if not config_scheme:
+            scale = encoding_obj.setdefault("scale", {})
+            scale["scheme"] = csr.scheme
+            if csr.type == 'diverging' and csr.domain_mid is not None and vl_type == 'quantitative':
+                scale["domainMid"] = csr.domain_mid
+
+    # --- Zero baseline (positional quantitative) ---
+    if channel in ('x', 'y') and vl_type == 'quantitative' and cs.zero:
+        zd = cs.zero
+        scale = encoding_obj.setdefault("scale", {})
+        scale["zero"] = zd.zero
+        if not zd.zero and zd.domain_pad_fraction > 0:
+            scale["padding"] = zd.domain_pad_fraction
+        # Apply nice rounding
+        if cs.domain_constraint:
+            if cs.domain_constraint.clamp:
+                scale["nice"] = False
+            elif cs.domain_constraint.min_val is not None and cs.domain_constraint.max_val is not None:
+                scale["nice"] = False
+
+    # --- Domain constraint ---
+    if channel in ('x', 'y') and vl_type == 'quantitative' and cs.domain_constraint:
+        dc = cs.domain_constraint
+        if dc.min_val is not None and dc.max_val is not None:
+            scale = encoding_obj.setdefault("scale", {})
+            scale["domain"] = [dc.min_val, dc.max_val]
+            if dc.clamp:
+                scale["clamp"] = True
+
+    # --- Scale type (log) ---
+    if channel in ('x', 'y') and vl_type == 'quantitative' and cs.scale_type:
+        encoding_obj.setdefault("scale", {})["type"] = cs.scale_type
+
+    # --- Tick constraints ---
+    if channel in ('x', 'y') and cs.tick_constraint:
+        tc = cs.tick_constraint
+        axis = encoding_obj.setdefault("axis", {})
+        if tc.exact_ticks:
+            axis["values"] = tc.exact_ticks
+        if tc.min_step:
+            axis["tickMinStep"] = tc.min_step
+
+    # --- Ordinal sort order ---
+    if cs.ordinal_sort_order and vl_type in ('ordinal', 'nominal'):
+        encoding_obj["sort"] = cs.ordinal_sort_order
+
+    # --- Temporal format ---
+    if cs.temporal_format and vl_type == 'temporal':
+        axis_key = "axis" if channel in ('x', 'y') else "legend"
+        encoding_obj.setdefault(axis_key, {})["format"] = cs.temporal_format
+
+    # --- Reversed axis ---
+    if cs.reversed and channel in ('x', 'y'):
+        encoding_obj.setdefault("scale", {})["reverse"] = True
+
+    # --- Large nominal legend handling ---
+    if vl_type == 'nominal' and channel == 'color':
+        unique_count = 0
+        if cs.color_scheme:
+            # use the scheme already set
+            pass
+        else:
+            encoding_obj.setdefault("scale", {})["scheme"] = "tableau10"
+
+
+def _apply_spec_quality(
+    spec: dict,
+    table_data: list[dict],
+    df: pd.DataFrame,
+    chart_type: str,
+) -> list[dict]:
+    """
+    Post-processing quality improvements for VL specs.
+
+    Mirrors the TS ``vlApplyLayoutToSpec`` logic in instantiate-spec.ts.
+    Returns (potentially filtered) table_data.
+    """
+    encoding = spec.get("encoding", {})
+    config = spec.setdefault("config", {})
+
+    # ── 1. Filter nulls for line / area y-field (prevents broken lines) ───
+    #    Default VL behaviour leaves gaps at null points.  Filtering them
+    #    out from the data connects the line across missing values.
+    if chart_type in ('line', 'area'):
+        y_field = encoding.get("y", {}).get("field")
+        if y_field:
+            table_data = [
+                row for row in table_data
+                if row.get(y_field) is not None
+                and not (isinstance(row.get(y_field), float) and pd.isna(row[y_field]))
+            ]
+
+    # ── 2. Tooltips ───────────────────────────────────────────────────────
+    config.setdefault("mark", {})["tooltip"] = True
+
+    # ── 3. Canvas sizing defaults ─────────────────────────────────────────
+    view = config.setdefault("view", {})
+    view.setdefault("continuousWidth", 400)
+    view.setdefault("continuousHeight", 300)
+
+    # ── 4. Axis label limits (prevent long labels from overflowing) ──────
+    ax_x = config.setdefault("axisX", {})
+    ax_x.setdefault("labelLimit", 120)
+    ax_y = config.setdefault("axisY", {})
+    ax_y.setdefault("labelLimit", 120)
+
+    # ── 5. Step-based sizing for wide discrete axes ───────────────────────
+    for axis_ch, dim_key in [("x", "width"), ("y", "height")]:
+        enc = encoding.get(axis_ch, {})
+        if (
+            enc.get("type") in ("nominal", "ordinal")
+            and enc.get("field")
+            and dim_key not in spec
+        ):
+            field = enc["field"]
+            if field in df.columns:
+                n_unique = df[field].nunique()
+                if n_unique > 12:
+                    step = max(12, min(30, 600 // n_unique))
+                    spec[dim_key] = {"step": step}
+
+    # ── 6. X-axis label rotation for crowded labels ──────────────────────
+    x_enc = encoding.get("x", {})
+    if x_enc.get("type") in ("nominal", "ordinal") and x_enc.get("field"):
+        field = x_enc["field"]
+        if field in df.columns:
+            n_unique = df[field].nunique()
+            vals = df[field].dropna().astype(str)
+            max_label_len = int(vals.str.len().max()) if len(vals) > 0 else 0
+            if n_unique > 8 or (n_unique > 4 and max_label_len > 10):
+                if "labelAngle" not in ax_x:
+                    ax_x["labelAngle"] = -45
+                    ax_x["labelAlign"] = "right"
+                    ax_x["labelBaseline"] = "top"
+
+    # ── 7. Facet header limits ────────────────────────────────────────────
+    for facet_ch in ("facet", "column", "row"):
+        enc = encoding.get(facet_ch)
+        if enc and enc.get("field") and enc["field"] in df.columns:
+            n_facets = df[enc["field"]].nunique()
+            if n_facets > 6:
+                config.setdefault("header", {}).update({
+                    "labelLimit": 120, "labelFontSize": 9,
+                })
+                break
+
+    # ── 8. Faceted chart lighter axis titles ──────────────────────────────
+    has_row = "row" in encoding
+    has_col = "column" in encoding or "facet" in encoding
+    if has_row or has_col:
+        light_title = {
+            "titleFontWeight": "normal",
+            "titleFontSize": 11,
+            "titleColor": "#666",
+        }
+        for ax_key in ("axisX", "axisY"):
+            ax_cfg = config.setdefault(ax_key, {})
+            for k, v in light_title.items():
+                ax_cfg.setdefault(k, v)
+
+    # ── 9. Dual-legend repositioning ──────────────────────────────────────
+    #    When two+ channels produce legends (e.g. color + size), move the
+    #    categorical legend to the bottom to free plot area width.
+    legend_channels = [
+        ch for ch in ("color", "size", "shape", "opacity")
+        if ch in encoding and encoding[ch].get("field")
+    ]
+    if len(legend_channels) >= 2:
+        cat_chs = [
+            ch for ch in legend_channels
+            if encoding[ch].get("type") in ("nominal", "ordinal")
+        ]
+        quant_chs = [
+            ch for ch in legend_channels
+            if encoding[ch].get("type") in ("quantitative", "temporal")
+        ]
+        if cat_chs and quant_chs:
+            for ch in cat_chs:
+                legend = encoding[ch].setdefault("legend", {})
+                legend["orient"] = "bottom"
+                legend["direction"] = "horizontal"
+
+    return table_data
 
 
 def _apply_chart_config(spec: dict, chart_type: str, config: dict):

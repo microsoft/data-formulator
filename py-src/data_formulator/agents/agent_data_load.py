@@ -27,6 +27,21 @@ Types to consider include: string, number, date
 
 ''' + generate_semantic_types_prompt() + '''
 
+Enriched annotation fields (optional — provide when applicable):
+
+- "intrinsic_domain": [min, max] — the known scale bounds of the measurement instrument.
+    - Infer from data values and context: e.g., if a "rating" column has values 1-10, the domain is [1, 10]; if it's clearly a 5-star system, use [1, 5].
+    - For Percentage: [0, 100] if values are whole-number percentages, [0, 1] if fractional.
+    - For Correlation: always [-1, 1].
+    - Do NOT provide for open-ended measures like Revenue, Count, Quantity, Temperature, etc.
+    - Only provide when the scale bounds are clear from the data or domain knowledge.
+- "unit": a short unit string for physical/monetary quantities.
+    - Temperature: "°C", "°F", "K"
+    - Physical: "kg", "km", "mph", "m²", "L", etc.
+    - Currency: "USD", "EUR", "¥", etc.
+    - Duration: "ms", "s", "min", "hr"
+    - Only provide when the unit is clear from column name, data values, or context.
+
 Sort order:
 
 - if the field is string type and is ordinal, provide the natural sort order of the fields here.
@@ -42,8 +57,12 @@ output should be in the format of:
 {
     "suggested_table_name": ..., // the name of the table
     "fields": {
-        "field1": {"type": ..., "semantic_type": ..., "sort_order": [...]}, // replace field1 field2 with actual field names, if the field is string type and is ordinal, provide the natural sort order of the fields here 
-        "field2": {"type": ..., "semantic_type": ...}, // no need to provide sort_order if there is no inherent order of the field values
+        "field1": {"type": ..., "semantic_type": ..., "sort_order": [...], "intrinsic_domain": [...], "unit": ...},
+        // replace field1 field2 with actual field names
+        // only include sort_order if the field is ordinal with inherent order
+        // only include intrinsic_domain if the field has a known bounded scale
+        // only include unit if the unit is clear from context
+        "field2": {"type": ..., "semantic_type": ...},
         ...
     },
     "data_summary": ... // a short summary of the data (50-100 words), should capture the key characteristics of the data
@@ -82,11 +101,11 @@ table_0 (table_0) sample:
 {
     "suggested_table_name": "income",
     "fields": {
-        "name": {"type": "string", "semantic_type": "State", "sort_order": null},
+        "name": {"type": "string", "semantic_type": "State"},
         "region": {"type": "string", "semantic_type": "Region", "sort_order": ["northeast", "midwest", "south", "west", "other"]},
-        "state_id": {"type": "number", "semantic_type": "ID", "sort_order": null},
-        "pct": {"type": "number", "semantic_type": "Percentage", "sort_order": null},
-        "total": {"type": "number", "semantic_type": "Count", "sort_order": null},
+        "state_id": {"type": "number", "semantic_type": "ID"},
+        "pct": {"type": "number", "semantic_type": "Percentage", "intrinsic_domain": [0, 1]},
+        "total": {"type": "number", "semantic_type": "Count"},
         "group": {"type": "string", "semantic_type": "Range", "sort_order": ["<10000", "10000 to 14999", "15000 to 24999", "25000 to 34999", "35000 to 49999", "50000 to 74999", "75000 to 99999", "100000 to 149999", "150000 to 199999", "200000+"]}
     },
     "data_summary": "Income distribution across US states, with percentage and count by income bracket."
@@ -121,18 +140,16 @@ table_0 (weather_seattle_atlanta) sample:
     "fields": {  
         "Date": {  
             "type": "string",  
-            "semantic_type": "Date",  
-            "sort_order": null  
+            "semantic_type": "Date"  
         },  
         "City": {  
             "type": "string",  
-            "semantic_type": "City",  
-            "sort_order": null  
+            "semantic_type": "City"  
         },  
         "Temperature": {  
             "type": "number",  
             "semantic_type": "Temperature",  
-            "sort_order": null  
+            "unit": "°F"  
         }  
     },  
     "data_summary": "Daily temperature data comparing Seattle and Atlanta throughout 2020, recording daily temperature measurements for each city from January to September."

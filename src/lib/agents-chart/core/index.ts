@@ -52,7 +52,6 @@ export {
     isOrdinalType,
     isGeoType,
     getRecommendedColorScheme,
-    getRecommendedColorSchemeWithMidpoint,
     inferOrdinalSortOrder,
 } from './semantic-types';
 
@@ -78,7 +77,7 @@ export {
 } from './decisions';
 
 // Phase modules (analysis pipeline — VL-free)
-export { resolveSemantics, convertTemporalData } from './resolve-semantics';
+export { resolveChannelSemantics, convertTemporalData } from './resolve-semantics';
 export { filterOverflow } from './filter-overflow';
 export { computeLayout, computeChannelBudgets } from './compute-layout';
 
@@ -88,3 +87,34 @@ export {
     recommendChannels,
     type SemanticRole,
 } from './recommendation';
+
+// Field semantics
+export {
+    type SemanticAnnotation,
+    type FormatSpec,
+    type DomainConstraint,
+    type TickConstraint,
+    type ColorSchemeHint,
+    type DivergingInfo,
+    type FieldSemantics,
+    resolveFieldSemantics,
+    normalizeAnnotation,
+    getRegistryEntry,
+    toTypeString,
+    resolveFormat,
+    resolveDefaultVisType,
+    resolveAggregationDefault,
+    resolveZeroClassFromAnnotation,
+    resolveScaleType,
+    resolveDomainConstraint,
+    resolveTickConstraint,
+    resolveCanonicalOrder,
+    resolveCyclic,
+    resolveReversed,
+    resolveNice,
+    resolveDivergingInfo,
+    resolveColorSchemeHint,
+    resolveBinningSuggested,
+    resolveStackable,
+    resolveSortDirection,
+} from './field-semantics';

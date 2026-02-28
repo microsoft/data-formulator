@@ -8,7 +8,7 @@
  * produces a complete Vega-Lite specification in two stages:
  *
  * ── ANALYSIS (VL-free) ──────────────────────────────────────
- *   Phase 0:  resolveSemantics     → ChannelSemantics
+ *   Phase 0:  resolveChannelSemantics  → ChannelSemantics
  *   Step 0a:  declareLayoutMode    → LayoutDeclaration
  *   Step 0b:  convertTemporalData  → converted data
  *   Step 0c:  filterOverflow       → filtered data, nominalCounts
@@ -54,8 +54,9 @@ import {
 } from '../core/types';
 import type { ChartWarning } from '../core/types';
 import { vlGetTemplateDef } from './templates';
-import { inferVisCategory } from '../core/semantic-types';
-import { resolveSemantics, convertTemporalData } from '../core/resolve-semantics';
+import { inferVisCategory, computeZeroDecision } from '../core/semantic-types';
+import { resolveChannelSemantics, convertTemporalData } from '../core/resolve-semantics';
+import { toTypeString, type SemanticAnnotation } from '../core/field-semantics';
 import { filterOverflow } from '../core/filter-overflow';
 import { computeLayout, computeChannelBudgets, computeMinSubplotDimensions } from '../core/compute-layout';
 import { vlApplyLayoutToSpec, vlApplyTooltips } from './instantiate-spec';
@@ -102,11 +103,25 @@ export function assembleVegaLite(input: ChartAssemblyInput): any {
     const tplMark = chartTemplate.template?.mark;
     const templateMarkType = typeof tplMark === 'string' ? tplMark : tplMark?.type;
 
-    const channelSemantics = resolveSemantics(
-        encodings, data, semanticTypes,
-        chartTemplate.markCognitiveChannel,
-        templateMarkType,
+    // Convert temporal data once — feeds semantic resolution and all downstream stages
+    const convertedData = convertTemporalData(data, semanticTypes);
+
+    const channelSemantics = resolveChannelSemantics(
+        encodings, data, semanticTypes, convertedData,
     );
+
+    // Finalize zero-baseline (requires template mark knowledge)
+    const effectiveMarkType = templateMarkType || 'point';
+    for (const [channel, cs] of Object.entries(channelSemantics)) {
+        if ((channel === 'x' || channel === 'y') && cs.type === 'quantitative') {
+            const numericValues = data
+                .map(r => r[cs.field])
+                .filter((v: any) => v != null && typeof v === 'number' && !isNaN(v));
+            cs.zero = computeZeroDecision(
+                cs.semanticAnnotation.semanticType, channel, effectiveMarkType, numericValues,
+            );
+        }
+    }
 
     // ═══════════════════════════════════════════════════════════════════════
     // STEP 0a: declareLayoutMode (VL-free template hook)
@@ -173,13 +188,7 @@ export function assembleVegaLite(input: ChartAssemblyInput): any {
     const facetFixH = effectiveOptions.facetFixedPadding.height;
 
     // ═══════════════════════════════════════════════════════════════════════
-    // STEP 0b: Temporal Data Conversion
-    // ═══════════════════════════════════════════════════════════════════════
-
-    const convertedData = convertTemporalData(data, semanticTypes);
-
-    // ═══════════════════════════════════════════════════════════════════════
-    // STEP 0c: filterOverflow (VL-free)
+    // STEP 0b: filterOverflow (VL-free)
     // ═══════════════════════════════════════════════════════════════════════
 
     // Collect mark types for sort strategy
@@ -418,7 +427,7 @@ function buildVLEncodings(
     declaration: LayoutDeclaration,
     data: any[],
     canvasSize: { width: number; height: number },
-    semanticTypes: Record<string, string>,
+    semanticTypes: Record<string, string | SemanticAnnotation>,
     templateMarkType: string | undefined,
     chartTemplate: ChartTemplateDef,
 ): Record<string, any> {
@@ -543,7 +552,7 @@ function buildVLEncodings(
             } else {
                 try {
                     if (fieldName) {
-                        const fieldSemType = semanticTypes[fieldName] || '';
+                        const fieldSemType = toTypeString(semanticTypes[fieldName]);
                         const fieldVisCat = inferVisCategory(data.map(r => r[fieldName]));
                         let sortedValues = JSON.parse(encoding.sortBy);
 

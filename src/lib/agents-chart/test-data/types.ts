@@ -9,6 +9,7 @@
 import { Type } from '../../../data/types';
 import { Channel, EncodingItem, FieldItem } from '../../../components/ComponentType';
 import { AssembleOptions } from '../core/types';
+import type { SemanticAnnotation } from '../core/field-semantics';
 
 // ============================================================================
 // Test Case Definition
@@ -25,6 +26,12 @@ export interface TestCase {
     encodingMap: Partial<Record<Channel, EncodingItem>>;
     chartProperties?: Record<string, any>;
     assembleOptions?: AssembleOptions;
+    /**
+     * Enriched semantic annotations that override the plain semanticType strings
+     * in metadata. Use this when a field needs extra info like intrinsicDomain or unit.
+     * E.g., { rating: { semanticType: 'Rating', intrinsicDomain: [1, 5] } }
+     */
+    semanticAnnotations?: Record<string, SemanticAnnotation>;
 }
 
 /** Date format definition for date stress tests */

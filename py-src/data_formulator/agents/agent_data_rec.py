@@ -62,9 +62,37 @@ Concretely, you should infer the appropriate data and create a Python script bas
         "encodings": {} // object, map visual channels to output field names. Available channels depend on chart_type (see reference below).
         "config": {} // object (optional), chart styling options. Available options depend on chart_type (see reference below). Only include when there's a clear reason.
     }
+    "field_metadata": { // object, semantic type for each field used in chart encodings.
+        "<field_name>": "SemanticType" // string, one of the types from [SEMANTIC TYPE REFERENCE] below.
+    }
     "output_variable": "" // string, descriptive snake_case Python variable name for the final DataFrame.
 }
 ```
+
+**[SEMANTIC TYPE REFERENCE]**
+
+Choose the most specific type that fits. Only annotate fields used in chart encodings.
+
+| Category | Types |
+|---|---|
+| Temporal | DateTime, Date, Time, Timestamp, Year, Quarter, Month, Week, Day, Hour, YearMonth, YearQuarter, YearWeek, Decade, Duration |
+| Monetary measures | Amount, Price, Revenue, Cost |
+| Physical measures | Quantity, Temperature |
+| Proportion | Percentage |
+| Signed/diverging | Profit, PercentageChange, Sentiment, Correlation |
+| Generic measures | Count, Number |
+| Discrete numeric | Rank, Score, Rating, Index |
+| Identifier | ID |
+| Geographic | Latitude, Longitude, Country, State, City, Region, Address, ZipCode |
+| Entity names | PersonName, Company, Product, Category, Name |
+| Coded categorical | Status, Type, Boolean, Direction |
+| Binned ranges | Range, AgeGroup |
+| Fallback | String, Unknown |
+
+Key guidelines:
+- Use **Revenue/Cost** for summed monetary totals, **Price** for per-unit prices, **Profit** for values that can be negative.
+- Use **Temperature** (not Quantity) for temperature — it has special diverging behavior.
+- Use **Year** (not Number) for columns like "year" with values 2020, 2021.
 
 **[CHART TYPE REFERENCE]**
 
@@ -311,6 +339,10 @@ Here are our datasets, here are their field summaries and samples:
     "chart": {
         "chart_type": "bar",
         "encodings": {"x": "student", "y": "average_score"}
+    },
+    "field_metadata": {
+        "student": "ID",
+        "average_score": "Score"
     },
     "output_variable": "student_rankings"
 }

@@ -5,7 +5,7 @@
  * Chart.js chart assembly — Two-Stage Pipeline Coordinator.
  *
  * Reuses the **same core analysis pipeline** as Vega-Lite and ECharts:
- *   Phase 0:  resolveSemantics     → ChannelSemantics
+ *   Phase 0:  resolveChannelSemantics  → ChannelSemantics
  *   Step 0a:  declareLayoutMode    → LayoutDeclaration
  *   Step 0b:  convertTemporalData  → converted data
  *   Step 0c:  filterOverflow       → filtered data, nominalCounts
@@ -33,7 +33,8 @@ import {
 } from '../core/types';
 import type { ChartWarning } from '../core/types';
 import { cjsGetTemplateDef } from './templates';
-import { resolveSemantics, convertTemporalData } from '../core/resolve-semantics';
+import { resolveChannelSemantics, convertTemporalData } from '../core/resolve-semantics';
+import { computeZeroDecision } from '../core/semantic-types';
 import { filterOverflow } from '../core/filter-overflow';
 import { computeLayout, computeChannelBudgets } from '../core/compute-layout';
 import { cjsApplyLayoutToSpec, cjsApplyTooltips } from './instantiate-spec';
@@ -78,11 +79,25 @@ export function assembleChartjs(input: ChartAssemblyInput): any {
     const tplMark = chartTemplate.template?.mark;
     const templateMarkType = typeof tplMark === 'string' ? tplMark : tplMark?.type;
 
-    const channelSemantics = resolveSemantics(
-        encodings, data, semanticTypes,
-        chartTemplate.markCognitiveChannel,
-        templateMarkType,
+    // Convert temporal data once — feeds semantic resolution and all downstream stages
+    const convertedData = convertTemporalData(data, semanticTypes);
+
+    const channelSemantics = resolveChannelSemantics(
+        encodings, data, semanticTypes, convertedData,
     );
+
+    // Finalize zero-baseline (requires template mark knowledge)
+    const effectiveMarkType = templateMarkType || 'point';
+    for (const [channel, cs] of Object.entries(channelSemantics)) {
+        if ((channel === 'x' || channel === 'y') && cs.type === 'quantitative') {
+            const numericValues = data
+                .map(r => r[cs.field])
+                .filter((v: any) => v != null && typeof v === 'number' && !isNaN(v));
+            cs.zero = computeZeroDecision(
+                cs.semanticAnnotation.semanticType, channel, effectiveMarkType, numericValues,
+            );
+        }
+    }
 
     // ═══════════════════════════════════════════════════════════════════════
     // STEP 0a: declareLayoutMode (shared hook)
@@ -102,13 +117,7 @@ export function assembleChartjs(input: ChartAssemblyInput): any {
     } = effectiveOptions;
 
     // ═══════════════════════════════════════════════════════════════════════
-    // STEP 0b: Temporal Data Conversion (shared)
-    // ═══════════════════════════════════════════════════════════════════════
-
-    const convertedData = convertTemporalData(data, semanticTypes);
-
-    // ═══════════════════════════════════════════════════════════════════════
-    // STEP 0c: filterOverflow (shared)
+    // STEP 0b: filterOverflow (shared)
     // ═══════════════════════════════════════════════════════════════════════
 
     const allMarkTypes = new Set<string>();

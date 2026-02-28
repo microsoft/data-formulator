@@ -468,6 +468,31 @@ export const SimpleChartRecBox: FC = function () {
                 if (transformedData.virtual) {
                     candidateTable.virtual = { tableId: transformedData.virtual.table_name, rowCount: transformedData.virtual.row_count };
                 }
+
+                // Bootstrap metadata from agent field_metadata (temporary until fetchFieldSemanticType completes)
+                const fieldMetadata = refinedGoal?.['field_metadata'];
+                if (fieldMetadata && typeof fieldMetadata === 'object') {
+                    for (const [fieldName, meta] of Object.entries(fieldMetadata)) {
+                        if (!candidateTable.metadata[fieldName]) continue;
+                        if (typeof meta === 'string') {
+                            // Plain string format: { "field": "SemanticType" }
+                            candidateTable.metadata[fieldName].semanticType = meta;
+                        } else if (typeof meta === 'object' && meta !== null) {
+                            // Dict format: { "field": { "semantic_type": "...", "unit": "...", ... } }
+                            const m = meta as Record<string, any>;
+                            if (m['semantic_type']) {
+                                candidateTable.metadata[fieldName].semanticType = m['semantic_type'];
+                            }
+                            if (m['unit']) {
+                                candidateTable.metadata[fieldName].unit = m['unit'];
+                            }
+                            if (m['intrinsic_domain']) {
+                                candidateTable.metadata[fieldName].intrinsicDomain = m['intrinsic_domain'];
+                            }
+                        }
+                    }
+                }
+
                 createdTables.push(candidateTable);
                 const observedTableId = lastCreatedTableId || focusedTableId; // table the agent was looking at before this step
                 lastCreatedTableId = candidateTableId;
@@ -675,7 +700,7 @@ export const SimpleChartRecBox: FC = function () {
                     borderBottom: `1px solid ${alpha(theme.palette.warning.main, 0.2)}`,
                     backgroundColor: alpha(theme.palette.warning.main, 0.05),
                     borderRadius: '8px 8px 0 0',
-                    mx: '-8px', mt: '-4px', mb: '4px', px: '12px', pt: '8px', pb: '6px',
+                    mx: '-8px', mt: '-4px', mb: '4px', pt: '8px', pb: '6px',
                 }}>
                     <SmartToyOutlinedIcon sx={{ fontSize: 14, color: theme.palette.warning.main, mt: '1px', flexShrink: 0 }} />
                     <Typography sx={{ fontSize: 12, color: theme.palette.text.primary, lineHeight: 1.5, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>

@@ -3,13 +3,19 @@
 
 /**
  * =============================================================================
- * PHASE 0: RESOLVE SEMANTICS
+ * CHANNEL SEMANTICS RESOLVER
  * =============================================================================
  *
- * Derive all data-meaning-dependent decisions from semantic types,
- * data values, channel assignments, and mark type. These decisions are
- * abstract — they describe *what* should happen, not *how* to express it
- * in any particular charting library.
+ * Stage 2 of the semantic pipeline:
+ *   SemanticAnnotation + data → FieldSemantics → **ChannelSemantics**
+ *
+ * Takes each channel’s field, builds FieldSemantics (stage 1), then adds
+ * channel-specific visualization decisions: encoding type, color scheme,
+ * temporal format, ordinal sort, tick constraints, axis reversal, nice
+ * rounding, interpolation, and stacking.
+ *
+ * Zero-baseline is NOT resolved here — it requires template mark knowledge
+ * and is finalized by the assembler after this function returns.
  *
  * VL dependency: **None**
  * =============================================================================
@@ -19,20 +25,29 @@ import type {
     ChartEncoding,
     ChannelSemantics,
     SemanticResult,
-    MarkCognitiveChannel,
 } from './types';
 import {
     getVisCategory,
     inferVisCategory,
-    getRecommendedColorSchemeWithMidpoint,
-    computeZeroDecision,
+    getRecommendedColorScheme,
     inferOrdinalSortOrder,
-    type ZeroDecision,
 } from './semantic-types';
 import {
     resolveEncodingType as resolveEncodingTypeDecision,
     type EncodingTypeDecision,
 } from './decisions';
+import {
+    resolveFieldSemantics,
+    normalizeAnnotation,
+    toTypeString,
+    resolveNice,
+    resolveTickConstraint,
+    resolveReversed,
+    resolveStackable,
+    resolveColorSchemeHint,
+    resolveDivergingInfo,
+    type SemanticAnnotation,
+} from './field-semantics';
 
 // ---------------------------------------------------------------------------
 // Internal helpers (moved from assemble.ts)
@@ -228,13 +243,13 @@ function expandToFullYear(val: string): string {
  */
 export function convertTemporalData(
     data: any[],
-    semanticTypes: Record<string, string>,
+    semanticTypes: Record<string, string | SemanticAnnotation>,
 ): any[] {
     if (data.length === 0) return data;
 
     const keys = Object.keys(data[0]);
     const temporalKeys = keys.filter((k: string) => {
-        const st = semanticTypes[k] || '';
+        const st = toTypeString(semanticTypes[k]);
         const vc = inferVisCategory(data.map(r => r[k]));
         const stCategory = st ? getVisCategory(st) : null;
         return vc === 'temporal' || stCategory === 'temporal' || st === 'Decade';
@@ -246,7 +261,7 @@ export function convertTemporalData(
     return values.map((r: any) => {
         for (const temporalKey of temporalKeys) {
             const val = r[temporalKey];
-            const st = semanticTypes[temporalKey] || '';
+            const st = toTypeString(semanticTypes[temporalKey]);
 
             if (typeof val === 'number') {
                 if (st === 'Year' || st === 'Decade') {
@@ -274,34 +289,36 @@ export function convertTemporalData(
 }
 
 // ---------------------------------------------------------------------------
-// Public API: resolveSemantics
+// Public API: resolveChannelSemantics
 // ---------------------------------------------------------------------------
 
 /**
- * Phase 0: Resolve all semantic decisions from field data, semantic types,
- * and channel assignments.
+ * Resolve all channel-level semantic decisions.
  *
- * Produces a Record<channel, ChannelSemantics> where each entry carries the
- * field, resolved type, and all semantic decisions for that channel.
+ * For each channel, builds FieldSemantics (data identity) then layers on
+ * channel-specific visualization decisions (color scheme, temporal format,
+ * tick constraints, axis reversal, interpolation, etc.).
  *
- * @param encodings       Channel → ChartEncoding from user / AI agent
- * @param data            Array of data rows
- * @param semanticTypes   Field name → semantic type string
- * @param markCognitiveChannel  How the primary mark encodes its quantitative value
- * @param markType        The template's mark type string (for zero-baseline
- *                        decisions when markCognitiveChannel is not provided)
+ * Zero-baseline (cs.zero) is NOT resolved here -- it requires template
+ * mark knowledge (bar vs point) that belongs to the assembler.
+ * The assembler finalizes zero after calling this function.
+ *
+ * @param encodings       Channel -> ChartEncoding from user / AI agent
+ * @param data            Array of data rows (original, unconverted)
+ * @param semanticTypes   Field name -> semantic type string
+ * @param convertedData   Pre-converted temporal data (from convertTemporalData).
+ *                        If omitted, falls back to data for temporal format detection.
  */
-export function resolveSemantics(
+export function resolveChannelSemantics(
     encodings: Record<string, ChartEncoding>,
     data: any[],
-    semanticTypes: Record<string, string>,
-    markCognitiveChannel?: MarkCognitiveChannel,
-    markType?: string,
+    semanticTypes: Record<string, string | SemanticAnnotation>,
+    convertedData?: any[],
 ): SemanticResult {
     const result: SemanticResult = {};
 
-    // Convert temporal data for consistent parsing
-    const convertedData = convertTemporalData(data, semanticTypes);
+    // Use pre-converted temporal data for format detection, or fall back to raw data
+    const temporalData = convertedData ?? data;
 
     for (const [channel, encoding] of Object.entries(encodings)) {
         const fieldName = encoding.field;
@@ -311,16 +328,19 @@ export function resolveSemantics(
         if (!fieldName && encoding.aggregate === 'count') {
             result[channel] = {
                 field: '_count',
-                aggregate: 'count',
+                semanticAnnotation: { semanticType: 'Count' },
                 type: 'quantitative',
-                typeReason: 'count aggregate is always quantitative',
+                aggregationDefault: 'sum',
             };
             continue;
         }
 
         if (!fieldName) continue;
 
-        const semanticType = semanticTypes[fieldName] || '';
+        const rawAnnotation = semanticTypes[fieldName];
+        const semanticType = typeof rawAnnotation === 'string'
+            ? (rawAnnotation || '')
+            : (rawAnnotation?.semanticType ?? '');
         const fieldValues = data.map(r => r[fieldName]);
 
         // Resolve encoding type
@@ -330,17 +350,11 @@ export function resolveSemantics(
 
         // Apply explicit type override
         let resolvedType = typeDecision.vlType;
-        let typeReason = `visCategory=${typeDecision.visCategory}`;
-        if (typeDecision.channelOverride) typeReason += ', channelOverride';
-        if (typeDecision.cardinalityGuard) typeReason += ', cardinalityGuard';
-
         if (encoding.type) {
             resolvedType = encoding.type;
-            typeReason = 'explicit user override';
         } else if (channel === 'column' || channel === 'row') {
             if (resolvedType !== 'nominal' && resolvedType !== 'ordinal') {
                 resolvedType = 'nominal';
-                typeReason += ', facet→nominal';
             }
         }
 
@@ -350,21 +364,41 @@ export function resolveSemantics(
             const isoDateRegex = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})?$/;
             if (sampleValues.length > 0 && sampleValues.every((val: any) => isoDateRegex.test(`${val}`.trim()))) {
                 resolvedType = 'temporal';
-                typeReason += ', isoDateHack';
             }
         }
 
         // Build ChannelSemantics entry
+        // Stage 1: resolve field-level semantics (data identity)
+        const fc = resolveFieldSemantics(rawAnnotation, fieldName, fieldValues);
+        const annotation = fc.semanticAnnotation;
+
+        // Stage 2: layer on channel-specific visualization decisions
+        const tickConstraint = resolveTickConstraint(annotation.semanticType, annotation.intrinsicDomain);
+        const reversed = resolveReversed(annotation.semanticType);
+        const nice = resolveNice(annotation.semanticType, fc.domainConstraint);
+        const stackable = resolveStackable(annotation.semanticType);
+
         const cs: ChannelSemantics = {
             field: fieldName,
+            semanticAnnotation: annotation,
             type: resolvedType,
-            typeReason,
-        };
 
-        // Carry over encoding properties
-        if (encoding.aggregate) cs.aggregate = encoding.aggregate;
-        if (encoding.sortOrder) cs.sortOrder = encoding.sortOrder;
-        if (encoding.sortBy) cs.sortBy = encoding.sortBy;
+            // From FieldSemantics (data identity)
+            format: fc.format,
+            tooltipFormat: fc.tooltipFormat,
+            aggregationDefault: fc.aggregationDefault,
+            scaleType: fc.scaleType,
+            domainConstraint: fc.domainConstraint,
+            cyclic: fc.cyclic || undefined,
+            sortDirection: fc.sortDirection,
+            binningSuggested: fc.binningSuggested || undefined,
+
+            // Channel-specific visualization decisions
+            nice,
+            tickConstraint,
+            reversed: reversed || undefined,
+            stackable,
+        };
 
         // Adjust field name for aggregated fields
         if (encoding.aggregate) {
@@ -379,18 +413,6 @@ export function resolveSemantics(
 
         // --- Channel-specific semantic decisions ---
 
-        // Zero-baseline (positional quantitative only)
-        if ((channel === 'x' || channel === 'y') && cs.type === 'quantitative') {
-            const numericValues = data
-                .map(r => r[fieldName])
-                .filter((v: any) => v != null && typeof v === 'number' && !isNaN(v));
-
-            // Use markCognitiveChannel or fall back to mark type
-            const effectiveMarkType = markType || 'point';
-            const zero = computeZeroDecision(semanticType, channel, effectiveMarkType, numericValues);
-            cs.zero = zero;
-        }
-
         // Color scheme (color and group channels)
         if ((channel === 'color' || channel === 'group') && fieldName) {
             if (encoding.scheme && encoding.scheme !== 'default') {
@@ -401,15 +423,27 @@ export function resolveSemantics(
                 };
             } else {
                 const encodingVLType = cs.type as 'nominal' | 'ordinal' | 'quantitative' | 'temporal';
-                cs.colorScheme = getRecommendedColorSchemeWithMidpoint(
-                    semanticType, encodingVLType, fieldValues, fieldName,
+                // Use design-aligned classification from field-semantics.ts
+                const colorHint = resolveColorSchemeHint(semanticType, annotation, fieldValues);
+                const uniqueValues = [...new Set(fieldValues)];
+                cs.colorScheme = getRecommendedColorScheme(
+                    semanticType, encodingVLType, uniqueValues.length, fieldName,
+                    fieldValues, { type: colorHint.type },
                 );
+                // Apply midpoint from design-aligned diverging analysis
+                if (cs.colorScheme.type === 'diverging' && encodingVLType === 'quantitative') {
+                    const nums = fieldValues.filter((v: any) => typeof v === 'number' && !isNaN(v));
+                    const divInfo = resolveDivergingInfo(semanticType, annotation, nums);
+                    if (divInfo) {
+                        cs.colorScheme.domainMid = divInfo.midpoint;
+                    }
+                }
             }
         }
 
         // Temporal format
         if (cs.type === 'temporal' || (semanticType && getVisCategory(semanticType) === 'temporal')) {
-            const convertedFieldValues = convertedData.map(r => r[fieldName]);
+            const convertedFieldValues = temporalData.map(r => r[fieldName]);
             const fmt = resolveTemporalFormat(convertedFieldValues, semanticType);
             if (fmt) cs.temporalFormat = fmt;
         }

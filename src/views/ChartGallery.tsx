@@ -60,6 +60,7 @@ const VegaChart: React.FC<{ testCase: TestCase }> = React.memo(({ testCase }) =>
                 1,     // scaleFactor
                 testCase.assembleOptions?.maxStretch,
                 testCase.assembleOptions,
+                testCase.semanticAnnotations,
             );
 
             if (!vlSpec) {
@@ -86,10 +87,16 @@ const VegaChart: React.FC<{ testCase: TestCase }> = React.memo(({ testCase }) =>
                 }
             }
 
-            const semanticTypes: Record<string, string> = {};
+            const semanticTypes: Record<string, string | any> = {};
             for (const [fieldName, meta] of Object.entries(testCase.metadata)) {
                 if (meta.semanticType) {
                     semanticTypes[fieldName] = meta.semanticType;
+                }
+            }
+            // Override with enriched annotations when present (e.g., intrinsicDomain, unit)
+            if (testCase.semanticAnnotations) {
+                for (const [fieldName, annotation] of Object.entries(testCase.semanticAnnotations)) {
+                    semanticTypes[fieldName] = annotation;
                 }
             }
 

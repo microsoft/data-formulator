@@ -99,7 +99,9 @@ export interface DictTable {
     metadata: {[key: string]: {
         type: Type,
         semanticType: string, 
-        levels: any[]
+        levels: any[],
+        intrinsicDomain?: [number, number],
+        unit?: string,
     }}; // metadata of the table
 
     rows: any[]; // table content, each entry is a row

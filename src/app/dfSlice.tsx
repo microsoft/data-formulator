@@ -1209,7 +1209,9 @@ export const dataFormulatorSlice = createSlice({
                     table.metadata[name] = { 
                         type: typeMap[name]['type'] as Type, 
                         semanticType: typeMap[name]['semantic_type'], 
-                        levels: typeMap[name]['sort_order'] || undefined
+                        levels: typeMap[name]['sort_order'] || undefined,
+                        intrinsicDomain: typeMap[name]['intrinsic_domain'] || undefined,
+                        unit: typeMap[name]['unit'] || undefined,
                     };
                 }
 

@@ -30,6 +30,7 @@ from data_formulator.workflows.create_vl_plots import (
     coerce_field_type,
     resolve_field_type,
     spec_to_base64,
+    field_metadata_to_semantic_types,
 )
 
 import pandas as pd
@@ -510,7 +511,10 @@ class DataAgent:
                     field_type = coerce_field_type(chart_type, channel, field_type)
                     encodings[channel] = {"field": field, "type": field_type}
 
-            spec = assemble_vegailte_chart(df, chart_type, encodings, config=chart_config)
+            spec = assemble_vegailte_chart(
+                df, chart_type, encodings, config=chart_config,
+                semantic_types=field_metadata_to_semantic_types(refined_goal.get("field_metadata")),
+            )
             return spec_to_base64(spec) if spec else None
         except Exception as e:
             logger.error(f"[DataAgent] Chart creation error: {e}")

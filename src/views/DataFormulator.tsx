@@ -46,6 +46,7 @@ import { UnifiedDataUploadDialog, UploadTabType, DataLoadMenu } from './UnifiedD
 import { ReportView } from './ReportView';
 import { ExampleSession, exampleSessions, ExampleSessionCard } from './ExampleSessions';
 import { useDataRefresh, useDerivedTableRefresh } from '../app/useDataRefresh';
+import type { DictTable } from '../components/ComponentType';
 
 export const DataFormulatorFC = ({ }) => {
 

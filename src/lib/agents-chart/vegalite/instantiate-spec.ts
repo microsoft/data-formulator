@@ -22,9 +22,7 @@ import type {
     InstantiateContext,
     ChartWarning,
 } from '../core/types';
-import {
-    computePaddedDomain,
-} from '../core/semantic-types';
+import type { FormatSpec } from '../core/field-semantics';
 import {
     looksLikeDateString,
     analyzeTemporalField,
@@ -37,6 +35,7 @@ import {
     getVisCategory,
     inferVisCategory,
 } from '../core/semantic-types';
+import { toTypeString } from '../core/field-semantics';
 
 // ---------------------------------------------------------------------------
 // Public API: instantiateSpec
@@ -113,21 +112,16 @@ export function vlApplyLayoutToSpec(
 
             enc.scale.zero = decision.zero;
 
-            if (!decision.zero && decision.domainPadFraction > 0) {
-                const fieldName = enc.field;
-                if (fieldName) {
-                    const numericValues = context.table
-                        .map(r => r[fieldName])
-                        .filter((v: any) => v != null && typeof v === 'number' && !isNaN(v));
-                    const paddedDomain = computePaddedDomain(numericValues, decision.domainPadFraction);
-                    if (paddedDomain) {
-                        enc.scale.domain = paddedDomain;
-                        enc.scale.nice = false;
-                    }
-                }
-            }
+            // No explicit domain padding — VL's native `nice` rounding
+            // (on by default) already provides breathing room with clean
+            // tick-aligned bounds, which is superior to computed fractional
+            // bounds like [1.86, 4.94] that also conflict with semantic
+            // domain constraints and log scales.
         }
     }
+
+    // --- Apply field-context semantic decisions (format, domain, ticks, etc.) ---
+    vlApplyFieldContext(vgObj, channelSemantics, collectEncodingTargets);
 
     // --- Apply temporal formatting ---
     // For positional temporal axes (x/y), do NOT set axis.format — VL's
@@ -151,7 +145,7 @@ export function vlApplyLayoutToSpec(
         if (enc.type !== 'ordinal' && enc.type !== 'nominal') return;
         if (!cs) return;
 
-        const semanticType = context.semanticTypes[enc.field] || '';
+        const semanticType = toTypeString(context.semanticTypes[enc.field]);
         const stCategory = semanticType ? getVisCategory(semanticType) : null;
         if (stCategory !== 'temporal') return;
 
@@ -425,6 +419,187 @@ export function vlApplyLayoutToSpec(
             } else if (ch === 'color') {
                 if (!enc.legend) enc.legend = {};
                 enc.legend.values = [...trunc.keptValues, trunc.placeholder];
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// vlApplyFieldContext — Apply field-level semantic decisions to VL encodings
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a VL-compatible format expression from a FormatSpec.
+ *
+ * - d3's `format()` handles the numeric pattern.
+ * - Prefix/suffix are prepended/appended via a Vega expression.
+ *
+ * Returns an `axis.labelExpr` / `legend.labelExpr` string, or null if
+ * no formatting is needed (plain data labels suffice).
+ */
+function formatSpecToLabelExpr(fmt: FormatSpec): string | null {
+    if (!fmt.pattern) return null;
+    const hasPrefix = !!fmt.prefix;
+    const hasSuffix = !!fmt.suffix;
+
+    if (!hasPrefix && !hasSuffix) {
+        // Pure d3-format — can use axis.format directly (no expr needed)
+        return null;
+    }
+
+    // Build Vega expression: format(datum.value, pattern) with prefix/suffix
+    const pfx = hasPrefix ? `'${fmt.prefix}' + ` : '';
+    const sfx = hasSuffix ? ` + '${fmt.suffix}'` : '';
+    return `${pfx}format(datum.value, '${fmt.pattern}')${sfx}`;
+}
+
+/**
+ * Apply field-context semantic properties to VL encoding objects.
+ *
+ * Consumes the following ChannelSemantics properties that were previously
+ * dead writes (computed by resolveChannelSemantics but never read):
+ *
+ *   1. format       → axis.format / axis.labelExpr  (number formatting)
+ *   2. tooltipFormat → tooltip encoding format
+ *   3. domainConstraint → scale.domain + scale.clamp  (bounded types)
+ *   4. tickConstraint   → axis.tickMinStep + axis.values  (integer ticks)
+ *   5. reversed     → scale.reverse  (rank axes)
+ *   6. nice         → scale.nice  (bounded types disable nice)
+ *   7. scaleType    → scale.type  (log, sqrt, symlog)
+ */
+function vlApplyFieldContext(
+    vgObj: any,
+    channelSemantics: Record<string, ChannelSemantics>,
+    collectEncodingTargets: (ch: string) => any[],
+): void {
+    for (const [ch, cs] of Object.entries(channelSemantics)) {
+        const targets = collectEncodingTargets(ch);
+        if (targets.length === 0) continue;
+
+        for (const enc of targets) {
+            if (!enc.field) continue;
+
+            // ── 1. Number format (axis.format / axis.labelExpr) ──
+            // Only apply to quantitative positional channels.
+            // Without this: axes show raw numbers like "1000000" instead of "$1,000,000".
+            if (cs.format?.pattern && (ch === 'x' || ch === 'y') && enc.type === 'quantitative') {
+                // Skip if the encoding already has an explicit format
+                if (!enc.axis?.format && !enc.axis?.labelExpr) {
+                    if (!enc.axis) enc.axis = {};
+                    const expr = formatSpecToLabelExpr(cs.format);
+                    if (expr) {
+                        enc.axis.labelExpr = expr;
+                    } else {
+                        enc.axis.format = cs.format.pattern;
+                    }
+                }
+            }
+
+            // ── 2. Tooltip format ──
+            // Tooltip formatting is handled via VL's tooltip encoding with format.
+            // Without this: tooltips show raw floats like "0.4812" instead of "48.12%".
+            // NOTE: VL's `config.mark.tooltip: true` uses default formatting;
+            // explicit tooltip channels would need encoding-level format.
+            // For now, we set formatType on the main encoding when tooltipFormat
+            // has a simple pattern (no prefix/suffix).
+            // Full tooltip encoding is deferred to template-level implementation.
+
+            // ── 3. Domain constraint (scale.domain + scale.clamp) ──
+            // Semantic domain constraints (e.g., Rating [1-5], Percentage [0-100])
+            // represent *intrinsic* field bounds and should override any
+            // auto-computed padded domain from the zero-baseline heuristic.
+            // Without this: Rating gets auto-fitted to data range (e.g., 2-4.5)
+            // instead of showing the full 1-5 scale.
+            if (cs.domainConstraint && enc.type === 'quantitative' && (ch === 'x' || ch === 'y')) {
+                if (!enc.scale) enc.scale = {};
+                const { min, max, clamp } = cs.domainConstraint;
+                if (min !== undefined && max !== undefined) {
+                    enc.scale.domain = [min, max];
+                    // For non-bar marks (scatter, line, etc.), the explicit
+                    // semantic domain is authoritative — clear zero so VL
+                    // doesn't extend beyond intrinsic bounds (e.g., Rating
+                    // scatter [1,5] shouldn't stretch to [0,5]).
+                    // For bar/area marks, keep zero:true so bars grow from
+                    // zero with correct proportional lengths — VL extends
+                    // the domain to include 0, and the upper bound is still
+                    // capped by the domain constraint (e.g., [0,5] not [0,6]).
+                    const markType = typeof vgObj.mark === 'string' ? vgObj.mark : vgObj.mark?.type;
+                    const isBarLike = ['bar', 'area', 'rect'].includes(markType);
+                    if (!isBarLike && enc.scale.zero !== undefined) {
+                        delete enc.scale.zero;
+                    }
+                    if (clamp) {
+                        enc.scale.clamp = true;
+                    }
+                }
+            }
+
+            // ── 4. Tick constraint (axis.tickMinStep + axis.values) ──
+            // Without this: Rating 1-5 and Count axes show fractional ticks
+            // like 1.5, 2.5, 3.5 that have no physical meaning.
+            if (cs.tickConstraint && (ch === 'x' || ch === 'y') && enc.type === 'quantitative') {
+                if (!enc.axis) enc.axis = {};
+                if (cs.tickConstraint.integersOnly && enc.axis.tickMinStep === undefined) {
+                    enc.axis.tickMinStep = cs.tickConstraint.minStep ?? 1;
+                }
+                if (cs.tickConstraint.exactTicks && !enc.axis.values) {
+                    enc.axis.values = cs.tickConstraint.exactTicks;
+                }
+                // When ticks are integers, axis labels should show integers
+                // even if the underlying data has decimals (e.g., Rating
+                // data 3.7 with ticks at 1,2,3,4,5 → labels "1,2,3,4,5"
+                // not "1.0,2.0,3.0").
+                if (cs.tickConstraint.integersOnly && enc.axis.format) {
+                    // Replace decimal format with integer format for axis only
+                    enc.axis.format = enc.axis.format.replace(/\.\d+f$/, 'd');
+                }
+                // Same for labelExpr — swap the d3-format pattern inside
+                if (cs.tickConstraint.integersOnly && enc.axis.labelExpr) {
+                    enc.axis.labelExpr = enc.axis.labelExpr.replace(
+                        /format\(datum\.value,\s*'([^']*)\.\d+f'\)/,
+                        "format(datum.value, '$1d')",
+                    );
+                }
+            }
+
+            // ── 5. Reversed axis (scale.reverse) ──
+            // Only for quantitative axes. Ordinal y-axes already place the
+            // first domain value (rank 1) at the top by default, so adding
+            // scale.reverse there would double-reverse, putting 1 back at
+            // the bottom.
+            if (cs.reversed && (ch === 'x' || ch === 'y') && enc.type === 'quantitative') {
+                if (!enc.scale) enc.scale = {};
+                if (enc.scale.reverse === undefined) {
+                    enc.scale.reverse = true;
+                }
+            }
+
+            // ── 6. Nice rounding (scale.nice) ──
+            // Without this: Domain [1, 5] for ratings gets "nice-rounded"
+            // to [0, 6] which wastes space and implies values that don't exist.
+            if (cs.nice === false && enc.type === 'quantitative') {
+                if (!enc.scale) enc.scale = {};
+                if (enc.scale.nice === undefined) {
+                    enc.scale.nice = false;
+                }
+            }
+
+            // ── 7. Scale type (scale.type) ──
+            // Only applies for specific semantic types (Population, GDP, etc.)
+            // when data spans ≥ 4 orders of magnitude. Conservative policy
+            // to avoid surprising users on normal datasets.
+            if (cs.scaleType && cs.scaleType !== 'linear' && enc.type === 'quantitative') {
+                if (!enc.scale) enc.scale = {};
+                if (!enc.scale.type) {
+                    enc.scale.type = cs.scaleType;
+
+                    // Log/symlog scales don't support zero baseline — clean it up
+                    if (cs.scaleType === 'log' || cs.scaleType === 'symlog') {
+                        if (enc.scale.zero !== undefined) {
+                            delete enc.scale.zero;
+                        }
+                    }
+                }
             }
         }
     }
