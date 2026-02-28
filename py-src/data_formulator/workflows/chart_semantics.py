@@ -3,37 +3,30 @@
 
 """
 =============================================================================
-CHART SEMANTICS — Minimal Python port of the TS agents-chart library
+CHART SEMANTICS — Lightweight type resolution for VL spec assembly
 =============================================================================
 
-Ported from:
-  src/lib/agents-chart/core/type-registry.ts
-  src/lib/agents-chart/core/field-semantics.ts
-  src/lib/agents-chart/core/semantic-types.ts
-  src/lib/agents-chart/core/resolve-semantics.ts
+Provides semantic-aware type resolution for create_vl_plots.py:
+  - Type registry (maps semantic types → VL encoding types)
+  - VL type resolution (nominal / ordinal / temporal / quantitative)
+  - Ordinal sort order (months, days, quarters)
 
-Provides semantic-aware chart assembly helpers for create_vl_plots.py:
-  - Type registry (per-type compilation dimensions)
-  - Number formatting  ($, %, unit suffixes, abbreviation)
-  - Color scheme selection  (diverging / sequential / categorical)
-  - Zero-baseline decisions
-  - Domain constraints  (intrinsic domain merging)
-  - Ordinal sort order  (months, days, quarters)
-  - Temporal format detection
-  - Scale type  (log for wide-range data)
-  - Tick constraints  (integer-only for counts)
-
-This is NOT a 1:1 port — it's a minimal subset focused on VL spec quality.
-The TS library remains the canonical source of truth.
+This is intentionally minimal.  The TS agents-chart library is the
+canonical source of truth for formatting, color schemes, tick
+constraints, domain constraints, and other visual refinements.
+The Python side focuses on getting the structural type decisions right
+(which directly affect chart shape), and leaves cosmetic details to
+defaults or the front-end.
 =============================================================================
 """
 
 from __future__ import annotations
 
-import math
 import re
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Set, Tuple
+import math
+from dataclasses import dataclass
+from datetime import datetime, date
+from typing import Any, Dict, List, Optional, Tuple
 
 # ---------------------------------------------------------------------------
 # §1  Type Registry  (mirrors type-registry.ts)
@@ -46,83 +39,76 @@ class TypeRegistryEntry:
     vis_encodings: tuple   # Primary VL types, e.g. ('quantitative',)
     agg_role: str          # additive | intensive | signed-additive | dimension | identifier
     domain_shape: str      # open | bounded | fixed | cyclic
-    diverging: str         # none | inherent | conditional
-    format_class: str      # currency | percent | signed-percent | signed-currency | signed-decimal | unit-suffix | integer | decimal | plain
-    zero_baseline: str     # meaningful | arbitrary | contextual | none
-    zero_pad: float        # Domain padding for non-zero axes
 
 
-_UNKNOWN = TypeRegistryEntry('Categorical', 'Entity', ('nominal',), 'dimension', 'open', 'none', 'plain', 'none', 0)
+_UNKNOWN = TypeRegistryEntry('Categorical', 'Entity', ('nominal',), 'dimension', 'open')
 
 TYPE_REGISTRY: Dict[str, TypeRegistryEntry] = {
     # --- Temporal: DateTime ---
-    'DateTime':    TypeRegistryEntry('Temporal', 'DateTime', ('temporal',), 'dimension', 'open', 'none', 'plain', 'none', 0),
-    'Date':        TypeRegistryEntry('Temporal', 'DateTime', ('temporal',), 'dimension', 'open', 'none', 'plain', 'none', 0),
-    'Time':        TypeRegistryEntry('Temporal', 'DateTime', ('temporal',), 'dimension', 'open', 'none', 'plain', 'none', 0),
-    'Timestamp':   TypeRegistryEntry('Temporal', 'DateTime', ('temporal',), 'dimension', 'open', 'none', 'plain', 'none', 0),
+    'DateTime':    TypeRegistryEntry('Temporal', 'DateTime', ('temporal',), 'dimension', 'open'),
+    'Date':        TypeRegistryEntry('Temporal', 'DateTime', ('temporal',), 'dimension', 'open'),
+    'Time':        TypeRegistryEntry('Temporal', 'DateTime', ('temporal',), 'dimension', 'open'),
+    'Timestamp':   TypeRegistryEntry('Temporal', 'DateTime', ('temporal',), 'dimension', 'open'),
     # --- Temporal: DateGranule ---
-    'Year':        TypeRegistryEntry('Temporal', 'DateGranule', ('temporal', 'ordinal'), 'dimension', 'open', 'none', 'integer', 'arbitrary', 0.03),
-    'Quarter':     TypeRegistryEntry('Temporal', 'DateGranule', ('ordinal',), 'dimension', 'cyclic', 'none', 'plain', 'none', 0),
-    'Month':       TypeRegistryEntry('Temporal', 'DateGranule', ('ordinal',), 'dimension', 'cyclic', 'none', 'plain', 'arbitrary', 0),
-    'Week':        TypeRegistryEntry('Temporal', 'DateGranule', ('ordinal',), 'dimension', 'cyclic', 'none', 'plain', 'none', 0),
-    'Day':         TypeRegistryEntry('Temporal', 'DateGranule', ('ordinal',), 'dimension', 'cyclic', 'none', 'plain', 'arbitrary', 0),
-    'Hour':        TypeRegistryEntry('Temporal', 'DateGranule', ('ordinal',), 'dimension', 'cyclic', 'none', 'integer', 'arbitrary', 0),
-    'YearMonth':   TypeRegistryEntry('Temporal', 'DateGranule', ('temporal', 'ordinal'), 'dimension', 'open', 'none', 'plain', 'none', 0),
-    'YearQuarter': TypeRegistryEntry('Temporal', 'DateGranule', ('temporal', 'ordinal'), 'dimension', 'open', 'none', 'plain', 'none', 0),
-    'YearWeek':    TypeRegistryEntry('Temporal', 'DateGranule', ('temporal', 'ordinal'), 'dimension', 'open', 'none', 'plain', 'none', 0),
-    'Decade':      TypeRegistryEntry('Temporal', 'DateGranule', ('temporal', 'ordinal'), 'dimension', 'open', 'none', 'integer', 'arbitrary', 0.03),
+    'Year':        TypeRegistryEntry('Temporal', 'DateGranule', ('temporal', 'ordinal'), 'dimension', 'open'),
+    'Quarter':     TypeRegistryEntry('Temporal', 'DateGranule', ('ordinal',), 'dimension', 'cyclic'),
+    'Month':       TypeRegistryEntry('Temporal', 'DateGranule', ('ordinal',), 'dimension', 'cyclic'),
+    'Week':        TypeRegistryEntry('Temporal', 'DateGranule', ('ordinal',), 'dimension', 'cyclic'),
+    'Day':         TypeRegistryEntry('Temporal', 'DateGranule', ('ordinal',), 'dimension', 'cyclic'),
+    'Hour':        TypeRegistryEntry('Temporal', 'DateGranule', ('ordinal',), 'dimension', 'cyclic'),
+    'YearMonth':   TypeRegistryEntry('Temporal', 'DateGranule', ('temporal', 'ordinal'), 'dimension', 'open'),
+    'YearQuarter': TypeRegistryEntry('Temporal', 'DateGranule', ('temporal', 'ordinal'), 'dimension', 'open'),
+    'YearWeek':    TypeRegistryEntry('Temporal', 'DateGranule', ('temporal', 'ordinal'), 'dimension', 'open'),
+    'Decade':      TypeRegistryEntry('Temporal', 'DateGranule', ('temporal', 'ordinal'), 'dimension', 'open'),
     # --- Temporal: Duration ---
-    'Duration':    TypeRegistryEntry('Temporal', 'Duration', ('quantitative',), 'additive', 'open', 'none', 'unit-suffix', 'meaningful', 0),
+    'Duration':    TypeRegistryEntry('Temporal', 'Duration', ('quantitative',), 'additive', 'open'),
     # --- Measure: Amount ---
-    'Amount':      TypeRegistryEntry('Measure', 'Amount', ('quantitative',), 'additive', 'open', 'none', 'currency', 'meaningful', 0),
-    'Price':       TypeRegistryEntry('Measure', 'Amount', ('quantitative',), 'intensive', 'open', 'none', 'currency', 'meaningful', 0),
-    'Revenue':     TypeRegistryEntry('Measure', 'Amount', ('quantitative',), 'additive', 'open', 'none', 'currency', 'meaningful', 0),
-    'Cost':        TypeRegistryEntry('Measure', 'Amount', ('quantitative',), 'additive', 'open', 'none', 'currency', 'meaningful', 0),
+    'Amount':      TypeRegistryEntry('Measure', 'Amount', ('quantitative',), 'additive', 'open'),
+    'Price':       TypeRegistryEntry('Measure', 'Amount', ('quantitative',), 'intensive', 'open'),
+    'Revenue':     TypeRegistryEntry('Measure', 'Amount', ('quantitative',), 'additive', 'open'),
+    'Cost':        TypeRegistryEntry('Measure', 'Amount', ('quantitative',), 'additive', 'open'),
+    'Currency':    TypeRegistryEntry('Measure', 'Amount', ('quantitative',), 'additive', 'open'),
+    'GDP':         TypeRegistryEntry('Measure', 'Amount', ('quantitative',), 'additive', 'open'),
     # --- Measure: Physical ---
-    'Quantity':    TypeRegistryEntry('Measure', 'Physical', ('quantitative',), 'additive', 'open', 'none', 'unit-suffix', 'meaningful', 0),
-    'Temperature': TypeRegistryEntry('Measure', 'Physical', ('quantitative',), 'intensive', 'open', 'conditional', 'unit-suffix', 'arbitrary', 0.05),
+    'Quantity':    TypeRegistryEntry('Measure', 'Physical', ('quantitative',), 'additive', 'open'),
+    'Temperature': TypeRegistryEntry('Measure', 'Physical', ('quantitative',), 'intensive', 'open'),
     # --- Measure: Proportion ---
-    'Percentage':  TypeRegistryEntry('Measure', 'Proportion', ('quantitative',), 'intensive', 'bounded', 'none', 'percent', 'contextual', 0),
+    'Percentage':  TypeRegistryEntry('Measure', 'Proportion', ('quantitative',), 'intensive', 'bounded'),
     # --- Measure: SignedMeasure ---
-    'Profit':              TypeRegistryEntry('Measure', 'SignedMeasure', ('quantitative',), 'signed-additive', 'open', 'conditional', 'signed-currency', 'meaningful', 0),
-    'PercentageChange':    TypeRegistryEntry('Measure', 'SignedMeasure', ('quantitative',), 'intensive', 'open', 'conditional', 'signed-percent', 'meaningful', 0),
-    'Sentiment':           TypeRegistryEntry('Measure', 'SignedMeasure', ('quantitative',), 'intensive', 'open', 'inherent', 'signed-decimal', 'meaningful', 0),
-    'Correlation':         TypeRegistryEntry('Measure', 'SignedMeasure', ('quantitative',), 'intensive', 'bounded', 'inherent', 'signed-decimal', 'meaningful', 0),
+    'Profit':              TypeRegistryEntry('Measure', 'SignedMeasure', ('quantitative',), 'signed-additive', 'open'),
+    'PercentageChange':    TypeRegistryEntry('Measure', 'SignedMeasure', ('quantitative',), 'intensive', 'open'),
+    'Sentiment':           TypeRegistryEntry('Measure', 'SignedMeasure', ('quantitative',), 'intensive', 'open'),
+    'Correlation':         TypeRegistryEntry('Measure', 'SignedMeasure', ('quantitative',), 'intensive', 'bounded'),
     # --- Measure: GenericMeasure ---
-    'Count':       TypeRegistryEntry('Measure', 'GenericMeasure', ('quantitative',), 'additive', 'open', 'none', 'integer', 'meaningful', 0),
-    'Number':      TypeRegistryEntry('Measure', 'GenericMeasure', ('quantitative',), 'additive', 'open', 'none', 'decimal', 'meaningful', 0),
+    'Count':       TypeRegistryEntry('Measure', 'GenericMeasure', ('quantitative',), 'additive', 'open'),
+    'Number':      TypeRegistryEntry('Measure', 'GenericMeasure', ('quantitative',), 'additive', 'open'),
     # --- Discrete ---
-    'Rank':        TypeRegistryEntry('Discrete', 'Rank', ('ordinal',), 'dimension', 'open', 'none', 'integer', 'arbitrary', 0.08),
-    'Score':       TypeRegistryEntry('Discrete', 'Score', ('quantitative', 'ordinal'), 'intensive', 'bounded', 'conditional', 'decimal', 'contextual', 0.05),
-    'Rating':      TypeRegistryEntry('Discrete', 'Score', ('quantitative', 'ordinal'), 'intensive', 'bounded', 'conditional', 'decimal', 'contextual', 0.05),
-    'Index':       TypeRegistryEntry('Discrete', 'Index', ('ordinal',), 'dimension', 'open', 'none', 'integer', 'arbitrary', 0.08),
-    'ID':          TypeRegistryEntry('Identifier', 'ID', ('nominal',), 'identifier', 'open', 'none', 'plain', 'arbitrary', 0),
+    'Rank':        TypeRegistryEntry('Discrete', 'Rank', ('ordinal',), 'dimension', 'open'),
+    'Score':       TypeRegistryEntry('Discrete', 'Score', ('quantitative', 'ordinal'), 'intensive', 'bounded'),
+    'Rating':      TypeRegistryEntry('Discrete', 'Score', ('quantitative', 'ordinal'), 'intensive', 'bounded'),
+    'Index':       TypeRegistryEntry('Discrete', 'Index', ('ordinal',), 'dimension', 'open'),
+    'ID':          TypeRegistryEntry('Identifier', 'ID', ('nominal',), 'identifier', 'open'),
     # --- Geographic ---
-    'Latitude':    TypeRegistryEntry('Geographic', 'GeoCoordinate', ('quantitative', 'geographic'), 'dimension', 'fixed', 'none', 'decimal', 'arbitrary', 0.02),
-    'Longitude':   TypeRegistryEntry('Geographic', 'GeoCoordinate', ('quantitative', 'geographic'), 'dimension', 'fixed', 'none', 'decimal', 'arbitrary', 0.02),
-    'Country':     TypeRegistryEntry('Geographic', 'GeoPlace', ('nominal',), 'dimension', 'open', 'none', 'plain', 'none', 0),
-    'State':       TypeRegistryEntry('Geographic', 'GeoPlace', ('nominal',), 'dimension', 'open', 'none', 'plain', 'none', 0),
-    'City':        TypeRegistryEntry('Geographic', 'GeoPlace', ('nominal',), 'dimension', 'open', 'none', 'plain', 'none', 0),
-    'Region':      TypeRegistryEntry('Geographic', 'GeoPlace', ('nominal',), 'dimension', 'open', 'none', 'plain', 'none', 0),
-    'Address':     TypeRegistryEntry('Geographic', 'GeoPlace', ('nominal',), 'dimension', 'open', 'none', 'plain', 'none', 0),
-    'ZipCode':     TypeRegistryEntry('Geographic', 'GeoPlace', ('nominal',), 'dimension', 'open', 'none', 'plain', 'none', 0),
-    # --- Categorical: Entity ---
-    'PersonName':  TypeRegistryEntry('Categorical', 'Entity', ('nominal',), 'dimension', 'open', 'none', 'plain', 'none', 0),
-    'Company':     TypeRegistryEntry('Categorical', 'Entity', ('nominal',), 'dimension', 'open', 'none', 'plain', 'none', 0),
-    'Product':     TypeRegistryEntry('Categorical', 'Entity', ('nominal',), 'dimension', 'open', 'none', 'plain', 'none', 0),
-    'Category':    TypeRegistryEntry('Categorical', 'Entity', ('nominal',), 'dimension', 'open', 'none', 'plain', 'none', 0),
-    'Name':        TypeRegistryEntry('Categorical', 'Entity', ('nominal',), 'dimension', 'open', 'none', 'plain', 'none', 0),
-    # --- Categorical: Coded ---
-    'Status':      TypeRegistryEntry('Categorical', 'Coded', ('nominal',), 'dimension', 'open', 'none', 'plain', 'none', 0),
-    'Type':        TypeRegistryEntry('Categorical', 'Coded', ('nominal',), 'dimension', 'open', 'none', 'plain', 'none', 0),
-    'Boolean':     TypeRegistryEntry('Categorical', 'Coded', ('nominal',), 'dimension', 'fixed', 'none', 'plain', 'none', 0),
-    'Direction':   TypeRegistryEntry('Categorical', 'Coded', ('ordinal', 'nominal'), 'dimension', 'cyclic', 'none', 'plain', 'none', 0),
-    # --- Categorical: Binned ---
-    'Range':       TypeRegistryEntry('Categorical', 'Binned', ('ordinal',), 'dimension', 'open', 'none', 'plain', 'none', 0),
-    'AgeGroup':    TypeRegistryEntry('Categorical', 'Binned', ('ordinal',), 'dimension', 'open', 'none', 'plain', 'none', 0),
-    # --- Fallbacks ---
-    'String':      TypeRegistryEntry('Categorical', 'Entity', ('nominal',), 'dimension', 'open', 'none', 'plain', 'none', 0),
-    'Unknown':     TypeRegistryEntry('Categorical', 'Entity', ('nominal',), 'dimension', 'open', 'none', 'plain', 'none', 0),
+    'Country':     TypeRegistryEntry('Categorical', 'GeoPlace', ('nominal',), 'dimension', 'open'),
+    'State':       TypeRegistryEntry('Categorical', 'GeoPlace', ('nominal',), 'dimension', 'open'),
+    'City':        TypeRegistryEntry('Categorical', 'GeoPlace', ('nominal',), 'dimension', 'open'),
+    'Region':      TypeRegistryEntry('Categorical', 'GeoPlace', ('nominal',), 'dimension', 'open'),
+    'Latitude':    TypeRegistryEntry('Measure', 'GeoCoord', ('geographic', 'quantitative'), 'dimension', 'fixed'),
+    'Longitude':   TypeRegistryEntry('Measure', 'GeoCoord', ('geographic', 'quantitative'), 'dimension', 'fixed'),
+    # --- Categorical ---
+    'Category':    TypeRegistryEntry('Categorical', 'Entity', ('nominal',), 'dimension', 'open'),
+    'String':      TypeRegistryEntry('Categorical', 'Entity', ('nominal',), 'dimension', 'open'),
+    'Boolean':     TypeRegistryEntry('Categorical', 'Status', ('nominal',), 'dimension', 'open'),
+    'Status':      TypeRegistryEntry('Categorical', 'Status', ('nominal',), 'dimension', 'open'),
+    'Gender':      TypeRegistryEntry('Categorical', 'Demographic', ('nominal',), 'dimension', 'open'),
+    'AgeGroup':    TypeRegistryEntry('Categorical', 'Range', ('ordinal',), 'dimension', 'open'),
+    'Range':       TypeRegistryEntry('Categorical', 'Range', ('ordinal',), 'dimension', 'open'),
+    'Direction':   TypeRegistryEntry('Categorical', 'Entity', ('nominal',), 'dimension', 'cyclic'),
+    # --- Identifiers ---
+    'Name':        TypeRegistryEntry('Identifier', 'Name', ('nominal',), 'identifier', 'open'),
+    'Label':       TypeRegistryEntry('Identifier', 'Name', ('nominal',), 'identifier', 'open'),
+    'Code':        TypeRegistryEntry('Identifier', 'Code', ('nominal',), 'identifier', 'open'),
+    'Population':  TypeRegistryEntry('Measure', 'Amount', ('quantitative',), 'additive', 'open'),
 }
 
 
@@ -136,66 +122,8 @@ def is_registered(semantic_type: str) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# §2  Formatting  (mirrors field-semantics.ts §4)
+# §2  Channel Semantics (minimal)
 # ---------------------------------------------------------------------------
-
-CURRENCY_MAP = {
-    'USD': '$', 'EUR': '€', 'GBP': '£', 'JPY': '¥', 'CNY': '¥',
-    'KRW': '₩', 'INR': '₹', 'BRL': 'R$', 'CAD': 'CA$', 'AUD': 'A$',
-    'CHF': 'CHF', 'SEK': 'kr', 'NOK': 'kr', 'DKK': 'kr',
-}
-
-UNIT_SUFFIX_MAP = {
-    '°C': '°C', '°F': '°F', 'K': 'K', 'C': '°C', 'F': '°F',
-    'kg': ' kg', 'g': ' g', 'lb': ' lb', 'lbs': ' lbs', 'oz': ' oz',
-    'km': ' km', 'mi': ' mi', 'm': ' m', 'ft': ' ft', 'cm': ' cm', 'mm': ' mm',
-    'km/h': ' km/h', 'mph': ' mph', 'm/s': ' m/s',
-    'sec': ' s', 'min': ' min', 'hr': ' hr', 'day': ' days',
-    'seconds': ' s', 'minutes': ' min', 'hours': ' hr', 'days': ' days',
-}
-
-
-@dataclass
-class FormatSpec:
-    """d3-compatible format specification."""
-    pattern: str = ''
-    prefix: str = ''
-    suffix: str = ''
-    abbreviate: bool = False
-
-
-@dataclass
-class DomainConstraint:
-    """Domain bounds constraint for a quantitative axis."""
-    min_val: Optional[float] = None
-    max_val: Optional[float] = None
-    clamp: bool = False
-
-
-@dataclass
-class TickConstraint:
-    """Tick mark constraint."""
-    integers_only: bool = False
-    exact_ticks: Optional[List[int]] = None
-    min_step: Optional[float] = None
-
-
-@dataclass
-class ZeroDecision:
-    """Whether a quantitative axis should include zero."""
-    zero: bool = False
-    domain_pad_fraction: float = 0.0
-    zero_class: str = 'unknown'
-
-
-@dataclass
-class ColorSchemeRecommendation:
-    """Recommended color scheme for a channel."""
-    scheme: str = 'tableau10'
-    type: str = 'categorical'     # 'categorical' | 'sequential' | 'diverging'
-    reason: str = ''
-    domain_mid: Optional[float] = None
-
 
 @dataclass
 class ChannelSemantics:
@@ -203,149 +131,11 @@ class ChannelSemantics:
     field: str = ''
     semantic_type: str = ''
     vl_type: str = 'nominal'      # quantitative | nominal | ordinal | temporal
-    format: Optional[FormatSpec] = None
-    tooltip_format: Optional[FormatSpec] = None
-    zero: Optional[ZeroDecision] = None
-    color_scheme: Optional[ColorSchemeRecommendation] = None
-    domain_constraint: Optional[DomainConstraint] = None
-    tick_constraint: Optional[TickConstraint] = None
-    ordinal_sort_order: Optional[List[str]] = None
-    temporal_format: Optional[str] = None
-    scale_type: Optional[str] = None   # log | sqrt | symlog
-    reversed: bool = False
-
+    ordinal_sort_order: list[str] | None = None
 
 
 # ---------------------------------------------------------------------------
-# §3  Number Format Resolution
-# ---------------------------------------------------------------------------
-
-def _detect_precision(values: List[float]) -> int:
-    """Detect max meaningful decimal places in data, capped at 4."""
-    max_dec = 0
-    for v in values:
-        if not math.isfinite(v):
-            continue
-        s = f'{v:.10f}'
-        dot = s.index('.')
-        end = len(s) - 1
-        while end > dot and s[end] == '0':
-            end -= 1
-        d = end - dot if end > dot else 0
-        if d > max_dec:
-            max_dec = d
-    return min(max_dec, 4)
-
-
-def _detect_percentage_repr(values: List[float]) -> str:
-    """Detect if percentages are 0-1 or 0-100."""
-    if not values:
-        return '0-100'
-    below_1 = sum(1 for v in values if abs(v) <= 1)
-    if below_1 / len(values) >= 0.8:
-        return '0-1'
-    return '0-100'
-
-
-def _precision_format(values: List[float], use_grouping: bool = True, sign_mode: str = '') -> str:
-    p = _detect_precision(values)
-    g = ',' if use_grouping else ''
-    if p == 0:
-        return f'{sign_mode}{g}d'
-    return f'{sign_mode}{g}.{p}f'
-
-
-def resolve_format(
-    semantic_type: str,
-    unit: Optional[str] = None,
-    values: Optional[List[Any]] = None,
-) -> Tuple[FormatSpec, Optional[FormatSpec]]:
-    """
-    Resolve axis format and tooltip format for a field.
-    Returns (axis_format, tooltip_format).
-    """
-    entry = get_registry_entry(semantic_type)
-    nums = [v for v in (values or []) if isinstance(v, (int, float)) and math.isfinite(v)]
-
-    currency_prefix = None
-    unit_suffix = None
-    if unit:
-        currency_prefix = CURRENCY_MAP.get(unit.upper()) or CURRENCY_MAP.get(unit)
-        unit_suffix = UNIT_SUFFIX_MAP.get(unit) or f' {unit}'
-
-    fc = entry.format_class
-
-    if fc == 'currency':
-        pfx = currency_prefix or '$'
-        axis_pat = ',.2f' if semantic_type == 'Price' else _precision_format(nums)
-        return (
-            FormatSpec(pattern=axis_pat, prefix=pfx, abbreviate=True),
-            FormatSpec(pattern=',.2f', prefix=pfx),
-        )
-
-    if fc == 'signed-currency':
-        pfx = currency_prefix or '$'
-        return (
-            FormatSpec(pattern=_precision_format(nums, True, '+'), prefix=pfx, abbreviate=True),
-            FormatSpec(pattern='+,.2f', prefix=pfx),
-        )
-
-    if fc == 'percent':
-        rep = _detect_percentage_repr(nums)
-        if rep == '0-1':
-            p = _detect_precision(nums)
-            axis_p = max(0, p - 2)
-            tip_p = min(axis_p + 1, 4)
-            return (
-                FormatSpec(pattern=f'.{axis_p}%'),
-                FormatSpec(pattern=f'.{tip_p}%'),
-            )
-        return (
-            FormatSpec(pattern=_precision_format(nums, False), suffix='%'),
-            FormatSpec(pattern=_precision_format(nums, False), suffix='%'),
-        )
-
-    if fc == 'signed-percent':
-        rep = _detect_percentage_repr(nums)
-        if rep == '0-1':
-            p = _detect_precision(nums)
-            axis_p = max(0, p - 2)
-            tip_p = min(axis_p + 1, 4)
-            return (
-                FormatSpec(pattern=f'+.{axis_p}%'),
-                FormatSpec(pattern=f'+.{tip_p}%'),
-            )
-        return (
-            FormatSpec(pattern=_precision_format(nums, False, '+'), suffix='%'),
-            FormatSpec(pattern=_precision_format(nums, False, '+'), suffix='%'),
-        )
-
-    if fc == 'signed-decimal':
-        return (
-            FormatSpec(pattern=_precision_format(nums, False, '+')),
-            FormatSpec(pattern=_precision_format(nums, False, '+')),
-        )
-
-    if fc == 'unit-suffix':
-        sfx = unit_suffix or ''
-        return (
-            FormatSpec(pattern=_precision_format(nums), suffix=sfx, abbreviate=True),
-            FormatSpec(pattern=_precision_format(nums), suffix=sfx),
-        )
-
-    if fc == 'integer':
-        if semantic_type == 'Year':
-            return (FormatSpec(pattern='d'), None)
-        return (FormatSpec(pattern=',d'), FormatSpec(pattern=',d'))
-
-    if fc == 'decimal':
-        return (FormatSpec(), FormatSpec(pattern=_precision_format(nums)))
-
-    return (FormatSpec(), None)
-
-
-# ---------------------------------------------------------------------------
-# §4  VL Type Resolution  (mirrors semantic-types.ts getVisCategory + field-semantics.ts resolveDefaultVisType)
+# §3  VL Type Resolution
 # ---------------------------------------------------------------------------
 
 def resolve_vl_type(semantic_type: str, values: List[Any]) -> str:
@@ -365,10 +155,32 @@ def resolve_vl_type(semantic_type: str, values: List[Any]) -> str:
     # Disambiguate quantitative vs ordinal
     if 'quantitative' in candidates and 'ordinal' in candidates:
         distinct = len(set(v for v in values if v is not None))
+        # Guard: if values contain non-integer floats, they are continuous
+        # and should be quantitative regardless of cardinality.
+        # E.g. Rating values like 1.2, 3.7, 4.1 are clearly continuous.
+        nums = [v for v in values if isinstance(v, (int, float))]
+        if nums:
+            has_fractions = any(v % 1 != 0 for v in nums)
+            if has_fractions:
+                return 'quantitative'
         return 'ordinal' if distinct <= 12 else 'quantitative'
 
     # Disambiguate temporal vs ordinal
     if 'temporal' in candidates and 'ordinal' in candidates:
+        non_null = [v for v in values if v is not None]
+        if non_null and all(isinstance(v, (int, float)) for v in non_null):
+            # Pure numeric — check if they look like 4-digit years.
+            # When semantic type is Year/Decade and values are 4-digit
+            # integers in a plausible year range (1000–2999), use temporal
+            # for larger sets so VL gets a continuous time axis.
+            # convert_temporal_data will convert int → str("1980") before
+            # the data reaches VL, avoiding the unix-ms misinterpretation.
+            distinct = len(set(non_null))
+            if _looks_like_year_integers(non_null):
+                return 'ordinal' if distinct <= 6 else 'temporal'
+            # Not year-like integers → ordinal (safe default)
+            return 'ordinal' if distinct <= 20 else 'quantitative'
+        # Date strings or datetime objects → temporal
         distinct = len(set(v for v in values if v is not None))
         return 'ordinal' if distinct <= 6 else 'temporal'
 
@@ -379,6 +191,24 @@ def resolve_vl_type(semantic_type: str, values: List[Any]) -> str:
     return candidates[0]
 
 
+def _looks_like_year_integers(values: List[Any]) -> bool:
+    """Check if a list of numeric values look like 4-digit year integers.
+
+    Returns True when >=80% of non-null values are integers in the
+    plausible year range 1000-2999.  This is used to decide whether
+    integer Year/Decade data should get a temporal axis (with string
+    conversion) rather than being treated as plain quantitative numbers.
+    """
+    nums = [v for v in values if isinstance(v, (int, float)) and not isinstance(v, bool)]
+    if not nums:
+        return False
+    year_count = sum(
+        1 for v in nums
+        if v == int(v) and 1000 <= int(v) <= 2999
+    )
+    return year_count >= len(nums) * 0.8
+
+
 def _infer_vl_type_from_data(values: List[Any]) -> str:
     """Infer VL type purely from data values."""
     non_null = [v for v in values if v is not None]
@@ -386,300 +216,169 @@ def _infer_vl_type_from_data(values: List[Any]) -> str:
         return 'nominal'
     if all(isinstance(v, bool) for v in non_null):
         return 'nominal'
-    if all(isinstance(v, (int, float)) for v in non_null):
-        return 'quantitative'
-    # Check for dates
-    import pandas as pd
+
+    # Check for native datetime/date objects first
+    if all(isinstance(v, (datetime, date)) for v in non_null):
+        return 'temporal'
+
+    # Check for pandas Timestamp objects
     try:
-        if all(isinstance(v, str) and _looks_like_date(v) for v in non_null[:20]):
+        import pandas as pd
+        if all(isinstance(v, pd.Timestamp) for v in non_null):
             return 'temporal'
-    except Exception:
+    except ImportError:
         pass
+
+    if all(isinstance(v, (int, float)) for v in non_null):
+        # Pure numeric — check for likely timestamps
+        if all(_is_likely_timestamp(v) for v in non_null[:20]):
+            return 'temporal'
+        return 'quantitative'
+
+    # String values — check if they look like dates
+    str_vals = [v for v in non_null[:30] if isinstance(v, str)]
+    if str_vals and len(str_vals) >= len(non_null[:30]) * 0.8:
+        date_count = sum(1 for s in str_vals if _looks_like_date(s))
+        if date_count >= len(str_vals) * 0.7:
+            return 'temporal'
+
     return 'nominal'
 
 
-def _looks_like_date(s: str) -> bool:
-    return bool(re.match(r'^\d|^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)', s.strip(), re.I))
-
-
 # ---------------------------------------------------------------------------
-# §5  Zero-Baseline Decision  (mirrors semantic-types.ts computeZeroDecision)
+# Timestamp detection (mirrors TS isLikelyTimestamp)
 # ---------------------------------------------------------------------------
 
-def compute_zero_decision(
-    semantic_type: str,
-    channel: str,
-    mark_type: str,
-    values: Optional[List[float]] = None,
-) -> ZeroDecision:
-    """Compute whether a quantitative axis should include zero."""
-    entry = get_registry_entry(semantic_type)
-    is_bar_like = mark_type in ('bar', 'area', 'rect')
-    zero_class = entry.zero_baseline
-    if zero_class == 'none':
-        zero_class = 'unknown'
-
-    # Meaningful → always zero
-    if zero_class == 'meaningful':
-        return ZeroDecision(zero=True, domain_pad_fraction=0, zero_class=zero_class)
-
-    # Arbitrary → no zero (except bar with data crossing zero)
-    if zero_class == 'arbitrary':
-        if is_bar_like and values:
-            if min(values) <= 0:
-                return ZeroDecision(zero=True, domain_pad_fraction=0, zero_class=zero_class)
-        return ZeroDecision(zero=False, domain_pad_fraction=entry.zero_pad or 0.05, zero_class=zero_class)
-
-    # Contextual → use data range + mark to decide
-    if zero_class == 'contextual' and values:
-        data_min, data_max = min(values), max(values)
-        if data_min <= 0:
-            return ZeroDecision(zero=True, domain_pad_fraction=0, zero_class=zero_class)
-        proximity = data_min / data_max if data_max > 0 else 0
-        if proximity < 0.3:
-            return ZeroDecision(zero=True, domain_pad_fraction=0, zero_class=zero_class)
-        if is_bar_like:
-            return ZeroDecision(zero=True, domain_pad_fraction=0, zero_class=zero_class)
-        return ZeroDecision(zero=False, domain_pad_fraction=0.05, zero_class=zero_class)
-
-    # Unknown / fallback
-    if is_bar_like and channel in ('x', 'y'):
-        return ZeroDecision(zero=True, domain_pad_fraction=0, zero_class='unknown')
-    return ZeroDecision(zero=False, domain_pad_fraction=0.05, zero_class='unknown')
+_MAX_TIMESTAMP_SEC = 4102444800       # ~2099-12-31 in epoch seconds
+_MAX_TIMESTAMP_MS = 4102444800000     # ~2099-12-31 in epoch milliseconds
 
 
-# ---------------------------------------------------------------------------
-# §6  Domain Constraints  (mirrors field-semantics.ts §9)
-# ---------------------------------------------------------------------------
-
-def resolve_domain_constraint(
-    semantic_type: str,
-    intrinsic_domain: Optional[Tuple[float, float]] = None,
-    values: Optional[List[Any]] = None,
-) -> Optional[DomainConstraint]:
-    """Merge intrinsic domain with data range."""
-    nums = [v for v in (values or []) if isinstance(v, (int, float)) and math.isfinite(v)]
-
-    # 1. Explicit intrinsic domain → soft merge
-    if intrinsic_domain:
-        return _merge_intrinsic(intrinsic_domain, nums, hard=False)
-
-    # 2. Type-intrinsic hard domains
-    if semantic_type == 'Latitude':
-        return _merge_intrinsic((-90, 90), nums, hard=True)
-    if semantic_type == 'Longitude':
-        return _merge_intrinsic((-180, 180), nums, hard=True)
-    if semantic_type == 'Correlation':
-        return _merge_intrinsic((-1, 1), nums, hard=True)
-
-    # 3. Percentage
-    if semantic_type == 'Percentage' and nums:
-        rep = _detect_percentage_repr(nums)
-        intrinsic_max = 1 if rep == '0-1' else 100
-        return _merge_intrinsic((0, intrinsic_max), nums, hard=False)
-
-    return None
-
-
-def _merge_intrinsic(
-    intrinsic: Tuple[float, float],
-    values: List[float],
-    hard: bool,
-) -> DomainConstraint:
-    if hard:
-        return DomainConstraint(min_val=intrinsic[0], max_val=intrinsic[1], clamp=True)
-    if not values:
-        return DomainConstraint(min_val=intrinsic[0], max_val=intrinsic[1], clamp=False)
-    return DomainConstraint(
-        min_val=min(intrinsic[0], min(values)),
-        max_val=max(intrinsic[1], max(values)),
-        clamp=False,
-    )
-
-
-# ---------------------------------------------------------------------------
-# §7  Color Scheme  (mirrors semantic-types.ts getRecommendedColorScheme)
-# ---------------------------------------------------------------------------
-
-def resolve_color_scheme(
-    semantic_type: str,
-    vl_type: str,
-    unique_count: int = 10,
-    values: Optional[List[Any]] = None,
-    unit: Optional[str] = None,
-    intrinsic_domain: Optional[Tuple[float, float]] = None,
-) -> ColorSchemeRecommendation:
-    """Pick the best color scheme based on semantic type and data."""
-    entry = get_registry_entry(semantic_type)
-    nums = [v for v in (values or []) if isinstance(v, (int, float)) and math.isfinite(v)]
-
-    # Determine diverging hint
-    is_diverging = _is_diverging(semantic_type, entry, unit, intrinsic_domain, nums)
-    div_mid = _diverging_midpoint(semantic_type, entry, unit, intrinsic_domain, nums) if is_diverging else None
-
-    # Temperature
-    if semantic_type == 'Temperature':
-        if is_diverging:
-            return ColorSchemeRecommendation('redblue', 'diverging', 'temperature diverging', div_mid)
-        return ColorSchemeRecommendation('reds', 'sequential', 'temperature sequential')
-
-    # Percentage
-    if semantic_type == 'Percentage':
-        if is_diverging:
-            return ColorSchemeRecommendation('redblue', 'diverging', 'percentage diverging', div_mid)
-        return ColorSchemeRecommendation('oranges', 'sequential', 'percentage sequential')
-
-    # Financial
-    if semantic_type in ('Revenue', 'Price', 'Cost', 'Amount'):
-        if is_diverging:
-            return ColorSchemeRecommendation('redblue', 'diverging', 'financial diverging', div_mid)
-        return ColorSchemeRecommendation('goldgreen', 'sequential', 'financial sequential')
-
-    # Signed measures
-    if semantic_type in ('Profit', 'PercentageChange', 'Sentiment', 'Correlation'):
-        if is_diverging:
-            return ColorSchemeRecommendation('redblue', 'diverging', 'signed measure diverging', div_mid)
-        return ColorSchemeRecommendation('viridis', 'sequential', 'signed measure sequential')
-
-    # Score/Rating
-    if semantic_type in ('Score', 'Rating'):
-        if is_diverging:
-            return ColorSchemeRecommendation('redblue', 'diverging', 'score diverging', div_mid)
-        return ColorSchemeRecommendation('yelloworangebrown', 'sequential', 'score sequential')
-
-    # Rank
-    if semantic_type in ('Rank', 'Index'):
-        return ColorSchemeRecommendation('purples', 'sequential', 'rank sequential')
-
-    # Ranges
-    if semantic_type in ('AgeGroup', 'Range'):
-        return ColorSchemeRecommendation('blues', 'sequential', 'range sequential')
-
-    # Temporal granules
-    if semantic_type in ('Year', 'Quarter', 'Month', 'Week', 'Day', 'Hour', 'Decade'):
-        return ColorSchemeRecommendation('viridis', 'sequential', 'temporal sequential')
-
-    # Geographic
-    if entry.t1 == 'GeoPlace':
-        return ColorSchemeRecommendation(
-            'tableau20' if unique_count > 10 else 'set2',
-            'categorical', 'geographic categorical',
-        )
-
-    # Status/Boolean
-    if semantic_type in ('Status', 'Boolean'):
-        return ColorSchemeRecommendation('set1', 'categorical', 'status categorical')
-
-    # Category/Type
-    if semantic_type in ('Category', 'Type'):
-        return ColorSchemeRecommendation(
-            'tableau20' if unique_count > 10 else 'tableau10',
-            'categorical', 'categorical',
-        )
-
-    # Companies/Products
-    if semantic_type in ('Company', 'Product'):
-        return ColorSchemeRecommendation(
-            'tableau20' if unique_count > 10 else 'paired',
-            'categorical', 'entity categorical',
-        )
-
-    # Names
-    if semantic_type in ('Name', 'PersonName'):
-        return ColorSchemeRecommendation(
-            'tableau20' if unique_count > 8 else 'set2',
-            'categorical', 'name categorical',
-        )
-
-    # Duration
-    if semantic_type == 'Duration':
-        return ColorSchemeRecommendation('oranges', 'sequential', 'duration sequential')
-
-    # Generic measures
-    if entry.agg_role in ('additive', 'intensive', 'signed-additive'):
-        if is_diverging:
-            return ColorSchemeRecommendation('redblue', 'diverging', 'measure diverging', div_mid)
-        return ColorSchemeRecommendation('viridis', 'sequential', 'measure sequential')
-
-    # Default by VL type
-    if vl_type == 'quantitative':
-        return ColorSchemeRecommendation('viridis', 'sequential', 'default sequential')
-    if vl_type == 'ordinal':
-        return ColorSchemeRecommendation('blues', 'sequential', 'default ordinal sequential')
-    return ColorSchemeRecommendation(
-        'tableau20' if unique_count > 10 else 'tableau10',
-        'categorical', 'default categorical',
-    )
-
-
-def _is_diverging(
-    semantic_type: str,
-    entry: TypeRegistryEntry,
-    unit: Optional[str],
-    intrinsic_domain: Optional[Tuple[float, float]],
-    nums: List[float],
-) -> bool:
-    """Check if field should use diverging color scheme."""
-    # Temperature with known unit
-    if semantic_type == 'Temperature' and unit:
-        unit_mids = {'°C': 0, '°F': 32, 'K': 273.15, 'C': 0, 'F': 32}
-        mid = unit_mids.get(unit)
-        if mid is not None and nums:
-            lo, hi = min(nums), max(nums)
-            return lo < mid < hi
-
-    # Inherent diverging always → yes if data spans both sides
-    if entry.diverging == 'inherent' and nums:
-        return min(nums) < 0 < max(nums)
-
-    # Conditional diverging → only when data spans zero
-    if entry.diverging == 'conditional' and nums:
-        return min(nums) < 0 < max(nums)
-
-    # Domain-derived midpoint → data spans it
-    if intrinsic_domain and nums:
-        mid = (intrinsic_domain[0] + intrinsic_domain[1]) / 2
-        return min(nums) < mid < max(nums)
-
-    # Data-driven: spans zero
-    if nums and min(nums) < 0 < max(nums):
+def _is_likely_timestamp(val: Any) -> bool:
+    """Check if a numeric value is likely a unix timestamp (s or ms)."""
+    if not isinstance(val, (int, float)):
+        return False
+    if isinstance(val, bool):
+        return False
+    if math.isnan(val) or math.isinf(val):
+        return False
+    if val >= 1e9 and val <= _MAX_TIMESTAMP_SEC:
         return True
-
+    if val > _MAX_TIMESTAMP_SEC and val <= _MAX_TIMESTAMP_MS:
+        return True
     return False
 
 
-def _diverging_midpoint(
-    semantic_type: str,
-    entry: TypeRegistryEntry,
-    unit: Optional[str],
-    intrinsic_domain: Optional[Tuple[float, float]],
-    nums: List[float],
-) -> Optional[float]:
-    """Compute diverging midpoint."""
-    # Temperature unit
-    if semantic_type == 'Temperature' and unit:
-        unit_mids = {'°C': 0, '°F': 32, 'K': 273.15, 'C': 0, 'F': 32}
-        mid = unit_mids.get(unit)
-        if mid is not None:
-            return mid
+def _timestamp_to_ms(val: float) -> float:
+    """Convert seconds-epoch to ms-epoch if needed."""
+    return val * 1000 if val <= _MAX_TIMESTAMP_SEC else val
 
-    # Inherent/conditional → 0
-    if entry.diverging in ('inherent', 'conditional'):
-        return 0
 
-    # Domain midpoint
-    if intrinsic_domain:
-        return (intrinsic_domain[0] + intrinsic_domain[1]) / 2
+# ---------------------------------------------------------------------------
+# Date string detection (mirrors TS looksLikeDateString, much more robust)
+# ---------------------------------------------------------------------------
 
-    # Data spans 0
-    if nums and min(nums) < 0 < max(nums):
-        return 0
+# Pre-compiled patterns for efficiency
+_DATE_PATTERNS = [
+    # ISO 8601: 2020-01-15, 2020-01-15T12:00:00Z
+    re.compile(r'^\d{4}-\d{2}-\d{2}'),
+    # Slash-separated: 2020/01/15 or 01/15/2020 or 15/01/2020
+    re.compile(r'^\d{1,4}[/]\d{1,2}[/]\d{1,4}$'),
+    # Month name variants: Jan 2020, January 2020, Jan-2020, 2020-Jan
+    re.compile(r'^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*[\s,.-]+\d', re.I),
+    re.compile(r'^\d{1,2}[\s,.-]+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)', re.I),
+    re.compile(r'^\d{4}[\s,.-]+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)', re.I),
+    # Quarter formats: Q1 2020, 2020-Q1, 2020 Q1
+    re.compile(r'^Q[1-4][\s,-]+\d{4}$', re.I),
+    re.compile(r'^\d{4}[\s,-]*Q[1-4]$', re.I),
+    # Dot-separated: 15.01.2020 or 2020.01.15
+    re.compile(r'^\d{1,2}\.\d{1,2}\.\d{2,4}$'),
+    re.compile(r'^\d{4}\.\d{1,2}\.\d{1,2}$'),
+    # Dash-separated with short month: 15-Jan-2020, 2020-01-15
+    re.compile(r'^\d{1,2}-\w+-\d{2,4}$'),
+    # Year-month: 2020-01, 2020/01
+    re.compile(r'^\d{4}[-/]\d{1,2}$'),
+    # Month-year: Jan-2020
+    re.compile(r'^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*[-/]\d{4}$', re.I),
+    # Compact: 20200115
+    re.compile(r'^\d{8}$'),
+]
 
+
+def _looks_like_date(s: str) -> bool:
+    """Check if a string looks like a date/datetime value.
+
+    This is a lightweight heuristic used for type inference.
+    Does NOT match bare 4-digit years ("2020") — those should be
+    handled via semantic type (Year/Decade) to avoid false positives
+    with generic integer IDs.
+    """
+    t = s.strip()
+    if not t:
+        return False
+    return any(p.search(t) for p in _DATE_PATTERNS)
+
+
+# ---------------------------------------------------------------------------
+# Robust date parsing (try multiple strategies)
+# ---------------------------------------------------------------------------
+
+def _try_parse_date(val: Any) -> Optional[datetime]:
+    """Try to parse a value as a datetime.  Returns None on failure."""
+    if isinstance(val, datetime):
+        return val
+    if isinstance(val, date) and not isinstance(val, datetime):
+        return datetime(val.year, val.month, val.day)
+    try:
+        import pandas as pd
+        if isinstance(val, pd.Timestamp):
+            return val.to_pydatetime()
+    except ImportError:
+        pass
+
+    if isinstance(val, (int, float)):
+        if _is_likely_timestamp(val):
+            ms = _timestamp_to_ms(val)
+            return datetime.utcfromtimestamp(ms / 1000)
+        return None
+
+    if isinstance(val, str):
+        t = val.strip()
+        if not t:
+            return None
+        # Fast-path ISO
+        for fmt in (
+            '%Y-%m-%d',
+            '%Y-%m-%dT%H:%M:%S',
+            '%Y-%m-%dT%H:%M:%SZ',
+            '%Y-%m-%dT%H:%M:%S.%f',
+            '%Y-%m-%dT%H:%M:%S.%fZ',
+            '%m/%d/%Y',
+            '%d/%m/%Y',
+            '%Y/%m/%d',
+            '%b %d, %Y',
+            '%B %d, %Y',
+            '%d %b %Y',
+            '%d %B %Y',
+            '%b %Y',
+            '%B %Y',
+            '%Y-%m',
+            '%Y/%m',
+        ):
+            try:
+                return datetime.strptime(t, fmt)
+            except ValueError:
+                continue
+        # Fallback: pandas parser (very flexible)
+        try:
+            import pandas as pd
+            return pd.to_datetime(t).to_pydatetime()
+        except Exception:
+            pass
     return None
 
 
 # ---------------------------------------------------------------------------
-# §8  Ordinal Sort Order  (mirrors semantic-types.ts inferOrdinalSortOrder)
+# §4  Ordinal Sort Order  (months, days, quarters)
 # ---------------------------------------------------------------------------
 
 _MONTH_FULL = ['January', 'February', 'March', 'April', 'May', 'June',
@@ -706,7 +405,7 @@ _ORDINAL_SEQUENCES: Dict[str, List[Tuple[List[str], bool]]] = {
 }
 
 
-def infer_ordinal_sort_order(semantic_type: str, values: List[Any]) -> Optional[List[str]]:
+def infer_ordinal_sort_order(semantic_type: str, values: List[Any]) -> list[str] | None:
     """
     Detect canonical ordinal sort order for months, days, quarters, etc.
     Returns sorted unique values in canonical order, or None.
@@ -731,7 +430,7 @@ def infer_ordinal_sort_order(semantic_type: str, values: List[Any]) -> Optional[
 def _match_sequence(
     values: List[Any],
     sequences: List[Tuple[List[str], bool]],
-) -> Optional[List[str]]:
+) -> list[str] | None:
     unique_vals = list(dict.fromkeys(str(v) for v in values if v is not None))
     if not unique_vals:
         return None
@@ -756,166 +455,126 @@ def _match_sequence(
 
 
 # ---------------------------------------------------------------------------
-# §9  Temporal Format  (mirrors resolve-semantics.ts resolveTemporalFormat)
+# §5  Temporal Data Conversion  (mirrors TS convertTemporalData)
 # ---------------------------------------------------------------------------
 
-_SEMANTIC_LEVEL = {
-    'Year': 5, 'Decade': 5,
-    'YearMonth': 4, 'Month': 4, 'YearQuarter': 4, 'Quarter': 4,
-    'Date': 3, 'Day': 3,
-    'Hour': 2,
-    'DateTime': 1,
-    'Timestamp': 0,
-}
+def _expand_to_full_year(val: str) -> str:
+    """Expand 2-digit year to 4-digit: '98' → '1998', '07' → '2007'."""
+    t = val.strip()
+    if re.fullmatch(r'\d{2}', t):
+        n = int(t)
+        return str(2000 + n if n <= 49 else 1900 + n)
+    return val
 
 
-def resolve_temporal_format(semantic_type: str, values: List[Any]) -> Optional[str]:
+def convert_temporal_data(
+    data: List[Dict[str, Any]],
+    semantic_types: Dict[str, Any],
+    all_values: Dict[str, List[Any]] | None = None,
+) -> List[Dict[str, Any]]:
     """
-    Resolve the best temporal format string (d3 timeFormat) for a field.
+    Convert temporal field values to canonical string representations
+    so that Vega-Lite can parse them correctly.
+
+    Mirrors the TS ``convertTemporalData`` function.
+
+    This handles:
+    - Year/Decade integers → string ("2015" not 2015, avoids VL unix-ms interpretation)
+    - Unix timestamps → ISO datetime strings
+    - datetime/date objects → ISO strings
+    - pd.Timestamp objects → ISO strings
+    - 2-digit year strings → 4-digit
+    - Any other temporal values → str()
+
+    Parameters:
+    - data: list of row dicts (will be cloned)
+    - semantic_types: field_name → semantic type string or annotation dict
+    - all_values: optional precomputed {field: [values]} for type inference
+
+    Returns: new list of row dicts with temporal fields converted to strings.
     """
-    from datetime import datetime
-    dates = []
-    non_null = 0
-    for v in values[:100]:
-        if v is None:
-            continue
-        non_null += 1
-        try:
-            if isinstance(v, datetime):
-                dates.append(v)
-            elif isinstance(v, str) and _looks_like_date(v):
-                import dateutil.parser
-                dates.append(dateutil.parser.parse(v))
-        except Exception:
-            pass
+    if not data:
+        return data
 
-    if len(dates) < 2 or len(dates) < non_null * 0.5:
-        return None
+    import copy
 
-    # Analyze which components vary
-    months = set(d.month for d in dates)
-    days = set(d.day for d in dates)
-    hours = set(d.hour for d in dates)
-    minutes = set(d.minute for d in dates)
-    seconds = set(d.second for d in dates)
-    years = set(d.year for d in dates)
+    keys = list(data[0].keys())
+    temporal_keys = []
 
-    same = {
-        'month': len(months) == 1,
-        'day': len(days) == 1,
-        'hour': len(hours) <= 2,
-        'minute': len(minutes) == 1,
-        'second': len(seconds) == 1,
-    }
-    same_year = len(years) == 1
-    same_month = same_year and same['month']
-    same_day = same_month and same['day']
+    for k in keys:
+        sem_type = _extract_sem_type(semantic_types.get(k))
+        # Check semantic type
+        if sem_type and is_registered(sem_type):
+            entry = get_registry_entry(sem_type)
+            if 'temporal' in entry.vis_encodings:
+                temporal_keys.append(k)
+                continue
 
-    # Compute votes (same as TS)
-    votes = [0] * 6
-    if same['second']:
-        votes[5] += 1; votes[4] += 1; votes[3] += 1; votes[2] += 1; votes[1] += 1
-    if same['minute'] and same['second']:
-        votes[5] += 1; votes[4] += 1; votes[3] += 1; votes[2] += 1
-    if same['hour'] and same['minute'] and same['second']:
-        votes[5] += 1; votes[4] += 1; votes[3] += 1
-    if same['day'] and same['hour'] and same['minute'] and same['second']:
-        votes[5] += 2; votes[4] += 2
-    if same['month'] and same['day'] and same['hour'] and same['minute'] and same['second']:
-        votes[5] += 3
-    if not same['month'] and same['day'] and same['hour'] and same['minute'] and same['second']:
-        votes[4] += 3
-    if not same['day'] and same['hour'] and same['minute'] and same['second']:
-        votes[3] += 3
-    if not same['hour'] and same['minute'] and same['second']:
-        votes[2] += 3
-    if not same['minute'] and same['second']:
-        votes[1] += 3
-    if not same['second']:
-        votes[0] += 4
+        # Check data values
+        vals = all_values[k] if all_values and k in all_values else [r.get(k) for r in data[:50]]
+        inferred = _infer_vl_type_from_data(vals)
+        if inferred == 'temporal':
+            temporal_keys.append(k)
 
-    # Semantic type bias
-    sem_level = _SEMANTIC_LEVEL.get(semantic_type)
-    if sem_level is not None:
-        votes[sem_level] += 3
+    if not temporal_keys:
+        return data
 
-    # Pick best level
-    best_level = max(range(6), key=lambda i: votes[i])
+    result = copy.deepcopy(data)
+    for row in result:
+        for k in temporal_keys:
+            val = row.get(k)
+            if val is None:
+                continue
+            sem_type = _extract_sem_type(semantic_types.get(k))
 
-    # Level → format
-    fmt_map = {
-        5: '%Y',
-        4: '%b' if same_year else '%b %Y',
-        3: '%b %d' if same_year else '%b %d, %Y',
-        2: '%H:00' if same_day else '%b %d %H:00',
-        1: '%H:%M' if same_day else '%b %d %H:%M',
-        0: '%H:%M:%S' if same_day else '%b %d %H:%M:%S',
-    }
-    return fmt_map.get(best_level)
+            if isinstance(val, (int, float)) and not isinstance(val, bool):
+                if sem_type in ('Year', 'Decade'):
+                    # Year/Decade: always convert int to string representation
+                    row[k] = str(int(val))
+                elif _is_likely_timestamp(val):
+                    ms = _timestamp_to_ms(val)
+                    row[k] = datetime.utcfromtimestamp(ms / 1000).isoformat() + 'Z'
+                elif _looks_like_year_integers([val]):
+                    # 4-digit year-like integer without explicit Year semantic type
+                    # → convert to string so VL doesn't treat it as unix-ms
+                    row[k] = str(int(val))
+                else:
+                    row[k] = str(val)
+            elif isinstance(val, datetime):
+                row[k] = val.isoformat()
+            elif isinstance(val, date) and not isinstance(val, datetime):
+                row[k] = val.isoformat()
+            else:
+                try:
+                    import pandas as pd
+                    if isinstance(val, pd.Timestamp):
+                        row[k] = val.isoformat()
+                        continue
+                except ImportError:
+                    pass
+                # String handling
+                if isinstance(val, str):
+                    if sem_type in ('Year', 'Decade'):
+                        row[k] = _expand_to_full_year(val)
+                    else:
+                        row[k] = str(val)
+                else:
+                    row[k] = str(val)
+
+    return result
 
 
-# ---------------------------------------------------------------------------
-# §10  Scale Type  (mirrors field-semantics.ts resolveScaleType)
-# ---------------------------------------------------------------------------
-
-def resolve_scale_type(semantic_type: str, values: List[float]) -> Optional[str]:
-    """Recommend log scale for wide-range additive measures."""
-    entry = get_registry_entry(semantic_type)
-    if not (entry.agg_role == 'additive' and entry.domain_shape == 'open'):
-        return None
-    if len(values) < 10:
-        return None
-    nums = [v for v in values if isinstance(v, (int, float)) and math.isfinite(v)]
-    if len(nums) < 10:
-        return None
-    if min(nums) < 0:
-        return None
-    if max(nums) <= 0:
-        return None
-    pos_min = min(v for v in nums if v > 0)
-    if max(nums) / pos_min >= 10000:
-        return 'log'
-    return None
+def _extract_sem_type(annotation: Any) -> str:
+    """Extract the semantic type string from an annotation (str or dict)."""
+    if isinstance(annotation, str):
+        return annotation
+    if isinstance(annotation, dict):
+        return annotation.get('type', annotation.get('semantic_type', ''))
+    return ''
 
 
 # ---------------------------------------------------------------------------
-# §11  Tick Constraints  (mirrors field-semantics.ts §10)
-# ---------------------------------------------------------------------------
-
-def resolve_tick_constraint(
-    semantic_type: str,
-    intrinsic_domain: Optional[Tuple[float, float]] = None,
-) -> Optional[TickConstraint]:
-    entry = get_registry_entry(semantic_type)
-
-    if entry.format_class == 'integer':
-        tc = TickConstraint(integers_only=True, min_step=1)
-        if intrinsic_domain:
-            span = intrinsic_domain[1] - intrinsic_domain[0]
-            if 0 < span <= 20:
-                tc.exact_ticks = list(range(int(intrinsic_domain[0]), int(intrinsic_domain[1]) + 1))
-        return tc
-
-    if semantic_type in ('Score', 'Rating') and intrinsic_domain:
-        span = intrinsic_domain[1] - intrinsic_domain[0]
-        tc = TickConstraint(integers_only=True, min_step=1)
-        if 0 < span <= 20:
-            tc.exact_ticks = list(range(int(intrinsic_domain[0]), int(intrinsic_domain[1]) + 1))
-        return tc
-
-    return None
-
-
-# ---------------------------------------------------------------------------
-# §12  Reversed Axis  (mirrors field-semantics.ts §12)
-# ---------------------------------------------------------------------------
-
-def resolve_reversed(semantic_type: str) -> bool:
-    return semantic_type == 'Rank'
-
-
-# ---------------------------------------------------------------------------
-# §14  Full Channel Resolution
+# §6  Full Channel Resolution
 # ---------------------------------------------------------------------------
 
 def resolve_channel_semantics(
@@ -924,58 +583,27 @@ def resolve_channel_semantics(
     channel: str,
     mark_type: str,
     values: List[Any],
-    unit: Optional[str] = None,
-    intrinsic_domain: Optional[Tuple[float, float]] = None,
+    unit: str | None = None,
+    intrinsic_domain: tuple[float, float] | None = None,
 ) -> ChannelSemantics:
     """
-    Resolve all semantic decisions for one (field, channel) pair.
+    Resolve semantic decisions for one (field, channel) pair.
     This is the main entry point used by create_vl_plots.py.
+
+    Focuses on the critical structural decision: VL type + ordinal sort.
+    Formatting, domains, ticks, zero-baseline, color schemes, etc. are
+    left to VL defaults (or the front-end TS library).
     """
     vl_type = resolve_vl_type(semantic_type, values)
-    axis_fmt, tooltip_fmt = resolve_format(semantic_type, unit, values)
 
     cs = ChannelSemantics(
         field=field_name,
         semantic_type=semantic_type,
         vl_type=vl_type,
-        format=axis_fmt if axis_fmt and axis_fmt.pattern else None,
-        tooltip_format=tooltip_fmt,
     )
 
-    # Numeric values for downstream decisions
-    nums = [v for v in values if isinstance(v, (int, float)) and math.isfinite(v)]
-
-    # Zero baseline (positional quantitative only)
-    if channel in ('x', 'y') and vl_type == 'quantitative' and nums:
-        cs.zero = compute_zero_decision(semantic_type, channel, mark_type, nums)
-
-    # Domain constraint
-    cs.domain_constraint = resolve_domain_constraint(semantic_type, intrinsic_domain, values)
-
-    # Color scheme (color channel)
-    if channel in ('color', 'group'):
-        unique_count = len(set(v for v in values if v is not None))
-        cs.color_scheme = resolve_color_scheme(
-            semantic_type, vl_type, unique_count, values, unit, intrinsic_domain,
-        )
-
-    # Tick constraint
-    cs.tick_constraint = resolve_tick_constraint(semantic_type, intrinsic_domain)
-
-    # Ordinal sort order
+    # Ordinal sort order (months, days, quarters — affects axis label order)
     if vl_type in ('ordinal', 'nominal'):
         cs.ordinal_sort_order = infer_ordinal_sort_order(semantic_type, values)
-
-    # Temporal format
-    if vl_type == 'temporal':
-        cs.temporal_format = resolve_temporal_format(semantic_type, values)
-
-    # Scale type
-    if vl_type == 'quantitative' and nums:
-        cs.scale_type = resolve_scale_type(semantic_type, nums)
-
-    # Reversed
-    cs.reversed = resolve_reversed(semantic_type)
-
 
     return cs

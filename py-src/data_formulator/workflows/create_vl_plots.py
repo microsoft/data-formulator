@@ -10,8 +10,10 @@ from data_formulator.workflows.chart_semantics import (
     resolve_channel_semantics,
     resolve_vl_type,
     is_registered,
-    get_registry_entry,
     ChannelSemantics,
+    convert_temporal_data,
+    _looks_like_date,
+    _looks_like_year_integers,
 )
 
 logger = logging.getLogger(__name__)
@@ -91,23 +93,35 @@ def detect_field_type(series: pd.Series) -> str:
     Detect the appropriate Vega-Lite field type for a pandas Series.
     Returns one of: 'quantitative', 'nominal', 'ordinal', 'temporal'
     """
+    if pd.api.types.is_datetime64_any_dtype(series):
+        return 'temporal'
+    if pd.api.types.is_bool_dtype(series):
+        return 'nominal'
     if pd.api.types.is_numeric_dtype(series):
+        # Check if values look like 4-digit years (1000-2999).
+        # Year integers should be ordinal (discrete labels), not quantitative
+        # (which causes VL to format them with SI prefixes like ".024").
+        non_null_vals = series.dropna().tolist()
+        if non_null_vals and _looks_like_year_integers(non_null_vals):
+            return 'ordinal'
         # Check if it looks like a discrete categorical variable
         unique_count = series.nunique()
         total_count = len(series)
         if unique_count <= 20 and unique_count / total_count < 0.5:
             return 'ordinal'
         return 'quantitative'
-    elif pd.api.types.is_datetime64_any_dtype(series):
-        return 'temporal'
-    elif pd.api.types.is_bool_dtype(series):
+    # String or object type — check for date strings
+    non_null = series.dropna().head(30).tolist()
+    if non_null:
+        str_vals = [v for v in non_null if isinstance(v, str)]
+        if str_vals and len(str_vals) >= len(non_null) * 0.8:
+            date_count = sum(1 for s in str_vals if _looks_like_date(s))
+            if date_count >= len(str_vals) * 0.7:
+                return 'temporal'
+    unique_count = series.nunique()
+    if unique_count <= 50:
         return 'nominal'
-    else:
-        # String or object type
-        unique_count = series.nunique()
-        if unique_count <= 50:  # Assume categorical if reasonable number of unique values
-            return 'nominal'
-        return 'nominal'  # Default to nominal for text
+    return 'nominal'
 
 
 # Chart Templates
@@ -123,6 +137,11 @@ CHART_TEMPLATES = [
         "channels": ["x", "y", "color", "opacity", "detail", "column", "row"]
     },
     {
+        "chart": "dotted_line",
+        "mark": {"type": "line", "point": True},
+        "channels": ["x", "y", "color", "detail", "column", "row"]
+    },
+    {
         "chart": "bar",
         "mark": "bar",
         "channels": ["x", "y", "color", "opacity", "column", "row"]
@@ -131,6 +150,11 @@ CHART_TEMPLATES = [
         "chart": "group_bar",
         "mark": "bar",
         "channels": ["x", "y", "color", "opacity", "column", "row"]
+    },
+    {
+        "chart": "stacked_bar",
+        "mark": "bar",
+        "channels": ["x", "y", "color", "column", "row"]
     },
     {
         "chart": "heatmap",
@@ -143,9 +167,14 @@ CHART_TEMPLATES = [
         "channels": ["x", "y", "color", "column", "row"]
     },
     {
+        "chart": "streamgraph",
+        "mark": "area",
+        "channels": ["x", "y", "color", "column", "row"]
+    },
+    {
         "chart": "boxplot",
         "mark": "boxplot",
-        "channels": ["x", "y", "opacity", "column", "row"]
+        "channels": ["x", "y", "color", "opacity", "column", "row"]
     },
     {
         "chart": "histogram",
@@ -156,6 +185,61 @@ CHART_TEMPLATES = [
         "chart": "pie",
         "mark": "arc",
         "channels": ["theta", "color", "column", "row"]
+    },
+    {
+        "chart": "lollipop",
+        "mark": "rule",  # layered: rule + circle
+        "channels": ["x", "y", "color", "column", "row"]
+    },
+    {
+        "chart": "strip",
+        "mark": {"type": "circle", "opacity": 0.7},
+        "channels": ["x", "y", "color", "size", "column", "row"]
+    },
+    {
+        "chart": "density",
+        "mark": "area",
+        "channels": ["x", "color", "column", "row"]
+    },
+    {
+        "chart": "bump",
+        "mark": {"type": "line", "point": True, "interpolate": "monotone", "strokeWidth": 2},
+        "channels": ["x", "y", "color", "detail", "column", "row"]
+    },
+    {
+        "chart": "linear_regression",
+        "mark": "circle",  # layered: circle + regression line
+        "channels": ["x", "y", "size", "color", "column", "row"]
+    },
+    {
+        "chart": "ranged_dot",
+        "mark": "point",  # layered: line + point
+        "channels": ["x", "y", "color"]
+    },
+    {
+        "chart": "candlestick",
+        "mark": "rule",  # layered: rule + bar
+        "channels": ["x", "open", "high", "low", "close", "column", "row"]
+    },
+    {
+        "chart": "waterfall",
+        "mark": "bar",
+        "channels": ["x", "y", "color", "column", "row"]
+    },
+    {
+        "chart": "radar",
+        "mark": "line",  # computed polar projection
+        "channels": ["x", "y", "color", "column", "row"]
+    },
+    {
+        "chart": "rose",
+        "mark": {"type": "arc", "stroke": "white", "padAngle": 0.02},
+        "channels": ["x", "y", "color", "column", "row"]
+    },
+    {
+        "chart": "pyramid",
+        "mark": "bar",  # hconcat of 2 panels
+        "channels": ["x", "y", "color"]
     },
     {
         "chart": "worldmap",
@@ -180,12 +264,18 @@ _CHANNEL_TYPE_OVERRIDES: dict[str, dict[str, str]] = {
     "pie":        {"theta": "quantitative", "color": "nominal"},
     "worldmap":   {"longitude": "quantitative", "latitude": "quantitative"},
     "usmap":      {"longitude": "quantitative", "latitude": "quantitative"},
+    "candlestick": {"x": "ordinal"},
+    "density":    {"x": "quantitative"},
+    "waterfall":  {"x": "ordinal", "y": "quantitative"},
+    "pyramid":    {"y": "nominal", "x": "quantitative"},
+    "strip":      {},  # detected dynamically
+    "rose":       {"x": "nominal", "y": "quantitative"},
 }
 
 # Chart types where temporal fields on position channels should be ordinal
 # (discrete bars/cells rather than a continuous time axis).
 # For these charts, coerce_field_type downgrades "temporal" → "ordinal" on x/y.
-_BAR_LIKE_CHARTS = {"bar", "group_bar", "stacked_bar"}
+_BAR_LIKE_CHARTS = {"bar", "group_bar", "stacked_bar", "lollipop", "waterfall"}
 
 
 def coerce_field_type(chart_type: str, channel: str, detected_type: str) -> str:
@@ -557,42 +647,7 @@ def assemble_vegailte_chart(
         raise ValueError(f"Chart type '{chart_type}' not found in templates")
     
     # Build initial spec — some chart types need special structure
-    if chart_type == "histogram":
-        spec = {
-            "mark": "bar",
-            "encoding": {
-                "x": {"bin": True},
-                "y": {"aggregate": "count"}
-            }
-        }
-    elif chart_type in ("worldmap", "usmap"):
-        projection_type = "albersUsa" if chart_type == "usmap" else "equalEarth"
-        topo_url = (
-            "https://vega.github.io/vega-lite/data/us-10m.json" if chart_type == "usmap"
-            else "https://vega.github.io/vega-lite/data/world-110m.json"
-        )
-        topo_feature = "states" if chart_type == "usmap" else "countries"
-        spec = {
-            "width": 500 if chart_type == "usmap" else 600,
-            "height": 300 if chart_type == "usmap" else 350,
-            "layer": [
-                {
-                    "data": {"url": topo_url, "format": {"type": "topojson", "feature": topo_feature}},
-                    "projection": {"type": projection_type},
-                    "mark": {"type": "geoshape", "fill": "lightgray", "stroke": "white"},
-                },
-                {
-                    "projection": {"type": projection_type},
-                    "mark": "circle",
-                    "encoding": {},
-                },
-            ],
-        }
-    else:
-        spec = {
-            "mark": template["mark"],
-            "encoding": {}
-        }
+    spec = _build_initial_spec(chart_type, template, df, encodings, config)
     
     # Remove duplicate columns before converting to records
     if df.columns.duplicated().any():
@@ -602,6 +657,16 @@ def assemble_vegailte_chart(
     
     # Resolve mark type for semantic decisions
     mark_type = template["mark"]
+    if isinstance(mark_type, dict):
+        mark_type = mark_type.get("type", "point")
+
+    # Chart types that self-manage their encodings in _post_process_chart.
+    # For these, we still resolve field types but skip adding to spec encoding
+    # (the _post_process function distributes them from the raw encodings dict).
+    _SELF_MANAGED_CHARTS = {"radar", "pyramid", "waterfall"}
+    # Density: x/y are pre-set by template; only color goes through normal path
+    _DENSITY_SKIP_CHANNELS = {"x", "y"} if chart_type == "density" else set()
+
     # Apply encodings with semantic-aware handling
     for channel, encoding_input in encodings.items():
         # Parse encoding input (always a dict with "field" property)
@@ -684,9 +749,13 @@ def assemble_vegailte_chart(
         # For map charts, encodings go into the second layer
         if chart_type in ("worldmap", "usmap"):
             spec["layer"][1]["encoding"][channel] = encoding_obj
+        elif chart_type in _SELF_MANAGED_CHARTS:
+            pass  # post_process will handle distribution from raw encodings
+        elif channel in _DENSITY_SKIP_CHANNELS:
+            pass  # density template pre-sets x/y
         else:
             # Add encoding to spec
-            spec["encoding"][channel] = encoding_obj
+            spec.setdefault("encoding", {})[channel] = encoding_obj
     
     # Special handling for histogram: ensure x has bin:true and y has count
     if chart_type == "histogram":
@@ -700,12 +769,30 @@ def assemble_vegailte_chart(
         spec["mark"] = "arc"
     
     # Special handling for group_bar: add xOffset using the same field as color
-    if chart_type == "group_bar" and "color" in spec["encoding"]:
+    if chart_type == "group_bar" and "color" in spec.get("encoding", {}):
         color_encoding = spec["encoding"]["color"]
         spec["encoding"]["xOffset"] = {
             "field": color_encoding["field"],
             "type": color_encoding.get("type", "nominal")
         }
+
+    # Special handling for stacked_bar: set stack mode on quant axis
+    if chart_type == "stacked_bar":
+        stack_mode = (config or {}).get("stackMode", "stacked")
+        for axis in ("y", "x"):
+            enc = spec.get("encoding", {}).get(axis)
+            if enc and enc.get("type") == "quantitative":
+                if stack_mode == "normalize":
+                    enc["stack"] = "normalize"
+                elif stack_mode == "center":
+                    enc["stack"] = "center"
+                elif stack_mode == "layered":
+                    enc["stack"] = None
+                # default "stacked" uses VL default (true)
+                break
+
+    # Post-process special chart types (layered specs handled by _build_initial_spec)
+    _post_process_chart(spec, chart_type, df, encodings, config)
     
     # Apply config options
     if config:
@@ -764,14 +851,788 @@ def assemble_vegailte_chart(
     # Apply spec quality improvements (null handling, tooltips, sizing, etc.)
     table_data = _apply_spec_quality(spec, table_data, df, chart_type)
 
-    # Convert temporal fields to strings for Vega-Lite
-    for row in table_data:
-        for col in df.columns:
-            if pd.api.types.is_datetime64_any_dtype(df[col]):
-                row[col] = str(row[col])
-    
-    spec["data"] = {"values": table_data}
+    # Convert temporal fields to strings for Vega-Lite.
+    # Uses the robust convert_temporal_data which handles datetime objects,
+    # timestamps, year integers, date strings, etc.
+    table_data = convert_temporal_data(table_data, semantic_types)
+
+    # Post-encoding temporal guard: any field resolved as type="temporal"
+    # must have its integer values converted to strings so VL doesn't
+    # interpret e.g. 2024 as 2024ms-since-epoch.  convert_temporal_data
+    # above handles fields with known semantic types, but fields resolved
+    # as temporal purely by name heuristic (e.g. column named "year")
+    # may still have raw integer values.
+    _temporal_fields = set()
+    for _enc in spec.get("encoding", {}).values():
+        if isinstance(_enc, dict) and _enc.get("type") == "temporal":
+            _f = _enc.get("field")
+            if _f:
+                _temporal_fields.add(_f)
+    if _temporal_fields and table_data:
+        for row in table_data:
+            for _f in _temporal_fields:
+                v = row.get(_f)
+                if isinstance(v, (int, float)) and not isinstance(v, bool):
+                    row[_f] = str(int(v)) if v == int(v) else str(v)
+
+    # Charts that manage their own data (waterfall, radar, pyramid) set
+    # spec["data"] in _post_process_chart — don't overwrite it.
+    if "data" not in spec:
+        spec["data"] = {"values": table_data}
     return spec
+
+
+# ---------------------------------------------------------------------------
+# _build_initial_spec — construct the initial VL spec skeleton for each type
+# ---------------------------------------------------------------------------
+
+def _build_initial_spec(
+    chart_type: str,
+    template: dict,
+    df: pd.DataFrame,
+    encodings: dict,
+    config: dict | None,
+) -> dict:
+    """Build the initial VL spec skeleton before encoding channels are applied."""
+
+    if chart_type == "histogram":
+        return {
+            "mark": "bar",
+            "encoding": {
+                "x": {"bin": True},
+                "y": {"aggregate": "count"},
+            },
+        }
+
+    if chart_type in ("worldmap", "usmap"):
+        projection_type = "albersUsa" if chart_type == "usmap" else "equalEarth"
+        topo_url = (
+            "https://vega.github.io/vega-lite/data/us-10m.json"
+            if chart_type == "usmap"
+            else "https://vega.github.io/vega-lite/data/world-110m.json"
+        )
+        topo_feature = "states" if chart_type == "usmap" else "countries"
+        return {
+            "width": 500 if chart_type == "usmap" else 600,
+            "height": 300 if chart_type == "usmap" else 350,
+            "layer": [
+                {
+                    "data": {"url": topo_url, "format": {"type": "topojson", "feature": topo_feature}},
+                    "projection": {"type": projection_type},
+                    "mark": {"type": "geoshape", "fill": "lightgray", "stroke": "white"},
+                },
+                {
+                    "projection": {"type": projection_type},
+                    "mark": "circle",
+                    "encoding": {},
+                },
+            ],
+        }
+
+    if chart_type == "lollipop":
+        return {
+            "encoding": {},
+            "layer": [
+                {"mark": {"type": "rule", "strokeWidth": 1.5}, "encoding": {}},
+                {"mark": {"type": "circle", "size": int((config or {}).get("dotSize", 80))}, "encoding": {}},
+            ],
+        }
+
+    if chart_type == "linear_regression":
+        return {
+            "layer": [
+                {"mark": "circle", "encoding": {}},
+                {
+                    "mark": {"type": "line", "color": "red"},
+                    "transform": [{"regression": "__y__", "on": "__x__"}],
+                    "encoding": {},
+                },
+            ],
+            "encoding": {},
+        }
+
+    if chart_type == "ranged_dot":
+        return {
+            "encoding": {},
+            "layer": [
+                {"mark": "line", "encoding": {"detail": {}}},
+                {"mark": {"type": "point", "filled": True}, "encoding": {"color": {}}},
+            ],
+        }
+
+    if chart_type == "candlestick":
+        return {
+            "encoding": {},
+            "layer": [
+                {"mark": "rule", "encoding": {}},
+                {"mark": {"type": "bar", "size": 14}, "encoding": {}},
+            ],
+        }
+
+    if chart_type == "waterfall":
+        # Will be rebuilt into layered spec in _post_process_chart
+        return {"mark": "bar", "encoding": {}}
+
+    if chart_type == "density":
+        return {
+            "mark": "area",
+            "transform": [{"density": "__field__"}],
+            "encoding": {
+                "x": {"field": "value", "type": "quantitative"},
+                "y": {"field": "density", "type": "quantitative"},
+            },
+        }
+
+    if chart_type == "radar":
+        # Radar is entirely computed; placeholder spec
+        return {"mark": "point", "encoding": {}}
+
+    if chart_type == "pyramid":
+        return {
+            "spacing": 0,
+            "resolve": {"scale": {"y": "shared"}},
+            "hconcat": [
+                {
+                    "mark": "bar",
+                    "encoding": {
+                        "y": {},
+                        "x": {"scale": {"reverse": True}, "stack": None},
+                        "opacity": {"value": 0.9},
+                        "color": {"value": "#4e79a7"},
+                    },
+                },
+                {
+                    "mark": "bar",
+                    "encoding": {
+                        "y": {"axis": None},
+                        "x": {"stack": None},
+                        "opacity": {"value": 0.9},
+                        "color": {"value": "#e15759"},
+                    },
+                },
+            ],
+            "config": {"view": {"stroke": None}, "axis": {"grid": False}},
+        }
+
+    if chart_type == "streamgraph":
+        return {"mark": "area", "encoding": {}}
+
+    if chart_type == "rose":
+        mark = {"type": "arc", "stroke": "white", "padAngle": 0.02}
+        return {"mark": mark, "encoding": {}}
+
+    # Default: use template mark
+    mark = template["mark"]
+    return {"mark": mark, "encoding": {}}
+
+
+# ---------------------------------------------------------------------------
+# _post_process_chart — chart-type-specific post-processing
+# ---------------------------------------------------------------------------
+
+def _post_process_chart(
+    spec: dict,
+    chart_type: str,
+    df: pd.DataFrame,
+    encodings: dict,
+    config: dict | None,
+) -> None:
+    """Apply chart-type-specific post-processing after encodings are set."""
+
+    if chart_type == "lollipop":
+        _post_process_lollipop(spec, df, encodings)
+
+    elif chart_type == "linear_regression":
+        _post_process_linear_regression(spec, encodings)
+
+    elif chart_type == "ranged_dot":
+        _post_process_ranged_dot(spec, encodings)
+
+    elif chart_type == "candlestick":
+        _post_process_candlestick(spec, df, encodings, config)
+
+    elif chart_type == "waterfall":
+        _post_process_waterfall(spec, df, encodings, config)
+
+    elif chart_type == "density":
+        _post_process_density(spec, encodings, config)
+
+    elif chart_type == "radar":
+        _post_process_radar(spec, df, encodings, config)
+
+    elif chart_type == "pyramid":
+        _post_process_pyramid(spec, df, encodings)
+
+    elif chart_type == "streamgraph":
+        _post_process_streamgraph(spec, encodings, config)
+
+    elif chart_type == "bump":
+        _post_process_bump(spec, encodings)
+
+    elif chart_type == "strip":
+        _post_process_strip(spec, df, encodings, config)
+
+    elif chart_type == "rose":
+        _post_process_rose(spec, df, encodings, config)
+
+
+def _post_process_lollipop(spec: dict, df: pd.DataFrame, encodings: dict) -> None:
+    """Lollipop: rule from 0 + circle at value. Both layers share positional encodings."""
+    enc = spec.get("encoding", {})
+    layer_rule = spec["layer"][0]
+    layer_circle = spec["layer"][1]
+
+    for ch in ("x", "y"):
+        if ch in enc:
+            layer_rule["encoding"][ch] = dict(enc[ch])
+            layer_circle["encoding"][ch] = dict(enc[ch])
+
+    # Anchor rule from 0 on the quantitative axis
+    for axis in ("y", "x"):
+        if enc.get(axis, {}).get("type") == "quantitative":
+            layer_rule["encoding"][f"{axis}2"] = {"datum": 0}
+            break
+
+    # Color → circle layer only
+    if "color" in enc:
+        layer_circle["encoding"]["color"] = enc.pop("color")
+
+    # Facets stay at top-level
+    for ch in list(enc.keys()):
+        if ch not in ("x", "y"):
+            pass  # keep in top encoding for faceting
+
+
+def _post_process_linear_regression(spec: dict, encodings: dict) -> None:
+    """Linear regression: scatter layer + regression trend line."""
+    scatter = spec["layer"][0]
+    regression = spec["layer"][1]
+    top_enc = spec.get("encoding", {})
+
+    x_enc = top_enc.get("x")
+    y_enc = top_enc.get("y")
+
+    if x_enc:
+        scatter["encoding"]["x"] = dict(x_enc)
+        regression["encoding"]["x"] = dict(x_enc)
+        regression["transform"][0]["on"] = x_enc.get("field", "__x__")
+    if y_enc:
+        scatter["encoding"]["y"] = dict(y_enc)
+        regression["encoding"]["y"] = dict(y_enc)
+        regression["transform"][0]["regression"] = y_enc.get("field", "__y__")
+
+    if "color" in top_enc:
+        scatter["encoding"]["color"] = top_enc.pop("color")
+    if "size" in top_enc:
+        scatter["encoding"]["size"] = top_enc.pop("size")
+
+    # Facets
+    for ch in ("column", "row"):
+        if ch in top_enc:
+            pass  # keep at top level
+
+
+def _post_process_ranged_dot(spec: dict, encodings: dict) -> None:
+    """Ranged dot plot: line + point layers; detail links line segments."""
+    enc = spec.get("encoding", {})
+    line_layer = spec["layer"][0]
+    point_layer = spec["layer"][1]
+
+    if "color" in enc:
+        point_layer["encoding"]["color"] = enc.pop("color")
+
+    # Copy nominal axis into detail encoding for line layer
+    if enc.get("y", {}).get("type") == "nominal":
+        import copy
+        line_layer["encoding"]["detail"] = copy.deepcopy(enc["y"])
+    elif enc.get("x", {}).get("type") == "nominal":
+        import copy
+        line_layer["encoding"]["detail"] = copy.deepcopy(enc["x"])
+
+
+def _post_process_candlestick(
+    spec: dict, df: pd.DataFrame, encodings: dict, config: dict | None
+) -> None:
+    """Candlestick: rule (wick) + bar (body) with conditional coloring."""
+    enc = spec.get("encoding", {})
+    rule = spec["layer"][0]
+    bar = spec["layer"][1]
+
+    # x shared
+    if "x" in enc:
+        x_enc = dict(enc["x"])
+        if x_enc.get("type") in ("nominal", "ordinal"):
+            x_enc["sort"] = None
+        spec["encoding"]["x"] = x_enc
+
+    # Shared y-axis
+    y_axis = {"type": "quantitative", "scale": {"zero": False}, "axis": {"title": None}}
+    spec["title"] = {"text": "Price", "anchor": "start", "fontSize": 11,
+                      "fontWeight": "normal", "color": "#666"}
+
+    # Rule: y = low, y2 = high
+    open_f = encodings.get("open", {}).get("field")
+    high_f = encodings.get("high", {}).get("field")
+    low_f  = encodings.get("low", {}).get("field")
+    close_f = encodings.get("close", {}).get("field")
+
+    if low_f and high_f:
+        rule["encoding"]["y"] = {"field": low_f, **y_axis}
+        rule["encoding"]["y2"] = {"field": high_f}
+    if open_f and close_f:
+        bar["encoding"]["y"] = {"field": open_f, **y_axis}
+        bar["encoding"]["y2"] = {"field": close_f}
+        # Conditional color: green up, red down
+        bar["encoding"]["color"] = {
+            "condition": {
+                "test": f"datum['{open_f}'] < datum['{close_f}']",
+                "value": "#06982d",
+            },
+            "value": "#ae1325",
+        }
+
+    # Adaptive bar size
+    x_field = enc.get("x", {}).get("field")
+    if x_field and x_field in df.columns:
+        card = df[x_field].nunique()
+        plot_w = 400
+        bar_size = max(2, min(20, round(plot_w * 0.6 / max(card, 1))))
+        bar["mark"]["size"] = bar_size
+
+    # Remove OHLC channels from top-level encoding (not VL channels)
+    for ch in ("open", "high", "low", "close"):
+        enc.pop(ch, None)
+
+
+def _post_process_waterfall(
+    spec: dict, df: pd.DataFrame, encodings: dict, config: dict | None
+) -> None:
+    """Waterfall: cumulative bar chart with positive/negative coloring."""
+    x_field = encodings.get("x", {}).get("field")
+    y_field = encodings.get("y", {}).get("field")
+    if not x_field or not y_field or x_field not in df.columns or y_field not in df.columns:
+        return
+
+    # Build cumulative waterfall data
+    wf_data = []
+    cumsum = 0
+    rows = df[[x_field, y_field]].to_dict("records")
+    total_rows = len(rows)
+    for i, row in enumerate(rows):
+        val = row[y_field] if isinstance(row[y_field], (int, float)) else 0
+        prev = cumsum
+        if i == 0 or i == total_rows - 1:
+            wf_type = "total"
+            cumsum = val
+            prev = 0
+        else:
+            wf_type = "increase" if val >= 0 else "decrease"
+            cumsum += val
+        wf_data.append({
+            x_field: row[x_field],
+            "__wf_prev_sum": prev,
+            "__wf_sum": cumsum,
+            "__wf_color": wf_type,
+        })
+
+    corner_radius = int((config or {}).get("cornerRadius", 0))
+    mark_obj: dict = {"type": "bar"}
+    if corner_radius:
+        mark_obj["cornerRadius"] = corner_radius
+
+    spec.clear()
+    spec.update({
+        "data": {"values": wf_data},
+        "encoding": {
+            "x": {"field": x_field, "type": "ordinal", "sort": None,
+                   "axis": {"labelAngle": -45}},
+        },
+        "layer": [
+            {
+                "mark": mark_obj,
+                "encoding": {
+                    "y": {"field": "__wf_prev_sum", "type": "quantitative", "title": y_field},
+                    "y2": {"field": "__wf_sum"},
+                    "color": {
+                        "field": "__wf_color",
+                        "type": "nominal",
+                        "scale": {
+                            "domain": ["total", "increase", "decrease"],
+                            "range": ["#f7e0b6", "#93c4aa", "#f78a64"],
+                        },
+                        "legend": {"title": "Type"},
+                    },
+                },
+            }
+        ],
+    })
+
+
+def _post_process_density(spec: dict, encodings: dict, config: dict | None) -> None:
+    """Density plot: kernel density transform."""
+    x_enc = encodings.get("x", {})
+    x_field = x_enc.get("field")
+    if x_field:
+        spec["transform"][0]["density"] = x_field
+        spec["encoding"]["x"]["title"] = x_field
+
+    color_enc = encodings.get("color", {})
+    if color_enc.get("field"):
+        spec["transform"][0]["groupby"] = [color_enc["field"]]
+        spec["encoding"]["color"] = {
+            "field": color_enc["field"],
+            "type": color_enc.get("type", "nominal"),
+        }
+
+    bandwidth = (config or {}).get("bandwidth")
+    if bandwidth and float(bandwidth) > 0:
+        spec["transform"][0]["bandwidth"] = float(bandwidth)
+
+    # Remove x/y from top-level encoding (already set by template)
+    # Don't re-add them from the encoding loop
+
+
+def _post_process_radar(
+    spec: dict, df: pd.DataFrame, encodings: dict, config: dict | None
+) -> None:
+    """Radar chart: entirely client-computed polar projection."""
+    x_enc = encodings.get("x", {})
+    y_enc = encodings.get("y", {})
+    color_enc = encodings.get("color", {})
+
+    axis_field = x_enc.get("field")
+    value_field = y_enc.get("field")
+    group_field = color_enc.get("field")
+
+    if not axis_field or not value_field:
+        return
+    if axis_field not in df.columns or value_field not in df.columns:
+        return
+
+    axes = df[axis_field].unique().tolist()
+    n_axes = len(axes)
+    if n_axes < 3:
+        return
+
+    groups = df[group_field].unique().tolist() if group_field and group_field in df.columns else ["__all__"]
+
+    # Compute per-axis max for normalization
+    axis_max = {}
+    for ax in axes:
+        vals = df[df[axis_field] == ax][value_field].dropna()
+        mx = float(vals.max()) if len(vals) > 0 else 1
+        axis_max[ax] = mx if mx > 0 else 1
+
+    # Build polar coordinates
+    import math as _math
+
+    polygon_data = []
+    point_data = []
+    for grp in groups:
+        subset = df if grp == "__all__" else df[df[group_field] == grp]
+        for i, ax in enumerate(axes):
+            angle = 2 * _math.pi * i / n_axes
+            vals = subset[subset[axis_field] == ax][value_field].dropna()
+            mean_val = float(vals.mean()) if len(vals) > 0 else 0
+            norm = mean_val / axis_max[ax]
+            px = norm * _math.sin(angle)
+            py = -norm * _math.cos(angle)
+            rec = {"__x": px, "__y": py, "__group": grp, "__angle": angle, "__axis": ax, "__value": mean_val}
+            polygon_data.append(rec)
+            point_data.append(rec)
+        # Close polygon
+        if n_axes > 0:
+            first = polygon_data[-(n_axes)]
+            polygon_data.append({**first})
+
+    # Spoke data
+    spoke_data = []
+    for i, ax in enumerate(axes):
+        angle = 2 * _math.pi * i / n_axes
+        spoke_data.append({"__x": 0, "__y": 0, "__x2": _math.sin(angle), "__y2": -_math.cos(angle)})
+
+    # Ring data (concentric polygons at 0.25, 0.5, 0.75, 1.0)
+    ring_data = []
+    for level in (0.25, 0.5, 0.75, 1.0):
+        for i in range(n_axes + 1):
+            angle = 2 * _math.pi * (i % n_axes) / n_axes
+            ring_data.append({
+                "__x": level * _math.sin(angle),
+                "__y": -level * _math.cos(angle),
+                "__level": level,
+                "__order": i,
+            })
+
+    # Label data
+    label_data = []
+    for i, ax in enumerate(axes):
+        angle = 2 * _math.pi * i / n_axes
+        r = 1.12
+        label_data.append({
+            "__x": r * _math.sin(angle),
+            "__y": -r * _math.cos(angle),
+            "__label": f"{ax}\n({axis_max[ax]:.0f})",
+            "__align": "center" if abs(_math.sin(angle)) < 0.01 else ("left" if _math.sin(angle) > 0 else "right"),
+        })
+
+    filled = (config or {}).get("filled", True)
+    fill_opacity = float((config or {}).get("fillOpacity", 0.15))
+    stroke_width = float((config or {}).get("strokeWidth", 1.5))
+
+    scale_xy = {"domain": [-1.18, 1.18]}
+    layers = [
+        # Spokes
+        {
+            "data": {"values": spoke_data},
+            "mark": {"type": "rule", "color": "#ddd"},
+            "encoding": {
+                "x": {"field": "__x", "type": "quantitative", "scale": scale_xy, "axis": None},
+                "y": {"field": "__y", "type": "quantitative", "scale": scale_xy, "axis": None},
+                "x2": {"field": "__x2"},
+                "y2": {"field": "__y2"},
+            },
+        },
+        # Rings
+        {
+            "data": {"values": ring_data},
+            "mark": {"type": "line", "color": "#eee", "strokeWidth": 0.5},
+            "encoding": {
+                "x": {"field": "__x", "type": "quantitative", "scale": scale_xy, "axis": None},
+                "y": {"field": "__y", "type": "quantitative", "scale": scale_xy, "axis": None},
+                "detail": {"field": "__level", "type": "nominal"},
+                "order": {"field": "__order", "type": "quantitative"},
+            },
+        },
+        # Labels
+        {
+            "data": {"values": label_data},
+            "mark": {"type": "text", "fontSize": 11},
+            "encoding": {
+                "x": {"field": "__x", "type": "quantitative", "scale": scale_xy, "axis": None},
+                "y": {"field": "__y", "type": "quantitative", "scale": scale_xy, "axis": None},
+                "text": {"field": "__label", "type": "nominal"},
+                "align": {"field": "__align", "type": "nominal"},
+            },
+        },
+        # Data polygon
+        {
+            "data": {"values": polygon_data},
+            "mark": {
+                "type": "line",
+                "interpolate": "linear-closed",
+                "strokeWidth": stroke_width,
+                **({"filled": True, "fillOpacity": fill_opacity} if filled else {}),
+            },
+            "encoding": {
+                "x": {"field": "__x", "type": "quantitative", "scale": scale_xy, "axis": None},
+                "y": {"field": "__y", "type": "quantitative", "scale": scale_xy, "axis": None},
+                "color": {"field": "__group", "type": "nominal"},
+                "order": {"field": "__angle", "type": "quantitative"},
+            },
+        },
+        # Data points
+        {
+            "data": {"values": point_data},
+            "mark": {"type": "point", "filled": True, "size": 25},
+            "encoding": {
+                "x": {"field": "__x", "type": "quantitative", "scale": scale_xy, "axis": None},
+                "y": {"field": "__y", "type": "quantitative", "scale": scale_xy, "axis": None},
+                "color": {"field": "__group", "type": "nominal"},
+            },
+        },
+    ]
+
+    size = min(400, 400)
+    spec.clear()
+    spec.update({
+        "width": size,
+        "height": size,
+        "layer": layers,
+        "config": {"view": {"stroke": None}},
+    })
+
+
+def _post_process_pyramid(spec: dict, df: pd.DataFrame, encodings: dict) -> None:
+    """Pyramid: hconcat of two mirrored bar panels split by color field."""
+    if "hconcat" not in spec:
+        return
+
+    x_enc = encodings.get("x", {})
+    y_enc = encodings.get("y", {})
+    color_enc = encodings.get("color", {})
+
+    y_field = y_enc.get("field") or x_enc.get("field")
+    x_field = x_enc.get("field") if y_enc.get("field") else y_enc.get("field")
+    group_field = color_enc.get("field")
+
+    if not y_field or not x_field or not group_field:
+        return
+    if y_field not in df.columns or x_field not in df.columns or group_field not in df.columns:
+        return
+
+    groups = df[group_field].unique().tolist()
+    left_group = groups[0] if len(groups) > 0 else None
+    right_group = groups[1] if len(groups) > 1 else None
+
+    table_data = df.to_dict("records")
+    left_panel = spec["hconcat"][0]
+    right_panel = spec["hconcat"][1]
+
+    # y is the categorical axis (shared)
+    left_panel["encoding"]["y"] = {"field": y_field, "type": "nominal", "sort": None}
+    right_panel["encoding"]["y"] = {"field": y_field, "type": "nominal", "axis": None, "sort": None}
+
+    # x is the quantitative axis
+    x_max = float(df[x_field].max()) if pd.api.types.is_numeric_dtype(df[x_field]) else 100
+    left_panel["encoding"]["x"] = {
+        "field": x_field, "type": "quantitative",
+        "scale": {"reverse": True, "domain": [0, x_max]},
+        "stack": None,
+    }
+    right_panel["encoding"]["x"] = {
+        "field": x_field, "type": "quantitative",
+        "scale": {"domain": [0, x_max]},
+        "stack": None,
+    }
+
+    # Filter each panel
+    if left_group is not None:
+        left_panel["transform"] = [{"filter": {"field": group_field, "equal": left_group}}]
+        left_panel["encoding"]["color"] = {"value": "#4e79a7"}
+    if right_group is not None:
+        right_panel["transform"] = [{"filter": {"field": group_field, "equal": right_group}}]
+        right_panel["encoding"]["color"] = {"value": "#e15759"}
+
+    spec["data"] = {"values": table_data}
+
+
+def _post_process_streamgraph(spec: dict, encodings: dict, config: dict | None) -> None:
+    """Streamgraph: stacked area with center baseline."""
+    enc = spec.get("encoding", {})
+    # Force center stack on the quantitative axis
+    for axis in ("y", "x"):
+        if enc.get(axis, {}).get("type") == "quantitative":
+            enc[axis]["stack"] = "center"
+            enc[axis]["axis"] = None
+            break
+
+    interpolate = (config or {}).get("interpolate")
+    if interpolate:
+        spec["mark"] = {"type": "area", "interpolate": interpolate}
+
+
+def _post_process_bump(spec: dict, encodings: dict) -> None:
+    """Bump chart: reversed y-axis so rank 1 is at top."""
+    enc = spec.get("encoding", {})
+    # Detect rank axis (defaults to y)
+    y_enc = enc.get("y", {})
+    if y_enc:
+        y_enc.setdefault("scale", {})["reverse"] = True
+
+
+def _post_process_strip(
+    spec: dict, df: pd.DataFrame, encodings: dict, config: dict | None
+) -> None:
+    """Strip plot: jittered points along a categorical axis."""
+    enc = spec.get("encoding", {})
+    cfg = config or {}
+    step_width = int(cfg.get("stepWidth", 20))
+
+    # Detect categorical axis
+    cat_axis = None
+    cont_axis = None
+    for axis in ("x", "y"):
+        if enc.get(axis, {}).get("type") in ("nominal", "ordinal"):
+            cat_axis = axis
+            cont_axis = "y" if axis == "x" else "x"
+            break
+
+    if cat_axis is None:
+        return
+
+    # Set step-based width/height
+    dim = "width" if cat_axis == "x" else "height"
+    spec[dim] = {"step": step_width}
+
+    # Auto point size
+    cat_field = enc[cat_axis].get("field")
+    if cat_field and cat_field in df.columns:
+        max_group = int(df.groupby(cat_field).size().max())
+        cont_dim = spec.get("height" if cat_axis == "x" else "width", 300)
+        if isinstance(cont_dim, dict):
+            cont_len = 300
+        else:
+            cont_len = cont_dim
+        ideal_size = max(5, min(100, int(0.35 * step_width * cont_len / max(max_group, 1))))
+        point_size = int(cfg.get("pointSize", 0)) or ideal_size
+    else:
+        point_size = int(cfg.get("pointSize", 0)) or 30
+
+    mark = spec.get("mark", {})
+    if isinstance(mark, dict):
+        mark["size"] = point_size
+    else:
+        spec["mark"] = {"type": "circle", "opacity": 0.7, "size": point_size}
+
+    # Jitter transform
+    jitter_width = step_width * 0.7
+    spec.setdefault("transform", []).append({
+        "calculate": f"{-jitter_width/2} + random() * {jitter_width}",
+        "as": "__jitter",
+    })
+    offset_ch = "xOffset" if cat_axis == "x" else "yOffset"
+    enc[offset_ch] = {
+        "field": "__jitter",
+        "type": "quantitative",
+        "axis": None,
+        "scale": {"domain": [-step_width / 2, step_width / 2]},
+    }
+
+
+def _post_process_rose(
+    spec: dict, df: pd.DataFrame, encodings: dict, config: dict | None
+) -> None:
+    """Rose (Nightingale) chart: polar bar using arc mark."""
+    enc = spec.get("encoding", {})
+    cfg = config or {}
+
+    x_enc = enc.pop("x", None)
+    y_enc = enc.pop("y", None)
+
+    # x → theta (the angular/category axis)
+    if x_enc:
+        theta_enc = {"field": x_enc["field"], "type": "nominal", "stack": True}
+        if x_enc.get("sort"):
+            theta_enc["sort"] = x_enc["sort"]
+        enc["theta"] = theta_enc
+
+    # y → radius
+    if y_enc:
+        radius_field = y_enc["field"]
+        enc["radius"] = {"field": radius_field, "type": "quantitative", "scale": {"type": "sqrt"}}
+    else:
+        enc["radius"] = {"aggregate": "count", "type": "quantitative", "scale": {"type": "sqrt"}}
+
+    # color: use the explicit color field or fall back to x field
+    if "color" not in enc and x_enc:
+        enc["color"] = {"field": x_enc["field"], "type": "nominal"}
+
+    # Config
+    inner_radius = int(cfg.get("innerRadius", 0))
+    pad_angle = float(cfg.get("padAngle", 0.02))
+    mark = spec.get("mark", {})
+    if isinstance(mark, dict):
+        if inner_radius:
+            mark["innerRadius"] = inner_radius
+        mark["padAngle"] = pad_angle
+    else:
+        spec["mark"] = {"type": "arc", "stroke": "white", "padAngle": pad_angle}
+        if inner_radius:
+            spec["mark"]["innerRadius"] = inner_radius
+
+    # Square aspect ratio
+    spec["width"] = 300
+    spec["height"] = 300
 
 
 def _apply_semantic_encoding(
@@ -784,115 +1645,19 @@ def _apply_semantic_encoding(
     """
     Apply semantic-aware enhancements to a VL encoding object.
 
-    Reads resolved ChannelSemantics (from chart_semantics.py) and applies:
-      - Axis/label number formatting  ($, %, unit suffixes)
-      - Color scheme selection (diverging / sequential / categorical)
-      - Zero-baseline and domain padding
-      - Domain constraints (intrinsic domain merging)
-      - Ordinal sort order (months, days, quarters)
-      - Temporal format
-      - Scale type (log)
-      - Tick constraints (integer-only, exact ticks)
-      - Reversed axis
-      - Line interpolation
+    Kept intentionally minimal — only ordinal sort order (months, days).
+    Formatting, domains, ticks, zero-baseline, etc. are left to VL
+    defaults or handled by the front-end TS library.
     """
     vl_type = encoding_obj.get("type", "nominal")
 
-    # --- Number formatting (axis format + tooltip title suffix) ---
-    if cs.format and cs.format.pattern and channel in ('x', 'y', 'color', 'size', 'theta'):
-        fmt = cs.format
-        # Build VL axis/legend format from the d3-format spec
-        if fmt.pattern:
-            # Percentage formats work natively in d3
-            if '%' in fmt.pattern:
-                encoding_obj.setdefault("axis" if channel in ('x', 'y') else "legend", {})["format"] = fmt.pattern
-            elif fmt.prefix or fmt.suffix:
-                # VL doesn't natively support prefix/suffix in d3-format,
-                # so we use formatType: '' and formatCustom approach, or just set
-                # the format pattern and let abbreviation handle large values.
-                encoding_obj.setdefault("axis" if channel in ('x', 'y') else "legend", {})["format"] = fmt.pattern
-            else:
-                encoding_obj.setdefault("axis" if channel in ('x', 'y') else "legend", {})["format"] = fmt.pattern
-
-        # Axis title with prefix/suffix for clarity
-        if (fmt.prefix or fmt.suffix) and "title" not in encoding_obj:
-            title = encoding_obj.get("field", "")
-            if fmt.prefix and fmt.suffix:
-                title = f"{title} ({fmt.prefix}…{fmt.suffix.strip()})"
-            elif fmt.prefix:
-                title = f"{title} ({fmt.prefix})"
-            elif fmt.suffix:
-                title = f"{title} ({fmt.suffix.strip()})"
-            encoding_obj["title"] = title
-
-    # --- Color scheme ---
-    if channel in ('color', 'group') and cs.color_scheme:
-        csr = cs.color_scheme
-        # Don't override user-provided colorScheme from config
-        config_scheme = (config or {}).get("colorScheme") if chart_type == "heatmap" else None
-        if not config_scheme:
-            scale = encoding_obj.setdefault("scale", {})
-            scale["scheme"] = csr.scheme
-            if csr.type == 'diverging' and csr.domain_mid is not None and vl_type == 'quantitative':
-                scale["domainMid"] = csr.domain_mid
-
-    # --- Zero baseline (positional quantitative) ---
-    if channel in ('x', 'y') and vl_type == 'quantitative' and cs.zero:
-        zd = cs.zero
-        scale = encoding_obj.setdefault("scale", {})
-        scale["zero"] = zd.zero
-        if not zd.zero and zd.domain_pad_fraction > 0:
-            scale["padding"] = zd.domain_pad_fraction
-        # Apply nice rounding
-        if cs.domain_constraint:
-            if cs.domain_constraint.clamp:
-                scale["nice"] = False
-            elif cs.domain_constraint.min_val is not None and cs.domain_constraint.max_val is not None:
-                scale["nice"] = False
-
-    # --- Domain constraint ---
-    if channel in ('x', 'y') and vl_type == 'quantitative' and cs.domain_constraint:
-        dc = cs.domain_constraint
-        if dc.min_val is not None and dc.max_val is not None:
-            scale = encoding_obj.setdefault("scale", {})
-            scale["domain"] = [dc.min_val, dc.max_val]
-            if dc.clamp:
-                scale["clamp"] = True
-
-    # --- Scale type (log) ---
-    if channel in ('x', 'y') and vl_type == 'quantitative' and cs.scale_type:
-        encoding_obj.setdefault("scale", {})["type"] = cs.scale_type
-
-    # --- Tick constraints ---
-    if channel in ('x', 'y') and cs.tick_constraint:
-        tc = cs.tick_constraint
-        axis = encoding_obj.setdefault("axis", {})
-        if tc.exact_ticks:
-            axis["values"] = tc.exact_ticks
-        if tc.min_step:
-            axis["tickMinStep"] = tc.min_step
-
-    # --- Ordinal sort order ---
+    # --- Ordinal sort order (months, days, quarters) ---
     if cs.ordinal_sort_order and vl_type in ('ordinal', 'nominal'):
         encoding_obj["sort"] = cs.ordinal_sort_order
 
-    # --- Temporal format ---
-    if cs.temporal_format and vl_type == 'temporal':
-        axis_key = "axis" if channel in ('x', 'y') else "legend"
-        encoding_obj.setdefault(axis_key, {})["format"] = cs.temporal_format
-
-    # --- Reversed axis ---
-    if cs.reversed and channel in ('x', 'y'):
-        encoding_obj.setdefault("scale", {})["reverse"] = True
-
-    # --- Large nominal legend handling ---
+    # --- Basic color scheme fallback ---
     if vl_type == 'nominal' and channel == 'color':
-        unique_count = 0
-        if cs.color_scheme:
-            # use the scheme already set
-            pass
-        else:
-            encoding_obj.setdefault("scale", {})["scheme"] = "tableau10"
+        encoding_obj.setdefault("scale", {}).setdefault("scheme", "tableau10")
 
 
 def _apply_spec_quality(
@@ -1047,17 +1812,38 @@ def _apply_chart_config(spec: dict, chart_type: str, config: dict):
             _ensure_mark_obj(spec)
             spec["mark"]["opacity"] = float(opacity)
     
-    elif chart_type in ("bar", "group_bar"):
+    elif chart_type in ("bar", "group_bar", "stacked_bar"):
         corner_radius = config.get("cornerRadius")
         if corner_radius is not None:
             _ensure_mark_obj(spec)
             spec["mark"]["cornerRadius"] = int(corner_radius)
     
-    elif chart_type == "line":
+    elif chart_type in ("line", "dotted_line"):
         interpolate = config.get("interpolate")
         if interpolate:
             _ensure_mark_obj(spec)
             spec["mark"]["interpolate"] = interpolate
+    
+    elif chart_type == "area":
+        interpolate = config.get("interpolate")
+        opacity = config.get("opacity")
+        stack_mode = config.get("stackMode")
+        _ensure_mark_obj(spec)
+        if interpolate:
+            spec["mark"]["interpolate"] = interpolate
+        if opacity is not None:
+            spec["mark"]["opacity"] = float(opacity)
+        if stack_mode and "encoding" in spec:
+            for axis in ("y", "x"):
+                enc = spec["encoding"].get(axis)
+                if enc and enc.get("type") == "quantitative":
+                    if stack_mode == "normalize":
+                        enc["stack"] = "normalize"
+                    elif stack_mode == "center":
+                        enc["stack"] = "center"
+                    elif stack_mode == "layered":
+                        enc["stack"] = None
+                    break
     
     elif chart_type == "worldmap":
         projection = config.get("projection")
