@@ -157,14 +157,14 @@ const VegaChart: React.FC<{ testCase: TestCase }> = React.memo(({ testCase }) =>
         <Paper
             elevation={1}
             sx={{
-                p: 2, mb: 2, width: 'fit-content', maxWidth: '100%',
+                p: 2, mb: 2, maxWidth: 520,
                 border: error ? '2px solid #f44336' : '1px solid #e0e0e0',
             }}
         >
             <Typography variant="subtitle2" fontWeight={600} gutterBottom>
                 {testCase.title}
             </Typography>
-            <Typography variant="caption" color="text.secondary" display="block" mb={1}>
+            <Typography variant="caption" color="text.secondary" display="block" mb={1} sx={{ wordBreak: 'break-word' }}>
                 {testCase.description}
             </Typography>
             <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', mb: 1 }}>
@@ -426,14 +426,14 @@ const DualChart: React.FC<{ testCase: TestCase }> = React.memo(({ testCase }) =>
         <Paper
             elevation={1}
             sx={{
-                p: 2, mb: 2, width: 'fit-content', maxWidth: '100%',
+                p: 2, mb: 2, maxWidth: 800,
                 border: '1px solid #e0e0e0',
             }}
         >
             <Typography variant="subtitle2" fontWeight={600} gutterBottom>
                 {testCase.title}
             </Typography>
-            <Typography variant="caption" color="text.secondary" display="block" mb={1}>
+            <Typography variant="caption" color="text.secondary" display="block" mb={1} sx={{ wordBreak: 'break-word' }}>
                 {testCase.description}
             </Typography>
             <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', mb: 1 }}>
@@ -714,14 +714,14 @@ const TripleChart: React.FC<{ testCase: TestCase }> = React.memo(({ testCase }) 
         <Paper
             elevation={1}
             sx={{
-                p: 2, mb: 2, width: 'fit-content', maxWidth: '100%',
+                p: 2, mb: 2, maxWidth: 900,
                 border: '1px solid #e0e0e0',
             }}
         >
             <Typography variant="subtitle2" fontWeight={600} gutterBottom>
                 {testCase.title}
             </Typography>
-            <Typography variant="caption" color="text.secondary" display="block" mb={1}>
+            <Typography variant="caption" color="text.secondary" display="block" mb={1} sx={{ wordBreak: 'break-word' }}>
                 {testCase.description}
             </Typography>
             <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', mb: 1 }}>
@@ -870,14 +870,14 @@ const QuadChart: React.FC<{ testCase: TestCase }> = React.memo(({ testCase }) =>
         <Paper
             elevation={1}
             sx={{
-                p: 2, mb: 2, width: 'fit-content', maxWidth: '100%',
+                p: 2, mb: 2, maxWidth: 800,
                 border: '1px solid #e0e0e0',
             }}
         >
             <Typography variant="subtitle2" fontWeight={600} gutterBottom>
                 {testCase.title}
             </Typography>
-            <Typography variant="caption" color="text.secondary" display="block" mb={1}>
+            <Typography variant="caption" color="text.secondary" display="block" mb={1} sx={{ wordBreak: 'break-word' }}>
                 {testCase.description}
             </Typography>
             <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', mb: 1 }}>

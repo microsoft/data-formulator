@@ -617,6 +617,22 @@ export function genSemanticContextTests(): TestCase[] {
         genRevenueSequentialColorTest(),
         genCorrelationDivergingTest(),
         genNiceFalseScoreTest(),
+        // --- New tests (25–39) ---
+        genDurationUnitSuffixTest(),
+        genQuarterCanonicalOrderTest(),
+        genCostCurrencyFormatTest(),
+        genDirectionCompassOrderTest(),
+        genAgeGroupOrdinalTest(),
+        genBooleanColorTest(),
+        genLongitudeDomainClampTest(),
+        genIndexOrdinalTest(),
+        genPercentageWholeNumberTest(),
+        genScoreColorDivergingTest(),
+        genPriceEurCurrencyTest(),
+        genYearOrdinalDisambiguationTest(),
+        genProfitColorDivergingTest(),
+        genCountIntegerFormatTest(),
+        genUnregisteredTypeFallbackTest(),
     ];
 }
 
@@ -1073,7 +1089,7 @@ function genRevenueSequentialColorTest(): TestCase {
         encodingMap: {
             x: makeEncodingItem('region'),
             y: makeEncodingItem('revenue'),
-            color: makeEncodingItem('quarter'),
+            color: makeEncodingItem('revenue'),
         },
     };
 }
@@ -1179,6 +1195,746 @@ function genNiceFalseScoreTest(): TestCase {
         encodingMap: {
             x: makeEncodingItem('math_score'),
             y: makeEncodingItem('science_score'),
+        },
+    };
+}
+
+// ============================================================================
+// 25. Duration with unit suffix — additive measure, "min" suffix
+//     Semantic type: "Duration" + unit: "min"  →  "42 min" on axis
+//
+//     Duration is an additive measure (durations sum to a total), open domain,
+//     meaningful zero (0 = no time elapsed), and uses unit-suffix format.
+//
+//     WITHOUT this annotation:
+//       Axis shows bare numbers: 42, 85. No time context.
+//       Zero might not be included in axis.
+//
+//     WITH "Duration" + unit:
+//       Axis labels show "42 min", "85 min". Zero baseline included.
+// ============================================================================
+
+function genDurationUnitSuffixTest(): TestCase {
+    const rand = seeded(2501);
+    const tasks = ['Setup', 'Build', 'Test', 'Review', 'Deploy',
+                   'Cleanup', 'Backup', 'Sync'];
+    const data = tasks.map(t => ({
+        task: t,
+        duration_min: Math.round(5 + rand() * 115),
+    }));
+
+    return {
+        title: 'Duration Unit Suffix (min)',
+        description:
+            'Semantic type "Duration" with unit "min" appends " min" to axis labels. ' +
+            'Duration is additive (total makes sense) with meaningful zero. ' +
+            'WITHOUT this: bare numbers with no time unit context.',
+        tags: ['semantic', 'format', 'unit-suffix', 'duration', 'zero'],
+        chartType: 'Bar Chart',
+        data,
+        fields: [makeField('task'), makeField('duration_min')],
+        metadata: {
+            task:         { type: Type.String, semanticType: 'Category', levels: tasks },
+            duration_min: { type: Type.Number, semanticType: 'Duration', levels: [] },
+        },
+        semanticAnnotations: {
+            duration_min: { semanticType: 'Duration', unit: 'min' },
+        },
+        encodingMap: {
+            x: makeEncodingItem('task'),
+            y: makeEncodingItem('duration_min'),
+        },
+    };
+}
+
+// ============================================================================
+// 26. Quarter canonical order + cyclic behavior
+//     Semantic type: "Quarter" → ordinal sort Q1, Q2, Q3, Q4
+//
+//     Quarter is cyclic (Q4 wraps to Q1) and uses ordinal encoding.
+//     The canonical order ensures quarters appear in fiscal sequence.
+//
+//     WITHOUT this annotation:
+//       Quarters sorted alphabetically: Q1, Q2, Q3, Q4 happens to work
+//       but only by coincidence. Real datasets with "Q4-2024", "Q1-2025"
+//       would break. Also no cyclic semantics for wrap-around analysis.
+//
+//     WITH "Quarter":
+//       Guaranteed Q1→Q2→Q3→Q4 order. Cyclic flag enables wrap-around
+//       for cross-year comparisons.
+// ============================================================================
+
+function genQuarterCanonicalOrderTest(): TestCase {
+    const rand = seeded(2601);
+    // Deliberately shuffled quarters
+    const shuffledQuarters = ['Q3', 'Q1', 'Q4', 'Q2'];
+    const data: Record<string, any>[] = [];
+    for (const region of ['North', 'South', 'East']) {
+        for (const q of shuffledQuarters) {
+            data.push({
+                quarter: q,
+                region,
+                sales: Math.round(50000 + rand() * 200000),
+            });
+        }
+    }
+
+    return {
+        title: 'Quarter Canonical Order (Q1→Q4)',
+        description:
+            'Semantic type "Quarter" sorts Q1→Q2→Q3→Q4 in canonical order ' +
+            'regardless of data encounter order. Quarter is cyclic (Q4→Q1 wraps). ' +
+            'WITHOUT this: alphabetical order happens to work here, but no guarantee ' +
+            'for variant labels or cross-year data.',
+        tags: ['semantic', 'ordering', 'quarter', 'cyclic', 'canonical'],
+        chartType: 'Bar Chart',
+        data,
+        fields: [makeField('quarter'), makeField('region'), makeField('sales')],
+        metadata: {
+            quarter: { type: Type.String, semanticType: 'Quarter',  levels: shuffledQuarters },
+            region:  { type: Type.String, semanticType: 'Category', levels: ['North', 'South', 'East'] },
+            sales:   { type: Type.Number, semanticType: 'Revenue',  levels: [] },
+        },
+        encodingMap: {
+            x:     makeEncodingItem('quarter'),
+            y:     makeEncodingItem('sales'),
+            color: makeEncodingItem('region'),
+        },
+    };
+}
+
+// ============================================================================
+// 27. Cost currency format — another currency type (additive)
+//     Semantic type: "Cost" → currency prefix ($) + SI abbreviation
+//
+//     Cost shares formatClass='currency' with Revenue/Amount but has
+//     aggRole='additive' — costs sum to a meaningful total.
+//
+//     WITHOUT this annotation:
+//       Axis shows raw numbers: 450000, 1200000. No $ symbol.
+//
+//     WITH "Cost":
+//       Axis labels show "$450K", "$1.2M". Currency + abbreviation.
+// ============================================================================
+
+function genCostCurrencyFormatTest(): TestCase {
+    const rand = seeded(2701);
+    const departments = ['Engineering', 'Marketing', 'Sales', 'Support', 'HR', 'Legal'];
+    const data = departments.map(d => ({
+        department: d,
+        annual_cost: Math.round(200000 + rand() * 1800000),
+    }));
+
+    return {
+        title: 'Cost Currency Format ($)',
+        description:
+            'Semantic type "Cost" uses currency format ($450K, $1.2M). ' +
+            'Cost is additive — department costs sum to total company cost. ' +
+            'WITHOUT this: plain numbers without currency context.',
+        tags: ['semantic', 'format', 'currency', 'cost'],
+        chartType: 'Bar Chart',
+        data,
+        fields: [makeField('department'), makeField('annual_cost')],
+        metadata: {
+            department:  { type: Type.String, semanticType: 'Category', levels: departments },
+            annual_cost: { type: Type.Number, semanticType: 'Cost',     levels: [] },
+        },
+        encodingMap: {
+            x: makeEncodingItem('department'),
+            y: makeEncodingItem('annual_cost'),
+        },
+    };
+}
+
+// ============================================================================
+// 28. Direction compass order + cyclic
+//     Semantic type: "Direction" → compass order N→NE→E→SE→S→SW→W→NW
+//
+//     Direction is cyclic (NW wraps to N) and uses ordinal/nominal encoding.
+//     The canonical order ensures compass directions appear in clockwise order.
+//
+//     WITHOUT this annotation:
+//       Directions sorted alphabetically: E, N, NE, NW, S, SE, SW, W.
+//       Completely wrong — geographic/compass ordering is destroyed.
+//
+//     WITH "Direction":
+//       Canonical clockwise order: N, NE, E, SE, S, SW, W, NW.
+// ============================================================================
+
+function genDirectionCompassOrderTest(): TestCase {
+    const rand = seeded(2801);
+    // Deliberately shuffled
+    const shuffledDirs = ['SW', 'N', 'E', 'NW', 'S', 'NE', 'W', 'SE'];
+    const data = shuffledDirs.map(d => ({
+        direction: d,
+        wind_speed: Math.round(5 + rand() * 45),
+    }));
+
+    return {
+        title: 'Direction Compass Order (N→NW)',
+        description:
+            'Semantic type "Direction" sorts compass directions in clockwise order ' +
+            '(N→NE→E→SE→S→SW→W→NW). Direction is cyclic (NW→N wraps). ' +
+            'WITHOUT this: alphabetical (E, N, NE, NW...) destroys geographic sense.',
+        tags: ['semantic', 'ordering', 'direction', 'cyclic', 'compass', 'canonical'],
+        chartType: 'Bar Chart',
+        data,
+        fields: [makeField('direction'), makeField('wind_speed')],
+        metadata: {
+            direction:  { type: Type.String, semanticType: 'Direction', levels: shuffledDirs },
+            wind_speed: { type: Type.Number, semanticType: 'Quantity',  levels: [] },
+        },
+        encodingMap: {
+            x: makeEncodingItem('direction'),
+            y: makeEncodingItem('wind_speed'),
+        },
+    };
+}
+
+// ============================================================================
+// 29. AgeGroup — binned ordinal with inherent order
+//     Semantic type: "AgeGroup" → ordinal encoding, sequential color
+//
+//     AgeGroup is a binned type: continuous ages discretized into ranges.
+//     Values have inherent order (18-24 < 25-34 < 35-44...) unlike
+//     pure nominal categories. Uses ordinal encoding.
+//
+//     WITHOUT this annotation:
+//       Age groups treated as nominal — no guaranteed order, potentially
+//       sorted alphabetically which breaks the natural sequence.
+//
+//     WITH "AgeGroup":
+//       Ordinal encoding preserves the range order. Color uses sequential
+//       scheme reflecting the ordered nature.
+// ============================================================================
+
+function genAgeGroupOrdinalTest(): TestCase {
+    const rand = seeded(2901);
+    const ageGroups = ['18-24', '25-34', '35-44', '45-54', '55-64', '65+'];
+    const data = ageGroups.map(ag => ({
+        age_group: ag,
+        population: Math.round(500000 + rand() * 2000000),
+        avg_income: Math.round(25000 + rand() * 75000),
+    }));
+
+    return {
+        title: 'AgeGroup Binned Ordinal',
+        description:
+            'Semantic type "AgeGroup" is a binned ordinal — age ranges have inherent ' +
+            'order (18-24 < 25-34 < ...). Uses ordinal encoding, not nominal. ' +
+            'WITHOUT this: treated as unordered categories, alphabetical sorting.',
+        tags: ['semantic', 'ordinal', 'binned', 'agegroup'],
+        chartType: 'Bar Chart',
+        data,
+        fields: [makeField('age_group'), makeField('population'), makeField('avg_income')],
+        metadata: {
+            age_group:  { type: Type.String, semanticType: 'AgeGroup', levels: ageGroups },
+            population: { type: Type.Number, semanticType: 'Count',    levels: [] },
+            avg_income: { type: Type.Number, semanticType: 'Amount',   levels: [] },
+        },
+        semanticAnnotations: {
+            age_group: { semanticType: 'AgeGroup', sortOrder: ageGroups },
+        },
+        encodingMap: {
+            x: makeEncodingItem('age_group'),
+            y: makeEncodingItem('population'),
+        },
+    };
+}
+
+// ============================================================================
+// 30. Boolean on color — fixed domain, categorical color, 2 values
+//     Semantic type: "Boolean" → nominal encoding, fixed domain
+//
+//     Boolean has a fixed domainShape — only 2 values exist (True/False).
+//     Uses nominal encoding and categorical color scheme.
+//
+//     WITHOUT this annotation:
+//       Treated as generic string. No indication of the fixed 2-value nature.
+//
+//     WITH "Boolean":
+//       Fixed domain recognized. Categorical color with 2 distinct hues.
+// ============================================================================
+
+function genBooleanColorTest(): TestCase {
+    const rand = seeded(3001);
+    const data: Record<string, any>[] = [];
+    for (let i = 0; i < 30; i++) {
+        data.push({
+            customer_id: `C${i + 1}`,
+            purchase_amount: Math.round(20 + rand() * 480),
+            is_member: rand() > 0.5 ? 'True' : 'False',
+        });
+    }
+
+    return {
+        title: 'Boolean Color (True/False)',
+        description:
+            'Semantic type "Boolean" on color uses categorical scheme with ' +
+            'fixed 2-value domain. Ideal for binary classification display. ' +
+            'WITHOUT this: treated as generic string, no fixed-domain awareness.',
+        tags: ['semantic', 'color', 'boolean', 'categorical', 'fixed'],
+        chartType: 'Scatter Plot',
+        data,
+        fields: [makeField('customer_id'), makeField('purchase_amount'), makeField('is_member')],
+        metadata: {
+            customer_id:     { type: Type.String,  semanticType: 'ID',       levels: data.map(d => d.customer_id) },
+            purchase_amount: { type: Type.Number,  semanticType: 'Amount',   levels: [] },
+            is_member:       { type: Type.String,  semanticType: 'Boolean',  levels: ['True', 'False'] },
+        },
+        encodingMap: {
+            x:     makeEncodingItem('customer_id'),
+            y:     makeEncodingItem('purchase_amount'),
+            color: makeEncodingItem('is_member'),
+        },
+    };
+}
+
+// ============================================================================
+// 31. Longitude — hard domain [-180, 180] with clamp
+//     Semantic type: "Longitude" → scale.domain = [-180, 180], clamp = true
+//
+//     Mirrors the Latitude test (test 12) but for the horizontal coordinate.
+//     Longitude is a fixed geographic domain — values physically cannot
+//     exceed ±180°.
+//
+//     WITHOUT this annotation:
+//       Axis auto-scales to data range. No geographic context.
+//
+//     WITH "Longitude":
+//       Full -180 to 180 range. Clamp prevents out-of-range rendering.
+// ============================================================================
+
+function genLongitudeDomainClampTest(): TestCase {
+    const cities = [
+        { city: 'Tokyo',      longitude: 139.69, population_M: 13.96 },
+        { city: 'Delhi',      longitude:  77.21, population_M: 32.94 },
+        { city: 'London',     longitude:  -0.12, population_M:  9.00 },
+        { city: 'New York',   longitude: -74.01, population_M:  8.34 },
+        { city: 'São Paulo',  longitude: -46.63, population_M: 12.33 },
+        { city: 'Sydney',     longitude: 151.21, population_M:  5.31 },
+        { city: 'Cairo',      longitude:  31.24, population_M: 21.32 },
+        { city: 'Los Angeles',longitude:-118.24, population_M:  3.90 },
+    ];
+
+    return {
+        title: 'Longitude Hard Domain [-180°, 180°]',
+        description:
+            'Semantic type "Longitude" pins axis to [-180, 180] with clamp=true ' +
+            '(hard physical domain). Shows where cities fall in global E-W context. ' +
+            'WITHOUT this: axis scales to data range (-118 to 151), no global frame.',
+        tags: ['semantic', 'domain', 'clamp', 'longitude', 'geographic'],
+        chartType: 'Scatter Plot',
+        data: cities,
+        fields: [makeField('city'), makeField('longitude'), makeField('population_M')],
+        metadata: {
+            city:         { type: Type.String, semanticType: 'City',      levels: cities.map(c => c.city) },
+            longitude:    { type: Type.Number, semanticType: 'Longitude', levels: [] },
+            population_M: { type: Type.Number, semanticType: 'Count',     levels: [] },
+        },
+        encodingMap: {
+            x: makeEncodingItem('longitude'),
+            y: makeEncodingItem('population_M'),
+        },
+    };
+}
+
+// ============================================================================
+// 32. Index — ordinal, NOT reversed (contrast with Rank)
+//     Semantic type: "Index" → ordinal encoding, ascending sort
+//
+//     Unlike Rank (which reverses so #1 appears at top), Index is a
+//     sequence number (position, row number). Index 1 should appear first
+//     in data order — ascending, not reversed.
+//
+//     WITHOUT this annotation:
+//       Treated as generic number → quantitative encoding. Index values
+//       like 1, 2, 3 would have fractional ticks and continuous axis.
+//
+//     WITH "Index":
+//       Ordinal encoding (no fractional values). Ascending sort direction.
+//       Integer ticks only. Contrast with Rank which reverses.
+// ============================================================================
+
+function genIndexOrdinalTest(): TestCase {
+    const rand = seeded(3201);
+    const data = Array.from({ length: 10 }, (_, i) => ({
+        trial_number: i + 1,
+        response_time_ms: Math.round(200 + rand() * 800),
+    }));
+
+    return {
+        title: 'Index Ordinal (Not Reversed)',
+        description:
+            'Semantic type "Index" uses ordinal encoding with ascending sort. ' +
+            'Contrasts with Rank which reverses (best-first). Index is a plain ' +
+            'sequence: trial 1 → trial 10, no reversal. ' +
+            'WITHOUT this: treated as quantitative with fractional ticks.',
+        tags: ['semantic', 'ordinal', 'index', 'ascending'],
+        chartType: 'Line Chart',
+        data,
+        fields: [makeField('trial_number'), makeField('response_time_ms')],
+        metadata: {
+            trial_number:    { type: Type.Number, semanticType: 'Index',    levels: [] },
+            response_time_ms:{ type: Type.Number, semanticType: 'Duration', levels: [] },
+        },
+        semanticAnnotations: {
+            response_time_ms: { semanticType: 'Duration', unit: 'ms' },
+        },
+        encodingMap: {
+            x: makeEncodingItem('trial_number'),
+            y: makeEncodingItem('response_time_ms'),
+        },
+    };
+}
+
+// ============================================================================
+// 33. Percentage 0-100 representation (whole numbers)
+//     Semantic type: "Percentage" with whole-number data (40, 85, 72)
+//
+//     The format resolver detects 0-100 vs 0-1 representation.
+//     For 0-100: uses data precision format + "%" suffix (not d3's .% which
+//     multiplies by 100).
+//
+//     WITHOUT this:
+//       Values 72, 85, 40 shown as plain numbers. No % context.
+//
+//     WITH "Percentage" (0-100):
+//       Axis shows "72%", "85%", "40%". Data precision preserved.
+// ============================================================================
+
+function genPercentageWholeNumberTest(): TestCase {
+    const rand = seeded(3301);
+    const subjects = ['Math', 'Science', 'English', 'History', 'Art', 'PE'];
+    const data = subjects.map(s => ({
+        subject: s,
+        pass_rate: Math.round(45 + rand() * 50),
+    }));
+
+    return {
+        title: 'Percentage Whole-Number (0-100)',
+        description:
+            'Percentage field with whole-number data (45, 72, 85). Format resolver ' +
+            'detects 0-100 representation and uses "d" + "%" suffix instead of ' +
+            'd3\'s .% format (which would multiply by 100, showing "7200%"). ' +
+            'WITHOUT this: bare numbers without %. Different from 0-1 test (#2).',
+        tags: ['semantic', 'format', 'percentage', 'whole-number'],
+        chartType: 'Bar Chart',
+        data,
+        fields: [makeField('subject'), makeField('pass_rate')],
+        metadata: {
+            subject:   { type: Type.String, semanticType: 'Category',   levels: subjects },
+            pass_rate: { type: Type.Number, semanticType: 'Percentage', levels: [] },
+        },
+        semanticAnnotations: {
+            pass_rate: { semanticType: 'Percentage', intrinsicDomain: [0, 100] },
+        },
+        encodingMap: {
+            x: makeEncodingItem('subject'),
+            y: makeEncodingItem('pass_rate'),
+        },
+    };
+}
+
+// ============================================================================
+// 34. Score on color channel — conditional diverging
+//     Semantic type: "Score" on color → diverging color when data spans
+//     both sides of the domain midpoint
+//
+//     Score with domain [0, 100] has a midpoint at 50. When data spans
+//     both below and above 50, the color scheme should be diverging
+//     (e.g., below-50 = red, above-50 = blue).
+//
+//     WITHOUT this:
+//       Generic sequential palette. No midpoint awareness.
+//
+//     WITH "Score" on color:
+//       Diverging color scheme centered on midpoint 50.
+// ============================================================================
+
+function genScoreColorDivergingTest(): TestCase {
+    const rand = seeded(3401);
+    const students = ['Alice', 'Bob', 'Carol', 'Dave', 'Eve',
+                      'Frank', 'Grace', 'Heidi', 'Ivan', 'Judy',
+                      'Karl', 'Laura'];
+    const data = students.map(s => ({
+        student: s,
+        exam_score: Math.round(20 + rand() * 75),
+        study_hours: Math.round(1 + rand() * 30),
+    }));
+
+    return {
+        title: 'Score on Color (Conditional Diverging)',
+        description:
+            'Score with intrinsicDomain [0, 100] on color. Domain midpoint = 50. ' +
+            'Data spans both sides → diverging color scheme centered at 50. ' +
+            'Below-50 = one hue, above-50 = another. ' +
+            'WITHOUT this: sequential palette, no midpoint.',
+        tags: ['semantic', 'colorScheme', 'diverging', 'score', 'conditional'],
+        chartType: 'Scatter Plot',
+        data,
+        fields: [makeField('student'), makeField('exam_score'), makeField('study_hours')],
+        metadata: {
+            student:    { type: Type.String, semanticType: 'Category', levels: students },
+            exam_score: { type: Type.Number, semanticType: 'Score',    levels: [] },
+            study_hours:{ type: Type.Number, semanticType: 'Quantity', levels: [] },
+        },
+        semanticAnnotations: {
+            exam_score: { semanticType: 'Score', intrinsicDomain: [0, 100] },
+        },
+        encodingMap: {
+            x:     makeEncodingItem('study_hours'),
+            y:     makeEncodingItem('student'),
+            color: makeEncodingItem('exam_score'),
+        },
+    };
+}
+
+// ============================================================================
+// 35. Price with EUR currency override
+//     Semantic type: "Price" + unit: "EUR"  →  "€15.50" on axis
+//
+//     Annotation.unit overrides the default $ prefix for currency types.
+//     Price also uses intensive aggRole (unit price averages, doesn't sum)
+//     and always shows 2 decimal places for cents.
+//
+//     WITHOUT this:
+//       Default $ prefix. Or bare numbers with no currency.
+//
+//     WITH "Price" + unit: "EUR":
+//       Axis labels show "€15.50". Euro prefix from CURRENCY_MAP.
+// ============================================================================
+
+function genPriceEurCurrencyTest(): TestCase {
+    const rand = seeded(3501);
+    const products = ['Espresso', 'Latte', 'Cappuccino', 'Mocha', 'Americano',
+                      'Macchiato', 'Flat White', 'Cortado'];
+    const data = products.map(p => ({
+        drink: p,
+        price_eur: Math.round((2.50 + rand() * 5.50) * 100) / 100,
+        daily_sales: Math.round(20 + rand() * 180),
+    }));
+
+    return {
+        title: 'Price with EUR Currency Override',
+        description:
+            'Annotation unit "EUR" overrides default $ to show "€3.50" on axis. ' +
+            'Price is intensive (average makes sense, sum doesn\'t) with 2 decimal ' +
+            'places for cents. ' +
+            'WITHOUT this: default $ prefix or bare numbers.',
+        tags: ['semantic', 'format', 'currency', 'price', 'unit-override'],
+        chartType: 'Bar Chart',
+        data,
+        fields: [makeField('drink'), makeField('price_eur'), makeField('daily_sales')],
+        metadata: {
+            drink:       { type: Type.String, semanticType: 'Category', levels: products },
+            price_eur:   { type: Type.Number, semanticType: 'Price',    levels: [] },
+            daily_sales: { type: Type.Number, semanticType: 'Count',    levels: [] },
+        },
+        semanticAnnotations: {
+            price_eur: { semanticType: 'Price', unit: 'EUR' },
+        },
+        encodingMap: {
+            x: makeEncodingItem('drink'),
+            y: makeEncodingItem('price_eur'),
+        },
+    };
+}
+
+// ============================================================================
+// 36. Year temporal vs ordinal disambiguation
+//     Semantic type: "Year" with few values (≤6) → ordinal
+//     Semantic type: "Year" with many values (>6) → temporal
+//
+//     Year's registry entry has visEncodings: ['temporal', 'ordinal'].
+//     resolveDefaultVisType disambiguates using distinct count:
+//       ≤6 distinct → ordinal (e.g., 3 years: 2022, 2023, 2024)
+//       >6 distinct → temporal (e.g., 20 years trend)
+//
+//     This test uses 4 years → should pick ordinal.
+//     Contrast with test #20 (Year format) which uses 7 years → temporal.
+// ============================================================================
+
+function genYearOrdinalDisambiguationTest(): TestCase {
+    const rand = seeded(3601);
+    const years = [2021, 2022, 2023, 2024];
+    const data: Record<string, any>[] = [];
+    for (const y of years) {
+        for (const region of ['North', 'South']) {
+            data.push({
+                year: y,
+                region,
+                revenue: Math.round(500000 + rand() * 1500000),
+            });
+        }
+    }
+
+    return {
+        title: 'Year Ordinal (≤6 Distinct Values)',
+        description:
+            'Year with only 4 distinct values → ordinal encoding (not temporal). ' +
+            'resolveDefaultVisType picks ordinal when distinct ≤ 6. ' +
+            'Contrast with test #20 which uses 7 years → temporal. ' +
+            'WITHOUT disambiguation: always temporal, wasting axis resolution on 4 points.',
+        tags: ['semantic', 'defaultVisType', 'year', 'ordinal', 'disambiguation'],
+        chartType: 'Bar Chart',
+        data,
+        fields: [makeField('year'), makeField('region'), makeField('revenue')],
+        metadata: {
+            year:    { type: Type.Number, semanticType: 'Year',     levels: years },
+            region:  { type: Type.String, semanticType: 'Category', levels: ['North', 'South'] },
+            revenue: { type: Type.Number, semanticType: 'Revenue',  levels: [] },
+        },
+        encodingMap: {
+            x:     makeEncodingItem('year'),
+            y:     makeEncodingItem('revenue'),
+            color: makeEncodingItem('region'),
+        },
+    };
+}
+
+// ============================================================================
+// 37. Profit on color — signed currency diverging color
+//     Semantic type: "Profit" on color → diverging color scheme
+//     centered at 0, signed-currency format
+//
+//     When Profit is on the color channel instead of axis, the diverging
+//     analysis applies to color: positive = one hue, negative = another,
+//     midpoint at 0.
+//
+//     WITHOUT this:
+//       Sequential palette for color. No sign awareness. Losses and gains
+//       blend into the same gradient.
+//
+//     WITH "Profit" on color:
+//       Diverging scheme with domainMid = 0. (+) green, (-) red conceptually.
+// ============================================================================
+
+function genProfitColorDivergingTest(): TestCase {
+    const rand = seeded(3701);
+    const divisions = ['Product A', 'Product B', 'Product C', 'Product D',
+                       'Product E', 'Product F'];
+    const data = divisions.map(d => ({
+        product: d,
+        revenue: Math.round(100000 + rand() * 500000),
+        profit: Math.round(-80000 + rand() * 220000),
+    }));
+
+    return {
+        title: 'Profit on Color (Diverging)',
+        description:
+            'Profit on color channel triggers diverging color scheme (midpoint 0). ' +
+            'Positive profit → one hue, negative → another, making P&L obvious. ' +
+            'WITHOUT this: sequential gradient, losses and gains look alike.',
+        tags: ['semantic', 'colorScheme', 'diverging', 'profit', 'signed-currency'],
+        chartType: 'Bar Chart',
+        data,
+        fields: [makeField('product'), makeField('revenue'), makeField('profit')],
+        metadata: {
+            product: { type: Type.String, semanticType: 'Category', levels: divisions },
+            revenue: { type: Type.Number, semanticType: 'Revenue',  levels: [] },
+            profit:  { type: Type.Number, semanticType: 'Profit',   levels: [] },
+        },
+        encodingMap: {
+            x:     makeEncodingItem('product'),
+            y:     makeEncodingItem('revenue'),
+            color: makeEncodingItem('profit'),
+        },
+    };
+}
+
+// ============================================================================
+// 38. Count integer format — comma grouping
+//     Semantic type: "Count" → integer format with comma grouping (,d)
+//
+//     Count uses format class 'integer' → ",d" format for axis labels.
+//     This ensures tick marks are at whole numbers (no fractional counts)
+//     and large counts show thousands separators (1,234 not 1234).
+//
+//     Also tests aggregationDefault = 'sum' (additive measure — counts
+//     of subgroups sum to the total).
+//
+//     WITHOUT this:
+//       Generic number format. Fractional ticks possible (1.5 items?).
+//       No comma grouping on large values.
+//
+//     WITH "Count":
+//       Integer-only ticks with comma grouping. Meaningful zero.
+// ============================================================================
+
+function genCountIntegerFormatTest(): TestCase {
+    const rand = seeded(3801);
+    const categories = ['Electronics', 'Clothing', 'Food', 'Books', 'Toys', 'Sports'];
+    const data = categories.map(c => ({
+        category: c,
+        item_count: Math.round(500 + rand() * 9500),
+    }));
+
+    return {
+        title: 'Count Integer Format (,d)',
+        description:
+            'Semantic type "Count" uses integer format ",d" — comma grouping ' +
+            'with integer-only ticks (no fractional counts). Count is additive: ' +
+            'sub-counts sum to total. ' +
+            'WITHOUT this: fractional ticks (1,500.5?) and no commas.',
+        tags: ['semantic', 'format', 'integer', 'count', 'aggregation'],
+        chartType: 'Bar Chart',
+        data,
+        fields: [makeField('category'), makeField('item_count')],
+        metadata: {
+            category:   { type: Type.String, semanticType: 'Category', levels: categories },
+            item_count: { type: Type.Number, semanticType: 'Count',    levels: [] },
+        },
+        encodingMap: {
+            x: makeEncodingItem('category'),
+            y: makeEncodingItem('item_count'),
+        },
+    };
+}
+
+// ============================================================================
+// 39. Unregistered semantic type — fallback to data-driven behavior
+//     Semantic type: "CustomMetric" (not in registry)
+//
+//     When a semantic type is not registered, the system falls back to
+//     data-driven inference: if values are numeric → quantitative encoding,
+//     aggregationDefault = 'sum', zeroClass = 'meaningful'.
+//
+//     This tests that unregistered types don't crash and behave sensibly.
+//
+//     WITHOUT this (before fallback was added):
+//       Unknown types → nominal encoding even for numeric data.
+//
+//     WITH fallback:
+//       Numeric data → quantitative, sensible defaults applied.
+// ============================================================================
+
+function genUnregisteredTypeFallbackTest(): TestCase {
+    const rand = seeded(3901);
+    const items = ['Item A', 'Item B', 'Item C', 'Item D', 'Item E', 'Item F'];
+    const data = items.map(item => ({
+        item,
+        custom_metric: Math.round(100 + rand() * 900),
+    }));
+
+    return {
+        title: 'Unregistered Type Fallback',
+        description:
+            'Semantic type "CustomMetric" is NOT in the registry. Falls back to ' +
+            'data-driven inference: numeric data → quantitative encoding, ' +
+            'aggregationDefault = sum, zeroClass = meaningful. ' +
+            'Tests that unknown types don\'t crash and behave sensibly.',
+        tags: ['semantic', 'fallback', 'unregistered', 'data-driven'],
+        chartType: 'Bar Chart',
+        data,
+        fields: [makeField('item'), makeField('custom_metric')],
+        metadata: {
+            item:          { type: Type.String, semanticType: 'Category',     levels: items },
+            custom_metric: { type: Type.Number, semanticType: 'CustomMetric', levels: [] },
+        },
+        encodingMap: {
+            x: makeEncodingItem('item'),
+            y: makeEncodingItem('custom_metric'),
         },
     };
 }
