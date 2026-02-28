@@ -9,7 +9,10 @@ def detect_field_type(series: pd.Series) -> str:
     Detect the appropriate Vega-Lite field type for a pandas Series.
     Returns one of: 'quantitative', 'nominal', 'ordinal', 'temporal'
     """
-    if pd.api.types.is_numeric_dtype(series):
+    # Check bool before numeric: is_numeric_dtype also matches bool in pandas
+    if pd.api.types.is_bool_dtype(series):
+        return 'nominal'
+    elif pd.api.types.is_numeric_dtype(series):
         # Check if it looks like a discrete categorical variable
         unique_count = series.nunique()
         total_count = len(series)
@@ -18,8 +21,6 @@ def detect_field_type(series: pd.Series) -> str:
         return 'quantitative'
     elif pd.api.types.is_datetime64_any_dtype(series):
         return 'temporal'
-    elif pd.api.types.is_bool_dtype(series):
-        return 'nominal'
     else:
         # String or object type
         unique_count = series.nunique()
@@ -448,12 +449,16 @@ def assemble_vegailte_chart(
             encoding_obj["type"] = "quantitative"
         else:
             # Regular field encoding
-            field_type = detect_field_type(df[field_name])
+            # Honour an explicit 'type' from the encoding input (e.g. set by
+            # fields_to_encodings for type conversions such as quantitative →
+            # nominal for heatmap axes); fall back to auto-detection otherwise.
+            explicit_type = encoding_input.get("type")
+            field_type = explicit_type or detect_field_type(df[field_name])
             encoding_obj["field"] = field_name
             encoding_obj["type"] = field_type
-            
-            # Special handling for year/date fields
-            if pd.api.types.is_datetime64_any_dtype(df[field_name]):
+
+            # Special handling for datetime fields when no explicit type given
+            if not explicit_type and pd.api.types.is_datetime64_any_dtype(df[field_name]):
                 if channel in ['color', 'size', 'column', 'row']:
                     encoding_obj["type"] = "nominal"
                 else:
@@ -487,6 +492,14 @@ def assemble_vegailte_chart(
             "field": color_encoding["field"],
             "type": color_encoding.get("type", "nominal")
         }
+
+    # Heatmap post-processing: ensure x and y axes are nominal.
+    # This mirrors the TypeScript ChartTemplates postProcessor for "Heatmap"
+    # which forces both axes to nominal regardless of the detected field type.
+    if chart_type == "heatmap":
+        for axis in ["x", "y"]:
+            if axis in spec["encoding"]:
+                spec["encoding"][axis]["type"] = "nominal"
     
     # Handle faceting (column without row becomes facet)
     if "column" in spec["encoding"] and "row" not in spec["encoding"]:
