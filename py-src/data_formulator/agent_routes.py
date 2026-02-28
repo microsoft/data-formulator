@@ -168,12 +168,12 @@ def sanitize_model_error(error_message: str) -> str:
 @agent_bp.route('/test-model', methods=['GET', 'POST'])
 def test_model():
     if request.is_json:
-        logger.info("# code query: ")
+        logger.info("# test-model request")
         content = request.get_json()
 
         # contains endpoint, key, model, api_base, api_version
-        logger.info("content------------------------------")
-        logger.info(content)
+        logger.debug("content------------------------------")
+        logger.debug(content)
 
         client = get_client(content['model'])
         
@@ -185,8 +185,8 @@ def test_model():
                 ]
             )
 
-            logger.info(f"model: {content['model']}")
-            logger.info(f"welcome message: {response.choices[0].message.content}")
+            logger.debug(f"model: {content['model']}")
+            logger.debug(f"welcome message: {response.choices[0].message.content}")
 
             if "I can hear you." in response.choices[0].message.content:
                 result = {
@@ -211,14 +211,14 @@ def test_model():
 def process_data_on_load_request():
 
     if request.is_json:
-        logger.info("# process data query: ")
+        logger.info("# process-data-on-load request")
         content = request.get_json()
         token = content["token"]
         input_data = content["input_data"]
 
         client = get_client(content['model'])
 
-        logger.info(f" model: {content['model']}")
+        logger.debug(f" model: {content['model']}")
 
         try:
             # Get workspace (needed for both virtual and in-memory tables)
@@ -249,13 +249,13 @@ def process_data_on_load_request():
 def clean_data_stream_request():
     def generate():
         if request.is_json:
-            logger.info("# data clean stream request")
+            logger.info("# clean-data-stream request")
             content = request.get_json()
             token = content["token"]
 
             client = get_client(content['model'])
 
-            logger.info(f" model: {content['model']}")
+            logger.debug(f" model: {content['model']}")
             
             agent = DataCleanAgentStream(client=client)
 
@@ -301,7 +301,7 @@ def clean_data_stream_request():
 def sort_data_request():
 
     if request.is_json:
-        logger.info("# sort query: ")
+        logger.info("# sort-data request")
         content = request.get_json()
         token = content["token"]
 
@@ -327,7 +327,7 @@ def sort_data_request():
 def derive_data():
 
     if request.is_json:
-        logger.info("# request data: ")
+        logger.info("# derive-data request")
         content = request.get_json()        
         token = content["token"]
 
@@ -348,13 +348,13 @@ def derive_data():
         else:
             prev_messages = []
 
-        logger.info("== input tables ===>")
+        logger.debug("== input tables ===>")
         for table in input_tables:
-            logger.info(f"===> Table: {table['name']} (first 5 rows)")
-            logger.info(table['rows'][:5])
+            logger.debug(f"===> Table: {table['name']} (first 5 rows)")
+            logger.debug(table['rows'][:5])
 
-        logger.info("== user spec ===")
-        logger.info(instruction)
+        logger.debug("== user spec ===")
+        logger.debug(instruction)
 
         # If user provided chart encodings (via visualization context), use transform mode; otherwise recommendation
         mode = "transform" if current_visualization or expected_visualization else "recommendation"
@@ -379,7 +379,7 @@ def derive_data():
                 repair_attempts = 0
                 while results[0]['status'] == 'error' and repair_attempts < max_repair_attempts:
                     error_message = results[0]['content']
-                    logger.info(f"[derive-data] Code generation failed (attempt {repair_attempts + 1}/{max_repair_attempts}), mode={mode}. Error: {error_message}")
+                    logger.warning(f"[derive-data] Code generation failed (attempt {repair_attempts + 1}/{max_repair_attempts}), mode={mode}. Error: {error_message}")
                     new_instruction = f"We run into the following problem executing the code, please fix it:\n\n{error_message}\n\nPlease think step by step, reflect why the error happens and fix the code so that no more errors would occur."
 
                     prev_dialog = results[0]['dialog']
@@ -390,10 +390,10 @@ def derive_data():
                         results = agent.followup(input_tables, prev_dialog, [], new_instruction, n=1)
 
                     repair_attempts += 1
-                    logger.info(f"[derive-data] Repair attempt {repair_attempts}/{max_repair_attempts} result: {results[0]['status']}")
+                    logger.warning(f"[derive-data] Repair attempt {repair_attempts}/{max_repair_attempts} result: {results[0]['status']}")
 
                 if repair_attempts > 0:
-                    logger.info(f"[derive-data] Finished repair loop after {repair_attempts} attempt(s). Final status: {results[0]['status']}")
+                    logger.warning(f"[derive-data] Finished repair loop after {repair_attempts} attempt(s). Final status: {results[0]['status']}")
 
             # Sign code in each result so the frontend can send it back
             # for re-execution during data refresh with proof of authenticity.
@@ -417,7 +417,7 @@ def explore_data_streaming():
         if request.is_json:
             logger.setLevel(logging.INFO)
 
-            logger.info("# explore data request: ")
+            logger.info("# explore-data-streaming request")
             content = request.get_json()        
             token = content["token"]
 
@@ -430,13 +430,13 @@ def explore_data_streaming():
             agent_coding_rules = content.get("agent_coding_rules", "")
             conversation_history = content.get("conversation_history", None)
 
-            logger.info("== input tables ===>")
+            logger.debug("== input tables ===>")
             for table in input_tables:
-                logger.info(f"===> Table: {table['name']} (first 5 rows)")
-                logger.info(table['rows'][:5])
+                logger.debug(f"===> Table: {table['name']} (first 5 rows)")
+                logger.debug(table['rows'][:5])
 
-            logger.info("== exploration question ===")
-            logger.info(initial_plan)
+            logger.debug("== exploration question ===")
+            logger.debug(initial_plan)
 
             # Model config for the exploration flow
             model_config = {
@@ -542,12 +542,12 @@ def data_agent_streaming():
             clarification_response = content.get("clarification_response", None)
             completed_step_count = content.get("completed_step_count", 0)
 
-            logger.info("== input tables ===>")
+            logger.debug("== input tables ===>")
             for table in input_tables:
-                logger.info(f"===> Table: {table['name']} (first 5 rows)")
-                logger.info(table['rows'][:5])
+                logger.debug(f"===> Table: {table['name']} (first 5 rows)")
+                logger.debug(table['rows'][:5])
 
-            logger.info(f"== user question ===> {user_question}")
+            logger.debug(f"== user question ===> {user_question}")
 
             client = get_client(content['model'])
             identity_id = get_identity_id()
@@ -583,7 +583,7 @@ def data_agent_streaming():
                             "role": "user",
                             "content": f"[USER CLARIFICATION]\n\n{clarification_response}",
                         })
-                        logger.info(f"== resuming with clarification ===> {clarification_response}")
+                        logger.debug(f"== resuming with clarification ===> {clarification_response}")
 
                     for event in agent.run(
                         input_tables=input_tables,
@@ -638,7 +638,7 @@ def data_agent_streaming():
 def refine_data():
 
     if request.is_json:
-        logger.info("# request data: ")
+        logger.info("# refine-data request")
         content = request.get_json()        
         token = content["token"]
 
@@ -656,13 +656,13 @@ def refine_data():
         current_visualization = content.get("current_visualization", None)
         expected_visualization = content.get("expected_visualization", None)
 
-        logger.info("== input tables ===>")
+        logger.debug("== input tables ===>")
         for table in input_tables:
-            logger.info(f"===> Table: {table['name']} (first 5 rows)")
-            logger.info(table['rows'][:5])
+            logger.debug(f"===> Table: {table['name']} (first 5 rows)")
+            logger.debug(table['rows'][:5])
         
-        logger.info("== user spec ===>")
-        logger.info(new_instruction)
+        logger.debug("== user spec ===>")
+        logger.debug(new_instruction)
 
         try:
             identity_id = get_identity_id()
@@ -708,7 +708,7 @@ def refine_data():
 @agent_bp.route('/code-expl', methods=['GET', 'POST'])
 def request_code_expl():
     if request.is_json:
-        logger.info("# request data: ")
+        logger.info("# code-expl request")
         content = request.get_json()
         client = get_client(content['model'])
 

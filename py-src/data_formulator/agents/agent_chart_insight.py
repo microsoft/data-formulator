@@ -35,7 +35,7 @@ class ChartInsightAgent(object):
         
         Args:
             chart_image_base64: Base64-encoded PNG data URL of the chart
-            chart_type: The type of chart (e.g., "bar", "scatter")
+            chart_type: The type of chart (e.g., "Bar Chart", "Scatter Plot")
             field_names: List of field names used in the chart encodings
             input_tables: Optional list of input table dicts for data context
             n: Number of candidates to generate
@@ -74,14 +74,15 @@ class ChartInsightAgent(object):
             {"role": "user", "content": user_content}
         ]
 
-        logger.info(f"ChartInsightAgent: analyzing {chart_type} chart with fields {field_names}")
+        logger.debug(f"ChartInsightAgent: analyzing {chart_type} chart with fields {field_names}")
+        logger.info(f"[ChartInsightAgent] run start | chart_type={chart_type}")
 
         response = self.client.get_completion(messages=messages)
 
         candidates = []
         for choice in response.choices:
-            logger.info("\n=== Chart insight result ===>\n")
-            logger.info(choice.message.content + "\n")
+            logger.debug("\n=== Chart insight result ===>\n")
+            logger.debug(choice.message.content + "\n")
 
             response_content = choice.message.content
             title = ""
@@ -115,4 +116,6 @@ class ChartInsightAgent(object):
 
             candidates.append(result)
 
+        status = candidates[0].get('status', '?') if candidates else 'empty'
+        logger.info(f"[ChartInsightAgent] run done | status={status}")
         return candidates

@@ -16,7 +16,7 @@ export { makeField, makeEncodingItem, inferType, buildMetadata } from './types';
 export { seededRandom, genDates, genMonths, genYears, genNaturalDates, genCategories, genRandomNames, genMeasure } from './generators';
 
 // Chart-type generators
-export { genScatterTests, genLinearRegressionTests } from './scatter-tests';
+export { genScatterTests, genRegressionTests } from './scatter-tests';
 export { genBarTests, genStackedBarTests, genGroupedBarTests } from './bar-tests';
 export { genHistogramTests, genBoxplotTests, genDensityTests, genStripPlotTests } from './distribution-tests';
 export { genLineTests } from './line-tests';
@@ -43,7 +43,7 @@ export { genSemanticContextTests } from './semantic-tests';
 // ---------------------------------------------------------------------------
 import { TestCase, GallerySection } from './types';
 
-import { genScatterTests, genLinearRegressionTests } from './scatter-tests';
+import { genScatterTests, genRegressionTests } from './scatter-tests';
 import { genBarTests, genStackedBarTests, genGroupedBarTests } from './bar-tests';
 import { genHistogramTests, genBoxplotTests, genDensityTests, genStripPlotTests } from './distribution-tests';
 import { genLineTests } from './line-tests';
@@ -68,7 +68,7 @@ import { genGoFishScatterTests, genGoFishLineTests, genGoFishBarTests, genGoFish
 /** All test generators mapped by chart group */
 export const TEST_GENERATORS: Record<string, () => TestCase[]> = {
     'Scatter Plot': genScatterTests,
-    'Linear Regression': genLinearRegressionTests,
+    'Regression': genRegressionTests,
     'Bar Chart': genBarTests,
     'Stacked Bar Chart': genStackedBarTests,
     'Grouped Bar Chart': genGroupedBarTests,
@@ -172,7 +172,7 @@ export const GALLERY_SECTIONS: GallerySection[] = [
         label: 'VegaLite',
         description: 'Demos for every supported chart type',
         entries: [
-            'Scatter Plot', 'Linear Regression', 'Bar Chart', 'Stacked Bar Chart',
+            'Scatter Plot', 'Regression', 'Bar Chart', 'Stacked Bar Chart',
             'Grouped Bar Chart', 'Histogram', 'Heatmap', 'Line Chart', 'Dotted Line Chart',
             'Boxplot', 'Pie Chart', 'Ranged Dot Plot', 'Area Chart', 'Streamgraph',
             'Lollipop Chart', 'Density Plot', 'Bump Chart', 'Candlestick Chart', 'Waterfall Chart',
@@ -199,7 +199,7 @@ export const GALLERY_SECTIONS: GallerySection[] = [
         description: 'Same inputs through ECharts backend — compare series-based output vs VL encoding-based output',
         entries: [
             // VegaLite 同款（同一批 test case 用 VL+EC 双端渲染）
-            'Scatter Plot', 'Linear Regression', 'Bar Chart', 'Stacked Bar Chart',
+            'Scatter Plot', 'Regression', 'Bar Chart', 'Stacked Bar Chart',
             'Grouped Bar Chart', 'Histogram', 'Heatmap', 'Line Chart', 'Dotted Line Chart',
             'Boxplot', 'Pie Chart', 'Ranged Dot Plot', 'Area Chart', 'Streamgraph',
             'Lollipop Chart', 'Density Plot', 'Bump Chart', 'Candlestick Chart', 'Waterfall Chart',

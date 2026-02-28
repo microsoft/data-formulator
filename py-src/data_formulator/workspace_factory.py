@@ -95,7 +95,9 @@ def get_workspace(identity_id: str) -> Workspace:
     )
 
     if backend == "azure_blob":
-        from data_formulator.datalake.azure_blob_workspace import AzureBlobWorkspace
+        from data_formulator.datalake.cached_azure_blob_workspace import (
+            CachedAzureBlobWorkspace,
+        )
 
         client = _build_azure_container_client(cfg)
         root = (
@@ -103,7 +105,24 @@ def get_workspace(identity_id: str) -> Workspace:
             or os.getenv("DATA_FORMULATOR_HOME")
             or "workspaces"
         )
-        return AzureBlobWorkspace(identity_id, client, datalake_root=root)
+
+        # Cache configuration from env vars / CLI args
+        max_cache_mb = int(
+            cfg.get("cache_max_mb", os.getenv("DF_CACHE_MAX_MB", "1024"))
+        )
+        max_global_cache_mb = int(
+            cfg.get(
+                "global_cache_max_mb",
+                os.getenv("DF_GLOBAL_CACHE_MAX_MB", "10240"),
+            )
+        )
+        return CachedAzureBlobWorkspace(
+            identity_id,
+            client,
+            datalake_root=root,
+            max_cache_bytes=max_cache_mb * 1024 * 1024,
+            max_global_cache_bytes=max_global_cache_mb * 1024 * 1024,
+        )
 
     # Default: local filesystem workspace
     return Workspace(identity_id)

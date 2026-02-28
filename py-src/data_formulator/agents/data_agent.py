@@ -194,7 +194,9 @@ class DataAgent:
             iteration += 1
 
             # --- THINK: ask the LLM to pick an action -----------------
+            t_llm_start = time.time()
             action = self._get_next_action(trajectory)
+            logger.info(f"[DataAgent] timing: iteration {iteration} think llm={time.time() - t_llm_start:.3f}s")
 
             if action is None:
                 yield self._error_event(iteration, "Failed to parse agent action from LLM response")
@@ -403,7 +405,7 @@ class DataAgent:
             return None
 
         content = response.choices[0].message.content or ""
-        logger.info(f"[DataAgent] Raw LLM response:\n{content}")
+        logger.debug(f"[DataAgent] Raw LLM response:\n{content}")
 
         json_blocks = extract_json_objects(content)
         if not json_blocks:
@@ -455,7 +457,7 @@ class DataAgent:
             attempt += 1
             error_msg = results[0].get("content", "Unknown error")
             dialog = results[0].get("dialog", [])
-            logger.info(
+            logger.warning(
                 f"[DataAgent] Repair attempt {attempt}/{self.max_repair_attempts}: {error_msg}"
             )
             repair_instruction = (
@@ -495,7 +497,7 @@ class DataAgent:
     ) -> str | None:
         """Create a chart from transformed data and return a base64 PNG string."""
         chart_obj = refined_goal.get("chart", {})
-        chart_type = chart_obj.get("chart_type", "bar")
+        chart_type = chart_obj.get("chart_type", "Bar Chart")
         chart_encodings = chart_obj.get("encodings", {})
         chart_config = chart_obj.get("config", {})
 

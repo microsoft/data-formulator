@@ -12,7 +12,7 @@
 import { ChartTemplateDef } from '../../core/types';
 
 // --- Individual chart imports ---
-import { scatterPlotDef, linearRegressionDef, rangedDotPlotDef, boxplotDef } from './scatter';
+import { scatterPlotDef, regressionDef, rangedDotPlotDef, boxplotDef } from './scatter';
 import { barChartDef, pyramidChartDef, groupedBarChartDef, stackedBarChartDef, histogramDef, heatmapDef } from './bar';
 import { lineChartDef, dottedLineChartDef } from './line';
 import { bumpChartDef } from './bump';
@@ -33,7 +33,7 @@ import { customPointDef, customLineDef, customBarDef, customRectDef, customAreaD
  * Keys are category names shown in the UI, values are arrays of template definitions.
  */
 export const vlTemplateDefs: { [key: string]: ChartTemplateDef[] } = {
-    "Scatter & Point":  [scatterPlotDef, linearRegressionDef, boxplotDef, stripPlotDef],
+    "Scatter & Point":  [scatterPlotDef, regressionDef, boxplotDef, stripPlotDef],
     "Bar":              [barChartDef, groupedBarChartDef, stackedBarChartDef, histogramDef, lollipopChartDef, pyramidChartDef],
     "Line & Area":      [lineChartDef, dottedLineChartDef, bumpChartDef, areaChartDef, streamgraphDef],
     "Part-to-Whole":    [pieChartDef, roseChartDef, heatmapDef, waterfallChartDef],

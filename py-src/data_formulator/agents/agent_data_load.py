@@ -175,7 +175,8 @@ class DataLoadAgent(object):
 
         user_query = f"[DATA]\n\n{data_summary}\n\n[OUTPUT]"
 
-        logger.info(user_query)
+        logger.debug(user_query)
+        logger.info(f"[DataLoadAgent] run start")
 
         messages = [{"role":"system", "content": SYSTEM_PROMPT},
                     {"role":"user","content": user_query}]
@@ -185,11 +186,11 @@ class DataLoadAgent(object):
         candidates = []
         for choice in response.choices:
             
-            logger.info("\n=== Data load result ===>\n")
-            logger.info(choice.message.content + "\n")
+            logger.debug("\n=== Data load result ===>\n")
+            logger.debug(choice.message.content + "\n")
             
             json_blocks = extract_json_objects(choice.message.content + "\n")
-            logger.info(json_blocks)
+            logger.debug(json_blocks)
             
             if len(json_blocks) > 0:
                 result = {'status': 'ok', 'content': json_blocks[0]}
@@ -206,4 +207,6 @@ class DataLoadAgent(object):
 
             candidates.append(result)
 
+        status = candidates[0].get('status', '?') if candidates else 'empty'
+        logger.info(f"[DataLoadAgent] run done | status={status}")
         return candidates

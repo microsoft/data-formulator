@@ -218,14 +218,28 @@ const CURRENCY_MAP: Record<string, string> = {
     CHF: 'CHF', SEK: 'kr', NOK: 'kr', DKK: 'kr',
 };
 
-/** Map common unit strings to suffix display */
+/**
+ * Map common unit strings to suffix display.
+ *
+ * Limited to a small set of well-known, universally understood units.
+ * Unknown/arbitrary annotation.unit values are intentionally excluded
+ * to keep axis labels clean and avoid displaying obscure or verbose
+ * unit strings on tick marks.
+ */
 const UNIT_SUFFIX_MAP: Record<string, string> = {
-    '°C': '°C', '°F': '°F', 'K': 'K', C: '°C', F: '°F',
-    kg: ' kg', g: ' g', lb: ' lb', lbs: ' lbs', oz: ' oz',
-    km: ' km', mi: ' mi', m: ' m', ft: ' ft', cm: ' cm', mm: ' mm',
-    'km/h': ' km/h', mph: ' mph', 'm/s': ' m/s',
-    sec: ' s', min: ' min', hr: ' hr', day: ' days',
-    seconds: ' s', minutes: ' min', hours: ' hr', days: ' days',
+    // Temperature
+    '°C': '°C', '°F': '°F', C: '°C', F: '°F',
+    // Mass
+    kg: ' kg', lb: ' lb',
+    // Distance
+    km: ' km', mi: ' mi', m: ' m', ft: ' ft',
+    // Speed
+    'km/h': ' km/h', mph: ' mph',
+    // Time
+    sec: ' s', min: ' min', hr: ' hr',
+    seconds: ' s', minutes: ' min', hours: ' hr',
+    // Percentage (handled by formatClass, but allow explicit suffix)
+    '%': '%',
 };
 
 /**
@@ -298,8 +312,10 @@ export function resolveFormat(
 
     // Resolve currency prefix from annotation.unit
     const currencyPrefix = unit ? CURRENCY_MAP[unit.toUpperCase()] ?? CURRENCY_MAP[unit] : undefined;
-    // Resolve unit suffix from annotation.unit
-    const unitSuffix = unit ? UNIT_SUFFIX_MAP[unit] ?? (` ${unit}`) : undefined;
+    // Resolve unit suffix from annotation.unit — only use known units;
+    // unknown units are dropped to avoid polluting tick labels with
+    // obscure or verbose strings.
+    const unitSuffix = unit ? UNIT_SUFFIX_MAP[unit] : undefined;
 
     const nums = values.filter((v: any) => typeof v === 'number' && !isNaN(v));
 

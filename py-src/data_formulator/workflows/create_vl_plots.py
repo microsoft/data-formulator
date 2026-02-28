@@ -127,127 +127,127 @@ def detect_field_type(series: pd.Series) -> str:
 # Chart Templates
 CHART_TEMPLATES = [
     {
-        "chart": "point",
+        "chart": "Scatter Plot",
         "mark": "circle",
         "channels": ["x", "y", "color", "opacity", "size", "shape", "column", "row"]
     },
     {
-        "chart": "line",
+        "chart": "Line Chart",
         "mark": "line",
-        "channels": ["x", "y", "color", "opacity", "detail", "column", "row"]
+        "channels": ["x", "y", "color", "strokeDash", "opacity", "detail", "column", "row"]
     },
     {
-        "chart": "dotted_line",
+        "chart": "Dotted Line Chart",
         "mark": {"type": "line", "point": True},
         "channels": ["x", "y", "color", "detail", "column", "row"]
     },
     {
-        "chart": "bar",
+        "chart": "Bar Chart",
         "mark": "bar",
         "channels": ["x", "y", "color", "opacity", "column", "row"]
     },
     {
-        "chart": "group_bar",
+        "chart": "Grouped Bar Chart",
         "mark": "bar",
         "channels": ["x", "y", "color", "opacity", "column", "row"]
     },
     {
-        "chart": "stacked_bar",
+        "chart": "Stacked Bar Chart",
         "mark": "bar",
         "channels": ["x", "y", "color", "column", "row"]
     },
     {
-        "chart": "heatmap",
+        "chart": "Heatmap",
         "mark": "rect",
         "channels": ["x", "y", "color", "column", "row"]
     },
     {
-        "chart": "area",
+        "chart": "Area Chart",
         "mark": "area",
         "channels": ["x", "y", "color", "column", "row"]
     },
     {
-        "chart": "streamgraph",
+        "chart": "Streamgraph",
         "mark": "area",
         "channels": ["x", "y", "color", "column", "row"]
     },
     {
-        "chart": "boxplot",
+        "chart": "Boxplot",
         "mark": "boxplot",
         "channels": ["x", "y", "color", "opacity", "column", "row"]
     },
     {
-        "chart": "histogram",
+        "chart": "Histogram",
         "mark": "bar",
         "channels": ["x", "color", "column", "row"]
     },
     {
-        "chart": "pie",
+        "chart": "Pie Chart",
         "mark": "arc",
         "channels": ["theta", "color", "column", "row"]
     },
     {
-        "chart": "lollipop",
+        "chart": "Lollipop Chart",
         "mark": "rule",  # layered: rule + circle
         "channels": ["x", "y", "color", "column", "row"]
     },
     {
-        "chart": "strip",
+        "chart": "Strip Plot",
         "mark": {"type": "circle", "opacity": 0.7},
         "channels": ["x", "y", "color", "size", "column", "row"]
     },
     {
-        "chart": "density",
+        "chart": "Density Plot",
         "mark": "area",
         "channels": ["x", "color", "column", "row"]
     },
     {
-        "chart": "bump",
+        "chart": "Bump Chart",
         "mark": {"type": "line", "point": True, "interpolate": "monotone", "strokeWidth": 2},
         "channels": ["x", "y", "color", "detail", "column", "row"]
     },
     {
-        "chart": "linear_regression",
+        "chart": "Regression",
         "mark": "circle",  # layered: circle + regression line
         "channels": ["x", "y", "size", "color", "column", "row"]
     },
     {
-        "chart": "ranged_dot",
+        "chart": "Ranged Dot Plot",
         "mark": "point",  # layered: line + point
         "channels": ["x", "y", "color"]
     },
     {
-        "chart": "candlestick",
+        "chart": "Candlestick Chart",
         "mark": "rule",  # layered: rule + bar
         "channels": ["x", "open", "high", "low", "close", "column", "row"]
     },
     {
-        "chart": "waterfall",
+        "chart": "Waterfall Chart",
         "mark": "bar",
         "channels": ["x", "y", "color", "column", "row"]
     },
     {
-        "chart": "radar",
+        "chart": "Radar Chart",
         "mark": "line",  # computed polar projection
         "channels": ["x", "y", "color", "column", "row"]
     },
     {
-        "chart": "rose",
+        "chart": "Rose Chart",
         "mark": {"type": "arc", "stroke": "white", "padAngle": 0.02},
         "channels": ["x", "y", "color", "column", "row"]
     },
     {
-        "chart": "pyramid",
+        "chart": "Pyramid Chart",
         "mark": "bar",  # hconcat of 2 panels
         "channels": ["x", "y", "color"]
     },
     {
-        "chart": "worldmap",
+        "chart": "World Map",
         "mark": "circle",
         "channels": ["longitude", "latitude", "color", "size", "opacity"]
     },
     {
-        "chart": "usmap",
+        "chart": "US Map",
         "mark": "circle",
         "channels": ["longitude", "latitude", "color", "size"]
     }
@@ -258,24 +258,24 @@ CHART_TEMPLATES = [
 # When detect_field_type disagrees with what the chart semantics require,
 # the value here wins.  None means "keep detected".
 _CHANNEL_TYPE_OVERRIDES: dict[str, dict[str, str]] = {
-    "histogram":  {"x": "quantitative"},
-    "heatmap":    {"x": "nominal", "y": "nominal"},
-    "boxplot":    {"x": "nominal", "y": "quantitative"},
-    "pie":        {"theta": "quantitative", "color": "nominal"},
-    "worldmap":   {"longitude": "quantitative", "latitude": "quantitative"},
-    "usmap":      {"longitude": "quantitative", "latitude": "quantitative"},
-    "candlestick": {"x": "ordinal"},
-    "density":    {"x": "quantitative"},
-    "waterfall":  {"x": "ordinal", "y": "quantitative"},
-    "pyramid":    {"y": "nominal", "x": "quantitative"},
-    "strip":      {},  # detected dynamically
-    "rose":       {"x": "nominal", "y": "quantitative"},
+    "Histogram":  {"x": "quantitative"},
+    "Heatmap":    {"x": "nominal", "y": "nominal"},
+    "Boxplot":    {"x": "nominal", "y": "quantitative"},
+    "Pie Chart":        {"theta": "quantitative", "color": "nominal"},
+    "World Map":   {"longitude": "quantitative", "latitude": "quantitative"},
+    "US Map":      {"longitude": "quantitative", "latitude": "quantitative"},
+    "Candlestick Chart": {"x": "ordinal"},
+    "Density Plot":    {"x": "quantitative"},
+    "Waterfall Chart":  {"x": "ordinal", "y": "quantitative"},
+    "Pyramid Chart":    {"y": "nominal", "x": "quantitative"},
+    "Strip Plot":      {},  # detected dynamically
+    "Rose Chart":       {"x": "nominal", "y": "quantitative"},
 }
 
 # Chart types where temporal fields on position channels should be ordinal
 # (discrete bars/cells rather than a continuous time axis).
 # For these charts, coerce_field_type downgrades "temporal" → "ordinal" on x/y.
-_BAR_LIKE_CHARTS = {"bar", "group_bar", "stacked_bar", "lollipop", "waterfall"}
+_BAR_LIKE_CHARTS = {"Bar Chart", "Grouped Bar Chart", "Stacked Bar Chart", "Lollipop Chart", "Waterfall Chart"}
 
 
 def coerce_field_type(chart_type: str, channel: str, detected_type: str) -> str:
@@ -297,9 +297,7 @@ def coerce_field_type(chart_type: str, channel: str, detected_type: str) -> str:
 
 
 def get_chart_template(chart_type: str) -> dict | None:
-    """
-    Find a chart template by chart type name.
-    """
+    """Find a chart template by its full name (e.g. "Scatter Plot")."""
     for template in CHART_TEMPLATES:
         if template["chart"] == chart_type:
             return template
@@ -319,7 +317,7 @@ def fields_to_encodings(df, chart_type: str, fields: list[str]) -> dict[str, dic
     
     Parameters:
     - df: pandas DataFrame containing the data
-    - chart_type: string matching one of the chart types in CHART_TEMPLATES
+    - chart_type: string matching one of the chart types in CHART_TEMPLATES (e.g. "Scatter Plot")
     - fields: list of column names to assign to channels
     
     Returns:
@@ -358,7 +356,7 @@ def fields_to_encodings(df, chart_type: str, fields: list[str]) -> dict[str, dic
     # Sort fields by priority for assignment
     def field_priority(field_info_item):
         # Prioritize temporal fields for time-based charts
-        if chart_type in ["line", "area"] and field_info_item["type"] == "temporal":
+        if chart_type in ["Line Chart", "Area Chart"] and field_info_item["type"] == "temporal":
             return 0
         # Prioritize quantitative fields
         elif field_info_item["type"] == "quantitative":
@@ -393,19 +391,19 @@ def fields_to_encodings(df, chart_type: str, fields: list[str]) -> dict[str, dic
         target_type = original_type
         
         # Heatmap axes should be categorical
-        if chart_type == "heatmap" and channel in ["x", "y"]:
+        if chart_type == "Heatmap" and channel in ["x", "y"]:
             if original_type in ["quantitative", "temporal"]:
                 needs_conversion = True
                 target_type = "nominal"
         
         # Bar chart x-axis should be categorical for grouping
-        elif chart_type == "bar" and channel == "x":
+        elif chart_type == "Bar Chart" and channel == "x":
             if original_type == "quantitative":
                 needs_conversion = True
                 target_type = "nominal"
         
         # Color channel in non-heatmap charts should be categorical for discrete colors
-        elif channel == "color" and chart_type != "heatmap":
+        elif channel == "color" and chart_type != "Heatmap":
             if original_type == "quantitative" and field_info_item["is_low_cardinality"]:
                 needs_conversion = True
                 target_type = "nominal"
@@ -433,7 +431,7 @@ def fields_to_encodings(df, chart_type: str, fields: list[str]) -> dict[str, dic
     def assign_primary_channels():
         """Assign the main x and y channels"""
         if "x" in available_channels and "y" in available_channels:
-            if chart_type == "bar":
+            if chart_type == "Bar Chart":
                 # Bar chart: x = categorical, y = quantitative
                 categorical_field = next((f for f in field_info 
                                         if f["field"] not in used_fields and 
@@ -453,7 +451,7 @@ def fields_to_encodings(df, chart_type: str, fields: list[str]) -> dict[str, dic
                 if quantitative_field:
                     add_encoding("y", quantitative_field["field"])
             
-            elif chart_type in ["line", "area"]:
+            elif chart_type in ["Line Chart", "Area Chart"]:
                 # Line/Area chart: x = temporal/ordinal, y = quantitative
                 temporal_field = next((f for f in field_info 
                                      if f["field"] not in used_fields and 
@@ -474,7 +472,7 @@ def fields_to_encodings(df, chart_type: str, fields: list[str]) -> dict[str, dic
                 if quantitative_field:
                     add_encoding("y", quantitative_field["field"])
             
-            elif chart_type == "point":
+            elif chart_type == "Scatter Plot":
                 # Point charts: flexible for scatter plots, bubble charts, etc.
                 # Prefer quantitative fields but accept any field type
                 available_fields = [f for f in field_info if f["field"] not in used_fields]
@@ -494,7 +492,7 @@ def fields_to_encodings(df, chart_type: str, fields: list[str]) -> dict[str, dic
                     # Single field - use for y-axis, x can be index or categorical
                     add_encoding("y", available_fields[0]["field"])
             
-            elif chart_type == "heatmap":
+            elif chart_type == "Heatmap":
                 # Heatmap: x = categorical, y = categorical, color = quantitative
                 categorical_fields = [f for f in field_info 
                                     if f["field"] not in used_fields and 
@@ -520,7 +518,7 @@ def fields_to_encodings(df, chart_type: str, fields: list[str]) -> dict[str, dic
                         add_encoding("x", available_fields[0]["field"])
                         add_encoding("y", available_fields[1]["field"])
             
-            elif chart_type == "boxplot":
+            elif chart_type == "Boxplot":
                 # Box plot: x = categorical, y = quantitative
                 categorical_field = next((f for f in field_info 
                                         if f["field"] not in used_fields and 
@@ -548,7 +546,7 @@ def fields_to_encodings(df, chart_type: str, fields: list[str]) -> dict[str, dic
         remaining_fields = [f for f in field_info if f["field"] not in used_fields]
         
         # Special handling for heatmap color channel
-        if chart_type == "heatmap" and "color" in available_channels and remaining_fields:
+        if chart_type == "Heatmap" and "color" in available_channels and remaining_fields:
             # For heatmaps, color should be quantitative for intensity
             color_field = next((f for f in remaining_fields 
                               if f["type"] == "quantitative"), None)
@@ -663,9 +661,9 @@ def assemble_vegailte_chart(
     # Chart types that self-manage their encodings in _post_process_chart.
     # For these, we still resolve field types but skip adding to spec encoding
     # (the _post_process function distributes them from the raw encodings dict).
-    _SELF_MANAGED_CHARTS = {"radar", "pyramid", "waterfall"}
+    _SELF_MANAGED_CHARTS = {"Radar Chart", "Pyramid Chart", "Waterfall Chart"}
     # Density: x/y are pre-set by template; only color goes through normal path
-    _DENSITY_SKIP_CHANNELS = {"x", "y"} if chart_type == "density" else set()
+    _DENSITY_SKIP_CHANNELS = {"x", "y"} if chart_type == "Density Plot" else set()
 
     # Apply encodings with semantic-aware handling
     for channel, encoding_input in encodings.items():
@@ -747,7 +745,7 @@ def assemble_vegailte_chart(
                     encoding_obj["legend"] = {"symbolSize": 12, "labelFontSize": 8}
         
         # For map charts, encodings go into the second layer
-        if chart_type in ("worldmap", "usmap"):
+        if chart_type in ("World Map", "US Map"):
             spec["layer"][1]["encoding"][channel] = encoding_obj
         elif chart_type in _SELF_MANAGED_CHARTS:
             pass  # post_process will handle distribution from raw encodings
@@ -758,18 +756,18 @@ def assemble_vegailte_chart(
             spec.setdefault("encoding", {})[channel] = encoding_obj
     
     # Special handling for histogram: ensure x has bin:true and y has count
-    if chart_type == "histogram":
+    if chart_type == "Histogram":
         if "x" in spec["encoding"]:
             spec["encoding"]["x"]["bin"] = True
         if "y" not in spec["encoding"]:
             spec["encoding"]["y"] = {"aggregate": "count"}
     
     # Special handling for pie: mark is 'arc'
-    if chart_type == "pie":
+    if chart_type == "Pie Chart":
         spec["mark"] = "arc"
     
     # Special handling for group_bar: add xOffset using the same field as color
-    if chart_type == "group_bar" and "color" in spec.get("encoding", {}):
+    if chart_type == "Grouped Bar Chart" and "color" in spec.get("encoding", {}):
         color_encoding = spec["encoding"]["color"]
         spec["encoding"]["xOffset"] = {
             "field": color_encoding["field"],
@@ -777,7 +775,7 @@ def assemble_vegailte_chart(
         }
 
     # Special handling for stacked_bar: set stack mode on quant axis
-    if chart_type == "stacked_bar":
+    if chart_type == "Stacked Bar Chart":
         stack_mode = (config or {}).get("stackMode", "stacked")
         for axis in ("y", "x"):
             enc = spec.get("encoding", {}).get(axis)
@@ -799,7 +797,7 @@ def assemble_vegailte_chart(
         _apply_chart_config(spec, chart_type, config)
     
     # Handle agent "facet" channel → map to "column" so the existing column→facet logic picks it up
-    enc_target = spec["layer"][1]["encoding"] if chart_type in ("worldmap", "usmap") else spec.get("encoding", {})
+    enc_target = spec["layer"][1]["encoding"] if chart_type in ("World Map", "US Map") else spec.get("encoding", {})
     if "facet" in enc_target and "column" not in enc_target:
         enc_target["column"] = enc_target.pop("facet")
     
@@ -895,7 +893,7 @@ def _build_initial_spec(
 ) -> dict:
     """Build the initial VL spec skeleton before encoding channels are applied."""
 
-    if chart_type == "histogram":
+    if chart_type == "Histogram":
         return {
             "mark": "bar",
             "encoding": {
@@ -904,17 +902,17 @@ def _build_initial_spec(
             },
         }
 
-    if chart_type in ("worldmap", "usmap"):
-        projection_type = "albersUsa" if chart_type == "usmap" else "equalEarth"
+    if chart_type in ("World Map", "US Map"):
+        projection_type = "albersUsa" if chart_type == "US Map" else "equalEarth"
         topo_url = (
             "https://vega.github.io/vega-lite/data/us-10m.json"
-            if chart_type == "usmap"
+            if chart_type == "US Map"
             else "https://vega.github.io/vega-lite/data/world-110m.json"
         )
-        topo_feature = "states" if chart_type == "usmap" else "countries"
+        topo_feature = "states" if chart_type == "US Map" else "countries"
         return {
-            "width": 500 if chart_type == "usmap" else 600,
-            "height": 300 if chart_type == "usmap" else 350,
+            "width": 500 if chart_type == "US Map" else 600,
+            "height": 300 if chart_type == "US Map" else 350,
             "layer": [
                 {
                     "data": {"url": topo_url, "format": {"type": "topojson", "feature": topo_feature}},
@@ -929,7 +927,7 @@ def _build_initial_spec(
             ],
         }
 
-    if chart_type == "lollipop":
+    if chart_type == "Lollipop Chart":
         return {
             "encoding": {},
             "layer": [
@@ -938,20 +936,26 @@ def _build_initial_spec(
             ],
         }
 
-    if chart_type == "linear_regression":
+    if chart_type == "Regression":
+        reg_transform: dict = {"regression": "__y__", "on": "__x__"}
+        method = (config or {}).get("regressionMethod", "linear")
+        if method and method != "linear":
+            reg_transform["method"] = method
+            if method == "poly":
+                reg_transform["order"] = int((config or {}).get("polyOrder", 3))
         return {
             "layer": [
                 {"mark": "circle", "encoding": {}},
                 {
                     "mark": {"type": "line", "color": "red"},
-                    "transform": [{"regression": "__y__", "on": "__x__"}],
+                    "transform": [reg_transform],
                     "encoding": {},
                 },
             ],
             "encoding": {},
         }
 
-    if chart_type == "ranged_dot":
+    if chart_type == "Ranged Dot Plot":
         return {
             "encoding": {},
             "layer": [
@@ -960,7 +964,7 @@ def _build_initial_spec(
             ],
         }
 
-    if chart_type == "candlestick":
+    if chart_type == "Candlestick Chart":
         return {
             "encoding": {},
             "layer": [
@@ -969,11 +973,11 @@ def _build_initial_spec(
             ],
         }
 
-    if chart_type == "waterfall":
+    if chart_type == "Waterfall Chart":
         # Will be rebuilt into layered spec in _post_process_chart
         return {"mark": "bar", "encoding": {}}
 
-    if chart_type == "density":
+    if chart_type == "Density Plot":
         return {
             "mark": "area",
             "transform": [{"density": "__field__"}],
@@ -983,11 +987,11 @@ def _build_initial_spec(
             },
         }
 
-    if chart_type == "radar":
+    if chart_type == "Radar Chart":
         # Radar is entirely computed; placeholder spec
         return {"mark": "point", "encoding": {}}
 
-    if chart_type == "pyramid":
+    if chart_type == "Pyramid Chart":
         return {
             "spacing": 0,
             "resolve": {"scale": {"y": "shared"}},
@@ -1014,10 +1018,10 @@ def _build_initial_spec(
             "config": {"view": {"stroke": None}, "axis": {"grid": False}},
         }
 
-    if chart_type == "streamgraph":
+    if chart_type == "Streamgraph":
         return {"mark": "area", "encoding": {}}
 
-    if chart_type == "rose":
+    if chart_type == "Rose Chart":
         mark = {"type": "arc", "stroke": "white", "padAngle": 0.02}
         return {"mark": mark, "encoding": {}}
 
@@ -1039,40 +1043,40 @@ def _post_process_chart(
 ) -> None:
     """Apply chart-type-specific post-processing after encodings are set."""
 
-    if chart_type == "lollipop":
+    if chart_type == "Lollipop Chart":
         _post_process_lollipop(spec, df, encodings)
 
-    elif chart_type == "linear_regression":
-        _post_process_linear_regression(spec, encodings)
+    elif chart_type == "Regression":
+        _post_process_regression(spec, encodings)
 
-    elif chart_type == "ranged_dot":
+    elif chart_type == "Ranged Dot Plot":
         _post_process_ranged_dot(spec, encodings)
 
-    elif chart_type == "candlestick":
+    elif chart_type == "Candlestick Chart":
         _post_process_candlestick(spec, df, encodings, config)
 
-    elif chart_type == "waterfall":
+    elif chart_type == "Waterfall Chart":
         _post_process_waterfall(spec, df, encodings, config)
 
-    elif chart_type == "density":
+    elif chart_type == "Density Plot":
         _post_process_density(spec, encodings, config)
 
-    elif chart_type == "radar":
+    elif chart_type == "Radar Chart":
         _post_process_radar(spec, df, encodings, config)
 
-    elif chart_type == "pyramid":
+    elif chart_type == "Pyramid Chart":
         _post_process_pyramid(spec, df, encodings)
 
-    elif chart_type == "streamgraph":
+    elif chart_type == "Streamgraph":
         _post_process_streamgraph(spec, encodings, config)
 
-    elif chart_type == "bump":
+    elif chart_type == "Bump Chart":
         _post_process_bump(spec, encodings)
 
-    elif chart_type == "strip":
+    elif chart_type == "Strip Plot":
         _post_process_strip(spec, df, encodings, config)
 
-    elif chart_type == "rose":
+    elif chart_type == "Rose Chart":
         _post_process_rose(spec, df, encodings, config)
 
 
@@ -1103,8 +1107,8 @@ def _post_process_lollipop(spec: dict, df: pd.DataFrame, encodings: dict) -> Non
             pass  # keep in top encoding for faceting
 
 
-def _post_process_linear_regression(spec: dict, encodings: dict) -> None:
-    """Linear regression: scatter layer + regression trend line."""
+def _post_process_regression(spec: dict, encodings: dict) -> None:
+    """Regression: scatter layer + regression trend line."""
     scatter = spec["layer"][0]
     regression = spec["layer"][1]
     top_enc = spec.get("encoding", {})
@@ -1122,7 +1126,15 @@ def _post_process_linear_regression(spec: dict, encodings: dict) -> None:
         regression["transform"][0]["regression"] = y_enc.get("field", "__y__")
 
     if "color" in top_enc:
-        scatter["encoding"]["color"] = top_enc.pop("color")
+        color_enc = top_enc.pop("color")
+        scatter["encoding"]["color"] = color_enc
+        # Group regression by color field so each class gets its own trend line
+        color_field = color_enc.get("field")
+        if color_field:
+            regression["transform"][0]["groupby"] = [color_field]
+            regression["encoding"]["color"] = dict(color_enc)
+            # Remove hardcoded red so Vega-Lite uses the shared color scale
+            regression["mark"] = {"type": "line"}
     if "size" in top_enc:
         scatter["encoding"]["size"] = top_enc.pop("size")
 
@@ -1678,7 +1690,7 @@ def _apply_spec_quality(
     # ── 1. Filter nulls for line / area y-field (prevents broken lines) ───
     #    Default VL behaviour leaves gaps at null points.  Filtering them
     #    out from the data connects the line across missing values.
-    if chart_type in ('line', 'area'):
+    if chart_type in ('Line Chart', 'Area Chart'):
         y_field = encoding.get("y", {}).get("field")
         if y_field:
             table_data = [
@@ -1790,41 +1802,41 @@ def _apply_chart_config(spec: dict, chart_type: str, config: dict):
         if isinstance(s.get("mark"), str):
             s["mark"] = {"type": s["mark"]}
     
-    if chart_type == "histogram":
+    if chart_type == "Histogram":
         bin_count = config.get("binCount")
         if bin_count and "encoding" in spec and "x" in spec["encoding"]:
             spec["encoding"]["x"]["bin"] = {"maxbins": int(bin_count)}
     
-    elif chart_type == "pie":
+    elif chart_type == "Pie Chart":
         inner_radius = config.get("innerRadius")
         if inner_radius is not None:
             _ensure_mark_obj(spec)
             spec["mark"]["innerRadius"] = int(inner_radius)
     
-    elif chart_type == "heatmap":
+    elif chart_type == "Heatmap":
         color_scheme = config.get("colorScheme")
         if color_scheme and "encoding" in spec and "color" in spec["encoding"]:
             spec["encoding"]["color"].setdefault("scale", {})["scheme"] = color_scheme
     
-    elif chart_type == "point":
+    elif chart_type == "Scatter Plot":
         opacity = config.get("opacity")
         if opacity is not None:
             _ensure_mark_obj(spec)
             spec["mark"]["opacity"] = float(opacity)
     
-    elif chart_type in ("bar", "group_bar", "stacked_bar"):
+    elif chart_type in ("Bar Chart", "Grouped Bar Chart", "Stacked Bar Chart"):
         corner_radius = config.get("cornerRadius")
         if corner_radius is not None:
             _ensure_mark_obj(spec)
             spec["mark"]["cornerRadius"] = int(corner_radius)
     
-    elif chart_type in ("line", "dotted_line"):
+    elif chart_type in ("Line Chart", "Dotted Line Chart"):
         interpolate = config.get("interpolate")
         if interpolate:
             _ensure_mark_obj(spec)
             spec["mark"]["interpolate"] = interpolate
     
-    elif chart_type == "area":
+    elif chart_type == "Area Chart":
         interpolate = config.get("interpolate")
         opacity = config.get("opacity")
         stack_mode = config.get("stackMode")
@@ -1845,7 +1857,7 @@ def _apply_chart_config(spec: dict, chart_type: str, config: dict):
                         enc["stack"] = None
                     break
     
-    elif chart_type == "worldmap":
+    elif chart_type == "World Map":
         projection = config.get("projection")
         projection_center = config.get("projectionCenter")
         if projection and "layer" in spec:

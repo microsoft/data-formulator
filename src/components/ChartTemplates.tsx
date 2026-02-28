@@ -63,7 +63,7 @@ const ChartIcon: React.FC<{ src: string; alt?: string }> = ({ src, alt = "" }) =
 const CHART_ICONS: Record<string, any> = {
     "Auto": <InsightsIcon color="primary" />,
     "Scatter Plot": <ChartIcon src={chartIconScatter} />,
-    "Linear Regression": <ChartIcon src={chartIconLinearRegression} />,
+    "Regression": <ChartIcon src={chartIconLinearRegression} />,
     "Ranged Dot Plot": <ChartIcon src={chartIconDotPlotHorizontal} />,
     "Boxplot": <ChartIcon src={chartIconBoxPlot} />,
     "Bar Chart": <ChartIcon src={chartIconColumn} />,

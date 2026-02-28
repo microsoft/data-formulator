@@ -344,10 +344,113 @@ function lineMatrixToTestCase(entry: LineMatrixEntry, rand: () => number): TestC
 }
 
 // ============================================================================
+// Forecast test cases — demonstrate strokeDash for actual vs forecast
+// ============================================================================
+
+function genForecastTestSingleSeries(rand: () => number): TestCase {
+    // Single series: 12 months actual + 4 months forecast (continuous dates)
+    const allDates = genDates(16, 2024);  // 16 continuous dates
+    const actualDates = allDates.slice(0, 12);
+    const forecastDates = allDates.slice(12);
+
+    const data: Record<string, any>[] = [];
+    let val = 100;
+    // Actual data
+    for (const d of actualDates) {
+        val = Math.round(val + (rand() - 0.4) * 15);
+        data.push({ Date: d, Revenue: val, Type: 'actual' });
+    }
+    // Duplicate last actual point as first forecast point (for line connection)
+    const lastActual = data[data.length - 1];
+    data.push({ Date: lastActual.Date, Revenue: lastActual.Revenue, Type: 'forecast' });
+    // Forecast data (trending upward)
+    for (const d of forecastDates) {
+        val = Math.round(val + rand() * 12 + 3);
+        data.push({ Date: d, Revenue: val, Type: 'forecast' });
+    }
+
+    return {
+        title: 'Forecast — single series, actual vs forecast',
+        description: 'Single time series with actual (solid) vs forecast (dashed) using strokeDash',
+        tags: ['temporal', 'forecast', 'strokeDash', 'medium'],
+        chartType: 'Line Chart',
+        data,
+        fields: [makeField('Date'), makeField('Revenue'), makeField('Type')],
+        metadata: {
+            Date:    { type: Type.Date,   semanticType: 'Date',     levels: [] },
+            Revenue: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+            Type:    { type: Type.String, semanticType: 'Category', levels: ['actual', 'forecast'] },
+        },
+        encodingMap: {
+            x: makeEncodingItem('Date'),
+            y: makeEncodingItem('Revenue'),
+            strokeDash: makeEncodingItem('Type'),
+        },
+    };
+}
+
+function genForecastTestMultiSeries(rand: () => number): TestCase {
+    // 3 product series: 10 actual + 3 forecast (continuous dates)
+    const products = ['Widget A', 'Widget B', 'Widget C'];
+    const allDates = genDates(13, 2024);  // 13 continuous dates
+    const actualDates = allDates.slice(0, 10);
+    const forecastDates = allDates.slice(10);
+
+    const data: Record<string, any>[] = [];
+    for (const product of products) {
+        let val = 50 + Math.round(rand() * 100);
+        const vol = 5 + rand() * 15;
+        // Actual data
+        for (const d of actualDates) {
+            val = Math.round(Math.max(10, val + (rand() - 0.45) * vol));
+            data.push({ Date: d, Sales: val, Product: product, Type: 'actual' });
+        }
+        // Duplicate last actual point as first forecast (for line connection)
+        const lastActual = data[data.length - 1];
+        data.push({ Date: lastActual.Date, Sales: lastActual.Sales, Product: product, Type: 'forecast' });
+        // Forecast data
+        for (const d of forecastDates) {
+            val = Math.round(val + rand() * 10 + 2);
+            data.push({ Date: d, Sales: val, Product: product, Type: 'forecast' });
+        }
+    }
+
+    return {
+        title: 'Forecast — 3 series, color + strokeDash',
+        description: '3 product series with color for series grouping and strokeDash for actual vs forecast',
+        tags: ['temporal', 'nominal', 'forecast', 'strokeDash', 'color', 'medium'],
+        chartType: 'Line Chart',
+        data,
+        fields: [makeField('Date'), makeField('Sales'), makeField('Product'), makeField('Type')],
+        metadata: {
+            Date:    { type: Type.Date,   semanticType: 'Date',     levels: [] },
+            Sales:   { type: Type.Number, semanticType: 'Quantity', levels: [] },
+            Product: { type: Type.String, semanticType: 'Category', levels: products },
+            Type:    { type: Type.String, semanticType: 'Category', levels: ['actual', 'forecast'] },
+        },
+        encodingMap: {
+            x: makeEncodingItem('Date'),
+            y: makeEncodingItem('Sales'),
+            color: makeEncodingItem('Product'),
+            strokeDash: makeEncodingItem('Type'),
+        },
+    };
+}
+
+// ============================================================================
 // Public export
 // ============================================================================
 
 export function genLineTests(): TestCase[] {
     const rand = seededRandom(600);
-    return LINE_MATRIX.map(entry => lineMatrixToTestCase(entry, rand));
+    const matrixTests = LINE_MATRIX.map(entry => lineMatrixToTestCase(entry, rand));
+
+    // Forecast tests
+    const forecastRand = seededRandom(700);
+    const forecastTests = [
+        genForecastTestSingleSeries(forecastRand),
+        genForecastTestMultiSeries(forecastRand),
+    ];
+
+    return [...matrixTests, ...forecastTests];
 }

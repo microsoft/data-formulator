@@ -262,7 +262,9 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
 
     return (
         <Box sx={{ maxWidth: "600px", display: 'flex', flexDirection: 'column', ...sx }}>
+            <Box sx={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 1 }}>
             <Card variant='outlined' sx={{ 
+                flex: 1,
                 px: 1, 
                 pt: 0.5,
                 pb: 0.25,
@@ -319,34 +321,6 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                             inputLabel: { shrink: true },
                             input: {
                                 endAdornment: <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.25, flexShrink: 0 }}>
-                                    <Tooltip title={ideas.length > 0 ? "Refresh ideas" : "Get ideas"}>
-                                        <span>
-                                            <IconButton 
-                                                size="medium"
-                                                disabled={isFormulating || isLoadingIdeas || !currentTable}
-                                                sx={{
-                                                    p: 0.5,
-                                                    color: modeColor,
-                                                    '&:hover': {
-                                                        backgroundColor: alpha(modeColor, 0.08)
-                                                    }
-                                                }}
-                                                onClick={() => getIdeasFromAgent()}
-                                            >
-                                                {isLoadingIdeas ? 
-                                                    <CircularProgress size={24} sx={{ color: modeColor }} />
-                                                    : <TipsAndUpdatesIcon sx={{
-                                                        fontSize: 24,
-                                                        animation: ideas.length == 0 ? 'colorWipe 5s ease-in-out infinite' : 'none',
-                                                        '@keyframes colorWipe': {
-                                                            '0%, 90%': { scale: 1 },
-                                                            '95%': { scale: 1.2 },
-                                                            '100%': { scale: 1 },
-                                                        },
-                                                    }} />}
-                                            </IconButton>
-                                        </span>
-                                    </Tooltip>
                                     <Tooltip title="Generate chart from description">
                                         <span>
                                             <IconButton 
@@ -381,6 +355,34 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                     />
                 </Box>
             </Card>
+            <Tooltip title={ideas.length > 0 ? "Refresh ideas" : "Get ideas"}>
+                <span>
+                    <IconButton 
+                        size="medium"
+                        disabled={isFormulating || isLoadingIdeas || !currentTable}
+                        sx={{
+                            color: modeColor,
+                            '&:hover': {
+                                backgroundColor: alpha(modeColor, 0.08)
+                            }
+                        }}
+                        onClick={() => getIdeasFromAgent()}
+                    >
+                        {isLoadingIdeas ? 
+                            <CircularProgress size={24} sx={{ color: modeColor }} />
+                            : <TipsAndUpdatesIcon sx={{
+                                fontSize: 24,
+                                animation: ideas.length == 0 ? 'colorWipe 5s ease-in-out infinite' : 'none',
+                                '@keyframes colorWipe': {
+                                    '0%, 90%': { scale: 1 },
+                                    '95%': { scale: 1.2 },
+                                    '100%': { scale: 1 },
+                                },
+                            }} />}
+                    </IconButton>
+                </span>
+            </Tooltip>
+            </Box>
             {(ideas.length > 0 || thinkingBuffer) && (
                 <Box sx={{
                     display: 'flex', 

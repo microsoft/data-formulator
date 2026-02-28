@@ -121,7 +121,7 @@ export function vlApplyLayoutToSpec(
     }
 
     // --- Apply field-context semantic decisions (format, domain, ticks, etc.) ---
-    vlApplyFieldContext(vgObj, channelSemantics, collectEncodingTargets);
+    vlApplyFieldContext(vgObj, channelSemantics, collectEncodingTargets, context);
 
     // --- Apply temporal formatting ---
     // For positional temporal axes (x/y), do NOT set axis.format — VL's
@@ -331,7 +331,8 @@ export function vlApplyLayoutToSpec(
     // Vega-Lite stacks them all on the right, which eats into the plot area on a
     // 400×300 canvas.  Detect this and move the categorical (nominal/ordinal)
     // legend to the bottom with horizontal orientation, keeping the quantitative
-    // legend compact on the right.
+    // legend compact on the right — BUT only when the total chart height is too
+    // short to fit both stacked on the right comfortably.
     const legendChannels = (['color', 'size', 'shape', 'opacity', 'strokeDash', 'strokeWidth'] as const)
         .filter(ch => {
             const targets = collectEncodingTargets(ch);
@@ -353,43 +354,73 @@ export function vlApplyLayoutToSpec(
         }
 
         // Move categorical legends to bottom, keep quantitative ones on right
+        // — but only if the total chart height can't comfortably fit both.
         if (categoricalChs.length > 0 && quantitativeChs.length > 0) {
+            // Estimate total right-side legend height:
+            //   Quantitative legend ≈ 100px (gradient + title + labels)
+            //   Categorical legend ≈ title(20px) + entries × 20px each
+            const QUANT_LEGEND_HEIGHT = 100;
+            const CAT_TITLE_HEIGHT = 20;
+            const CAT_ENTRY_HEIGHT = 20;
+
+            // Estimate domain sizes for categorical legends
+            let totalCatEntries = 0;
             for (const ch of categoricalChs) {
                 const targets = collectEncodingTargets(ch);
                 for (const enc of targets) {
                     if (!enc.field) continue;
-                    if (!enc.legend) enc.legend = {};
-                    enc.legend.orient = 'bottom';
-                    enc.legend.direction = 'horizontal';
+                    const domainSize = new Set(context.table.map((r: any) => r[enc.field])).size;
+                    totalCatEntries += domainSize;
+                }
+            }
+            const estCatHeight = CAT_TITLE_HEIGHT * categoricalChs.length + totalCatEntries * CAT_ENTRY_HEIGHT;
+            const estTotalLegendHeight = QUANT_LEGEND_HEIGHT + estCatHeight + 20; // 20px gap between legends
 
-                    // Responsive columns: estimate how many legend entries fit
-                    // per row based on the available canvas width.
-                    // Each entry ≈ symbol(16) + label + padding.  Estimate label
-                    // width from the longest domain value, then derive columns.
-                    const domainValues = [...new Set(context.table.map((r: any) => r[enc.field]))];
-                    const domainSize = domainValues.length;
-                    const maxLabelLen = Math.max(
-                        ...domainValues.map((v: any) => String(v ?? '').length), 3,
-                    );
-                    // VL legend: symbol (~15px) + label (~5px/char at 11px proportional font) + gap (~8px)
-                    const entryWidth = 15 + maxLabelLen * 5 + 8;
-                    // Available width: VL's bottom legend spans the full SVG width,
-                    // which includes the plot area plus the right-side quantitative
-                    // legend (~130px).  Use that total for column estimation.
-                    const rightLegendWidth = 130;
-                    const availableWidth = canvasSize.width + rightLegendWidth;
-                    const columnsByWidth = Math.max(1, Math.floor(availableWidth / entryWidth));
-                    enc.legend.columns = Math.min(columnsByWidth, domainSize);
+            // Total chart height = subplot height × facet rows + overhead
+            const totalChartHeight = layout.subplotHeight * (layout.facet?.rows ?? 1)
+                + (layout.facet?.rows ?? 1) * 10; // approx facet spacing
 
-                    // For very high cardinality, cap visible symbols to keep
-                    // the bottom legend from growing too tall.
-                    const maxRows = 4;
-                    const maxVisible = columnsByWidth * maxRows;
-                    if (domainSize > maxVisible) {
-                        enc.legend.symbolLimit = maxVisible;
+            const fitsOnRight = totalChartHeight >= estTotalLegendHeight;
+
+            if (!fitsOnRight) {
+                for (const ch of categoricalChs) {
+                    const targets = collectEncodingTargets(ch);
+                    for (const enc of targets) {
+                        if (!enc.field) continue;
+                        if (!enc.legend) enc.legend = {};
+                        enc.legend.orient = 'bottom';
+                        enc.legend.direction = 'horizontal';
+
+                        // Responsive columns: estimate how many legend entries fit
+                        // per row based on the available canvas width.
+                        // Each entry ≈ symbol(16) + label + padding.  Estimate label
+                        // width from the longest domain value, then derive columns.
+                        const domainValues = [...new Set(context.table.map((r: any) => r[enc.field]))];
+                        const domainSize = domainValues.length;
+                        const maxLabelLen = Math.max(
+                            ...domainValues.map((v: any) => String(v ?? '').length), 3,
+                        );
+                        // VL legend: symbol (~15px) + label (~5px/char at 11px proportional font) + gap (~8px)
+                        const entryWidth = 15 + maxLabelLen * 5 + 8;
+                        // Available width: VL's bottom legend spans the full SVG width,
+                        // which includes the plot area plus the right-side quantitative
+                        // legend (~130px).  Use that total for column estimation.
+                        const rightLegendWidth = 130;
+                        const availableWidth = canvasSize.width + rightLegendWidth;
+                        const columnsByWidth = Math.max(1, Math.floor(availableWidth / entryWidth));
+                        enc.legend.columns = Math.min(columnsByWidth, domainSize);
+
+                        // For very high cardinality, cap visible symbols to keep
+                        // the bottom legend from growing too tall.
+                        const maxRows = 4;
+                        const maxVisible = columnsByWidth * maxRows;
+                        if (domainSize > maxVisible) {
+                            enc.legend.symbolLimit = maxVisible;
+                        }
                     }
                 }
             }
+            // else: chart is tall enough — leave both legends on the right (VL default)
         }
     }
 
@@ -429,15 +460,50 @@ export function vlApplyLayoutToSpec(
 // ---------------------------------------------------------------------------
 
 /**
+ * Build a Vega expression that abbreviates large numbers using a small
+ * set of universally understood suffixes: K (thousands), M (millions),
+ * B (billions), T (trillions).
+ *
+ * The expression is a nested ternary that picks the right divisor:
+ *   abs(v) >= 1e12 → v/1e12 + "T"
+ *   abs(v) >= 1e9  → v/1e9  + "B"
+ *   abs(v) >= 1e6  → v/1e6  + "M"
+ *   abs(v) >= 1e3  → v/1e3  + "K"
+ *   else           → plain number
+ *
+ * @param prefix  Optional prefix (e.g., "$")
+ * @param suffix  Optional suffix (e.g., " kg")
+ * @returns  A Vega labelExpr string
+ */
+function buildAbbreviationExpr(prefix?: string, suffix?: string): string {
+    const pfx = prefix ? `'${prefix}' + ` : '';
+    const sfx = suffix ? ` + '${suffix}'` : '';
+    // Use ~g to drop trailing zeros from the fractional digit
+    return (
+        `${pfx}(abs(datum.value) >= 1e12 ? format(datum.value / 1e12, '~g') + 'T' : ` +
+        `abs(datum.value) >= 1e9 ? format(datum.value / 1e9, '~g') + 'B' : ` +
+        `abs(datum.value) >= 1e6 ? format(datum.value / 1e6, '~g') + 'M' : ` +
+        `abs(datum.value) >= 1e3 ? format(datum.value / 1e3, '~g') + 'K' : ` +
+        `format(datum.value, ','))${sfx}`
+    );
+}
+
+/**
  * Build a VL-compatible format expression from a FormatSpec.
  *
  * - d3's `format()` handles the numeric pattern.
  * - Prefix/suffix are prepended/appended via a Vega expression.
+ * - When `abbreviate` is true, large values are compacted (1K, 1M, 1B, 1T).
  *
  * Returns an `axis.labelExpr` / `legend.labelExpr` string, or null if
  * no formatting is needed (plain data labels suffice).
  */
 function formatSpecToLabelExpr(fmt: FormatSpec): string | null {
+    // Abbreviation takes priority — produces its own complete expression
+    if (fmt.abbreviate) {
+        return buildAbbreviationExpr(fmt.prefix, fmt.suffix);
+    }
+
     if (!fmt.pattern) return null;
     const hasPrefix = !!fmt.prefix;
     const hasSuffix = !!fmt.suffix;
@@ -471,6 +537,7 @@ function vlApplyFieldContext(
     vgObj: any,
     channelSemantics: Record<string, ChannelSemantics>,
     collectEncodingTargets: (ch: string) => any[],
+    context: InstantiateContext,
 ): void {
     for (const [ch, cs] of Object.entries(channelSemantics)) {
         const targets = collectEncodingTargets(ch);
@@ -482,7 +549,7 @@ function vlApplyFieldContext(
             // ── 1. Number format (axis.format / axis.labelExpr) ──
             // Only apply to quantitative positional channels.
             // Without this: axes show raw numbers like "1000000" instead of "$1,000,000".
-            if (cs.format?.pattern && (ch === 'x' || ch === 'y') && enc.type === 'quantitative') {
+            if ((cs.format?.pattern || cs.format?.abbreviate) && (ch === 'x' || ch === 'y') && enc.type === 'quantitative') {
                 // Skip if the encoding already has an explicit format
                 if (!enc.axis?.format && !enc.axis?.labelExpr) {
                     if (!enc.axis) enc.axis = {};
@@ -597,6 +664,14 @@ function vlApplyFieldContext(
                     if (cs.scaleType === 'log' || cs.scaleType === 'symlog') {
                         if (enc.scale.zero !== undefined) {
                             delete enc.scale.zero;
+                        }
+                        // Log axes produce many grid lines (1,2,3…9 per
+                        // decade).  Make them very light so they convey the
+                        // log-scale structure without competing with data.
+                        if (ch === 'x' || ch === 'y') {
+                            if (!enc.axis) enc.axis = {};
+                            enc.axis.gridColor = '#e8e8e8';
+                            enc.axis.gridOpacity = 0.5;
                         }
                     }
                 }

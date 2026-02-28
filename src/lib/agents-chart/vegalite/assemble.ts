@@ -433,7 +433,16 @@ function buildVLEncodings(
 ): Record<string, any> {
     const resolvedEncodings: Record<string, any> = {};
 
+    // Only process channels the template declares (plus facets which are always valid)
+    const templateChannels = new Set([
+        ...(chartTemplate.channels || []),
+        'column', 'row',  // faceting is always allowed
+    ]);
+
     for (const [channel, encoding] of Object.entries(encodings)) {
+        // Skip channels not supported by this chart type
+        if (!templateChannels.has(channel)) continue;
+
         const encodingObj: any = {};
         const fieldName = encoding.field;
         const cs = channelSemantics[channel];

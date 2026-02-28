@@ -157,7 +157,7 @@ const CHART_ROLE_MAP: Record<string, ChannelRoleMap> = {
     'Area Chart': FAMILY_XY_STANDARD,
     'Streamgraph': FAMILY_XY_STANDARD,
     'Scatter Plot': FAMILY_XY_STANDARD,
-    'Linear Regression': FAMILY_XY_STANDARD,
+    'Regression': FAMILY_XY_STANDARD,
     'Ranged Dot Plot': FAMILY_XY_STANDARD,
     'Boxplot': FAMILY_XY_STANDARD,
     'Strip Plot': FAMILY_XY_STANDARD,

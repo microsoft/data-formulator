@@ -150,7 +150,8 @@ class CodeExplanationAgent(object):
 
         user_query = f"[CONTEXT]\n\n{data_summary}\n\n[CODE]\n\nhere is the transformation code: {code}\n\n[EXPLANATION]\n"
 
-        logger.info(user_query)
+        logger.debug(user_query)
+        logger.info(f"[CodeExplanationAgent] run start")
 
         messages = [{"role":"system", "content": SYSTEM_PROMPT},
                     {"role":"user","content": user_query}]
@@ -160,8 +161,8 @@ class CodeExplanationAgent(object):
         candidates = []
         for choice in response.choices:
             
-            logger.info("\n=== Code explanation result ===>\n")
-            logger.info(choice.message.content + "\n")
+            logger.debug("\n=== Code explanation result ===>\n")
+            logger.debug(choice.message.content + "\n")
             
             # Inline parsing of concepts section
             response_content = choice.message.content
@@ -198,4 +199,6 @@ class CodeExplanationAgent(object):
 
             candidates.append(result)
 
+        status = candidates[0].get('status', '?') if candidates else 'empty'
+        logger.info(f"[CodeExplanationAgent] run done | status={status}")
         return candidates

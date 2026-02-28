@@ -9,7 +9,7 @@
  *   EC: series[].data = [[x, y], [x, y], ...] with type: 'scatter'
  */
 
-import { ChartTemplateDef } from '../../core/types';
+import { ChartTemplateDef, ChartPropertyDef } from '../../core/types';
 import { formatTimestamp } from '../instantiate-spec';
 import { DEFAULT_COLORS, groupBy, getCategoryOrder, extractCategories } from './utils';
 
@@ -591,7 +591,7 @@ export const ecScatterPlotDef: ChartTemplateDef = {
     },
 };
 
-/** Simple linear regression: slope and intercept (mirror vegalite Linear Regression). */
+/** Simple linear regression: slope and intercept. */
 function linearRegression(data: number[][]): { slope: number; intercept: number; xMin: number; xMax: number } {
     const n = data.length;
     if (n === 0) return { slope: 0, intercept: 0, xMin: 0, xMax: 0 };
@@ -610,11 +610,145 @@ function linearRegression(data: number[][]): { slope: number; intercept: number;
     return { slope, intercept, xMin, xMax };
 }
 
+/** Polynomial regression via least-squares normal equations. */
+function polyRegression(data: number[][], order: number): { coeffs: number[]; xMin: number; xMax: number } {
+    const n = data.length;
+    if (n === 0) return { coeffs: [0], xMin: 0, xMax: 0 };
+    let xMin = data[0][0], xMax = data[0][0];
+    for (const [x] of data) { if (x < xMin) xMin = x; if (x > xMax) xMax = x; }
+    const k = order + 1;
+    // Build normal equations: X^T X * a = X^T y
+    const xtx: number[][] = Array.from({ length: k }, () => new Array(k).fill(0));
+    const xty: number[] = new Array(k).fill(0);
+    for (const [x, y] of data) {
+        let xp = 1;
+        for (let i = 0; i < k; i++) {
+            xty[i] += xp * y;
+            let xp2 = xp;
+            for (let j = i; j < k; j++) {
+                xtx[i][j] += xp2;
+                if (i !== j) xtx[j][i] += xp2;
+                xp2 *= x;
+            }
+            xp *= x;
+        }
+    }
+    // Gaussian elimination with partial pivoting
+    const aug = xtx.map((row, i) => [...row, xty[i]]);
+    for (let col = 0; col < k; col++) {
+        let maxRow = col;
+        for (let row = col + 1; row < k; row++) {
+            if (Math.abs(aug[row][col]) > Math.abs(aug[maxRow][col])) maxRow = row;
+        }
+        [aug[col], aug[maxRow]] = [aug[maxRow], aug[col]];
+        const pivot = aug[col][col];
+        if (Math.abs(pivot) < 1e-12) continue;
+        for (let j = col; j <= k; j++) aug[col][j] /= pivot;
+        for (let row = 0; row < k; row++) {
+            if (row === col) continue;
+            const factor = aug[row][col];
+            for (let j = col; j <= k; j++) aug[row][j] -= factor * aug[col][j];
+        }
+    }
+    const coeffs = aug.map(row => row[k]);
+    return { coeffs, xMin, xMax };
+}
+
+/** Evaluate polynomial at x given coefficients [a0, a1, a2, ...] */
+function polyEval(coeffs: number[], x: number): number {
+    let result = 0, xp = 1;
+    for (const c of coeffs) { result += c * xp; xp *= x; }
+    return result;
+}
+
+/** Generate regression curve points for a given method. */
+function regressionCurvePoints(
+    data: number[][],
+    method: string,
+    order: number,
+    numPoints: number = 50,
+): number[][] {
+    if (data.length === 0) return [];
+    if (method === 'linear' || !method) {
+        const reg = linearRegression(data);
+        return [[reg.xMin, reg.slope * reg.xMin + reg.intercept],
+                [reg.xMax, reg.slope * reg.xMax + reg.intercept]];
+    }
+    // For non-linear methods, transform data, fit linear, then transform back
+    if (method === 'log') {
+        // y = a + b * ln(x)
+        const filtered = data.filter(([x]) => x > 0);
+        if (filtered.length < 2) return [];
+        const logData = filtered.map(([x, y]) => [Math.log(x), y]);
+        const reg = linearRegression(logData);
+        let xMin = Infinity, xMax = -Infinity;
+        for (const [x] of filtered) { if (x < xMin) xMin = x; if (x > xMax) xMax = x; }
+        const pts: number[][] = [];
+        for (let i = 0; i < numPoints; i++) {
+            const x = xMin + (xMax - xMin) * i / (numPoints - 1);
+            pts.push([x, reg.intercept + reg.slope * Math.log(x)]);
+        }
+        return pts;
+    }
+    if (method === 'exp') {
+        // ln(y) = a + b*x  →  y = exp(a) * exp(b*x)
+        const filtered = data.filter(([, y]) => y > 0);
+        if (filtered.length < 2) return [];
+        const logData = filtered.map(([x, y]) => [x, Math.log(y)]);
+        const reg = linearRegression(logData);
+        let xMin = Infinity, xMax = -Infinity;
+        for (const [x] of filtered) { if (x < xMin) xMin = x; if (x > xMax) xMax = x; }
+        const pts: number[][] = [];
+        for (let i = 0; i < numPoints; i++) {
+            const x = xMin + (xMax - xMin) * i / (numPoints - 1);
+            pts.push([x, Math.exp(reg.intercept + reg.slope * x)]);
+        }
+        return pts;
+    }
+    if (method === 'pow') {
+        // ln(y) = a + b*ln(x)  →  y = exp(a) * x^b
+        const filtered = data.filter(([x, y]) => x > 0 && y > 0);
+        if (filtered.length < 2) return [];
+        const logData = filtered.map(([x, y]) => [Math.log(x), Math.log(y)]);
+        const reg = linearRegression(logData);
+        let xMin = Infinity, xMax = -Infinity;
+        for (const [x] of filtered) { if (x < xMin) xMin = x; if (x > xMax) xMax = x; }
+        const pts: number[][] = [];
+        for (let i = 0; i < numPoints; i++) {
+            const x = xMin + (xMax - xMin) * i / (numPoints - 1);
+            pts.push([x, Math.exp(reg.intercept) * Math.pow(x, reg.slope)]);
+        }
+        return pts;
+    }
+    if (method === 'quad') {
+        const reg = polyRegression(data, 2);
+        const pts: number[][] = [];
+        for (let i = 0; i < numPoints; i++) {
+            const x = reg.xMin + (reg.xMax - reg.xMin) * i / (numPoints - 1);
+            pts.push([x, polyEval(reg.coeffs, x)]);
+        }
+        return pts;
+    }
+    if (method === 'poly') {
+        const reg = polyRegression(data, order);
+        const pts: number[][] = [];
+        for (let i = 0; i < numPoints; i++) {
+            const x = reg.xMin + (reg.xMax - reg.xMin) * i / (numPoints - 1);
+            pts.push([x, polyEval(reg.coeffs, x)]);
+        }
+        return pts;
+    }
+    // Fallback to linear
+    const reg = linearRegression(data);
+    return [[reg.xMin, reg.slope * reg.xMin + reg.intercept],
+            [reg.xMax, reg.slope * reg.xMax + reg.intercept]];
+}
+
 /**
- * Linear Regression — scatter + trend line (mirror vegalite/templates/scatter.ts linearRegressionDef).
+ * Regression — scatter + trend line (mirror vegalite/templates/scatter.ts regressionDef).
  */
-export const ecLinearRegressionDef: ChartTemplateDef = {
-    chart: 'Linear Regression',
+export const ecRegressionDef: ChartTemplateDef = {
+    chart: 'Regression',
     template: { mark: 'circle', encoding: {} },
     channels: ['x', 'y', 'size', 'color', 'column', 'row'],
     markCognitiveChannel: 'position',
@@ -625,6 +759,9 @@ export const ecLinearRegressionDef: ChartTemplateDef = {
         const colorField = channelSemantics.color?.field;
 
         if (!xField || !yField) return;
+
+        const method = chartProperties?.regressionMethod ?? 'linear';
+        const polyOrder = chartProperties?.polyOrder ?? 3;
 
         const option: any = {
             tooltip: { trigger: 'item' },
@@ -645,8 +782,7 @@ export const ecLinearRegressionDef: ChartTemplateDef = {
             let colorIdx = 0;
             for (const [name, rows] of groups) {
                 const data = rows.map((r: any) => [r[xField], r[yField]]);
-                const reg = linearRegression(data);
-                const lineData = [[reg.xMin, reg.slope * reg.xMin + reg.intercept], [reg.xMax, reg.slope * reg.xMax + reg.intercept]];
+                const lineData = regressionCurvePoints(data, method, polyOrder);
                 option.series.push({
                     name,
                     type: 'scatter',
@@ -658,20 +794,21 @@ export const ecLinearRegressionDef: ChartTemplateDef = {
                     type: 'line',
                     data: lineData,
                     showSymbol: false,
+                    smooth: method !== 'linear',
                     lineStyle: { color: DEFAULT_COLORS[colorIdx % DEFAULT_COLORS.length], width: 2 },
                 });
                 colorIdx++;
             }
         } else {
             const data = table.map((r: any) => [r[xField], r[yField]]);
-            const reg = linearRegression(data);
-            const lineData = [[reg.xMin, reg.slope * reg.xMin + reg.intercept], [reg.xMax, reg.slope * reg.xMax + reg.intercept]];
+            const lineData = regressionCurvePoints(data, method, polyOrder);
             option.series.push({ type: 'scatter', data, itemStyle: { opacity } });
             option.series.push({
                 name: 'Trend',
                 type: 'line',
                 data: lineData,
                 showSymbol: false,
+                smooth: method !== 'linear',
                 lineStyle: { color: '#ee6666', width: 2 },
             });
         }
@@ -689,4 +826,22 @@ export const ecLinearRegressionDef: ChartTemplateDef = {
         delete spec.mark;
         delete spec.encoding;
     },
+    properties: [
+        {
+            key: 'regressionMethod', label: 'Method', type: 'discrete',
+            options: [
+                { value: 'linear', label: 'Linear' },
+                { value: 'log',    label: 'Logarithmic' },
+                { value: 'exp',    label: 'Exponential' },
+                { value: 'pow',    label: 'Power' },
+                { value: 'quad',   label: 'Quadratic' },
+                { value: 'poly',   label: 'Polynomial' },
+            ],
+            defaultValue: 'linear',
+        } as ChartPropertyDef,
+        {
+            key: 'polyOrder', label: 'Poly Order', type: 'continuous',
+            min: 2, max: 10, step: 1, defaultValue: 3,
+        } as ChartPropertyDef,
+    ],
 };

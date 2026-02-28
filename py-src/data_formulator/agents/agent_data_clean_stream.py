@@ -183,7 +183,8 @@ class DataCleanAgentStream(object):
             'content': content
         }
 
-        logger.info(user_prompt)
+        logger.debug(user_prompt)
+        logger.info(f"[DataCleanAgent] run start (streaming)")
 
         system_message = {
             'role': 'system',
@@ -211,8 +212,8 @@ class DataCleanAgentStream(object):
                     yield delta.content
         
         # Parse the final content the same way as the non-streaming version
-        logger.info("\n=== Python Data Clean Agent Stream ===>\n")
-        logger.info(accumulated_content + "\n")
+        logger.debug("\n=== Python Data Clean Agent Stream ===>\n")
+        logger.debug(accumulated_content + "\n")
 
         # Parse table sections from the accumulated content
         tables = parse_table_sections(accumulated_content)
@@ -228,6 +229,7 @@ class DataCleanAgentStream(object):
 
         result['dialog'] = [*messages, {"role": "assistant", "content": accumulated_content}]
         result['agent'] = 'DataCleanAgentStream'
+        logger.info(f"[DataCleanAgent] run done | status={result.get('status', '?')}")
         
         # add a newline to the beginning of the result to separate it from the previous result     
         yield '\n' + json.dumps(result) + '\n'

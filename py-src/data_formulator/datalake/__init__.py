@@ -41,6 +41,8 @@ from data_formulator.datalake.workspace import (
     get_default_workspace_root,
 )
 from data_formulator.datalake.azure_blob_workspace import AzureBlobWorkspace
+from data_formulator.datalake.cached_azure_blob_workspace import CachedAzureBlobWorkspace
+from data_formulator.datalake.cache_manager import GlobalCacheManager
 
 # Metadata types and operations
 from data_formulator.datalake.metadata import (
@@ -75,6 +77,8 @@ __all__ = [
     "Workspace",
     "WorkspaceWithTempData",
     "AzureBlobWorkspace",
+    "CachedAzureBlobWorkspace",
+    "GlobalCacheManager",
     "get_data_formulator_home",
     "get_default_workspace_root",
     # Metadata

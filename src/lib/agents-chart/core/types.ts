@@ -19,14 +19,14 @@ import type { SemanticAnnotation, FormatSpec, DomainConstraint, TickConstraint }
 // ---------------------------------------------------------------------------
 
 export const channels = [
-    "x", "y", "x2", "y2", "id", "color", "opacity", "size", "shape", "column",
+    "x", "y", "x2", "y2", "id", "color", "opacity", "size", "shape", "strokeDash", "column",
     "row", "latitude", "longitude", "radius", "detail", "group",
     "open", "high", "low", "close", "angle",
 ] as const;
 
 export const channelGroups: Record<string, string[]> = {
     "": ["x", "x2", "y", "y2", "latitude", "longitude", "id", "radius", "detail"],
-    "legends": ["color", "group", "size", "shape", "text", "opacity"],
+    "legends": ["color", "group", "size", "shape", "text", "opacity", "strokeDash"],
     "price": ["open", "high", "low", "close"],
     "facets": ["column", "row"],
 };

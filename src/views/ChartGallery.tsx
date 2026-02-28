@@ -157,27 +157,30 @@ const VegaChart: React.FC<{ testCase: TestCase }> = React.memo(({ testCase }) =>
         <Paper
             elevation={1}
             sx={{
-                p: 2, mb: 2, maxWidth: 520,
+                p: 2, mb: 2, width: 'fit-content',
                 border: error ? '2px solid #f44336' : '1px solid #e0e0e0',
             }}
         >
-            <Typography variant="subtitle2" fontWeight={600} gutterBottom>
-                {testCase.title}
-            </Typography>
-            <Typography variant="caption" color="text.secondary" display="block" mb={1} sx={{ wordBreak: 'break-word' }}>
-                {testCase.description}
-            </Typography>
-            <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', mb: 1 }}>
-                {testCase.tags.map(tag => (
-                    <Chip key={tag} label={tag} size="small" variant="outlined"
-                        sx={{ fontSize: 10, height: 20 }} />
-                ))}
-            </Box>
-            {inferredSize && (
-                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5, fontSize: 10 }}>
-                    Inferred size: {inferredSize}
+            {/* Text block: width:0 + minWidth:100% prevents text from expanding the card beyond the chart width */}
+            <Box sx={{ width: 0, minWidth: '100%', overflow: 'hidden' }}>
+                <Typography variant="subtitle2" fontWeight={600} gutterBottom>
+                    {testCase.title}
                 </Typography>
-            )}
+                <Typography variant="caption" color="text.secondary" display="block" mb={1} sx={{ wordBreak: 'break-word' }}>
+                    {testCase.description}
+                </Typography>
+                <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', mb: 1 }}>
+                    {testCase.tags.map(tag => (
+                        <Chip key={tag} label={tag} size="small" variant="outlined"
+                            sx={{ fontSize: 10, height: 20 }} />
+                    ))}
+                </Box>
+                {inferredSize && (
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5, fontSize: 10 }}>
+                        Inferred size: {inferredSize}
+                    </Typography>
+                )}
+            </Box>
             {error ? (
                 <Typography color="error" variant="body2" sx={{ whiteSpace: 'pre-wrap', fontSize: 11 }}>
                     {error}
@@ -186,7 +189,7 @@ const VegaChart: React.FC<{ testCase: TestCase }> = React.memo(({ testCase }) =>
                 <Box ref={containerRef} sx={{ minHeight: 200 }} />
             )}
             {warnings.length > 0 && (
-                <Box sx={{ mt: 1, p: 1, bgcolor: '#fff3e0', borderLeft: '3px solid #ff9800' }}>
+                <Box sx={{ mt: 1, p: 1, bgcolor: '#fff3e0', borderLeft: '3px solid #ff9800', width: 0, minWidth: '100%' }}>
                     <Typography variant="body2" color="warning.dark" sx={{ fontSize: 11, fontWeight: 600, mb: 0.5 }}>
                         Warning:
                     </Typography>
@@ -198,7 +201,7 @@ const VegaChart: React.FC<{ testCase: TestCase }> = React.memo(({ testCase }) =>
                 </Box>
             )}
             {specOptions && (
-                <details style={{ marginTop: 8 }}>
+                <details style={{ marginTop: 8, width: 0, minWidth: '100%', overflow: 'hidden' }}>
                     <summary style={{ cursor: 'pointer', fontSize: 11, color: '#888' }}>
                         Spec
                     </summary>
