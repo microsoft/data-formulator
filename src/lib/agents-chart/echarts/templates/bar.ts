@@ -77,6 +77,17 @@ function buildCategoryGroupCounts(
     );
 }
 
+/** True if all labels parse as numbers → horizontal axis labels; otherwise vertical (for heatmap). */
+function areHeatmapCategoriesNumeric(cats: string[]): boolean {
+    if (cats.length === 0) return true;
+    return cats.every((c) => {
+        const s = String(c).trim();
+        if (s === '') return false;
+        const n = Number(s);
+        return !isNaN(n) && isFinite(n);
+    });
+}
+
 // ─── Bar Chart ──────────────────────────────────────────────────────────────
 
 export const ecBarChartDef: ChartTemplateDef = {
@@ -126,25 +137,32 @@ export const ecBarChartDef: ChartTemplateDef = {
             if (maxVal === -Infinity) maxVal = 1;
 
             const option: any = {
-                tooltip: {
-                    position: 'top',
-                    formatter: (params: any) => {
-                        const d = params.data;
-                        return `${categories[d[0]]}, ${groups[d[1]]}: ${d[2]}`;
-                    },
+                tooltip: { position: 'top' },
+                _encodingTooltip: {
+                    trigger: 'item',
+                    parts: [
+                        { from: 'data', index: 0, label: catField, format: 'category', categoryNames: categories },
+                        { from: 'data', index: 1, label: valField, format: 'category', categoryNames: groups },
+                        { from: 'data', index: 2, label: 'Count', format: 'number' },
+                    ],
                 },
                 xAxis: {
                     type: 'category',
                     data: categories,
                     name: catField,
                     splitArea: { show: true },
-                    axisLabel: { rotate: 90 },
+                    axisTick: { show: true, alignWithLabel: true },
+                    axisLabel: {
+                        rotate: areHeatmapCategoriesNumeric(categories) ? 0 : 90,
+                    },
                 },
                 yAxis: {
                     type: 'category',
                     data: groups,
                     name: valField,
                     splitArea: { show: true },
+                    axisTick: { show: true, alignWithLabel: true },
+                    axisLabel: { rotate: 0 },
                 },
                 visualMap: {
                     min: minVal,

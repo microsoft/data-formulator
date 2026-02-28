@@ -12,10 +12,21 @@
  */
 
 import { ChartTemplateDef } from '../../core/types';
-import { extractCategories, groupBy, DEFAULT_COLORS } from './utils';
+import { extractCategories, groupBy, DEFAULT_COLORS, getCategoryOrder } from './utils';
 import { detectBandedAxisForceDiscrete } from '../../vegalite/templates/utils';
 
 const isDiscrete = (type: string | undefined) => type === 'nominal' || type === 'ordinal';
+
+/** True if all category labels parse as numbers → horizontal; otherwise vertical (x-axis only, same as line chart). */
+function areCategoriesNumeric(cats: string[]): boolean {
+    if (cats.length === 0) return true;
+    return cats.every((c) => {
+        const s = String(c).trim();
+        if (s === '') return false;
+        const n = Number(s);
+        return !isNaN(n) && isFinite(n);
+    });
+}
 
 /** Compute the five-number summary for an array of values. */
 function fiveNumberSummary(values: number[]): [number, number, number, number, number] {
@@ -76,6 +87,9 @@ export const ecBoxplotDef: ChartTemplateDef = {
         const { channelSemantics, table } = ctx;
         const xCS = channelSemantics.x;
         const yCS = channelSemantics.y;
+        const colorField = channelSemantics.color?.field;
+        const colorType = channelSemantics.color?.type;
+        const colorIsDiscrete = colorField && isDiscrete(colorType);
 
         if (!xCS?.field || !yCS?.field) return;
 
@@ -96,27 +110,12 @@ export const ecBoxplotDef: ChartTemplateDef = {
         const catCS = channelSemantics[catAxis];
         const categories = extractCategories(table, catField, catCS?.ordinalSortOrder);
 
-        // Group data by category
-        const catGroups = groupBy(table, catField);
-
-        // Compute boxplot data per category
-        const boxData: [number, number, number, number, number][] = [];
-        const outlierData: [number, number][] = [];
-
-        for (let i = 0; i < categories.length; i++) {
-            const cat = categories[i];
-            const rows = catGroups.get(cat) || [];
-            const values = rows.map(r => Number(r[valField])).filter(v => isFinite(v));
-            boxData.push(fiveNumberSummary(values));
-
-            const outliers = findOutliers(values);
-            for (const o of outliers) {
-                outlierData.push([i, o]);
-            }
-        }
-
+        const colorPalette = (ctx.resolvedEncodings as any)?.color?.colorPalette ?? DEFAULT_COLORS;
         const isHorizontal = catAxis === 'y';
 
+        const catAxisLabel = {
+            rotate: isHorizontal ? 0 : (areCategoriesNumeric(categories) ? 0 : 90),
+        };
         const option: any = {
             tooltip: { trigger: 'item' },
             [isHorizontal ? 'yAxis' : 'xAxis']: {
@@ -124,31 +123,93 @@ export const ecBoxplotDef: ChartTemplateDef = {
                 data: categories,
                 name: catField,
                 boundaryGap: true,
+                axisTick: { show: true, alignWithLabel: true },
+                axisLabel: catAxisLabel,
             },
             [isHorizontal ? 'xAxis' : 'yAxis']: {
                 type: 'value',
                 name: valField,
+                axisLabel: { rotate: 0 },
             },
-            series: [
-                {
-                    type: 'boxplot',
-                    data: boxData,
-                    itemStyle: {
-                        borderColor: '#5470c6',
-                    },
-                },
-            ],
+            series: [],
         };
 
-        // Add outlier scatter series if there are outliers
-        if (outlierData.length > 0) {
+        if (colorIsDiscrete && colorField) {
+            // Grouped boxplot: one series per color value (e.g. Male, Female)
+            const colorCategories = extractCategories(table, colorField, getCategoryOrder(ctx, 'color'));
+            const catGroups = groupBy(table, catField);
+
+            for (let cIdx = 0; cIdx < colorCategories.length; cIdx++) {
+                const colorName = colorCategories[cIdx];
+                const boxData: [number, number, number, number, number][] = [];
+                const outlierData: [number, number][] = [];
+
+                for (let i = 0; i < categories.length; i++) {
+                    const cat = categories[i];
+                    const rows = (catGroups.get(cat) || []).filter(
+                        (r: any) => String(r[colorField] ?? '') === colorName,
+                    );
+                    const values = rows.map((r: any) => Number(r[valField])).filter(v => isFinite(v));
+                    boxData.push(fiveNumberSummary(values));
+
+                    const outliers = findOutliers(values);
+                    for (const o of outliers) {
+                        outlierData.push([i, o]);
+                    }
+                }
+
+                const borderColor = colorPalette[cIdx % colorPalette.length];
+                option.series.push({
+                    name: colorName,
+                    type: 'boxplot',
+                    data: boxData,
+                    itemStyle: { borderColor },
+                });
+                if (outlierData.length > 0) {
+                    option.series.push({
+                        name: colorName + ' (outliers)',
+                        type: 'scatter',
+                        data: outlierData,
+                        symbolSize: 4,
+                        itemStyle: { color: borderColor },
+                    });
+                }
+            }
+
+            option.legend = { data: colorCategories };
+            option._legendTitle = colorField;
+        } else {
+            // Single boxplot series (no color grouping)
+            const catGroups = groupBy(table, catField);
+            const boxData: [number, number, number, number, number][] = [];
+            const outlierData: [number, number][] = [];
+
+            for (let i = 0; i < categories.length; i++) {
+                const cat = categories[i];
+                const rows = catGroups.get(cat) || [];
+                const values = rows.map((r: any) => Number(r[valField])).filter((v: number) => isFinite(v));
+                boxData.push(fiveNumberSummary(values));
+
+                const outliers = findOutliers(values);
+                for (const o of outliers) {
+                    outlierData.push([i, o]);
+                }
+            }
+
             option.series.push({
-                name: 'Outliers',
-                type: 'scatter',
-                data: outlierData,
-                symbolSize: 4,
-                itemStyle: { color: '#ee6666' },
+                type: 'boxplot',
+                data: boxData,
+                itemStyle: { borderColor: '#5470c6' },
             });
+            if (outlierData.length > 0) {
+                option.series.push({
+                    name: 'Outliers',
+                    type: 'scatter',
+                    data: outlierData,
+                    symbolSize: 4,
+                    itemStyle: { color: '#ee6666' },
+                });
+            }
         }
 
         Object.assign(spec, option);

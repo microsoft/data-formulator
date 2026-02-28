@@ -208,8 +208,23 @@ export function ecApplyLayoutToSpec(
                 const rightMarginPx = option._legendWidth + LEGEND_GAP + CANVAS_BUFFER;
                 const hasYTitle = !!option.yAxis?.name;
                 const gridLeft = (hasYTitle ? 70 : 50) + CANVAS_BUFFER;
-                // Use same effective width as later (plotWidth + grid.left + grid.right) so legend aligns with grid
-                const plotW = layout?.subplotWidth ?? canvasSize?.width ?? 400;
+                // Use same effective plot width as canvas block (grouped bar/boxplot widen the plot) so legend does not overlap chart
+                let plotW = layout?.subplotWidth ?? canvasSize?.width ?? 400;
+                const xIsDiscreteForLegend = layout.xNominalCount > 0 || layout.xContinuousAsDiscrete > 0;
+                if (xIsDiscreteForLegend) {
+                    let xItemCount = layout.xNominalCount || layout.xContinuousAsDiscrete || 0;
+                    if (layout.xStepUnit === 'group' && option.series && Array.isArray(option.series) && layout.xNominalCount > 0) {
+                        const barSeriesCount = option.series.filter((s: any) => s.type === 'bar').length || option.series.length;
+                        if (barSeriesCount > 0) {
+                            xItemCount = Math.max(1, Math.round(layout.xNominalCount / barSeriesCount));
+                        }
+                    }
+                    plotW = xItemCount > 0 ? layout.xStep * xItemCount : plotW;
+                    const boxplotSeriesCount = option.series?.filter((s: any) => s.type === 'boxplot').length || 0;
+                    if (boxplotSeriesCount > 1) {
+                        plotW = plotW * boxplotSeriesCount;
+                    }
+                }
                 const effectiveChartWidth = plotW + gridLeft + rightMarginPx;
                 const legendLeftPx = Math.max(0, effectiveChartWidth - rightMarginPx);
                 option.legend = {
@@ -326,6 +341,11 @@ export function ecApplyLayoutToSpec(
                 }
             }
             plotWidth = xItemCount > 0 ? layout.xStep * xItemCount : (layout.subplotWidth || canvasSize.width);
+            // Grouped boxplot: multiple boxplot series (e.g. by color) need more horizontal space so boxes don't overlap (same idea as grouped bar).
+            const boxplotSeriesCount = option.series?.filter((s: any) => s.type === 'boxplot').length || 0;
+            if (boxplotSeriesCount > 1) {
+                plotWidth = plotWidth * boxplotSeriesCount;
+            }
         } else {
             // Continuous axis — subplotWidth is already correct
             plotWidth = layout.subplotWidth || canvasSize.width;
@@ -387,8 +407,15 @@ export function ecApplyLayoutToSpec(
     if (option.xAxis && layout.xLabel) {
         if (!option.xAxis.axisLabel) option.xAxis.axisLabel = {};
 
-        // ECharts uses degrees (positive = counter-clockwise). Don't override category axis rotate (template set it for scatter).
-        if (layout.xLabel.labelAngle && layout.xLabel.labelAngle !== 0 && option.xAxis.type !== 'category') {
+        // Category axis: templates (line, heatmap, bar) set rotate by label type (numeric vs non-numeric). Preserve it.
+        // Time axis: line chart sets rotate 90 for date labels; preserve that too.
+        const templateRotate = option.xAxis.axisLabel.rotate;
+        const isCategoryX = option.xAxis.type === 'category';
+        const isTimeX = option.xAxis.type === 'time';
+        const preserveTemplateRotate =
+            (isCategoryX && (templateRotate === 0 || templateRotate === 90)) ||
+            (isTimeX && templateRotate === 90);
+        if (layout.xLabel.labelAngle != null && layout.xLabel.labelAngle !== 0 && !preserveTemplateRotate) {
             option.xAxis.axisLabel.rotate = -layout.xLabel.labelAngle;  // VL convention → EC convention
         }
 
@@ -467,6 +494,15 @@ export function ecApplyLayoutToSpec(
                 const fmt = cs.temporalFormat;
                 axisObj.axisLabel.formatter = (val: number) => formatTimestamp(val, fmt);
             }
+        }
+    }
+
+    // ── Tooltip category as temporal (line/area/bar axis tooltip) ─────────
+    const enc = option._encodingTooltip;
+    if (enc?.trigger === 'axis' && enc.categoryLabel != null && option.xAxis?.type === 'time') {
+        const xFmt = channelSemantics?.x?.temporalFormat;
+        if (xFmt) {
+            option._encodingTooltip = { ...enc, categoryFormat: 'temporal', temporalFormat: xFmt };
         }
     }
 
@@ -579,15 +615,26 @@ function buildEncodingTooltipFormatter(option: any): ((params: any) => string) |
     if (enc.trigger === 'axis' && enc.categoryLabel != null) {
         const categoryLabel = enc.categoryLabel;
         const valueLabel = enc.valueLabel ?? 'Value';
+        const categoryFormat = enc.categoryFormat;
+        const temporalFormat = enc.temporalFormat ?? '%b %d, %Y';
         return (params: any) => {
             const list = Array.isArray(params) ? params : [params];
             if (list.length === 0) return '';
             const p = list[0];
-            const cat = p.axisValue ?? p.name ?? '';
+            let cat: string;
+            const rawCat = p.axisValue ?? p.name ?? '';
+            if (categoryFormat === 'temporal' && (rawCat !== '' && rawCat != null)) {
+                const ts = typeof rawCat === 'number' ? rawCat : new Date(rawCat as string).getTime();
+                cat = Number.isFinite(ts) ? formatTimestamp(ts, temporalFormat) : String(rawCat);
+            } else {
+                cat = String(rawCat);
+            }
             const parts = [`${categoryLabel}: ${cat}`];
             for (const item of list) {
                 const name = item.seriesName ?? valueLabel;
-                const val = item.value != null ? item.value : (Array.isArray(item.data) ? item.data[item.dataIndex] : item.data);
+                let val = item.value != null ? item.value : (Array.isArray(item.data) ? item.data[item.dataIndex] : item.data);
+                // Line/area series data is [x, y]; ECharts may pass the full point — use y (index 1) for value.
+                if (Array.isArray(val) && val.length >= 2) val = val[1];
                 parts.push(`${name}: ${fmtNumForTooltip(val)}`);
             }
             return parts.join('<br/>');
@@ -617,7 +664,8 @@ function buildEncodingTooltipFormatter(option: any): ((params: any) => string) |
             if (val == null && p.from !== 'series' && p.from !== 'name') continue;
             let str: string;
             if (p.format === 'temporal') {
-                str = formatTimestamp(Number(val), p.temporalFormat ?? '%b %d, %Y');
+                const ts = typeof val === 'number' ? val : new Date(val as string).getTime();
+                str = Number.isFinite(ts) ? formatTimestamp(ts, p.temporalFormat ?? '%b %d, %Y') : String(val ?? '');
             } else if (p.format === 'category' && p.categoryNames) {
                 const i = Number(val);
                 str = Number.isInteger(i) && p.categoryNames[i] != null ? p.categoryNames[i] : String(val ?? '');
@@ -653,9 +701,10 @@ export function ecApplyTooltips(option: any): void {
         const hasScatter = option.series?.some((s: any) => s.type === 'scatter');
         const hasPie = option.series?.some((s: any) => s.type === 'pie');
         const hasRadar = option.series?.some((s: any) => s.type === 'radar');
+        const hasHeatmap = option.series?.some((s: any) => s.type === 'heatmap');
         const hasCandlestick = option.series?.some((s: any) => s.type === 'candlestick');
         const hasThemeRiver = option.series?.some((s: any) => s.type === 'themeRiver');
-        option.tooltip.trigger = (hasScatter || hasPie || hasRadar || hasThemeRiver)
+        option.tooltip.trigger = (hasScatter || hasPie || hasRadar || hasHeatmap || hasThemeRiver)
             ? 'item'
             : 'axis';
         // Candlestick charts benefit from crosshair pointer

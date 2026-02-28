@@ -15,6 +15,17 @@ import { extractCategories, DEFAULT_COLORS } from './utils';
 
 const isDiscrete = (type: string | undefined) => type === 'nominal' || type === 'ordinal';
 
+/** True if all category labels parse as numbers → use horizontal labels; otherwise vertical. */
+function areCategoriesNumeric(cats: string[]): boolean {
+    if (cats.length === 0) return true;
+    return cats.every((c) => {
+        const s = String(c).trim();
+        if (s === '') return false;
+        const n = Number(s);
+        return !isNaN(n) && isFinite(n);
+    });
+}
+
 /** Map VL-style scheme names to ECharts built-in color ranges. */
 const SCHEME_COLORS: Record<string, string[]> = {
     viridis:     ['#440154', '#3b528b', '#21918c', '#5ec962', '#fde725'],
@@ -95,24 +106,32 @@ export const ecHeatmapDef: ChartTemplateDef = {
         const schemeColors = SCHEME_COLORS[schemeName] || SCHEME_COLORS.viridis;
 
         const option: any = {
-            tooltip: {
-                position: 'top',
-                formatter: (params: any) => {
-                    const d = params.data;
-                    return `${xCategories[d[0]]}, ${yCategories[d[1]]}: ${d[2]}`;
-                },
+            tooltip: { position: 'top' },
+            _encodingTooltip: {
+                trigger: 'item',
+                parts: [
+                    { from: 'data', index: 0, label: xField, format: 'category', categoryNames: xCategories },
+                    { from: 'data', index: 1, label: yField, format: 'category', categoryNames: yCategories },
+                    { from: 'data', index: 2, label: colorField ?? 'Value', format: 'number' },
+                ],
             },
             xAxis: {
                 type: 'category',
                 data: xCategories,
                 name: xField,
                 splitArea: { show: true },
+                axisTick: { show: true, alignWithLabel: true },
+                axisLabel: {
+                    rotate: areCategoriesNumeric(xCategories) ? 0 : 90,
+                },
             },
             yAxis: {
                 type: 'category',
                 data: yCategories,
                 name: yField,
                 splitArea: { show: true },
+                axisTick: { show: true, alignWithLabel: true },
+                axisLabel: { rotate: 0 },
             },
             visualMap: {
                 min: minVal,

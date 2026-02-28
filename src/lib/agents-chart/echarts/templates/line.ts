@@ -14,6 +14,17 @@ import { extractCategories, groupBy, DEFAULT_COLORS, getCategoryOrder } from './
 
 const isDiscrete = (type: string | undefined) => type === 'nominal' || type === 'ordinal';
 
+/** True if all category labels parse as numbers → horizontal; otherwise vertical (x-axis only). */
+function areCategoriesNumeric(cats: string[]): boolean {
+    if (cats.length === 0) return true;
+    return cats.every((c) => {
+        const s = String(c).trim();
+        if (s === '') return false;
+        const n = Number(s);
+        return !isNaN(n) && isFinite(n);
+    });
+}
+
 const interpolateMap: Record<string, string> = {
     'linear': 'linear',       // default
     'monotone': 'monotone',   // ECharts smooth: true approximates this
@@ -38,6 +49,7 @@ export const ecLineChartDef: ChartTemplateDef = {
         const xCS = channelSemantics.x;
         const yCS = channelSemantics.y;
         const colorField = channelSemantics.color?.field;
+        const colorType = channelSemantics.color?.type;
 
         if (!xCS?.field || !yCS?.field) return;
         const xField = xCS.field;
@@ -46,30 +58,66 @@ export const ecLineChartDef: ChartTemplateDef = {
         // Determine x-axis type
         const xIsDiscrete = isDiscrete(xCS.type);
         const xIsTemporal = xCS.type === 'temporal';
+        const yIsDiscrete = isDiscrete(yCS.type);
+        const isContinuousColor = !!colorField && (colorType === 'quantitative' || colorType === 'temporal');
 
         // Build x-axis categories for discrete/temporal axes
         const categories = xIsDiscrete ? extractCategories(table, xField, getCategoryOrder(ctx, 'x')) : undefined;
+        const yCategories = yIsDiscrete ? extractCategories(table, yField, getCategoryOrder(ctx, 'y')) : undefined;
 
         const option: any = {
             tooltip: {
                 trigger: 'axis',
             },
-            xAxis: {
-                type: xIsDiscrete ? 'category' : xIsTemporal ? 'time' : 'value',
-                name: xField,
-                nameLocation: 'middle',
-                nameGap: 30,
-                ...(categories ? { data: categories } : {}),
-            },
-            yAxis: {
-                type: 'value',
-                name: yField,
-                nameLocation: 'middle',
-                nameGap: 40,
-            },
+            xAxis: (() => {
+                const type = xIsDiscrete ? 'category' : xIsTemporal ? 'time' : 'value';
+                const base: any = {
+                    type,
+                    name: xField,
+                    nameLocation: 'middle',
+                    nameGap: 30,
+                    ...(categories ? { data: categories } : {}),
+                };
+                if (xIsDiscrete && categories) {
+                    base.axisTick = { show: true, alignWithLabel: true };
+                    base.axisLabel = { rotate: areCategoriesNumeric(categories) ? 0 : 90 };
+                } else if (xIsTemporal) {
+                    base.axisTick = { show: true, alignWithLabel: true };
+                    base.axisLabel = { rotate: 90 };
+                }
+                return base;
+            })(),
+            yAxis: yIsDiscrete && yCategories
+                ? {
+                    type: 'category',
+                    data: yCategories,
+                    name: yField,
+                    nameLocation: 'middle',
+                    nameGap: 40,
+                    axisTick: { show: true, alignWithLabel: true },
+                    axisLabel: { rotate: 0 },
+                }
+                : {
+                    type: 'value',
+                    name: yField,
+                    nameLocation: 'middle',
+                    nameGap: 40,
+                    axisLabel: { rotate: 0 },
+                },
             series: [],
         };
-        option._encodingTooltip = { trigger: 'axis', categoryLabel: xField, valueLabel: yField };
+        // Default: axis tooltip for standard line charts.
+        // When color is continuous (Quantity/Date), we switch to item tooltip to support per-point color values.
+        option._encodingTooltip = isContinuousColor
+            ? {
+                trigger: 'item',
+                parts: [
+                    { from: 'data', index: 0, label: xField, format: 'number' },
+                    { from: 'data', index: 1, label: yField, format: 'number' },
+                    { from: 'data', index: 2, label: colorField, format: 'number' },
+                ],
+            }
+            : { trigger: 'axis', categoryLabel: xField, valueLabel: yField };
 
         // Apply zero-baseline
         // ECharts: scale=true means "data-fit", scale=false means "include zero"
@@ -86,22 +134,101 @@ export const ecLineChartDef: ChartTemplateDef = {
                    : interpolate === 'step-after' ? 'end'
                    : undefined;
 
-        if (colorField) {
+        if (isContinuousColor && colorField) {
+            // Continuous color (Quantity/Date): single line + colored points with a continuous visualMap.
+            // This mirrors Vega-Lite's common pattern: gray line + colored points.
+            const sorted = [...table].sort((a: any, b: any) => {
+                const ax = a[xField];
+                const bx = b[xField];
+                if (xIsTemporal) return new Date(ax).getTime() - new Date(bx).getTime();
+                const na = Number(ax);
+                const nb = Number(bx);
+                if (!isNaN(na) && !isNaN(nb)) return na - nb;
+                return String(ax).localeCompare(String(bx));
+            });
+
+            const pointData = sorted.map((r: any) => [r[xField], r[yField], r[colorField]]);
+            const lineData = sorted.map((r: any) => [r[xField], r[yField]]);
+
+            // VisualMap domain
+            const nums = sorted
+                .map((r: any) => Number(r[colorField]))
+                .filter((v: number) => !isNaN(v) && isFinite(v));
+            const cMin = nums.length ? Math.min(...nums) : 0;
+            const cMax = nums.length ? Math.max(...nums) : 1;
+
+            option.visualMap = {
+                type: 'continuous',
+                min: cMin,
+                max: cMax,
+                dimension: 2, // [x, y, color]
+                orient: 'vertical',
+                right: 10,
+                top: 'center',
+                // Greens (matches VL example); can be overridden later via chartProperties if needed.
+                inRange: { color: ['#f7fcf5', '#74c476', '#00441b'] },
+                seriesIndex: 1, // apply to point series
+                name: colorField,
+                textStyle: { fontSize: 10 },
+                calculable: true,
+            };
+            option._visualMapWidth = 70;
+            option.graphic = [
+                ...(Array.isArray(option.graphic) ? option.graphic : (option.graphic ? [option.graphic] : [])),
+                {
+                    type: 'text' as const,
+                    right: 10,
+                    top: 4,
+                    z: 100,
+                    style: {
+                        text: colorField,
+                        fontSize: 11,
+                        fontWeight: 'bold',
+                        fill: '#333',
+                        textAlign: 'right',
+                    },
+                },
+            ];
+
+            option.series.push({
+                type: 'line',
+                data: lineData,
+                itemStyle: { color: '#cccccc' },
+                lineStyle: { color: '#cccccc' },
+                showSymbol: false,
+                symbol: 'none',
+                ...(smooth ? { smooth: true } : {}),
+                ...(step ? { step } : {}),
+            });
+            option.series.push({
+                type: 'scatter',
+                data: pointData,
+                symbol: 'circle',
+                symbolSize: 7,
+                itemStyle: { opacity: 1 },
+            });
+        } else if (colorField && isDiscrete(colorType)) {
             // Multi-series line chart
             const groups = groupBy(table, colorField);
             option.legend = { data: [...groups.keys()] };
 
             let colorIdx = 0;
             for (const [name, rows] of groups) {
-                const seriesData = xIsDiscrete
-                    ? buildCategoryAlignedData(rows, xField, yField, categories!)
-                    : rows.map(r => [r[xField], r[yField]]);
+                const seriesData =
+                    yIsDiscrete && yCategories
+                        ? buildCategoryAlignedXYData(rows, xField, yField, yCategories)
+                        : xIsDiscrete
+                            ? buildCategoryAlignedData(rows, xField, yField, categories!)
+                            : rows.map(r => [r[xField], r[yField]]);
 
                 const series: any = {
                     name,
                     type: 'line',
                     data: seriesData,
                     itemStyle: { color: DEFAULT_COLORS[colorIdx % DEFAULT_COLORS.length] },
+                    // Default line chart: don't draw point markers.
+                    showSymbol: false,
+                    symbol: 'none',
                 };
                 if (smooth) series.smooth = true;
                 if (step) series.step = step;
@@ -111,14 +238,23 @@ export const ecLineChartDef: ChartTemplateDef = {
             }
         } else {
             // Single series
-            const seriesData = xIsDiscrete
-                ? categories!.map(cat => {
-                    const row = table.find(r => String(r[xField]) === cat);
-                    return row ? row[yField] : null;
-                })
-                : table.map(r => [r[xField], r[yField]]);
+            const seriesData =
+                yIsDiscrete && yCategories
+                    ? buildCategoryAlignedXYData(table, xField, yField, yCategories)
+                    : xIsDiscrete
+                        ? categories!.map(cat => {
+                            const row = table.find(r => String(r[xField]) === cat);
+                            return row ? row[yField] : null;
+                        })
+                        : table.map(r => [r[xField], r[yField]]);
 
-            const series: any = { type: 'line', data: seriesData };
+            const series: any = {
+                type: 'line',
+                data: seriesData,
+                // Default line chart: don't draw point markers.
+                showSymbol: false,
+                symbol: 'none',
+            };
             if (smooth) series.smooth = true;
             if (step) series.step = step;
 
@@ -161,6 +297,28 @@ function buildCategoryAlignedData(
     return categories.map(cat => map.get(cat) ?? null);
 }
 
+/**
+ * For y-category axis line charts (x is numeric/time, y is discrete),
+ * align points by y category order and output [x, yCategory] pairs.
+ */
+function buildCategoryAlignedXYData(
+    rows: any[],
+    xField: string,
+    yField: string,
+    yCategories: string[],
+): Array<[any, string]> {
+    const map = new Map<string, any>();
+    for (const row of rows) {
+        const key = String(row[yField] ?? '');
+        if (!map.has(key)) {
+            map.set(key, row[xField]);
+        }
+    }
+    return yCategories
+        .filter((cat) => map.has(cat))
+        .map((cat) => [map.get(cat), cat] as [any, string]);
+}
+
 /** RANK_SEMANTIC_TYPES: used to detect rank axis for Bump Chart (mirror vegalite/templates/bump.ts). */
 const RANK_SEMANTIC_TYPES = new Set(['Rank', 'Index', 'Score', 'Rating', 'Level']);
 
@@ -191,18 +349,30 @@ export const ecDottedLineChartDef: ChartTemplateDef = {
 
         const option: any = {
             tooltip: { trigger: 'axis' },
-            xAxis: {
-                type: xIsDiscrete ? 'category' : xIsTemporal ? 'time' : 'value',
-                name: xField,
-                nameLocation: 'middle',
-                nameGap: 30,
-                ...(categories ? { data: categories } : {}),
-            },
+            xAxis: (() => {
+                const type = xIsDiscrete ? 'category' : xIsTemporal ? 'time' : 'value';
+                const base: any = {
+                    type,
+                    name: xField,
+                    nameLocation: 'middle',
+                    nameGap: 30,
+                    ...(categories ? { data: categories } : {}),
+                };
+                if (xIsDiscrete && categories) {
+                    base.axisTick = { show: true, alignWithLabel: true };
+                    base.axisLabel = { rotate: areCategoriesNumeric(categories) ? 0 : 90 };
+                } else if (xIsTemporal) {
+                    base.axisTick = { show: true, alignWithLabel: true };
+                    base.axisLabel = { rotate: 90 };
+                }
+                return base;
+            })(),
             yAxis: {
                 type: 'value',
                 name: yField,
                 nameLocation: 'middle',
                 nameGap: 40,
+                axisLabel: { rotate: 0 },
             },
             series: [],
         };
@@ -290,19 +460,28 @@ export const ecBumpChartDef: ChartTemplateDef = {
 
         const option: any = {
             tooltip: { trigger: 'axis' },
-            xAxis: {
-                type: xIsDiscrete ? 'category' : 'value',
-                name: xField,
-                nameLocation: 'middle',
-                nameGap: 30,
-                ...(categories ? { data: categories } : {}),
-            },
+            xAxis: (() => {
+                const type = xIsDiscrete ? 'category' : 'value';
+                const base: any = {
+                    type,
+                    name: xField,
+                    nameLocation: 'middle',
+                    nameGap: 30,
+                    ...(categories ? { data: categories } : {}),
+                };
+                if (xIsDiscrete && categories) {
+                    base.axisTick = { show: true, alignWithLabel: true };
+                    base.axisLabel = { rotate: areCategoriesNumeric(categories) ? 0 : 90 };
+                }
+                return base;
+            })(),
             yAxis: {
                 type: 'value',
                 name: yField,
                 nameLocation: 'middle',
                 nameGap: 40,
                 inverse: !!rankOnY,
+                axisLabel: { rotate: 0 },
             },
             series: [],
         };
