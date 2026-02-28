@@ -3,7 +3,7 @@
 > **Status:** Draft — for discussion and revision  
 > **Date:** 2026-02-27  
 > **Scope:** Redesign the semantic type system to produce a structured per-field compilation context that drives all visualization property decisions  
-> **Related:** `design-semantic-types.md` (current system), `semantic-types.ts`, `resolve-semantics.ts`, `decisions.ts`
+> **Related:** `core/semantic-types.ts`, `core/field-semantics.ts`, `core/type-registry.ts`, `core/resolve-semantics.ts`, `core/decisions.ts`
 
 ---
 
@@ -15,13 +15,13 @@ Having 80+ fine-grained types is powerful but impractical for every scenario. Di
 
 | Tier | Count | Purpose | LLM cost | Viz config quality |
 |---|---|---|---|---|
-| **T0 — Family** | 7 | Coarsest. Enough to pick encoding type (Q/O/N/T) and basic defaults | Lowest — can even be rule-based without LLM | Correct encoding, generic formatting |
-| **T1 — Category** | 16 | Mid-level. Enough for format prefix/suffix, aggregation default, zero-baseline, color scheme class | Moderate — small closed list, high accuracy | Good formatting, sensible defaults |
-| **T2 — Specific** | ~40 | Finest. Enables diverging midpoints, domain constraints, tick strategies, interpolation hints | Higher — larger vocabulary, needs examples | Full compilation context |
+| **T0 — Family** | 6 | Coarsest. Enough to pick encoding type (Q/O/N/T) and basic defaults | Lowest — can even be rule-based without LLM | Correct encoding, generic formatting |
+| **T1 — Category** | 17 | Mid-level. Enough for format prefix/suffix, aggregation default, zero-baseline, color scheme class | Moderate — small closed list, high accuracy | Good formatting, sensible defaults |
+| **T2 — Specific** | 46 | Finest. Enables diverging midpoints, domain constraints, tick strategies, interpolation hints | Higher — larger vocabulary, needs examples | Full compilation context |
 
 **The key design principle:** the compilation logic works at any tier. If the LLM provides `"Revenue"` (T2), we get everything: `$` prefix, sum aggregation, meaningful zero, sequential color, log-scale hint. If it provides `"Amount"` (T1), we still get `$` prefix, sum, meaningful zero — but miss the log-scale hint. If it provides `"Measure"` (T0), we get quantitative encoding, sum aggregation, meaningful zero — but no format prefix. **Graceful degradation, not failure.**
 
-### 0.2 Tier 0 — Families (~7 types)
+### 0.2 Tier 0 — Families (6 types)
 
 These are the broadest categories. They map directly to visualization encoding logic and can be inferred by simple heuristics (no LLM needed):
 
@@ -32,14 +32,13 @@ These are the broadest categories. They map directly to visualization encoding l
 | **Discrete** | number | ordinal | Integer ticks, no aggregation, arbitrary zero |
 | **Geographic** | number/string | geographic/nominal | Map layer, geocoding |
 | **Categorical** | string | nominal | Color/shape/facet, no axis ordering |
-| **Ordinal** | string | ordinal | Ordered categories, canonical sort |
 | **Identifier** | number/string | nominal | Tooltip only, never encode on axis/color |
 
 **What T0 alone gives you:** correct encoding type, basic aggregation default, zero-baseline class, which channels are appropriate (you wouldn't put a Categorical on Y for a bar chart). This is roughly what a simple rule-based system (no LLM) could produce from data type + cardinality + column-name heuristics.
 
 **What T0 misses:** format prefix/suffix, specific aggregation (sum vs avg), diverging detection, domain constraints, scale type hints, interpolation.
 
-### 0.3 Tier 1 — Categories (~25 types)
+### 0.3 Tier 1 — Categories (17 types)
 
 Mid-level types within each family. Each T1 type maps to exactly one T0 family. The LLM picks from a manageable list and gets high accuracy.
 
@@ -50,7 +49,6 @@ Mid-level types within each family. Each T1 type maps to exactly one T0 family. 
 | **Discrete** | `Rank`, `Score`, `Index` | Reversed axis (Rank), integer ticks, domain hints |
 | **Geographic** | `GeoCoordinate`, `GeoPlace` | Lat/lon pairing vs geocodable name; map layer type |
 | **Categorical** | `Entity`, `Coded`, `Binned` | Cardinality expectations, ordinal-ness of binned values |
-| **Ordinal** | (most ordinals are DateGranule or Binned — see above) | |
 | **Identifier** | `ID` | Never aggregate, never encode |
 
 **Full T1 type table:**
@@ -79,7 +77,7 @@ Mid-level types within each family. Each T1 type maps to exactly one T0 family. 
 
 **What T1 misses:** specific format symbol ($€£¥ vs just "currency"), exact domain bounds, unit-specific formatting (°C vs °F), type-specific interpolation hints. Diverging midpoints for domain-specific scales (like pH=7) are derived from `intrinsicDomain` or type-intrinsic logic rather than T2 types.
 
-### 0.4 Tier 2 — Specific types (~40 types)
+### 0.4 Tier 2 — Specific types (46 types)
 
 The full vocabulary. Each T2 type maps to exactly one T1 category. These provide the finest-grained compilation context.
 
@@ -88,7 +86,7 @@ The T2 inventory is deliberately **pruned to types that change compilation behav
 | T1 Category | T2 Specific Types |
 |---|---|
 | `DateTime` | DateTime, Date, Time, Timestamp |
-| `DateGranule` | Year, Quarter, Month, Day, Hour, YearMonth, YearQuarter, YearWeek, Decade |
+| `DateGranule` | Year, Quarter, Month, Week, Day, Hour, YearMonth, YearQuarter, YearWeek, Decade |
 | `Duration` | Duration |
 | `Amount` | Amount, Price, Revenue, Cost |
 | `Physical` | Quantity, Temperature |
@@ -100,7 +98,7 @@ The T2 inventory is deliberately **pruned to types that change compilation behav
 | `Index` | Index |
 | `GeoCoordinate` | Latitude, Longitude |
 | `GeoPlace` | Country, State, City, Region, ZipCode, Address |
-| `Entity` | PersonName, Company, Product, Category, Name |
+| `Entity` | PersonName, Company, Product, Category, Name, String, Unknown |
 | `Coded` | Status, Type, Boolean, Direction |
 | `Binned` | Range, AgeGroup |
 | `ID` | ID |
@@ -108,7 +106,7 @@ The T2 inventory is deliberately **pruned to types that change compilation behav
 **What was dropped and why:**
 
 > **Implementation note:** These types are fully removed from both the
-> `TYPE_REGISTRY` (field-semantics.ts) and the `SemanticTypes` constant
+> `TYPE_REGISTRY` (type-registry.ts) and the `SemanticTypes` constant
 > (semantic-types.ts). If the LLM produces a dropped type string, it will
 > hit the `UNKNOWN_ENTRY` fallback (Categorical/Entity/nominal). The LLM
 > prompt should be updated to only offer the "Use instead" types.
@@ -128,7 +126,7 @@ The T2 inventory is deliberately **pruned to types that change compilation behav
 | SKU | ID | Same compilation (identifier role) |
 
 **What T2 adds over T1:**
-- `Revenue` vs `Price` → both `Amount`, but Revenue is `measure-sum` (totals) while Price is `measure-avg` (per-unit); `Cost` kept for LLM annotation clarity (compiles like Revenue)
+- `Revenue` vs `Price` → both `Amount`, but Revenue is `additive` (totals) while Price is `intensive` (per-unit); `Cost` kept for LLM annotation clarity (compiles like Revenue)
 - `Temperature` vs `Quantity` → both `Physical`, but Temperature has conditional diverging (freezing-point midpoint from unit); Quantity is generic with no diverging
 - `Month` vs `Year` vs `Quarter` → all `DateGranule`, but Month has cyclic(12) domain, Quarter has cyclic(4), Year is open-ended
 - `Sentiment` vs `Profit` vs `Correlation` → all `SignedMeasure`, but Sentiment is inherently diverging, Profit is conditionally diverging, Correlation has fixed domain [-1,1]
@@ -140,7 +138,7 @@ T0 Family         T1 Category          T2 Specific
 ─────────         ───────────          ──────────────────────
 
 Temporal ─────┬── DateTime ──────────── DateTime, Date, Time, Timestamp
-              ├── DateGranule ───────── Year, Quarter, Month, Day, Hour,
+              ├── DateGranule ───────── Year, Quarter, Month, Week, Day, Hour,
               │                         YearMonth, YearQuarter, YearWeek, Decade
               └── Duration ─────────── Duration
 
@@ -157,7 +155,7 @@ Discrete ─────┬── Rank ─────────────�
 Geographic ───┬── GeoCoordinate ────── Latitude, Longitude
               └── GeoPlace ─────────── Country, State, City, Region, ZipCode, Address
 
-Categorical ──┬── Entity ───────────── PersonName, Company, Product, Category, Name
+Categorical ──┬── Entity ───────────── PersonName, Company, Product, Category, Name, String, Unknown
               ├── Coded ────────────── Status, Type, Boolean, Direction
               └── Binned ───────────── Range, AgeGroup
 
@@ -178,7 +176,7 @@ function resolveFieldSemantics(annotation, fieldName, values) {
     // T0 decisions (always available)
     const encoding = resolveEncoding(t0, values);
     const aggRole  = resolveAggRole(t0);
-    const zeroClass = resolveZeroClass_T0(t0);
+    const zeroBaseline = resolveZeroBaseline_T0(t0);
 
     // T1 decisions (available if T1 or finer)
     const formatClass = t1 ? resolveFormatClass(t1) : null;
@@ -202,9 +200,9 @@ The tiered system enables different annotation strategies depending on the task:
 
 | Strategy | Types used | When to use | LLM prompt size |
 |---|---|---|---|
-| **Full T2** | All specific types | High-value dashboards, one-time setup | Largest (~40 types in prompt) |
+| **Full T2** | All specific types | High-value dashboards, one-time setup | Largest (~46 types in prompt) |
 | **T1 only** | Category-level only | Bulk dataset annotation, cost-sensitive | Medium (~16 types) |
-| **T0 only** | Family-level only | Quick preview, rule-based fallback | Smallest (~7 types), may not need LLM |
+| **T0 only** | Family-level only | Quick preview, rule-based fallback | Smallest (~6 types), may not need LLM |
 | **Mixed** | T2 for key fields, T1 for rest | Typical interactive session | Adaptive prompt |
 
 **Mixed strategy example:**
@@ -235,7 +233,7 @@ The tier hierarchy (T0→T1→T2) is ONE axis of the type system — it controls
 | Dimension | Values | What viz properties it controls |
 |---|---|---|
 | **Vis encoding candidates** | `quantitative`, `ordinal`, `nominal`, `temporal` (one or more, with preference order) | Axis type, scale type, mark compatibility, channel compatibility, sort |
-| **Aggregation role** | `measure-sum`, `measure-avg`, `dimension`, `identifier` | Whether to aggregate, which aggregate function, whether to group-by, tooltip-only |
+| **Aggregation role** | `additive`, `intensive`, `signed-additive`, `dimension`, `identifier` | Whether to aggregate, which aggregate function, whether to group-by, tooltip-only |
 | **Domain shape** | `open`, `bounded`, `fixed`, `cyclic` | Scale domain clamping, tick generation, extrapolation, axis extent, radar/polar recommendation |
 | **Diverging nature** | `none`, `conditional`, `inherent` | Color scheme class (sequential vs diverging), midpoint, legend center, bipolar axis |
 | **Format class** | `currency`, `percent`, `unit-suffix`, `date`, `time`, `integer`, `plain` | Axis label format, tooltip format, prefix/suffix, decimal precision |
@@ -255,7 +253,7 @@ Each dimension controls a specific, non-overlapping set of downstream visualizat
 
 **Aggregation role** → determines:
 - Whether the field appears in the `aggregate` vs `groupby` clause
-- Default aggregate function: `measure-sum` → `"sum"`, `measure-avg` → `"mean"`
+- Default aggregate function: `additive` → `"sum"`, `intensive` → `"mean"`, `signed-additive` → `"sum"`
 - Whether the field should be offered as a measure or dimension in the UI
 - `identifier` → excluded from aggregation entirely, tooltip-only
 
@@ -288,22 +286,22 @@ Every type occupies a position in the tier hierarchy AND a position along each o
 |---|---|---|---|---|---|---|---|
 | Month | DateGranule | Temporal | ordinal, temporal | dimension | cyclic (12) | none | date |
 | Year | DateGranule | Temporal | temporal, ordinal | dimension | open | none | integer |
-| Rating | Score | Discrete | quantitative, ordinal | measure-avg | bounded [1,N] | conditional | integer |
-| Temperature | Physical | Measure | quantitative | measure-avg | open | conditional | unit-suffix |
-| Quantity | Physical | Measure | quantitative | measure-avg | open, ≥0 | none | unit-suffix |
-| Sentiment | SignedMeasure | Measure | quantitative | measure-avg | bounded [-1,1] | inherent | plain |
-| Correlation | SignedMeasure | Measure | quantitative | measure-avg | bounded [-1,1] | inherent | plain |
-| Profit | SignedMeasure | Measure | quantitative | measure-sum | open | conditional | currency |
-| PercentageChange | SignedMeasure | Measure | quantitative | measure-avg | open | conditional | percent |
-| Revenue | Amount | Measure | quantitative | measure-sum | open, ≥0 | none | currency |
-| Price | Amount | Measure | quantitative | measure-avg | open, ≥0 | none | currency |
-| Percentage | Proportion | Measure | quantitative | measure-avg | bounded [0,1] or [0,100] (data-inferred) | none | percent |
-| Count | GenericMeasure | Measure | quantitative | measure-sum | open, ≥0 | none | integer |
+| Rating | Score | Discrete | quantitative, ordinal | intensive | bounded [1,N] | conditional | integer |
+| Temperature | Physical | Measure | quantitative | intensive | open | conditional | unit-suffix |
+| Quantity | Physical | Measure | quantitative | intensive | open, ≥0 | none | unit-suffix |
+| Sentiment | SignedMeasure | Measure | quantitative | signed-additive | bounded [-1,1] | inherent | plain |
+| Correlation | SignedMeasure | Measure | quantitative | signed-additive | bounded [-1,1] | inherent | plain |
+| Profit | SignedMeasure | Measure | quantitative | signed-additive | open | conditional | currency |
+| PercentageChange | SignedMeasure | Measure | quantitative | signed-additive | open | conditional | percent |
+| Revenue | Amount | Measure | quantitative | additive | open, ≥0 | none | currency |
+| Price | Amount | Measure | quantitative | intensive | open, ≥0 | none | currency |
+| Percentage | Proportion | Measure | quantitative | intensive | bounded [0,1] or [0,100] (data-inferred) | none | percent |
+| Count | GenericMeasure | Measure | quantitative | additive | open, ≥0 | none | integer |
 | Country | GeoPlace | Geographic | nominal | dimension | open | none | plain |
 | Latitude | GeoCoordinate | Geographic | quantitative | dimension | fixed [-90,90] | none | plain |
 | ZipCode | GeoPlace | Geographic | nominal (NOT quant!) | dimension | open | none | plain |
 | AgeGroup | Binned | Categorical | ordinal | dimension | bounded | none | plain |
-| Duration | Duration | Temporal | quantitative | measure-sum | open, ≥0 | none | time |
+| Duration | Duration | Temporal | quantitative | additive | open, ≥0 | none | time |
 | Rank | Rank | Discrete | ordinal | dimension | open | none | integer |
 | Status | Coded | Categorical | nominal | dimension | fixed | none | plain |
 | Direction | Coded | Categorical | nominal | dimension | cyclic (8/16) | none | plain |
@@ -340,25 +338,28 @@ The compilation logic queries **two independent sources** to produce the `FieldS
 The tier hierarchy provides **progressive refinement** (more detail at finer tiers). The orthogonal dimensions provide **cross-cutting properties** that apply regardless of tier. Both are stored in the type registry:
 
 ```typescript
-// Each type in the registry carries BOTH its tier position AND its dimension values
+// Each type in the registry carries its tier position AND its dimension values.
+// Actual interface from core/type-registry.ts:
 interface TypeRegistryEntry {
     // Tier position
-    tier: 'T0' | 'T1' | 'T2';
-    parent?: string;           // T2→T1 or T1→T0 parent
+    t0: T0Family;              // 'Temporal' | 'Measure' | 'Discrete' | 'Geographic' | 'Categorical' | 'Identifier'
+    t1: T1Category;            // e.g., 'Amount', 'DateGranule', 'Entity', etc.
 
     // Orthogonal dimensions (these drive viz properties directly)
-    visEncodings: VisEncoding[];         // preference-ordered, e.g., ['quantitative', 'ordinal']
-    aggRole: 'measure-sum' | 'measure-avg' | 'dimension' | 'identifier';
-    domainShape: 'open' | 'bounded' | 'fixed' | 'cyclic';
-    diverging: 'none' | 'conditional' | 'inherent';
-    formatClass: 'currency' | 'percent' | 'unit-suffix' | 'date' | 'time' | 'integer' | 'plain';
-
-    // Optional refinements (T2-level specifics)
-    domainBounds?: [number, number];     // e.g., [-90, 90] for Latitude
-    cyclePeriod?: number;                // e.g., 12 for Month
-    reversedAxis?: boolean;              // e.g., true for Rank
+    visEncodings: VisCategory[];         // preference-ordered, e.g., ['quantitative', 'ordinal']
+    aggRole: AggRole;                    // 'additive' | 'intensive' | 'signed-additive' | 'dimension' | 'identifier'
+    domainShape: DomainShape;            // 'open' | 'bounded' | 'fixed' | 'cyclic'
+    diverging: DivergingClass;           // 'none' | 'conditional' | 'inherent'
+    formatClass: FormatClass;            // 'currency' | 'percent' | 'signed-percent' | 'unit-suffix' | 'date' | 'time' | 'integer' | 'plain'
+    zeroBaseline: ZeroBaseline;          // 'meaningful' | 'arbitrary' | 'contextual' | 'none'
+    zeroPad: number;                     // domain padding fraction (e.g., 0.08 for Rank, 0.05 for Temperature)
 }
 ```
+
+> **Note on aggRole naming:** The design doc originally proposed `measure-sum` / `measure-avg` terminology.
+> The implementation uses `additive` (summed: Revenue, Count), `intensive` (averaged: Temperature, Price),
+> and `signed-additive` (summed but can go negative: Profit). The mapping is:
+> `measure-sum` → `additive`, `measure-avg` → `intensive`, signed measures → `signed-additive`.
 
 When a type is recognized at T1 level, the builder inherits the T1 entry's dimension values. When recognized at T2, the T2 entry's values override. When only T0 is known, the builder uses conservative defaults for each dimension (e.g., `visEncodings: ['quantitative']` for Measure, `domainShape: 'open'`, `diverging: 'none'`).
 
@@ -370,7 +371,7 @@ When a type is recognized at T1 level, the builder inherits the T1 entry's dimen
 
 3. **Diverging nature directly determines color scheme.** This is not just a T2-level detail — it's an orthogonal dimension that T1 types can carry too. `SignedMeasure` (T1) carries diverging information; `Physical` (T1) is conditionally diverging (only `Temperature` within it, at T2 level). Domain-specific diverging midpoints (e.g., pH=7) are derived from `intrinsicDomain` midpoint rather than dedicated types.
 
-4. **Aggregation role determines aggregate function — and auto-aggregation.** `Revenue` and `Price` are both `Amount` (T1), but Revenue is `measure-sum` while Price is `measure-avg`. This distinction lives in the orthogonal dimension, not in the tier hierarchy. Critically, the aggregation role is essential for **auto-aggregation in under-specified charts**: when a user creates a bar chart with X=`Month` and Y=`Revenue` but provides no color encoding, the dataset likely has multiple rows per month (e.g., per-product or per-region rows). Without explicit color to distinguish them, the system must auto-aggregate Y. Knowing Revenue is `measure-sum` lets the instantiator emit `{"aggregate": "sum", "field": "Revenue"}` automatically. The same applies to line charts — multiple Y values per X point produce a jagged, unreadable line unless aggregated. The correct aggregate function (sum vs mean vs count) depends entirely on the field's aggregation role: Revenue→sum, Temperature→mean, row-count→count. Getting this wrong (e.g., summing temperatures) produces nonsensical charts. Auto-aggregation should be a **compiler option** — an explicit flag the caller passes to the instantiation phase, since some contexts (e.g., raw data preview, user explicitly wanting per-row marks) should suppress it:
+4. **Aggregation role determines aggregate function — and auto-aggregation.** `Revenue` and `Price` are both `Amount` (T1), but Revenue is `additive` while Price is `intensive`. This distinction lives in the orthogonal dimension, not in the tier hierarchy. Critically, the aggregation role is essential for **auto-aggregation in under-specified charts**: when a user creates a bar chart with X=`Month` and Y=`Revenue` but provides no color encoding, the dataset likely has multiple rows per month (e.g., per-product or per-region rows). Without explicit color to distinguish them, the system must auto-aggregate Y. Knowing Revenue is `additive` lets the instantiator emit `{"aggregate": "sum", "field": "Revenue"}` automatically. The same applies to line charts — multiple Y values per X point produce a jagged, unreadable line unless aggregated. The correct aggregate function (sum vs mean vs count) depends entirely on the field's aggregation role: Revenue→sum, Temperature→mean, row-count→count. Getting this wrong (e.g., summing temperatures) produces nonsensical charts. Auto-aggregation should be a **compiler option** — an explicit flag the caller passes to the instantiation phase, since some contexts (e.g., raw data preview, user explicitly wanting per-row marks) should suppress it:
 
     ```typescript
     interface CompilerOptions {
@@ -397,7 +398,7 @@ The dimension values in the type registry (§0.7.3, §0.7.4) are **intrinsic** �
 | `Country` → vis: nominal | 150+ countries | Consider top-N filtering or map instead of bar | Nominal with extreme cardinality → unreadable |
 | `Year` → vis: [temporal, ordinal] | Only 3 values: 2022, 2023, 2024 | Prefer ordinal | Sparse temporal → ordinal ticks better |
 | `Percentage` → domain: bounded [0,100] | Actual data range [45, 55] | Narrow domain, zoom in | Bounded but data clustered → auto-zoom |
-| `GenericMeasure` → agg: heuristic | Field name contains "count" | measure-sum | Name-based heuristic refines generic role |
+| `GenericMeasure` → agg: heuristic | Field name contains "count" | additive | Name-based heuristic refines generic role |
 
 **Design decision: where does this happen?**
 
@@ -490,7 +491,7 @@ all read the same `ChannelSemantics` record without knowing each other exist.
 | Canonical order | `resolveFieldSemantics()` → `resolveCanonicalOrder()` | `FieldSemantics.canonicalOrder` (internal) |
 | Cyclic ordering | `resolveFieldSemantics()` → `resolveCyclic()` | `ChannelSemantics.cyclic` |
 | Sort direction | `resolveFieldSemantics()` → `resolveSortDirection()` | `ChannelSemantics.sortDirection` |
-| Zero class | `resolveFieldSemantics()` → `resolveZeroClassFromAnnotation()` | `FieldSemantics.zeroClass` (internal) |
+| Zero baseline | `resolveFieldSemantics()` → `resolveZeroClassFromAnnotation()` | `FieldSemantics.zeroBaseline` (internal) |
 | Binning suggested | `resolveFieldSemantics()` → `resolveBinningSuggested()` | `ChannelSemantics.binningSuggested` |
 | **Channel-specific (visualization)** | | |
 | Encoding type (Q/O/N/T) | `resolveEncodingTypeDecision()` | `ChannelSemantics.type` |
@@ -617,7 +618,7 @@ interface SemanticAnnotation {
      * When provided, drives:
      *   - domainConstraint in FieldSemantics
      *   - tickConstraint.exactTicks (for small discrete scales)
-     *   - zeroClass refinement (scale starting at 1 → arbitrary zero)
+     *   - zeroBaseline refinement (scale starting at 1 → arbitrary zero)
      *   - colorSchemeHint.divergingMidpoint (via intrinsicDomain midpoint)
      */
     intrinsicDomain?: [number, number];
@@ -820,7 +821,7 @@ resolveFieldSemantics(annotation: SemanticAnnotation, fieldName, values)
     │     → domainConstraint = mergeIntrinsicWithData(intrinsicDomain, values, soft)
     │       (effective domain = union of intrinsic bounds and actual data range)
     │     → tickConstraint.exactTicks (if intrinsic range is small, e.g., [1,5] → [1,2,3,4,5])
-    │     → zeroClass: intrinsicDomain[0] > 0 → 'arbitrary' (1-based scale)
+    │     → zeroBaseline: intrinsicDomain[0] > 0 → 'arbitrary' (1-based scale)
     │     → binningSuggested: false (bounded discrete scale)
     │     → colorSchemeHint.divergingMidpoint: (intrinsicDomain[0] + intrinsicDomain[1]) / 2
     │
@@ -901,7 +902,7 @@ interface FieldSemantics {
      * NOT a boolean decision — that requires channel + mark type knowledge
      * and is finalized as ChannelSemantics.zero in Stage 4.
      */
-    zeroClass: ZeroClass | 'unknown';
+    zeroBaseline: ZeroBaseline | 'unknown';
 
     /**
      * Recommended scale type based on data distribution.
@@ -1236,7 +1237,7 @@ Two categories:
 **Percentage scale detection:** The representation (0–1 fractional vs 0–100 whole-number) is detected from data: if ≥ 80% of absolute values are ≤ 1, treat as fractional; otherwise whole-number. This works even when values exceed the intrinsic range (e.g., [10, 20, 155] → whole-number → intrinsic [0, 100] → effective [0, 155]).
 
 When `annotation.intrinsicDomain` is provided, the builder also derives:
-- **zeroClass:** If `intrinsicDomain[0] > 0` (e.g., Rating [1, 5]), zero is arbitrary. If `intrinsicDomain[0] === 0` (e.g., Score [0, 100]), zero is contextual.
+- **zeroBaseline:** If `intrinsicDomain[0] > 0` (e.g., Rating [1, 5]), zero is arbitrary. If `intrinsicDomain[0] === 0` (e.g., Score [0, 100]), zero is contextual.
 - **tickConstraint:** If the intrinsic domain span is small (≤ 20), generate `exactTicks` for every integer. E.g., Rating [1, 5] → `exactTicks: [1, 2, 3, 4, 5]`.
 - **binningSuggested:** If intrinsic domain span ≤ 20, binning is not useful → `false`.
 - **colorSchemeHint.divergingMidpoint:** `(intrinsicDomain[0] + intrinsicDomain[1]) / 2`. E.g., Score [0, 100] → midpoint 50.
@@ -1491,7 +1492,7 @@ resolveFieldSemantics(annotation, fieldName, values)
     ├── resolveAggregationDefault(semanticType)
     │     → 'sum' | 'average' | undefined
     │
-    ├── resolveZeroClass(semanticType, domain)
+    ├── resolveZeroBaseline(semanticType, domain)
     │     → 'meaningful' | 'arbitrary' | 'contextual'
     │     └── intrinsicDomain[0] > 0? → 'arbitrary' (1-based scale)
     │
@@ -1521,7 +1522,7 @@ resolveFieldSemantics(annotation, fieldName, values)
           └── domain span ≤ 20? → false
 ```
 
-**Functions exported from field-semantics.ts but called by Stage 2 (`resolveChannelSemantics`):**
+**Functions exported from core/field-semantics.ts but called by Stage 2 (`resolveChannelSemantics`):**
 
 ```
 resolveTickConstraint(semanticType, domain, values)                → TickConstraint | undefined
@@ -1624,7 +1625,7 @@ resolveChannelSemantics(encodings, data, semanticTypes, convertedData?)
 **Key design decision:** Stage 2 does NOT resolve `zero` (zero-baseline).
 The zero decision requires knowing the template's mark type (bar → include
 zero for length integrity; scatter → data-fitted), which is Stage 4
-knowledge. Stage 2 provides `zeroClass` (from FieldSemantics) as a hint;
+knowledge. Stage 2 provides `zeroBaseline` (from FieldSemantics) as a hint;
 Stage 4 finalizes `cs.zero` using `computeZeroDecision()`.
 
 **Temporal data conversion:** `convertTemporalData()` runs once in the
@@ -1712,7 +1713,7 @@ a narrow, well-defined interface (e.g., "I use binned axes" → affects layout s
 
 Each backend assembler performs:
 
-1. **Zero-baseline finalization** — reads `zeroClass` from `ChannelSemantics`,
+1. **Zero-baseline finalization** — reads `zeroBaseline` from `ChannelSemantics`,
    combines with template mark type, calls `computeZeroDecision()`:
    ```typescript
    // In each assembler, after resolveChannelSemantics():
@@ -1784,7 +1785,7 @@ type SemanticResult = Record<string, ChannelSemantics>;
     "format": { "pattern": "€,.0f", "prefix": "€", "abbreviate": true },
     "tooltipFormat": { "pattern": "€,.2f", "prefix": "€" },
     "aggregationDefault": "sum",
-    "zeroClass": "meaningful",
+    "zeroBaseline": "meaningful",
     "scaleType": "linear",
     "domainConstraint": null,
     "canonicalOrder": null,
@@ -1816,7 +1817,7 @@ type SemanticResult = Record<string, ChannelSemantics>;
     "format": { "pattern": ".1f", "suffix": "°C" },
     "tooltipFormat": { "pattern": ".2f", "suffix": "°C" },
     "aggregationDefault": "average",
-    "zeroClass": "arbitrary",
+    "zeroBaseline": "arbitrary",
     "scaleType": "linear",
     "domainConstraint": null,
     "canonicalOrder": null,
@@ -1848,7 +1849,7 @@ type SemanticResult = Record<string, ChannelSemantics>;
     "format": { "pattern": "d" },
     "tooltipFormat": { "pattern": "d" },
     "aggregationDefault": null,
-    "zeroClass": "arbitrary",
+    "zeroBaseline": "arbitrary",
     "scaleType": "linear",
     "domainConstraint": null,
     "canonicalOrder": null,
@@ -1880,7 +1881,7 @@ type SemanticResult = Record<string, ChannelSemantics>;
     "format": {},
     "tooltipFormat": {},
     "aggregationDefault": null,
-    "zeroClass": null,
+    "zeroBaseline": null,
     "scaleType": null,
     "domainConstraint": null,
     "canonicalOrder": ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
@@ -1920,7 +1921,7 @@ The builder **infers the representation from data values**: if `max(values) ≤ 
     "format": { "pattern": ".1p%" },
     "tooltipFormat": { "pattern": ".2p%" },
     "aggregationDefault": "average",
-    "zeroClass": "contextual",
+    "zeroBaseline": "contextual",
     "scaleType": "linear",
     "domainConstraint": { "min": 0, "max": 1, "clamp": false },
     "canonicalOrder": null,
@@ -1951,7 +1952,7 @@ Note: d3's `.1%` format handles the ×100 conversion: `0.48` → `"48.0%"`. Prec
     "format": { "pattern": "d", "suffix": "%" },
     "tooltipFormat": { "pattern": ".1f", "suffix": "%" },
     "aggregationDefault": "average",
-    "zeroClass": "contextual",
+    "zeroBaseline": "contextual",
     "scaleType": "linear",
     "domainConstraint": { "min": 0, "max": 100, "clamp": false },
     "canonicalOrder": null,
@@ -1984,7 +1985,7 @@ Note: here `suffix: "%"` is explicit and the pattern is plain `d` (integer, no �
     "format": {},
     "tooltipFormat": { "pattern": ".1f" },
     "aggregationDefault": "average",
-    "zeroClass": "arbitrary",
+    "zeroBaseline": "arbitrary",
     "scaleType": "linear",
     "domainConstraint": { "min": 1, "max": 5, "clamp": false },
     "canonicalOrder": null,
@@ -2004,11 +2005,11 @@ Note: `format: {}` (empty) — VL handles axis formatting natively for Rating.
 
 **Key derivations from `domain: [1, 5]`:**
 - `domainConstraint`: axis range fixed to 1–5
-- `zeroClass: "arbitrary"`: domain starts at 1 (not 0), so zero is not meaningful
+- `zeroBaseline: "arbitrary"`: domain starts at 1 (not 0), so zero is not meaningful
 - `tickConstraint.exactTicks: [1,2,3,4,5]`: span = 4 ≤ 20, so every integer gets a tick (channel-resolved)
 - `binningSuggested: false`: only 5 possible values, binning is useless
 - `nice: false`: bounded domain shape → don't extend to "nice" numbers (channel-resolved)
-- **Mark-aware zero**: For bar marks, despite `zeroClass: 'arbitrary'`, the Stage 4 assembler
+- **Mark-aware zero**: For bar marks, despite `zeroBaseline: 'arbitrary'`, the Stage 4 assembler
   keeps `scale.zero = true` for proportional bar lengths (bars grow from 0, VL auto-extends to [0,5]).
   For scatter/line marks, `scale.zero` is cleared and the axis stays [1,5].
 
@@ -2056,7 +2057,7 @@ Same as Phase B but translating to ECharts API (`axisLabel.formatter`, `yAxis.in
 
 ### Phase E: Consolidate existing decisions
 
-1. `computeZeroDecision` reads `zeroClass` from `ChannelSemantics`; finalized in Stage 4 by each assembler
+1. `computeZeroDecision` reads `zeroBaseline` from `ChannelSemantics`; finalized in Stage 4 by each assembler
 2. Move `getRecommendedColorScheme` to read from `cs.colorScheme` (promoted from FieldSemantics)
 3. Move `inferOrdinalSortOrder` to read from `cs.ordinalSortOrder` (promoted from FieldSemantics)
 4. Move temporal format resolution to `cs.temporalFormat` (promoted from FieldSemantics)

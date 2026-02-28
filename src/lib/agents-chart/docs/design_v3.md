@@ -1,11 +1,12 @@
 # Agents-Chart v3: System Architecture
 
 > Technical architecture of the `agents-chart` library — a deterministic
-> compiler that transforms high-level chart specifications into Vega-Lite.
+> compiler that transforms high-level chart specifications into backend-
+> specific rendering specs (Vega-Lite, ECharts, Chart.js, GoFish).
 >
-> For motivation, examples, and the Q&A rationale, see [story.md](story.md).
+> For motivation, examples, and the Q&A rationale, see [story-v2.md](story-v2.md).
 > For sizing model details, see [design-stretch-model.md](design-stretch-model.md).
-> For semantic type system details, see [design-semantic-types.md](design-semantic-types.md).
+> For semantic type system details, see [design-semantics-new.md](design-semantics-new.md).
 
 ---
 
@@ -32,14 +33,20 @@
 
 ## Two-Stage Pipeline
 
+Each backend has its own `assemble*()` entry point (`assembleVegaLite`,
+`assembleECharts`, `assembleChartjs`, `assembleGoFish`), but they all
+follow the same two-stage structure. The analysis stage is shared;
+only the instantiation stage is backend-specific.
+
 ```
-assembleChart(chartType, encodings, data, semanticTypes, canvasSize, options)
+assembleVegaLite(input: ChartAssemblyInput)   // or assembleECharts, assembleChartjs, assembleGoFish
        │
        ▼
- ══ ANALYSIS (VL-free) ═══════════════════════════════════════
+ ══ ANALYSIS (backend-free, shared core) ═════════════════════
        │
        ├── Phase 0:  resolveSemantics()     → ChannelSemantics
        │     Infers encoding type, zero-baseline, color scheme,
+       │     format, aggregation default, scale type, domain,
        │     temporal format for each channel from semantic types
        │     + data characteristics.
        │
@@ -61,30 +68,29 @@ assembleChart(chartType, encodings, data, semanticTypes, canvasSize, options)
              banded axes, gas-pressure model for continuous axes.
        │
        ▼
- ══ INSTANTIATE (VL-specific) ════════════════════════════════
+ ══ INSTANTIATE (backend-specific) ═══════════════════════════
        │
-       ├── buildVLEncodings()
-       │     Translates abstract channel semantics into VL
-       │     encoding objects. Handles group→color+offset,
-       │     size scaling, sort, color schemes.
+       ├── build*Encodings()                        (per backend)
+       │     Translates abstract channel semantics into
+       │     backend encoding objects.
        │
        ├── template.instantiate()
-       │     Template-specific VL spec construction.
+       │     Template-specific spec construction.
        │     (e.g., pie remaps size→theta, bar adjusts marks)
        │
-       ├── restructureFacets()
-       │     Restructures column/row into VL facet spec for
+       ├── restructureFacets()                      (VL/ECharts)
+       │     Restructures column/row into facet spec for
        │     layered charts. Computes facet columns.
        │
        ├── applyLayoutToSpec()
        │     Applies width/height/step/config/formatting from
-       │     LayoutResult to the VL spec.
+       │     LayoutResult to the backend spec.
        │
        └── Post-layout adjustments
              Facet binning, independent y-scales, tooltips.
        │
        ▼
-   Return: complete Vega-Lite spec + warnings
+   Return: complete backend spec + warnings
 ```
 
 ---
@@ -137,26 +143,51 @@ Abstract channel for two distinct visual mappings:
 ### `ChannelSemantics`
 
 Phase 0 output for a single channel. Combines user input with resolved
-decisions:
+decisions. This is the central IR — all four backends read the same
+`ChannelSemantics` record.
 
 ```typescript
 interface ChannelSemantics {
-    // From user / AI input
+    // --- Identity ---
     field: string;
-    aggregate?: string;
-    sortOrder?: string;
-    sortBy?: string;
+    semanticAnnotation: SemanticAnnotation;
 
-    // Resolved by Phase 0
+    // --- Encoding type ---
     type: 'quantitative' | 'nominal' | 'ordinal' | 'temporal';
-    typeReason?: string;
 
-    // Channel-specific decisions
-    zero?: ZeroDecision;               // positional quantitative only
-    colorScheme?: ColorSchemeRecommendation;  // color/group channels
-    temporalFormat?: string;           // temporal fields
+    // --- Formatting ---
+    format?: FormatSpec;
+    tooltipFormat?: FormatSpec;
+    temporalFormat?: string;
+
+    // --- Aggregation ---
+    aggregationDefault?: 'sum' | 'average';
+
+    // --- Scale ---
+    zero?: ZeroDecision;
+    scaleType?: 'linear' | 'log' | 'sqrt' | 'symlog';
+    nice?: boolean;
+    domainConstraint?: DomainConstraint;
+    tickConstraint?: TickConstraint;
+
+    // --- Ordering ---
+    ordinalSortOrder?: string[];
+    cyclic?: boolean;
+    reversed?: boolean;
+    sortDirection?: 'ascending' | 'descending';
+
+    // --- Color ---
+    colorScheme?: ColorSchemeRecommendation;
+
+    // --- Histogram ---
+    binningSuggested?: boolean;
+
+    // --- Stacking ---
+    stackable?: 'sum' | 'normalize' | false;
 }
 ```
+
+21 fields total (2 required: `field`, `type`; plus `semanticAnnotation`).
 
 ### `LayoutDeclaration`
 
@@ -259,35 +290,64 @@ type OverflowStrategy = (
 
 ## File Map
 
+### Core (shared across all backends)
+
 | File | Lines | Role |
 |------|-------|------|
-| `assemble.ts` | 625 | Two-stage pipeline coordinator |
-| `types.ts` | 460 | All type definitions |
-| `resolve-semantics.ts` | 406 | Phase 0: semantic resolution + temporal conversion |
-| `filter-overflow.ts` | 300 | Phase 0c: VL-free overflow filtering |
-| `compute-layout.ts` | 484 | Phase 1: VL-free layout computation |
-| `instantiate-spec.ts` | 353 | Phase 2: `applyLayoutToSpec`, `applyTooltips` |
-| `decisions.ts` | 542 | Reusable decision functions (elastic budget, step, facet, label, gas pressure) |
-| `semantic-types.ts` | 1052 | Semantic type system (hierarchy, zero decisions, color schemes) |
-| `index.ts` | 104 | Public API exports |
-| `templates/index.ts` | 61 | Template registry |
-| `templates/bar.ts` | 309 | Bar, grouped bar, stacked bar, histogram, heatmap, pyramid |
-| `templates/scatter.ts` | 123 | Scatter, linear regression, ranged dot, boxplot |
-| `templates/line.ts` | 54 | Line, dotted line |
-| `templates/area.ts` | 86 | Area, streamgraph |
-| `templates/pie.ts` | 41 | Pie (size→theta remap) |
-| `templates/bump.ts` | 66 | Bump chart |
-| `templates/lollipop.ts` | 75 | Lollipop chart |
-| `templates/candlestick.ts` | 82 | Candlestick |
-| `templates/waterfall.ts` | 126 | Waterfall |
-| `templates/radar.ts` | 377 | Radar chart |
-| `templates/density.ts` | 39 | Density plot |
-| `templates/jitter.ts` | 121 | Strip / jitter plot |
-| `templates/map.ts` | 146 | US map, world map |
-| `templates/custom.ts` | 45 | Custom point/line/bar/rect/area |
-| `templates/utils.ts` | 348 | Shared template utilities |
+| `core/types.ts` | 686 | All type definitions (ChannelSemantics, ChartAssemblyInput, etc.) |
+| `core/field-semantics.ts` | 978 | Field semantic resolution (T0/T1/T2 tiered logic) |
+| `core/semantic-types.ts` | 921 | Semantic type system (hierarchy, zero decisions, color schemes) |
+| `core/type-registry.ts` | 197 | Type registry (46 types, 6 T0 families) |
+| `core/resolve-semantics.ts` | 476 | Phase 0: channel semantic resolution + temporal conversion |
+| `core/compute-layout.ts` | 907 | Phase 1: backend-free layout computation |
+| `core/decisions.ts` | 724 | Reusable decision functions (elastic budget, step, facet, label, gas pressure) |
+| `core/filter-overflow.ts` | 296 | Phase 0c: backend-free overflow filtering |
+| `core/recommendation.ts` | 1178 | Chart recommendation engine |
+| `core/index.ts` | 120 | Core re-exports |
 
-**Total: ~6,425 lines** across 25 files.
+### Vega-Lite backend
+
+| File | Lines | Role |
+|------|-------|------|
+| `vegalite/assemble.ts` | 751 | VL two-stage pipeline coordinator |
+| `vegalite/instantiate-spec.ts` | 614 | `applyLayoutToSpec`, `applyTooltips` |
+| `vegalite/recommendation.ts` | 201 | VL-specific recommendation |
+| `vegalite/templates/*.ts` | ~2,300 | 17 template files (28 chart types) |
+
+### ECharts backend
+
+| File | Lines | Role |
+|------|-------|------|
+| `echarts/assemble.ts` | 710 | ECharts two-stage pipeline coordinator |
+| `echarts/instantiate-spec.ts` | 660 | ECharts spec instantiation |
+| `echarts/facet.ts` | 251 | ECharts facet support |
+| `echarts/recommendation.ts` | 101 | ECharts-specific recommendation |
+| `echarts/templates/*.ts` | ~3,900 | 24 template files (26 chart types) |
+
+### Chart.js backend
+
+| File | Lines | Role |
+|------|-------|------|
+| `chartjs/assemble.ts` | 213 | Chart.js two-stage pipeline coordinator |
+| `chartjs/instantiate-spec.ts` | 158 | Chart.js spec instantiation |
+| `chartjs/recommendation.ts` | 34 | Chart.js recommendation |
+| `chartjs/templates/*.ts` | ~1,400 | 10 template files (10 chart types) |
+
+### GoFish backend
+
+| File | Lines | Role |
+|------|-------|------|
+| `gofish/assemble.ts` | 521 | GoFish imperative rendering pipeline |
+| `gofish/recommendation.ts` | 34 | GoFish recommendation |
+| `gofish/templates/*.ts` | ~850 | 8 template files (8 chart types) |
+
+### Top-level
+
+| File | Lines | Role |
+|------|-------|------|
+| `index.ts` | 60 | Public API re-exports (all 4 backends) |
+
+**Total: ~20,358 lines** across 87 `.ts` files (excluding test-data).
 
 ---
 
@@ -331,73 +391,140 @@ overall canvas growth.
 ## Semantic Type System
 
 Semantic types classify fields by what they *mean* (not just their data
-type), organized in a hierarchy:
+type), organized in a three-tier hierarchy (T0 → T1 → T2):
 
 ```
-             AnyType
-          ┌────┼────────┐
-       Temporal  Numeric  Categorical
-       ┌──┴──┐  ┌──┴──┐  ┌──┴──┐
-     Point Granule Measure Discrete Entity Coded
+T0 Family        T1 Category           T2 Types (examples)
+─────────        ───────────           ──────────────────
+Temporal ────┬── DateTime ──────────── DateTime, Date, Time, Timestamp
+             ├── DateGranule ────────── Year, Quarter, Month, Week, Day, Hour, ...
+             └── Duration ──────────── Duration
+
+Measure ─────┬── Amount ────────────── Amount, Price, Revenue, Cost
+             ├── Physical ──────────── Quantity, Temperature
+             ├── Proportion ────────── Percentage
+             ├── SignedMeasure ──────── Profit, PercentageChange, Sentiment, Correlation
+             └── GenericMeasure ────── Count, Number
+
+Discrete ────┬── Rank ──────────────── Rank
+             ├── Score ─────────────── Score, Rating
+             └── Index ─────────────── Index
+
+Geographic ──┬── GeoCoordinate ─────── Latitude, Longitude
+             └── GeoPlace ──────────── Country, State, City, Region, ZipCode, Address
+
+Categorical ─┬── Entity ────────────── PersonName, Company, Product, Category, Name, ...
+             ├── Coded ─────────────── Status, Type, Boolean, Direction
+             └── Binned ────────────── Range, AgeGroup
+
+Identifier ──┴── ID ────────────────── ID
 ```
 
-Each type drives:
-- **Encoding type** (Revenue → quantitative, Rank → ordinal, Month → ordinal)
-- **Zero baseline** (Revenue → include zero, Temperature → don't)
-- **Domain padding** (Rank → 8%, Temperature → 5%)
-- **Color scheme** (categorical, sequential, or diverging)
-- **Axis formatting** (Revenue → `$,.0f`, Percentage → `.0%`)
+**46 registered types** across 6 T0 families and 17 T1 categories.
 
-→ Full details: [design-semantic-types.md](design-semantic-types.md)
+Each type entry in the registry carries orthogonal dimensions that drive
+visualization decisions:
+- **visEncodings** — encoding type candidates (quantitative, ordinal, nominal, temporal)
+- **aggRole** — aggregation role (`additive`, `intensive`, `signed-additive`, `dimension`, `identifier`)
+- **domainShape** — domain shape (`open`, `bounded`, `fixed`, `cyclic`)
+- **diverging** — diverging nature (`none`, `conditional`, `inherent`)
+- **formatClass** — format class (`currency`, `percent`, `unit-suffix`, `date`, `integer`, `plain`, ...)
+- **zeroBaseline** — zero baseline policy (`meaningful`, `arbitrary`, `contextual`, `none`)
+- **zeroPad** — domain padding fraction
+
+→ Full details: [design-semantics-new.md](design-semantics-new.md)
 
 ---
 
 ## Template Catalog
 
+### Vega-Lite (28 chart types)
+
 | Category | Charts |
 |----------|--------|
 | **Scatter & Point** | Scatter Plot, Linear Regression, Boxplot, Strip Plot |
-| **Bar** | Bar Chart, Grouped Bar, Stacked Bar, Histogram, Lollipop, Pyramid |
-| **Line & Area** | Line Chart, Dotted Line, Bump Chart, Area Chart, Streamgraph |
-| **Part-to-Whole** | Pie Chart, Heatmap, Waterfall |
-| **Statistical** | Density Plot, Ranged Dot Plot, Radar Chart, Candlestick |
+| **Bar** | Bar Chart, Grouped Bar Chart, Stacked Bar Chart, Histogram, Lollipop Chart, Pyramid Chart |
+| **Line & Area** | Line Chart, Dotted Line Chart, Bump Chart, Area Chart, Streamgraph |
+| **Part-to-Whole** | Pie Chart, Rose Chart, Heatmap, Waterfall Chart |
+| **Statistical** | Density Plot, Ranged Dot Plot, Radar Chart, Candlestick Chart |
 | **Map** | US Map, World Map |
 | **Custom** | Custom Point, Custom Line, Custom Bar, Custom Rect, Custom Area |
 
-**30 chart types** across 7 categories.
+### ECharts (26 chart types)
+
+| Category | Charts |
+|----------|--------|
+| **Scatter & Point** | Scatter Plot, Linear Regression, Ranged Dot Plot, Boxplot, Strip Plot |
+| **Bar** | Bar Chart, Grouped Bar Chart, Stacked Bar Chart, Histogram, Lollipop Chart, Pyramid Chart, Heatmap |
+| **Line & Area** | Line Chart, Dotted Line Chart, Bump Chart, Area Chart, Streamgraph |
+| **Part-to-Whole** | Pie Chart, Funnel Chart, Treemap, Sunburst |
+| **Polar** | Radar Chart, Rose Chart |
+| **Financial** | Candlestick Chart |
+| **Indicator** | Gauge Chart |
+| **Flow** | Sankey |
+| **Other** | Waterfall Chart, Density Plot |
+
+### Chart.js (10 chart types)
+
+| Category | Charts |
+|----------|--------|
+| **Scatter & Point** | Scatter Plot |
+| **Bar** | Bar Chart, Grouped Bar Chart, Stacked Bar Chart, Histogram |
+| **Line & Area** | Line Chart, Area Chart |
+| **Part-to-Whole** | Pie Chart |
+| **Polar** | Radar Chart, Rose Chart |
+
+### GoFish (8 chart types)
+
+| Category | Charts |
+|----------|--------|
+| **Scatter & Point** | Scatter Plot |
+| **Bar** | Bar Chart, Grouped Bar Chart, Stacked Bar Chart |
+| **Line & Area** | Line Chart, Area Chart |
+| **Part-to-Whole** | Pie Chart, Scatter Pie Chart |
+
+**72 template definitions** across 4 backends.
 
 Each template defines:
-1. **`template`** — VL spec skeleton (mark + encoding structure)
+1. **`template`** — spec skeleton (mark + encoding structure)
 2. **`channels`** — available encoding channels
 3. **`markCognitiveChannel`** — how the mark encodes value (`position`, `length`, `area`, `color`)
 4. **`declareLayoutMode()`** — optional hook for layout intent
-5. **`instantiate()`** — build final VL spec from resolved context
+5. **`instantiate()`** — build final backend spec from resolved context
 
 ---
 
 ## Public API
 
-```typescript
-import { assembleChart } from './lib/agents-chart';
+All four backends share the same input type (`ChartAssemblyInput`)
+and follow the same calling convention:
 
-const spec = assembleChart(
-    'Scatter Plot',
-    { x: { field: 'weight' }, y: { field: 'mpg' }, color: { field: 'origin' } },
-    myData,
-    { weight: 'Quantity', mpg: 'Quantity', origin: 'Country' },
-    { width: 400, height: 300 },
-);
+```typescript
+import { assembleVegaLite, assembleECharts, assembleChartjs, assembleGoFish } from './lib/agents-chart';
+
+const input: ChartAssemblyInput = {
+    chartType: 'Scatter Plot',
+    encodings: { x: { field: 'weight' }, y: { field: 'mpg' }, color: { field: 'origin' } },
+    table: myData,
+    semanticTypes: { weight: 'Quantity', mpg: 'Quantity', origin: 'Country' },
+    canvasSize: { width: 400, height: 300 },
+};
+
+const vlSpec   = assembleVegaLite(input);  // → Vega-Lite JSON spec
+const ecSpec   = assembleECharts(input);   // → ECharts option object
+const cjsSpec  = assembleChartjs(input);   // → Chart.js config object
+const gfSpec   = assembleGoFish(input);    // → GoFish imperative spec
 ```
 
-**Input:**
+**`ChartAssemblyInput` fields:**
 - `chartType` — template name (e.g., `"Grouped Bar Chart"`)
 - `encodings` — channel → `ChartEncoding` (field, aggregate, sort, scheme)
-- `data` — array of row objects
+- `table` — array of row objects
 - `semanticTypes` — field name → semantic type string (e.g., `"Revenue"`, `"Year"`)
 - `canvasSize` — `{ width, height }` in pixels
 - `options` — `AssembleOptions` (layout tuning, all have defaults)
 
-**Output:** Complete Vega-Lite spec with `data.values`, ready to render.
+**Output:** Complete backend-specific spec, ready to render.
 May include `_warnings: ChartWarning[]` for overflow/truncation diagnostics.
 
 ---
@@ -428,7 +555,7 @@ The default overflow strategy priority:
 
 ```
 ┌─────────────────────────────────────────────────┐
-│              ANALYSIS (VL-free)                  │
+│              ANALYSIS (core/ — backend-free)     │
 │                                                  │
 │  resolveSemantics  →  ChannelSemantics           │
 │  declareLayoutMode →  LayoutDeclaration          │
@@ -438,23 +565,25 @@ The default overflow strategy priority:
 │                                                  │
 │  Inputs:  abstract channels, data, semantic types│
 │  Outputs: types, decisions, layout numbers       │
-│  Imports: NO vega-lite, NO VL encoding syntax    │
+│  Imports: NO backend-specific syntax             │
 ├─────────────────────────────────────────────────┤
-│              INSTANTIATE (VL-specific)           │
+│   INSTANTIATE (vegalite/ | echarts/ | chartjs/ | gofish/)  │
 │                                                  │
-│  buildVLEncodings  →  VL encoding objects        │
-│  template.instantiate → VL spec                  │
-│  restructureFacets → VL facet structure          │
-│  applyLayoutToSpec → VL config/sizing            │
+│  Each backend has its own:                       │
+│    build*Encodings  →  backend encoding objects   │
+│    template.instantiate → backend spec            │
+│    restructureFacets → backend facet structure    │
+│    applyLayoutToSpec → backend config/sizing      │
 │                                                  │
 │  Inputs:  ChannelSemantics + LayoutResult + data │
-│  Outputs: complete Vega-Lite spec                │
-│  This is the ONLY code that constructs VL syntax │
+│  Outputs: complete backend-specific spec         │
+│  Backend code ONLY constructs its own syntax     │
 └─────────────────────────────────────────────────┘
 ```
 
 The boundary is enforced by function signatures: analysis-stage functions
-accept `ChannelSemantics` and `LayoutDeclaration` — never VL encoding
-objects or spec structures. This makes it possible to retarget the
-analysis stage to non-VL backends (ECharts, Plotly, etc.) without
-changing any analysis code.
+accept `ChannelSemantics` and `LayoutDeclaration` — never backend encoding
+objects or spec structures. All four backends (Vega-Lite, ECharts,
+Chart.js, GoFish) share the same analysis stage and read the same
+`ChannelSemantics` IR. Adding a new backend only requires implementing
+the instantiation layer — no analysis code changes.
