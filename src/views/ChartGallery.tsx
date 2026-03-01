@@ -9,10 +9,11 @@
  * React components that render the gallery UI.
  */
 
-import React, { useEffect, useRef, useState, useMemo } from 'react';
+import React, { useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import {
-    Box, Tabs, Tab, Typography, Paper, Chip,
+    Box, Tabs, Tab, Typography, Paper, Chip, Button,
 } from '@mui/material';
+import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import embed from 'vega-embed';
 import * as echarts from 'echarts';
 import { Chart, registerables } from 'chart.js';
@@ -198,6 +199,30 @@ const VegaChart: React.FC<{ testCase: TestCase }> = React.memo(({ testCase }) =>
                             {w.message}
                         </Typography>
                     ))}
+                </Box>
+            )}
+            {/* Debug copy button — only for debug-tagged tests */}
+            {testCase.tags.includes('debug') && (
+                <Box sx={{ mt: 1 }}>
+                    <Button
+                        size="small"
+                        variant="outlined"
+                        startIcon={<ContentCopyIcon sx={{ fontSize: 12 }} />}
+                        sx={{ fontSize: 10, textTransform: 'none', py: 0.25, px: 1 }}
+                        onClick={() => {
+                            const parts: string[] = [];
+                            if (specOptions) {
+                                parts.push('## agents-chart input spec\n' + specOptions);
+                            }
+                            if (specJson) {
+                                const vlLines = specJson.split('\n').slice(0, 50).join('\n');
+                                parts.push('## vega-lite output spec (first 50 lines)\n' + vlLines);
+                            }
+                            navigator.clipboard.writeText(parts.join('\n\n'));
+                        }}
+                    >
+                        Copy Spec + VL
+                    </Button>
                 </Box>
             )}
             {specOptions && (

@@ -374,7 +374,7 @@ export function resolveChannelSemantics(
 
         // Stage 2: layer on channel-specific visualization decisions
         const tickConstraint = resolveTickConstraint(annotation.semanticType, annotation.intrinsicDomain);
-        const reversed = resolveReversed(annotation.semanticType);
+        const reversed = resolveReversed(annotation.semanticType, channel);
         const nice = resolveNice(annotation.semanticType, fc.domainConstraint);
         const stackable = resolveStackable(annotation.semanticType);
 

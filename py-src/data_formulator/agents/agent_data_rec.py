@@ -73,7 +73,6 @@ SHARED_CHART_REFERENCE = '''**[CHART TYPE REFERENCE]**
 | Regression | x, y, color, size, facet | regressionMethod ("linear","log","exp","pow","quad","poly"), polyOrder (2–10) |
 | Bar Chart | x, y, color, facet | cornerRadius (0–15) |
 | Grouped Bar Chart | x, y, group, facet | cornerRadius (0–15) |
-| Histogram | x, color, facet | binCount (5–50) |
 | Line Chart | x, y, color, strokeDash, facet | interpolate ("linear","monotone","step") |
 | Area Chart | x, y, color, facet | — |
 | Heatmap | x, y, color, facet | colorScheme ("viridis","blues","reds","oranges","greens","blueorange","redblue") |
@@ -87,9 +86,9 @@ SHARED_CHART_REFERENCE = '''**[CHART TYPE REFERENCE]**
 
 **Critical chart rules:**
 - **Scatter Plot**: good default for relationships/correlations. Use config opacity (0.1–1.0) for dense data instead of encoding opacity.
-- **Regression**: automatically overlays a trend line — do NOT compute regression in Python.
-- **Histogram**: only needs x encoding; values are auto-binned.
-- **Bar Chart**: same-x rows are automatically stacked. Use Grouped Bar Chart for side-by-side (group channel, not color).
+- **Regression**: automatically overlays a trend line — do NOT compute regression in Python. Use color to get separate trend lines per group.
+- **Bar Chart**: x=categorical, y=quantitative (vertical bars). Swap x↔y for horizontal bars. For histograms/distributions, bin the data in the Python step. Same-x rows are auto-stacked.
+- **Grouped Bar Chart**: use the group channel (not color) for side-by-side bars.
 - **Line Chart**: use strokeDash to differentiate line styles (e.g. actual vs forecast).
 - **Pie Chart**: use "size" channel (not "theta") for the wedge values. Avoid when >7–8 categories.
 - **Lollipop Chart**: like bar but with dot+line — cleaner for ranked comparisons.

@@ -546,10 +546,26 @@ function vlApplyFieldContext(
         for (const enc of targets) {
             if (!enc.field) continue;
 
+            // ── 0. Temporal + bin incompatibility guard ──
+            // VL's `bin` operates on numeric values. Setting `type: "temporal"`
+            // with `bin` causes VL to parse values (e.g., year 2004) as dates
+            // and bin in milliseconds, producing nonsensical time-of-day labels.
+            // For temporal binning, VL expects `timeUnit` instead.
+            // Fix: demote to `quantitative` so bins work on raw numbers.
+            if (enc.bin && enc.type === 'temporal') {
+                enc.type = 'quantitative';
+                // Year/Decade values should show as plain integers, not "2,004"
+                if (!enc.axis) enc.axis = {};
+                if (!enc.axis.format) enc.axis.format = 'd';
+            }
+
             // ── 1. Number format (axis.format / axis.labelExpr) ──
             // Only apply to quantitative positional channels.
+            // Skip binned encodings — VL formats bin ranges natively and
+            // our semantic format (e.g. percent) would misinterpret the
+            // bin boundaries.
             // Without this: axes show raw numbers like "1000000" instead of "$1,000,000".
-            if ((cs.format?.pattern || cs.format?.abbreviate) && (ch === 'x' || ch === 'y') && enc.type === 'quantitative') {
+            if ((cs.format?.pattern || cs.format?.abbreviate) && (ch === 'x' || ch === 'y') && enc.type === 'quantitative' && !enc.bin) {
                 // Skip if the encoding already has an explicit format
                 if (!enc.axis?.format && !enc.axis?.labelExpr) {
                     if (!enc.axis) enc.axis = {};
@@ -575,9 +591,10 @@ function vlApplyFieldContext(
             // Semantic domain constraints (e.g., Rating [1-5], Percentage [0-100])
             // represent *intrinsic* field bounds and should override any
             // auto-computed padded domain from the zero-baseline heuristic.
+            // Skip binned encodings — VL handles bin domain automatically.
             // Without this: Rating gets auto-fitted to data range (e.g., 2-4.5)
             // instead of showing the full 1-5 scale.
-            if (cs.domainConstraint && enc.type === 'quantitative' && (ch === 'x' || ch === 'y')) {
+            if (cs.domainConstraint && enc.type === 'quantitative' && (ch === 'x' || ch === 'y') && !enc.bin) {
                 if (!enc.scale) enc.scale = {};
                 const { min, max, clamp } = cs.domainConstraint;
                 if (min !== undefined && max !== undefined) {
@@ -602,15 +619,24 @@ function vlApplyFieldContext(
             }
 
             // ── 4. Tick constraint (axis.tickMinStep + axis.values) ──
+            // Skip binned encodings — VL handles bin ticks natively.
             // Without this: Rating 1-5 and Count axes show fractional ticks
             // like 1.5, 2.5, 3.5 that have no physical meaning.
-            if (cs.tickConstraint && (ch === 'x' || ch === 'y') && enc.type === 'quantitative') {
+            if (cs.tickConstraint && (ch === 'x' || ch === 'y') && enc.type === 'quantitative' && !enc.bin) {
                 if (!enc.axis) enc.axis = {};
                 if (cs.tickConstraint.integersOnly && enc.axis.tickMinStep === undefined) {
                     enc.axis.tickMinStep = cs.tickConstraint.minStep ?? 1;
                 }
                 if (cs.tickConstraint.exactTicks && !enc.axis.values) {
                     enc.axis.values = cs.tickConstraint.exactTicks;
+                }
+                // Hide fractional tick labels for integer-only fields.
+                // VL may still generate fractional ticks when the domain
+                // span is small (e.g., all values = 1 → domain [0,1] →
+                // ticks at 0, 0.2, 0.4…). The `,d` format rounds these
+                // to duplicate labels. This labelExpr suppresses them.
+                if (cs.tickConstraint.integersOnly && !enc.axis.labelExpr && !enc.axis.values) {
+                    enc.axis.labelExpr = "datum.value === ceil(datum.value) ? format(datum.value, ',d') : ''";
                 }
                 // When ticks are integers, axis labels should show integers
                 // even if the underlying data has decimals (e.g., Rating
@@ -634,7 +660,8 @@ function vlApplyFieldContext(
             // first domain value (rank 1) at the top by default, so adding
             // scale.reverse there would double-reverse, putting 1 back at
             // the bottom.
-            if (cs.reversed && (ch === 'x' || ch === 'y') && enc.type === 'quantitative') {
+            // Skip binned encodings — VL handles bin axis direction natively.
+            if (cs.reversed && (ch === 'x' || ch === 'y') && enc.type === 'quantitative' && !enc.bin) {
                 if (!enc.scale) enc.scale = {};
                 if (enc.scale.reverse === undefined) {
                     enc.scale.reverse = true;
@@ -644,7 +671,8 @@ function vlApplyFieldContext(
             // ── 6. Nice rounding (scale.nice) ──
             // Without this: Domain [1, 5] for ratings gets "nice-rounded"
             // to [0, 6] which wastes space and implies values that don't exist.
-            if (cs.nice === false && enc.type === 'quantitative') {
+            // Skip binned encodings — VL computes bin extents automatically.
+            if (cs.nice === false && enc.type === 'quantitative' && !enc.bin) {
                 if (!enc.scale) enc.scale = {};
                 if (enc.scale.nice === undefined) {
                     enc.scale.nice = false;
@@ -655,7 +683,9 @@ function vlApplyFieldContext(
             // Only applies for specific semantic types (Population, GDP, etc.)
             // when data spans ≥ 4 orders of magnitude. Conservative policy
             // to avoid surprising users on normal datasets.
-            if (cs.scaleType && cs.scaleType !== 'linear' && enc.type === 'quantitative') {
+            // Skip binned encodings — log/sqrt scales conflict with VL's
+            // linear bin computation and break when data contains zeros.
+            if (cs.scaleType && cs.scaleType !== 'linear' && enc.type === 'quantitative' && !enc.bin) {
                 if (!enc.scale) enc.scale = {};
                 if (!enc.scale.type) {
                     enc.scale.type = cs.scaleType;

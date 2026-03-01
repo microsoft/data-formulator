@@ -104,6 +104,9 @@ function genPercentageFormatTest(): TestCase {
             department:      { type: Type.String, semanticType: 'Category',   levels: categories },
             completion_rate: { type: Type.Number, semanticType: 'Percentage', levels: [] },
         },
+        semanticAnnotations: {
+            completion_rate: { semanticType: 'Percentage', intrinsicDomain: [0, 1] },
+        },
         encodingMap: {
             x: makeEncodingItem('department'),
             y: makeEncodingItem('completion_rate'),
@@ -350,6 +353,9 @@ function genRevenueVsPercentTest(): TestCase {
             city:        { type: Type.String, semanticType: 'City',       levels: CITIES },
             revenue:     { type: Type.Number, semanticType: 'Revenue',    levels: [] },
             growth_rate: { type: Type.Number, semanticType: 'Percentage', levels: [] },
+        },
+        semanticAnnotations: {
+            growth_rate: { semanticType: 'Percentage', intrinsicDomain: [0, 1] },
         },
         encodingMap: {
             x:     makeEncodingItem('revenue'),
@@ -858,6 +864,9 @@ function genPercentageChangeSignedTest(): TestCase {
             stock:        { type: Type.String, semanticType: 'Category',         levels: stocks },
             ytd_change:   { type: Type.Number, semanticType: 'PercentageChange', levels: [] },
             market_cap_B: { type: Type.Number, semanticType: 'Amount',           levels: [] },
+        },
+        semanticAnnotations: {
+            ytd_change: { semanticType: 'PercentageChange', intrinsicDomain: [-1, 1] },
         },
         encodingMap: {
             x: makeEncodingItem('stock'),

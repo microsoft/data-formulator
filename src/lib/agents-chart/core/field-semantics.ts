@@ -339,6 +339,15 @@ export function resolveFormat(
         }
 
         case 'percent': {
+            // Without an explicit intrinsicDomain we cannot reliably tell
+            // whether values are fractional 0-1 or whole-number 0-100, so
+            // fall back to plain formatting to avoid misinterpretation.
+            if (!annotation.intrinsicDomain) {
+                return {
+                    format:  {},
+                    tooltipFormat: { pattern: precisionFormat(nums) },
+                };
+            }
             const rep = detectPercentageRepresentation(nums);
             if (rep === '0-1') {
                 // d3's .% format multiplies by 100 automatically
@@ -359,6 +368,15 @@ export function resolveFormat(
         }
 
         case 'signed-percent': {
+            // Without an explicit intrinsicDomain we cannot reliably tell
+            // whether values are fractional 0-1 or whole-number 0-100, so
+            // fall back to plain signed formatting to avoid misinterpretation.
+            if (!annotation.intrinsicDomain) {
+                return {
+                    format:  { pattern: precisionFormat(nums, true, '+') },
+                    tooltipFormat: { pattern: precisionFormat(nums, true, '+') },
+                };
+            }
             const rep = detectPercentageRepresentation(nums);
             if (rep === '0-1') {
                 const p = detectPrecision(nums);
@@ -435,7 +453,19 @@ export function resolveDefaultVisType(
 
     const entry = getRegistryEntry(semanticType);
     const candidates = entry.visEncodings;
-    if (candidates.length === 1) return candidates[0];
+    if (candidates.length === 1) {
+        // Guard: if registry says quantitative but actual values are
+        // strings (e.g. binned ranges like "91-95"), defer to data inference.
+        if (candidates[0] === 'quantitative') {
+            const nonNull = values.filter(v => v != null);
+            const allNumeric = nonNull.length > 0 &&
+                nonNull.every(v => typeof v === 'number' || (typeof v === 'string' && !isNaN(+v) && v.trim() !== ''));
+            if (!allNumeric) {
+                return inferVisCategory(values);
+            }
+        }
+        return candidates[0];
+    }
 
     // Disambiguate between quantitative and ordinal based on distinct count
     if (candidates.includes('quantitative') && candidates.includes('ordinal')) {
@@ -528,8 +558,12 @@ export function resolveScaleType(
     // Only consider log for additive measures with open domains —
     // these are the types that can legitimately span many orders of magnitude.
     // (E.g., revenue, population, quantities across different scales.)
+    // Exclude generic fallback types (Number, Unknown) — they just mean
+    // "we know it's numeric but not what it measures", so applying
+    // log/symlog would be presumptuous.
     const entry = getRegistryEntry(semanticType);
-    const eligible = entry.aggRole === 'additive' && entry.domainShape === 'open';
+    const eligible = entry.aggRole === 'additive' && entry.domainShape === 'open'
+        && entry.t1 !== 'GenericMeasure';
     if (!eligible) return undefined;
 
     if (values.length < 10) return undefined;
@@ -544,9 +578,15 @@ export function resolveScaleType(
     // Only all-positive data — don't auto-log mixed-sign
     if (min < 0) return undefined;
 
-    // Require ≥ 4 orders of magnitude (10 000×) — very conservative
+    // Require ≥ 6 orders of magnitude (1000 000×) — very conservative
     const positiveMin = Math.min(...filtered.filter(v => v > 0));
-    if (positiveMin > 0 && max / positiveMin >= 10000) return 'log';
+    if (positiveMin > 0 && max / positiveMin >= 1000000) {
+        // If data contains zeros, log(0) = -∞ breaks the scale.
+        // Use symlog (linear near zero, logarithmic for large values)
+        // so zeros remain representable.
+        const hasZeros = filtered.some(v => v === 0);
+        return hasZeros ? 'symlog' : 'log';
+    }
 
     return undefined;
 }
@@ -716,10 +756,16 @@ export function resolveCyclic(semanticType: string): boolean {
 /**
  * Whether the axis should be reversed for this field.
  *
- * Rank is the primary case: 1st place should appear at the top.
+ * Rank is the primary case: 1st place should appear at the top of the
+ * y-axis.  On the x-axis, rank 1 should stay on the left (no reversal).
  */
-export function resolveReversed(semanticType: string): boolean {
-    return semanticType === 'Rank';
+export function resolveReversed(semanticType: string, channel?: string): boolean {
+    if (semanticType === 'Rank') {
+        // Only reverse on the y-axis (rank 1 at top).
+        // On x-axis, natural left-to-right order is correct.
+        return channel !== 'x';
+    }
+    return false;
 }
 
 // =============================================================================

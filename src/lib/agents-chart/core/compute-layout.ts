@@ -687,8 +687,48 @@ export function computeChannelBudgets(
         : minStepVal;
 
     // --- 4. Per-channel budgets ---
-    const maxXToKeep = Math.floor(maxSubplotW / xMinGroupStep);
-    const maxYToKeep = Math.floor(maxSubplotH / yMinGroupStep);
+    let maxXToKeep = Math.floor(maxSubplotW / xMinGroupStep);
+    let maxYToKeep = Math.floor(maxSubplotH / yMinGroupStep);
+
+    // --- 5. Faceted-chart canvas cap ---
+    // Each subplot's step-based width/height must fit in the (un-stretched)
+    // canvas dimensions. Without this, a busy discrete axis produces
+    // subplots wider than the canvas, causing clipping.  Filtering values
+    // yields narrower subplots; we then re-derive the facet grid so more
+    // columns fit, reducing overall chart height.
+    if (facetGrid) {
+        const canvasXCap = Math.max(1, Math.floor(canvasSize.width / xMinGroupStep));
+        const canvasYCap = Math.max(1, Math.floor(canvasSize.height / yMinGroupStep));
+
+        if (maxXToKeep > canvasXCap || maxYToKeep > canvasYCap) {
+            maxXToKeep = Math.min(maxXToKeep, canvasXCap);
+            maxYToKeep = Math.min(maxYToKeep, canvasYCap);
+
+            // Re-derive facet grid with the tighter subplot size.
+            const colField = channelSemantics.column?.field;
+            const rowField = channelSemantics.row?.field;
+            const colCount = colField
+                ? new Set(data.map(r => r[colField])).size : 0;
+
+            if (colCount > 1 && !rowField) {
+                const tighterW = canvasXCap * xMinGroupStep;
+                const totalW = canvasSize.width * maxStretchVal - fixW;
+                const totalH = canvasSize.height * maxStretchVal - fixH;
+                const revisedMaxCols = Math.max(1, Math.floor(totalW / (tighterW + gap)));
+                const revisedMaxRows = Math.max(1, Math.floor(
+                    totalH / ((options.minSubplotSize ?? 60) + gap),
+                ));
+                const maxTotal = revisedMaxCols * revisedMaxRows;
+                const effectiveCount = Math.min(colCount, maxTotal);
+                const visRows = Math.ceil(effectiveCount / revisedMaxCols);
+                const visCols = Math.ceil(effectiveCount / visRows);
+
+                facetGrid.columns = visCols;
+                facetGrid.rows = visRows;
+                facetGrid.maxColumnValues = maxTotal;
+            }
+        }
+    }
 
     const hasRow = !!channelSemantics.row?.field;
     const maxFacetColumns = facetGrid?.maxColumnValues ?? Infinity;

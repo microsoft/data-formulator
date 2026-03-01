@@ -590,14 +590,12 @@ function buildVLEncodings(
                 if (cs?.ordinalSortOrder && cs.ordinalSortOrder.length > 0) {
                     encodingObj.sort = preserveDomainTypes(cs.ordinalSortOrder);
                 } else if (fieldIsNumeric && fieldName) {
-                        // Numeric data treated as nominal: sort by numeric value
-                        // so labels appear as 0,1,2,3… instead of data-encounter order.
-                        // Don't use `sort: null` here — it preserves encounter order
-                        // which scrambles numeric categories.
-                        const uniqueNums = [...new Set(data.map(r => r[fieldName]))]
-                            .filter(v => v != null)
-                            .sort((a: number, b: number) => a - b);
-                        encodingObj.sort = uniqueNums;
+                        // Numeric data treated as nominal/ordinal: sort by numeric
+                        // value so labels appear as 0,1,2,3… instead of data-encounter
+                        // order.  Use "ascending" instead of an explicit value array
+                        // to keep the spec compact (avoids enumerating every unique
+                        // value, which can be hundreds for fields like Rank).
+                        encodingObj.sort = "ascending";
                 } else {
                     encodingObj.sort = null;
                 }
