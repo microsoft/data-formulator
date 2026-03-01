@@ -10,6 +10,17 @@ import { extractCategories, groupBy, DEFAULT_COLORS } from './utils';
 
 const isDiscrete = (type: string | undefined) => type === 'nominal' || type === 'ordinal';
 
+/** True if all category labels parse as numbers → horizontal; else vertical (align with line/bar). */
+function areCategoriesNumeric(cats: string[]): boolean {
+    if (cats.length === 0) return true;
+    return cats.every((c) => {
+        const s = String(c).trim();
+        if (s === '') return false;
+        const n = Number(s);
+        return !isNaN(n) && isFinite(n);
+    });
+}
+
 /** Seeded jitter for reproducible strip plot. */
 function jitter(seed: number): () => number {
     let s = seed;
@@ -46,38 +57,50 @@ export const ecStripPlotDef: ChartTemplateDef = {
 
         const categories = extractCategories(table, catField!, (catAxis === 'x' ? xCS : yCS)?.ordinalSortOrder);
         const catToIndex = new Map(categories.map((c, i) => [c, i]));
-        const jitterWidth = (chartProperties?.stepWidth ?? 20) * 0.8;
+        // Jitter in band [i, i+1]. ECharts category axis only accepts integer indices so jitter is invisible;
+        // use value axis with range [0, n] and formatter so fractional x/y are rendered.
+        const jitterHalfWidth = 0.5;
         const rand = jitter(42);
+        const nCat = categories.length;
+        const catAxisLabel = () => ({
+            interval: 0,
+            rotate: areCategoriesNumeric(categories) ? 0 : 90,
+            formatter: (value: number) => categories[Math.min(Math.floor(value), nCat - 1)] ?? '',
+        });
+        const valueAxisCommon = (name: string, nameGap: number) => ({
+            type: 'value' as const,
+            name,
+            nameLocation: 'middle' as const,
+            nameGap,
+            axisTick: { show: true },
+            axisLabel: { rotate: 0 },
+        });
+        const catAxisConfig = () => ({
+            type: 'value' as const,
+            name: catField,
+            nameLocation: 'middle' as const,
+            nameGap: 30,
+            min: 0,
+            max: nCat,
+            interval: 1,
+            axisTick: { show: true },
+            axisLabel: catAxisLabel(),
+        });
 
         const option: any = {
             tooltip: { trigger: 'item' },
-            xAxis: {
-                type: 'category',
-                data: categories,
-                name: catField,
-                nameLocation: 'middle',
-                nameGap: 30,
-            },
-            yAxis: {
-                type: 'value',
-                name: contField,
-                nameLocation: 'middle',
-                nameGap: 40,
-            },
+            xAxis: catAxis === 'x' ? catAxisConfig() : valueAxisCommon(contField!, 30),
+            yAxis: catAxis === 'y' ? catAxisConfig() : valueAxisCommon(contField!, 40),
             series: [],
         };
-
-        if (catAxis === 'y') {
-            option.xAxis = { type: 'value', name: contField, nameLocation: 'middle', nameGap: 30 };
-            option.yAxis = { type: 'category', data: categories, name: catField, nameLocation: 'middle', nameGap: 40 };
-        }
 
         const buildPoint = (row: any) => {
             const cat = String(row[catField!] ?? '');
             const idx = catToIndex.get(cat) ?? 0;
-            const offset = rand() * jitterWidth;
-            const x = catAxis === 'x' ? idx + offset : row[contField];
-            const y = catAxis === 'y' ? idx + offset : row[contField];
+            const center = idx + 0.5;
+            const offset = rand() * jitterHalfWidth;
+            const x = catAxis === 'x' ? center + offset : row[contField];
+            const y = catAxis === 'y' ? center + offset : row[contField];
             return [x, y];
         };
 

@@ -12,6 +12,17 @@ import { detectBandedAxisFromSemantics } from '../../vegalite/templates/utils';
 
 const isDiscrete = (type: string | undefined) => type === 'nominal' || type === 'ordinal';
 
+/** True if all category labels parse as numbers → horizontal labels; otherwise vertical (align with line chart). */
+function areCategoriesNumeric(cats: string[]): boolean {
+    if (cats.length === 0) return true;
+    return cats.every((c) => {
+        const s = String(c).trim();
+        if (s === '') return false;
+        const n = Number(s);
+        return !isNaN(n) && isFinite(n);
+    });
+}
+
 export const ecLollipopChartDef: ChartTemplateDef = {
     chart: 'Lollipop Chart',
     template: { mark: 'bar', encoding: {} },
@@ -52,11 +63,41 @@ export const ecLollipopChartDef: ChartTemplateDef = {
         const option: any = {
             tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
             xAxis: isHorizontal
-                ? { type: 'value', name: valField }
-                : { type: 'category', data: categories, name: catField },
+                ? {
+                    type: 'value',
+                    name: valField,
+                    nameLocation: 'middle',
+                    nameGap: 30,
+                    axisTick: { show: true },
+                    axisLabel: { rotate: 0 },
+                }
+                : {
+                    type: 'category',
+                    data: categories,
+                    name: catField,
+                    nameLocation: 'middle',
+                    nameGap: 30,
+                    axisTick: { show: true, alignWithLabel: true },
+                    axisLabel: { rotate: areCategoriesNumeric(categories) ? 0 : 90 },
+                },
             yAxis: isHorizontal
-                ? { type: 'category', data: categories, name: catField }
-                : { type: 'value', name: valField },
+                ? {
+                    type: 'category',
+                    data: categories,
+                    name: catField,
+                    nameLocation: 'middle',
+                    nameGap: 40,
+                    axisTick: { show: true, alignWithLabel: true },
+                    axisLabel: { rotate: 0 },
+                }
+                : {
+                    type: 'value',
+                    name: valField,
+                    nameLocation: 'middle',
+                    nameGap: 40,
+                    axisTick: { show: true },
+                    axisLabel: { rotate: 0 },
+                },
             series: [
                 {
                     type: 'bar',

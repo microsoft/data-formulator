@@ -287,7 +287,7 @@ export const ecBarChartDef: ChartTemplateDef = {
                     axisTick: { show: true, alignWithLabel: true },
                     axisLine: { show: true },
                 },
-                yAxis: { type: 'value', name: 'Count' },
+                yAxis: { type: 'value', name: 'Count', axisTick: { show: true } },
                 series: groups.map((name, i) => ({
                     name,
                     type: 'bar',
@@ -406,7 +406,7 @@ export const ecStackedBarChartDef: ChartTemplateDef = {
                     axisTick: { show: true, alignWithLabel: true },
                     axisLine: { show: true },
                 },
-                yAxis: { type: 'value', name: 'Count' },
+                yAxis: { type: 'value', name: 'Count', axisTick: { show: true } },
                 series: [],
             };
             option._encodingTooltip = {
@@ -627,7 +627,7 @@ export const ecGroupedBarChartDef: ChartTemplateDef = {
                     axisTick: { show: true, alignWithLabel: true },
                     axisLine: { show: true },
                 },
-                yAxis: { type: 'value', name: 'Count' },
+                yAxis: { type: 'value', name: 'Count', axisTick: { show: true } },
                 series: segments.map((name, i) => ({
                     name,
                     type: 'bar',
@@ -686,7 +686,7 @@ export const ecGroupedBarChartDef: ChartTemplateDef = {
                     axisTick: { show: true, alignWithLabel: true },
                     axisLine: { show: true },
                 },
-                yAxis: { type: 'value', name: 'Count' },
+                yAxis: { type: 'value', name: 'Count', axisTick: { show: true } },
                 series: [],
             };
             option._encodingTooltip = {

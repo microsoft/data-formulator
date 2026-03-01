@@ -129,6 +129,7 @@ export const ecBoxplotDef: ChartTemplateDef = {
             [isHorizontal ? 'xAxis' : 'yAxis']: {
                 type: 'value',
                 name: valField,
+                axisTick: { show: true },
                 axisLabel: { rotate: 0 },
             },
             series: [],

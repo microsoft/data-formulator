@@ -84,6 +84,8 @@ export const ecLineChartDef: ChartTemplateDef = {
                 } else if (xIsTemporal) {
                     base.axisTick = { show: true, alignWithLabel: true };
                     base.axisLabel = { rotate: 90 };
+                } else {
+                    base.axisTick = { show: true };
                 }
                 return base;
             })(),
@@ -102,6 +104,7 @@ export const ecLineChartDef: ChartTemplateDef = {
                     name: yField,
                     nameLocation: 'middle',
                     nameGap: 40,
+                    axisTick: { show: true },
                     axisLabel: { rotate: 0 },
                 },
             series: [],
@@ -282,19 +285,24 @@ export const ecLineChartDef: ChartTemplateDef = {
 /**
  * For category-axis line charts, align series data to the shared category array.
  * Returns an array of y-values (or null) indexed by category position.
+ * Optional yTransform applies to non-null values (e.g. rank inversion for Bump chart).
  */
 function buildCategoryAlignedData(
     rows: any[],
     xField: string,
     yField: string,
     categories: string[],
+    yTransform?: (y: number) => number,
 ): (number | null)[] {
-    // Build a map: category → y value
     const map = new Map<string, number>();
     for (const row of rows) {
-        map.set(String(row[xField]), row[yField]);
+        const v = row[yField];
+        if (v != null && !isNaN(Number(v))) map.set(String(row[xField]), Number(v));
     }
-    return categories.map(cat => map.get(cat) ?? null);
+    return categories.map(cat => {
+        const v = map.get(cat);
+        return v != null ? (yTransform ? yTransform(v) : v) : null;
+    });
 }
 
 /**
@@ -364,6 +372,8 @@ export const ecDottedLineChartDef: ChartTemplateDef = {
                 } else if (xIsTemporal) {
                     base.axisTick = { show: true, alignWithLabel: true };
                     base.axisLabel = { rotate: 90 };
+                } else {
+                    base.axisTick = { show: true };
                 }
                 return base;
             })(),
@@ -372,6 +382,7 @@ export const ecDottedLineChartDef: ChartTemplateDef = {
                 name: yField,
                 nameLocation: 'middle',
                 nameGap: 40,
+                axisTick: { show: true },
                 axisLabel: { rotate: 0 },
             },
             series: [],
@@ -429,6 +440,9 @@ export const ecDottedLineChartDef: ChartTemplateDef = {
 
 /**
  * Bump Chart — line with points, rank axis reversed when y is rank-like (mirror vegalite/templates/bump.ts).
+ * Use yAxis as category with data ['1','2',...,'maxRank'] and inverse: true so rank 1 is at top without
+ * using value-axis inverse (which in ECharts moves the x-axis to the top). Series y values are category
+ * indices (rank - 1). All serializable — no formatter needed.
  */
 export const ecBumpChartDef: ChartTemplateDef = {
     chart: 'Bump Chart',
@@ -456,36 +470,92 @@ export const ecBumpChartDef: ChartTemplateDef = {
         const rankOnX = xIsRank && !yIsRank;
 
         const xIsDiscrete = isDiscrete(xCS.type);
+        const xIsTemporal = xCS.type === 'temporal';
         const categories = xIsDiscrete ? extractCategories(table, xField, getCategoryOrder(ctx, 'x')) : undefined;
+
+        const rankValues = table.map((r: any) => Number(r[yField])).filter((v: number) => !isNaN(v) && isFinite(v));
+        const maxRank = rankValues.length ? Math.max(...rankValues) : 1;
+        const rankCategories = Array.from({ length: maxRank }, (_, i) => String(i + 1));
+        const rankToIndex = (rank: number) => Math.max(0, Math.min(maxRank - 1, Math.round(rank) - 1));
+
+        const toXValue = (v: any): number | string => {
+            if (v == null) return NaN;
+            if (xIsTemporal) return typeof v === 'number' ? v : new Date(String(v)).getTime();
+            const n = Number(v);
+            return isNaN(n) ? String(v) : n;
+        };
+        const sortRowsByX = (rows: any[]) =>
+            [...rows].sort((a, b) => {
+                const ax = toXValue(a[xField]);
+                const bx = toXValue(b[xField]);
+                if (typeof ax === 'number' && typeof bx === 'number') return ax - bx;
+                return String(ax).localeCompare(String(bx));
+            });
 
         const option: any = {
             tooltip: { trigger: 'axis' },
             xAxis: (() => {
-                const type = xIsDiscrete ? 'category' : 'value';
+                const type = xIsDiscrete ? 'category' : xIsTemporal ? 'time' : 'value';
                 const base: any = {
                     type,
                     name: xField,
                     nameLocation: 'middle',
                     nameGap: 30,
+                    axisLine: { show: true },
                     ...(categories ? { data: categories } : {}),
                 };
                 if (xIsDiscrete && categories) {
                     base.axisTick = { show: true, alignWithLabel: true };
                     base.axisLabel = { rotate: areCategoriesNumeric(categories) ? 0 : 90 };
+                } else if (xIsTemporal) {
+                    base.axisTick = { show: true, alignWithLabel: true };
+                    base.axisLabel = { rotate: 90 };
+                } else {
+                    base.axisTick = { show: true };
                 }
                 return base;
             })(),
-            yAxis: {
-                type: 'value',
-                name: yField,
-                nameLocation: 'middle',
-                nameGap: 40,
-                inverse: !!rankOnY,
-                axisLabel: { rotate: 0 },
-            },
+            yAxis: rankOnY
+                ? {
+                    type: 'category',
+                    data: rankCategories,
+                    inverse: true,
+                    name: yField,
+                    nameLocation: 'middle',
+                    nameGap: 40,
+                    axisLabel: { rotate: 0 },
+                    axisTick: { show: true, alignWithLabel: true },
+                }
+                : {
+                    type: 'value',
+                    name: yField,
+                    nameLocation: 'middle',
+                    nameGap: 40,
+                    axisTick: { show: true },
+                    axisLabel: { rotate: 0 },
+                },
             series: [],
         };
-        option._encodingTooltip = { trigger: 'axis', categoryLabel: xField, valueLabel: yField };
+        if (rankOnY) {
+            option.tooltip = {
+                trigger: 'axis',
+                formatter: (params: any) => {
+                    const list = Array.isArray(params) ? params : [params];
+                    if (list.length === 0) return '';
+                    const p = list[0];
+                    const cat = p.axisValue ?? p.name ?? '';
+                    let html = `<b>${cat}</b><br/>`;
+                    list.forEach((item: any) => {
+                        const idx = item.value != null ? Number(item.value) : null;
+                        const displayRank = idx != null && Number.isInteger(idx) ? String(idx + 1) : '–';
+                        html += `${item.marker} ${item.seriesName}: ${displayRank}<br/>`;
+                    });
+                    return html;
+                },
+            };
+        } else {
+            option._encodingTooltip = { trigger: 'axis', categoryLabel: xField, valueLabel: yField };
+        }
 
         const baseSeriesOpt = { showSymbol: true, symbolSize: 6, smooth: true };
 
@@ -494,10 +564,10 @@ export const ecBumpChartDef: ChartTemplateDef = {
             option.legend = { data: [...groups.keys()] };
             let colorIdx = 0;
             for (const [name, rows] of groups) {
+                const orderedRows = xIsDiscrete ? rows : sortRowsByX(rows);
                 const seriesData = xIsDiscrete
-                    ? buildCategoryAlignedData(rows, xField, yField, categories!)
-                    : (rankOnX ? [...rows].sort((a, b) => Number(a[xField]) - Number(b[xField])) : rows)
-                        .map(r => [r[xField], r[yField]]);
+                    ? buildCategoryAlignedData(rows, xField, yField, categories!, rankOnY ? rankToIndex : undefined)
+                    : orderedRows.map(r => [toXValue(r[xField]), rankOnY ? rankToIndex(Number(r[yField])) : r[yField]]);
                 option.series.push({
                     name,
                     type: 'line',
@@ -508,14 +578,10 @@ export const ecBumpChartDef: ChartTemplateDef = {
                 colorIdx++;
             }
         } else {
-            let rows = table;
-            if (rankOnX) rows = [...rows].sort((a, b) => Number(a[xField]) - Number(b[xField]));
+            const rows = xIsDiscrete ? table : sortRowsByX(table);
             const seriesData = xIsDiscrete
-                ? categories!.map(cat => {
-                    const row = rows.find(r => String(r[xField]) === cat);
-                    return row ? row[yField] : null;
-                })
-                : rows.map(r => [r[xField], r[yField]]);
+                ? buildCategoryAlignedData(rows, xField, yField, categories!, rankOnY ? rankToIndex : undefined)
+                : rows.map(r => [toXValue(r[xField]), rankOnY ? rankToIndex(Number(r[yField])) : r[yField]]);
             option.series.push({ type: 'line', data: seriesData, ...baseSeriesOpt });
         }
 

@@ -628,8 +628,8 @@ export const ecLinearRegressionDef: ChartTemplateDef = {
 
         const option: any = {
             tooltip: { trigger: 'item' },
-            xAxis: { type: 'value', name: xField, nameLocation: 'middle', nameGap: 30 },
-            yAxis: { type: 'value', name: yField, nameLocation: 'middle', nameGap: 40 },
+            xAxis: { type: 'value', name: xField, nameLocation: 'middle', nameGap: 30, axisTick: { show: true } },
+            yAxis: { type: 'value', name: yField, nameLocation: 'middle', nameGap: 40, axisTick: { show: true } },
             series: [],
         };
 

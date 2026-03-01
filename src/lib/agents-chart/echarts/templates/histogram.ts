@@ -65,6 +65,7 @@ export const ecHistogramDef: ChartTemplateDef = {
                     name: xField,
                     nameLocation: 'middle',
                     nameGap: 25,
+                    axisTick: { show: true, alignWithLabel: true },
                     axisLabel: { rotate: categories.length > 10 ? 45 : 0 },
                 },
                 yAxis: {
@@ -72,6 +73,7 @@ export const ecHistogramDef: ChartTemplateDef = {
                     name: 'Count',
                     nameLocation: 'middle',
                     nameGap: 40,
+                    axisTick: { show: true },
                 },
                 series: [{
                     type: 'bar',
@@ -139,6 +141,7 @@ export const ecHistogramDef: ChartTemplateDef = {
                     name: xField,
                     nameLocation: 'middle',
                     nameGap: 25,
+                    axisTick: { show: true, alignWithLabel: true },
                     axisLabel: { rotate: categories.length > 10 ? 45 : 0 },
                 },
                 yAxis: {
@@ -146,6 +149,7 @@ export const ecHistogramDef: ChartTemplateDef = {
                     name: 'Count',
                     nameLocation: 'middle',
                     nameGap: 40,
+                    axisTick: { show: true },
                 },
                 series,
             };

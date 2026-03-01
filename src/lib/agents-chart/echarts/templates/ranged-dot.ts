@@ -37,6 +37,7 @@ export const ecRangedDotPlotDef: ChartTemplateDef = {
                 name: xField,
                 nameLocation: 'middle',
                 nameGap: 30,
+                axisTick: xIsDiscrete ? { show: true, alignWithLabel: true } : { show: true },
                 ...(xCategories ? { data: xCategories } : {}),
             },
             yAxis: yIsDiscrete && yCategories
@@ -49,7 +50,7 @@ export const ecRangedDotPlotDef: ChartTemplateDef = {
                     axisTick: { show: true, alignWithLabel: true },
                     axisLabel: { rotate: 0 },
                 }
-                : { type: 'value', name: yField, nameLocation: 'middle', nameGap: 40 },
+                : { type: 'value', name: yField, nameLocation: 'middle', nameGap: 40, axisTick: { show: true } },
             series: [],
         };
 

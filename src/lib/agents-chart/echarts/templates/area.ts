@@ -72,6 +72,7 @@ export const ecAreaChartDef: ChartTemplateDef = {
                     base.axisTick = { show: true, alignWithLabel: true };
                     base.axisLabel = { rotate: 90 };
                 } else {
+                    base.axisTick = { show: true };
                     base.axisLabel = { rotate: 0 };
                 }
                 return base;
@@ -91,6 +92,7 @@ export const ecAreaChartDef: ChartTemplateDef = {
                     name: yField,
                     nameLocation: 'middle',
                     nameGap: 40,
+                    axisTick: { show: true },
                     axisLabel: { rotate: 0 },
                 },
             series: [],
