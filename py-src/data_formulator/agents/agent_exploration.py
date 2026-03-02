@@ -6,7 +6,6 @@ import logging
 import base64
 
 from data_formulator.agents.agent_utils import extract_json_objects, generate_data_summary
-from data_formulator.agents.agent_sql_data_transform import generate_sql_data_summary
 
 logger = logging.getLogger(__name__)
 
@@ -95,10 +94,10 @@ Guidelines:
 
 class ExplorationAgent(object):
 
-    def __init__(self, client, agent_exploration_rules="", db_conn=None):
+    def __init__(self, client, workspace, agent_exploration_rules=""):
         self.agent_exploration_rules = agent_exploration_rules
         self.client = client
-        self.db_conn = db_conn
+        self.workspace = workspace
 
     def process_gpt_response(self, messages, response):
         """Process GPT response to extract exploration plan"""
@@ -109,8 +108,8 @@ class ExplorationAgent(object):
         candidates = []
         for choice in response.choices:
             
-            logger.info("\n=== Exploration Planning Result ===>\n")
-            logger.info(choice.message.content + "\n")
+            logger.debug("\n=== Exploration Planning Result ===>\n")
+            logger.debug(choice.message.content + "\n")
             
             json_blocks = extract_json_objects(choice.message.content + "\n")
             if not json_blocks:
@@ -150,11 +149,7 @@ class ExplorationAgent(object):
             return {"type": "text", "text": "The visualization is not available."}
 
     def get_data_summary(self, input_tables):
-        if self.db_conn:
-            data_summary = generate_sql_data_summary(self.db_conn, input_tables)
-        else:
-            data_summary = generate_data_summary(input_tables)
-        return data_summary
+        return generate_data_summary(input_tables, workspace=self.workspace)
             
     def suggest_followup(self, input_tables, completed_steps: list[dict], next_steps: list[str]):
         """
@@ -201,6 +196,9 @@ class ExplorationAgent(object):
         
         messages.append({"role": "user", "content": f"[NEXT STEPS]\n\n{json.dumps(next_steps, indent=4)}"})
 
+        logger.info(f"[ExplorationAgent] suggest_followup start")
         response = self.client.get_completion(messages)
-        
-        return self.process_gpt_response(messages, response)
+        candidates = self.process_gpt_response(messages, response)
+        status = candidates[0].get('status', 'unknown') if candidates else 'empty'
+        logger.info(f"[ExplorationAgent] suggest_followup done | status={status}")
+        return candidates

@@ -2,11 +2,12 @@
 // Licensed under the MIT License.
 
 import { Box, Typography, Button, useTheme, alpha, Divider } from "@mui/material";
+import { borderColor, radius } from '../app/tokens';
 import React, { FC } from "react";
 import GridViewIcon from '@mui/icons-material/GridView';
 import GitHubIcon from '@mui/icons-material/GitHub';
 import YouTubeIcon from '@mui/icons-material/YouTube';
-import PrecisionManufacturingIcon from '@mui/icons-material/PrecisionManufacturing';
+import { AgentIcon as PrecisionManufacturingIcon } from '../icons';
 
 import { toolName } from "../app/App";
 import { useSelector } from "react-redux";
@@ -49,16 +50,8 @@ const features: Feature[] = [
 
 export const About: FC<{}> = function About({ }) {
     const theme = useTheme();
-    const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
 
-    let actionButtons = !serverConfig.PROJECT_FRONT_PAGE ? (
-        <Box component="nav" aria-label="Primary actions" sx={{ display: 'flex', justifyContent: 'center', gap: 1.5, mb: 4, flexWrap: 'wrap' }}>
-            <Button size="large" variant="contained" color="primary" 
-                startIcon={<PrecisionManufacturingIcon aria-hidden="true" />}
-                href="/app"
-            >Start Exploration</Button>
-        </Box>
-    ) : (
+    let actionButtons = (
         <Box component="nav" aria-label="Primary actions" sx={{ display: 'flex', justifyContent: 'center', gap: 1.5, mb: 4, flexWrap: 'wrap' }}>
             <Button size="large" variant="outlined" color="primary" 
                 sx={{ textTransform: 'none' }}
@@ -175,9 +168,9 @@ export const About: FC<{}> = function About({ }) {
                             {/* Media Content */}
                             <Box sx={{ 
                                 flex: 1,
-                                borderRadius: 2,
+                                borderRadius: radius.md,
                                 overflow: 'hidden',
-                                border: '1px solid rgba(0,0,0,0.1)',
+                                border: `1px solid ${borderColor.divider}`,
                             }}>
                                 {feature.mediaType === 'video' ? (
                                     <Box

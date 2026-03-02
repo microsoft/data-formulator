@@ -30,7 +30,7 @@ import csv
 import math
 from datetime import datetime, timedelta
 from flask import Blueprint, Response, request, jsonify
-from typing import List, Dict, Any, Optional
+from typing import Any
 from collections import deque
 import threading
 
@@ -101,15 +101,16 @@ def make_csv_response(rows: list, filename: str = "data.csv") -> Response:
 # ============================================================================
 # ISS Location Tracking - Real-time trajectory
 # Returns accumulated position history that grows over time
-# Recommended refresh: 5-10 seconds
+# Background thread automatically collects positions every 5 seconds
 # ============================================================================
 
 # Thread-safe storage for ISS position history
 _iss_track_lock = threading.Lock()
-_iss_track_history: deque = deque(maxlen=10000)  # Keep last 10000 positions (~20000 min at 5s intervals)
-_iss_last_fetch: Optional[datetime] = None
+_iss_track_history: deque = deque(maxlen=10000)  # Keep last 10000 positions
+_iss_last_fetch: datetime | None = None
+_iss_collector_started = False
 
-def _fetch_iss_position() -> Optional[Dict[str, Any]]:
+def _fetch_iss_position() -> dict[str, Any] | None:
     """Fetch current ISS position from API"""
     try:
         response = requests.get("http://api.open-notify.org/iss-now.json", timeout=10)
@@ -126,22 +127,49 @@ def _fetch_iss_position() -> Optional[Dict[str, Any]]:
         return None
 
 
+def _iss_collector_loop():
+    """Background thread that continuously collects ISS positions every 5 seconds."""
+    global _iss_last_fetch
+    logger.info("ISS position collector started")
+    while True:
+        try:
+            position = _fetch_iss_position()
+            if position:
+                now = datetime.utcnow()
+                position["fetched_at"] = now.isoformat() + "Z"
+                with _iss_track_lock:
+                    _iss_track_history.append(position)
+                    _iss_last_fetch = now
+        except Exception as e:
+            logger.warning(f"ISS collector error: {e}")
+        threading.Event().wait(10)  # Sleep 10 seconds between fetches
+
+
+def start_iss_collector():
+    """Start the background ISS position collector if not already running."""
+    global _iss_collector_started
+    if _iss_collector_started:
+        return
+    _iss_collector_started = True
+    t = threading.Thread(target=_iss_collector_loop, daemon=True)
+    t.start()
+
+
 @demo_stream_bp.route('/iss', methods=['GET'])
 @limiter.limit(ISS_RATE_LIMIT)
 def get_iss():
     """
-    ISS position trajectory over time. Each refresh adds new position(s).
+    ISS position trajectory over time. Positions are collected automatically
+    in the background every 5 seconds.
     
     Query params:
-        - minutes: How many minutes of history to return (default: 30, max: 60)
-        - limit: Max number of points to return (default: 100, max: 500)
+        - minutes: How many minutes of history to return (default: 1440, max: 1440)
+        - limit: Max number of points to return (default: 10000, max: 10000)
     
-    Data accumulates over time - each refresh may add new positions.
     The ISS completes one orbit in ~90 minutes, so 30 min shows ~1/3 of orbit.
-    
-    Recommended refresh: 5-10 seconds
     """
-    global _iss_last_fetch
+    # Ensure the collector is running
+    start_iss_collector()
     
     minutes = min(1440, max(1, int(request.args.get('minutes', 1440))))
     limit = min(10000, max(1000, int(request.args.get('limit', 10000))))
@@ -149,17 +177,7 @@ def get_iss():
     now = datetime.utcnow()
     cutoff = now - timedelta(minutes=minutes)
     
-    # Fetch new position if enough time has passed (at least 3 seconds)
     with _iss_track_lock:
-        should_fetch = _iss_last_fetch is None or (now - _iss_last_fetch).total_seconds() >= 3
-        
-        if should_fetch:
-            position = _fetch_iss_position()
-            if position:
-                position["fetched_at"] = now.isoformat() + "Z"
-                _iss_track_history.append(position)
-                _iss_last_fetch = now
-        
         # Filter to requested time window and limit
         rows = []
         for pos in _iss_track_history:
@@ -173,7 +191,7 @@ def get_iss():
         # Limit and sort by time
         rows = sorted(rows, key=lambda x: x["timestamp"])[-limit:]
     
-    # If we have no data yet, fetch once and return
+    # If we have no data yet (just started), do a one-time fetch
     if not rows:
         position = _fetch_iss_position()
         if position:
@@ -181,6 +199,15 @@ def get_iss():
             rows = [position]
     
     return make_csv_response(rows)
+
+
+@demo_stream_bp.route('/iss/reset', methods=['POST'])
+def reset_iss():
+    """Clear all accumulated ISS position history and start fresh."""
+    with _iss_track_lock:
+        _iss_track_history.clear()
+    return jsonify({"status": "ok", "message": "ISS position history cleared"})
+
 
 # ============================================================================
 # USGS Earthquakes - Accumulating dataset of seismic events
@@ -1074,7 +1101,7 @@ def get_yfinance_financials():
 # Thread-safe storage for sales transaction history
 _sales_lock = threading.Lock()
 _sales_history: deque = deque(maxlen=1000)  # Keep last 1000 transactions
-_sales_last_update: Optional[datetime] = None
+_sales_last_update: datetime | None = None
 
 # Products with realistic pricing and popularity
 _SALES_PRODUCTS = [
@@ -1097,7 +1124,7 @@ _SALES_CHANNELS = ["Web", "Mobile App", "In-Store", "Partner"]
 _SALES_CHANNEL_WEIGHTS = [0.40, 0.35, 0.15, 0.10]
 
 
-def _generate_sale_transaction(timestamp: datetime) -> Dict[str, Any]:
+def _generate_sale_transaction(timestamp: datetime) -> dict[str, Any]:
     """Generate a single sale transaction"""
     product = random.choices(_SALES_PRODUCTS, weights=[p["popularity"] for p in _SALES_PRODUCTS])[0]
     region = random.choices(_SALES_REGIONS, weights=_SALES_REGION_WEIGHTS)[0]
@@ -1219,6 +1246,7 @@ def get_info():
                 "url": "/api/demo-stream/iss",
                 "name": "🛰️ Open Notify: International Space Station Real-time Positions (updates every 30 sec)",
                 "refresh_seconds": 30,
+                "reset_url": "/api/demo-stream/iss/reset",
             },
             
             # Earthquake Data Variations

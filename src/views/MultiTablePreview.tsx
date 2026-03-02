@@ -44,6 +44,8 @@ export interface MultiTablePreviewProps {
     compact?: boolean;
     /** Whether to show the "Preview" label */
     showPreviewLabel?: boolean;
+    /** Whether to hide the row count display */
+    hideRowCount?: boolean;
 }
 
 export const MultiTablePreview: React.FC<MultiTablePreviewProps> = ({
@@ -59,6 +61,7 @@ export const MultiTablePreview: React.FC<MultiTablePreviewProps> = ({
     maxHeight = 200,
     maxRows = 12,
     compact = true,
+    hideRowCount = false,
 }) => {
     const previewTables = tables ?? (table ? [table] : null);
     const [internalActiveIndex, setInternalActiveIndex] = useState(0);
@@ -206,9 +209,11 @@ export const MultiTablePreview: React.FC<MultiTablePreviewProps> = ({
                                     maxHeight={maxHeight}
                                 />
                             </Card>
-                            <Typography variant="caption" color="text.secondary">
-                                {activeTable.rows.length} rows × {activeTable.names.length} columns
-                            </Typography>
+                            {!hideRowCount && (
+                                <Typography variant="caption" color="text.secondary">
+                                    {activeTable.rows.length} rows × {activeTable.names.length} columns
+                                </Typography>
+                            )}
                         </Box>
                     )}
 

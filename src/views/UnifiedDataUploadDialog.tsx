@@ -3,6 +3,7 @@
 
 import * as React from 'react';
 import { useState, useCallback, useEffect, useRef } from 'react';
+import { borderColor, transition, radius } from '../app/tokens';
 import {
     Box,
     Button,
@@ -24,28 +25,37 @@ import CloseIcon from '@mui/icons-material/Close';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 import ContentPasteIcon from '@mui/icons-material/ContentPaste';
 import LinkIcon from '@mui/icons-material/Link';
+import { StreamIcon } from '../icons';
 import StorageIcon from '@mui/icons-material/Storage';
 import ImageSearchIcon from '@mui/icons-material/ImageSearch';
 import ExploreIcon from '@mui/icons-material/Explore';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import Paper from '@mui/material/Paper';
+import CircularProgress from '@mui/material/CircularProgress';
+import Backdrop from '@mui/material/Backdrop';
 
-import StreamIcon from '@mui/icons-material/Stream';
 import { useDispatch, useSelector } from 'react-redux';
 import { DataFormulatorState, dfActions, fetchFieldSemanticType } from '../app/dfSlice';
 import { AppDispatch } from '../app/store';
+import { loadTable } from '../app/tableThunks';
 import { DataSourceConfig, DictTable } from '../components/ComponentType';
 import { createTableFromFromObjectArray, createTableFromText, loadTextDataWrapper, loadBinaryDataWrapper } from '../data/utils';
 import { DataLoadingChat } from './DataLoadingChat';
 import { DatasetSelectionView, DatasetMetadata } from './TableSelectionView';
-import { getUrls } from '../app/utils';
+import { getUrls, fetchWithIdentity } from '../app/utils';
 import { DBManagerPane } from './DBTableManager';
 import { MultiTablePreview } from './MultiTablePreview';
 import { 
-    FormControlLabel, 
-    Switch
+    ToggleButton, 
+    ToggleButtonGroup,
+    FormControlLabel,
+    Switch,
 } from '@mui/material';
+import FolderOpenIcon from '@mui/icons-material/FolderOpen';
+import CloudIcon from '@mui/icons-material/Cloud';
+import OpenInNewIcon from '@mui/icons-material/OpenInNew';
+import LanguageIcon from '@mui/icons-material/Language';
 
 export type UploadTabType = 'menu' | 'upload' | 'paste' | 'url' | 'database' | 'extract' | 'explore';
 
@@ -79,7 +89,6 @@ interface DataSourceCardProps {
     description: string;
     onClick: () => void;
     disabled?: boolean;
-    disabledReason?: string;
 }
 
 const DataSourceCard: React.FC<DataSourceCardProps> = ({ 
@@ -88,7 +97,6 @@ const DataSourceCard: React.FC<DataSourceCardProps> = ({
     description, 
     onClick, 
     disabled = false,
-    disabledReason 
 }) => {
     const theme = useTheme();
     
@@ -99,11 +107,10 @@ const DataSourceCard: React.FC<DataSourceCardProps> = ({
             sx={{
                 p: 1.5,
                 cursor: disabled ? 'not-allowed' : 'pointer',
-                border: '1px solid',
-                borderColor: 'divider',
-                borderRadius: 1,
+                border: `1px solid ${borderColor.divider}`,
+                borderRadius: radius.sm,
                 opacity: disabled ? 0.5 : 1,
-                transition: 'all 0.15s ease',
+                transition: transition.fast,
                 display: 'flex',
                 alignItems: 'center',
                 gap: 1.5,
@@ -155,14 +162,6 @@ const DataSourceCard: React.FC<DataSourceCardProps> = ({
         </Paper>
     );
 
-    if (disabled && disabledReason) {
-        return (
-            <Tooltip title={disabledReason} placement="top">
-                <span>{card}</span>
-            </Tooltip>
-        );
-    }
-
     return card;
 };
 
@@ -196,32 +195,28 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
             title: 'Sample Datasets', 
             description: 'Explore and load curated example datasets',
             icon: <ExploreIcon />, 
-            disabled: false,
-            disabledReason: undefined
+            disabled: false
         },
         { 
             value: 'upload' as UploadTabType, 
             title: 'Upload File', 
             description: 'Upload local files (CSV, TSV, JSON, Excel)',
             icon: <UploadFileIcon />, 
-            disabled: false,
-            disabledReason: undefined
+            disabled: false
         },
         { 
             value: 'paste' as UploadTabType, 
             title: 'Paste Data', 
             description: 'Paste tabular data directly from clipboard',
             icon: <ContentPasteIcon />, 
-            disabled: false,
-            disabledReason: undefined
+            disabled: false
         },
         { 
             value: 'extract' as UploadTabType, 
             title: 'Extract Unstructured Data', 
             description: 'Extract tables from images or text using AI',
             icon: <ImageSearchIcon />, 
-            disabled: false,
-            disabledReason: undefined
+            disabled: false
         },
     ];
 
@@ -231,16 +226,14 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
             title: 'Load from URL', 
             description: 'Load data from a URL with optional auto-refresh',
             icon: <LinkIcon />, 
-            disabled: false,
-            disabledReason: undefined
+            disabled: false
         },
         { 
             value: 'database' as UploadTabType, 
             title: 'Database', 
             description: 'Connect to databases or data services',
             icon: <StorageIcon />, 
-            disabled: serverConfig.DISABLE_DATABASE,
-            disabledReason: 'Database connection is disabled in this environment'
+            disabled: false
         },
     ];
 
@@ -332,7 +325,6 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
                             description={source.description}
                             onClick={() => onSelectTab(source.value)}
                             disabled={source.disabled}
-                            disabledReason={source.disabledReason}
                         />
                     </Box>
                 ))}
@@ -351,7 +343,6 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
                             description={source.description}
                             onClick={() => onSelectTab(source.value)}
                             disabled={source.disabled}
-                            disabledReason={source.disabledReason}
                         />
                     </Box>
                 ))}
@@ -401,7 +392,6 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
                         description={source.description}
                         onClick={() => onSelectTab(source.value)}
                         disabled={source.disabled}
-                        disabledReason={source.disabledReason}
                     />
                 ))}
             </Box>
@@ -441,7 +431,6 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
                         description={source.description}
                         onClick={() => onSelectTab(source.value)}
                         disabled={source.disabled}
-                        disabledReason={source.disabledReason}
                     />
                 ))}
             </Box>
@@ -465,11 +454,23 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
     const existingTables = useSelector((state: DataFormulatorState) => state.tables);
     const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
     const dataCleanBlocks = useSelector((state: DataFormulatorState) => state.dataCleanBlocks);
+    const frontendRowLimit = useSelector((state: DataFormulatorState) => state.config?.frontendRowLimit ?? 50000);
     const existingNames = new Set(existingTables.map(t => t.id));
 
     const [activeTab, setActiveTab] = useState<UploadTabType>(initialTab === 'menu' ? 'menu' : initialTab);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const urlInputRef = useRef<HTMLInputElement>(null);
+
+    // Store on server toggle (forced off when DISABLE_DATABASE)
+    const diskPersistenceDisabled = serverConfig.DISABLE_DATABASE;
+    const [storeOnServer, setStoreOnServer] = useState<boolean>(!diskPersistenceDisabled);
+
+    // When serverConfig loads and database is enabled, default to store on server
+    useEffect(() => {
+        if (!diskPersistenceDisabled) {
+            setStoreOnServer(true);
+        }
+    }, [diskPersistenceDisabled]);
 
     // Paste tab state
     const [pasteContent, setPasteContent] = useState<string>("");
@@ -494,10 +495,14 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
     const [urlPreviewActiveIndex, setUrlPreviewActiveIndex] = useState<number>(0);
     
     // Example URLs state
-    const [exampleUrls, setExampleUrls] = useState<Array<{ label: string; url: string; refreshSeconds: number }>>([]);
+    const [exampleUrls, setExampleUrls] = useState<Array<{ label: string; url: string; refreshSeconds: number; resetUrl?: string }>>([]); 
 
     // Sample datasets state
     const [datasetPreviews, setDatasetPreviews] = useState<DatasetMetadata[]>([]);
+
+    // Loading state for dataset loading
+    const [datasetLoading, setDatasetLoading] = useState<boolean>(false);
+    const [datasetLoadingLabel, setDatasetLoadingLabel] = useState<string>('');
 
     // Constants
     const MAX_DISPLAY_LINES = 20;
@@ -515,7 +520,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
     // Load sample datasets
     useEffect(() => {
         if (open && activeTab === 'explore') {
-            fetch(`${getUrls().EXAMPLE_DATASETS}`)
+            fetchWithIdentity(`${getUrls().EXAMPLE_DATASETS}`)
             .then((response) => response.json())
             .then((result) => {
                 let datasets: DatasetMetadata[] = result.map((info: any) => {
@@ -572,14 +577,15 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                 setDatasetPreviews(datasets);
             });
         } else if (open && activeTab === 'url') {
-            fetch(`${window.location.origin}/api/demo-stream/info`)
+            fetchWithIdentity(`${window.location.origin}/api/demo-stream/info`)
             .then(res => res.json())
             .then(data => {
                 const demoExamples = data.demo_examples
                     .map((ex: any) => ({
                         label: ex.name,
                         url: ex.url,
-                        refreshSeconds: ex.refresh_seconds || 60
+                        refreshSeconds: ex.refresh_seconds || 60,
+                        resetUrl: ex.reset_url || undefined,
                 }));
                 
                 setExampleUrls(demoExamples);
@@ -711,8 +717,11 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
         if (table) {
             const sourceConfig: DataSourceConfig = { type: 'file', fileName: filePreviewFiles[0]?.name };
             const tableWithSource = { ...table, source: sourceConfig };
-            dispatch(dfActions.loadTable(tableWithSource));
-            dispatch(fetchFieldSemanticType(tableWithSource));
+            dispatch(loadTable({
+                table: tableWithSource,
+                storeOnServer,
+                file: storeOnServer ? filePreviewFiles[filePreviewActiveIndex] || filePreviewFiles[0] : undefined,
+            }));
             handleClose();
         }
     };
@@ -725,8 +734,11 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
             const table = filePreviewTables[i];
             const sourceConfig: DataSourceConfig = { type: 'file', fileName: filePreviewFiles[i]?.name || filePreviewFiles[0]?.name };
             const tableWithSource = { ...table, source: sourceConfig };
-            dispatch(dfActions.loadTable(tableWithSource));
-            dispatch(fetchFieldSemanticType(tableWithSource));
+            dispatch(loadTable({
+                table: tableWithSource,
+                storeOnServer,
+                file: storeOnServer ? filePreviewFiles[i] || filePreviewFiles[0] : undefined,
+            }));
         }
         handleClose();
     };
@@ -784,8 +796,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
         if (table) {
             // Add source info for paste data
             const tableWithSource = { ...table, source: { type: 'paste' as const } };
-            dispatch(dfActions.loadTable(tableWithSource));
-            dispatch(fetchFieldSemanticType(tableWithSource));
+            dispatch(loadTable({ table: tableWithSource, storeOnServer }));
             handleClose();
         }
     };
@@ -883,8 +894,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                 sourceConfig = { type: 'url', url: tableURL };
             }
             const tableWithSource = { ...table, source: sourceConfig };
-            dispatch(dfActions.loadTable(tableWithSource));
-            dispatch(fetchFieldSemanticType(tableWithSource));
+            dispatch(loadTable({ table: tableWithSource, storeOnServer }));
             handleClose();
         }
     };
@@ -908,8 +918,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                 sourceConfig = { type: 'url', url: tableURL };
             }
             const tableWithSource = { ...table, source: sourceConfig };
-            dispatch(dfActions.loadTable(tableWithSource));
-            dispatch(fetchFieldSemanticType(tableWithSource));
+            dispatch(loadTable({ table: tableWithSource, storeOnServer }));
         }
         handleClose();
     };
@@ -993,8 +1002,57 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                         </IconButton>
                     </Tooltip>
                 )}
+                {activeTab !== 'menu' && (
+                    <Box sx={{ ml: 'auto', mr: 0, display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                        <Typography variant="caption" sx={{ fontSize: '0.7rem', color: 'text.secondary', mr: 0.5 }}>
+                            Load data in
+                        </Typography>
+                        <ToggleButtonGroup
+                            value={storeOnServer ? 'disk' : 'browser'}
+                            exclusive
+                            onChange={(_, val) => { if (val) setStoreOnServer(val === 'disk'); }}
+                            size="small"
+                            sx={{ height: 26, '& .MuiToggleButton-root': { textTransform: 'none', fontSize: '0.7rem', px: 1, py: 0 } }}
+                        >
+                            <ToggleButton value="browser">
+                                <Tooltip title={`Data stays in browser only (limited to ${frontendRowLimit.toLocaleString()} rows)`} placement="bottom">
+                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                        <LanguageIcon sx={{ fontSize: 14 }} /> Browser
+                                    </Box>
+                                </Tooltip>
+                            </ToggleButton>
+                            <ToggleButton value="disk" disabled={diskPersistenceDisabled}>
+                                <Tooltip title={diskPersistenceDisabled
+                                    ? 'Install Data Formulator locally to unlock analysis for large datasets'
+                                    : serverConfig.WORKSPACE_BACKEND === 'azure_blob'
+                                        ? 'Data stored in Azure Blob Storage (supports large tables)'
+                                        : 'Data stored in workspace on disk (supports large tables)'} placement="bottom">
+                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                        {serverConfig.WORKSPACE_BACKEND === 'azure_blob'
+                                            ? <><CloudIcon sx={{ fontSize: 14 }} /> Azure</>
+                                            : <><FolderOpenIcon sx={{ fontSize: 14 }} /> Disk</>}
+                                    </Box>
+                                </Tooltip>
+                            </ToggleButton>
+                        </ToggleButtonGroup>
+                        {storeOnServer && !diskPersistenceDisabled && serverConfig.DATA_FORMULATOR_HOME
+                            && serverConfig.WORKSPACE_BACKEND !== 'azure_blob' && (
+                            <Tooltip title={`Open workspace: ${serverConfig.DATA_FORMULATOR_HOME}`} placement="bottom">
+                                <IconButton
+                                    size="small"
+                                    onClick={() => {
+                                        fetchWithIdentity(getUrls().OPEN_WORKSPACE, { method: 'POST' }).catch(() => {});
+                                    }}
+                                    sx={{ p: 0.5 }}
+                                >
+                                    <OpenInNewIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
+                                </IconButton>
+                            </Tooltip>
+                        )}
+                    </Box>
+                )}
                 <IconButton
-                    sx={{ marginLeft: 'auto' }}
+                    sx={{ marginLeft: activeTab === 'menu' ? 'auto' : undefined }}
                     size="small"
                     onClick={handleClose}
                     aria-label="close"
@@ -1044,12 +1102,12 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                             <Box
                                 sx={{
                                     border: '2px dashed',
-                                    borderColor: 'divider',
-                                    borderRadius: 2,
+                                    borderColor: borderColor.divider,
+                                    borderRadius: radius.md,
                                     p: showFilePreview ? 2 : 3,
                                     textAlign: 'center',
                                     cursor: 'pointer',
-                                    transition: 'all 0.2s',
+                                    transition: transition.normal,
                                     '&:hover': {
                                         borderColor: 'primary.main',
                                         backgroundColor: alpha(theme.palette.primary.main, 0.04),
@@ -1276,6 +1334,33 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                                 >
                                                     {example.label}
                                                 </Typography>
+                                                {example.resetUrl && (
+                                                    <Typography
+                                                        component="span"
+                                                        variant="caption"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            fetchWithIdentity(`${window.location.origin}${example.resetUrl}`, { method: 'POST' })
+                                                                .then(() => {
+                                                                    console.log('Reset successful');
+                                                                })
+                                                                .catch(err => console.error('Reset failed:', err));
+                                                        }}
+                                                        sx={{
+                                                            fontSize: '0.7rem',
+                                                            color: 'text.secondary',
+                                                            ml: 1,
+                                                            cursor: 'pointer',
+                                                            display: 'inline-flex',
+                                                            alignItems: 'center',
+                                                            gap: 0.25,
+                                                            '&:hover': { color: 'warning.main' },
+                                                        }}
+                                                    >
+                                                        <RestartAltIcon sx={{ fontSize: 12 }} />
+                                                        reset
+                                                    </Typography>
+                                                )}
                                             </Box>
                                         ))}
                                     </Box>
@@ -1442,30 +1527,12 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
 
                 {/* Database Tab */}
                 <TabPanel value={activeTab} index="database">
-                    {serverConfig.DISABLE_DATABASE ? (
-                        <Box sx={{ textAlign: 'center', py: 4, px: 2 }}>
-                            <Typography color="text.secondary" sx={{ mb: 2 }}>
-                                Database connection is disabled in this environment.
-                            </Typography>
-                            <Typography variant="body2" color="text.secondary">
-                                Install Data Formulator locally to use database features. <br />
-                                <Link 
-                                    href="https://github.com/microsoft/data-formulator" 
-                                    target="_blank" 
-                                    rel="noopener noreferrer"
-                                >
-                                    https://github.com/microsoft/data-formulator
-                                </Link>
-                            </Typography>
-                        </Box>
-                    ) : (
-                        <DBManagerPane />
-                    )}
+                    <DBManagerPane onClose={handleClose} storeOnServer={storeOnServer} />
                 </TabPanel>
 
                 {/* Extract Data Tab */}
                 <TabPanel value={activeTab} index="extract">
-                    <DataLoadingChat />
+                    <DataLoadingChat storeOnServer={storeOnServer} />
                 </TabPanel>
 
                 {/* Explore Sample Datasets Tab */}
@@ -1474,45 +1541,53 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                         <DatasetSelectionView 
                         datasets={datasetPreviews} 
                         hideRowNum
-                        handleSelectDataset={(dataset) => {
+                        handleSelectDataset={async (dataset) => {
                             // Check if this is a live dataset
                             const isLiveDataset = dataset.live === true;
                             
-                            for (let table of dataset.tables) {
-                                // For live datasets with relative URLs, construct full URL
-                                let fullUrl = table.url;
-                                if (table.url.startsWith('/')) {
-                                    fullUrl = window.location.origin + table.url;
-                                }
-                                
-                                fetch(fullUrl)
-                                    .then(res => res.text())
-                                    .then(textData => {
-                                        let tableName = table.url.split("/").pop()?.split(".")[0]?.split("?")[0] || 'table-' + Date.now().toString().substring(0, 8);
-                                        let dictTable;
-                                        if (table.format == "csv") {
-                                            dictTable = createTableFromText(tableName, textData);
-                                        } else if (table.format == "json") {
-                                            dictTable = createTableFromFromObjectArray(tableName, JSON.parse(textData), true);
-                                        } 
-                                        if (dictTable) {
-                                            // For live datasets, set up as stream source with auto-refresh
-                                            if (isLiveDataset) {
-                                                dictTable.source = { 
-                                                    type: 'stream', 
-                                                    url: fullUrl,
-                                                    autoRefresh: true,
-                                                    refreshIntervalSeconds: dataset.refreshIntervalSeconds || 60,
-                                                    lastRefreshed: Date.now()
-                                                };
-                                            } else {
-                                                // Regular example data
-                                                dictTable.source = { type: 'example', url: table.url };
-                                            }
-                                            dispatch(dfActions.loadTable(dictTable));
-                                            dispatch(fetchFieldSemanticType(dictTable));
+                            setDatasetLoading(true);
+                            setDatasetLoadingLabel(`Loading ${dataset.name}...`);
+                            
+                            try {
+                                const loadPromises = dataset.tables.map(async (table) => {
+                                    // For live datasets with relative URLs, construct full URL
+                                    let fullUrl = table.url;
+                                    if (table.url.startsWith('/')) {
+                                        fullUrl = window.location.origin + table.url;
+                                    }
+                                    
+                                    const res = await fetch(fullUrl);
+                                    const textData = await res.text();
+                                    let tableName = table.url.split("/").pop()?.split(".")[0]?.split("?")[0] || 'table-' + Date.now().toString().substring(0, 8);
+                                    let dictTable;
+                                    if (table.format == "csv") {
+                                        dictTable = createTableFromText(tableName, textData);
+                                    } else if (table.format == "json") {
+                                        dictTable = createTableFromFromObjectArray(tableName, JSON.parse(textData), true);
+                                    } 
+                                    if (dictTable) {
+                                        // For live datasets, set up as stream source with auto-refresh
+                                        if (isLiveDataset) {
+                                            dictTable.source = { 
+                                                type: 'stream', 
+                                                url: fullUrl,
+                                                autoRefresh: true,
+                                                refreshIntervalSeconds: dataset.refreshIntervalSeconds || 60,
+                                                lastRefreshed: Date.now()
+                                            };
+                                        } else {
+                                            // Regular example data
+                                            dictTable.source = { type: 'example', url: table.url };
                                         }
-                                    });
+                                        await dispatch(loadTable({ table: dictTable, storeOnServer }));
+                                    }
+                                });
+                                await Promise.all(loadPromises);
+                            } catch (error) {
+                                console.error('Failed to load dataset:', error);
+                            } finally {
+                                setDatasetLoading(false);
+                                setDatasetLoadingLabel('');
                             }
                             handleClose();
                         }}
@@ -1521,6 +1596,33 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                 </TabPanel>
 
             </DialogContent>
+
+            {/* Loading overlay for dataset loading */}
+            <Backdrop
+                open={datasetLoading}
+                sx={{
+                    position: 'absolute',
+                    zIndex: (theme) => theme.zIndex.drawer + 1,
+                    backgroundColor: 'rgba(255, 255, 255, 0.85)',
+                    backdropFilter: 'blur(4px)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 2,
+                }}
+            >
+                <CircularProgress size={36} />
+                <Typography variant="body2" color="text.secondary">
+                    {datasetLoadingLabel || 'Loading data...'}
+                </Typography>
+                <Button
+                    variant="text"
+                    size="small"
+                    onClick={() => { setDatasetLoading(false); setDatasetLoadingLabel(''); }}
+                    sx={{ mt: 1, textTransform: 'none', color: 'text.secondary' }}
+                >
+                    Cancel
+                </Button>
+            </Backdrop>
         </Dialog>
     );
 };

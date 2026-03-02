@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <!-- Density curve filled area — smooth bell-like shape -->
+  <path d="M48,216 Q68,214 88,200 Q108,178 128,130 Q148,82 158,75
+           Q168,82 178,110 Q198,165 218,195 Q230,210 236,216 Z"
+        fill="#76c6ff"/>
+  <!-- Density curve outline -->
+  <path d="M48,216 Q68,214 88,200 Q108,178 128,130 Q148,82 158,75
+           Q168,82 178,110 Q198,165 218,195 Q230,210 236,216"
+        fill="none" stroke="#363636" stroke-width="3" stroke-linecap="round"/>
+  <!-- Y-axis -->
+  <line x1="48" y1="28" x2="48" y2="220" stroke="#363636" stroke-width="4" stroke-linecap="round"/>
+  <!-- X-axis -->
+  <line x1="44" y1="216" x2="240" y2="216" stroke="#363636" stroke-width="4" stroke-linecap="round"/>
+</svg>

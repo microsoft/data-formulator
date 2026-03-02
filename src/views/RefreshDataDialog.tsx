@@ -2,6 +2,7 @@
 // Licensed under the MIT License.
 
 import React, { useState, useCallback, useRef } from 'react';
+import { borderColor, transition, radius } from '../app/tokens';
 import {
     Dialog,
     DialogTitle,
@@ -399,7 +400,7 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
                     {isLoading && <LinearProgress sx={{ mb: 2, height: 2 }} />}
                 </Box>
 
-                <Tabs value={tabValue} onChange={handleTabChange} sx={{ borderBottom: 1, borderColor: 'divider', px: 3 }}>
+                <Tabs value={tabValue} onChange={handleTabChange} sx={{ borderBottom: `1px solid ${borderColor.divider}`, px: 3 }}>
                     <Tab label="Paste Data" sx={{ textTransform: 'none', fontSize: '0.875rem', minHeight: 48 }} />
                     <Tab label="Upload File" sx={{ textTransform: 'none', fontSize: '0.875rem', minHeight: 48 }} />
                     <Tab label="From URL" sx={{ textTransform: 'none', fontSize: '0.875rem', minHeight: 48 }} />
@@ -429,7 +430,7 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
                                 p: 1, 
                                 backgroundColor: alpha(theme.palette.text.secondary, 0.04), 
                                 borderRadius: 1,
-                                border: `1px solid ${alpha(theme.palette.divider, 0.5)}`
+                                border: `1px solid ${borderColor.divider}`
                             }}>
                                 <Typography variant="caption" sx={{ flex: 1, fontSize: '0.75rem', color: 'text.secondary' }}>
                                     Large content ({Math.round(pasteContent.length / 1000)}KB) • {showFullContent ? 'Full view' : 'Preview'}
@@ -505,12 +506,12 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
                             <Box
                                 sx={{
                                     border: '2px dashed',
-                                    borderColor: 'divider',
-                                    borderRadius: 2,
+                                    borderColor: borderColor.divider,
+                                    borderRadius: radius.md,
                                     p: 4,
                                     textAlign: 'center',
                                     cursor: 'pointer',
-                                    transition: 'all 0.2s',
+                                    transition: transition.normal,
                                     '&:hover': {
                                         borderColor: 'primary.main',
                                         backgroundColor: alpha(theme.palette.primary.main, 0.04),

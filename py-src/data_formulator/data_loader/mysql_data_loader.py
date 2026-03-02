@@ -1,19 +1,12 @@
 import json
 import logging
+from typing import Any
 
 import pandas as pd
-import duckdb
+import pyarrow as pa
+import connectorx as cx
 
-from data_formulator.data_loader.external_data_loader import ExternalDataLoader, sanitize_table_name
-
-from data_formulator.security import validate_sql_query
-from typing import Dict, Any, Optional, List
-
-try:
-    import pymysql
-    PYMYSQL_AVAILABLE = True
-except ImportError:
-    PYMYSQL_AVAILABLE = False
+from data_formulator.data_loader.external_data_loader import ExternalDataLoader
 
 logger = logging.getLogger(__name__)
 
@@ -21,291 +14,225 @@ logger = logging.getLogger(__name__)
 class MySQLDataLoader(ExternalDataLoader):
 
     @staticmethod
-    def list_params() -> List[Dict[str, Any]]:
+    def list_params() -> list[dict[str, Any]]:
         params_list = [
-            {"name": "user", "type": "string", "required": True, "default": "root", "description": ""}, 
+            {"name": "user", "type": "string", "required": True, "default": "root", "description": "MySQL username"}, 
             {"name": "password", "type": "string", "required": False, "default": "", "description": "leave blank for no password"}, 
-            {"name": "host", "type": "string", "required": True, "default": "localhost", "description": ""}, 
-            {"name": "port", "type": "int", "required": False, "default": 3306, "description": "MySQL server port (default 3306)"},
-            {"name": "database", "type": "string", "required": True, "default": "mysql", "description": ""}
+            {"name": "host", "type": "string", "required": True, "default": "localhost", "description": "server address"}, 
+            {"name": "port", "type": "int", "required": False, "default": 3306, "description": "server port"},
+            {"name": "database", "type": "string", "required": True, "default": "mysql", "description": "database name"}
         ]
         return params_list
 
     @staticmethod
     def auth_instructions() -> str:
-        return """
-MySQL Connection Instructions:
+        return """**Example:** user: `root` · host: `localhost` · port: `3306` · database: `mydb`
 
-1. Local MySQL Setup:
-   - Ensure MySQL server is running on your machine
-   - Default connection: host='localhost', user='root', port=3306
-   - If you haven't set a root password, leave password field empty
+**Local setup:** Ensure MySQL is running — `brew services list` (macOS) or `systemctl status mysql` (Linux). Leave password blank if none is set.
 
-2. Remote MySQL Connection:
-   - Obtain host address, port, username, and password from your database administrator
-   - Ensure the MySQL server allows remote connections
-   - Check that your IP is whitelisted in MySQL's user permissions
+**Remote setup:** Get host, port, username, and password from your database administrator. Ensure the server allows remote connections and your IP is whitelisted.
 
-3. Common Connection Parameters:
-   - user: Your MySQL username (default: 'root')
-   - password: Your MySQL password (leave empty if no password set)
-   - host: MySQL server address (default: 'localhost')
-   - port: MySQL server port (default: 3306)
-   - database: Target database name to connect to
+**Troubleshooting:** Test with `mysql -u <user> -p -h <host> -P <port> <database>`"""
 
-4. Troubleshooting:
-   - Verify MySQL service is running: `brew services list` (macOS) or `sudo systemctl status mysql` (Linux)
-   - Test connection: `mysql -u [username] -p -h [host] -P [port] [database]`
-"""
-
-    def __init__(self, params: Dict[str, Any], duck_db_conn: duckdb.DuckDBPyConnection):
-        if not PYMYSQL_AVAILABLE:
-            raise ImportError(
-                "pymysql is required for MySQL connections. "
-                "Install with: pip install pymysql"
-            )
-        
+    def __init__(self, params: dict[str, Any]):
         self.params = params
-        self.duck_db_conn = duck_db_conn
-        
-        # Get params as-is from frontend
-        host = self.params.get('host', '')
-        user = self.params.get('user', '')
-        password = self.params.get('password', '')
-        database = self.params.get('database', '')
-        
-        # Validate required params
-        if not host:
+
+        self.host = self.params.get("host", "")
+        self.user = self.params.get("user", "")
+        self.password = self.params.get("password", "")
+        self.database = self.params.get("database", "")
+
+        if not self.host:
             raise ValueError("MySQL host is required")
-        if not user:
+        if not self.user:
             raise ValueError("MySQL user is required")
-        if not database:
+        if not self.database:
             raise ValueError("MySQL database is required")
-        
-        # Handle port (only field with sensible default)
-        port = self.params.get('port', '')
+
+        port = self.params.get("port", "")
         if isinstance(port, str):
-            port = int(port) if port else 3306
+            self.port = int(port) if port else 3306
         elif not port:
-            port = 3306
+            self.port = 3306
+        else:
+            self.port = int(port)
         
+        # Build connection URL for connectorx
+        # Format: mysql://user:password@host:port/database
+        # - Use explicit empty password (user:@host) so the URL parser sees user vs password correctly.
+        # - Use 127.0.0.1 when host is localhost to force IPv4 TCP and avoid IPv6 ::1 connection issues.
+        host_for_url = "127.0.0.1" if (self.host or "").strip().lower() == "localhost" else self.host
+        if self.password:
+            self.connection_url = f"mysql://{self.user}:{self.password}@{host_for_url}:{self.port}/{self.database}"
+        else:
+            self.connection_url = f"mysql://{self.user}:@{host_for_url}:{self.port}/{self.database}"
+        
+        self._sanitized_url = f"mysql://{self.user}:***@{self.host}:{self.port}/{self.database}"
+        
+        # Test connection
         try:
-            self.mysql_conn = pymysql.connect(
-                host=host,
-                user=user,
-                password=password,
-                database=database,
-                port=port,
-                cursorclass=pymysql.cursors.DictCursor,
-                charset='utf8mb4'
-            )
-            self.database = database
-            logger.info(f"Successfully connected to MySQL database: {self.database}")
+            cx.read_sql(self.connection_url, "SELECT 1", return_type="arrow")
         except Exception as e:
-            logger.error(f"Failed to connect to MySQL: {e}")
-            raise
+            logger.error(f"Failed to connect to MySQL (mysql://{self.user}:***@{self.host}:{self.port}/{self.database}): {e}")
+            raise ValueError(f"Failed to connect to MySQL database '{self.database}' on host '{self.host}': {e}") from e
+        logger.info(f"Successfully connected to MySQL: mysql://{self.user}:***@{self.host}:{self.port}/{self.database}")
 
-    def _execute_query(self, query: str, params: tuple = None) -> pd.DataFrame:
-        """Execute a query using native MySQL connection and return a DataFrame.
-        
-        Args:
-            query: SQL query string. Use %s for parameterized queries.
-            params: Optional tuple of parameters for parameterized queries.
-        """
+    # MySQL types that connectorx cannot handle natively
+    _CX_GEOMETRY_TYPES = {'geometry', 'point', 'linestring', 'polygon',
+                           'multipoint', 'multilinestring', 'multipolygon',
+                           'geometrycollection'}
+    _CX_OTHER_UNSUPPORTED = {'bit'}
+    _CX_UNSUPPORTED_TYPES = _CX_GEOMETRY_TYPES | _CX_OTHER_UNSUPPORTED
+
+    def _safe_select_list(self, schema: str, table_name: str) -> str:
+        """Build a SELECT column list that converts unsupported types to text.
+        Uses ST_AsText() for geometry types, CAST(... AS CHAR) for others.
+        Returns '*' if no unsupported columns are found."""
         try:
-            with self.mysql_conn.cursor() as cursor:
-                cursor.execute(query, params)
-                rows = cursor.fetchall()
-                if rows:
-                    return pd.DataFrame(rows)
+            columns_query = f"""
+                SELECT COLUMN_NAME, DATA_TYPE
+                FROM information_schema.columns
+                WHERE TABLE_SCHEMA = '{schema}' AND TABLE_NAME = '{table_name}'
+                ORDER BY ORDINAL_POSITION
+            """
+            cols_arrow = cx.read_sql(self.connection_url, columns_query, return_type="arrow")
+            cols_df = cols_arrow.to_pandas()
+            has_unsupported = any(r['DATA_TYPE'].lower() in self._CX_UNSUPPORTED_TYPES for _, r in cols_df.iterrows())
+            if not has_unsupported:
+                return "*"
+            parts = []
+            for _, r in cols_df.iterrows():
+                col, dtype = r['COLUMN_NAME'], r['DATA_TYPE'].lower()
+                if dtype in self._CX_GEOMETRY_TYPES:
+                    parts.append(f"ST_AsText(`{col}`) AS `{col}`")
+                elif dtype in self._CX_OTHER_UNSUPPORTED:
+                    parts.append(f"CAST(`{col}` AS CHAR) AS `{col}`")
                 else:
-                    # Return empty DataFrame with column names
-                    return pd.DataFrame()
-        except Exception as e:
-            logger.error(f"Error executing MySQL query: {e}")
-            # Try to reconnect if connection was lost
-            self._reconnect_if_needed()
-            raise
-
-    def _reconnect_if_needed(self):
-        """Attempt to reconnect to MySQL if the connection was lost."""
-        try:
-            self.mysql_conn.ping(reconnect=True)
-        except Exception as e:
-            logger.warning(f"Reconnection attempt failed: {e}")
-            # Try to create a new connection using stored params
-            host = self.params.get('host', '')
-            user = self.params.get('user', '')
-            password = self.params.get('password', '')
-            
-            port = self.params.get('port', '')
-            if isinstance(port, str):
-                port = int(port) if port else 3306
-            elif not port:
-                port = 3306
-            
-            self.mysql_conn = pymysql.connect(
-                host=host,
-                user=user,
-                password=password,
-                database=self.database,
-                port=port,
-                cursorclass=pymysql.cursors.DictCursor,
-                charset='utf8mb4'
-            )
-
-    def list_tables(self, table_filter: str = None) -> List[Dict[str, Any]]:
-        # Get list of tables from the connected database
-        # Filter by the specific database we're connected to for better performance
-        tables_query = """
-            SELECT TABLE_SCHEMA, TABLE_NAME 
-            FROM information_schema.tables 
-            WHERE TABLE_SCHEMA = %s
-            AND TABLE_TYPE = 'BASE TABLE'
-        """
-        tables_df = self._execute_query(tables_query, (self.database,))
-        
-        if tables_df.empty:
-            return []
-
-        results = []
-        
-        for _, row in tables_df.iterrows():
-            schema = row['TABLE_SCHEMA']
-            table_name = row['TABLE_NAME']
-
-            # Apply table filter if provided
-            if table_filter and table_filter.lower() not in table_name.lower():
-                continue
-
-            full_table_name = f"{schema}.{table_name}"
-
-            try:
-                # Get column information from MySQL
-                columns_query = (
-                    "SELECT COLUMN_NAME, DATA_TYPE "
-                    "FROM information_schema.columns "
-                    "WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s "
-                    "ORDER BY ORDINAL_POSITION"
-                )
-                columns_df = self._execute_query(columns_query, (schema, table_name))
-                columns = [{
-                    'name': col_row['COLUMN_NAME'],
-                    'type': col_row['DATA_TYPE']
-                } for _, col_row in columns_df.iterrows()]
-                
-                # Get sample data
-                sample_query = "SELECT * FROM `{}`.`{}` LIMIT 10".format(schema, table_name)
-                sample_df = self._execute_query(sample_query)
-                sample_rows = json.loads(sample_df.to_json(orient="records", date_format='iso'))
-                
-                # Get row count
-                count_query = "SELECT COUNT(*) as cnt FROM `{}`.`{}`".format(schema, table_name)
-                count_df = self._execute_query(count_query)
-                row_count = int(count_df['cnt'].iloc[0]) if not count_df.empty else 0
-
-                table_metadata = {
-                    "row_count": row_count,
-                    "columns": columns,
-                    "sample_rows": sample_rows
-                }
-                
-                results.append({
-                    "name": full_table_name,
-                    "metadata": table_metadata
-                })
-            except Exception as e:
-                logger.warning(f"Error processing table {full_table_name}: {e}")
-                continue
-            
-        return results
-
-    def ingest_data(self, table_name: str, name_as: Optional[str] = None, size: int = 1000000, sort_columns: List[str] = None, sort_order: str = 'asc'):
-        """Fetch data from MySQL and ingest into DuckDB."""
-        if name_as is None:
-            name_as = table_name.split('.')[-1]
-
-        name_as = sanitize_table_name(name_as)
-
-        # Validate and sanitize table name components
-        sanitized_size = None
-        try:
-            sanitized_size = int(size)
-            if sanitized_size <= 0:
-                raise ValueError("Size must be a positive integer.")
+                    parts.append(f"`{col}`")
+            return ', '.join(parts)
         except Exception:
-            raise ValueError("Size parameter must be a positive integer.")
+            return "*"
 
-        # Build ORDER BY clause if sort_columns are specified
+    def fetch_data_as_arrow(
+        self,
+        source_table: str,
+        size: int = 1000000,
+        sort_columns: list[str] | None = None,
+        sort_order: str = 'asc'
+    ) -> pa.Table:
+        """
+        Fetch data from MySQL as a PyArrow Table using connectorx.
+        
+        connectorx provides extremely fast Arrow-native database access.
+        """
+        if not source_table:
+            raise ValueError("source_table must be provided")
+        
+        # Handle table names and build safe column list
+        if '.' in source_table:
+            parts = source_table.split('.', 1)
+            col_list = self._safe_select_list(parts[0].strip('`'), parts[1].strip('`'))
+            base_query = f"SELECT {col_list} FROM {source_table}"
+        else:
+            col_list = self._safe_select_list(self.database, source_table.strip('`'))
+            base_query = f"SELECT {col_list} FROM `{source_table}`"
+        
+        # Add ORDER BY if sort columns specified
         order_by_clause = ""
         if sort_columns and len(sort_columns) > 0:
-            # Use backticks for MySQL column quoting
             order_direction = "DESC" if sort_order == 'desc' else "ASC"
             sanitized_cols = [f'`{col}` {order_direction}' for col in sort_columns]
-            order_by_clause = f"ORDER BY {', '.join(sanitized_cols)}"
-
-        if '.' in table_name:
-            parts = table_name.split('.')
-            schema = sanitize_table_name(parts[0])
-            tbl = sanitize_table_name(parts[1])
-            query = f"SELECT * FROM `{schema}`.`{tbl}` {order_by_clause} LIMIT {sanitized_size}"
-        else:
-            sanitized_table_name = sanitize_table_name(table_name)
-            query = f"SELECT * FROM `{sanitized_table_name}` {order_by_clause} LIMIT {sanitized_size}"
-
-        # Fetch data from MySQL
-        df = self._execute_query(query)
+            order_by_clause = f" ORDER BY {', '.join(sanitized_cols)}"
         
-        if df.empty:
-            logger.warning(f"No data fetched from table {table_name}")
-            return
+        query = f"{base_query}{order_by_clause} LIMIT {size}"
         
-        # Ingest into DuckDB using the base class method
-        self.ingest_df_to_duckdb(df, name_as)
-        logger.info(f"Successfully ingested {len(df)} rows from {table_name} into DuckDB table {name_as}")
-
-    def view_query_sample(self, query: str) -> List[Dict[str, Any]]:
-        result, error_message = validate_sql_query(query)
-        if not result:
-            raise ValueError(error_message)
+        logger.info(f"Executing MySQL query via connectorx: {query[:200]}...")
         
-        # Execute query via native MySQL connection
-        df = self._execute_query(query)
-        return json.loads(df.head(10).to_json(orient="records", date_format='iso'))
-
-    def ingest_data_from_query(self, query: str, name_as: str) -> pd.DataFrame:
-        """Execute custom query and ingest results into DuckDB."""
-        result, error_message = validate_sql_query(query)
-        if not result:
-            raise ValueError(error_message)
+        arrow_table = cx.read_sql(self.connection_url, query, return_type="arrow")
         
-        # Execute query via native MySQL connection
-        df = self._execute_query(query)
+        logger.info(f"Fetched {arrow_table.num_rows} rows from MySQL [Arrow-native]")
         
-        # Ingest into DuckDB using the base class method
-        self.ingest_df_to_duckdb(df, sanitize_table_name(name_as))
-        return df
+        return arrow_table
 
-    def close(self):
-        """Explicitly close the MySQL connection."""
-        if hasattr(self, 'mysql_conn') and self.mysql_conn:
-            try:
-                self.mysql_conn.close()
-            except Exception as e:
-                logger.warning(f"Error closing MySQL connection: {e}")
-
-    def __enter__(self):
-        """Support context manager entry."""
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        """Support context manager exit and cleanup."""
-        self.close()
-
-    def __del__(self):
-        """Clean up MySQL connection when the loader is destroyed."""
+    def list_tables(self, table_filter: str | None = None) -> list[dict[str, Any]]:
+        """List available tables from MySQL database."""
+        return self._list_tables_connectorx(table_filter)
+    
+    def _list_tables_connectorx(self, table_filter: str | None = None) -> list[dict[str, Any]]:
+        """List tables using connectorx."""
         try:
-            self.close()
-        except Exception:
-            # Ignore errors during destruction to prevent exceptions in garbage collection
-            pass
+            tables_query = f"""
+                SELECT TABLE_SCHEMA, TABLE_NAME 
+                FROM information_schema.tables 
+                WHERE TABLE_SCHEMA = '{self.database}'
+                AND TABLE_TYPE = 'BASE TABLE'
+            """
+            tables_arrow = cx.read_sql(self.connection_url, tables_query, return_type="arrow")
+            tables_df = tables_arrow.to_pandas()
+            
+            if tables_df.empty:
+                return []
+            
+            results = []
+            
+            for _, row in tables_df.iterrows():
+                schema = row['TABLE_SCHEMA']
+                table_name = row['TABLE_NAME']
+                
+                if table_filter and table_filter.lower() not in table_name.lower():
+                    continue
+                
+                full_table_name = f"{schema}.{table_name}"
+                
+                try:
+                    # Get column information
+                    columns_query = f"""
+                        SELECT COLUMN_NAME, DATA_TYPE 
+                        FROM information_schema.columns 
+                        WHERE TABLE_SCHEMA = '{schema}' AND TABLE_NAME = '{table_name}'
+                        ORDER BY ORDINAL_POSITION
+                    """
+                    columns_arrow = cx.read_sql(self.connection_url, columns_query, return_type="arrow")
+                    columns_df = columns_arrow.to_pandas()
+                    columns = [{
+                        'name': col_row['COLUMN_NAME'],
+                        'type': col_row['DATA_TYPE']
+                    } for _, col_row in columns_df.iterrows()]
+                    
+                    # Build safe column list (casts unsupported types to CHAR)
+                    col_list = self._safe_select_list(schema, table_name)
+                    
+                    # Get sample data
+                    sample_rows = []
+                    sample_query = f"SELECT {col_list} FROM `{schema}`.`{table_name}` LIMIT 10"
+                    try:
+                        sample_arrow = cx.read_sql(self.connection_url, sample_query, return_type="arrow")
+                        sample_df = sample_arrow.to_pandas()
+                        sample_rows = json.loads(sample_df.to_json(orient="records", date_format='iso'))
+                    except Exception as sample_err:
+                        logger.warning(f"Could not sample {full_table_name}: {sample_err}")
+                    
+                    # Get row count
+                    count_query = f"SELECT COUNT(*) as cnt FROM `{schema}`.`{table_name}`"
+                    count_arrow = cx.read_sql(self.connection_url, count_query, return_type="arrow")
+                    row_count = int(count_arrow.to_pandas()['cnt'].iloc[0])
+                    
+                    table_metadata = {
+                        "row_count": row_count,
+                        "columns": columns,
+                        "sample_rows": sample_rows
+                    }
+                    
+                    results.append({
+                        "name": full_table_name,
+                        "metadata": table_metadata
+                    })
+                except Exception as e:
+                    logger.warning(f"Error processing table {full_table_name}: {e}")
+                    continue
+            
+            return results
+
+        except Exception as e:
+            logger.error(f"Error listing tables: {e}")
+            return []

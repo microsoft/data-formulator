@@ -5,7 +5,7 @@
 import { FC } from 'react'
 import { useDrag } from 'react-dnd'
 
-import '../scss/ConceptShelf.scss';
+import '../scss/DraggableCard.scss';
 
 import { useTheme } from '@mui/material/styles';
 

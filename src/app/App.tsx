@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-import React, { FC, useEffect, useState } from 'react';
+import React, { FC, useCallback, useEffect, useState } from 'react';
 import '../scss/App.scss';
 
 import { useDispatch, useSelector } from "react-redux";
@@ -10,10 +10,11 @@ import {
     dfActions,
     dfSelectors,
     fetchAvailableModels,
-    getSessionId,
 } from './dfSlice'
+import { getBrowserId } from './identity';
 
 import { red, purple, blue, brown, yellow, orange, } from '@mui/material/colors';
+import { palettes, defaultPaletteKey, paletteKeys, bgAlpha } from './tokens';
 
 import _ from 'lodash';
 
@@ -23,12 +24,10 @@ import {
     Typography,
     Box,
     Toolbar,
-    Input,
     Divider,
     DialogTitle,
     Dialog,
     DialogContent,
-    Avatar,
     Link,
     DialogContentText,
     DialogActions,
@@ -37,9 +36,15 @@ import {
     Menu,
     MenuItem,
     TextField,
-    useTheme,
     SvgIcon,
     IconButton,
+    Select,
+    FormControl,
+    InputLabel,
+    ListItemIcon,
+    ListItemText,
+    CircularProgress,
+    LinearProgress,
 } from '@mui/material';
 
 
@@ -59,7 +64,9 @@ import {
     RouterProvider,
 } from "react-router-dom";
 import { About } from '../views/About';
+import ChartGallery from '../views/ChartGallery';
 import { MessageSnackbar } from '../views/MessageSnackbar';
+import { ChartRenderService } from '../views/ChartRenderService';
 import { DictTable } from '../components/ComponentType';
 import { AppDispatch } from './store';
 import dfLogo from '../assets/df-logo.png';
@@ -67,11 +74,13 @@ import { ModelSelectionButton } from '../views/ModelSelectionDialog';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 import DownloadIcon from '@mui/icons-material/Download';
-import { handleDBDownload } from '../views/DBTableManager';
-import { getUrls } from './utils';
+import SaveIcon from '@mui/icons-material/Save';
+import FolderOpenIcon from '@mui/icons-material/FolderOpen';
+import RefreshIcon from '@mui/icons-material/Refresh';
+import { getUrls, fetchWithIdentity } from './utils';
+import { persistor } from './store';
 import { UnifiedDataUploadDialog } from '../views/UnifiedDataUploadDialog';
 import ChatIcon from '@mui/icons-material/Chat';
-import { AgentRulesDialog } from '../views/AgentRulesDialog';
 import ArticleIcon from '@mui/icons-material/Article';
 import EditIcon from '@mui/icons-material/Edit';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
@@ -100,6 +109,14 @@ const AppBar = styled(MuiAppBar)(({ theme }) => ({
 }));
 
 declare module '@mui/material/styles' {
+    interface PaletteColor {
+        bgcolor?: string;
+        textColor?: string;
+    }
+    interface SimplePaletteColorOptions {
+        bgcolor?: string;
+        textColor?: string;
+    }
     interface Palette {
         derived: Palette['primary'];
         custom: Palette['primary'];
@@ -109,105 +126,6 @@ declare module '@mui/material/styles' {
         custom: PaletteOptions['primary'];
     }
 }
-
-export const ImportStateButton: React.FC<{}> = ({ }) => {
-    const dispatch = useDispatch();
-    const inputRef = React.useRef<HTMLInputElement>(null);
-
-    const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>): void => {
-        const files = event.target.files;
-        if (files) {
-            for (let file of files) {
-                file.text().then((text) => {
-                    try {
-                        let savedState = JSON.parse(text);
-                        dispatch(dfActions.loadState(savedState));
-                    } catch (error) {
-                        console.error('Failed to parse state file:', error);
-                    }
-                });
-            }
-        }
-        // Reset the input value to allow uploading the same file again
-        if (inputRef.current) {
-            inputRef.current.value = '';
-        }
-    };
-
-    return (
-        <Button 
-            variant="text" 
-            color="primary"
-            sx={{textTransform: 'none'}}
-            onClick={() => inputRef.current?.click()}
-            startIcon={<UploadFileIcon />}
-        >
-            <Input 
-                inputProps={{ 
-                    accept: '.json, .dfstate',
-                    multiple: false 
-                }}
-                id="upload-data-file"
-                type="file"
-                sx={{ display: 'none' }}
-                inputRef={inputRef}
-                onChange={handleFileUpload}
-            />
-            import session
-        </Button>
-    );
-}
-
-export const ExportStateButton: React.FC<{}> = ({ }) => {
-    const sessionId = useSelector((state: DataFormulatorState) => state.sessionId);
-    const tables = useSelector((state: DataFormulatorState) => state.tables);
-    const fullStateJson = useSelector((state: DataFormulatorState) => {
-        // Fields to exclude from serialization
-        const excludedFields = new Set([
-            'models',
-            'selectedModelId',
-            'testedModels',
-            'dataLoaderConnectParams',
-            'sessionId',
-            'agentRules',
-            'serverConfig',
-        ]);
-        
-        // Build new object with only allowed fields
-        const stateToSerialize: any = {};
-        for (const [key, value] of Object.entries(state)) {
-            if (!excludedFields.has(key)) {
-                stateToSerialize[key] = value;
-            }
-        }
-        
-        return JSON.stringify(stateToSerialize);
-    });
-
-    return <Tooltip title="save session locally">
-        <Button 
-            variant="text" 
-            sx={{textTransform: 'none'}} 
-            onClick={() => {
-                function download(content: string, fileName: string, contentType: string) {
-                    let a = document.createElement("a");
-                    let file = new Blob([content], { type: contentType });
-                    a.href = URL.createObjectURL(file);
-                    a.download = fileName;
-                    a.click();
-                }
-                let firstTableName = tables.length > 0 ? tables[0].id: '';
-                download(fullStateJson, `df_state_${firstTableName}_${sessionId?.slice(0, 4)}.json`, 'text/plain');
-            }}
-            startIcon={<DownloadIcon />}
-        >
-            export session
-        </Button>
-    </Tooltip>
-}
-
-
-//type AppProps = ConnectedProps<typeof connector>;
 
 export const toolName = "Data Formulator"
 
@@ -238,14 +156,304 @@ const TableMenu: React.FC = () => {
     );
 };
 
+const SaveSessionDialog: React.FC<{open: boolean, onClose: () => void}> = ({open, onClose}) => {
+    const [sessionName, setSessionName] = useState('');
+    const [saving, setSaving] = useState(false);
+    const dispatch = useDispatch();
+    const tables = useSelector((state: DataFormulatorState) => state.tables);
+
+    const fullState = useSelector((state: DataFormulatorState) => {
+        const excludedFields = new Set([
+            'models', 'selectedModelId', 'testedModels',
+            'dataLoaderConnectParams', 'identity', 'agentRules', 'serverConfig',
+        ]);
+        const stateToSerialize: any = {};
+        for (const [key, value] of Object.entries(state)) {
+            if (!excludedFields.has(key)) {
+                stateToSerialize[key] = value;
+            }
+        }
+        return stateToSerialize;
+    });
+
+    const handleSave = async () => {
+        if (!sessionName.trim()) return;
+        setSaving(true);
+        try {
+            const res = await fetchWithIdentity(getUrls().SESSION_SAVE, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: sessionName.trim(), state: fullState }),
+            });
+            const data = await res.json();
+            if (data.status === 'ok') {
+                dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Session", type: "success", value: `Session "${sessionName}" saved` }));
+                onClose();
+            } else {
+                dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Session", type: "error", value: data.message || 'Save failed' }));
+            }
+        } catch (e) {
+            dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Session", type: "error", value: 'Failed to save session' }));
+        }
+        setSaving(false);
+    };
+
+    return (
+        <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth>
+            <DialogTitle>Save Session</DialogTitle>
+            <DialogContent>
+                <TextField
+                    autoFocus fullWidth margin="dense" label="Session name"
+                    value={sessionName} onChange={(e) => setSessionName(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') handleSave(); }}
+                    helperText={`${tables.length} table(s) will be saved`}
+                />
+            </DialogContent>
+            <DialogActions>
+                <Button onClick={onClose}>Cancel</Button>
+                <Button onClick={handleSave} disabled={!sessionName.trim() || saving}>
+                    {saving ? 'Saving...' : 'Save'}
+                </Button>
+            </DialogActions>
+        </Dialog>
+    );
+};
+
+const LoadSessionDialog: React.FC<{open: boolean, onClose: () => void}> = ({open, onClose}) => {
+    const [sessions, setSessions] = useState<{name: string, saved_at: string}[]>([]);
+    const [loading, setLoading] = useState(false);
+    const [listLoading, setListLoading] = useState(false);
+    const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+    const dispatch = useDispatch();
+
+    const fetchSessions = useCallback(async () => {
+        setListLoading(true);
+        try {
+            const res = await fetchWithIdentity(getUrls().SESSION_LIST);
+            const data = await res.json();
+            if (data.status === 'ok') setSessions(data.sessions);
+        } catch (e) { /* ignore */ }
+        setListLoading(false);
+    }, []);
+
+    useEffect(() => {
+        if (!open) return;
+        fetchSessions();
+    }, [open, fetchSessions]);
+
+    const handleLoad = async (name: string) => {
+        setLoading(true);
+        dispatch(dfActions.setSessionLoading({ loading: true, label: `Loading session "${name}"...` }));
+        onClose();
+        try {
+            const res = await fetchWithIdentity(getUrls().SESSION_LOAD, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name }),
+            });
+            const data = await res.json();
+            if (data.status === 'ok') {
+                dispatch(dfActions.loadState(data.state));
+                dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Session", type: "success", value: `Session "${name}" loaded` }));
+            } else {
+                dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Session", type: "error", value: data.message || 'Load failed' }));
+            }
+        } catch (e) {
+            dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Session", type: "error", value: 'Failed to load session' }));
+        }
+        setLoading(false);
+        dispatch(dfActions.setSessionLoading({ loading: false }));
+    };
+
+    const handleDelete = async (name: string) => {
+        try {
+            const res = await fetchWithIdentity(getUrls().SESSION_DELETE, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name }),
+            });
+            const data = await res.json();
+            if (data.status === 'ok') {
+                setSessions(prev => prev.filter(s => s.name !== name));
+                dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Session", type: "success", value: `Session "${name}" deleted` }));
+            }
+        } catch (e) { /* ignore */ }
+        setConfirmDelete(null);
+    };
+
+    return (
+        <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth>
+            <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                Load Session
+                <Tooltip title="Refresh session list">
+                    <IconButton size="small" onClick={fetchSessions} disabled={listLoading}>
+                        {listLoading ? <CircularProgress size={18} /> : <RefreshIcon fontSize="small" />}
+                    </IconButton>
+                </Tooltip>
+            </DialogTitle>
+            <DialogContent sx={{ px: 1 }}>
+                {listLoading && sessions.length === 0 ? (
+                    <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', py: 4, gap: 1.5 }}>
+                        <CircularProgress size={28} />
+                        <Typography variant="body2" color="text.secondary">Loading sessions...</Typography>
+                    </Box>
+                ) : sessions.length === 0 ? (
+                    <DialogContentText sx={{ px: 1 }}>No saved sessions found.</DialogContentText>
+                ) : (
+                    sessions.map(s => (
+                        <Box
+                            key={s.name}
+                            sx={{
+                                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                                px: 1.5, py: 1, mx: 0, my: 0.5, borderRadius: 1, cursor: 'pointer',
+                                '&:hover': { backgroundColor: 'action.hover' },
+                                transition: 'background-color 0.15s',
+                            }}
+                            onClick={() => handleLoad(s.name)}
+                        >
+                            <Box sx={{ flex: 1, minWidth: 0 }}>
+                                <Typography variant="body2" fontWeight="bold" noWrap>{s.name}</Typography>
+                                <Typography variant="caption" color="text.secondary">
+                                    {new Date(s.saved_at).toLocaleString()}
+                                </Typography>
+                            </Box>
+                            {confirmDelete === s.name ? (
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }} onClick={e => e.stopPropagation()}>
+                                    <Button size="small" color="error" sx={{ minWidth: 0, fontSize: 11, textTransform: 'none' }}
+                                        onClick={() => handleDelete(s.name)}>delete</Button>
+                                    <Button size="small" sx={{ minWidth: 0, fontSize: 11, textTransform: 'none' }}
+                                        onClick={() => setConfirmDelete(null)}>cancel</Button>
+                                </Box>
+                            ) : (
+                                <Tooltip title="Delete session">
+                                    <IconButton size="small" onClick={(e) => { e.stopPropagation(); setConfirmDelete(s.name); }}>
+                                        <ClearIcon fontSize="small" />
+                                    </IconButton>
+                                </Tooltip>
+                            )}
+                        </Box>
+                    ))
+                )}
+            </DialogContent>
+            <DialogActions>
+                <Button onClick={onClose}>Close</Button>
+            </DialogActions>
+        </Dialog>
+    );
+};
+
 const SessionMenu: React.FC = () => {
     const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
+    const [saveDialogOpen, setSaveDialogOpen] = useState(false);
+    const [loadDialogOpen, setLoadDialogOpen] = useState(false);
+    const [recentSessions, setRecentSessions] = useState<{name: string, saved_at: string}[]>([]);
+    const [exporting, setExporting] = useState(false);
+    const importRef = React.useRef<HTMLInputElement>(null);
     const open = Boolean(anchorEl);
-    const sessionId = useSelector((state: DataFormulatorState) => state.sessionId);
-    const tables = useSelector((state: DataFormulatorState) => state.tables);
-    const theme = useTheme();
-    
     const dispatch = useDispatch();
+    const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
+    const diskPersistenceDisabled = serverConfig.DISABLE_DATABASE;
+
+    const fullState = useSelector((state: DataFormulatorState) => {
+        const excludedFields = new Set([
+            'models', 'selectedModelId', 'testedModels',
+            'dataLoaderConnectParams', 'identity', 'agentRules', 'serverConfig',
+        ]);
+        const obj: any = {};
+        for (const [key, value] of Object.entries(state)) {
+            if (!excludedFields.has(key)) obj[key] = value;
+        }
+        return obj;
+    });
+
+    // Fetch recent sessions when the menu opens
+    useEffect(() => {
+        if (!open || diskPersistenceDisabled) return;
+        (async () => {
+            try {
+                const res = await fetchWithIdentity(getUrls().SESSION_LIST);
+                const data = await res.json();
+                if (data.status === 'ok') setRecentSessions(data.sessions.slice(0, 3));
+            } catch (e) { /* ignore */ }
+        })();
+    }, [open]);
+
+    const closeMenu = () => setAnchorEl(null);
+
+    const handleLoadSession = async (name: string) => {
+        closeMenu();
+        dispatch(dfActions.setSessionLoading({ loading: true, label: `Loading session "${name}"...` }));
+        try {
+            const res = await fetchWithIdentity(getUrls().SESSION_LOAD, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name }),
+            });
+            const data = await res.json();
+            if (data.status === 'ok') {
+                dispatch(dfActions.loadState(data.state));
+                dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Session", type: "success", value: `Session "${name}" loaded` }));
+            } else {
+                dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Session", type: "error", value: data.message || 'Load failed' }));
+            }
+        } catch (e) {
+            dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Session", type: "error", value: 'Failed to load session' }));
+        }
+        dispatch(dfActions.setSessionLoading({ loading: false }));
+    };
+
+    const handleExport = async () => {
+        closeMenu();
+        setExporting(true);
+        try {
+            const res = await fetchWithIdentity(getUrls().SESSION_EXPORT, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ state: fullState }),
+            });
+            if (!res.ok) throw new Error('Export failed');
+            const blob = await res.blob();
+            const disposition = res.headers.get('content-disposition');
+            const match = disposition?.match(/filename="?(.+?)"?$/);
+            const filename = match?.[1] || 'session.dfsession';
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = filename;
+            a.click();
+            URL.revokeObjectURL(a.href);
+            dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Session", type: "success", value: "Session exported" }));
+        } catch (e) {
+            dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Session", type: "error", value: 'Failed to export session' }));
+        }
+        setExporting(false);
+    };
+
+    const handleImport = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+        closeMenu();
+        dispatch(dfActions.setSessionLoading({ loading: true, label: `Importing session from ${file.name}...` }));
+        try {
+            const formData = new FormData();
+            formData.append('file', file);
+            const res = await fetchWithIdentity(getUrls().SESSION_IMPORT, {
+                method: 'POST',
+                body: formData,
+            });
+            const data = await res.json();
+            if (data.status === 'ok') {
+                dispatch(dfActions.loadState(data.state));
+                dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Session", type: "success", value: `Session imported from ${file.name}` }));
+            } else {
+                dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Session", type: "error", value: data.message || 'Import failed' }));
+            }
+        } catch (e) {
+            dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Session", type: "error", value: 'Failed to import session' }));
+        }
+        dispatch(dfActions.setSessionLoading({ loading: false }));
+        if (importRef.current) importRef.current.value = '';
+    };
+
     return (
         <>
             <Button 
@@ -257,69 +465,87 @@ const SessionMenu: React.FC = () => {
                 Session
             </Button>
             <Menu
-                id="session-menu"
                 anchorEl={anchorEl}
                 open={open}
-                onClose={() => setAnchorEl(null)}
-                slotProps={{
-                    paper: { sx: { py: '4px', px: '8px' } }
-                }}
-                aria-labelledby="session-menu-button"
-                sx={{ '& .MuiMenuItem-root': { padding: 0, margin: 0 } }}
+                onClose={closeMenu}
+                slotProps={{ paper: { sx: { minWidth: 200 } } }}
             >
-                <MenuItem onClick={() => {}}>
-                    <ExportStateButton />
+                <Tooltip title={diskPersistenceDisabled ? "Install locally to use this feature" : ""} placement="right">
+                    <span>
+                        <MenuItem disabled={diskPersistenceDisabled} onClick={() => { setSaveDialogOpen(true); closeMenu(); }}
+                            sx={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <SaveIcon sx={{ fontSize: 16, color: 'text.secondary' }} /> Save session
+                        </MenuItem>
+                    </span>
+                </Tooltip>
+                <Tooltip title={diskPersistenceDisabled ? "Install locally to use this feature" : ""} placement="right">
+                    <span>
+                        <MenuItem disabled={diskPersistenceDisabled} onClick={() => { setLoadDialogOpen(true); closeMenu(); }}
+                            sx={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <FolderOpenIcon sx={{ fontSize: 16, color: 'text.secondary' }} /> Open session...
+                        </MenuItem>
+                    </span>
+                </Tooltip>
+
+                {!diskPersistenceDisabled && recentSessions.length > 0 && [
+                    <Divider key="div-recent" />,
+                    <Typography key="label-recent" variant="caption" sx={{ px: 2, py: 0.5, color: 'text.secondary', display: 'block', fontSize: 10 }}>
+                        Quick resume
+                    </Typography>,
+                    ...recentSessions.map(s => (
+                        <MenuItem key={s.name} onClick={() => handleLoadSession(s.name)}
+                            sx={{ pl: 4, py: 0.25, minHeight: 0, fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2 }}>
+                            <Typography noWrap sx={{ fontSize: 12 }}>{s.name}</Typography>
+                            <Typography noWrap sx={{ fontSize: 10, color: 'text.secondary', flexShrink: 0 }}>
+                                {new Date(s.saved_at).toLocaleDateString()}
+                            </Typography>
+                        </MenuItem>
+                    )),
+                ]}
+
+                <Divider />
+                <MenuItem onClick={handleExport} disabled={exporting}
+                    sx={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <DownloadIcon sx={{ fontSize: 16, color: 'text.secondary' }} /> {exporting ? 'Exporting...' : 'Export to file'}
                 </MenuItem>
-                <MenuItem onClick={(e) => {}}>
-                    <ImportStateButton />
+                <MenuItem onClick={() => importRef.current?.click()}
+                    sx={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <UploadFileIcon sx={{ fontSize: 16, color: 'text.secondary' }} /> Import from file
+                    <input
+                        type="file"
+                        hidden
+                        accept=".dfsession,.zip"
+                        ref={importRef}
+                        onChange={handleImport}
+                    />
                 </MenuItem>
-                <Divider><Typography variant="caption" sx={{ fontSize: 12, color: 'text.secondary' }}>database file</Typography></Divider>
-                {sessionId && tables.some(t => t.virtual) && 
-                    <Typography fontSize="inherit" sx={{ color: theme.palette.warning.main, width: '160px', display: 'flex', alignItems: 'center', gap: 1, fontSize: 9 }}>
-                        This session contains data stored in the database, export and reload the database to resume the session later.
-                    </Typography>}
-                <MenuItem disabled={!sessionId || !tables.some(t => t.virtual)}  onClick={() => {
-                    handleDBDownload(sessionId ?? '');
-                }}>
-                    <Button startIcon={<DownloadIcon />}
-                        sx={{ fontSize: 14, textTransform: 'none', display: 'flex', alignItems: 'center'}}>
-                        download database
-                    </Button>
-                </MenuItem>
-                <MenuItem onClick={() => {}}>
-                    <Button disabled={!sessionId} startIcon={<UploadIcon />} 
-                        sx={{ fontSize: 14, textTransform: 'none', display: 'flex', alignItems: 'center'}}
-                        component="label">
-                        import database
-                        <input type="file" hidden accept=".db" onChange={async (e) => {
-                            const file = e.target.files?.[0];
-                            if (!file) return;
-                            const formData = new FormData();
-                            formData.append('file', file);
-                            try {
-                                const response = await fetch(getUrls().UPLOAD_DB_FILE, { method: 'POST', body: formData });
-                                const data = await response.json();
-                                if (data.status === 'success') {
-                                    dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "DB Manager", type: "success", value: "Database imported successfully" }));
-                                } else {
-                                    dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "DB Manager", type: "error", value: data.message || 'Import failed' }));
-                                }
-                            } catch (error) {
-                                dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "DB Manager", type: "error", value: 'Import failed' }));
-                            }
-                            e.target.value = '';
-                        }} />
-                    </Button>
-                </MenuItem>
-                
             </Menu>
+            <SaveSessionDialog open={saveDialogOpen} onClose={() => setSaveDialogOpen(false)} />
+            <LoadSessionDialog open={loadDialogOpen} onClose={() => setLoadDialogOpen(false)} />
         </>
     );
 };
 
 const ResetDialog: React.FC = () => {
     const [open, setOpen] = useState(false);
+    const [exiting, setExiting] = useState(false);
     const dispatch = useDispatch();
+
+    const handleExit = async () => {
+        setExiting(true);
+        // Clear workspace on server first
+        try {
+            await fetchWithIdentity(getUrls().RESET_DB_FILE, { method: 'POST' });
+        } catch (e) {
+            console.warn('Failed to reset server workspace:', e);
+        }
+        dispatch(dfActions.resetState());
+
+        // Flush the reset state to IndexedDB so the persisted
+        // state matches (preserves models, config, agentRules).
+        await persistor.flush();
+        window.location.reload();
+    };
 
     return (
         <>
@@ -329,32 +555,71 @@ const ResetDialog: React.FC = () => {
                 onClick={() => setOpen(true)} 
                 endIcon={<PowerSettingsNewIcon />}
             >
-                Reset
+                Exit
             </Button>
-            <Dialog onClose={() => setOpen(false)} open={open}>
-                <DialogTitle sx={{ display: "flex", alignItems: "center" }}>Reset Session?</DialogTitle>
+            <Dialog onClose={exiting ? undefined : () => setOpen(false)} open={open} 
+                sx={{ '& .MuiDialog-paper': { position: 'relative', overflow: 'hidden' } }}>
+                <DialogTitle sx={{ display: "flex", alignItems: "center" }}>Exit Session?</DialogTitle>
                 <DialogContent>
                     <DialogContentText>
-                        All unexported content (charts, derived data, concepts) will be lost upon reset.
+                        All unsaved content (data, charts, reports) will be lost. Make sure to save your session before exiting.
                     </DialogContentText>
                 </DialogContent>
                 <DialogActions>
                     <Button 
-                        onClick={() => { 
-                            dispatch(dfActions.resetState()); 
-                            setOpen(false);
-                            
-                            // Add a delay to ensure the state has been reset before reloading
-                            setTimeout(() => {
-                                window.location.reload();
-                            }, 250); // 250ms should be enough for state update
-                        }} 
+                        disabled={exiting}
+                        onClick={handleExit}
                         endIcon={<PowerSettingsNewIcon />}
                     >
-                        reset session 
+                        Exit session
                     </Button>
-                    <Button onClick={() => setOpen(false)}>cancel</Button>
+                    <Button onClick={() => setOpen(false)} disabled={exiting}>cancel</Button>
                 </DialogActions>
+                {/* Cleaning overlay on top of dialog */}
+                {exiting && (
+                    <Box sx={{
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        backgroundColor: 'rgba(255, 255, 255, 0.92)',
+                        backdropFilter: 'blur(4px)',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 2,
+                        zIndex: 1,
+                        borderRadius: 'inherit',
+                    }}>
+                        <Typography sx={{
+                            fontSize: 36,
+                            animation: 'sweepBroom 1.2s ease-in-out infinite',
+                            '@keyframes sweepBroom': {
+                                '0%, 100%': {
+                                    transform: 'rotate(-15deg) translateX(0px)',
+                                },
+                                '25%': {
+                                    transform: 'rotate(-5deg) translateX(8px)',
+                                },
+                                '50%': {
+                                    transform: 'rotate(-15deg) translateX(0px)',
+                                },
+                                '75%': {
+                                    transform: 'rotate(-25deg) translateX(-8px)',
+                                },
+                            },
+                            transformOrigin: 'top center',
+                        }}>
+                            🧹
+                        </Typography>
+                        <Typography variant="body1" color="text.secondary" sx={{ fontWeight: 500 }}>
+                            Cleaning workspace...
+                        </Typography>
+                        <LinearProgress sx={{ width: 200, mt: 1, borderRadius: 1 }} />
+                    </Box>
+                )}
             </Dialog>
         </>
     );
@@ -366,17 +631,23 @@ const ConfigDialog: React.FC = () => {
     const config = useSelector((state: DataFormulatorState) => state.config);
 
 
-    const [formulateTimeoutSeconds, setFormulateTimeoutSeconds] = useState(config.formulateTimeoutSeconds);
-    const [maxRepairAttempts, setMaxRepairAttempts] = useState(config.maxRepairAttempts);
+    const [formulateTimeoutSeconds, setFormulateTimeoutSeconds] = useState(config.formulateTimeoutSeconds ?? 30);
 
-    const [defaultChartWidth, setDefaultChartWidth] = useState(config.defaultChartWidth);
-    const [defaultChartHeight, setDefaultChartHeight] = useState(config.defaultChartHeight);
+    const [defaultChartWidth, setDefaultChartWidth] = useState(config.defaultChartWidth ?? 300);
+    const [defaultChartHeight, setDefaultChartHeight] = useState(config.defaultChartHeight ?? 300);
+    const [maxStretchFactor, setMaxStretchFactor] = useState(config.maxStretchFactor ?? 2.0);
+    const [frontendRowLimit, setFrontendRowLimit] = useState(config.frontendRowLimit ?? 50000);
+    const [paletteKey, setPaletteKey] = useState(
+        (config.paletteKey && palettes[config.paletteKey]) ? config.paletteKey : defaultPaletteKey
+    );
 
     // Add check for changes
     const hasChanges = formulateTimeoutSeconds !== config.formulateTimeoutSeconds || 
-                      maxRepairAttempts !== config.maxRepairAttempts ||
                       defaultChartWidth !== config.defaultChartWidth ||
-                      defaultChartHeight !== config.defaultChartHeight;
+                      defaultChartHeight !== config.defaultChartHeight ||
+                      maxStretchFactor !== config.maxStretchFactor ||
+                      frontendRowLimit !== config.frontendRowLimit ||
+                      paletteKey !== ((config.paletteKey && palettes[config.paletteKey]) ? config.paletteKey : defaultPaletteKey);
 
     return (
         <>
@@ -393,6 +664,39 @@ const ConfigDialog: React.FC = () => {
                         maxWidth: 400
                     }}>
                         <Divider><Typography variant="caption">Frontend</Typography></Divider>
+                        <FormControl fullWidth size="small">
+                            <InputLabel id="palette-select-label" sx={{ fontSize: 13 }}>Color Theme</InputLabel>
+                            <Select
+                                labelId="palette-select-label"
+                                value={paletteKey}
+                                label="Color Theme"
+                                onChange={(e) => setPaletteKey(e.target.value)}
+                                sx={{ fontSize: 13 }}
+                                renderValue={(key) => {
+                                    const p = palettes[key];
+                                    return (
+                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                            <Box sx={{ width: 12, height: 12, borderRadius: '50%', backgroundColor: p.primary.main, flexShrink: 0 }} />
+                                            <Box sx={{ width: 12, height: 12, borderRadius: '50%', backgroundColor: p.custom.main, flexShrink: 0 }} />
+                                            <Typography sx={{ fontSize: 13 }}>{p.name}</Typography>
+                                        </Box>
+                                    );
+                                }}
+                            >
+                                {paletteKeys.map(key => {
+                                    const p = palettes[key];
+                                    return (
+                                        <MenuItem key={key} value={key} sx={{ py: 0.5 }}>
+                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mr: 1.5 }}>
+                                                <Box sx={{ width: 14, height: 14, borderRadius: '50%', backgroundColor: p.primary.main, border: '1px solid rgba(0,0,0,0.1)' }} />
+                                                <Box sx={{ width: 14, height: 14, borderRadius: '50%', backgroundColor: p.custom.main, border: '1px solid rgba(0,0,0,0.1)' }} />
+                                            </Box>
+                                            <ListItemText primary={p.name} slotProps={{ primary: { sx: { fontSize: 13 } } }} />
+                                        </MenuItem>
+                                    );
+                                })}
+                            </Select>
+                        </FormControl>
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                             <Box sx={{ flex: 1 }}>
                                 <TextField
@@ -446,6 +750,65 @@ const ConfigDialog: React.FC = () => {
                                 />
                             </Box>
                         </Box>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                            <Box sx={{ flex: 1 }}>
+                                <TextField
+                                    label="local-only row limit"
+                                    type="number"
+                                    variant="outlined"
+                                    value={frontendRowLimit}
+                                    onChange={(e) => {
+                                        const value = parseInt(e.target.value);
+                                        setFrontendRowLimit(value);
+                                    }}
+                                    fullWidth
+                                    slotProps={{
+                                        input: {
+                                            inputProps: {
+                                                min: 100,
+                                                max: 1000000
+                                            }
+                                        }
+                                    }}
+                                    error={frontendRowLimit < 100 || frontendRowLimit > 1000000}
+                                    helperText={frontendRowLimit < 100 || frontendRowLimit > 1000000 ? 
+                                        "Value must be between 100 and 1,000,000 rows" : ""}
+                                />
+                                <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+                                    Maximum number of rows kept when loading data locally (not stored on server).
+                                </Typography>
+                            </Box>
+                        </Box>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                            <Box sx={{ flex: 1 }}>
+                                <TextField
+                                    label="max chart stretch factor"
+                                    type="number"
+                                    variant="outlined"
+                                    value={maxStretchFactor}
+                                    onChange={(e) => {
+                                        const value = parseFloat(e.target.value);
+                                        setMaxStretchFactor(value);
+                                    }}
+                                    fullWidth
+                                    slotProps={{
+                                        input: {
+                                            inputProps: {
+                                                min: 1,
+                                                max: 5,
+                                                step: 0.1
+                                            }
+                                        }
+                                    }}
+                                    error={isNaN(maxStretchFactor) || maxStretchFactor < 1 || maxStretchFactor > 5}
+                                    helperText={isNaN(maxStretchFactor) || maxStretchFactor < 1 || maxStretchFactor > 5 ? 
+                                        "Value must be between 1.0 and 5.0" : ""}
+                                />
+                                <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+                                    How much charts can grow beyond the base size (1.0 = no stretch, 2.0 = up to 2×).
+                                </Typography>
+                            </Box>
+                        </Box>
                         <Divider><Typography variant="caption">Backend</Typography></Divider>
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                             <Box sx={{ flex: 1 }}>
@@ -472,53 +835,27 @@ const ConfigDialog: React.FC = () => {
                                 </Typography>
                             </Box>
                         </Box>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                            <Box sx={{ flex: 1 }}>
-                                <TextField
-                                    label="max repair attempts"
-                                    type="number"
-                                    variant="outlined"
-                                    value={maxRepairAttempts}
-                                    onChange={(e) => {
-                                        const value = parseInt(e.target.value);
-                                        setMaxRepairAttempts(value);
-                                    }}
-                                    fullWidth
-                                    slotProps={{
-                                        input: {
-                                            inputProps: {
-                                                min: 1,
-                                                max: 5,
-                                            }
-                                        }
-                                    }}
-                                    error={maxRepairAttempts <= 0 || maxRepairAttempts > 5}
-                                    helperText={maxRepairAttempts <= 0 || maxRepairAttempts > 5 ? 
-                                        "Value must be between 1 and 5" : ""}
-                                />
-                                <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
-                                    How many attempts LLM will make to repair code if code fails to execute (recommended = 1, higher values might increase the chance of success but it's slow).
-                                </Typography>
-                            </Box>
-                        </Box>
                     </Box>
                 </DialogContent>
                 <DialogActions sx={{'.MuiButton-root': {textTransform: 'none'}}}>
                     <Button sx={{marginRight: 'auto'}} onClick={() => {
                         setFormulateTimeoutSeconds(30);
-                        setMaxRepairAttempts(1);
                         setDefaultChartWidth(300);
                         setDefaultChartHeight(300);
+                        setMaxStretchFactor(2.0);
+                        setFrontendRowLimit(50000);
+                        setPaletteKey(defaultPaletteKey);
                     }}>Reset to default</Button>
                     <Button onClick={() => setOpen(false)}>Cancel</Button>
                     <Button 
                         variant={hasChanges ? "contained" : "text"}
-                        disabled={!hasChanges || isNaN(maxRepairAttempts) || maxRepairAttempts <= 0 || maxRepairAttempts > 5 
-                            || isNaN(formulateTimeoutSeconds) || formulateTimeoutSeconds <= 0 || formulateTimeoutSeconds > 3600
+                        disabled={!hasChanges || isNaN(formulateTimeoutSeconds) || formulateTimeoutSeconds <= 0 || formulateTimeoutSeconds > 3600
                             || isNaN(defaultChartWidth) || defaultChartWidth <= 0 || defaultChartWidth > 1000
-                            || isNaN(defaultChartHeight) || defaultChartHeight <= 0 || defaultChartHeight > 1000}
+                            || isNaN(defaultChartHeight) || defaultChartHeight <= 0 || defaultChartHeight > 1000
+                            || isNaN(maxStretchFactor) || maxStretchFactor < 1 || maxStretchFactor > 5
+                            || isNaN(frontendRowLimit) || frontendRowLimit < 100 || frontendRowLimit > 1000000}
                         onClick={() => {
-                            dispatch(dfActions.setConfig({formulateTimeoutSeconds, maxRepairAttempts, defaultChartWidth, defaultChartHeight}));
+                            dispatch(dfActions.setConfig({formulateTimeoutSeconds, defaultChartWidth, defaultChartHeight, maxStretchFactor, frontendRowLimit, paletteKey}));
                             setOpen(false);
                         }}
                     >
@@ -535,20 +872,24 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
     const dispatch = useDispatch<AppDispatch>();
     const viewMode = useSelector((state: DataFormulatorState) => state.viewMode);
     const generatedReports = useSelector((state: DataFormulatorState) => state.generatedReports);
-    const focusedTableId = useSelector((state: DataFormulatorState) => state.focusedTableId);
+    const focusedId = useSelector((state: DataFormulatorState) => state.focusedId);
     const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
+    const rawPaletteKey = useSelector((state: DataFormulatorState) => state.config.paletteKey);
+    const activePaletteKey = (rawPaletteKey && palettes[rawPaletteKey]) ? rawPaletteKey : defaultPaletteKey;
 
     useEffect(() => {
-        fetch(getUrls().APP_CONFIG)
+        fetchWithIdentity(getUrls().APP_CONFIG)
             .then(response => response.json())
             .then(data => {
                 dispatch(dfActions.setServerConfig(data));
             });
     }, []);
 
-    // if the user has logged in
+    // User authentication state
     const [userInfo, setUserInfo] = useState<{ name: string, userId: string } | undefined>(undefined);
+    const [authChecked, setAuthChecked] = useState(false);
 
+    // Check for authenticated user first
     useEffect(() => {
         fetch('/.auth/me')
             .then(function (response) { return response.json(); })
@@ -562,15 +903,30 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
                     setUserInfo(userInfo);
                 }
             }).catch(err => {
-                //user is not logged in, do not show logout button
-                //console.error(err)
+                // User is not logged in, will use browser identity
+            }).finally(() => {
+                setAuthChecked(true);
             });
     }, []);
+
+    // Initialize identity after auth check completes
+    // No server round-trip needed - identity is determined client-side:
+    // Priority: user identity (if logged in) > browser identity (localStorage-based, shared across tabs)
+    useEffect(() => {
+        if (authChecked) {
+            if (userInfo?.userId) {
+                // User is logged in - use their user ID
+                dispatch(dfActions.setIdentity({ type: 'user', id: userInfo.userId }));
+            } else {
+                // Not logged in - use browser ID (from localStorage, shared across tabs)
+                dispatch(dfActions.setIdentity({ type: 'browser', id: getBrowserId() }));
+            }
+        }
+    }, [authChecked, userInfo?.userId]);
 
     useEffect(() => {
         document.title = toolName;
         dispatch(fetchAvailableModels());
-        dispatch(getSessionId());
     }, []);
 
     let theme = createTheme({
@@ -583,39 +939,64 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
             ].join(",")
         },
         // Default Material UI palette
-        // palette: {
-        //     primary: {
-        //         main: blue[700]
-        //     },
-        //     secondary: {
-        //         main: purple[700]
-        //     },
-        //     derived: {
-        //         main: yellow[700], 
-        //     },
-        //     custom: {
-        //         main: orange[700], //lightsalmon
-        //     },
-        //     warning: {
-        //         main: '#bf5600', // New accessible color, original (#ed6c02) has insufficient color contrast of 3.11
-        //     },
-        // },
-       // Microsoft Fluent UI palette (alternative option)
-        palette: {
-            primary: {
-                main: '#0078d4'      // Fluent UI themePrimary (Microsoft Blue)
+        // Active palette from user config — selectable via Settings dialog
+        // Available: material, fluent, vivid, jewel, electric, tealCoral, copilot
+        palette: (() => {
+            const p = palettes[activePaletteKey];
+            const bg = (entry: { main: string; bgcolor?: string }) => entry.bgcolor ?? alpha(entry.main, bgAlpha);
+            const tc = (entry: { main: string; textColor?: string }) => entry.textColor ?? entry.main;
+            return {
+                primary:   { main: p.primary.main,   bgcolor: bg(p.primary),   textColor: tc(p.primary)   },
+                secondary: { main: p.secondary.main, bgcolor: bg(p.secondary), textColor: tc(p.secondary) },
+                derived:   { main: p.derived.main,   bgcolor: bg(p.derived),   textColor: tc(p.derived)   },
+                custom:    { main: p.custom.main,    bgcolor: bg(p.custom),    textColor: tc(p.custom)    },
+                warning:   { main: p.warning.main },
+            };
+        })(),
+        components: {
+            MuiButton: {
+                styleOverrides: {
+                    text: ({ ownerState, theme: t }) => {
+                        const c = ownerState.color;
+                        if (c && c !== 'inherit' && c !== 'error' && c !== 'info' && c !== 'success' && c in t.palette) {
+                            const p = (t.palette as any)[c];
+                            if (p?.textColor) return { color: p.textColor };
+                        }
+                        return {};
+                    },
+                    outlined: ({ ownerState, theme: t }) => {
+                        const c = ownerState.color;
+                        if (c && c !== 'inherit' && c !== 'error' && c !== 'info' && c !== 'success' && c in t.palette) {
+                            const p = (t.palette as any)[c];
+                            if (p?.textColor) return { color: p.textColor, borderColor: alpha(p.textColor, 0.5) };
+                        }
+                        return {};
+                    },
+                },
             },
-            secondary: {
-                main: '#8764b8'      // Fluent UI purple
+            MuiIconButton: {
+                styleOverrides: {
+                    root: ({ ownerState, theme: t }) => {
+                        const c = ownerState.color;
+                        if (c && c !== 'inherit' && c !== 'default' && c !== 'error' && c !== 'info' && c !== 'success' && c in t.palette) {
+                            const p = (t.palette as any)[c];
+                            if (p?.textColor) return { color: p.textColor };
+                        }
+                        return {};
+                    },
+                },
             },
-            derived: {
-                main: '#ffb900',     // Fluent UI yellow/gold
-            },
-            custom: {
-                main: '#d83b01',     // Fluent UI orange (Office orange)
-            },
-            warning: {
-                main: '#a4262c',     // Fluent UI red (accessible)
+            MuiLink: {
+                styleOverrides: {
+                    root: ({ ownerState, theme: t }) => {
+                        const c = ownerState.color as string | undefined;
+                        if (c && c !== 'inherit' && c in t.palette) {
+                            const p = (t.palette as any)[c];
+                            if (p?.textColor) return { color: p.textColor };
+                        }
+                        return {};
+                    },
+                },
             },
         },
     });
@@ -623,6 +1004,8 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
     // Check if we're on the about page
     const isAboutPage = (window.location.pathname === '/about' 
             || (window.location.pathname === '/' && serverConfig.PROJECT_FRONT_PAGE));
+    const isGalleryPage = window.location.pathname === '/gallery';
+    const isAppPage = !isAboutPage && !isGalleryPage;
 
     let appBar =  [
         <AppBar position="static" key="app-bar-main" >
@@ -684,20 +1067,43 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
                             px: 1.5,
                             py: 0.5,
                             minWidth: 'auto',
-                            color: !isAboutPage ? 'text.primary' : 'text.secondary',
-                            backgroundColor: !isAboutPage ? 'rgba(0, 0, 0, 0.08)' : 'transparent',
+                            color: isAppPage ? 'text.primary' : 'text.secondary',
+                            backgroundColor: isAppPage ? 'rgba(0, 0, 0, 0.08)' : 'transparent',
                             '&:hover': {
                                 color: 'text.primary',
-                                backgroundColor: !isAboutPage ? 'rgba(0, 0, 0, 0.08)' : 'rgba(0, 0, 0, 0.04)',
+                                backgroundColor: isAppPage ? 'rgba(0, 0, 0, 0.08)' : 'rgba(0, 0, 0, 0.04)',
                             },
                         }}
                     >
                         App
                     </Button>
+                    <Button 
+                        component="a" 
+                        href="/gallery"
+                        sx={{ 
+                            textDecoration: 'none',
+                            textTransform: 'none',
+                            fontSize: '13px',
+                            fontWeight: 400,
+                            border: 'none',
+                            borderRadius: 0,
+                            px: 1.5,
+                            py: 0.5,
+                            minWidth: 'auto',
+                            color: isGalleryPage ? 'text.primary' : 'text.secondary',
+                            backgroundColor: isGalleryPage ? 'rgba(0, 0, 0, 0.08)' : 'transparent',
+                            '&:hover': {
+                                color: 'text.primary',
+                                backgroundColor: isGalleryPage ? 'rgba(0, 0, 0, 0.08)' : 'rgba(0, 0, 0, 0.04)',
+                            },
+                        }}
+                    >
+                        Gallery
+                    </Button>
                 </Box>
-                {!isAboutPage && (
+                {isAppPage && (
                     <Box sx={{ display: 'flex', ml: 'auto', fontSize: 14 }}>
-                        {focusedTableId !== undefined && <React.Fragment><ToggleButtonGroup
+                        {focusedId !== undefined && <React.Fragment><ToggleButtonGroup
                             value={viewMode}
                             exclusive
                             onChange={(_, newMode) => {
@@ -734,7 +1140,6 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
                             </ToggleButton>
                         </ToggleButtonGroup>
                         <ConfigDialog />
-                        <AgentRulesDialog />
                         <Divider orientation="vertical" variant="middle" flexItem /></React.Fragment>}
                         <ModelSelectionButton />
                         <Divider orientation="vertical" variant="middle" flexItem />
@@ -742,11 +1147,9 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
                         <Typography fontSize="inherit" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                             <TableMenu />
                         </Typography>
-                        <Divider orientation="vertical" variant="middle" flexItem />
                         <Typography fontSize="inherit" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                             <SessionMenu />
                         </Typography>
-                        <Divider orientation="vertical" variant="middle" flexItem />
                         <ResetDialog />
                     </Box>
                 )}
@@ -822,7 +1225,7 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
                         </Tooltip>
                     </Box>
                 )}
-                {!isAboutPage && (
+                {isAppPage && (
                     <Tooltip title="View on GitHub">
                         <Button
                             component="a"
@@ -849,7 +1252,12 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
         {
             path: "/about",
             element: <About />,
-        }, {
+        },
+        {
+            path: "/gallery",
+            element: <ChartGallery />,
+        },
+        {
             path: "/",
             element: serverConfig.PROJECT_FRONT_PAGE ? <About /> : <DataFormulatorFC />,
         }, {
@@ -884,6 +1292,7 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
                 {appBar}
                 <RouterProvider router={router} />
                 <MessageSnackbar />
+                <ChartRenderService />
             </Box>
         </Box>;
 

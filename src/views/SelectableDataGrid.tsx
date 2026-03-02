@@ -2,6 +2,7 @@
 // Licensed under the MIT License.
 
 import * as React from 'react';
+import { shadow, transition } from '../app/tokens';
 import { TableVirtuoso } from 'react-virtuoso';
 import Table from '@mui/material/Table';
 import TableBody from '@mui/material/TableBody';
@@ -20,15 +21,16 @@ import { getIconFromType } from './ViewUtils';
 import { IconButton, TableSortLabel, Typography } from '@mui/material';
 
 import _ from 'lodash';
+import * as d3 from 'd3-dsv';
 import { FieldSource, FieldItem } from '../components/ComponentType';
 
 import FileDownloadIcon from '@mui/icons-material/FileDownload';
-import CloudQueueIcon from '@mui/icons-material/CloudQueue';
+import { TableIcon } from '../icons';
 import CasinoIcon from '@mui/icons-material/Casino';
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
 import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
 import UnfoldMoreIcon from '@mui/icons-material/UnfoldMore';
-import { getUrls } from '../app/utils';
+import { getUrls, fetchWithIdentity } from '../app/utils';
 import { useDrag } from 'react-dnd';
 import { useSelector } from 'react-redux';
 import { DataFormulatorState } from '../app/dfSlice';
@@ -82,8 +84,6 @@ function getColorForFieldSource(source: string | undefined, theme: any): string 
     }
     
     switch (source) {
-        case "derived":
-            return theme.palette.derived.main; // Yellow/gold for derived fields
         case "custom":
             return theme.palette.custom.main; // Orange for custom fields
         case "original":
@@ -106,6 +106,11 @@ const DraggableHeader: React.FC<DraggableHeaderProps> = ({
 }) => {
     const theme = useTheme();
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
+    const tables = useSelector((state: DataFormulatorState) => state.tables);
+    
+    // Get semantic type from table metadata
+    const table = tables.find(t => t.id === tableId);
+    const semanticType = table?.metadata?.[columnDef.id]?.semanticType;
     
     // Find the corresponding FieldItem for this column
     // Try to find by name first, then by constructing the ID for original fields
@@ -128,13 +133,13 @@ const DraggableHeader: React.FC<DraggableHeaderProps> = ({
         }),
     }), [field]);
 
-    let backgroundColor = "white";
+    let backgroundColor: string;
     let borderBottomColor = theme.palette.primary.main;
     if (columnDef.source == "custom") {
-        backgroundColor = alpha(theme.palette.custom.main, 0.05);
+        backgroundColor = theme.palette.custom.bgcolor || alpha(theme.palette.custom.main, 0.1);
         borderBottomColor = theme.palette.custom.main;
     } else {
-        backgroundColor = alpha(theme.palette.primary.main, 0.05);
+        backgroundColor = theme.palette.primary.bgcolor || alpha(theme.palette.primary.main, 0.1);
         borderBottomColor = theme.palette.primary.main;
     }
 
@@ -159,14 +164,13 @@ const DraggableHeader: React.FC<DraggableHeaderProps> = ({
     return (
         <Box 
             className="data-view-header-container" 
-            ref={field ? dragSource : dragPreview}
+            ref={dragPreview}
             sx={{ 
                 backgroundColor: backgroundColor, 
                 borderBottomColor, 
                 borderBottomWidth: '2px', 
                 borderBottomStyle: 'solid',
                 opacity,
-                cursor: cursorStyle,
                 display: 'flex',
                 alignItems: 'center',
                 position: 'relative',
@@ -178,13 +182,14 @@ const DraggableHeader: React.FC<DraggableHeaderProps> = ({
                 ...(field && {
                     '&:hover': {
                         backgroundColor: hoverBackgroundColor,
-                        boxShadow: '0 2px 4px rgba(0,0,0,0.08)',
+                        boxShadow: shadow.md,
                     },
                 }),
             }}
         >
             {/* Main content area - draggable for concepts, using original TableSortLabel structure */}
             <TableSortLabel
+                ref={field ? dragSource : undefined}
                 className="data-view-header-title"
                 sx={{ 
                     display: "flex", 
@@ -209,9 +214,19 @@ const DraggableHeader: React.FC<DraggableHeaderProps> = ({
                 <span role="img" style={{ fontSize: "inherit", padding: "2px", display: "inline-flex", alignItems: "center" }}>
                     {getIconFromType(columnDef.dataType)}
                 </span>
-                <Typography sx={{fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'}}>
-                    {columnDef.label}
-                </Typography>
+                <Tooltip 
+                    title={semanticType ? (
+                        <Typography sx={{ fontSize: 11 }}>
+                            <b>{columnDef.label}</b>: <i>{semanticType}</i>
+                        </Typography>
+                    ) : ''}
+                    arrow
+                    placement="top"
+                >
+                    <Typography sx={{fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'}}>
+                        {columnDef.label}
+                    </Typography>
+                </Tooltip>
             </TableSortLabel>
             {/* Separate sort handler button */}
             <Tooltip title={<Typography sx={{fontSize: 10}}>Sort by <b>{columnDef.label}</b></Typography>}>
@@ -282,6 +297,41 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({
         )),
     }
 
+    const handleDownload = async (format: 'csv' | 'tsv') => {
+        const delimiter = format === 'tsv' ? '\t' : ',';
+        const ext = format === 'tsv' ? 'tsv' : 'csv';
+        const mime = format === 'tsv' ? 'text/tab-separated-values' : 'text/csv';
+
+        if (virtual) {
+            // Virtual table: fetch full data from server
+            try {
+                const response = await fetchWithIdentity(getUrls().EXPORT_TABLE_CSV, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ table_name: tableId, delimiter }),
+                });
+                if (!response.ok) throw new Error('Export failed');
+                const blob = await response.blob();
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                a.download = `${tableName}.${ext}`;
+                a.click();
+                URL.revokeObjectURL(a.href);
+            } catch (error) {
+                console.error('Error downloading table:', error);
+            }
+        } else {
+            // Local table: export from in-memory rows
+            const csvContent = d3.dsvFormat(delimiter).format(rows);
+            const blob = new Blob([csvContent], { type: mime });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = `${tableName}.${ext}`;
+            a.click();
+            URL.revokeObjectURL(a.href);
+        }
+    };
+
     const fetchVirtualData = (sortByColumnIds: string[], sortOrder: 'asc' | 'desc') => {
         // Set loading to true when starting the fetch
         setIsLoading(true);
@@ -298,7 +348,7 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({
         }
         
         // Use the SAMPLE_TABLE endpoint with appropriate ordering
-        fetch(getUrls().SAMPLE_TABLE, {
+        fetchWithIdentity(getUrls().SAMPLE_TABLE, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -431,7 +481,7 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({
                 sx={{ display: 'flex', flexDirection: 'row',  position: 'absolute', bottom: 6, right: 12 }}>
                 <Box sx={{display: 'flex', alignItems: 'center', mx: 1}}>
                     <Typography sx={{display: 'flex', alignItems: 'center', fontSize: '12px'}}>
-                        {virtual && <CloudQueueIcon sx={{fontSize: 16, mr: 1}}/> }
+                        {virtual && <TableIcon sx={{width: 14, height: 14, mr: 1}}/> }
                         {`${rowCount} rows`}
                     </Typography>
                     {virtual && rowCount > 10000 && (
@@ -453,6 +503,15 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({
                             </IconButton>
                         </Tooltip>
                     )}
+                    <Tooltip title="Download as CSV">
+                        <IconButton 
+                            size="small" 
+                            color="primary" 
+                            onClick={() => handleDownload('csv')}
+                        >
+                            <FileDownloadIcon sx={{ fontSize: 18 }} />
+                        </IconButton>
+                    </Tooltip>
                 </Box>
             </Paper>
         </Box >

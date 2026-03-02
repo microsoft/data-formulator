@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <!-- Radar / Spider Chart icon -->
+  <!-- Outer ring (serves as chart boundary — standard axis style) -->
+  <polygon points="128,18 233,94 193,217 63,217 23,94"
+           fill="none" stroke="#363636" stroke-width="4" stroke-linejoin="round"/>
+  <!-- Data polygon A (blue) -->
+  <polygon points="128,39 210,106 179,204 75,185 39,106"
+           fill="#76c6ff" stroke="#4a8acb" stroke-width="2"/>
+  <!-- Data polygon B (gray) -->
+  <polygon points="128,63 185,124 161,192 88,167 57,112"
+           fill="#d0d0d0" stroke="#7a7a7a" stroke-width="2"/>
+  <!-- Guidelines on top -->
+  <!-- Middle ring -->
+  <polygon points="128,55 198,105 171,187 85,187 58,105"
+           fill="none" stroke="#b0b0b0" stroke-width="1.5"/>
+  <!-- Inner ring -->
+  <polygon points="128,91 163,117 150,158 106,158 93,117"
+           fill="none" stroke="#b0b0b0" stroke-width="1.5"/>
+  <!-- Spokes -->
+  <line x1="128" y1="128" x2="128" y2="18" stroke="#b0b0b0" stroke-width="1.5"/>
+  <line x1="128" y1="128" x2="233" y2="94" stroke="#b0b0b0" stroke-width="1.5"/>
+  <line x1="128" y1="128" x2="193" y2="217" stroke="#b0b0b0" stroke-width="1.5"/>
+  <line x1="128" y1="128" x2="63" y2="217" stroke="#b0b0b0" stroke-width="1.5"/>
+  <line x1="128" y1="128" x2="23" y2="94" stroke="#b0b0b0" stroke-width="1.5"/>
+</svg>
