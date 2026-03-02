@@ -720,7 +720,12 @@ class AzureBlobWorkspace(Workspace):
                 self.cleanup()
                 for entry in workspace_entries:
                     rel = entry[len("workspace/"):]
-                    self._upload_bytes(rel, zf.read(entry))
+                    # Guard against zip-slip: secure_filename strips
+                    # path separators and ".." components.
+                    safe_rel = secure_filename(rel)
+                    if not safe_rel:
+                        continue  # skip entries that sanitise to empty
+                    self._upload_bytes(safe_rel, zf.read(entry))
                 if not self._blob_exists(METADATA_FILENAME):
                     self._init_metadata()
                 # Invalidate caches since workspace blobs were replaced

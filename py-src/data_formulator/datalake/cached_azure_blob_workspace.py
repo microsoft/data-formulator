@@ -221,8 +221,18 @@ class CachedAzureBlobWorkspace(AzureBlobWorkspace):
     # ------------------------------------------------------------------
 
     def _cache_path(self, filename: str) -> Path:
-        """Return the local cache path for *filename*."""
-        return self._cache_dir / filename
+        """Return the local cache path for *filename*.
+
+        Raises ``ValueError`` if the resolved path escapes the cache
+        directory (defence-in-depth against path-traversal attacks).
+        """
+        resolved = (self._cache_dir / filename).resolve()
+        if not resolved.is_relative_to(self._cache_dir.resolve()):
+            raise ValueError(
+                f"Path traversal detected: {filename!r} resolves outside "
+                f"the cache directory"
+            )
+        return resolved
 
     # ------------------------------------------------------------------
     # Low-level blob overrides (write-through cache)
