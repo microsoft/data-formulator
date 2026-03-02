@@ -77,7 +77,8 @@ class SortDataAgent(object):
 
         user_query = f"[INPUT]\n\n{json.dumps(input_obj)}\n\n[OUTPUT]"
 
-        logger.info(user_query)
+        logger.debug(user_query)
+        logger.info(f"[SortDataAgent] run start")
 
         messages = [{"role":"system", "content": SYSTEM_PROMPT},
                     {"role":"user","content": user_query}]
@@ -90,8 +91,8 @@ class SortDataAgent(object):
         candidates = []
         for choice in response.choices:
             
-            logger.info("\n=== Sort data agent ===>\n")
-            logger.info(choice.message.content + "\n")
+            logger.debug("\n=== Sort data agent ===>\n")
+            logger.debug(choice.message.content + "\n")
             
             json_blocks = extract_json_objects(choice.message.content + "\n")
             
@@ -110,4 +111,6 @@ class SortDataAgent(object):
 
             candidates.append(result)
 
+        status = candidates[0].get('status', '?') if candidates else 'empty'
+        logger.info(f"[SortDataAgent] run done | status={status}")
         return candidates

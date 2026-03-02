@@ -2,10 +2,10 @@
 // Licensed under the MIT License.
 
 import { useSelector, useDispatch } from 'react-redux';
-import { DataFormulatorState, dfActions, dfSelectors, fetchCodeExpl, fetchChartInsight, fetchFieldSemanticType } from './dfSlice';
-import { AppDispatch } from './store';
+import { DataFormulatorState, dfActions, dfSelectors, fetchCodeExpl, fetchChartInsight, fetchFieldSemanticType } from '../app/dfSlice';
+import { AppDispatch } from '../app/store';
 import { Chart, FieldItem, Trigger, createDictTable, DictTable } from '../components/ComponentType';
-import { getUrls, getTriggers, fetchWithIdentity } from './utils';
+import { getUrls, getTriggers, fetchWithIdentity } from '../app/utils';
 
 export type IdeaItem = {
     text: string;

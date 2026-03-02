@@ -39,7 +39,11 @@ class NotASandbox(Sandbox):
                 warnings.filterwarnings("ignore")
 
                 namespace = {output_variable: None}
-                exec(code, namespace)
+                # Security: this sandbox has NO isolation and is for benchmarking only.
+                # In production, use LocalSandbox or DockerSandbox. Code executed here
+                # is HMAC-SHA256 signed at generation time (see code_signing.py) and
+                # verified by the /refresh-derived-data endpoint before reaching exec().
+                exec(code, namespace)  # nosec  # codeql[py/code-injection]
 
                 output_df = namespace[output_variable]
                 if not isinstance(output_df, pd.DataFrame):

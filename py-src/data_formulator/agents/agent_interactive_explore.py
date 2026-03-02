@@ -167,7 +167,8 @@ class InteractiveExploreAgent(object):
         else:
             system_prompt = base_system_prompt
 
-        logger.info(f"Interactive explore agent input: {context}")
+        logger.debug(f"Interactive explore agent input: {context}")
+        logger.info(f"[InteractiveExploreAgent] run start")
         
         try:
             if current_chart:
@@ -204,3 +205,5 @@ class InteractiveExploreAgent(object):
                     
                     # Stream each character for real-time display as JSON
                     yield delta.content
+
+        logger.info(f"[InteractiveExploreAgent] run done")

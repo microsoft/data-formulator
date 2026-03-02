@@ -207,8 +207,9 @@ export function computeLayout(
         let count: number;
         if (isBinned) {
             const binDef = declaration.binnedAxes![axis];
+            // Default to 10 bins (Vega-Lite's default maxbins)
             count = typeof binDef === 'object' && binDef.maxbins
-                ? binDef.maxbins : 6;
+                ? binDef.maxbins : 10;
         } else {
             count = new Set(table.map((r: any) => r[cs.field])).size;
         }
@@ -236,12 +237,34 @@ export function computeLayout(
     }
 
     // --- Facet subplot sizing ---
+    // Log-scale axes need more room so the minor grid lines (1,2,3…9 per
+    // decade) remain legible and act as the visual cue that it's log scale.
+    // Compute the number of orders of magnitude each axis spans; each
+    // decade needs ~40px minimum to avoid a dense wall of grid lines.
+    const LOG_PX_PER_DECADE = 40;
+    let logBoostX = 0;
+    let logBoostY = 0;
+    for (const axis of ['x', 'y'] as const) {
+        const cs = channelSemantics[axis];
+        if (!cs?.field || !cs.scaleType) continue;
+        if (cs.scaleType !== 'log' && cs.scaleType !== 'symlog') continue;
+        const vals = table
+            .map((r: any) => r[cs.field])
+            .filter((v: any) => typeof v === 'number' && v > 0 && isFinite(v));
+        if (vals.length < 2) continue;
+        const decades = Math.log10(Math.max(...vals)) - Math.log10(Math.min(...vals));
+        const needed = Math.ceil(Math.max(1, decades)) * LOG_PX_PER_DECADE;
+        if (axis === 'x') logBoostX = needed;
+        else logBoostY = needed;
+    }
     const minContinuousSize = Math.max(10, minStepVal);
+    const minContinuousSizeX = Math.max(minContinuousSize, logBoostX);
+    const minContinuousSizeY = Math.max(minContinuousSize, logBoostY);
 
     let subplotWidth: number;
     if (facetCols > 1) {
         const stretch = Math.min(maxStretchVal, Math.pow(facetCols, facetElasticityVal));
-        subplotWidth = Math.round(Math.max(minContinuousSize,
+        subplotWidth = Math.round(Math.max(minContinuousSizeX,
             (defaultChartWidth * stretch - fixW) / facetCols - gap));
     } else {
         subplotWidth = defaultChartWidth;
@@ -250,7 +273,7 @@ export function computeLayout(
     let subplotHeight: number;
     if (facetRows > 1) {
         const stretch = Math.min(maxStretchVal, Math.pow(facetRows, facetElasticityVal));
-        subplotHeight = Math.round(Math.max(minContinuousSize,
+        subplotHeight = Math.round(Math.max(minContinuousSizeY,
             (defaultChartHeight * stretch - fixH) / facetRows - gap));
     } else {
         subplotHeight = defaultChartHeight;
@@ -664,8 +687,48 @@ export function computeChannelBudgets(
         : minStepVal;
 
     // --- 4. Per-channel budgets ---
-    const maxXToKeep = Math.floor(maxSubplotW / xMinGroupStep);
-    const maxYToKeep = Math.floor(maxSubplotH / yMinGroupStep);
+    let maxXToKeep = Math.floor(maxSubplotW / xMinGroupStep);
+    let maxYToKeep = Math.floor(maxSubplotH / yMinGroupStep);
+
+    // --- 5. Faceted-chart canvas cap ---
+    // Each subplot's step-based width/height must fit in the (un-stretched)
+    // canvas dimensions. Without this, a busy discrete axis produces
+    // subplots wider than the canvas, causing clipping.  Filtering values
+    // yields narrower subplots; we then re-derive the facet grid so more
+    // columns fit, reducing overall chart height.
+    if (facetGrid) {
+        const canvasXCap = Math.max(1, Math.floor(canvasSize.width / xMinGroupStep));
+        const canvasYCap = Math.max(1, Math.floor(canvasSize.height / yMinGroupStep));
+
+        if (maxXToKeep > canvasXCap || maxYToKeep > canvasYCap) {
+            maxXToKeep = Math.min(maxXToKeep, canvasXCap);
+            maxYToKeep = Math.min(maxYToKeep, canvasYCap);
+
+            // Re-derive facet grid with the tighter subplot size.
+            const colField = channelSemantics.column?.field;
+            const rowField = channelSemantics.row?.field;
+            const colCount = colField
+                ? new Set(data.map(r => r[colField])).size : 0;
+
+            if (colCount > 1 && !rowField) {
+                const tighterW = canvasXCap * xMinGroupStep;
+                const totalW = canvasSize.width * maxStretchVal - fixW;
+                const totalH = canvasSize.height * maxStretchVal - fixH;
+                const revisedMaxCols = Math.max(1, Math.floor(totalW / (tighterW + gap)));
+                const revisedMaxRows = Math.max(1, Math.floor(
+                    totalH / ((options.minSubplotSize ?? 60) + gap),
+                ));
+                const maxTotal = revisedMaxCols * revisedMaxRows;
+                const effectiveCount = Math.min(colCount, maxTotal);
+                const visRows = Math.ceil(effectiveCount / revisedMaxCols);
+                const visCols = Math.ceil(effectiveCount / visRows);
+
+                facetGrid.columns = visCols;
+                facetGrid.rows = visRows;
+                facetGrid.maxColumnValues = maxTotal;
+            }
+        }
+    }
 
     const hasRow = !!channelSemantics.row?.field;
     const maxFacetColumns = facetGrid?.maxColumnValues ?? Infinity;
@@ -759,6 +822,22 @@ export function computeFacetGrid(
 
     let minSubplotWidth = baseMinSubplot;
     let minSubplotHeight = baseMinSubplot;
+
+    // Log-scale axes need more space for minor grid lines to be legible.
+    const LOG_PX_PER_DECADE_FACET = 40;
+    for (const axis of ['x', 'y'] as const) {
+        const cs = channelSemantics[axis];
+        if (!cs?.field || !cs.scaleType) continue;
+        if (cs.scaleType !== 'log' && cs.scaleType !== 'symlog') continue;
+        const vals = data
+            .map((r: any) => r[cs.field])
+            .filter((v: any) => typeof v === 'number' && v > 0 && isFinite(v));
+        if (vals.length < 2) continue;
+        const decades = Math.log10(Math.max(...vals)) - Math.log10(Math.min(...vals));
+        const needed = Math.ceil(Math.max(1, decades)) * LOG_PX_PER_DECADE_FACET;
+        if (axis === 'x') minSubplotWidth = Math.max(minSubplotWidth, needed);
+        else minSubplotHeight = Math.max(minSubplotHeight, needed);
+    }
 
     for (const axis of ['x', 'y'] as const) {
         const cs = channelSemantics[axis];
@@ -875,6 +954,22 @@ export function computeMinSubplotDimensions(
 
     let minSubplotWidth = minSubplot;
     let minSubplotHeight = minSubplot;
+
+    // Log-scale axes need more space so minor grid lines stay legible.
+    const LOG_PX_PER_DECADE_MIN = 40;
+    for (const axis of ['x', 'y'] as const) {
+        const cs = channelSemantics[axis];
+        if (!cs?.field || !cs.scaleType) continue;
+        if (cs.scaleType !== 'log' && cs.scaleType !== 'symlog') continue;
+        const vals = data
+            .map((r: any) => r[cs.field])
+            .filter((v: any) => typeof v === 'number' && v > 0 && isFinite(v));
+        if (vals.length < 2) continue;
+        const decades = Math.log10(Math.max(...vals)) - Math.log10(Math.min(...vals));
+        const needed = Math.ceil(Math.max(1, decades)) * LOG_PX_PER_DECADE_MIN;
+        if (axis === 'x') minSubplotWidth = Math.max(minSubplotWidth, needed);
+        else minSubplotHeight = Math.max(minSubplotHeight, needed);
+    }
 
     const isDiscreteType = (t: string | undefined) =>
         t === 'nominal' || t === 'ordinal';

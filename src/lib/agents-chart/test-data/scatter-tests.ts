@@ -338,10 +338,10 @@ export function genScatterTests(): TestCase[] {
 }
 
 // ============================================================================
-// Linear Regression Tests  (not matrix-driven — only 2 cases)
+// Regression Tests  (not matrix-driven)
 // ============================================================================
 
-export function genLinearRegressionTests(): TestCase[] {
+export function genRegressionTests(): TestCase[] {
     const tests: TestCase[] = [];
     const rand = seededRandom(55);
 
@@ -356,7 +356,7 @@ export function genLinearRegressionTests(): TestCase[] {
             title: 'Basic regression (40 pts)',
             description: 'Hours vs Score — simple linear trend',
             tags: ['quantitative', 'small'],
-            chartType: 'Linear Regression',
+            chartType: 'Regression',
             data,
             fields: [makeField('Hours'), makeField('Score')],
             metadata: {
@@ -386,7 +386,7 @@ export function genLinearRegressionTests(): TestCase[] {
             title: 'Regression + Color (2 groups)',
             description: '60 points — separate regression per gender',
             tags: ['quantitative', 'color', 'medium'],
-            chartType: 'Linear Regression',
+            chartType: 'Regression',
             data,
             fields: [makeField('Experience'), makeField('Salary'), makeField('Gender')],
             metadata: {
@@ -395,6 +395,248 @@ export function genLinearRegressionTests(): TestCase[] {
                 Gender: { type: Type.String, semanticType: 'Category', levels: groups },
             },
             encodingMap: { x: makeEncodingItem('Experience'), y: makeEncodingItem('Salary'), color: makeEncodingItem('Gender') },
+        });
+    }
+
+    // 3. Regression with 4 color groups
+    {
+        const regions = ['North', 'South', 'East', 'West'];
+        const data: any[] = [];
+        const offsets: Record<string, number> = { North: 10, South: -5, East: 3, West: -8 };
+        const slopes: Record<string, number> = { North: 0.7, South: 0.5, East: 0.9, West: 0.4 };
+        for (const r of regions) {
+            for (let i = 0; i < 25; i++) {
+                const x = 5 + rand() * 90;
+                data.push({
+                    Advertising: Math.round(x * 10) / 10,
+                    Revenue: Math.round(offsets[r] + x * slopes[r] + (rand() - 0.5) * 15),
+                    Region: r,
+                });
+            }
+        }
+        tests.push({
+            title: 'Regression + Color (4 groups)',
+            description: '100 points — separate regression per region with distinct slopes',
+            tags: ['quantitative', 'color', 'medium'],
+            chartType: 'Regression',
+            data,
+            fields: [makeField('Advertising'), makeField('Revenue'), makeField('Region')],
+            metadata: {
+                Advertising: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                Revenue: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                Region: { type: Type.String, semanticType: 'Category', levels: regions },
+            },
+            encodingMap: { x: makeEncodingItem('Advertising'), y: makeEncodingItem('Revenue'), color: makeEncodingItem('Region') },
+        });
+    }
+
+    // 4. Regression with 6 color groups (many categories)
+    {
+        const subjects = ['Math', 'Science', 'English', 'History', 'Art', 'Music'];
+        const data: any[] = [];
+        const baseIntercepts = [15, 25, 20, 10, 30, 5];
+        const baseSlopes = [0.8, 0.6, 0.5, 0.7, 0.3, 0.9];
+        for (let si = 0; si < subjects.length; si++) {
+            for (let i = 0; i < 20; i++) {
+                const x = 10 + rand() * 80;
+                data.push({
+                    StudyHours: Math.round(x * 10) / 10,
+                    ExamScore: Math.round(baseIntercepts[si] + x * baseSlopes[si] + (rand() - 0.5) * 18),
+                    Subject: subjects[si],
+                });
+            }
+        }
+        tests.push({
+            title: 'Regression + Color (6 groups)',
+            description: '120 points — separate regression per subject',
+            tags: ['quantitative', 'color', 'large'],
+            chartType: 'Regression',
+            data,
+            fields: [makeField('StudyHours'), makeField('ExamScore'), makeField('Subject')],
+            metadata: {
+                StudyHours: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                ExamScore: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                Subject: { type: Type.String, semanticType: 'Category', levels: subjects },
+            },
+            encodingMap: { x: makeEncodingItem('StudyHours'), y: makeEncodingItem('ExamScore'), color: makeEncodingItem('Subject') },
+        });
+    }
+
+    // 5. Regression with 3 color groups + size encoding
+    {
+        const tiers = ['Budget', 'Mid-Range', 'Premium'];
+        const data: any[] = [];
+        const tierOffsets = [5, 20, 40];
+        const tierSlopes = [0.3, 0.5, 0.8];
+        for (let ti = 0; ti < tiers.length; ti++) {
+            for (let i = 0; i < 30; i++) {
+                const x = 10 + rand() * 85;
+                const weight = Math.round(50 + rand() * 150);
+                data.push({
+                    EngineSize: Math.round(x * 10) / 10,
+                    Horsepower: Math.round(tierOffsets[ti] + x * tierSlopes[ti] + (rand() - 0.5) * 12),
+                    Tier: tiers[ti],
+                    Weight: weight,
+                });
+            }
+        }
+        tests.push({
+            title: 'Regression + Color (3 groups) + Size',
+            description: '90 points — regression per tier with weight as size',
+            tags: ['quantitative', 'color', 'size', 'medium'],
+            chartType: 'Regression',
+            data,
+            fields: [makeField('EngineSize'), makeField('Horsepower'), makeField('Tier'), makeField('Weight')],
+            metadata: {
+                EngineSize: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                Horsepower: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                Tier: { type: Type.String, semanticType: 'Category', levels: tiers },
+                Weight: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+            },
+            encodingMap: {
+                x: makeEncodingItem('EngineSize'),
+                y: makeEncodingItem('Horsepower'),
+                color: makeEncodingItem('Tier'),
+                size: makeEncodingItem('Weight'),
+            },
+        });
+    }
+
+    // 6. Logarithmic regression
+    {
+        const n = 50;
+        const data = Array.from({ length: n }, () => {
+            const x = 1 + rand() * 99;  // avoid log(0)
+            return { Investment: Math.round(x * 10) / 10, Returns: Math.round(10 * Math.log(x) + 5 + (rand() - 0.5) * 8) };
+        });
+        tests.push({
+            title: 'Logarithmic regression (50 pts)',
+            description: 'Investment vs Returns — log trend',
+            tags: ['quantitative', 'small', 'log'],
+            chartType: 'Regression',
+            data,
+            fields: [makeField('Investment'), makeField('Returns')],
+            metadata: {
+                Investment: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                Returns: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+            },
+            encodingMap: { x: makeEncodingItem('Investment'), y: makeEncodingItem('Returns') },
+            chartProperties: { regressionMethod: 'log' },
+        });
+    }
+
+    // 7. Quadratic regression
+    {
+        const n = 60;
+        const data = Array.from({ length: n }, () => {
+            const x = -10 + rand() * 20;
+            const y = 0.5 * x * x - 2 * x + 3 + (rand() - 0.5) * 6;
+            return { Position: Math.round(x * 10) / 10, Height: Math.round(y * 10) / 10 };
+        });
+        tests.push({
+            title: 'Quadratic regression (60 pts)',
+            description: 'Parabolic data — quad fit',
+            tags: ['quantitative', 'medium', 'quad'],
+            chartType: 'Regression',
+            data,
+            fields: [makeField('Position'), makeField('Height')],
+            metadata: {
+                Position: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                Height: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+            },
+            encodingMap: { x: makeEncodingItem('Position'), y: makeEncodingItem('Height') },
+            chartProperties: { regressionMethod: 'quad' },
+        });
+    }
+
+    // 8. Polynomial regression (order 4) with color
+    {
+        const groups = ['Group A', 'Group B', 'Group C'];
+        const data: any[] = [];
+        for (const g of groups) {
+            const shift = groups.indexOf(g) * 3;
+            for (let i = 0; i < 30; i++) {
+                const x = -5 + rand() * 10;
+                const y = shift + 0.05 * Math.pow(x, 3) - 0.3 * x * x + x + 5 + (rand() - 0.5) * 4;
+                data.push({
+                    Input: Math.round(x * 10) / 10,
+                    Output: Math.round(y * 10) / 10,
+                    Category: g,
+                });
+            }
+        }
+        tests.push({
+            title: 'Poly regression (3 groups, order 4)',
+            description: '90 points — cubic-ish data with poly(4) fit per group',
+            tags: ['quantitative', 'color', 'medium', 'poly'],
+            chartType: 'Regression',
+            data,
+            fields: [makeField('Input'), makeField('Output'), makeField('Category')],
+            metadata: {
+                Input: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                Output: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                Category: { type: Type.String, semanticType: 'Category', levels: groups },
+            },
+            encodingMap: { x: makeEncodingItem('Input'), y: makeEncodingItem('Output'), color: makeEncodingItem('Category') },
+            chartProperties: { regressionMethod: 'poly', polyOrder: 4 },
+        });
+    }
+
+    // 9. Exponential regression
+    {
+        const n = 45;
+        const data = Array.from({ length: n }, () => {
+            const x = rand() * 5;
+            const y = 2 * Math.exp(0.4 * x) + (rand() - 0.5) * 3;
+            return { Time: Math.round(x * 10) / 10, Growth: Math.round(Math.max(0.1, y) * 10) / 10 };
+        });
+        tests.push({
+            title: 'Exponential regression (45 pts)',
+            description: 'Time vs Growth — exponential trend',
+            tags: ['quantitative', 'small', 'exp'],
+            chartType: 'Regression',
+            data,
+            fields: [makeField('Time'), makeField('Growth')],
+            metadata: {
+                Time: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                Growth: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+            },
+            encodingMap: { x: makeEncodingItem('Time'), y: makeEncodingItem('Growth') },
+            chartProperties: { regressionMethod: 'exp' },
+        });
+    }
+
+    // 10. Power regression with 2 color groups
+    {
+        const classes = ['Species A', 'Species B'];
+        const data: any[] = [];
+        for (const cls of classes) {
+            const scale = cls === 'Species A' ? 1.5 : 0.8;
+            const exp = cls === 'Species A' ? 0.6 : 0.8;
+            for (let i = 0; i < 30; i++) {
+                const x = 1 + rand() * 50;
+                const y = scale * Math.pow(x, exp) + (rand() - 0.5) * 3;
+                data.push({
+                    BodyMass: Math.round(x * 10) / 10,
+                    MetabolicRate: Math.round(Math.max(0.1, y) * 10) / 10,
+                    Species: cls,
+                });
+            }
+        }
+        tests.push({
+            title: 'Power regression + Color (2 groups)',
+            description: '60 points — allometric scaling per species',
+            tags: ['quantitative', 'color', 'medium', 'pow'],
+            chartType: 'Regression',
+            data,
+            fields: [makeField('BodyMass'), makeField('MetabolicRate'), makeField('Species')],
+            metadata: {
+                BodyMass: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                MetabolicRate: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                Species: { type: Type.String, semanticType: 'Category', levels: classes },
+            },
+            encodingMap: { x: makeEncodingItem('BodyMass'), y: makeEncodingItem('MetabolicRate'), color: makeEncodingItem('Species') },
+            chartProperties: { regressionMethod: 'pow' },
         });
     }
 

@@ -25,8 +25,8 @@ export const scatterPlotDef: ChartTemplateDef = {
     ] as ChartPropertyDef[],
 };
 
-export const linearRegressionDef: ChartTemplateDef = {
-    chart: "Linear Regression",
+export const regressionDef: ChartTemplateDef = {
+    chart: "Regression",
     template: {
         layer: [
             {
@@ -44,6 +44,7 @@ export const linearRegressionDef: ChartTemplateDef = {
     markCognitiveChannel: 'position',
     instantiate: (spec, ctx) => {
         const { x, y, color, size, column, row } = ctx.resolvedEncodings;
+        const config = ctx.chartProperties;
         // x & y → both layers + transform field names
         if (x) {
             spec.layer[0].encoding.x = { ...spec.layer[0].encoding.x, ...x };
@@ -55,14 +56,52 @@ export const linearRegressionDef: ChartTemplateDef = {
             spec.layer[1].encoding.y = { ...spec.layer[1].encoding.y, ...y };
             if (y.field) spec.layer[1].transform[0].regression = y.field;
         }
-        // color, size → scatter layer only
-        if (color) spec.layer[0].encoding.color = { ...spec.layer[0].encoding.color, ...color };
+        // Regression method (default: linear)
+        const method = config?.regressionMethod;
+        if (method && method !== 'linear') {
+            spec.layer[1].transform[0].method = method;
+            // For polynomial, allow configurable order
+            if (method === 'poly') {
+                const order = config?.polyOrder ?? 3;
+                spec.layer[1].transform[0].order = order;
+            }
+        }
+        // color → scatter layer always; if present, also group regression by color field
+        if (color) {
+            spec.layer[0].encoding.color = { ...spec.layer[0].encoding.color, ...color };
+            if (color.field) {
+                // Group regression by color field so each class gets its own trend line
+                spec.layer[1].transform[0].groupby = [color.field];
+                // Pass color encoding to regression layer so lines match scatter colors
+                spec.layer[1].encoding.color = { ...color };
+                // Remove the hardcoded red so Vega-Lite uses the shared color scale
+                spec.layer[1].mark = { type: "line" };
+            }
+        }
         if (size) spec.layer[0].encoding.size = { ...spec.layer[0].encoding.size, ...size };
         // facets → top-level encoding
         if (!spec.encoding) spec.encoding = {};
         if (column) spec.encoding.column = column;
         if (row) spec.encoding.row = row;
     },
+    properties: [
+        {
+            key: "regressionMethod", label: "Method", type: "discrete",
+            options: [
+                { value: "linear", label: "Linear" },
+                { value: "log",    label: "Logarithmic" },
+                { value: "exp",    label: "Exponential" },
+                { value: "pow",    label: "Power" },
+                { value: "quad",   label: "Quadratic" },
+                { value: "poly",   label: "Polynomial" },
+            ],
+            defaultValue: "linear",
+        },
+        {
+            key: "polyOrder", label: "Poly Order", type: "continuous",
+            min: 2, max: 10, step: 1, defaultValue: 3,
+        },
+    ] as ChartPropertyDef[],
 };
 
 export const rangedDotPlotDef: ChartTemplateDef = {

@@ -8,7 +8,7 @@
  * produces a complete Vega-Lite specification in two stages:
  *
  * ── ANALYSIS (VL-free) ──────────────────────────────────────
- *   Phase 0:  resolveSemantics     → ChannelSemantics
+ *   Phase 0:  resolveChannelSemantics  → ChannelSemantics
  *   Step 0a:  declareLayoutMode    → LayoutDeclaration
  *   Step 0b:  convertTemporalData  → converted data
  *   Step 0c:  filterOverflow       → filtered data, nominalCounts
@@ -54,8 +54,9 @@ import {
 } from '../core/types';
 import type { ChartWarning } from '../core/types';
 import { vlGetTemplateDef } from './templates';
-import { inferVisCategory } from '../core/semantic-types';
-import { resolveSemantics, convertTemporalData } from '../core/resolve-semantics';
+import { inferVisCategory, computeZeroDecision } from '../core/semantic-types';
+import { resolveChannelSemantics, convertTemporalData } from '../core/resolve-semantics';
+import { toTypeString, type SemanticAnnotation } from '../core/field-semantics';
 import { filterOverflow } from '../core/filter-overflow';
 import { computeLayout, computeChannelBudgets, computeMinSubplotDimensions } from '../core/compute-layout';
 import { vlApplyLayoutToSpec, vlApplyTooltips } from './instantiate-spec';
@@ -102,11 +103,25 @@ export function assembleVegaLite(input: ChartAssemblyInput): any {
     const tplMark = chartTemplate.template?.mark;
     const templateMarkType = typeof tplMark === 'string' ? tplMark : tplMark?.type;
 
-    const channelSemantics = resolveSemantics(
-        encodings, data, semanticTypes,
-        chartTemplate.markCognitiveChannel,
-        templateMarkType,
+    // Convert temporal data once — feeds semantic resolution and all downstream stages
+    const convertedData = convertTemporalData(data, semanticTypes);
+
+    const channelSemantics = resolveChannelSemantics(
+        encodings, data, semanticTypes, convertedData,
     );
+
+    // Finalize zero-baseline (requires template mark knowledge)
+    const effectiveMarkType = templateMarkType || 'point';
+    for (const [channel, cs] of Object.entries(channelSemantics)) {
+        if ((channel === 'x' || channel === 'y') && cs.type === 'quantitative') {
+            const numericValues = data
+                .map(r => r[cs.field])
+                .filter((v: any) => v != null && typeof v === 'number' && !isNaN(v));
+            cs.zero = computeZeroDecision(
+                cs.semanticAnnotation.semanticType, channel, effectiveMarkType, numericValues,
+            );
+        }
+    }
 
     // ═══════════════════════════════════════════════════════════════════════
     // STEP 0a: declareLayoutMode (VL-free template hook)
@@ -123,7 +138,21 @@ export function assembleVegaLite(input: ChartAssemblyInput): any {
             const binnedAxes: Record<string, boolean | { maxbins?: number }> = {};
             for (const axis of ['x', 'y']) {
                 if (templateEnc[axis]?.bin) {
-                    binnedAxes[axis] = templateEnc[axis].bin;
+                    // Use chartProperties.binCount when available so layout
+                    // sizing matches the actual number of bins rendered.
+                    const propBins = chartProperties?.binCount;
+                    if (propBins != null) {
+                        binnedAxes[axis] = { maxbins: propBins };
+                    } else if (typeof templateEnc[axis].bin === 'object' && templateEnc[axis].bin.maxbins) {
+                        binnedAxes[axis] = templateEnc[axis].bin;
+                    } else {
+                        // Find the template's default binCount from its property definitions
+                        const binPropDef = chartTemplate.properties?.find(
+                            (p: any) => p.key === 'binCount'
+                        );
+                        const defaultBins = binPropDef?.defaultValue ?? 10;
+                        binnedAxes[axis] = { maxbins: defaultBins };
+                    }
                 }
             }
             if (Object.keys(binnedAxes).length > 0) {
@@ -159,13 +188,7 @@ export function assembleVegaLite(input: ChartAssemblyInput): any {
     const facetFixH = effectiveOptions.facetFixedPadding.height;
 
     // ═══════════════════════════════════════════════════════════════════════
-    // STEP 0b: Temporal Data Conversion
-    // ═══════════════════════════════════════════════════════════════════════
-
-    const convertedData = convertTemporalData(data, semanticTypes);
-
-    // ═══════════════════════════════════════════════════════════════════════
-    // STEP 0c: filterOverflow (VL-free)
+    // STEP 0b: filterOverflow (VL-free)
     // ═══════════════════════════════════════════════════════════════════════
 
     // Collect mark types for sort strategy
@@ -404,13 +427,22 @@ function buildVLEncodings(
     declaration: LayoutDeclaration,
     data: any[],
     canvasSize: { width: number; height: number },
-    semanticTypes: Record<string, string>,
+    semanticTypes: Record<string, string | SemanticAnnotation>,
     templateMarkType: string | undefined,
     chartTemplate: ChartTemplateDef,
 ): Record<string, any> {
     const resolvedEncodings: Record<string, any> = {};
 
+    // Only process channels the template declares (plus facets which are always valid)
+    const templateChannels = new Set([
+        ...(chartTemplate.channels || []),
+        'column', 'row',  // faceting is always allowed
+    ]);
+
     for (const [channel, encoding] of Object.entries(encodings)) {
+        // Skip channels not supported by this chart type
+        if (!templateChannels.has(channel)) continue;
+
         const encodingObj: any = {};
         const fieldName = encoding.field;
         const cs = channelSemantics[channel];
@@ -529,7 +561,7 @@ function buildVLEncodings(
             } else {
                 try {
                     if (fieldName) {
-                        const fieldSemType = semanticTypes[fieldName] || '';
+                        const fieldSemType = toTypeString(semanticTypes[fieldName]);
                         const fieldVisCat = inferVisCategory(data.map(r => r[fieldName]));
                         let sortedValues = JSON.parse(encoding.sortBy);
 
@@ -558,14 +590,12 @@ function buildVLEncodings(
                 if (cs?.ordinalSortOrder && cs.ordinalSortOrder.length > 0) {
                     encodingObj.sort = preserveDomainTypes(cs.ordinalSortOrder);
                 } else if (fieldIsNumeric && fieldName) {
-                        // Numeric data treated as nominal: sort by numeric value
-                        // so labels appear as 0,1,2,3… instead of data-encounter order.
-                        // Don't use `sort: null` here — it preserves encounter order
-                        // which scrambles numeric categories.
-                        const uniqueNums = [...new Set(data.map(r => r[fieldName]))]
-                            .filter(v => v != null)
-                            .sort((a: number, b: number) => a - b);
-                        encodingObj.sort = uniqueNums;
+                        // Numeric data treated as nominal/ordinal: sort by numeric
+                        // value so labels appear as 0,1,2,3… instead of data-encounter
+                        // order.  Use "ascending" instead of an explicit value array
+                        // to keep the spec compact (avoids enumerating every unique
+                        // value, which can be hundreds for fields like Rank).
+                        encodingObj.sort = "ascending";
                 } else {
                     encodingObj.sort = null;
                 }

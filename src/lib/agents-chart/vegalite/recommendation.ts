@@ -4,7 +4,7 @@
 /**
  * Vega-Lite recommendation & adaptation wrappers.
  *
- * Extends core/recommendation.ts with VL-only chart types (Linear Regression,
+ * Extends core/recommendation.ts with VL-only chart types (Regression,
  * Ranged Dot Plot, Pyramid, Lollipop, Dotted Line, Bump, Density, Waterfall,
  * Strip, US/World Map) and filters results to VL-valid channels.
  */
@@ -47,16 +47,9 @@ function vlGetRecommendation(chartType: string, tv: InternalTableView): Record<s
     };
 
     switch (chartType) {
-        case 'Linear Regression': {
-            // Same as Scatter Plot
-            const yField = pickQuantitative(tv, used) ?? pickTemporal(tv, used) ?? pickNominal(tv, used);
-            const xField = pickQuantitative(tv, used) ?? pickTemporal(tv, used) ?? pickNominal(tv, used);
-            if (!xField || !yField) return {};
-            assign('x', xField);
-            assign('y', yField);
-            assign('color', pickLowCardNominal(tv, used));
-            return rec;
-        }
+        case 'Regression':
+            // Regression uses the same logic as Scatter Plot in the core engine
+            return getRecommendation('Scatter Plot', tv);
 
         case 'Ranged Dot Plot': {
             const yField = pickGeo(tv, used) ?? pickDiscrete(tv, used);

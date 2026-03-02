@@ -11,6 +11,7 @@
 
 import { ChartTemplateDef, ChartPropertyDef } from '../../core/types';
 import { extractCategories, groupBy, DEFAULT_COLORS, getCategoryOrder } from './utils';
+import { toTypeString } from '../../core/field-semantics';
 
 const isDiscrete = (type: string | undefined) => type === 'nominal' || type === 'ordinal';
 
@@ -462,8 +463,8 @@ export const ecBumpChartDef: ChartTemplateDef = {
         const xField = xCS.field;
         const yField = yCS.field;
 
-        const ySemType = semanticTypes?.[yField] || '';
-        const xSemType = semanticTypes?.[xField] || '';
+        const ySemType = toTypeString(semanticTypes?.[yField]);
+        const xSemType = toTypeString(semanticTypes?.[xField]);
         const yIsRank = RANK_SEMANTIC_TYPES.has(ySemType);
         const xIsRank = RANK_SEMANTIC_TYPES.has(xSemType);
         const rankOnY = yIsRank && !xIsRank;

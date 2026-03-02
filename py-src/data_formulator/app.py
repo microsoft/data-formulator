@@ -75,6 +75,9 @@ def configure_logging():
         handlers=[logging.StreamHandler(sys.stdout)]
     )
     
+    # Enable INFO for agent modules so timing logs are visible
+    logging.getLogger('data_formulator.agents').setLevel(logging.INFO)
+
     # Suppress verbose logging from third-party libraries
     logging.getLogger('httpx').setLevel(logging.WARNING)
     logging.getLogger('litellm').setLevel(logging.WARNING)

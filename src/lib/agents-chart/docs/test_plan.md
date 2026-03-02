@@ -1,5 +1,32 @@
 # Chart Engine Test Plan
 
+## Overview
+
+Test data lives in `test-data/` as fixture generators (not executable test suites).
+Each file exports generator functions that produce `TestCase[]` arrays. The gallery
+UI (`ChartGallery.tsx`) uses `TEST_GENERATORS` and `GALLERY_SECTIONS` from
+`test-data/index.ts` to render all tests interactively.
+
+**20 test-data files**, **~11,100 lines**, **53 named test generators**.
+
+### Test categories
+
+| Category | Files | Description |
+|----------|-------|-------------|
+| **VL chart matrices** | scatter-tests, line-tests, bar-tests, area-tests | Matrix-driven tests for core VL chart types |
+| **Distribution charts** | distribution-tests | Histogram, Boxplot, Density, Strip Plot |
+| **Specialized charts** | specialized-tests | Pie, Heatmap, Lollipop, Candlestick, Waterfall, Ranged Dot, Bump, Radar, Pyramid, Rose, Custom |
+| **Semantic context** | semantic-tests | 39 tests validating semantic type → ChannelSemantics resolution |
+| **ECharts backend** | echarts-tests | All ECharts chart types (reuses VL inputs + ECharts-only types) |
+| **Chart.js backend** | chartjs-tests | Chart.js chart types |
+| **GoFish backend** | gofish-tests | GoFish imperative rendering |
+| **Facets** | facet-tests | Column, row, col+row, wrap, clip, overflow faceting |
+| **Stress/sizing** | stress-tests, gas-pressure-tests, line-area-stretch-tests, discrete-axis-tests | Overflow, elasticity, pressure model, discrete axis sizing |
+| **Temporal** | date-tests | Year, Month, YearMonth, Decade, DateTime, Hours parsing/formatting |
+| **Line/area variants** | line-area-tests | Dotted Line, Bump Chart |
+
+---
+
 ## Scatter Plot
 
 A scatter plot places marks (points/bubbles) in a 2D space. The core axes are continuous (quantitative), but one or both axes can be discrete (nominal), which changes how the engine computes layout, step sizing, and overflow.
@@ -97,7 +124,7 @@ Channels: `x, y, color, opacity, column, row`
 
 Tests are generated from `LINE_MATRIX` in `line-tests.ts`. Each row specifies axis types, optional color channel, point count, and flags like `sparse` (20% dropout).
 
-### Full test matrix (18 tests)
+### Full test matrix (16 tests)
 
 #### T × Q — 6 tests (core time series)
 
@@ -119,21 +146,21 @@ Tests are generated from `LINE_MATRIX` in `line-tests.ts`. Each row specifies ax
 | 9 | 30 | — | 30 | Label overflow |
 | 10 | 5 | Q | 5 | Ordinal + gradient |
 
-#### Q × O — 3 tests (mirror)
-
-| # | yCard | color | n | what it tests |
-|---|-------|-------|---|---------------|
-| 11 | 5 | — | 5 | Horizontal ordinal |
-| 12 | 12 | N(4) | 48 | Horizontal 12 ordinal × 4 |
-| 13 | 30 | — | 30 | Horizontal 30 ordinal overflow |
-
 #### Q × Q — 3 tests
 
 | # | color | n | what it tests |
 |---|-------|---|---------------|
-| 14 | — | 30 | Quantitative x line |
-| 15 | N(3) | 150 | 3 parametric curves |
-| 16 | — | 200 | Dense single curve |
+| 11 | — | 30 | Quantitative x line |
+| 12 | N(3) | 150 | 3 parametric curves |
+| 13 | — | 200 | Dense single curve |
+
+#### Q × O — 3 tests (mirror)
+
+| # | yCard | color | n | what it tests |
+|---|-------|-------|---|---------------|
+| 14 | 5 | — | 5 | Horizontal ordinal |
+| 15 | 12 | N(4) | 48 | Horizontal 12 ordinal × 4 |
+| 16 | 30 | — | 30 | Horizontal 30 ordinal overflow |
 
 #### Excluded combos
 
@@ -143,7 +170,7 @@ Tests are generated from `LINE_MATRIX` in `line-tests.ts`. Each row specifies ax
 
 ### Coverage summary
 
-Axis combos: T×Q, O×Q, Q×O, Q×Q. Color variants (N, Q) crossed with primary combos. Density from 5 to 4000 (stress). Sparse dropout tests irregular gaps. Total **18 tests**.
+Axis combos: T×Q, O×Q, Q×Q, Q×O. Color variants (N, Q) crossed with primary combos. Density from 5 to 4000 (stress). Sparse dropout tests irregular gaps. Total **16 tests**.
 
 ---
 
@@ -158,7 +185,7 @@ Bar charts encode values as rectangular bars. Three variants share a common matr
 
 Three matrices (`BAR_MATRIX`, `STACKED_BAR_MATRIX`, `GROUPED_BAR_MATRIX`) share one generator function `barMatrixToTestCase`. The third channel key is `'color'` for bar/stacked and `'group'` for grouped.
 
-### Bar Chart matrix (20 tests)
+### Bar Chart matrix (19 tests)
 
 #### N × Q — 6 tests (classic vertical)
 
@@ -201,16 +228,15 @@ Three matrices (`BAR_MATRIX`, `STACKED_BAR_MATRIX`, `GROUPED_BAR_MATRIX`) share 
 | 15 | 20 | Both quant — dynamic resizing |
 | 16 | 30 | Equally spaced 1..30 |
 
-#### Edge combos — 4 tests
+#### Edge combos — 3 tests
 
 | # | x | y | n | what it tests |
 |---|---|---|---|---------------|
 | 17 | N | N | grid | Cat × cat (degenerate) |
 | 18 | T | T | 20 | Date × date (degenerate) |
 | 19 | T | N | 25 | Temporal × categorical |
-| 20 | N | T | 25 | Categorical × temporal |
 
-### Stacked Bar Chart matrix (13 tests)
+### Stacked Bar Chart matrix (12 tests)
 
 | # | x | y | color | n | what it tests |
 |---|---|---|-------|---|---------------|
@@ -226,9 +252,8 @@ Three matrices (`BAR_MATRIX`, `STACKED_BAR_MATRIX`, `GROUPED_BAR_MATRIX`) share 
 | 10 | Q | T | N(3) | 45 | Horizontal temporal stack |
 | 11 | N | N | N(3) | grid | Cat×cat stacked (edge) |
 | 12 | T | T | N(3) | 30 | Date×date stacked (edge) |
-| 13 | T | N | N(4) | 20 | Temporal×cat stacked |
 
-### Grouped Bar Chart matrix (13 tests)
+### Grouped Bar Chart matrix (12 tests)
 
 | # | x | y | group | n | what it tests |
 |---|---|---|-------|---|---------------|
@@ -244,22 +269,21 @@ Three matrices (`BAR_MATRIX`, `STACKED_BAR_MATRIX`, `GROUPED_BAR_MATRIX`) share 
 | 10 | N | Q | Q | 50 | Continuous float on group |
 | 11 | N | N | N(3) | grid | Cat×cat grouped (edge) |
 | 12 | T | T | N(3) | 30 | Date×date grouped (edge) |
-| 13 | T | N | N(4) | 20 | Temporal×cat grouped |
 
 ### Coverage summary
 
-All three bar variants cover all 9 xy-type combinations. Bar Chart has 20 tests, Stacked Bar has 13, Grouped Bar has 13 — total **46 bar tests**. Covers horizontal/vertical orientation, discrete cutoff, numeric/continuous color, edge combos.
+All three bar variants cover common xy-type combinations. Bar Chart has 19 tests, Stacked Bar has 12, Grouped Bar has 12 — total **43 bar tests**. Covers horizontal/vertical orientation, discrete cutoff, numeric/continuous color, edge combos.
 
 ## Area Chart & Streamgraph
 
 **File:** `area-tests.ts`
-**Approach:** Matrix-driven — `AREA_MATRIX` (23 entries) + `STREAMGRAPH_MATRIX` (6 entries).
+**Approach:** Matrix-driven — `AREA_MATRIX` (17 entries) + `STREAMGRAPH_MATRIX` (6 entries).
 **Shared generator:** `areaMatrixToTestCase(entry, chartType, rand)` — same infrastructure for both chart types.
 **Data characteristic:** Uses `genAreaTrend()` with upward drift (natural for cumulative / stacked-area metrics).
 
 Area charts use O (ordinal) for categorical axes (like line charts) — area fills imply continuity. N (nominal) is used only for color groups. Purely nominal axis combos are excluded.
 
-### Area Chart matrix (18 tests)
+### Area Chart matrix (17 tests)
 
 #### T × Q — 7 tests (core stacked / layered area)
 
@@ -316,19 +340,32 @@ Area charts use O (ordinal) for categorical axes (like line charts) — area fil
 
 ### Coverage summary
 
-Area Chart covers T×Q, O×Q, Q×O, Q×Q axis combos (18 tests). Streamgraph adds 6 tests exercising T×Q, O×Q, and Q×Q with multi-series color. Total **24 area/streamgraph tests**.
+Area Chart covers T×Q, O×Q, Q×O, Q×Q axis combos (17 tests). Streamgraph adds 6 tests exercising T×Q, O×Q, and Q×Q with multi-series color. Total **23 area/streamgraph tests**.
 
 ---
 
-## Grand total
+## Grand total (matrix-driven chart tests)
 
 | Chart type | Tests |
 |------------|-------|
 | Scatter | 25 |
-| Line | 18 |
-| Bar | 20 |
-| Stacked Bar | 13 |
-| Grouped Bar | 13 |
-| Area | 18 |
+| Line | 16 |
+| Bar | 19 |
+| Stacked Bar | 12 |
+| Grouped Bar | 12 |
+| Area | 17 |
 | Streamgraph | 6 |
-| **Total** | **113** |
+| **Matrix subtotal** | **107** |
+
+Plus additional non-matrix test generators:
+- Distribution charts (Histogram, Boxplot, Density, Strip)
+- Specialized charts (Pie, Heatmap, Lollipop, Candlestick, Waterfall, etc.)
+- Semantic context (39 tests)
+- Facets (9 generators)
+- Stress/sizing (4 generators)
+- Temporal (7 generators)
+- ECharts backend (24 generators)
+- Chart.js backend (11 generators)
+- GoFish backend (10 generators)
+
+**53 named test generators** total across all categories.

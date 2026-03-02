@@ -1,6 +1,9 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
+import { getRegistryEntry, getRegisteredTypes, isRegistered, type VisCategory } from './type-registry';
+export type { VisCategory } from './type-registry';
+
 /**
  * =============================================================================
  * SEMANTIC TYPE SYSTEM
@@ -24,7 +27,7 @@
  *                           └──────┬──────┘
  *            ┌────────────────────┼────────────────────┐
  *            ▼                    ▼                    ▼
- *     ┌──────────┐         ┌──────────┐         ┌──────────┐
+ *     ┌──────────┐         ┌──────────┐         ┌───────-───┐
  *     │ Temporal │         │ Numeric  │         │Categorical│
  *     └────┬─────┘         └────┬─────┘         └─────┬────┘
  *          │                    │                     │
@@ -35,8 +38,10 @@
  * DateTime    Year     Quantity    Rank      Person     Status
  * Date        Month    Count       Index     Company    Boolean
  * Time        Day      Price       Score     Product    Category
- *             Quarter  Percentage  Rating    Location
+ *             Quarter  Percentage  Rating
  *             Decade   Amount      ID
+ *                      Temperature
+ *                      Revenue
  * 
  * =============================================================================
  */
@@ -76,7 +81,6 @@ export const SemanticTypes = {
     
     // Temporal duration/span
     Duration: 'Duration',       // Time span: "2 hours", "3 days", milliseconds
-    TimeRange: 'TimeRange',     // Time interval: "9am-5pm", "2020-2024"
     
     // =========================================================================
     // NUMERIC MEASURE TYPES - Continuous values for aggregation
@@ -89,14 +93,13 @@ export const SemanticTypes = {
     Revenue: 'Revenue',         // Total revenue/sales
     Cost: 'Cost',               // Expenses/costs
     Percentage: 'Percentage',   // 0-100% or 0-1 ratio
-    Rate: 'Rate',               // Rate of change, interest rate
-    Ratio: 'Ratio',             // Proportion between values
-    Distance: 'Distance',       // Length, height, width
-    Area: 'Area',               // Square units
-    Volume: 'Volume',           // Cubic units
-    Weight: 'Weight',           // Mass
     Temperature: 'Temperature', // Degrees
-    Speed: 'Speed',             // Velocity
+    
+    // Signed measures (can be positive or negative, zero has meaning)
+    Profit: 'Profit',             // Gain/loss, profit/deficit
+    PercentageChange: 'PercentageChange', // Growth rate, change %
+    Sentiment: 'Sentiment',       // Positive/negative sentiment score
+    Correlation: 'Correlation',   // Positive/negative correlation coefficient
     
     // =========================================================================
     // NUMERIC DISCRETE TYPES - Numbers with ordinal/identifier meaning
@@ -107,7 +110,6 @@ export const SemanticTypes = {
     ID: 'ID',                   // Unique identifier (not for aggregation!)
     Score: 'Score',             // Rating score: 1-5, 1-10, 0-100
     Rating: 'Rating',           // Star rating, letter grade
-    Level: 'Level',             // Discrete levels: 1, 2, 3
     
     // =========================================================================
     // GEOGRAPHIC TYPES - Location-based data
@@ -115,27 +117,20 @@ export const SemanticTypes = {
     
     Latitude: 'Latitude',       // -90 to 90
     Longitude: 'Longitude',     // -180 to 180
-    Coordinates: 'Coordinates', // Lat/Long pair
     Country: 'Country',         // Country name or code
     State: 'State',             // State/Province
     City: 'City',               // City name
     Region: 'Region',           // Geographic region
     Address: 'Address',         // Street address
     ZipCode: 'ZipCode',         // Postal code
-    Location: 'Location',       // Generic location (fallback)
     
     // =========================================================================
     // CATEGORICAL ENTITY TYPES - Named entities
     // =========================================================================
     
     PersonName: 'PersonName',   // Full name, first/last name
-    Username: 'Username',       // Account username
-    Email: 'Email',             // Email address
     Company: 'Company',         // Company/Organization name
-    Brand: 'Brand',             // Brand name
-    Department: 'Department',   // Organizational unit
     Product: 'Product',         // Product name
-    SKU: 'SKU',                 // Product identifier
     Category: 'Category',       // Product/item category
     Name: 'Name',               // Generic named entity (fallback)
     
@@ -146,8 +141,6 @@ export const SemanticTypes = {
     Status: 'Status',           // State: "Active", "Pending", "Closed"
     Type: 'Type',               // Type classification
     Boolean: 'Boolean',         // True/False, Yes/No
-    Binary: 'Binary',           // Two-value categorical
-    Code: 'Code',               // Coded value: "A", "B", "C"
     Direction: 'Direction',     // Compass direction: "N", "NE", "East", etc.
     
     // =========================================================================
@@ -156,7 +149,6 @@ export const SemanticTypes = {
     
     Range: 'Range',             // Numeric range: "10000-20000", "<50", "50+"
     AgeGroup: 'AgeGroup',       // Age range: "18-24", "25-34"
-    Bucket: 'Bucket',           // Generic binned value
     
     // =========================================================================
     // FALLBACK TYPES
@@ -171,233 +163,82 @@ export const SemanticTypes = {
 export type SemanticType = typeof SemanticTypes[keyof typeof SemanticTypes];
 
 // ---------------------------------------------------------------------------
-// Visualization Categories
+// Visualization Categories  →  defined in type-registry.ts (single source of truth)
 // ---------------------------------------------------------------------------
 
-export type VisCategory = 'quantitative' | 'ordinal' | 'nominal' | 'temporal' | 'geographic';
-
 // ---------------------------------------------------------------------------
-// Type Sets for Classification
+// Type Sets for Classification — derived from type-registry.ts
 // ---------------------------------------------------------------------------
 
-/** Types suitable for time-series X axis (have inherent temporal ordering) */
-export const timeseriesXTypes = new Set<string>([
-    'DateTime', 'Date', 'Time', 'Timestamp',
-    'YearMonth', 'YearQuarter', 'YearWeek',
-    'Year', 'Quarter', 'Month', 'Week', 'Day', 'Hour', 'Decade',
-]);
+// timeseriesXTypes: REMOVED — derived from type-registry.ts via isTimeSeriesType()
 
-/** Types suitable for quantitative encoding (true continuous measures) */
-export const measureTypes = new Set<string>([
-    'Quantity', 'Count',
-    'Amount', 'Price', 'Revenue', 'Cost',
-    'Percentage', 'Rate', 'Ratio',
-    'Distance', 'Area', 'Volume', 'Weight', 'Temperature', 'Speed',
-    'Duration',
-    'Number',  // Generic fallback
-]);
+/**
+ * Types suitable for quantitative encoding (true continuous measures).
+ *
+ * Derived from the registry: aggRole ∈ {additive, intensive, signed-additive},
+ * excluding Score/Rating (t1='Score') which behave as bounded ordinal scales
+ * for vis purposes (e.g., 1–5 star rating). This is an intentional vis-level
+ * distinction, not a mathematical one.
+ */
+export const measureTypes = new Set<string>(
+    getRegisteredTypes().filter(t => {
+        const e = getRegistryEntry(t);
+        return ['additive', 'intensive', 'signed-additive'].includes(e.aggRole) && e.t1 !== 'Score';
+    })
+);
 
 /** Numeric types that should NOT be used as measures (don't aggregate) */
 export const nonMeasureNumericTypes = new Set<string>([
-    'Rank', 'Index', 'ID', 'Score', 'Rating', 'Level',
+    'Rank', 'Index', 'ID', 'Score', 'Rating',
     'Year', 'Month', 'Day', 'Hour',
     'Latitude', 'Longitude',
 ]);
 
-/** Types suitable for categorical color/grouping encoding */
-export const categoricalTypes = new Set<string>([
-    // Entities
-    'Name', 'PersonName', 'Username', 'Email',
-    'Company', 'Brand', 'Department', 'Product', 'Category',
-    // Coded
-    'Status', 'Type', 'Boolean', 'Binary', 'Code', 'Direction',
-    // Geographic names
-    'Location', 'Country', 'State', 'City', 'Region',
-    // Ranges (ordinal but work as categorical for color)
-    'Range', 'AgeGroup', 'Bucket',
-    // Fallback
-    'String',
-]);
-
-/** Types suitable for ordinal encoding (have inherent order) */
-export const ordinalTypes = new Set<string>([
-    // Temporal granules
-    'Year', 'Quarter', 'Month', 'Week', 'Day', 'Hour', 'Decade',
-    // Discrete numerics
-    'Rank', 'Score', 'Rating', 'Level',
-    // Ranges
-    'Range', 'AgeGroup', 'Bucket', 'TimeRange',
-    // Compass
-    'Direction',
-]);
-
-/** Types suitable for geographic/map visualizations */
-export const geoTypes = new Set<string>([
-    'Latitude', 'Longitude', 'Coordinates',
-    'Location', 'Country', 'State', 'City', 'Region', 'Address', 'ZipCode',
-]);
-
-/** Geographic coordinate types (for lat/lon matching) */
-export const geoCoordinateTypes = new Set<string>([
-    'Latitude', 'Longitude', 'Coordinates',
-]);
-
-/** Geographic named location types (can be geocoded) */
-export const geoLocationTypes = new Set<string>([
-    'Location', 'Country', 'State', 'City', 'Region', 'Address', 'ZipCode',
-]);
-
-// ---------------------------------------------------------------------------
-// Type Hierarchy for Generalization
-// ---------------------------------------------------------------------------
+/**
+ * Types suitable for categorical color/grouping encoding.
+ *
+ * Derived from the registry: types that include 'nominal' in visEncodings
+ * (at any position — Direction has ['ordinal','nominal']),
+ * plus binned types (Range, AgeGroup) which also work as categorical for
+ * color/grouping despite having 'ordinal' as their primary encoding.
+ * Excludes identifiers (ID) which are nominal but not useful for grouping.
+ */
+export const categoricalTypes = new Set<string>(
+    getRegisteredTypes().filter(t => {
+        const e = getRegistryEntry(t);
+        return (e.visEncodings.includes('nominal') && e.aggRole !== 'identifier') || e.t1 === 'Binned';
+    })
+);
 
 /**
- * Parent type for each semantic type in the lattice.
- * null means this is a root type.
+ * Types suitable for ordinal encoding (have inherent order).
+ *
+ * Derived from the registry: types whose visEncodings include 'ordinal'.
  */
-const typeHierarchy: Record<string, string | null> = {
-    // Temporal point-in-time
-    DateTime: null,
-    Date: 'DateTime',
-    Time: 'DateTime',
-    Timestamp: 'DateTime',
-    
-    // Temporal granules
-    Year: null,
-    Quarter: null,
-    Month: null,
-    Week: null,
-    Day: null,
-    Hour: null,
-    YearMonth: 'Date',
-    YearQuarter: 'Date',
-    YearWeek: 'Date',
-    Decade: 'Year',
-    
-    // Duration/Range
-    Duration: 'Quantity',
-    TimeRange: 'Range',
-    
-    // Measures
-    Quantity: null,
-    Count: 'Quantity',
-    Amount: 'Quantity',
-    Price: 'Amount',
-    Revenue: 'Amount',
-    Cost: 'Amount',
-    Percentage: 'Quantity',
-    Rate: 'Quantity',
-    Ratio: 'Percentage',
-    Distance: 'Quantity',
-    Area: 'Quantity',
-    Volume: 'Quantity',
-    Weight: 'Quantity',
-    Temperature: 'Quantity',
-    Speed: 'Quantity',
-    
-    // Discrete numerics
-    Rank: null,
-    Index: 'Rank',
-    ID: null,
-    Score: 'Rank',
-    Rating: 'Score',
-    Level: 'Rank',
-    
-    // Geographic coordinates
-    Latitude: null,
-    Longitude: null,
-    Coordinates: null,
-    
-    // Geographic locations
-    Location: null,
-    Country: 'Location',
-    State: 'Location',
-    City: 'Location',
-    Region: 'Location',
-    Address: 'Location',
-    ZipCode: 'Location',
-    
-    // Entity names
-    Name: null,
-    PersonName: 'Name',
-    Username: 'Name',
-    Email: 'Name',
-    Company: 'Name',
-    Brand: 'Name',
-    Department: 'Name',
-    Product: 'Name',
-    SKU: 'ID',
-    Category: null,
-    
-    // Coded categoricals
-    Status: null,
-    Type: 'Category',
-    Boolean: null,
-    Binary: 'Boolean',
-    Code: null,
-    Direction: null,
-    
-    // Ranges
-    Range: null,
-    AgeGroup: 'Range',
-    Bucket: 'Range',
-    
-    // Fallbacks
-    String: null,
-    Number: 'Quantity',
-    Unknown: null,
-};
+export const ordinalTypes = new Set<string>(
+    getRegisteredTypes().filter(t => {
+        const e = getRegistryEntry(t);
+        return e.visEncodings.includes('ordinal');
+    })
+);
 
-/**
- * Mapping from semantic type to preferred Vega-Lite encoding type.
- */
-const visCategoryMap: Record<string, VisCategory> = {
-    // Temporal → temporal
-    DateTime: 'temporal', Date: 'temporal', Time: 'temporal', Timestamp: 'temporal',
-    YearMonth: 'temporal', YearQuarter: 'temporal', YearWeek: 'temporal',
-    Year: 'temporal',
-    
-    // Temporal granules → ordinal
-    Quarter: 'ordinal', Month: 'ordinal',
-    Week: 'ordinal', Day: 'ordinal', Hour: 'ordinal', Decade: 'ordinal',
-    TimeRange: 'ordinal',
-    
-    // Duration → quantitative
-    Duration: 'quantitative',
-    
-    // Measures → quantitative
-    Quantity: 'quantitative', Count: 'quantitative',
-    Amount: 'quantitative', Price: 'quantitative', Revenue: 'quantitative', Cost: 'quantitative',
-    Percentage: 'quantitative', Rate: 'quantitative', Ratio: 'quantitative',
-    Distance: 'quantitative', Area: 'quantitative', Volume: 'quantitative',
-    Weight: 'quantitative', Temperature: 'quantitative', Speed: 'quantitative',
-    
-    // Discrete numerics → ordinal (except ID, Score, Rating which are quantitative)
-    Rank: 'ordinal', Index: 'ordinal', Score: 'quantitative', Rating: 'quantitative', Level: 'ordinal',
-    ID: 'nominal',
-    
-    // Geographic coordinates → geographic
-    Latitude: 'geographic', Longitude: 'geographic', Coordinates: 'geographic',
-    
-    // Geographic locations → nominal
-    Location: 'nominal', Country: 'nominal', State: 'nominal', City: 'nominal',
-    Region: 'nominal', Address: 'nominal', ZipCode: 'nominal',
-    
-    // Entity names → nominal
-    Name: 'nominal', PersonName: 'nominal', Username: 'nominal', Email: 'nominal',
-    Company: 'nominal', Brand: 'nominal', Department: 'nominal',
-    Product: 'nominal', SKU: 'nominal', Category: 'nominal',
-    
-    // Coded → nominal (Direction is ordinal — clockwise from North)
-    Status: 'nominal', Type: 'nominal', Boolean: 'nominal', Binary: 'nominal', Code: 'nominal',
-    Direction: 'ordinal',
-    
-    // Ranges → ordinal
-    Range: 'ordinal', AgeGroup: 'ordinal', Bucket: 'ordinal',
-    
-    // Fallbacks
-    String: 'nominal', Number: 'quantitative', Unknown: 'nominal',
-};
+// geoTypes, geoCoordinateTypes, geoLocationTypes: REMOVED — derived from type-registry.ts
+// via isGeoType(), isGeoCoordinateType(), isGeoLocationString()
+
+// ---------------------------------------------------------------------------
+// Type Hierarchy — REMOVED
+// ---------------------------------------------------------------------------
+// The typeHierarchy map and its helper functions (getParentType,
+// getAncestorTypes, isSubtypeOf) have been removed. They were unused
+// externally — no consumer ever imported them.
+//
+// The registry's t0/t1 dimensions capture family grouping (e.g., all
+// Amount types share t1='Amount'). If fine-grained parent-child lattice
+// traversal is ever needed in the future, it can be rebuilt from
+// type-registry.ts with an explicit `parent` field per entry.
+// ---------------------------------------------------------------------------
+
+// visCategoryMap: REMOVED — derived from type-registry.ts via getRegistryEntry().visEncodings[0]
 
 // ---------------------------------------------------------------------------
 // Helper Functions
@@ -405,11 +246,15 @@ const visCategoryMap: Record<string, VisCategory> = {
 
 /**
  * Get the Vega-Lite visualization category for a semantic type.
+ * Derived from the registry's visEncodings[0] (primary encoding).
  * Returns null for unrecognised types so callers can fall back
  * to data-driven inference.
  */
 export function getVisCategory(semanticType: string): VisCategory | null {
-    return visCategoryMap[semanticType] ?? null;
+    // Return null for empty, 'Unknown', or any unregistered type string
+    // so callers fall back to data-driven inference (inferVisCategory).
+    if (!semanticType || !isRegistered(semanticType)) return null;
+    return getRegistryEntry(semanticType).visEncodings[0] ?? null;
 }
 
 
@@ -447,9 +292,11 @@ export function isMeasureType(semanticType: string): boolean {
 
 /**
  * Check if a semantic type is suitable for time-series X axis.
+ * Derived from type-registry: t0 === 'Temporal' but not Duration.
  */
 export function isTimeSeriesType(semanticType: string): boolean {
-    return timeseriesXTypes.has(semanticType);
+    const entry = getRegistryEntry(semanticType);
+    return entry.t0 === 'Temporal' && entry.t1 !== 'Duration';
 }
 
 /**
@@ -468,30 +315,26 @@ export function isOrdinalType(semanticType: string): boolean {
 
 /**
  * Check if a semantic type is geographic.
+ * Derived from type-registry: t0 === 'Geographic'.
  */
 export function isGeoType(semanticType: string): boolean {
-    return geoTypes.has(semanticType);
+    return getRegistryEntry(semanticType).t0 === 'Geographic';
 }
 
 /**
  * Check if a semantic type is a geographic coordinate (lat/lon).
+ * Derived from type-registry: t1 === 'GeoCoordinate'.
  */
 export function isGeoCoordinateType(semanticType: string): boolean {
-    return geoCoordinateTypes.has(semanticType);
+    return getRegistryEntry(semanticType).t1 === 'GeoCoordinate';
 }
 
 /**
  * Check if a semantic type is a named geographic location.
+ * Derived from type-registry: t1 === 'GeoPlace'.
  */
 export function isGeoLocationString(semanticType: string): boolean {
-    return geoLocationTypes.has(semanticType);
-}
-
-/**
- * Get the parent type in the hierarchy (for generalization).
- */
-export function getParentType(semanticType: string): string | null {
-    return typeHierarchy[semanticType] ?? null;
+    return getRegistryEntry(semanticType).t1 === 'GeoPlace';
 }
 
 /**
@@ -501,29 +344,8 @@ export function isNonMeasureNumeric(semanticType: string): boolean {
     return nonMeasureNumericTypes.has(semanticType);
 }
 
-/**
- * Get all ancestor types in the hierarchy (for type matching).
- */
-export function getAncestorTypes(semanticType: string): string[] {
-    const ancestors: string[] = [];
-    let current = getParentType(semanticType);
-    while (current) {
-        ancestors.push(current);
-        current = getParentType(current);
-    }
-    return ancestors;
-}
-
-/**
- * Check if one type is a subtype of another (including self).
- */
-export function isSubtypeOf(semanticType: string, parentType: string): boolean {
-    if (semanticType === parentType) return true;
-    return getAncestorTypes(semanticType).includes(parentType);
-}
-
 // ---------------------------------------------------------------------------
-// Zero-Baseline Classification
+// Zero-Baseline Classification  →  data lives in type-registry.ts (zeroBaseline, zeroPad)
 // ---------------------------------------------------------------------------
 
 /**
@@ -562,46 +384,17 @@ export interface ZeroDecision {
     zeroClass: ZeroClass | 'unknown';
 }
 
-/** Semantic types where 0 = absence of the measured thing */
-export const zeroMeaningfulTypes = new Set<string>([
-    'Count', 'Amount', 'Revenue', 'Cost', 'Price',
-    'Quantity', 'Distance', 'Area', 'Volume', 'Weight',
-    'Duration', 'Speed',
-    'Number',  // fallback assumes measure
-]);
-
-/** Semantic types where 0 is arbitrary or nonexistent */
-export const zeroArbitraryTypes = new Set<string>([
-    'Temperature', 'Year',
-    'Rank', 'Index', 'Level',
-    'ID',
-    'Latitude', 'Longitude',
-    'Decade', 'Month', 'Day', 'Hour',
-]);
-
-/** Semantic types where zero is meaningful but data-fitting may be appropriate */
-export const zeroContextualTypes = new Set<string>([
-    'Percentage', 'Rate', 'Ratio',
-    'Score', 'Rating',
-]);
-
-/** Domain padding fractions by semantic type for non-zero axes */
-const zeroPadMap: Record<string, number> = {
-    Rank: 0.08, Index: 0.08, Level: 0.08,
-    Score: 0.05, Rating: 0.05,
-    Year: 0.03, Decade: 0.03,
-    Temperature: 0.05,
-    Latitude: 0.02, Longitude: 0.02,
-};
+// zeroMeaningfulTypes, zeroArbitraryTypes, zeroContextualTypes, zeroPadMap:
+// REMOVED — now stored as zeroBaseline/zeroPad in type-registry.ts
 
 /**
  * Classify a semantic type's relationship to zero.
+ * Derived from the registry's zeroBaseline dimension.
  */
 export function getZeroClass(semanticType: string): ZeroClass | 'unknown' {
-    if (zeroMeaningfulTypes.has(semanticType)) return 'meaningful';
-    if (zeroArbitraryTypes.has(semanticType)) return 'arbitrary';
-    if (zeroContextualTypes.has(semanticType)) return 'contextual';
-    return 'unknown';
+    const baseline = getRegistryEntry(semanticType).zeroBaseline;
+    if (baseline === 'none') return 'unknown';
+    return baseline;
 }
 
 /**
@@ -626,6 +419,7 @@ export function computeZeroDecision(
 ): ZeroDecision {
     const isBarLike = ['bar', 'area', 'rect'].includes(markType);
     const isPositional = ['x', 'y'].includes(channel);
+    const entry = getRegistryEntry(semanticType);
     const zeroClass = getZeroClass(semanticType);
 
     // --- Zero-meaningful types: always zero ---
@@ -644,7 +438,7 @@ export function computeZeroDecision(
         }
         return {
             zero: false,
-            domainPadFraction: zeroPadMap[semanticType] ?? 0.05,
+            domainPadFraction: entry.zeroPad || 0.05,
             zeroClass,
         };
     }
@@ -720,72 +514,9 @@ export interface ColorSchemeRecommendation {
     domainMid?: number;
 }
 
-/**
- * Determine the appropriate midpoint for a diverging color scale.
- * 
- * @param semanticType - The semantic type of the field
- * @param values - Array of numeric values from the data
- * @returns The recommended midpoint value, or undefined if not applicable
- */
-export function getDivergingMidpoint(
-    semanticType: string | undefined,
-    values: number[]
-): number | undefined {
-    if (values.length === 0) return undefined;
-    
-    const validValues = values.filter(v => typeof v === 'number' && !isNaN(v));
-    if (validValues.length === 0) return undefined;
-    
-    const min = Math.min(...validValues);
-    const max = Math.max(...validValues);
-    
-    // If data doesn't span both sides of any potential midpoint, 
-    // diverging might not be ideal - return undefined
-    const spansBothSides = (mid: number) => min < mid && max > mid;
-    
-    // Type-specific midpoints
-    switch (semanticType) {
-        case 'Temperature':
-            // 0°C is a natural midpoint for temperature
-            // But check if data is likely Fahrenheit (spans around 32)
-            if (spansBothSides(0)) return 0;
-            if (spansBothSides(32) && max > 50) return 32; // Likely Fahrenheit
-            return (min + max) / 2;
-            
-        case 'Percentage':
-        case 'Rate':
-        case 'Ratio':
-            // 0 is natural for percentage change, growth rates
-            if (spansBothSides(0)) return 0;
-            // For 0-100% data, 50% could be meaningful
-            if (min >= 0 && max <= 100 && spansBothSides(50)) return 50;
-            // For 0-1 normalized data
-            if (min >= 0 && max <= 1 && spansBothSides(0.5)) return 0.5;
-            return (min + max) / 2;
-            
-        case 'Score':
-        case 'Rating':
-            // For ratings, midpoint of scale is natural
-            // Common scales: 1-5, 1-10, 0-100
-            if (min >= 0 && max <= 5) return 2.5;
-            if (min >= 0 && max <= 10) return 5;
-            if (min >= 0 && max <= 100) return 50;
-            return (min + max) / 2;
-            
-        case 'Amount':
-        case 'Revenue':
-        case 'Cost':
-        case 'Price':
-            // For financial data, 0 is meaningful if data spans it
-            if (spansBothSides(0)) return 0;
-            return (min + max) / 2;
-            
-        default:
-            // General case: use 0 if data spans it, otherwise use median
-            if (spansBothSides(0)) return 0;
-            return (min + max) / 2;
-    }
-}
+// getDivergingMidpoint: REMOVED — superseded by resolveDivergingInfo() in field-semantics.ts
+// which uses a priority chain (unit → type-intrinsic → domain → data) and
+// distinguishes inherent vs conditional diverging.
 
 /**
  * Vega-Lite color schemes organized by use case
@@ -847,13 +578,17 @@ const colorSchemes = {
  * @param uniqueValueCount - Number of unique values (for categorical sizing)
  * @param fieldName - Field name (for consistent hashing)
  * @param values - Optional actual data values (for inspecting data range)
+ * @param colorHint - Optional classification from resolveColorSchemeHint().
+ *        When provided, the hint's type ('diverging'|'sequential'|'categorical')
+ *        overrides inline detection, avoiding duplicate diverging logic.
  */
 export function getRecommendedColorScheme(
     semanticType: string | undefined,
     encodingType: 'nominal' | 'ordinal' | 'quantitative' | 'temporal',
     uniqueValueCount: number = 10,
     fieldName: string = '',
-    values: any[] = []
+    values: any[] = [],
+    colorHint?: { type: 'categorical' | 'sequential' | 'diverging' },
 ): ColorSchemeRecommendation {
     
     // Helper for consistent scheme selection from array
@@ -882,57 +617,50 @@ export function getRecommendedColorScheme(
         };
     }
 
-    // Temperature - use diverging only when data actually spans both hot and cold (crosses 0)
+    // --- Diverging-capable types ---
+    // When a colorHint is provided (from resolveColorSchemeHint), it drives the
+    // diverging/sequential decision. Without a hint, fall back to sequential.
+    // This avoids duplicating the diverging detection logic from field-semantics.ts.
+
+    // Temperature
     if (semanticType === 'Temperature') {
-        if (encodingType === 'quantitative') {
-            const nums = values.filter((v: any) => typeof v === 'number' && !isNaN(v));
-            const min = nums.length > 0 ? Math.min(...nums) : 0;
-            const max = nums.length > 0 ? Math.max(...nums) : 0;
-            if (min < 0 && max > 0) {
-                return { scheme: 'redblue', type: 'diverging', reason: 'temperature spans hot-cold around 0' };
-            }
+        if (colorHint?.type === 'diverging') {
+            return { scheme: 'redblue', type: 'diverging', reason: 'temperature diverging around freezing point' };
         }
         return { scheme: 'reds', type: 'sequential', reason: 'temperature single-direction uses sequential' };
     }
 
-    // Percentage/Rate/Ratio - diverging ONLY when data has both positive and negative values
-    if (['Percentage', 'Rate', 'Ratio'].includes(semanticType)) {
-        if (encodingType === 'quantitative') {
-            const nums = values.filter((v: any) => typeof v === 'number' && !isNaN(v));
-            const min = nums.length > 0 ? Math.min(...nums) : 0;
-            const max = nums.length > 0 ? Math.max(...nums) : 0;
-            if (min < 0 && max > 0) {
-                return { scheme: 'redblue', type: 'diverging', reason: 'percentage/rate spans positive and negative' };
-            }
+    // Percentage
+    if (semanticType === 'Percentage') {
+        if (colorHint?.type === 'diverging') {
+            return { scheme: 'redblue', type: 'diverging', reason: 'percentage spans positive and negative' };
         }
-        return { scheme: 'oranges', type: 'sequential', reason: 'percentage/rate all same sign uses sequential' };
+        return { scheme: 'oranges', type: 'sequential', reason: 'percentage all same sign uses sequential' };
     }
 
-    // Revenue/Price/Cost/Amount - diverging only when data spans negative
+    // Revenue/Price/Cost/Amount
     if (['Revenue', 'Price', 'Cost', 'Amount'].includes(semanticType)) {
-        if (encodingType === 'quantitative') {
-            const nums = values.filter((v: any) => typeof v === 'number' && !isNaN(v));
-            const min = nums.length > 0 ? Math.min(...nums) : 0;
-            const max = nums.length > 0 ? Math.max(...nums) : 0;
-            if (min < 0 && max > 0) {
-                return { scheme: 'redblue', type: 'diverging', reason: 'financial data spans positive and negative' };
-            }
+        if (colorHint?.type === 'diverging') {
+            return { scheme: 'redblue', type: 'diverging', reason: 'financial data spans positive and negative' };
         }
         return { scheme: 'goldgreen', type: 'sequential', reason: 'financial data uses gold-green' };
     }
 
-    // Score/Rating - evaluation metrics, use warm colors
+    // Score/Rating - evaluation metrics; diverging when hint says so (e.g., domain midpoint)
     if (['Score', 'Rating'].includes(semanticType)) {
+        if (colorHint?.type === 'diverging') {
+            return { scheme: 'redblue', type: 'diverging', reason: 'score/rating diverging around midpoint' };
+        }
         return { scheme: 'yelloworangebrown', type: 'sequential', reason: 'scores use warm sequential' };
     }
 
-    // Rank/Level - use single-hue sequential
-    if (['Rank', 'Level', 'Index'].includes(semanticType)) {
+    // Rank - use single-hue sequential
+    if (['Rank', 'Index'].includes(semanticType)) {
         return { scheme: 'purples', type: 'sequential', reason: 'ranks use single-hue sequential' };
     }
 
     // Age groups / ranges - use sequential
-    if (['AgeGroup', 'Range', 'Bucket'].includes(semanticType)) {
+    if (['AgeGroup', 'Range'].includes(semanticType)) {
         return { scheme: 'blues', type: 'sequential', reason: 'age/range groups use sequential' };
     }
 
@@ -942,20 +670,20 @@ export function getRecommendedColorScheme(
     }
 
     // Geographic locations - use geographic-friendly palettes
-    if (geoLocationTypes.has(semanticType)) {
+    if (getRegistryEntry(semanticType ?? '').t1 === 'GeoPlace') {
         if (uniqueValueCount <= 10) {
             return { scheme: 'set2', type: 'categorical', reason: 'geographic regions use distinct pastels' };
         }
         return { scheme: 'tableau20', type: 'categorical', reason: 'many regions use large categorical' };
     }
 
-    // Status/Boolean/Binary - use accent colors for clear distinction
-    if (['Status', 'Boolean', 'Binary'].includes(semanticType)) {
+    // Status/Boolean - use accent colors for clear distinction
+    if (['Status', 'Boolean'].includes(semanticType)) {
         return { scheme: 'set1', type: 'categorical', reason: 'status uses high-contrast categorical' };
     }
 
     // Categories/Types - use standard categorical
-    if (['Category', 'Type', 'Code'].includes(semanticType)) {
+    if (['Category', 'Type'].includes(semanticType)) {
         return { 
             scheme: uniqueValueCount > 10 ? 'tableau20' : 'tableau10', 
             type: 'categorical', 
@@ -963,8 +691,8 @@ export function getRecommendedColorScheme(
         };
     }
 
-    // Companies/Brands/Products - use paired for small sets, tableau for large
-    if (['Company', 'Brand', 'Product', 'Department'].includes(semanticType)) {
+    // Companies/Products - use paired for small sets, tableau for large
+    if (['Company', 'Product'].includes(semanticType)) {
         return { 
             scheme: uniqueValueCount > 10 ? 'tableau20' : 'paired', 
             type: 'categorical', 
@@ -973,7 +701,7 @@ export function getRecommendedColorScheme(
     }
 
     // Person names - use saturated schemes for readability; only pastel for very small sets
-    if (['Name', 'PersonName', 'Username'].includes(semanticType)) {
+    if (['Name', 'PersonName'].includes(semanticType)) {
         return { 
             scheme: uniqueValueCount > 8 ? 'tableau20' : 'set2', 
             type: 'categorical', 
@@ -987,7 +715,12 @@ export function getRecommendedColorScheme(
     }
 
     // Quantity/Count/Distance/etc. - general measures
+    // Check colorHint first — signed measures (Profit, Sentiment, Correlation,
+    // PercentageChange) pass through here and should honor their diverging hint.
     if (measureTypes.has(semanticType)) {
+        if (colorHint?.type === 'diverging') {
+            return { scheme: 'redblue', type: 'diverging', reason: 'measure with diverging nature' };
+        }
         const sequentialSchemes = ['viridis', 'blues', 'greens', 'reds', 'yelloworangebrown', 'goldgreen'];
         return { 
             scheme: pickScheme(sequentialSchemes, fieldName), 
@@ -1019,41 +752,9 @@ export function getRecommendedColorScheme(
     return { scheme: 'viridis', type: 'sequential', reason: 'universal fallback' };
 }
 
-/**
- * Get recommended color scheme with midpoint calculation for diverging schemes.
- * This is a convenience wrapper that combines scheme recommendation with midpoint calculation.
- * 
- * @param semanticType - The semantic type of the field
- * @param encodingType - The Vega-Lite encoding type
- * @param values - The actual data values (for calculating midpoint and unique count)
- * @param fieldName - Field name (for consistent hashing)
- */
-export function getRecommendedColorSchemeWithMidpoint(
-    semanticType: string | undefined,
-    encodingType: 'nominal' | 'ordinal' | 'quantitative' | 'temporal',
-    values: any[],
-    fieldName: string = ''
-): ColorSchemeRecommendation {
-    const uniqueValues = [...new Set(values)];
-    const recommendation = getRecommendedColorScheme(
-        semanticType,
-        encodingType,
-        uniqueValues.length,
-        fieldName,
-        values
-    );
-    
-    // For diverging schemes, calculate the midpoint
-    if (recommendation.type === 'diverging' && encodingType === 'quantitative') {
-        const numericValues = values.filter(v => typeof v === 'number' && !isNaN(v));
-        const midpoint = getDivergingMidpoint(semanticType, numericValues);
-        if (midpoint !== undefined) {
-            recommendation.domainMid = midpoint;
-        }
-    }
-    
-    return recommendation;
-}
+// getRecommendedColorSchemeWithMidpoint: REMOVED — diverging midpoint is now
+// resolved via resolveDivergingInfo() in field-semantics.ts and applied directly
+// by the caller in resolve-semantics.ts. See resolveChannelSemantics().
 
 // ===========================================================================
 // Canonical Ordinal Sort Orders

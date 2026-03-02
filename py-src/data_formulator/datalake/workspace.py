@@ -181,6 +181,11 @@ class Workspace:
         if not metadata_exists(self._path):
             self._init_metadata()
 
+        # --- in-memory metadata cache ----------------------------------------
+        # Avoids re-reading and re-parsing workspace.yaml on every method call.
+        # Invalidated automatically by save_metadata() and cleanup().
+        self._metadata_cache: Optional[WorkspaceMetadata] = None
+
         # Clean up any stale temp files from previous crashes (older than 24 hours)
         # This is safe because active temp files are always created fresh and
         # cleaned up within minutes of their creation
@@ -267,10 +272,19 @@ class Workspace:
         return True
     
     def get_metadata(self) -> WorkspaceMetadata:
-        return load_metadata(self._path)
+        if self._metadata_cache is not None:
+            return self._metadata_cache
+        self._metadata_cache = load_metadata(self._path)
+        return self._metadata_cache
     
     def save_metadata(self, metadata: WorkspaceMetadata) -> None:
         save_metadata(self._path, metadata)
+        # Update the cache with the just-saved metadata
+        self._metadata_cache = metadata
+
+    def invalidate_metadata_cache(self) -> None:
+        """Force the next get_metadata() to re-read from disk."""
+        self._metadata_cache = None
     
     def add_table_metadata(self, table: TableMetadata) -> None:
         metadata = self.get_metadata()
@@ -320,6 +334,7 @@ class Workspace:
         if self._path.exists():
             shutil.rmtree(self._path)
             logger.info(f"Cleaned up workspace {self._safe_id}")
+        self._metadata_cache = None
 
     def get_relative_data_file_path(self, table_name: str) -> str:
         """

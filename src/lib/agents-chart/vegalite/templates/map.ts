@@ -12,7 +12,6 @@ const mapProjections = [
     { value: "conicEquidistant", label: "Conic Equidistant" },
     { value: "azimuthalEquidistant", label: "Azimuthal Equidistant" },
     { value: "mollweide", label: "Mollweide" },
-    { value: "albersUsa", label: "Albers USA" },
 ] as const;
 
 const projectionCenterPresets: { label: string; center: [number, number] }[] = [

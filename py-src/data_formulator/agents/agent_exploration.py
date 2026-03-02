@@ -108,8 +108,8 @@ class ExplorationAgent(object):
         candidates = []
         for choice in response.choices:
             
-            logger.info("\n=== Exploration Planning Result ===>\n")
-            logger.info(choice.message.content + "\n")
+            logger.debug("\n=== Exploration Planning Result ===>\n")
+            logger.debug(choice.message.content + "\n")
             
             json_blocks = extract_json_objects(choice.message.content + "\n")
             if not json_blocks:
@@ -196,6 +196,9 @@ class ExplorationAgent(object):
         
         messages.append({"role": "user", "content": f"[NEXT STEPS]\n\n{json.dumps(next_steps, indent=4)}"})
 
+        logger.info(f"[ExplorationAgent] suggest_followup start")
         response = self.client.get_completion(messages)
-        
-        return self.process_gpt_response(messages, response)
+        candidates = self.process_gpt_response(messages, response)
+        status = candidates[0].get('status', 'unknown') if candidates else 'empty'
+        logger.info(f"[ExplorationAgent] suggest_followup done | status={status}")
+        return candidates

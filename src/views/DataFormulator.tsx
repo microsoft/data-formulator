@@ -46,6 +46,7 @@ import { UnifiedDataUploadDialog, UploadTabType, DataLoadMenu } from './UnifiedD
 import { ReportView } from './ReportView';
 import { ExampleSession, exampleSessions, ExampleSessionCard } from './ExampleSessions';
 import { useDataRefresh, useDerivedTableRefresh } from '../app/useDataRefresh';
+import type { DictTable } from '../components/ComponentType';
 
 export const DataFormulatorFC = ({ }) => {
 
@@ -248,6 +249,7 @@ export const DataFormulatorFC = ({ }) => {
 
     // Compute thread count to decide preferred pane width:
     // A "thread" is a leaf table's derivation chain displayed as a column.
+    // Must match the chain-splitting logic in DataThread (MAX_CHAIN_TABLES).
     const threadCount = useMemo(() => {
         // A table is a "leaf" if no other non-anchored table derives from it
         const hasNonAnchoredChild = new Set<string>();
@@ -260,7 +262,45 @@ export const DataFormulatorFC = ({ }) => {
         // Threads = leaf tables with derivation chains + 1 group for hanging (source) tables
         const threaded = leafTables.filter(t => t.derive);
         const hanging = leafTables.filter(t => !t.derive);
-        return threaded.length + (hanging.length > 0 ? 1 : 0);
+        let count = threaded.length + (hanging.length > 0 ? 1 : 0);
+
+        // Account for chain-splitting: long chains are broken into sub-threads
+        // (mirrors MAX_CHAIN_TABLES logic in DataThread)
+        const MAX_CHAIN_TABLES = 5;
+        const tableById = new Map(tables.map(t => [t.id, t]));
+        const getChainLength = (t: DictTable): number => {
+            let len = 1;
+            let cur = t;
+            while (cur.derive && !cur.anchored) {
+                len++;
+                const parent = tableById.get(cur.derive.trigger.tableId);
+                if (!parent) break;
+                cur = parent;
+            }
+            return len;
+        };
+        const claimedForCount = new Set<string>();
+        for (const lt of threaded) {
+            // Walk chain
+            const chainIds: string[] = [lt.id];
+            let cur = lt;
+            while (cur.derive && !cur.anchored) {
+                const pid = cur.derive.trigger.tableId;
+                chainIds.push(pid);
+                const parent = tableById.get(pid);
+                if (!parent) break;
+                cur = parent;
+            }
+            const ownedIds = chainIds.filter(id => !claimedForCount.has(id));
+            if (ownedIds.length > MAX_CHAIN_TABLES) {
+                // Each extra split adds one more thread entry
+                const extraSplits = Math.floor((ownedIds.length - 1) / MAX_CHAIN_TABLES);
+                count += extraSplits;
+            }
+            chainIds.forEach(id => claimedForCount.add(id));
+        }
+
+        return count;
     }, [tables]);
     const preferredColumns = threadCount <= 1 ? 1 : 2;
 

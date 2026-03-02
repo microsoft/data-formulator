@@ -10,7 +10,8 @@ from data_formulator.agents.agent_data_rec import DataRecAgent
 from data_formulator.agents.client_utils import Client
 from data_formulator.datalake.workspace import WorkspaceWithTempData, Workspace
 from data_formulator.workspace_factory import get_workspace
-from data_formulator.workflows.create_vl_plots import assemble_vegailte_chart, spec_to_base64, coerce_field_type, resolve_field_type
+from data_formulator.workflows.create_vl_plots import assemble_vegailte_chart, spec_to_base64, coerce_field_type, resolve_field_type, field_metadata_to_semantic_types
+from data_formulator.code_signing import sign_result
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +20,7 @@ def create_chart_spec_from_data(
     chart_type: str, 
     chart_encodings: dict[str, str],
     config: dict | None = None,
+    field_metadata: dict | None = None,
 ) -> str:
     """
     Create a chart from transformed data using Vega-Lite.
@@ -50,7 +52,8 @@ def create_chart_spec_from_data(
                 encodings[channel] = {"field": field, "type": field_type}
         
         # Create Vega-Lite specification
-        spec = assemble_vegailte_chart(df, chart_type, encodings, config=config)
+        semantic_types = field_metadata_to_semantic_types(field_metadata)
+        spec = assemble_vegailte_chart(df, chart_type, encodings, config=config, semantic_types=semantic_types)
         
         return spec
         
@@ -210,6 +213,8 @@ def run_exploration_flow_streaming(
 
             # Extract transformation result
             transform_result = transformation_results[0]
+            # Sign the code so the frontend can prove authenticity on refresh
+            sign_result(transform_result)
             transformed_data = transform_result['content']
             refined_goal = transform_result.get('refined_goal', {})
             code = transform_result.get('code', '')
@@ -238,6 +243,7 @@ def run_exploration_flow_streaming(
                 chart_type,
                 chart_encodings,
                 config=chart_config,
+                field_metadata=refined_goal.get('field_metadata'),
             )
             current_visualization = spec_to_base64(chart_spec) if chart_spec else None
             

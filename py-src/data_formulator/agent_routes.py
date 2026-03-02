@@ -24,6 +24,7 @@ from data_formulator.agents.agent_data_rec import DataRecAgent
 
 from data_formulator.agents.agent_sort_data import SortDataAgent
 from data_formulator.auth import get_identity_id
+from data_formulator.code_signing import sign_result, verify_code, MAX_CODE_SIZE
 from data_formulator.datalake.workspace import Workspace, WorkspaceWithTempData
 from data_formulator.workspace_factory import get_workspace
 from data_formulator.agents.agent_data_load import DataLoadAgent
@@ -35,6 +36,7 @@ from data_formulator.agents.agent_report_gen import ReportGenAgent
 from data_formulator.agents.client_utils import Client
 
 from data_formulator.workflows.exploration_flow import run_exploration_flow_streaming
+from data_formulator.agents.data_agent import DataAgent
 
 # Get logger for this module (logging config done in app.py)
 logger = logging.getLogger(__name__)
@@ -166,12 +168,12 @@ def sanitize_model_error(error_message: str) -> str:
 @agent_bp.route('/test-model', methods=['GET', 'POST'])
 def test_model():
     if request.is_json:
-        logger.info("# code query: ")
+        logger.info("# test-model request")
         content = request.get_json()
 
         # contains endpoint, key, model, api_base, api_version
-        logger.info("content------------------------------")
-        logger.info(content)
+        logger.debug("content------------------------------")
+        logger.debug(content)
 
         client = get_client(content['model'])
         
@@ -183,8 +185,8 @@ def test_model():
                 ]
             )
 
-            logger.info(f"model: {content['model']}")
-            logger.info(f"welcome message: {response.choices[0].message.content}")
+            logger.debug(f"model: {content['model']}")
+            logger.debug(f"welcome message: {response.choices[0].message.content}")
 
             if "I can hear you." in response.choices[0].message.content:
                 result = {
@@ -209,14 +211,14 @@ def test_model():
 def process_data_on_load_request():
 
     if request.is_json:
-        logger.info("# process data query: ")
+        logger.info("# process-data-on-load request")
         content = request.get_json()
         token = content["token"]
         input_data = content["input_data"]
 
         client = get_client(content['model'])
 
-        logger.info(f" model: {content['model']}")
+        logger.debug(f" model: {content['model']}")
 
         try:
             # Get workspace (needed for both virtual and in-memory tables)
@@ -247,13 +249,13 @@ def process_data_on_load_request():
 def clean_data_stream_request():
     def generate():
         if request.is_json:
-            logger.info("# data clean stream request")
+            logger.info("# clean-data-stream request")
             content = request.get_json()
             token = content["token"]
 
             client = get_client(content['model'])
 
-            logger.info(f" model: {content['model']}")
+            logger.debug(f" model: {content['model']}")
             
             agent = DataCleanAgentStream(client=client)
 
@@ -299,7 +301,7 @@ def clean_data_stream_request():
 def sort_data_request():
 
     if request.is_json:
-        logger.info("# sort query: ")
+        logger.info("# sort-data request")
         content = request.get_json()
         token = content["token"]
 
@@ -325,7 +327,7 @@ def sort_data_request():
 def derive_data():
 
     if request.is_json:
-        logger.info("# request data: ")
+        logger.info("# derive-data request")
         content = request.get_json()        
         token = content["token"]
 
@@ -346,13 +348,13 @@ def derive_data():
         else:
             prev_messages = []
 
-        logger.info("== input tables ===>")
+        logger.debug("== input tables ===>")
         for table in input_tables:
-            logger.info(f"===> Table: {table['name']} (first 5 rows)")
-            logger.info(table['rows'][:5])
+            logger.debug(f"===> Table: {table['name']} (first 5 rows)")
+            logger.debug(table['rows'][:5])
 
-        logger.info("== user spec ===")
-        logger.info(instruction)
+        logger.debug("== user spec ===")
+        logger.debug(instruction)
 
         # If user provided chart encodings (via visualization context), use transform mode; otherwise recommendation
         mode = "transform" if current_visualization or expected_visualization else "recommendation"
@@ -377,7 +379,7 @@ def derive_data():
                 repair_attempts = 0
                 while results[0]['status'] == 'error' and repair_attempts < max_repair_attempts:
                     error_message = results[0]['content']
-                    logger.info(f"[derive-data] Code generation failed (attempt {repair_attempts + 1}/{max_repair_attempts}), mode={mode}. Error: {error_message}")
+                    logger.warning(f"[derive-data] Code generation failed (attempt {repair_attempts + 1}/{max_repair_attempts}), mode={mode}. Error: {error_message}")
                     new_instruction = f"We run into the following problem executing the code, please fix it:\n\n{error_message}\n\nPlease think step by step, reflect why the error happens and fix the code so that no more errors would occur."
 
                     prev_dialog = results[0]['dialog']
@@ -388,10 +390,15 @@ def derive_data():
                         results = agent.followup(input_tables, prev_dialog, [], new_instruction, n=1)
 
                     repair_attempts += 1
-                    logger.info(f"[derive-data] Repair attempt {repair_attempts}/{max_repair_attempts} result: {results[0]['status']}")
+                    logger.warning(f"[derive-data] Repair attempt {repair_attempts}/{max_repair_attempts} result: {results[0]['status']}")
 
                 if repair_attempts > 0:
-                    logger.info(f"[derive-data] Finished repair loop after {repair_attempts} attempt(s). Final status: {results[0]['status']}")
+                    logger.warning(f"[derive-data] Finished repair loop after {repair_attempts} attempt(s). Final status: {results[0]['status']}")
+
+            # Sign code in each result so the frontend can send it back
+            # for re-execution during data refresh with proof of authenticity.
+            for r in results:
+                sign_result(r)
 
             response = flask.jsonify({ "token": token, "status": "ok", "results": results })
         except Exception as e:
@@ -410,7 +417,7 @@ def explore_data_streaming():
         if request.is_json:
             logger.setLevel(logging.INFO)
 
-            logger.info("# explore data request: ")
+            logger.info("# explore-data-streaming request")
             content = request.get_json()        
             token = content["token"]
 
@@ -423,13 +430,13 @@ def explore_data_streaming():
             agent_coding_rules = content.get("agent_coding_rules", "")
             conversation_history = content.get("conversation_history", None)
 
-            logger.info("== input tables ===>")
+            logger.debug("== input tables ===>")
             for table in input_tables:
-                logger.info(f"===> Table: {table['name']} (first 5 rows)")
-                logger.info(table['rows'][:5])
+                logger.debug(f"===> Table: {table['name']} (first 5 rows)")
+                logger.debug(table['rows'][:5])
 
-            logger.info("== exploration question ===")
-            logger.info(initial_plan)
+            logger.debug("== exploration question ===")
+            logger.debug(initial_plan)
 
             # Model config for the exploration flow
             model_config = {
@@ -502,11 +509,136 @@ def explore_data_streaming():
     return response
 
 
+@agent_bp.route('/data-agent-streaming', methods=['GET', 'POST'])
+def data_agent_streaming():
+    """Autonomous data exploration agent endpoint (SWE-agent style).
+
+    Accepts a user question, runs the DataAgent observe-think-act loop,
+    and streams events back as newline-delimited JSON.
+
+    To resume after a clarification, the client sends:
+        - trajectory: the trajectory list returned in the clarify event
+        - clarification_response: the user's answer (string)
+    The server appends the answer to the trajectory and continues the loop.
+    """
+    def generate():
+        if request.is_json:
+            logger.setLevel(logging.INFO)
+            logger.info("# data-agent-streaming request")
+
+            content = request.get_json()
+            token = content.get("token", "")
+
+            input_tables = content["input_tables"]
+            user_question = content.get("user_question", "")
+            max_iterations = content.get("max_iterations", 5)
+            max_repair_attempts = content.get("max_repair_attempts", 1)
+            agent_exploration_rules = content.get("agent_exploration_rules", "")
+            agent_coding_rules = content.get("agent_coding_rules", "")
+            conversation_history = content.get("conversation_history", None)
+
+            # Stateless resume: client sends back the trajectory + user answer
+            resume_trajectory = content.get("trajectory", None)
+            clarification_response = content.get("clarification_response", None)
+            completed_step_count = content.get("completed_step_count", 0)
+
+            logger.debug("== input tables ===>")
+            for table in input_tables:
+                logger.debug(f"===> Table: {table['name']} (first 5 rows)")
+                logger.debug(table['rows'][:5])
+
+            logger.debug(f"== user question ===> {user_question}")
+
+            client = get_client(content['model'])
+            identity_id = get_identity_id()
+
+            if not identity_id:
+                yield json.dumps({
+                    "token": token,
+                    "status": "error",
+                    "result": {"type": "error", "error_message": "Identity ID required"},
+                }) + '\n'
+                return
+
+            workspace = get_workspace(identity_id)
+            temp_data = get_temp_tables(workspace, input_tables) if input_tables else None
+
+            try:
+                with WorkspaceWithTempData(workspace, temp_data) as ws:
+                    agent = DataAgent(
+                        client=client,
+                        workspace=ws,
+                        agent_exploration_rules=agent_exploration_rules,
+                        agent_coding_rules=agent_coding_rules,
+                        max_iterations=max_iterations,
+                        max_repair_attempts=max_repair_attempts,
+                    )
+
+                    # Build trajectory for resume or fresh start
+                    trajectory = None
+                    if resume_trajectory and clarification_response:
+                        # Append the user's clarification to the saved trajectory
+                        trajectory = list(resume_trajectory)
+                        trajectory.append({
+                            "role": "user",
+                            "content": f"[USER CLARIFICATION]\n\n{clarification_response}",
+                        })
+                        logger.debug(f"== resuming with clarification ===> {clarification_response}")
+
+                    for event in agent.run(
+                        input_tables=input_tables,
+                        user_question=user_question,
+                        conversation_history=conversation_history,
+                        trajectory=trajectory,
+                        completed_step_count=completed_step_count,
+                    ):
+                        yield json.dumps({
+                            "token": token,
+                            "status": "ok",
+                            "result": event,
+                        }) + '\n'
+
+                        # Stop streaming after terminal events
+                        if event.get("type") in ("completion", "clarify"):
+                            break
+
+            except Exception as e:
+                logger.error(f"Error in data-agent-streaming: {e}")
+                logger.error(traceback.format_exc())
+                yield json.dumps({
+                    "token": token,
+                    "status": "error",
+                    "result": None,
+                    "error_message": sanitize_model_error(str(e)),
+                }) + '\n'
+
+            logger.setLevel(logging.WARNING)
+
+        else:
+            yield json.dumps({
+                "token": "",
+                "status": "error",
+                "result": None,
+                "error_message": "Invalid request format",
+            }) + '\n'
+
+    response = Response(
+        stream_with_context(generate()),
+        mimetype='application/json',
+        headers={
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type',
+        }
+    )
+    return response
+
+
 @agent_bp.route('/refine-data', methods=['GET', 'POST'])
 def refine_data():
 
     if request.is_json:
-        logger.info("# request data: ")
+        logger.info("# refine-data request")
         content = request.get_json()        
         token = content["token"]
 
@@ -524,13 +656,13 @@ def refine_data():
         current_visualization = content.get("current_visualization", None)
         expected_visualization = content.get("expected_visualization", None)
 
-        logger.info("== input tables ===>")
+        logger.debug("== input tables ===>")
         for table in input_tables:
-            logger.info(f"===> Table: {table['name']} (first 5 rows)")
-            logger.info(table['rows'][:5])
+            logger.debug(f"===> Table: {table['name']} (first 5 rows)")
+            logger.debug(table['rows'][:5])
         
-        logger.info("== user spec ===>")
-        logger.info(new_instruction)
+        logger.debug("== user spec ===>")
+        logger.debug(new_instruction)
 
         try:
             identity_id = get_identity_id()
@@ -558,6 +690,10 @@ def refine_data():
                 if repair_attempts > 0:
                     logger.info(f"[refine-data] Finished repair loop after {repair_attempts} attempt(s). Final status: {results[0]['status']}")
 
+            # Sign code in each result for secure refresh later.
+            for r in results:
+                sign_result(r)
+
             response = flask.jsonify({ "token": token, "status": "ok", "results": results})
         except Exception as e:
             logger.error(f"Error in refine-data: {e}")
@@ -572,7 +708,7 @@ def refine_data():
 @agent_bp.route('/code-expl', methods=['GET', 'POST'])
 def request_code_expl():
     if request.is_json:
-        logger.info("# request data: ")
+        logger.info("# code-expl request")
         content = request.get_json()
         client = get_client(content['model'])
 
@@ -742,14 +878,22 @@ def refresh_derived_data():
     """
     Re-run Python transformation code with updated input data to refresh a derived table.
     
+    Security: The code must have been previously signed by the server (via
+    ``code_signing.sign_result``) when it was first generated by an agent.
+    The frontend must send the original ``code_signature`` back alongside
+    the code.  This endpoint verifies the signature before executing,
+    preventing execution of tampered or injected code.
+    
     This endpoint:
-    1. Gets input tables from workspace (extending with temp data if needed)
-    2. Re-runs the transformation code in workspace context
-    3. Updates the derived table in workspace if virtual flag is true
+    1. Verifies the code signature (HMAC-SHA256)
+    2. Gets input tables from workspace (extending with temp data if needed)
+    3. Re-runs the transformation code in workspace context
+    4. Updates the derived table in workspace if virtual flag is true
     
     Request body:
     - input_tables: list of {name: string, rows: list} objects representing the parent tables
     - code: the Python transformation code to execute
+    - code_signature: HMAC-SHA256 signature of the code (required)
     - output_variable: the variable name containing the result DataFrame (required)
     - output_table_name: the workspace table name to update with results (required if virtual=true)
     - virtual: boolean flag indicating whether to save result to workspace
@@ -767,6 +911,7 @@ def refresh_derived_data():
         data = request.get_json()
         input_tables = data.get('input_tables', [])
         code = data.get('code', '')
+        code_signature = data.get('code_signature', '')
         output_variable = data.get('output_variable')
         output_table_name = data.get('output_table_name')
         virtual = data.get('virtual', False)
@@ -781,6 +926,37 @@ def refresh_derived_data():
             return jsonify({
                 "status": "error", 
                 "message": "No transformation code provided"
+            }), 400
+
+        # ---- Security: verify code signature --------------------------------
+        # The code must have been signed by the server when the agent first
+        # generated it.  Reject unsigned or tampered code.
+        if not code_signature:
+            logger.warning("[refresh-derived-data] Rejected request: missing code_signature")
+            return jsonify({
+                "status": "error",
+                "message": "Missing code_signature — code must be signed by the server"
+            }), 403
+
+        if len(code) > MAX_CODE_SIZE:
+            logger.warning(f"[refresh-derived-data] Rejected request: code too large ({len(code)} bytes)")
+            return jsonify({
+                "status": "error",
+                "message": f"Code exceeds maximum allowed size ({MAX_CODE_SIZE} bytes)"
+            }), 400
+
+        if not verify_code(code, code_signature):
+            logger.warning("[refresh-derived-data] Rejected request: invalid code_signature (code may have been tampered with)")
+            return jsonify({
+                "status": "error",
+                "message": "Invalid code_signature — code may have been tampered with"
+            }), 403
+
+        # ---- Input validation -----------------------------------------------
+        if len(input_tables) > 50:
+            return jsonify({
+                "status": "error",
+                "message": "Too many input tables (max 50)"
             }), 400
             
         if not output_variable:

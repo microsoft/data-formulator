@@ -16,7 +16,7 @@ export { makeField, makeEncodingItem, inferType, buildMetadata } from './types';
 export { seededRandom, genDates, genMonths, genYears, genNaturalDates, genCategories, genRandomNames, genMeasure } from './generators';
 
 // Chart-type generators
-export { genScatterTests, genLinearRegressionTests } from './scatter-tests';
+export { genScatterTests, genRegressionTests } from './scatter-tests';
 export { genBarTests, genStackedBarTests, genGroupedBarTests } from './bar-tests';
 export { genHistogramTests, genBoxplotTests, genDensityTests, genStripPlotTests } from './distribution-tests';
 export { genLineTests } from './line-tests';
@@ -36,13 +36,15 @@ export { genChartJsScatterTests, genChartJsLineTests, genChartJsBarTests, genCha
 export { genGoFishScatterTests, genGoFishLineTests, genGoFishBarTests, genGoFishStackedBarTests, genGoFishGroupedBarTests, genGoFishAreaTests, genGoFishStackedAreaTests, genGoFishPieTests, genGoFishScatterPieTests, genGoFishStressTests } from './gofish-tests';
 export { genDiscreteAxisTests } from './discrete-axis-tests';
 export { genDateTests, genDateYearTests, genDateMonthTests, genDateYearMonthTests, genDateDecadeTests, genDateDateTimeTests, genDateHoursTests } from './date-tests';
+export { genSemanticContextTests } from './semantic-tests';
+export { genDebugTests } from './debug-tests';
 
 // ---------------------------------------------------------------------------
 // Master map & gallery sections
 // ---------------------------------------------------------------------------
 import { TestCase, GallerySection } from './types';
 
-import { genScatterTests, genLinearRegressionTests } from './scatter-tests';
+import { genScatterTests, genRegressionTests } from './scatter-tests';
 import { genBarTests, genStackedBarTests, genGroupedBarTests } from './bar-tests';
 import { genHistogramTests, genBoxplotTests, genDensityTests, genStripPlotTests } from './distribution-tests';
 import { genLineTests } from './line-tests';
@@ -59,6 +61,8 @@ import { genGasPressureTests } from './gas-pressure-tests';
 import { genLineAreaStretchTests } from './line-area-stretch-tests';
 import { genDiscreteAxisTests } from './discrete-axis-tests';
 import { genDateYearTests, genDateMonthTests, genDateYearMonthTests, genDateDecadeTests, genDateDateTimeTests, genDateHoursTests } from './date-tests';
+import { genSemanticContextTests } from './semantic-tests';
+import { genDebugTests } from './debug-tests';
 import { genEChartsScatterTests, genEChartsLineTests, genEChartsBarTests, genEChartsStackedBarTests, genEChartsGroupedBarTests, genEChartsStressTests, genEChartsAreaTests, genEChartsPieTests, genEChartsHeatmapTests, genEChartsHistogramTests, genEChartsBoxplotTests, genEChartsRadarTests, genEChartsCandlestickTests, genEChartsStreamgraphTests, genEChartsFacetSmallTests, genEChartsFacetWrapTests, genEChartsFacetClipTests, genEChartsRoseTests, genEChartsGaugeTests, genEChartsFunnelTests, genEChartsTreemapTests, genEChartsSunburstTests, genEChartsSankeyTests, genEChartsUniqueStressTests } from './echarts-tests';
 import { genChartJsScatterTests, genChartJsLineTests, genChartJsBarTests, genChartJsStackedBarTests, genChartJsGroupedBarTests, genChartJsAreaTests, genChartJsPieTests, genChartJsHistogramTests, genChartJsRadarTests, genChartJsStressTests, genChartJsRoseTests } from './chartjs-tests';
 import { genGoFishScatterTests, genGoFishLineTests, genGoFishBarTests, genGoFishStackedBarTests, genGoFishGroupedBarTests, genGoFishAreaTests, genGoFishStackedAreaTests, genGoFishPieTests, genGoFishScatterPieTests, genGoFishStressTests } from './gofish-tests';
@@ -66,7 +70,7 @@ import { genGoFishScatterTests, genGoFishLineTests, genGoFishBarTests, genGoFish
 /** All test generators mapped by chart group */
 export const TEST_GENERATORS: Record<string, () => TestCase[]> = {
     'Scatter Plot': genScatterTests,
-    'Linear Regression': genLinearRegressionTests,
+    'Regression': genRegressionTests,
     'Bar Chart': genBarTests,
     'Stacked Bar Chart': genStackedBarTests,
     'Grouped Bar Chart': genGroupedBarTests,
@@ -109,6 +113,8 @@ export const TEST_GENERATORS: Record<string, () => TestCase[]> = {
     'Discrete Axis Sizing': genDiscreteAxisTests,
     'Gas Pressure (§2)': genGasPressureTests,
     'Line/Area Stretch': genLineAreaStretchTests,
+    'Semantic Context': genSemanticContextTests,
+    'Debug Cases': genDebugTests,
     'ECharts: Scatter': genEChartsScatterTests,
     'ECharts: Line': genEChartsLineTests,
     'ECharts: Bar': genEChartsBarTests,
@@ -161,10 +167,20 @@ export const TEST_GENERATORS: Record<string, () => TestCase[]> = {
 /** Gallery organised into three sections */
 export const GALLERY_SECTIONS: GallerySection[] = [
     {
+        label: 'Semantic Context',
+        description: 'Demonstrates how semantic type annotations improve chart output: formatting, domain constraints, axis reversal, scale type, and interpolation',
+        entries: ['Semantic Context'],
+    },
+    {
+        label: 'Debug Cases',
+        description: 'Regression tests from evaluation failures: log+bin+zeros, temporal+bin, single-point line',
+        entries: ['Debug Cases'],
+    },
+    {
         label: 'VegaLite',
         description: 'Demos for every supported chart type',
         entries: [
-            'Scatter Plot', 'Linear Regression', 'Bar Chart', 'Stacked Bar Chart',
+            'Scatter Plot', 'Regression', 'Bar Chart', 'Stacked Bar Chart',
             'Grouped Bar Chart', 'Histogram', 'Heatmap', 'Line Chart', 'Dotted Line Chart',
             'Boxplot', 'Pie Chart', 'Ranged Dot Plot', 'Area Chart', 'Streamgraph',
             'Lollipop Chart', 'Density Plot', 'Bump Chart', 'Candlestick Chart', 'Waterfall Chart',
@@ -191,7 +207,7 @@ export const GALLERY_SECTIONS: GallerySection[] = [
         description: 'Same inputs through ECharts backend — compare series-based output vs VL encoding-based output',
         entries: [
             // VegaLite 同款（同一批 test case 用 VL+EC 双端渲染）
-            'Scatter Plot', 'Linear Regression', 'Bar Chart', 'Stacked Bar Chart',
+            'Scatter Plot', 'Regression', 'Bar Chart', 'Stacked Bar Chart',
             'Grouped Bar Chart', 'Histogram', 'Heatmap', 'Line Chart', 'Dotted Line Chart',
             'Boxplot', 'Pie Chart', 'Ranged Dot Plot', 'Area Chart', 'Streamgraph',
             'Lollipop Chart', 'Density Plot', 'Bump Chart', 'Candlestick Chart', 'Waterfall Chart',

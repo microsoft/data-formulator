@@ -96,7 +96,7 @@ export const waterfallChartDef: ChartTemplateDef = {
             {
                 mark: {
                     type: "bar",
-                    ...(cornerRadius > 0 ? { cornerRadiusEnd: cornerRadius } : {}),
+                    ...(cornerRadius > 0 ? { cornerRadius: cornerRadius } : {}),
                 },
                 encoding: {
                     y: {

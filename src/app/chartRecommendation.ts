@@ -11,28 +11,37 @@
 
 import { Channel, Chart, DictTable, FieldItem } from '../components/ComponentType';
 import { generateFreshChart } from './dfSlice';
+import { vlGetTemplateDef } from '../lib/agents-chart';
 
 /** Map from agent short names to display chart type names. */
 const AGENT_CHART_TYPE_MAP: Record<string, string> = {
-    line: 'Line Chart',
-    histogram: 'Histogram',
+    scatter: 'Scatter Plot',
+    regression: 'Regression',
     bar: 'Bar Chart',
-    point: 'Scatter Plot',
-    boxplot: 'Boxplot',
+    grouped_bar: 'Grouped Bar Chart',
+    histogram: 'Histogram',
+    line: 'Line Chart',
     area: 'Area Chart',
     heatmap: 'Heatmap',
-    group_bar: 'Grouped Bar Chart',
+    boxplot: 'Boxplot',
     pie: 'Pie Chart',
+    lollipop: 'Lollipop Chart',
+    waterfall: 'Waterfall Chart',
+    candlestick: 'Candlestick Chart',
+    world_map: 'World Map',
+    us_map: 'US Map',
+    // Legacy aliases (backward compat with older agent responses)
+    point: 'Scatter Plot',
+    group_bar: 'Grouped Bar Chart',
     worldmap: 'World Map',
     usmap: 'US Map',
-    candlestick: 'Candlestick Chart',
 };
 
 /**
  * Resolve an AI agent's chart recommendation into a concrete Chart object.
- * The agent returns a `refinedGoal` with `chart.chart_type` (short name)
- * and `chart.encodings` (field->channel map); this function maps those to
- * the internal Chart representation.
+ * The agent returns a `refinedGoal` with `chart.chart_type` which may be
+ * a short name (e.g. "scatter"), a full template name (e.g. "Radar Chart"),
+ * or a user-chosen chart type passed through from the UI.
  */
 export const resolveRecommendedChart = (refinedGoal: any, allFields: FieldItem[], table: DictTable): Chart => {
     const chartObj = refinedGoal['chart'] || {};
@@ -48,7 +57,10 @@ export const resolveRecommendedChart = (refinedGoal: any, allFields: FieldItem[]
         return newChart;
     }
 
-    const chartType = AGENT_CHART_TYPE_MAP[rawChartType] || 'Scatter Plot';
+    // Resolve chart type: try short-name map first, then check if it's already a valid template name
+    const chartType = AGENT_CHART_TYPE_MAP[rawChartType]
+        || (vlGetTemplateDef(rawChartType) ? rawChartType : undefined)
+        || 'Scatter Plot';
     let newChart = generateFreshChart(table.id, chartType) as Chart;
     newChart = resolveChartFields(newChart, allFields, chartEncodings, table);
 

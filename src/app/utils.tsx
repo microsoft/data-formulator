@@ -32,6 +32,7 @@ export function getUrls() {
         DERIVE_DATA: `/api/agent/derive-data`,
         REFINE_DATA: `/api/agent/refine-data`,
         EXPLORE_DATA_STREAMING: `/api/agent/explore-data-streaming`,
+        DATA_AGENT_STREAMING: `/api/agent/data-agent-streaming`,
 
         // these functions involves database
         UPLOAD_DB_FILE: `/api/tables/upload-db-file`,
@@ -386,7 +387,7 @@ export const assembleVegaChart = (
     encodingMap: { [key in Channel]: EncodingItem; }, 
     conceptShelfItems: FieldItem[], 
     workingTable: any[],
-    tableMetadata: {[key: string]: {type: Type, semanticType: string, levels: any[]}},
+    tableMetadata: {[key: string]: {type: Type, semanticType: string, levels: any[], intrinsicDomain?: [number, number], unit?: string}},
     baseChartWidth: number = 100,
     baseChartHeight: number = 80,
     addTooltips: boolean = false,
@@ -394,6 +395,7 @@ export const assembleVegaChart = (
     scaleFactor: number = 1,
     maxStretchFactor?: number,
     assembleOptions?: AssembleOptions,
+    semanticAnnotationOverrides?: Record<string, any>,
 ) => {
 
     // Convert app-level EncodingMap (fieldID-based) to library-level encodings (field-name-based)
@@ -411,10 +413,26 @@ export const assembleVegaChart = (
     }
 
     // Extract semantic types from table metadata
-    const semanticTypes: Record<string, string> = {};
+    // Build SemanticAnnotation objects when enriched metadata (intrinsicDomain, unit) is available
+    const semanticTypes: Record<string, string | any> = {};
     for (const [fieldName, meta] of Object.entries(tableMetadata)) {
         if (meta.semanticType) {
-            semanticTypes[fieldName] = meta.semanticType;
+            if (meta.intrinsicDomain || meta.unit) {
+                // Build enriched annotation object
+                const annotation: any = { semanticType: meta.semanticType };
+                if (meta.intrinsicDomain) annotation.intrinsicDomain = meta.intrinsicDomain;
+                if (meta.unit) annotation.unit = meta.unit;
+                if (meta.levels && meta.levels.length > 0) annotation.sortOrder = meta.levels;
+                semanticTypes[fieldName] = annotation;
+            } else {
+                semanticTypes[fieldName] = meta.semanticType;
+            }
+        }
+    }
+    // Merge enriched annotations (e.g., intrinsicDomain, unit) when provided
+    if (semanticAnnotationOverrides) {
+        for (const [fieldName, annotation] of Object.entries(semanticAnnotationOverrides)) {
+            semanticTypes[fieldName] = annotation;
         }
     }
 

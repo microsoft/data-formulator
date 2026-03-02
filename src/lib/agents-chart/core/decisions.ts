@@ -23,10 +23,10 @@
  */
 
 import {
-    getVisCategory,
     inferVisCategory,
     type VisCategory,
 } from './semantic-types';
+import { getRegistryEntry, isRegistered } from './type-registry';
 
 // ---------------------------------------------------------------------------
 // Encoding Type Resolution
@@ -47,15 +47,232 @@ export interface EncodingTypeDecision {
     cardinalityGuard: boolean;
 }
 
+// ---------------------------------------------------------------------------
+// Helpers for encoding type resolution
+// ---------------------------------------------------------------------------
+
+/**
+ * Map a VisCategory to the corresponding VL encoding type string.
+ * Geographic maps to quantitative since VL uses quantitative for coordinates.
+ */
+function visCategoryToVLType(vc: VisCategory): 'quantitative' | 'ordinal' | 'nominal' | 'temporal' {
+    switch (vc) {
+        case 'quantitative': return 'quantitative';
+        case 'ordinal':      return 'ordinal';
+        case 'temporal':     return 'temporal';
+        case 'geographic':   return 'quantitative';
+        case 'nominal':
+        default:             return 'nominal';
+    }
+}
+
+/**
+ * Validate that field values actually parse as dates.
+ *
+ * @param fromRegistry  If true, uses a looser threshold (≥30%) since the
+ *                      semantic type explicitly identified the field as temporal.
+ *                      If false (data-inferred), requires ≥50%.
+ */
+function validateTemporalParsing(
+    data: any[],
+    fieldName: string,
+    fromRegistry: boolean,
+): boolean {
+    const sampleValues = data.map(r => r[fieldName]).slice(0, 15).filter((v: any) => v != null);
+    if (sampleValues.length === 0) return false;
+
+    const looksTemporalValue = (val: any): boolean => {
+        if (val instanceof Date) return true;
+        if (typeof val === 'number') {
+            // Year-like integers (1500–2200)
+            if (val >= 1500 && val <= 2200 && val % 1 === 0) return true;
+            // Unix-ms timestamps: 86_400_000 (Jan 2, 1970) to ~year 2103
+            if (val > 86400000 && val < 4200000000000) return true;
+            return false;
+        }
+        if (typeof val === 'string') {
+            const trimmed = val.trim();
+            if (!trimmed) return false;
+            if (/^\d{4}$/.test(trimmed)) return true;
+            return !Number.isNaN(Date.parse(trimmed));
+        }
+        return false;
+    };
+
+    const passingCount = sampleValues.filter(looksTemporalValue).length;
+    const minFraction = fromRegistry ? 0.3 : 0.5;
+    return passingCount / sampleValues.length >= minFraction;
+}
+
+/**
+ * Apply temporal channel-compatibility adjustments, shared by both
+ * registry-driven and data-inferred temporal paths.
+ */
+function resolveTemporalEncoding(
+    visCategory: VisCategory,
+    channel: string,
+    data: any[],
+    fieldName: string,
+    fromRegistry: boolean,
+): EncodingTypeDecision {
+    // Temporal on facet/size channels → ordinal (VL limitation)
+    if (['size', 'column', 'row'].includes(channel)) {
+        return { vlType: 'ordinal', visCategory, channelOverride: true, cardinalityGuard: false };
+    }
+    // Temporal on color with low cardinality → ordinal for distinct colors
+    if (channel === 'color') {
+        const uniqueCount = new Set(data.map(r => r[fieldName])).size;
+        if (uniqueCount <= 12) {
+            return { vlType: 'ordinal', visCategory, channelOverride: true, cardinalityGuard: false };
+        }
+    }
+    // Validate temporal parsing
+    if (!validateTemporalParsing(data, fieldName, fromRegistry)) {
+        return { vlType: 'ordinal', visCategory, channelOverride: false, cardinalityGuard: false };
+    }
+    return { vlType: 'temporal', visCategory, channelOverride: false, cardinalityGuard: false };
+}
+
+/**
+ * Apply channel-context guards to an ordinal encoding.
+ *
+ * Even when the registry says a field is ordinal, channel context may
+ * require promoting to quantitative:
+ *   - High cardinality on color/group → unreadable legend
+ *   - High cardinality on x/y        → bars/lollipops need proportional
+ *     spacing and baseline anchoring (y2/x2)
+ *   - Fractional values + high cardinality → mis-classified continuous measure
+ *
+ * @param fromRegistry  Whether the ordinal type came from the registry
+ *        (true) or was data-inferred (false). Data-inferred additionally
+ *        checks for fractional values (Guard 1).
+ */
+function applyOrdinalGuards(
+    visCategory: VisCategory,
+    channel: string,
+    data: any[],
+    fieldName: string,
+    fieldValues: any[],
+    fromRegistry: boolean,
+): EncodingTypeDecision {
+    const numericVals = fieldValues.filter(v => v != null && !isNaN(+v)).map(Number);
+    if (numericVals.length > 0) {
+        const uniqueCount = new Set(numericVals).size;
+        const hasFractions = numericVals.some(v => v % 1 !== 0);
+
+        // Guard 1 (data-inferred only): fractional + high-cardinality →
+        // mis-classified continuous measure. Registry types are explicit,
+        // so this guard only applies when the type was inferred from data.
+        if (!fromRegistry && hasFractions && uniqueCount > 20) {
+            return { vlType: 'quantitative', visCategory, channelOverride: false, cardinalityGuard: true };
+        }
+
+        // Guard 2: integer ordinal with high cardinality on color/group →
+        // a discrete legend with 12+ entries is unreadable; promote to
+        // quantitative so VL renders a continuous gradient instead.
+        if (!hasFractions && uniqueCount > 12 && ['color', 'group'].includes(channel)) {
+            return { vlType: 'quantitative', visCategory, channelOverride: true, cardinalityGuard: true };
+        }
+
+        // Guard 3: integer ordinal with high cardinality on position
+        // axes (x, y) → charts like bar/lollipop need a quantitative
+        // axis for proportional length; treating 12+ unique integers
+        // as discrete categories produces an unreadable axis and
+        // prevents baseline anchoring (y2/x2).
+        if (!hasFractions && uniqueCount > 12 && ['x', 'y'].includes(channel)) {
+            return { vlType: 'quantitative', visCategory, channelOverride: true, cardinalityGuard: true };
+        }
+    }
+    return { vlType: 'ordinal', visCategory, channelOverride: false, cardinalityGuard: false };
+}
+
+/**
+ * Disambiguate when the registry lists multiple visEncodings for a type.
+ *
+ * Uses channel context and data characteristics to select the most
+ * appropriate encoding from the candidates. Each combination of
+ * candidate encodings has dedicated logic:
+ *
+ *   temporal + ordinal  (Year, YearMonth, Decade, …)
+ *   quantitative + ordinal  (Score, Rating)
+ *   quantitative + geographic  (Latitude, Longitude)
+ *   ordinal + nominal  (Direction)
+ */
+function disambiguateMultiEncoding(
+    candidates: VisCategory[],
+    channel: string,
+    data: any[],
+    fieldName: string,
+    fieldValues: any[],
+): EncodingTypeDecision {
+    const has = (vc: VisCategory) => candidates.includes(vc);
+
+    // ── Temporal + Ordinal (Year, YearMonth, Decade, etc.) ────────
+    // Time-unit granules. Temporal for continuous time axes (x/y);
+    // ordinal for grouping channels (color, facet, size).
+    if (has('temporal') && has('ordinal')) {
+        return resolveTemporalEncoding('temporal', channel, data, fieldName, true);
+    }
+
+    // ── Quantitative + Ordinal (Score, Rating) ────────────────────
+    // Bounded discrete numerics. Use ordinal for grouping channels
+    // with low cardinality (distinct colors/symbols); quantitative
+    // for position axes (proportional spacing, zero-baseline).
+    if (has('quantitative') && has('ordinal')) {
+        if (['color', 'group'].includes(channel)) {
+            const uniqueCount = new Set(data.map(r => r[fieldName])).size;
+            if (uniqueCount <= 12) {
+                return { vlType: 'ordinal', visCategory: 'ordinal', channelOverride: false, cardinalityGuard: false };
+            }
+            // High-cardinality Score/Rating on color → quantitative gradient
+            return { vlType: 'quantitative', visCategory: 'quantitative', channelOverride: false, cardinalityGuard: true };
+        }
+        if (['column', 'row'].includes(channel)) {
+            return { vlType: 'ordinal', visCategory: 'ordinal', channelOverride: false, cardinalityGuard: false };
+        }
+        // x, y, size → quantitative (proportional axis)
+        return { vlType: 'quantitative', visCategory: 'quantitative', channelOverride: false, cardinalityGuard: false };
+    }
+
+    // ── Quantitative + Geographic (Latitude, Longitude) ───────────
+    // Geographic is for map projections; standard encodings use quantitative.
+    if (has('quantitative') && has('geographic')) {
+        return { vlType: 'quantitative', visCategory: 'quantitative', channelOverride: false, cardinalityGuard: false };
+    }
+
+    // ── Ordinal + Nominal (Direction) ─────────────────────────────
+    // Inherently ordered, but nominal for grouping channels to get
+    // distinct (unordered) colors rather than a sequential scale.
+    if (has('ordinal') && has('nominal')) {
+        if (['color', 'group'].includes(channel)) {
+            return { vlType: 'nominal', visCategory: 'nominal', channelOverride: false, cardinalityGuard: false };
+        }
+        return { vlType: 'ordinal', visCategory: 'ordinal', channelOverride: false, cardinalityGuard: false };
+    }
+
+    // ── Fallback: first candidate ─────────────────────────────────
+    const fallback = candidates[0];
+    return { vlType: visCategoryToVLType(fallback), visCategory: fallback, channelOverride: false, cardinalityGuard: false };
+}
+
+// ---------------------------------------------------------------------------
+// Main API
+// ---------------------------------------------------------------------------
+
 /**
  * Resolve the VL encoding type for a field.
  *
- * Unified pipeline:
- *   1. Determine a VisCategory — from semantic type if available, otherwise
- *      inferred from raw data values.
- *   2. Map VisCategory → VL encoding type, applying channel-specific rules
- *      (e.g. temporal → ordinal for facets).
- *   3. Guard against mis-classified ordinal types with dense float data.
+ * Two-stage pipeline:
+ *
+ * **Stage 1 — Registry-driven** (when semanticType is registered):
+ *   - Single visEncoding  → use it directly (with channel adjustments)
+ *   - Multiple visEncodings → `disambiguateMultiEncoding()` selects best
+ *     option using channel context + data characteristics
+ *
+ * **Stage 2 — Data-inferred fallback** (no registered semantic type):
+ *   - `inferVisCategory()` inspects raw values → VisCategory
+ *   - Heuristic guards catch common mis-classifications (e.g., dense
+ *     fractional data inferred as ordinal)
  *
  * This is a pure decision — it does NOT mutate any spec.
  *
@@ -72,70 +289,80 @@ export function resolveEncodingType(
     data: any[],
     fieldName: string,
 ): EncodingTypeDecision {
-    // Step 1: Determine vis category
-    const mappedCategory = semanticType ? getVisCategory(semanticType) : null;
-    const visCategory: VisCategory = mappedCategory ?? inferVisCategory(fieldValues);
+    // ═══════════════════════════════════════════════════════════════════
+    // Stage 1: Registry-driven resolution
+    // ═══════════════════════════════════════════════════════════════════
+    // The registry's visEncodings array is the source of truth.
+    //   - Single encoding  → resolved directly
+    //   - Multiple encodings → disambiguated by channel + data
+    if (semanticType && isRegistered(semanticType)) {
+        const entry = getRegistryEntry(semanticType);
+        const candidates = entry.visEncodings;
 
+        if (candidates.length > 1) {
+            // Multiple encodings listed — disambiguate semantically
+            return disambiguateMultiEncoding(candidates, channel, data, fieldName, fieldValues);
+        }
+
+        // Single encoding — use it directly with channel adjustments
+        const baseType = candidates[0];
+
+        // Guard: if the registry says quantitative but the actual values
+        // are strings (e.g. semantic "Quantity" on a binned field like
+        // "91-95"), fall back to data-inferred type.  Numeric strings
+        // that parse as numbers (e.g. "42") still count as numeric.
+        if (baseType === 'quantitative') {
+            const nonNull = fieldValues.filter(v => v != null);
+            const allNumeric = nonNull.length > 0 &&
+                nonNull.every(v => typeof v === 'number' || (typeof v === 'string' && !isNaN(+v) && v.trim() !== ''));
+            if (!allNumeric) {
+                // Values aren't actually numeric — infer from data instead
+                const inferred = inferVisCategory(fieldValues);
+                return {
+                    vlType: visCategoryToVLType(inferred),
+                    visCategory: inferred,
+                    channelOverride: false,
+                    cardinalityGuard: false,
+                };
+            }
+        }
+
+        if (baseType === 'temporal') {
+            return resolveTemporalEncoding(baseType, channel, data, fieldName, true);
+        }
+        if (baseType === 'ordinal') {
+            return applyOrdinalGuards(baseType, channel, data, fieldName, fieldValues, true);
+        }
+        return {
+            vlType: visCategoryToVLType(baseType),
+            visCategory: baseType,
+            channelOverride: false,
+            cardinalityGuard: false,
+        };
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Stage 2: Data-inferred fallback
+    // ═══════════════════════════════════════════════════════════════════
+    // No registered semantic type — infer from raw data values, then
+    // apply heuristic guards for common data-inference mis-classifications.
+    const visCategory: VisCategory = inferVisCategory(fieldValues);
     let channelOverride = false;
     let cardinalityGuard = false;
 
-    // Step 2: Map to VL type with channel-specific overrides
     switch (visCategory) {
-        case 'temporal': {
-            if (['size', 'column', 'row'].includes(channel)) {
-                channelOverride = true;
-                return { vlType: 'ordinal', visCategory, channelOverride, cardinalityGuard };
-            }
-            if (channel === 'color') {
-                const uniqueColorValues = new Set(data.map(r => r[fieldName])).size;
-                if (uniqueColorValues <= 12) {
-                    channelOverride = true;
-                    return { vlType: 'ordinal', visCategory, channelOverride, cardinalityGuard };
-                }
-            }
-            // Validate temporal parsing
-            {
-                const sampleValues = data.map(r => r[fieldName]).slice(0, 15).filter((v: any) => v != null);
-                const isValidTemporal = sampleValues.length > 0 && sampleValues.some((val: any) => {
-                    if (val instanceof Date) return true;
-                    if (typeof val === 'number') {
-                        if (val >= 1000 && val <= 3000) return true;
-                        if (val > 86400000 && val < 4200000000000) return true;
-                        return false;
-                    }
-                    if (typeof val === 'string') {
-                        const trimmed = val.trim();
-                        if (!trimmed) return false;
-                        if (/^\d{4}$/.test(trimmed)) return true;
-                        return !Number.isNaN(Date.parse(trimmed));
-                    }
-                    return false;
-                });
+        case 'temporal':
+            return resolveTemporalEncoding(visCategory, channel, data, fieldName, false);
 
-                if (!isValidTemporal) {
-                    return { vlType: 'ordinal', visCategory, channelOverride: false, cardinalityGuard: false };
-                }
-                return { vlType: 'temporal', visCategory, channelOverride: false, cardinalityGuard: false };
-            }
-        }
-        case 'ordinal': {
-            // Guard: if numeric values are mostly fractional + high-cardinality,
-            // treat as quantitative (mis-classified continuous measure)
-            const numericVals = fieldValues.filter(v => v != null && !isNaN(+v)).map(Number);
-            if (numericVals.length > 0) {
-                const uniqueCount = new Set(numericVals).size;
-                const hasFractions = numericVals.some(v => v % 1 !== 0);
-                if (hasFractions && uniqueCount > 20) {
-                    cardinalityGuard = true;
-                    return { vlType: 'quantitative', visCategory, channelOverride, cardinalityGuard };
-                }
-            }
-            return { vlType: 'ordinal', visCategory, channelOverride, cardinalityGuard };
-        }
+        case 'ordinal':
+            return applyOrdinalGuards(visCategory, channel, data, fieldName, fieldValues, false);
+
         case 'quantitative':
             return { vlType: 'quantitative', visCategory, channelOverride, cardinalityGuard };
+
         case 'geographic':
             return { vlType: 'quantitative', visCategory, channelOverride, cardinalityGuard };
+
         case 'nominal':
         default:
             return { vlType: 'nominal', visCategory, channelOverride, cardinalityGuard };
@@ -422,7 +649,9 @@ export function computeFacetLayout(
     baseHeight: number,
     params: FacetLayoutParams,
 ): FacetLayoutDecision {
-    const minContinuousSize = Math.max(10, 6);
+    // Minimum subplot dimension — use the caller-supplied parameter
+    // (default 60px) so subplots remain readable.
+    const minContinuousSize = params.minSubplotSize;
 
     let subplotWidth: number;
     if (facetCols > 1) {

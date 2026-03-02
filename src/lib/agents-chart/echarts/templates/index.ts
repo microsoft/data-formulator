@@ -9,7 +9,7 @@
  */
 
 import { ChartTemplateDef } from '../../core/types';
-import { ecScatterPlotDef, ecLinearRegressionDef } from './scatter';
+import { ecScatterPlotDef, ecRegressionDef } from './scatter';
 import { ecBarChartDef, ecStackedBarChartDef, ecGroupedBarChartDef } from './bar';
 import { ecLineChartDef, ecDottedLineChartDef, ecBumpChartDef } from './line';
 import { ecAreaChartDef } from './area';
@@ -38,7 +38,7 @@ import { ecDensityPlotDef } from './density';
  * Mirrors vegalite/templates/index.ts so VegaLite test cases can run through ECharts.
  */
 export const ecTemplateDefs: { [key: string]: ChartTemplateDef[] } = {
-    'Scatter & Point': [ecScatterPlotDef, ecLinearRegressionDef, ecRangedDotPlotDef, ecBoxplotDef, ecStripPlotDef],
+    'Scatter & Point': [ecScatterPlotDef, ecRegressionDef, ecRangedDotPlotDef, ecBoxplotDef, ecStripPlotDef],
     'Bar':             [ecBarChartDef, ecGroupedBarChartDef, ecStackedBarChartDef, ecHistogramDef, ecLollipopChartDef, ecPyramidChartDef, ecHeatmapDef],
     'Line & Area':     [ecLineChartDef, ecDottedLineChartDef, ecBumpChartDef, ecAreaChartDef, ecStreamgraphDef],
     'Part-to-Whole':   [ecPieChartDef, ecFunnelChartDef, ecTreemapDef, ecSunburstDef],

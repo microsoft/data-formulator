@@ -26,7 +26,7 @@ export const barChartDef: ChartTemplateDef = {
         defaultBuildEncodings(spec, ctx.resolvedEncodings);
         const config = ctx.chartProperties;
         if (config && config.cornerRadius > 0) {
-            spec.mark = setMarkProp(spec.mark, 'cornerRadiusEnd', config.cornerRadius);
+            spec.mark = setMarkProp(spec.mark, 'cornerRadius', config.cornerRadius);
         }
         adjustBarMarks(spec, ctx);
     },

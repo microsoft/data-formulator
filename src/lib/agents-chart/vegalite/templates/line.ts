@@ -98,7 +98,7 @@ function buildContinuousColorLineLayers(
 export const lineChartDef: ChartTemplateDef = {
     chart: "Line Chart",
     template: { mark: "line", encoding: {} },
-    channels: ["x", "y", "color", "detail", "opacity", "column", "row"],
+    channels: ["x", "y", "color", "strokeDash", "detail", "opacity", "column", "row"],
     markCognitiveChannel: 'position',
     declareLayoutMode: () => ({
         paramOverrides: { continuousMarkCrossSection: { x: 100, y: 20, seriesCountAxis: 'auto' } },

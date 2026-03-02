@@ -3,6 +3,7 @@
 
 import type { ZeroDecision, ColorSchemeRecommendation } from './semantic-types';
 import type { LabelSizingDecision } from './decisions';
+import type { SemanticAnnotation, FormatSpec, DomainConstraint, TickConstraint } from './field-semantics';
 
 /**
  * Core types for the chart engine library.
@@ -18,14 +19,14 @@ import type { LabelSizingDecision } from './decisions';
 // ---------------------------------------------------------------------------
 
 export const channels = [
-    "x", "y", "x2", "y2", "id", "color", "opacity", "size", "shape", "column",
+    "x", "y", "x2", "y2", "id", "color", "opacity", "size", "shape", "strokeDash", "column",
     "row", "latitude", "longitude", "radius", "detail", "group",
     "open", "high", "low", "close", "angle",
 ] as const;
 
 export const channelGroups: Record<string, string[]> = {
     "": ["x", "x2", "y", "y2", "latitude", "longitude", "id", "radius", "detail"],
-    "legends": ["color", "group", "size", "shape", "text", "opacity"],
+    "legends": ["color", "group", "size", "shape", "text", "opacity", "strokeDash"],
     "price": ["open", "high", "low", "close"],
     "facets": ["column", "row"],
 };
@@ -51,55 +52,78 @@ export interface ChartEncoding {
  * Everything Phase 0 decides for a single channel.
  *
  * Combines the original ChartEncoding (user intent) with resolved
- * decisions (type, zero-baseline, color scheme, temporal format).
- * All downstream phases read this — no separate maps needed.
+ * decisions derived from semantic type, data values, and channel context.
+ * All downstream phases (layout, assembly, instantiation) read this —
+ * no nested FieldSemantics reference needed.
  */
 export interface ChannelSemantics {
-    // --- From ChartEncoding (user / AI input) ---
+    // --- Identity ---
     /** Field name bound to this channel */
     field: string;
-    /** User-specified aggregate (e.g., 'sum', 'mean', 'count') */
-    aggregate?: string;
-    /** Sort order for discrete axes ('ascending', 'descending') */
-    sortOrder?: string;
-    /** Field to sort by (if different from the encoded field) */
-    sortBy?: string;
+    /** The semantic annotation for this field */
+    semanticAnnotation: SemanticAnnotation;
 
-    // --- Resolved by Phase 0 ---
+    // --- Encoding type ---
     /**
      * Final encoding type for this channel.
      * Resolved from semantic type + data characteristics + channel rules.
      */
     type: 'quantitative' | 'nominal' | 'ordinal' | 'temporal';
-    /** Human-readable reason for the type decision (for debugging) */
-    typeReason?: string;
 
-    // --- Channel-specific semantic decisions ---
+    // --- Formatting ---
+    /** Axis/legend number format */
+    format?: FormatSpec;
+    /** Tooltip format (typically higher precision) */
+    tooltipFormat?: FormatSpec;
+    /**
+     * Temporal format string (temporal fields on any channel).
+     * E.g., "%Y", "%b %d", "%H:%M".
+     */
+    temporalFormat?: string;
+
+    // --- Aggregation ---
+    /** Default aggregate function when used as a measure */
+    aggregationDefault?: 'sum' | 'average';
+
+    // --- Scale ---
     /**
      * Zero-baseline decision (positional quantitative channels only).
      * Present only on 'x' and 'y' channels with type 'quantitative'.
      */
     zero?: ZeroDecision;
+    /** Recommended scale type */
+    scaleType?: 'linear' | 'log' | 'sqrt' | 'symlog';
+    /** Whether to apply "nice" rounding to domain endpoints */
+    nice?: boolean;
+    /** Domain bounds constraint */
+    domainConstraint?: DomainConstraint;
+    /** Tick mark constraints */
+    tickConstraint?: TickConstraint;
 
-    /**
-     * Color scheme recommendation (color channel only).
-     */
-    colorScheme?: ColorSchemeRecommendation;
-
-    /**
-     * Temporal format string (temporal fields on any channel).
-     * E.g., "%Y", "%b %d", "%H:%M".
-     * Present only when type is 'temporal' or field is ordinal-temporal.
-     */
-    temporalFormat?: string;
-
+    // --- Ordering ---
     /**
      * Canonical ordinal sort order for this field's values.
-     * Present when the field's values match a known ordinal sequence
-     * (e.g., month names, day-of-week, quarters).
-     * Contains the unique data values sorted in their natural order.
+     * E.g., month names, day-of-week, quarters.
      */
     ordinalSortOrder?: string[];
+    /** Whether the canonical order is cyclic (wraps around) */
+    cyclic?: boolean;
+    /** Whether the axis should be reversed (e.g., Rank: 1 at top) */
+    reversed?: boolean;
+    /** Default sort direction */
+    sortDirection?: 'ascending' | 'descending';
+
+    // --- Color ---
+    /** Color scheme recommendation (color channel only) */
+    colorScheme?: ColorSchemeRecommendation;
+
+    // --- Histogram ---
+    /** Whether this field benefits from binning */
+    binningSuggested?: boolean;
+
+    // --- Stacking ---
+    /** Whether values can be stacked, and how */
+    stackable?: 'sum' | 'normalize' | false;
 }
 
 /** Phase 0 output: one entry per channel. */
@@ -379,8 +403,8 @@ export interface InstantiateContext {
     /** Target canvas dimensions */
     canvasSize: { width: number; height: number };
 
-    /** Field name → semantic type string */
-    semanticTypes: Record<string, string>;
+    /** Field name → semantic type (string or enriched annotation) */
+    semanticTypes: Record<string, string | SemanticAnnotation>;
 
     /** Chart type name */
     chartType: string;
@@ -547,7 +571,7 @@ export interface ChartAssemblyInput {
      * Fields not listed here fall back to `inferVisCategory()` which inspects
      * raw data values.
      */
-    semantic_types?: Record<string, string>;
+    semantic_types?: Record<string, string | SemanticAnnotation>;
 
     /**
      * Chart specification — describes *what* to draw.

@@ -42,10 +42,29 @@ def _warm_worker_loop(conn):
     def block_mischief(event, arg):
         if type(event) != str:
             raise RuntimeError("bad audit event")
+        # Block file writes (only allow reading)
         if event == "open" and type(arg[1]) == str and arg[1] not in ("r", "rb"):
             raise IOError("file write forbidden")
-        if event.split(".")[0] in ["subprocess", "shutil", "winreg"]:
+        # Block dangerous filesystem / process operations
+        _blocked_prefixes = ("subprocess", "shutil", "winreg", "webbrowser")
+        if event.split(".")[0] in _blocked_prefixes:
             raise IOError("potentially dangerous, filesystem-accessing functions forbidden")
+        # Block network access — code should only transform data, not
+        # make outbound connections (prevents data exfiltration).
+        if event in ("socket.connect", "socket.bind", "socket.sendto",
+                      "socket.sendmsg", "socket.getaddrinfo"):
+            raise IOError("network access forbidden in sandbox")
+        # Block ctypes / dynamic library loading (could bypass audit hooks)
+        if event in ("ctypes.dlopen", "ctypes.dlsym", "ctypes.set_errno"):
+            raise IOError("ctypes access forbidden in sandbox")
+        # Block import of dangerous modules
+        if event == "import" and type(arg[0]) == str:
+            _blocked_modules = ("subprocess", "shutil", "socket", "http",
+                                "urllib", "requests", "ctypes", "multiprocessing",
+                                "signal", "resource")
+            mod_name = arg[0].split(".")[0]
+            if mod_name in _blocked_modules:
+                raise ImportError(f"import of '{mod_name}' is forbidden in sandbox")
 
     addaudithook(block_mischief)
     del block_mischief
@@ -72,7 +91,12 @@ def _warm_worker_loop(conn):
 
         namespace = {**allowed_objects}
         try:
-            exec(code, namespace)
+            # Security: code is HMAC-SHA256 signed by the server when first generated
+            # by AI agents (see code_signing.py). The /refresh-derived-data endpoint
+            # verifies the signature before forwarding code here, ensuring only
+            # server-originated code is executed. Additional audit hooks above block
+            # file writes, network access, subprocess spawning, and dangerous imports.
+            exec(code, namespace)  # nosec  # codeql[py/code-injection]
         except Exception as err:
             conn.send({"status": "error", "error_message": f"Error: {type(err).__name__} - {err}"})
             continue
@@ -224,13 +248,28 @@ class LocalSandbox(Sandbox):
     # Warm subprocess execution (persistent worker pool)
     # ------------------------------------------------------------------
 
+    # Maximum wall-clock time for a single code execution (seconds).
+    EXECUTION_TIMEOUT = int(os.environ.get("DF_SANDBOX_TIMEOUT", "120"))
+
     @staticmethod
     def _run_in_warm_subprocess(code, allowed_objects):
         """Send code to a warm worker from the pool, return the result."""
         proc, conn = _worker_pool.acquire()
         try:
             conn.send((code, {**allowed_objects}))
-            result = conn.recv()
+            # Enforce a wall-clock timeout to prevent runaway code
+            if conn.poll(timeout=LocalSandbox.EXECUTION_TIMEOUT):
+                result = conn.recv()
+            else:
+                # Timed out — kill and discard the worker
+                _worker_pool.discard(proc, conn)
+                return {
+                    "status": "error",
+                    "error_message": (
+                        f"Code execution timed out after "
+                        f"{LocalSandbox.EXECUTION_TIMEOUT}s"
+                    ),
+                }
             _worker_pool.release(proc, conn)
             return result
         except Exception as e:
