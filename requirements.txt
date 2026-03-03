@@ -97,7 +97,7 @@ comm==0.2.3
     #   ipywidgets
 connectorx==0.4.5
     # via data-formulator
-cryptography==46.0.4
+cryptography==46.0.5
     # via
     #   azure-identity
     #   azure-storage-blob
