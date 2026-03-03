@@ -34,13 +34,13 @@ https://github.com/user-attachments/assets/8ca57b68-4d7a-42cb-bcce-43f8b1681ce2 
 ## News 🔥🔥🔥
 
 [03-02-2026] **Data Formulator 0.7 (alpha)** — More charts, new experience, enterprise-ready
--  📊 **30 visualization types**: Expanded from ~15 to 30 chart types with a new semantic chart engine — new types include area, streamgraph, bump, candlestick, density, lollipop, pie, rose, waterfall, strip plot, radar, US map, world map, and more. Semantic field analysis automatically recommends the right chart for the data.
--  💬 **New experience — hybrid chat + data thread**: Chat-based interaction is woven directly into the exploration thread. Richer thread cards show transformation lineage, chart previews, and agent reasoning in a unified timeline.
--  🤖 **Redesigned agent architecture**: A unified `DataAgent` replaces four separate agents. New recommendation agent suggests charts and exploration directions; new insight agent generates natural-language takeaways from chart results.
--  🏗️ **Workspace / Data Lake architecture**: A persistent, identity-based workspace layer manages user data with a `workspace.yaml` metadata catalog. Supports local and Azure Blob backends for enterprise deployments.
--  🔒 **Security hardening**: Code signing for generated code, sandboxed execution (local & Docker), authentication layer, and Flask rate limiting.
--  📦 **UV-first build**: Fully reproducible builds with `uv.lock`; `uv sync` + `uv run data_formulator` is now the recommended development workflow.
--  📝 A detailed writeup on the new architecture and design is coming soon — stay tuned!
+-  📊 **30 chart types** with a new semantic chart engine (area, streamgraph, candlestick, pie, radar, maps, and more).
+-  💬 **Hybrid chat + data thread** — chat woven into the exploration timeline with lineage, previews, and reasoning.
+-  🤖 **Unified `DataAgent`** replacing four separate agents, plus new recommendation and insight agents.
+-  🏗️ **Workspace / Data Lake** — persistent, identity-based data management with local and Azure Blob backends.
+-  🔒 **Security hardening** — code signing, sandboxed execution, authentication, and rate limiting.
+-  📦 **UV-first build** — reproducible builds via `uv.lock`; `uv sync` + `uv run data_formulator`.
+-  📝 Detailed writeup on the new architecture coming soon — stay tuned!
 
 ## Previous Updates
 
