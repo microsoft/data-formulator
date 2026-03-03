@@ -12,6 +12,7 @@ import traceback
 from flask import request, jsonify, Blueprint, Response
 import pandas as pd
 from pathlib import Path
+from werkzeug.utils import secure_filename
 
 from data_formulator.data_loader import DATA_LOADERS
 from data_formulator.auth import get_identity_id
@@ -418,10 +419,13 @@ def create_table():
             file = request.files['file']
             if not file.filename or not is_supported_file(file.filename):
                 return jsonify({"status": "error", "message": "Unsupported file format"}), 400
+            safe_name = secure_filename(file.filename)
+            if not safe_name:
+                return jsonify({"status": "error", "message": "Invalid filename"}), 400
             meta = save_uploaded_file(
                 workspace,
                 file.stream,
-                file.filename,
+                safe_name,
                 table_name=sanitized_table_name,
                 overwrite=False,
             )

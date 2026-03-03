@@ -340,9 +340,12 @@ export function useDataRefresh() {
 
         // Set up new refresh schedules
         refreshConfigs.forEach((config) => {
+            // Skip derived tables — they are refreshed by useDerivedTableRefresh
+            // when their source tables change, not by polling an external source.
             const shouldAutoRefresh = config.autoRefresh && 
                 config.refreshIntervalSeconds && 
-                config.refreshIntervalSeconds > 0;
+                config.refreshIntervalSeconds > 0 &&
+                !config.hasDerive;
 
             if (shouldAutoRefresh) {
                 const intervalMs = config.refreshIntervalSeconds! * 1000;

@@ -115,7 +115,7 @@ const TYPE_REGISTRY: Record<string, TypeRegistryEntry> = {
 
     // --- Measure: SignedMeasure ---
     Profit:             { t0: 'Measure', t1: 'SignedMeasure', visEncodings: ['quantitative'], aggRole: 'signed-additive', domainShape: 'open', diverging: 'conditional', formatClass: 'signed-currency',  zeroBaseline: 'meaningful', zeroPad: 0 },
-    PercentageChange:   { t0: 'Measure', t1: 'SignedMeasure', visEncodings: ['quantitative'], aggRole: 'intensive',       domainShape: 'open', diverging: 'conditional', formatClass: 'signed-percent',   zeroBaseline: 'meaningful', zeroPad: 0 },
+    PercentageChange:   { t0: 'Measure', t1: 'SignedMeasure', visEncodings: ['quantitative'], aggRole: 'intensive',       domainShape: 'open', diverging: 'conditional', formatClass: 'signed-percent',   zeroBaseline: 'contextual', zeroPad: 0.05 },
     Sentiment:          { t0: 'Measure', t1: 'SignedMeasure', visEncodings: ['quantitative'], aggRole: 'intensive',       domainShape: 'open', diverging: 'inherent',    formatClass: 'signed-decimal',   zeroBaseline: 'meaningful', zeroPad: 0 },
     Correlation:        { t0: 'Measure', t1: 'SignedMeasure', visEncodings: ['quantitative'], aggRole: 'intensive',       domainShape: 'bounded', diverging: 'inherent', formatClass: 'signed-decimal',   zeroBaseline: 'meaningful', zeroPad: 0 },
 

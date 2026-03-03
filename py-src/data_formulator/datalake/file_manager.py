@@ -15,6 +15,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import BinaryIO, Union
 
+from werkzeug.utils import secure_filename
+
 from data_formulator.datalake.metadata import TableMetadata
 from data_formulator.datalake.workspace import Workspace
 
@@ -158,6 +160,11 @@ def save_uploaded_file(
     Raises:
         ValueError: If file type is not supported
     """
+    # Sanitize filename to prevent path traversal (defence-in-depth)
+    filename = secure_filename(filename)
+    if not filename:
+        raise ValueError("Invalid filename after sanitization")
+
     # Validate file type
     file_type = get_file_type(filename)
     if file_type is None:

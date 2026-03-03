@@ -44,6 +44,8 @@ import { ModelSelectionButton } from './ModelSelectionDialog';
 import { getUrls, fetchWithIdentity } from '../app/utils';
 import { UnifiedDataUploadDialog, UploadTabType, DataLoadMenu } from './UnifiedDataUploadDialog';
 import { ReportView } from './ReportView';
+import GitHubIcon from '@mui/icons-material/GitHub';
+import YouTubeIcon from '@mui/icons-material/YouTube';
 import { ExampleSession, exampleSessions, ExampleSessionCard } from './ExampleSessions';
 import { useDataRefresh, useDerivedTableRefresh } from '../app/useDataRefresh';
 import type { DictTable } from '../components/ComponentType';
@@ -412,9 +414,31 @@ export const DataFormulatorFC = ({ }) => {
             </Box>
             <Typography sx={{ 
                 fontSize: 24, color: theme.palette.text.secondary, 
-                textAlign: 'center', mb: 4}}>
+                textAlign: 'center', mb: 2}}>
                 Explore data with visualizations, powered by AI agents. 
             </Typography>
+            {serverConfig.PROJECT_FRONT_PAGE && (
+            <Box component="nav" aria-label="Resources" sx={{ display: 'flex', justifyContent: 'center', gap: 1, mb: 3, flexWrap: 'wrap' }}>
+                <Button size="small" variant="text" color="primary"
+                    sx={{ textTransform: 'none', fontSize: 13 }}
+                    startIcon={<Box component="img" sx={{ width: 15, height: 15 }} alt="" aria-hidden="true" src="/pip-logo.svg" />}
+                    target="_blank" rel="noopener noreferrer"
+                    href="https://pypi.org/project/data-formulator/"
+                >Install Locally</Button>
+                <Button size="small" variant="text" color="primary"
+                    sx={{ textTransform: 'none', fontSize: 13 }}
+                    startIcon={<YouTubeIcon sx={{ color: '#FF0000', fontSize: 17 }} aria-hidden="true" />}
+                    target="_blank" rel="noopener noreferrer"
+                    href="https://www.youtube.com/watch?v=GfTE2FLyMrs"
+                >Video</Button>
+                <Button size="small" variant="text" color="primary"
+                    sx={{ textTransform: 'none', fontSize: 13 }}
+                    startIcon={<GitHubIcon aria-hidden="true" sx={{ fontSize: 17 }} />}
+                    target="_blank" rel="noopener noreferrer"
+                    href="https://github.com/microsoft/data-formulator"
+                >GitHub</Button>
+            </Box>
+            )}
             <Box sx={{my: 4}}>
                 <DataLoadMenu 
                     onSelectTab={(tab) => openUploadDialog(tab)}

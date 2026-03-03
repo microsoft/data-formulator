@@ -871,6 +871,7 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
 
     const dispatch = useDispatch<AppDispatch>();
     const viewMode = useSelector((state: DataFormulatorState) => state.viewMode);
+    const tables = useSelector((state: DataFormulatorState) => state.tables);
     const generatedReports = useSelector((state: DataFormulatorState) => state.generatedReports);
     const focusedId = useSelector((state: DataFormulatorState) => state.focusedId);
     const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
@@ -1002,14 +1003,13 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
     });
 
     // Check if we're on the about page
-    const isAboutPage = (window.location.pathname === '/about' 
-            || (window.location.pathname === '/' && serverConfig.PROJECT_FRONT_PAGE));
+    const isAboutPage = window.location.pathname === '/about';
     const isGalleryPage = window.location.pathname === '/gallery';
     const isAppPage = !isAboutPage && !isGalleryPage;
 
     let appBar =  [
         <AppBar position="static" key="app-bar-main" >
-            <Toolbar variant="dense" sx={{height: 40, minHeight: 36}}>
+            <Toolbar variant="dense" sx={{height: 40, minHeight: 36, position: 'relative'}}>
                 <Button sx={{
                     display: "flex", flexDirection: "row", textTransform: "none",
                     alignItems: 'stretch',
@@ -1021,7 +1021,7 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
                     <Box component="img" sx={{ height: 20, mr: 0.5 }} alt="" src={dfLogo} />
                     <Typography noWrap component="h1" sx={{ fontWeight: 300, display: { xs: 'none', sm: 'block' }, letterSpacing: '0.03em' }}>
                         {toolName}
-                    </Typography>                    
+                    </Typography>
                 </Button>
                 <Box
                     sx={{ 
@@ -1101,6 +1101,11 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
                         Gallery
                     </Button>
                 </Box>
+                {tables.length === 0 && (
+                    <Typography noWrap sx={{ position: 'absolute', left: '50%', transform: 'translateX(-50%)', fontWeight: 500, fontSize: '0.65rem', color: 'text.disabled', letterSpacing: '0.15em', textTransform: 'uppercase' }}>
+                        Microsoft Research
+                    </Typography>
+                )}
                 {isAppPage && (
                     <Box sx={{ display: 'flex', ml: 'auto', fontSize: 14 }}>
                         {focusedId !== undefined && <React.Fragment><ToggleButtonGroup
@@ -1150,7 +1155,7 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
                         <Typography fontSize="inherit" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                             <SessionMenu />
                         </Typography>
-                        <ResetDialog />
+                        {tables.length > 0 && <ResetDialog />}
                     </Box>
                 )}
                 {isAboutPage && (
@@ -1259,7 +1264,7 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
         },
         {
             path: "/",
-            element: serverConfig.PROJECT_FRONT_PAGE ? <About /> : <DataFormulatorFC />,
+            element: <DataFormulatorFC />,
         }, {
             path: "*",
             element: <DataFormulatorFC />,

@@ -549,16 +549,14 @@ function genTemperatureScatterZeroTest(): TestCase {
 }
 
 // ============================================================================
-// 18. Percentage line — contextual zero with data far from zero
+// 18. Percentage line — snap-to-bound heuristic
 //     Semantic type: "Percentage" → intrinsicDomain [0, 100]
 //
-//     Percentage is contextual: zero may or may not be included depending
-//     on the data range and mark type. For a line chart with data 40–85%,
-//     the intrinsicDomain [0, 100] shows the full scale, providing context
-//     for how close values are to 0% or 100%.
-//
-//     WITHOUT this: line chart data-fits to [40, 85], losing context
-//     WITH intrinsicDomain [0, 100]: full scale visible
+//     Uses snap-to-bound: if data approaches the theoretical endpoint
+//     (≥90% of max), the axis snaps to it. Data at 40–85% is below the
+//     snap threshold → axis data-fits. Data at 60–97% would snap to 100%.
+//     The zero-baseline contextual logic independently decides whether
+//     to include 0 (bar = yes, line = depends on proximity).
 // ============================================================================
 
 function genPercentageLineDomainTest(): TestCase {
@@ -570,11 +568,11 @@ function genPercentageLineDomainTest(): TestCase {
     }));
 
     return {
-        title: 'Percentage Line — Full Scale [0,100]',
+        title: 'Percentage Line — Snap-to-Bound',
         description:
-            'Completion rates (40–85%) with intrinsicDomain [0, 100]. The semantic domain ' +
-            'shows the full percentage scale so you can see proximity to 0% and 100%. ' +
-            'WITHOUT this: line fits tightly to 40–85, losing context about absolute position.',
+            'Completion rates (40–85%) with intrinsicDomain [0, 100]. Data max (85%) is ' +
+            'below the 90% snap threshold, so the axis data-fits rather than forcing 100%. ' +
+            'If data reached 97%, the axis would snap to 100% (stopping at 97% looks arbitrary).',
         tags: ['semantic', 'domain', 'zero', 'percentage', 'line'],
         chartType: 'Line Chart',
         data,
@@ -1946,4 +1944,556 @@ function genUnregisteredTypeFallbackTest(): TestCase {
             y: makeEncodingItem('custom_metric'),
         },
     };
+}
+
+// ############################################################################
+// SNAP-TO-BOUND TESTS
+//
+// Demonstrate the snap-to-bound heuristic for Percentage and PercentageChange.
+// Each bound snaps independently when data reaches within 25% of the
+// intrinsic range from that edge. Data exceeding a bound never snaps.
+// ############################################################################
+
+// ============================================================================
+// S1. Percentage — data far from both bounds → no snap
+//     Data 35–65%, threshold=25. Neither end close → axis data-fits.
+// ============================================================================
+
+function genSnapPctNoSnapTest(): TestCase {
+    const rand = seeded(7001);
+    const weeks = Array.from({ length: 8 }, (_, i) => `Week ${i + 1}`);
+    const data = weeks.map(w => ({
+        week: w,
+        usage: Math.round(35 + rand() * 30),
+    }));
+
+    return {
+        title: 'Snap: Pct 35–65% → no snap',
+        description:
+            'Usage data ranges 35–65%. Both ends are far from 0 and 100 ' +
+            '(threshold = 25% of range = 25), so no snap occurs. ' +
+            'Axis data-fits to show detail in the 35–65% band.',
+        tags: ['semantic', 'snap', 'percentage', 'no-snap'],
+        chartType: 'Line Chart',
+        data,
+        fields: [makeField('week'), makeField('usage')],
+        metadata: {
+            week:  { type: Type.String, semanticType: 'Category',   levels: weeks },
+            usage: { type: Type.Number, semanticType: 'Percentage', levels: [] },
+        },
+        semanticAnnotations: {
+            usage: { semanticType: 'Percentage', intrinsicDomain: [0, 100] },
+        },
+        encodingMap: {
+            x: makeEncodingItem('week'),
+            y: makeEncodingItem('usage'),
+        },
+    };
+}
+
+// ============================================================================
+// S2. Percentage — data near upper bound only → snap max to 100
+//     Data 60–97%, 97 within threshold of 100 → domainMax=100.
+//     Lower end (60) far from 0 → no snap min.
+// ============================================================================
+
+function genSnapPctMaxOnlyTest(): TestCase {
+    const rand = seeded(7002);
+    const depts = ['Engineering', 'Marketing', 'Sales', 'Support', 'Design', 'Legal'];
+    const data = depts.map(d => ({
+        dept: d,
+        completion: Math.round(60 + rand() * 37),
+    }));
+
+    return {
+        title: 'Snap: Pct 84–96% → snap max 100',
+        description:
+            'Completion data reaches 96%. Since 96 is within 25 (threshold = 25% of 100) ' +
+            'of 100, the upper bound snaps to 100%. Lower end (84%) is far from 0 → ' +
+            'no snap. Shows domainMax=100 while the lower end auto-fits.',
+        tags: ['semantic', 'snap', 'percentage', 'snap-max'],
+        chartType: 'Bar Chart',
+        data,
+        fields: [makeField('dept'), makeField('completion')],
+        metadata: {
+            dept:       { type: Type.String, semanticType: 'Category',   levels: depts },
+            completion: { type: Type.Number, semanticType: 'Percentage', levels: [] },
+        },
+        semanticAnnotations: {
+            completion: { semanticType: 'Percentage', intrinsicDomain: [0, 100] },
+        },
+        encodingMap: {
+            x: makeEncodingItem('dept'),
+            y: makeEncodingItem('completion'),
+        },
+    };
+}
+
+// ============================================================================
+// S3. Percentage — data near lower bound only → snap min to 0
+//     Data 2–25%, 2 within threshold of 0 → domainMin=0.
+//     Upper end (25) far from 100 → no snap max.
+// ============================================================================
+
+function genSnapPctMinOnlyTest(): TestCase {
+    const rand = seeded(7003);
+    const items = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
+    const data = items.map(item => ({
+        item,
+        error_rate: Math.round(2 + rand() * 23),
+    }));
+
+    return {
+        title: 'Snap: Pct 4–20% → snap min 0',
+        description:
+            'Error rates range 4–20%. Since 4 is within 25 (threshold = 25% of 100) ' +
+            'of 0, the lower bound snaps to 0%. Upper end (20%) is far from 100 → ' +
+            'no snap. Shows domainMin=0 while the upper end auto-fits.',
+        tags: ['semantic', 'snap', 'percentage', 'snap-min'],
+        chartType: 'Bar Chart',
+        data,
+        fields: [makeField('item'), makeField('error_rate')],
+        metadata: {
+            item:       { type: Type.String, semanticType: 'Category',   levels: items },
+            error_rate: { type: Type.Number, semanticType: 'Percentage', levels: [] },
+        },
+        semanticAnnotations: {
+            error_rate: { semanticType: 'Percentage', intrinsicDomain: [0, 100] },
+        },
+        encodingMap: {
+            x: makeEncodingItem('item'),
+            y: makeEncodingItem('error_rate'),
+        },
+    };
+}
+
+// ============================================================================
+// S4. Percentage — data near both bounds → snap both [0, 100]
+//     Data 3–95%, both ends close → full [0, 100] domain.
+// ============================================================================
+
+function genSnapPctBothTest(): TestCase {
+    const rand = seeded(7004);
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const data = months.map((m, i) => ({
+        month: m,
+        capacity: Math.round(3 + (i / 11) * 87 + rand() * 5),
+    }));
+
+    return {
+        title: 'Snap: Pct 3–95% → snap both [0,100]',
+        description:
+            'Capacity ranges 3–95%. Both 3 (within 25 of 0) and 95 (within 25 of 100) ' +
+            'trigger snap, producing the full [0, 100] domain. Natural for data that ' +
+            'spans nearly the entire percentage range.',
+        tags: ['semantic', 'snap', 'percentage', 'snap-both'],
+        chartType: 'Line Chart',
+        data,
+        fields: [makeField('month'), makeField('capacity')],
+        metadata: {
+            month:    { type: Type.String, semanticType: 'Month',      levels: months },
+            capacity: { type: Type.Number, semanticType: 'Percentage', levels: [] },
+        },
+        semanticAnnotations: {
+            capacity: { semanticType: 'Percentage', intrinsicDomain: [0, 100] },
+        },
+        encodingMap: {
+            x: makeEncodingItem('month'),
+            y: makeEncodingItem('capacity'),
+        },
+    };
+}
+
+// ============================================================================
+// S5. Percentage — data exceeds upper bound → no snap
+//     Data 30–130%, 130 exceeds 100 → no snap on either end.
+//     (30 is also far from 0.)
+// ============================================================================
+
+function genSnapPctExceedTest(): TestCase {
+    const rand = seeded(7005);
+    const quarters = ['Q1', 'Q2', 'Q3', 'Q4'];
+    const data = quarters.map(q => ({
+        quarter: q,
+        growth: Math.round(30 + rand() * 100),
+    }));
+
+    return {
+        title: 'Snap: Pct 30–130% → no snap (exceeds)',
+        description:
+            'Growth data ranges 30–130%. The max (130) exceeds the intrinsic upper ' +
+            'bound (100), so no snap — VL auto-extends. The min (30) is also far from 0. ' +
+            'Axis data-fits to the actual data range.',
+        tags: ['semantic', 'snap', 'percentage', 'exceed'],
+        chartType: 'Bar Chart',
+        data,
+        fields: [makeField('quarter'), makeField('growth')],
+        metadata: {
+            quarter: { type: Type.String, semanticType: 'Category',   levels: quarters },
+            growth:  { type: Type.Number, semanticType: 'Percentage', levels: [] },
+        },
+        semanticAnnotations: {
+            growth: { semanticType: 'Percentage', intrinsicDomain: [0, 100] },
+        },
+        encodingMap: {
+            x: makeEncodingItem('quarter'),
+            y: makeEncodingItem('growth'),
+        },
+    };
+}
+
+// ============================================================================
+// S6. PercentageChange — small range near zero → no snap
+//     Data -3% to +5%, both far from ±100% → axis data-fits.
+// ============================================================================
+
+function genSnapPctChangeNoSnapTest(): TestCase {
+    const rand = seeded(7006);
+    const stocks = ['AAPL', 'GOOG', 'MSFT', 'AMZN', 'META', 'NVDA', 'TSLA'];
+    const data = stocks.map(s => ({
+        stock: s,
+        daily_change: Math.round((-0.03 + rand() * 0.08) * 1000) / 1000,
+    }));
+
+    return {
+        title: 'Snap: PctChange ±3–5% → no snap',
+        description:
+            'Daily stock changes range -3% to +5%. Both ends are far from ±1 ' +
+            '(threshold = 0.25 per side), so no snap. Axis data-fits around the small range. ' +
+            'Contextual zero-baseline still includes 0 for bar marks.',
+        tags: ['semantic', 'snap', 'percentage-change', 'no-snap'],
+        chartType: 'Bar Chart',
+        data,
+        fields: [makeField('stock'), makeField('daily_change')],
+        metadata: {
+            stock:        { type: Type.String, semanticType: 'Category',         levels: stocks },
+            daily_change: { type: Type.Number, semanticType: 'PercentageChange', levels: [] },
+        },
+        semanticAnnotations: {
+            daily_change: { semanticType: 'PercentageChange', intrinsicDomain: [-1, 1] },
+        },
+        encodingMap: {
+            x: makeEncodingItem('stock'),
+            y: makeEncodingItem('daily_change'),
+        },
+    };
+}
+
+// ============================================================================
+// S7. PercentageChange — near negative bound → snap min to -1
+//     Data -0.96 to +0.25, -0.96 within 0.25 (25% of 1) of -1 → snap min=-1.
+// ============================================================================
+
+function genSnapPctChangeMinTest(): TestCase {
+    const data = [
+        { sector: 'Tech',       ytd_return: -0.96 },
+        { sector: 'Energy',     ytd_return: -0.42 },
+        { sector: 'Finance',    ytd_return: -0.71 },
+        { sector: 'Healthcare', ytd_return:  0.25 },
+        { sector: 'Retail',     ytd_return: -0.55 },
+        { sector: 'Telecom',    ytd_return: -0.83 },
+    ];
+    const sectors = data.map(d => d.sector);
+
+    return {
+        title: 'Snap: PctChange -96% to +25% → snap min -100%',
+        description:
+            'Sector returns range -96% to +25%. The min (-0.96) is within 0.25 (threshold = ' +
+            '25% of distance 1 from zero to -1) of -1, so the lower bound snaps to -100%. ' +
+            'Upper end (+25%) is far from +100% → no snap. Shows domainMin=-1 with ' +
+            'auto-fit upper end.',
+        tags: ['semantic', 'snap', 'percentage-change', 'snap-min'],
+        chartType: 'Bar Chart',
+        data,
+        fields: [makeField('sector'), makeField('ytd_return')],
+        metadata: {
+            sector:     { type: Type.String, semanticType: 'Category',         levels: sectors },
+            ytd_return: { type: Type.Number, semanticType: 'PercentageChange', levels: [] },
+        },
+        semanticAnnotations: {
+            ytd_return: { semanticType: 'PercentageChange', intrinsicDomain: [-1, 1] },
+        },
+        encodingMap: {
+            x: makeEncodingItem('sector'),
+            y: makeEncodingItem('ytd_return'),
+        },
+    };
+}
+
+// ============================================================================
+// S8. PercentageChange — near both bounds → snap both [-1, 1]
+//     Data -0.95 to +0.93, both within 0.25 (25% of per-side distance 1) → full [-1, 1].
+// ============================================================================
+
+function genSnapPctChangeBothTest(): TestCase {
+    const data = [
+        { strategy: 'Strategy A', performance: -0.95 },
+        { strategy: 'Strategy B', performance: -0.30 },
+        { strategy: 'Strategy C', performance:  0.15 },
+        { strategy: 'Strategy D', performance: -0.60 },
+        { strategy: 'Strategy E', performance:  0.48 },
+        { strategy: 'Strategy F', performance:  0.93 },
+    ];
+    const strategies = data.map(d => d.strategy);
+
+    return {
+        title: 'Snap: PctChange ±95–93% → snap both [-1,1]',
+        description:
+            'Strategy performance ranges -95% to +93%. Both -0.95 (within 0.25 of -1) ' +
+            'and +0.93 (within 0.25 of +1) trigger snap (threshold = 25% of each side\'s ' +
+            'distance from zero = 0.25), producing the full [-1, 1] domain.',
+        tags: ['semantic', 'snap', 'percentage-change', 'snap-both'],
+        chartType: 'Bar Chart',
+        data,
+        fields: [makeField('strategy'), makeField('performance')],
+        metadata: {
+            strategy:    { type: Type.String, semanticType: 'Category',         levels: strategies },
+            performance: { type: Type.Number, semanticType: 'PercentageChange', levels: [] },
+        },
+        semanticAnnotations: {
+            performance: { semanticType: 'PercentageChange', intrinsicDomain: [-1, 1] },
+        },
+        encodingMap: {
+            x: makeEncodingItem('strategy'),
+            y: makeEncodingItem('performance'),
+        },
+    };
+}
+
+// ============================================================================
+// S9. Stacked bar — percentages sum to ~100% per group → keep snap
+//     Individual values 30–40%, each group has 3 series summing to ~98%.
+//     Individual values are far from 100% (no individual snap), but the stacked
+//     totals (~98%) are within 25% of 100 → re-snap fires domainMax=100.
+// ============================================================================
+
+function genSnapStackedSumNear100Test(): TestCase {
+    const categories = ['Alpha', 'Beta', 'Gamma', 'Delta'];
+    const series = ['Part A', 'Part B', 'Part C'];
+    // Each group's parts sum to ~97–99%
+    const groupTotals: Record<string, number[]> = {
+        'Alpha': [35, 30, 33],   // sum = 98
+        'Beta':  [40, 28, 30],   // sum = 98
+        'Gamma': [32, 35, 30],   // sum = 97
+        'Delta': [38, 27, 34],   // sum = 99
+    };
+
+    const data: Record<string, any>[] = [];
+    for (const cat of categories) {
+        const parts = groupTotals[cat];
+        series.forEach((s, i) => {
+            data.push({ category: cat, series: s, share: parts[i] });
+        });
+    }
+
+    return {
+        title: 'Snap: Stacked Pct sum≈100% → snap max 100',
+        description:
+            'Stacked bar with 3 series per group. Individual values range 27–40% (far from 100, ' +
+            'no individual snap), but stacked totals per group are 97–99%. Since 99 is within ' +
+            '25 (threshold) of 100, the stacked-total re-snap fires → domainMax=100. ' +
+            'This keeps the axis at a natural percentage ceiling.',
+        tags: ['semantic', 'snap', 'percentage', 'stacked', 'sum-near-bound'],
+        chartType: 'Stacked Bar Chart',
+        data,
+        fields: [makeField('category'), makeField('share'), makeField('series')],
+        metadata: {
+            category: { type: Type.String, semanticType: 'Category',   levels: categories },
+            series:   { type: Type.String, semanticType: 'Category',   levels: series },
+            share:    { type: Type.Number, semanticType: 'Percentage', levels: [] },
+        },
+        semanticAnnotations: {
+            share: { semanticType: 'Percentage', intrinsicDomain: [0, 100] },
+        },
+        encodingMap: {
+            x: makeEncodingItem('category'),
+            y: makeEncodingItem('share'),
+            color: makeEncodingItem('series'),
+        },
+    };
+}
+
+// ============================================================================
+// S10. Stacked bar — percentages sum to ~150% per group → skip snap
+//      Individual values 30–60%, but 3 series stack to ~150%.
+//      Totals exceed intrinsic upper bound (100) → skip domain constraint.
+// ============================================================================
+
+function genSnapStackedSumExceedsTest(): TestCase {
+    const categories = ['East', 'West', 'North', 'South'];
+    const series = ['Source X', 'Source Y', 'Source Z'];
+    // Each group's parts sum to ~140–160%
+    const groupTotals: Record<string, number[]> = {
+        'East':  [55, 48, 42],   // sum = 145
+        'West':  [60, 50, 45],   // sum = 155
+        'North': [45, 52, 43],   // sum = 140
+        'South': [58, 55, 47],   // sum = 160
+    };
+
+    const data: Record<string, any>[] = [];
+    for (const cat of categories) {
+        const parts = groupTotals[cat];
+        series.forEach((s, i) => {
+            data.push({ region: cat, source: s, overlap_pct: parts[i] });
+        });
+    }
+
+    return {
+        title: 'Snap: Stacked Pct sum≈150% → no snap (exceeds)',
+        description:
+            'Stacked bar with 3 overlapping percentage sources per region. Individual values ' +
+            'range 42–60%, but stacked totals are 140–160% — exceeding the intrinsic upper ' +
+            'bound of 100%. Domain constraint is skipped so VL auto-extends the axis.',
+        tags: ['semantic', 'snap', 'percentage', 'stacked', 'sum-exceeds'],
+        chartType: 'Stacked Bar Chart',
+        data,
+        fields: [makeField('region'), makeField('overlap_pct'), makeField('source')],
+        metadata: {
+            region:      { type: Type.String, semanticType: 'Category',   levels: categories },
+            source:      { type: Type.String, semanticType: 'Category',   levels: series },
+            overlap_pct: { type: Type.Number, semanticType: 'Percentage', levels: [] },
+        },
+        semanticAnnotations: {
+            overlap_pct: { semanticType: 'Percentage', intrinsicDomain: [0, 100] },
+        },
+        encodingMap: {
+            x: makeEncodingItem('region'),
+            y: makeEncodingItem('overlap_pct'),
+            color: makeEncodingItem('source'),
+        },
+    };
+}
+
+// ============================================================================
+// S11. Stacked bar — individual values snap, totals fit → keep snap
+//      Individual values 80–95% (near 100, snap fires individually).
+//      Stacked totals ~270% exceed 100, but the individual snap already
+//      fired — this test verifies the stacked-total check correctly
+//      overrides it: totals 270% > 100 → skip domain constraint.
+// ============================================================================
+
+function genSnapStackedIndividualSnapButTotalsExceedTest(): TestCase {
+    const categories = ['Jan', 'Feb', 'Mar', 'Apr'];
+    const series = ['Metric 1', 'Metric 2', 'Metric 3'];
+    // Individual values 80–95% (all snap individually), but sum ~270%
+    const groupTotals: Record<string, number[]> = {
+        'Jan': [92, 88, 85],   // sum = 265
+        'Feb': [95, 90, 87],   // sum = 272
+        'Mar': [91, 93, 84],   // sum = 268
+        'Apr': [94, 89, 91],   // sum = 274
+    };
+
+    const data: Record<string, any>[] = [];
+    for (const cat of categories) {
+        const parts = groupTotals[cat];
+        series.forEach((s, i) => {
+            data.push({ month: cat, metric: s, score: parts[i] });
+        });
+    }
+
+    return {
+        title: 'Snap: Stacked Pct indiv snap but sum>100% → skip',
+        description:
+            'Individual scores range 84–95% — close to 100%, so snap fires on individual ' +
+            'values. But when stacked (3 metrics per month), totals reach 265–274%. Since ' +
+            'totals exceed intrinsic bound (100), the stacked-total check overrides → ' +
+            'domain constraint is skipped, VL auto-extends.',
+        tags: ['semantic', 'snap', 'percentage', 'stacked', 'individual-snap-override'],
+        chartType: 'Stacked Bar Chart',
+        data,
+        fields: [makeField('month'), makeField('score'), makeField('metric')],
+        metadata: {
+            month:  { type: Type.String, semanticType: 'Category',   levels: categories },
+            metric: { type: Type.String, semanticType: 'Category',   levels: series },
+            score:  { type: Type.Number, semanticType: 'Percentage', levels: [] },
+        },
+        semanticAnnotations: {
+            score: { semanticType: 'Percentage', intrinsicDomain: [0, 100] },
+        },
+        encodingMap: {
+            x: makeEncodingItem('month'),
+            y: makeEncodingItem('score'),
+            color: makeEncodingItem('metric'),
+        },
+    };
+}
+
+// ============================================================================
+// S12. Stacked bar — individual values 30–50%, totals far from 100% → no snap
+//      Individual values are mid-range (no individual snap).
+//      Stacked totals ~58–70%, also far from 100% → no re-snap either.
+//      Axis should data-fit.
+// ============================================================================
+
+function genSnapStackedTotalsFarFromBoundTest(): TestCase {
+    const categories = ['Q1', 'Q2', 'Q3', 'Q4'];
+    const series = ['Channel A', 'Channel B'];
+    // Each group sums to ~58–70%
+    const groupTotals: Record<string, number[]> = {
+        'Q1': [30, 28],   // sum = 58
+        'Q2': [35, 30],   // sum = 65
+        'Q3': [28, 32],   // sum = 60
+        'Q4': [38, 32],   // sum = 70
+    };
+
+    const data: Record<string, any>[] = [];
+    for (const cat of categories) {
+        const parts = groupTotals[cat];
+        series.forEach((s, i) => {
+            data.push({ quarter: cat, channel: s, coverage: parts[i] });
+        });
+    }
+
+    return {
+        title: 'Snap: Stacked Pct sum≈58–70% → no snap',
+        description:
+            'Stacked bar with 2 series per quarter. Individual values range 28–38% ' +
+            '(far from 100%, no individual snap). Stacked totals are 58–70% — also ' +
+            'far from 100% (threshold = 25). No snap fires on either individual values ' +
+            'or stacked totals. Axis data-fits.',
+        tags: ['semantic', 'snap', 'percentage', 'stacked', 'no-snap'],
+        chartType: 'Stacked Bar Chart',
+        data,
+        fields: [makeField('quarter'), makeField('coverage'), makeField('channel')],
+        metadata: {
+            quarter:  { type: Type.String, semanticType: 'Category',   levels: categories },
+            channel:  { type: Type.String, semanticType: 'Category',   levels: series },
+            coverage: { type: Type.Number, semanticType: 'Percentage', levels: [] },
+        },
+        semanticAnnotations: {
+            coverage: { semanticType: 'Percentage', intrinsicDomain: [0, 100] },
+        },
+        encodingMap: {
+            x: makeEncodingItem('quarter'),
+            y: makeEncodingItem('coverage'),
+            color: makeEncodingItem('channel'),
+        },
+    };
+}
+
+/**
+ * Generate all snap-to-bound test cases.
+ *
+ * Demonstrates the snap-to-bound heuristic for Percentage [0,100]
+ * and PercentageChange [-1,1]. Each bound snaps independently when
+ * data reaches within 25% of the effective side range from that edge.
+ * For zero-straddling domains (lo < 0 < hi), each side's threshold is
+ * computed relative to its distance from zero, not the full range.
+ */
+export function genSnapToBoundTests(): TestCase[] {
+    return [
+        genSnapPctNoSnapTest(),
+        genSnapPctMaxOnlyTest(),
+        genSnapPctMinOnlyTest(),
+        genSnapPctBothTest(),
+        genSnapPctExceedTest(),
+        genSnapPctChangeNoSnapTest(),
+        genSnapPctChangeMinTest(),
+        genSnapPctChangeBothTest(),
+        genSnapStackedSumNear100Test(),
+        genSnapStackedSumExceedsTest(),
+        genSnapStackedIndividualSnapButTotalsExceedTest(),
+        genSnapStackedTotalsFarFromBoundTest(),
+    ];
 }

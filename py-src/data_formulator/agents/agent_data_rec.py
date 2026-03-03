@@ -71,8 +71,8 @@ SHARED_CHART_REFERENCE = '''**[CHART TYPE REFERENCE]**
 |---|---|---|
 | Scatter Plot | x, y, color, size, facet | opacity (0.1–1.0) |
 | Regression | x, y, color, size, facet | regressionMethod ("linear","log","exp","pow","quad","poly"), polyOrder (2–10) |
-| Bar Chart | x, y, color, facet | cornerRadius (0–15) |
-| Grouped Bar Chart | x, y, group, facet | cornerRadius (0–15) |
+| Bar Chart | x, y, color, facet | — |
+| Grouped Bar Chart | x, y, group, facet | — |
 | Line Chart | x, y, color, strokeDash, facet | interpolate ("linear","monotone","step") |
 | Area Chart | x, y, color, facet | — |
 | Heatmap | x, y, color, facet | colorScheme ("viridis","blues","reds","oranges","greens","blueorange","redblue") |

@@ -4,8 +4,12 @@
 > tried is brittle — prompt-engineered Vega-Lite that breaks when users
 > edit fields, sizing heuristics that fail on new data shapes, retry
 > loops that burn tokens. **Agents-chart** is a library that eliminates
-> this brittleness. For the system architecture, see
-> [design_v3.md](design_v3.md).
+> this brittleness.
+>
+> For the semantic type system, see
+> [design-semantics.md](design-semantics.md). For the axis layout
+> compression models, see
+> [design-stretch-model.md](design-stretch-model.md).
 
 ---
 
@@ -37,11 +41,11 @@ calling your agent again. The quality is consistent because it comes from
 the library, not from the model.
 
 Because the semantic layer is **library-agnostic**, the same spec compiles
-to multiple rendering backends — Vega-Lite, ECharts, and Chart.js today,
-with Plotly or D3 tomorrow — without re-deriving any design rules and
-without duplicating any prompts. The expensive work (semantic reasoning,
-layout computation) is done once; only the final instantiation step
-differs per backend.
+to multiple rendering backends — Vega-Lite, ECharts, Chart.js, and GoFish
+today, with Plotly or D3 tomorrow — without re-deriving any design rules
+and without duplicating any prompts. The expensive work (semantic
+reasoning, layout computation) is done once; only the final instantiation
+step differs per backend.
 
 ---
 
@@ -296,8 +300,8 @@ which model produced the spec.
   no VL stack traces, no silent misrepresentation.
 
 - **Multi-backend output from one spec.** The same semantic spec compiles
-  to Vega-Lite, ECharts, or Chart.js. Your deployment context picks the
-  backend; your agent and your prompts don't change.
+  to Vega-Lite, ECharts, Chart.js, or GoFish. Your deployment context
+  picks the backend; your agent and your prompts don't change.
 
 - **The generated output is still accessible.** Agents-chart compiles to
   standard Vega-Lite (or ECharts options, or Chart.js configs). If a user
@@ -339,9 +343,90 @@ transformation, not visualization plumbing.
 
 ---
 
-## How It Works
+## System Architecture
 
-Agents-chart's compiler operates in three phases. Phases 0 and 1 contain
+### Design Principles
+
+1. **VL-free analysis.** Layout computation, overflow filtering, and
+   semantic resolution operate on abstract channel names (`x`, `y`,
+   `color`, `group`, `size`) — never on Vega-Lite encoding objects.
+   This keeps the core logic backend-agnostic.
+
+2. **Minimal spec surface.** The input is: chart type + field assignments +
+   semantic types (~7–12 lines). The compiler derives all low-level
+   parameters deterministically.
+
+3. **Templates absorb VL complexity.** Bespoke charts (lollipop, bump,
+   candlestick, waterfall, etc.) are defined as template skeletons with
+   an `instantiate()` hook. The user/LLM never touches layered marks,
+   custom transforms, or scale configurations.
+
+4. **No UI dependencies.** Zero React, Redux, or framework imports.
+   Pure TypeScript library usable from any context.
+
+### Two-Stage Pipeline
+
+Each backend has its own `assemble*()` entry point (`assembleVegaLite`,
+`assembleECharts`, `assembleChartjs`, `assembleGoFish`), but they all
+follow the same two-stage structure. The analysis stage is shared;
+only the instantiation stage is backend-specific.
+
+```
+assembleVegaLite(input: ChartAssemblyInput)   // or assembleECharts, assembleChartjs, assembleGoFish
+       │
+       ▼
+ ══ ANALYSIS (backend-free, shared core) ═════════════════════
+       │
+       ├── Phase 0:  resolveSemantics()     → ChannelSemantics
+       │     Infers encoding type, zero-baseline, color scheme,
+       │     format, aggregation default, scale type, domain,
+       │     temporal format for each channel from semantic types
+       │     + data characteristics.
+       │
+       ├── Step 0a:  template.declareLayoutMode()  → LayoutDeclaration
+       │     Template hook: declares axis flags (banded?),
+       │     type overrides, param overrides, overflow strategy.
+       │
+       ├── Step 0b:  convertTemporalData()  → converted data
+       │     Parses temporal string values into Date objects.
+       │
+       ├── Step 0c:  filterOverflow()       → OverflowResult
+       │     Truncates discrete channels that exceed the canvas
+       │     budget. Produces filtered data, nominal counts,
+       │     truncation warnings.
+       │
+       └── Phase 1:  computeLayout()        → LayoutResult
+             Computes subplot width/height, step sizes, label
+             sizing, facet columns/rows. Uses spring model for
+             banded axes, gas-pressure model for continuous axes.
+       │
+       ▼
+ ══ INSTANTIATE (backend-specific) ═══════════════════════════
+       │
+       ├── build*Encodings()                        (per backend)
+       │     Translates abstract channel semantics into
+       │     backend encoding objects.
+       │
+       ├── template.instantiate()
+       │     Template-specific spec construction.
+       │     (e.g., pie remaps size→theta, bar adjusts marks)
+       │
+       ├── restructureFacets()                      (VL/ECharts)
+       │     Restructures column/row into facet spec for
+       │     layered charts. Computes facet columns.
+       │
+       ├── applyLayoutToSpec()
+       │     Applies width/height/step/config/formatting from
+       │     LayoutResult to the backend spec.
+       │
+       └── Post-layout adjustments
+             Facet binning, independent y-scales, tooltips.
+       │
+       ▼
+   Return: complete backend spec + warnings
+```
+
+The compiler operates in three conceptual phases. Phases 0 and 1 contain
 ~90% of the design logic and are **identical across all backends**. Phase 2
 is a thin translation layer — typically 50–100 lines per chart type.
 
@@ -358,6 +443,10 @@ Three design decisions make this architecture work: semantic types as the
 contract between your agent and the library (Phase 0), parametric physics
 for layout (Phase 1), and a library-agnostic multi-backend framework
 (Phase 2).
+
+---
+
+## How It Works
 
 ### 1. Semantic types as the contract
 
@@ -407,6 +496,9 @@ and agents-chart handles the cross-product. Instead of 75 configurations
 that each need an agent call, the system needs 15 type assignments (done
 once) and handles all 75 deterministically.
 
+→ Full semantic type system details:
+[design-semantics.md](design-semantics.md)
+
 ### 2. Parametric physics instead of manual heuristics
 
 The layout challenge is **coordinating sizing across axes, layers, mark
@@ -443,12 +535,30 @@ equations regardless of chart type. Change one parameter (e.g., raise
 $\ell_{\min}$ to guarantee wider bars) and the system re-equilibrates
 automatically — no cascade of broken heuristics.
 
-This is a fundamental shift for agent developers: instead of maintaining
-a growing library of layout heuristics that your agent or post-processing
-must encode, you tune a handful of physics parameters that generalize
-across all chart types, all facet structures, and all data shapes. The
-parameters have physical intuition ("minimum bar width", "compression
-resistance"), not arbitrary magic numbers.
+**Spring Model (Discrete Axes).** Applies to banded marks (bar, histogram,
+heatmap, boxplot, grouped bar). Models the axis as $N$ springs in a box:
+
+$$\ell = \frac{\kappa \cdot \ell_0 + L_0 / N}{1 + \kappa}$$
+
+Three regimes: **Fits** (items at natural size), **Elastic** (items
+compress + axis stretches), **Overflow** (items at minimum, excess
+truncated).
+
+**Gas-Pressure Model (Continuous Axes).** Applies to positional marks
+(scatter, line, area, bump). Each axis stretches based on 1D crowding
+pressure:
+
+$$s = \min\!\big(1 + \beta_c,\; p^{\,\alpha_c}\big)$$
+
+Two pressure modes: **positional** (unique pixel positions × √σ / dim)
+and **series-count** (nSeries × σ / dim for line/area Y axes).
+
+**Facet Model.** Second-level stretch for faceted charts. Each subplot
+runs its own sizing model internally; the facet layer determines subplot
+count, columns, and overall canvas growth.
+
+→ Full layout model details:
+[design-stretch-model.md](design-stretch-model.md)
 
 ### 3. Library-agnostic multi-backend architecture
 
@@ -466,7 +576,7 @@ No single charting library fits all of them:
 | **Vega-Lite** | Grammar of graphics; declarative composition; strong faceting and layering | Heavy runtime (~400 KB); limited interactivity beyond tooltips; poor mobile performance |
 | **ECharts** | Rich interactivity (zoom, brush, dataZoom); Canvas + SVG dual renderer; strong CJK locale support | Imperative option-bag API; no grammar-of-graphics composition; verbose config for layered designs |
 | **Chart.js** | Lightweight (~60 KB); Canvas-native (fast for large datasets); simple API; massive plugin ecosystem | No faceting; limited statistical charts; no declarative composition |
-| **Plotly** | Scientific charts (contour, 3D surface); built-in statistical transforms; Dash integration | Very heavy runtime (~1 MB); opinionated styling; slower render for simple charts |
+| **GoFish** | Imperative rendering; full control over mark placement | No built-in layout or scale system |
 
 **These are not interchangeable APIs with different syntax — they use
 fundamentally different visual representation models and data models.**
@@ -493,18 +603,11 @@ Adapting between them is highly non-trivial:
 
 These differences mean you can't transliterate a spec from one library
 to another — you must *re-think* the chart in each library's conceptual
-model. A grouped bar chart is `xOffset` encoding + `column` facet in
-Vega-Lite, nested `series[]` with `barGap`/`barCategoryGap` in ECharts,
-and stacked `datasets[]` with `grouped: true` in Chart.js. The same
-visual result requires structurally different specs that share almost no
-code. This is why porting prompts, examples, or post-processing logic
-from one backend to another is not a matter of syntax translation — it's
-a conceptual rewrite.
-
-Without a backend-agnostic library, supporting multiple renderers means
-**duplicating your entire agent pipeline per backend** — prompts, examples,
-post-processing, validation, retry logic, sizing heuristics. This is the
-$B \times T \times R$ explosion: $B$ backends × $T$ templates × $R$ rules.
+model. Without a backend-agnostic library, supporting multiple renderers
+means **duplicating your entire agent pipeline per backend** — prompts,
+examples, post-processing, validation, retry logic, sizing heuristics.
+This is the $B \times T \times R$ explosion: $B$ backends × $T$
+templates × $R$ rules.
 
 **Agents-chart collapses this to $T + (B \times I)$.** The $T$ templates
 and $R$ rules live in shared Phases 0–1, and each backend only implements
@@ -512,12 +615,6 @@ $I$ instantiation functions — thin translators that map the
 already-computed layout into the target library's config format. Adding a
 new backend means writing instantiation code, not re-implementing the
 design system.
-
-This isn't hypothetical. Agents-chart currently compiles the same semantic
-spec to **three backends** — Vega-Lite, ECharts, and Chart.js — sharing
-all semantic type logic, the spring/pressure layout model, and overflow
-detection. Each new backend took days, not months, because the expensive
-design work was already done.
 
 **What this means for you:**
 
@@ -576,9 +673,463 @@ that it can parse and repair automatically.
 | **720 temporal cells** | *"Heatmap X axis: 720 hourly cells compressed to 1.1 px each. Consider aggregating to daily."* | 14,400 px wide, or 0.5 px cells — a solid color band. |
 | **50 facets × 10 categories** | *"Facet overflow: 50 subplots cannot fit readable bars. Showing top 12 facets; 38 truncated."* | 50 squished facets with 0.8 px bars. Technically renders but useless. |
 
-**Agents-chart failures are diagnostic and recoverable** — your agent
-receives structured messages that explain what's wrong and what to do
-about it.
+---
+
+## Abstract Channels
+
+The library defines its own channel vocabulary, distinct from VL encoding
+channels. This decouples user/AI intent from rendering specifics.
+
+| Channel | Purpose | VL translation |
+|---------|---------|----------------|
+| `x`, `y` | Positional axes | Direct mapping |
+| `x2`, `y2` | Range endpoints (ranged dot, waterfall) | Direct mapping |
+| `color` | Color encoding | Direct mapping |
+| `group` | Grouped subdivision (e.g., grouped bar) | VL `color` + `xOffset`/`yOffset` |
+| `size` | Mark size (scatter) or slice weight (pie) | Scatter: VL `size` with sqrt scale; Pie: VL `theta` |
+| `shape` | Mark shape | Direct mapping |
+| `opacity` | Opacity | Direct mapping |
+| `column`, `row` | Faceting | VL `facet`/`column`/`row` |
+| `detail` | Detail level without visual change | Direct mapping |
+| `latitude`, `longitude` | Geo coordinates | Direct mapping |
+| `open`, `high`, `low`, `close` | Candlestick price channels | Layered rule + rect encoding |
+| `radius` | Radar chart radius | VL `radius` with sqrt scale |
+
+### The `group` channel
+
+First-class channel for grouped bar charts. The analysis stage resolves
+its semantics (type, color scheme) without any VL knowledge. The grouping
+axis is auto-detected: whichever of `x`/`y` is discrete gets subdivided.
+
+During instantiation, `buildVLEncodings()` translates:
+- `group` → VL `color` encoding (for coloring)
+- `group` → VL `xOffset` or `yOffset` encoding (for position subdivision)
+
+This avoids the old `additionalEncodings` hack and keeps the analysis
+stage completely VL-free.
+
+### The `size` channel
+
+Abstract channel for two distinct visual mappings:
+- **Scatter plot**: maps to VL `size` with adaptive `sqrt` scale range
+  based on canvas area and point count.
+- **Pie chart**: `pie.ts` instantiate remaps `size` → VL `theta`,
+  stripping the sqrt scale (theta is linear area).
+
+---
+
+## Core Types
+
+### `ChannelSemantics`
+
+Phase 0 output for a single channel. Combines user input with resolved
+decisions. This is the central IR — all four backends read the same
+`ChannelSemantics` record.
+
+```typescript
+interface ChannelSemantics {
+    // --- Identity ---
+    field: string;
+    semanticAnnotation: SemanticAnnotation;
+
+    // --- Encoding type ---
+    type: 'quantitative' | 'nominal' | 'ordinal' | 'temporal';
+
+    // --- Formatting ---
+    format?: FormatSpec;
+    tooltipFormat?: FormatSpec;
+    temporalFormat?: string;
+
+    // --- Aggregation ---
+    aggregationDefault?: 'sum' | 'average';
+
+    // --- Scale ---
+    zero?: ZeroDecision;
+    scaleType?: 'linear' | 'log' | 'sqrt' | 'symlog';
+    nice?: boolean;
+    domainConstraint?: DomainConstraint;
+    tickConstraint?: TickConstraint;
+
+    // --- Ordering ---
+    ordinalSortOrder?: string[];
+    cyclic?: boolean;
+    reversed?: boolean;
+    sortDirection?: 'ascending' | 'descending';
+
+    // --- Color ---
+    colorScheme?: ColorSchemeRecommendation;
+
+    // --- Histogram ---
+    binningSuggested?: boolean;
+
+    // --- Stacking ---
+    stackable?: 'sum' | 'normalize' | false;
+}
+```
+
+21 fields total (2 required: `field`, `type`; plus `semanticAnnotation`).
+
+### `LayoutDeclaration`
+
+Template's layout intent, returned by `declareLayoutMode()`:
+
+```typescript
+interface LayoutDeclaration {
+    axisFlags?: {
+        x?: { banded: boolean };
+        y?: { banded: boolean };
+    };
+    resolvedTypes?: Record<string, 'nominal' | 'ordinal' | 'quantitative' | 'temporal'>;
+    paramOverrides?: Partial<AssembleOptions>;
+    binnedAxes?: Record<string, boolean | { maxbins?: number }>;
+    overflowStrategy?: OverflowStrategy;
+}
+```
+
+No `grouping` field — grouping is auto-detected from `channelSemantics.group`
++ which axis is discrete.
+
+No `additionalEncodings` — the `group` channel + auto-detection replaces
+the old approach entirely.
+
+### `LayoutResult`
+
+Phase 1 output — all layout decisions:
+
+```typescript
+interface LayoutResult {
+    subplotWidth: number;
+    subplotHeight: number;
+    xStep: number;
+    yStep: number;
+    xStepUnit?: 'item' | 'group';
+    yStepUnit?: 'item' | 'group';
+    xContinuousAsDiscrete: number;
+    yContinuousAsDiscrete: number;
+    xNominalCount: number;
+    yNominalCount: number;
+    xLabel: LabelSizingDecision;
+    yLabel: LabelSizingDecision;
+    facet?: { columns: number; rows: number; subplotWidth: number; subplotHeight: number };
+    truncations: TruncationWarning[];
+}
+```
+
+### `InstantiateContext`
+
+Everything a template's `instantiate()` receives:
+
+```typescript
+interface InstantiateContext {
+    channelSemantics: Record<string, ChannelSemantics>;
+    layout: LayoutResult;
+    table: any[];
+    resolvedEncodings: Record<string, any>;  // VL encoding objects
+    encodings: Record<string, ChartEncoding>;
+    chartProperties?: Record<string, any>;
+    canvasSize: { width: number; height: number };
+    semanticTypes: Record<string, string>;
+    chartType: string;
+}
+```
+
+### `ChartTemplateDef`
+
+Template definition — pure data, no UI dependencies:
+
+```typescript
+interface ChartTemplateDef {
+    chart: string;                           // display name
+    template: any;                           // VL spec skeleton
+    channels: string[];                      // available encoding channels
+    markCognitiveChannel: MarkCognitiveChannel;  // 'position' | 'length' | 'area' | 'color'
+
+    declareLayoutMode?: (cs, data, props) => LayoutDeclaration;
+    instantiate: (spec, context: InstantiateContext) => void;
+    properties?: ChartPropertyDef[];
+}
+```
+
+### `OverflowStrategy`
+
+Customizable per-template. The default strategy in `filter-overflow.ts` handles:
+connected marks (keep all for continuity), user sorts, auto-sorts,
+bar sum-aggregate, numeric sort, first-N.
+
+```typescript
+type OverflowStrategy = (
+    channel: string,
+    fieldName: string,
+    uniqueValues: any[],
+    maxToKeep: number,
+    context: OverflowStrategyContext,
+) => any[];
+```
+
+---
+
+## Semantic Type System
+
+Semantic types classify fields by what they *mean* (not just their data
+type), organized in a three-tier hierarchy (T0 → T1 → T2):
+
+```
+T0 Family        T1 Category           T2 Types (examples)
+─────────        ───────────           ──────────────────
+Temporal ────┬── DateTime ──────────── DateTime, Date, Time, Timestamp
+             ├── DateGranule ────────── Year, Quarter, Month, Week, Day, Hour, ...
+             └── Duration ──────────── Duration
+
+Measure ─────┬── Amount ────────────── Amount, Price, Revenue, Cost
+             ├── Physical ──────────── Quantity, Temperature
+             ├── Proportion ────────── Percentage
+             ├── SignedMeasure ──────── Profit, PercentageChange, Sentiment, Correlation
+             └── GenericMeasure ────── Count, Number
+
+Discrete ────┬── Rank ──────────────── Rank
+             ├── Score ─────────────── Score, Rating
+             └── Index ─────────────── Index
+
+Geographic ──┬── GeoCoordinate ─────── Latitude, Longitude
+             └── GeoPlace ──────────── Country, State, City, Region, ZipCode, Address
+
+Categorical ─┬── Entity ────────────── PersonName, Company, Product, Category, Name, ...
+             ├── Coded ─────────────── Status, Type, Boolean, Direction
+             └── Binned ────────────── Range, AgeGroup
+
+Identifier ──┴── ID ────────────────── ID
+```
+
+**46 registered types** across 6 T0 families and 17 T1 categories.
+
+Each type entry in the registry carries orthogonal dimensions that drive
+visualization decisions:
+- **visEncodings** — encoding type candidates (quantitative, ordinal, nominal, temporal)
+- **aggRole** — aggregation role (`additive`, `intensive`, `signed-additive`, `dimension`, `identifier`)
+- **domainShape** — domain shape (`open`, `bounded`, `fixed`, `cyclic`)
+- **diverging** — diverging nature (`none`, `conditional`, `inherent`)
+- **formatClass** — format class (`currency`, `percent`, `unit-suffix`, `date`, `integer`, `plain`, ...)
+- **zeroBaseline** — zero baseline policy (`meaningful`, `arbitrary`, `contextual`, `none`)
+- **zeroPad** — domain padding fraction
+
+→ Full details: [design-semantics.md](design-semantics.md)
+
+---
+
+## Template Catalog
+
+### Vega-Lite (30 chart types)
+
+| Category | Charts |
+|----------|--------|
+| **Scatter & Point** | Scatter Plot, Regression, Ranged Dot Plot, Boxplot, Strip Plot |
+| **Bar** | Bar Chart, Grouped Bar Chart, Stacked Bar Chart, Histogram, Heatmap, Lollipop Chart, Pyramid Chart |
+| **Line & Area** | Line Chart, Dotted Line Chart, Bump Chart, Area Chart, Streamgraph |
+| **Part-to-Whole** | Pie Chart, Rose Chart, Waterfall Chart |
+| **Statistical** | Density Plot, Candlestick Chart, Radar Chart |
+| **Map** | US Map, World Map |
+| **Custom** | Custom Point, Custom Line, Custom Bar, Custom Rect, Custom Area |
+
+### ECharts (28 chart types)
+
+| Category | Charts |
+|----------|--------|
+| **Scatter & Point** | Scatter Plot, Regression, Ranged Dot Plot, Boxplot, Strip Plot |
+| **Bar** | Bar Chart, Grouped Bar Chart, Stacked Bar Chart, Histogram, Heatmap, Lollipop Chart, Pyramid Chart |
+| **Line & Area** | Line Chart, Dotted Line Chart, Bump Chart, Area Chart, Streamgraph |
+| **Part-to-Whole** | Pie Chart, Funnel Chart, Treemap, Sunburst Chart |
+| **Polar** | Radar Chart, Rose Chart |
+| **Financial** | Candlestick Chart |
+| **Indicator** | Gauge Chart |
+| **Flow** | Sankey Diagram |
+| **Other** | Waterfall Chart, Density Plot |
+
+### Chart.js (10 chart types)
+
+| Category | Charts |
+|----------|--------|
+| **Scatter & Point** | Scatter Plot |
+| **Bar** | Bar Chart, Grouped Bar Chart, Stacked Bar Chart, Histogram |
+| **Line & Area** | Line Chart, Area Chart |
+| **Part-to-Whole** | Pie Chart |
+| **Polar** | Radar Chart, Rose Chart |
+
+### GoFish (8 chart types)
+
+| Category | Charts |
+|----------|--------|
+| **Scatter & Point** | Scatter Plot, Scatter Pie Chart |
+| **Bar** | Bar Chart, Grouped Bar Chart, Stacked Bar Chart |
+| **Line & Area** | Line Chart, Area Chart |
+| **Part-to-Whole** | Pie Chart |
+
+**76 template definitions** across 4 backends.
+
+Each template defines:
+1. **`template`** — spec skeleton (mark + encoding structure)
+2. **`channels`** — available encoding channels
+3. **`markCognitiveChannel`** — how the mark encodes value (`position`, `length`, `area`, `color`)
+4. **`declareLayoutMode()`** — optional hook for layout intent
+5. **`instantiate()`** — build final backend spec from resolved context
+
+---
+
+## Public API
+
+All four backends share the same input type (`ChartAssemblyInput`)
+and follow the same calling convention:
+
+```typescript
+import { assembleVegaLite, assembleECharts, assembleChartjs, assembleGoFish } from './lib/agents-chart';
+
+const input: ChartAssemblyInput = {
+    chartType: 'Scatter Plot',
+    encodings: { x: { field: 'weight' }, y: { field: 'mpg' }, color: { field: 'origin' } },
+    table: myData,
+    semanticTypes: { weight: 'Quantity', mpg: 'Quantity', origin: 'Country' },
+    canvasSize: { width: 400, height: 300 },
+};
+
+const vlSpec   = assembleVegaLite(input);  // → Vega-Lite JSON spec
+const ecSpec   = assembleECharts(input);   // → ECharts option object
+const cjsSpec  = assembleChartjs(input);   // → Chart.js config object
+const gfSpec   = assembleGoFish(input);    // → GoFish imperative spec
+```
+
+**`ChartAssemblyInput` fields:**
+- `chartType` — template name (e.g., `"Grouped Bar Chart"`)
+- `encodings` — channel → `ChartEncoding` (field, aggregate, sort, scheme)
+- `table` — array of row objects
+- `semanticTypes` — field name → semantic type string (e.g., `"Revenue"`, `"Year"`)
+- `canvasSize` — `{ width, height }` in pixels
+- `options` — `AssembleOptions` (layout tuning, all have defaults)
+
+**Output:** Complete backend-specific spec, ready to render.
+May include `_warnings: ChartWarning[]` for overflow/truncation diagnostics.
+
+---
+
+## Overflow & Warning System
+
+When discrete channels overflow the canvas budget, the library:
+
+1. Computes the max items that fit (from spring model equilibrium)
+2. Applies the overflow strategy (default or template-custom) to choose
+   which values to keep
+3. Filters the data to only kept values
+4. Emits `TruncationWarning` with: channel, field, kept values, omitted
+   count, placeholder string
+5. Emits `ChartWarning` for the UI
+
+The default overflow strategy priority:
+1. Connected marks (line, area) → keep all (truncation breaks continuity)
+2. User-specified sort → keep top/bottom N by sort order
+3. Quantitative opposite axis → sort by opposite, keep top N
+4. Bar with count aggregate → sum-aggregate and keep top N
+5. Numeric field → numeric sort, keep first N
+6. Fallback → keep first N in data order
+
+---
+
+## File Map
+
+### Core (shared across all backends)
+
+| File | Lines | Role |
+|------|-------|------|
+| `core/types.ts` | 686 | All type definitions (ChannelSemantics, ChartAssemblyInput, etc.) |
+| `core/field-semantics.ts` | 1,040 | Field semantic resolution (T0/T1/T2 tiered logic) |
+| `core/semantic-types.ts` | 921 | Semantic type system (hierarchy, zero decisions, color schemes) |
+| `core/type-registry.ts` | 197 | Type registry (46 types, 6 T0 families) |
+| `core/resolve-semantics.ts` | 476 | Phase 0: channel semantic resolution + temporal conversion |
+| `core/compute-layout.ts` | 1,001 | Phase 1: backend-free layout computation |
+| `core/decisions.ts` | 919 | Reusable decision functions (elastic budget, step, facet, label, gas pressure) |
+| `core/filter-overflow.ts` | 296 | Phase 0c: backend-free overflow filtering |
+| `core/recommendation.ts` | 1,178 | Chart recommendation engine |
+| `core/index.ts` | 120 | Core re-exports |
+
+### Vega-Lite backend
+
+| File | Lines | Role |
+|------|-------|------|
+| `vegalite/assemble.ts` | 758 | VL two-stage pipeline coordinator |
+| `vegalite/instantiate-spec.ts` | 719 | `applyLayoutToSpec`, `applyTooltips` |
+| `vegalite/recommendation.ts` | 194 | VL-specific recommendation |
+| `vegalite/templates/*.ts` | ~2,500 | 15 template files (30 chart types) |
+
+### ECharts backend
+
+| File | Lines | Role |
+|------|-------|------|
+| `echarts/assemble.ts` | 710 | ECharts two-stage pipeline coordinator |
+| `echarts/instantiate-spec.ts` | 660 | ECharts spec instantiation |
+| `echarts/facet.ts` | 251 | ECharts facet support |
+| `echarts/recommendation.ts` | 101 | ECharts-specific recommendation |
+| `echarts/templates/*.ts` | ~4,800 | 23 template files (28 chart types) |
+
+### Chart.js backend
+
+| File | Lines | Role |
+|------|-------|------|
+| `chartjs/assemble.ts` | 213 | Chart.js two-stage pipeline coordinator |
+| `chartjs/instantiate-spec.ts` | 158 | Chart.js spec instantiation |
+| `chartjs/recommendation.ts` | 34 | Chart.js recommendation |
+| `chartjs/templates/*.ts` | ~1,400 | 8 template files (10 chart types) |
+
+### GoFish backend
+
+| File | Lines | Role |
+|------|-------|------|
+| `gofish/assemble.ts` | 521 | GoFish imperative rendering pipeline |
+| `gofish/recommendation.ts` | 34 | GoFish recommendation |
+| `gofish/templates/*.ts` | ~850 | 6 template files (8 chart types) |
+
+### Top-level
+
+| File | Lines | Role |
+|------|-------|------|
+| `index.ts` | 60 | Public API re-exports (all 4 backends) |
+
+**Total: ~21,000 lines** across 87 `.ts` files (excluding test-data).
+
+---
+
+## Architectural Boundaries
+
+```
+┌─────────────────────────────────────────────────┐
+│              ANALYSIS (core/ — backend-free)     │
+│                                                  │
+│  resolveSemantics  →  ChannelSemantics           │
+│  declareLayoutMode →  LayoutDeclaration          │
+│  convertTemporalData                             │
+│  filterOverflow    →  OverflowResult             │
+│  computeLayout     →  LayoutResult               │
+│                                                  │
+│  Inputs:  abstract channels, data, semantic types│
+│  Outputs: types, decisions, layout numbers       │
+│  Imports: NO backend-specific syntax             │
+├─────────────────────────────────────────────────┤
+│   INSTANTIATE (vegalite/ | echarts/ | chartjs/ | gofish/)  │
+│                                                  │
+│  Each backend has its own:                       │
+│    build*Encodings  →  backend encoding objects   │
+│    template.instantiate → backend spec            │
+│    restructureFacets → backend facet structure    │
+│    applyLayoutToSpec → backend config/sizing      │
+│                                                  │
+│  Inputs:  ChannelSemantics + LayoutResult + data │
+│  Outputs: complete backend-specific spec         │
+│  Backend code ONLY constructs its own syntax     │
+└─────────────────────────────────────────────────┘
+```
+
+The boundary is enforced by function signatures: analysis-stage functions
+accept `ChannelSemantics` and `LayoutDeclaration` — never backend encoding
+objects or spec structures. All four backends (Vega-Lite, ECharts,
+Chart.js, GoFish) share the same analysis stage and read the same
+`ChannelSemantics` IR. Adding a new backend only requires implementing
+the instantiation layer — no analysis code changes.
 
 ---
 
@@ -633,16 +1184,6 @@ identical shades of blue — visually indistinguishable. The chart *renders*
 without error but the color encoding is meaningless. With agents-chart,
 `CategoryCode` → nominal → categorical palette, and groups get distinct
 hues automatically.
-
-Other bespoke charts where agents-chart eliminates prompt complexity:
-
-| Chart type | What your agent would need to generate in raw VL |
-|------------|---------------------------------------------------|
-| **Bump chart** | Layered line + circle, reversed Y, ordinal domain with padding |
-| **Streamgraph** | Stack offset (`"center"`), area interpolation, series ordering |
-| **Candlestick** | Layered rect + rule, open/close/high/low encoding, color by direction |
-| **Waterfall** | Running sum transform, positive/negative coloring, connector rules |
-| **Ridge plot** | Row-faceted density, overlapping layout, per-facet bandwidth |
 
 ### Example 3: Faceted bar chart — physics layout vs. hard-coded sizing
 

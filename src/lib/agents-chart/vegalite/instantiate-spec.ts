@@ -35,7 +35,7 @@ import {
     getVisCategory,
     inferVisCategory,
 } from '../core/semantic-types';
-import { toTypeString } from '../core/field-semantics';
+import { toTypeString, snapToBoundHeuristic } from '../core/field-semantics';
 
 // ---------------------------------------------------------------------------
 // Public API: instantiateSpec
@@ -520,6 +520,59 @@ function formatSpecToLabelExpr(fmt: FormatSpec): string | null {
 }
 
 /**
+ * Compute the maximum stacked (group) total for a quantitative field.
+ *
+ * For a stacked bar chart with:
+ *   x = category (grouping), y = value (stacked), color = series
+ *
+ * This computes sum(value) for each category group and returns the max.
+ * Used to check whether stacked totals exceed an intrinsic domain bound
+ * (e.g., percentages summing to >100%).
+ *
+ * Returns undefined if the grouping field can't be determined.
+ */
+function computeMaxStackedTotal(
+    table: any[],
+    measureField: string,
+    measureChannel: string,
+    channelSemantics: Record<string, ChannelSemantics>,
+): number | undefined {
+    if (!table || table.length === 0) return undefined;
+
+    // The grouping axis is the *other* positional channel
+    const groupChannel = measureChannel === 'y' ? 'x' : 'y';
+    const groupCS = channelSemantics[groupChannel];
+    if (!groupCS) return undefined;
+    const groupField = groupCS.field;
+    if (!groupField) return undefined;
+
+    // Also consider facet fields (row/column) as additional grouping
+    const facetFields: string[] = [];
+    for (const ch of ['row', 'column']) {
+        const fcs = channelSemantics[ch];
+        if (fcs?.field) facetFields.push(fcs.field);
+    }
+
+    // Group rows and sum the measure field per group
+    const totals = new Map<string, number>();
+    for (const row of table) {
+        const val = row[measureField];
+        if (typeof val !== 'number' || isNaN(val)) continue;
+
+        // Build group key from grouping field + facet fields
+        const keyParts = [String(row[groupField])];
+        for (const ff of facetFields) {
+            keyParts.push(String(row[ff]));
+        }
+        const key = keyParts.join('|||');
+        totals.set(key, (totals.get(key) ?? 0) + val);
+    }
+
+    if (totals.size === 0) return undefined;
+    return Math.max(...totals.values());
+}
+
+/**
  * Apply field-context semantic properties to VL encoding objects.
  *
  * Consumes the following ChannelSemantics properties that were previously
@@ -588,15 +641,84 @@ function vlApplyFieldContext(
             // Full tooltip encoding is deferred to template-level implementation.
 
             // ── 3. Domain constraint (scale.domain + scale.clamp) ──
-            // Semantic domain constraints (e.g., Rating [1-5], Percentage [0-100])
-            // represent *intrinsic* field bounds and should override any
-            // auto-computed padded domain from the zero-baseline heuristic.
+            // Semantic domain constraints represent *intrinsic* field bounds.
+            // Full constraints (both min+max) set scale.domain directly.
+            // Partial constraints (only min or max) use VL's domainMin/domainMax
+            // for single-ended bounds, letting the other end auto-fit from data.
             // Skip binned encodings — VL handles bin domain automatically.
+            //
+            // Stacking interaction:
+            //   Sum-stacked charts (default / "zero" / "center") show stacked
+            //   totals on the axis, not individual values. The field-level snap
+            //   heuristic only saw individual values, which may not reflect the
+            //   actual axis range.  We recompute: if the max group total still
+            //   fits within the intrinsic bound, the snap constraint is safe
+            //   (e.g., percentages summing to exactly 100%).  If totals exceed
+            //   the bound, we skip the constraint to avoid clipping bars.
+            //   Normalize-stacked (stack: "normalize"): VL normalizes to [0,1],
+            //   so domain is always [0,1]. Constraint is harmless. → Keep.
+            //   Layered / no stack (stack: null/false): each bar is
+            //   independent. → Apply domain constraints as normal.
+            //
+            // VL auto-stacks bar/area marks when a color encoding is present
+            // (unless stack: null/false).
+            //
             // Without this: Rating gets auto-fitted to data range (e.g., 2-4.5)
             // instead of showing the full 1-5 scale.
-            if (cs.domainConstraint && enc.type === 'quantitative' && (ch === 'x' || ch === 'y') && !enc.bin) {
+            const isExplicitlyStacked = enc.stack !== undefined && enc.stack !== null && enc.stack !== false;
+            const markType = typeof vgObj.mark === 'string' ? vgObj.mark : vgObj.mark?.type;
+            const isBarLike = ['bar', 'area', 'rect'].includes(markType);
+            // Check for color encoding at top level, in layers, or in faceted spec
+            const hasColorEncoding = !!(
+                vgObj.encoding?.color?.field
+                || (Array.isArray(vgObj.layer) && vgObj.layer.some((l: any) => l.encoding?.color?.field))
+                || vgObj.spec?.encoding?.color?.field
+            );
+            const isImplicitlyStacked = isBarLike && hasColorEncoding && enc.stack !== null;
+            const isStacked = isExplicitlyStacked || isImplicitlyStacked;
+            const isNormalizeStacked = enc.stack === 'normalize';
+            const isSumStacked = isStacked && !isNormalizeStacked;
+
+            // For sum-stacked charts, check if stacked totals exceed the
+            // intrinsic domain.  If they do, skip the domain constraint.
+            //
+            // Also, if snap didn't fire on individual values but stacked
+            // totals are near the intrinsic bound, re-run snap on the totals.
+            // Example: individual percentages range 20–50% (no snap), but
+            // they sum to ~100% per group → should snap to 100%.
+            let skipDomain = false;
+            let effectiveDomainConstraint = cs.domainConstraint;
+
+            if (isSumStacked) {
+                const intrinsic = cs.semanticAnnotation?.intrinsicDomain;
+                if (intrinsic) {
+                    const maxTotal = computeMaxStackedTotal(
+                        context.table, enc.field, ch, channelSemantics,
+                    );
+
+                    if (cs.domainConstraint) {
+                        // Snap fired on individual values — check if stacked
+                        // totals would exceed the intrinsic bound.
+                        if (maxTotal !== undefined && maxTotal > intrinsic[1]) {
+                            skipDomain = true;
+                        }
+                    } else if (maxTotal !== undefined) {
+                        // Snap didn't fire on individual values — re-run snap
+                        // on the stacked totals to see if they're near bounds.
+                        const stackedSnap = snapToBoundHeuristic(intrinsic, [maxTotal]);
+                        if (stackedSnap) {
+                            effectiveDomainConstraint = stackedSnap;
+                        }
+                    }
+                } else if (cs.domainConstraint) {
+                    // No intrinsic domain to compare against → skip to be safe
+                    skipDomain = true;
+                }
+            }
+
+            if (effectiveDomainConstraint && enc.type === 'quantitative' && (ch === 'x' || ch === 'y') && !enc.bin && !skipDomain) {
                 if (!enc.scale) enc.scale = {};
-                const { min, max, clamp } = cs.domainConstraint;
+                const { min, max, clamp } = effectiveDomainConstraint;
                 if (min !== undefined && max !== undefined) {
                     enc.scale.domain = [min, max];
                     // For non-bar marks (scatter, line, etc.), the explicit
@@ -607,14 +729,22 @@ function vlApplyFieldContext(
                     // zero with correct proportional lengths — VL extends
                     // the domain to include 0, and the upper bound is still
                     // capped by the domain constraint (e.g., [0,5] not [0,6]).
-                    const markType = typeof vgObj.mark === 'string' ? vgObj.mark : vgObj.mark?.type;
-                    const isBarLike = ['bar', 'area', 'rect'].includes(markType);
                     if (!isBarLike && enc.scale.zero !== undefined) {
                         delete enc.scale.zero;
                     }
-                    if (clamp) {
-                        enc.scale.clamp = true;
-                    }
+                } else {
+                    // Partial constraint — snap one end while auto-fitting the other.
+                    // E.g., Percentage data at 97% → domainMax = 100, domainMin auto-fits.
+                    if (min !== undefined) enc.scale.domainMin = min;
+                    if (max !== undefined) enc.scale.domainMax = max;
+                    // VL may suppress nice rounding on the free end when
+                    // domainMin/domainMax is set, causing data to touch the
+                    // chart border.  Force nice so the unconstrained end
+                    // gets proper headroom (e.g., data at +26% rounds to +40%).
+                    enc.scale.nice = true;
+                }
+                if (clamp) {
+                    enc.scale.clamp = true;
                 }
             }
 

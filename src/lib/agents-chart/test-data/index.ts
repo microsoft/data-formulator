@@ -36,7 +36,7 @@ export { genChartJsScatterTests, genChartJsLineTests, genChartJsBarTests, genCha
 export { genGoFishScatterTests, genGoFishLineTests, genGoFishBarTests, genGoFishStackedBarTests, genGoFishGroupedBarTests, genGoFishAreaTests, genGoFishStackedAreaTests, genGoFishPieTests, genGoFishScatterPieTests, genGoFishStressTests } from './gofish-tests';
 export { genDiscreteAxisTests } from './discrete-axis-tests';
 export { genDateTests, genDateYearTests, genDateMonthTests, genDateYearMonthTests, genDateDecadeTests, genDateDateTimeTests, genDateHoursTests } from './date-tests';
-export { genSemanticContextTests } from './semantic-tests';
+export { genSemanticContextTests, genSnapToBoundTests } from './semantic-tests';
 export { genDebugTests } from './debug-tests';
 
 // ---------------------------------------------------------------------------
@@ -61,7 +61,7 @@ import { genGasPressureTests } from './gas-pressure-tests';
 import { genLineAreaStretchTests } from './line-area-stretch-tests';
 import { genDiscreteAxisTests } from './discrete-axis-tests';
 import { genDateYearTests, genDateMonthTests, genDateYearMonthTests, genDateDecadeTests, genDateDateTimeTests, genDateHoursTests } from './date-tests';
-import { genSemanticContextTests } from './semantic-tests';
+import { genSemanticContextTests, genSnapToBoundTests } from './semantic-tests';
 import { genDebugTests } from './debug-tests';
 import { genEChartsScatterTests, genEChartsLineTests, genEChartsBarTests, genEChartsStackedBarTests, genEChartsGroupedBarTests, genEChartsStressTests, genEChartsAreaTests, genEChartsPieTests, genEChartsHeatmapTests, genEChartsHistogramTests, genEChartsBoxplotTests, genEChartsRadarTests, genEChartsCandlestickTests, genEChartsStreamgraphTests, genEChartsFacetSmallTests, genEChartsFacetWrapTests, genEChartsFacetClipTests, genEChartsRoseTests, genEChartsGaugeTests, genEChartsFunnelTests, genEChartsTreemapTests, genEChartsSunburstTests, genEChartsSankeyTests, genEChartsUniqueStressTests } from './echarts-tests';
 import { genChartJsScatterTests, genChartJsLineTests, genChartJsBarTests, genChartJsStackedBarTests, genChartJsGroupedBarTests, genChartJsAreaTests, genChartJsPieTests, genChartJsHistogramTests, genChartJsRadarTests, genChartJsStressTests, genChartJsRoseTests } from './chartjs-tests';
@@ -114,6 +114,7 @@ export const TEST_GENERATORS: Record<string, () => TestCase[]> = {
     'Gas Pressure (§2)': genGasPressureTests,
     'Line/Area Stretch': genLineAreaStretchTests,
     'Semantic Context': genSemanticContextTests,
+    'Snap-to-Bound': genSnapToBoundTests,
     'Debug Cases': genDebugTests,
     'ECharts: Scatter': genEChartsScatterTests,
     'ECharts: Line': genEChartsLineTests,
@@ -169,7 +170,7 @@ export const GALLERY_SECTIONS: GallerySection[] = [
     {
         label: 'Semantic Context',
         description: 'Demonstrates how semantic type annotations improve chart output: formatting, domain constraints, axis reversal, scale type, and interpolation',
-        entries: ['Semantic Context'],
+        entries: ['Semantic Context', 'Snap-to-Bound'],
     },
     {
         label: 'Debug Cases',

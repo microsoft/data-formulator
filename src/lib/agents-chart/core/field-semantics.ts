@@ -628,14 +628,95 @@ function mergeIntrinsicWithData(
 }
 
 /**
+ * Snap-to-bound heuristic for bounded types like Percentage / PercentageChange.
+ *
+ * Each bound is snapped independently:
+ * - If data approaches the intrinsic lower bound → snap min
+ * - If data approaches the intrinsic upper bound → snap max
+ * - If data exceeds a bound → don't snap that side (let VL auto-extend)
+ *
+ * Threshold: 25% of the *effective side range*.
+ *
+ * We err on the side of snapping, because:
+ * - Semantic types are opt-in — the bound carries meaning by definition.
+ * - A wrong snap (extra white space) is less harmful than a wrong
+ *   no-snap (viewer loses semantic reference, differences are
+ *   exaggerated and proximity to the bound is hidden).
+ * - Only when data is clearly in the interior (> 25% away from each
+ *   bound) does the bound stop being a useful reference.
+ *
+ * When the intrinsic domain straddles zero (lo < 0 < hi), zero acts as a
+ * visual baseline (bar charts, contextual zero).  Each bound's threshold
+ * is computed relative to its distance from zero — not the full range —
+ * so that snapping one side doesn't make values on the other side of zero
+ * invisible (e.g., snapping to -100% when data has a tiny +0.2% bar).
+ *
+ * When the domain doesn't straddle zero (e.g., [0, 100]), the full range
+ * is used as the reference.
+ *
+ * Examples for Percentage [0, 100] (threshold = 25, full range):
+ *   20–45%   → snap min=0 only     (20 within 25 of 0; 45 far from 100)
+ *   35–65%   → no snap             (both far from edges, in interior)
+ *   55–82%   → snap max=100 only   (82 within 25 of 100; 55 far from 0)
+ *   15–80%   → snap both [0, 100]  (15 near 0, 80 near 100)
+ *   30–130%  → no snap             (130 exceeds 100 → no snap; 30 far from 0)
+ *
+ * Examples for PercentageChange [-1, 1] (threshold = 0.25 per side):
+ *   -0.03 to +0.05 → no snap       (both far from ±0.75)
+ *   -0.70 to +0.30 → no snap       (-0.70 > -0.75, not close enough)
+ *   -0.80 to +0.30 → snap min=-1   (-0.80 ≤ -0.75; +0.30 < 0.75)
+ *   -0.80 to +0.78 → snap both     (both within 0.25 of edges)
+ */
+export function snapToBoundHeuristic(
+    intrinsic: [number, number],
+    values: any[],
+): DomainConstraint | undefined {
+    const nums = values.filter((v: any) => typeof v === 'number' && !isNaN(v));
+    if (nums.length === 0) return undefined;
+
+    const [lo, hi] = intrinsic;
+    const range = hi - lo;
+    if (range <= 0) return undefined;
+
+    const dataMin = Math.min(...nums);
+    const dataMax = Math.max(...nums);
+
+    // When the domain straddles zero, compute each side's threshold relative
+    // to its distance from zero.  This prevents snapping one side from
+    // stretching the axis so wide that values near zero on the other side
+    // become invisible (sub-pixel bars).
+    const zeroInside = lo < 0 && hi > 0;
+    const thresholdLo = 0.25 * (zeroInside ? (0 - lo) : range);
+    const thresholdHi = 0.25 * (zeroInside ? hi       : range);
+
+    let snapMin: number | undefined;
+    let snapMax: number | undefined;
+
+    // Snap lower bound: data min is close to intrinsic lower bound
+    // AND data doesn't go below it (if it does, VL auto-extends)
+    if (dataMin >= lo && dataMin <= lo + thresholdLo) {
+        snapMin = lo;
+    }
+
+    // Snap upper bound: data max is close to intrinsic upper bound
+    // AND data doesn't exceed it
+    if (dataMax <= hi && dataMax >= hi - thresholdHi) {
+        snapMax = hi;
+    }
+
+    if (snapMin === undefined && snapMax === undefined) return undefined;
+
+    return { min: snapMin, max: snapMax, clamp: false };
+}
+
+/**
  * Resolve domain constraints from annotation, type-intrinsic rules, or data.
  *
- * The effective domain is always the **union** of the intrinsic (semantic)
- * domain and the actual data range, so that data points outside the
- * type's natural bounds (e.g., Percentage > 100 %) are never clipped.
- *
  * Only truly fixed physical domains (Latitude, Longitude, Correlation)
- * use hard clamping.
+ * use hard clamping. Bounded types like Percentage use a snap-to-bound
+ * heuristic: the axis extends to the theoretical endpoint (e.g., 100%)
+ * only when data is close to it, avoiding wasted space when data is
+ * concentrated in a small region.
  *
  * Priority: annotation.intrinsicDomain > type-intrinsic > data-inferred
  */
@@ -644,8 +725,18 @@ export function resolveDomainConstraint(
     annotation: SemanticAnnotation,
     values: any[],
 ): DomainConstraint | undefined {
-    // 1. Explicit annotation intrinsicDomain — soft merge with data
+    const entry = getRegistryEntry(semanticType);
+
+    // 1. Explicit annotation intrinsicDomain
     if (annotation.intrinsicDomain) {
+        // Proportion (Percentage) and SignedMeasure (PercentageChange, Profit):
+        // use snap-to-bound heuristic on both ends independently.
+        // Don't force the full theoretical range — only snap to a bound
+        // when data approaches it (e.g., 97% → snap to 100%, -0.95 → snap to -1).
+        if (entry.t1 === 'Proportion' || entry.t1 === 'SignedMeasure') {
+            return snapToBoundHeuristic(annotation.intrinsicDomain, values);
+        }
+        // All other types: soft merge (union of intrinsic + data)
         return mergeIntrinsicWithData(annotation.intrinsicDomain, values, false);
     }
 
@@ -654,14 +745,13 @@ export function resolveDomainConstraint(
     if (semanticType === 'Longitude')   return mergeIntrinsicWithData([-180, 180], values, true);
     if (semanticType === 'Correlation') return mergeIntrinsicWithData([-1, 1], values, true);
 
-    // 3. Data-inferred intrinsic domain for Percentage / Rate
-    //    Detect scale (0–1 fractional vs 0–100 whole-number) then soft-merge.
+    // 3. Percentage without explicit annotation — detect scale and apply snap
     if (semanticType === 'Percentage') {
         const nums = values.filter((v: any) => typeof v === 'number' && !isNaN(v));
         if (nums.length > 0) {
             const rep = detectPercentageRepresentation(nums);
-            const intrinsicMax = rep === '0-1' ? 1 : 100;
-            return mergeIntrinsicWithData([0, intrinsicMax], nums, false);
+            const M = rep === '0-1' ? 1 : 100;
+            return snapToBoundHeuristic([0, M], values);
         }
     }
 

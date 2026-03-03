@@ -1328,6 +1328,7 @@ export const selectRefreshConfigs = createSelector(
         canRefresh: t.source?.canRefresh ?? false,
         url: t.source?.url,
         hasVirtual: !!t.virtual?.tableId,
+        hasDerive: !!t.derive,
     })),
     {
         memoizeOptions: {
@@ -1338,7 +1339,8 @@ export const selectRefreshConfigs = createSelector(
                     if (a.id !== b.id || a.autoRefresh !== b.autoRefresh ||
                         a.refreshIntervalSeconds !== b.refreshIntervalSeconds ||
                         a.sourceType !== b.sourceType || a.canRefresh !== b.canRefresh ||
-                        a.url !== b.url || a.hasVirtual !== b.hasVirtual) return false;
+                        a.url !== b.url || a.hasVirtual !== b.hasVirtual ||
+                        a.hasDerive !== b.hasDerive) return false;
                 }
                 return true;
             }

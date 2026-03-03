@@ -691,11 +691,16 @@ export function computeChannelBudgets(
     let maxYToKeep = Math.floor(maxSubplotH / yMinGroupStep);
 
     // --- 5. Faceted-chart canvas cap ---
-    // Each subplot's step-based width/height must fit in the (un-stretched)
-    // canvas dimensions. Without this, a busy discrete axis produces
-    // subplots wider than the canvas, causing clipping.  Filtering values
-    // yields narrower subplots; we then re-derive the facet grid so more
-    // columns fit, reducing overall chart height.
+    // When a busy discrete axis makes each subplot wider than the
+    // un-stretched canvas, cap axis items to fit within one canvas
+    // width/height.  This lets subplots be narrower, potentially fitting
+    // more facet columns — reducing overall chart height.
+    //
+    // Example: 70 counties on X × 20 states on column.  Without the cap,
+    // minSubplotWidth = 70 × 6 = 420 → only 1 facet column fits → each
+    // state stacks vertically → excessively tall chart.  With the cap,
+    // X is truncated to floor(400/6) = 66 items, and the facet grid is
+    // re-derived with narrower subplots so more columns fit.
     if (facetGrid) {
         const canvasXCap = Math.max(1, Math.floor(canvasSize.width / xMinGroupStep));
         const canvasYCap = Math.max(1, Math.floor(canvasSize.height / yMinGroupStep));
@@ -704,17 +709,24 @@ export function computeChannelBudgets(
             maxXToKeep = Math.min(maxXToKeep, canvasXCap);
             maxYToKeep = Math.min(maxYToKeep, canvasYCap);
 
-            // Re-derive facet grid with the tighter subplot size.
+            // With tighter axis items, subplots can be narrower, so more
+            // facet columns may fit.  Re-derive the grid for column-only
+            // wrapping (the most affected case).
             const colField = channelSemantics.column?.field;
             const rowField = channelSemantics.row?.field;
             const colCount = colField
                 ? new Set(data.map(r => r[colField])).size : 0;
 
             if (colCount > 1 && !rowField) {
-                const tighterW = canvasXCap * xMinGroupStep;
+                const tighterW = Math.max(
+                    options.minSubplotSize ?? 60,
+                    maxXToKeep * xMinGroupStep,
+                );
                 const totalW = canvasSize.width * maxStretchVal - fixW;
                 const totalH = canvasSize.height * maxStretchVal - fixH;
-                const revisedMaxCols = Math.max(1, Math.floor(totalW / (tighterW + gap)));
+                const revisedMaxCols = Math.max(1, Math.floor(
+                    totalW / (tighterW + gap),
+                ));
                 const revisedMaxRows = Math.max(1, Math.floor(
                     totalH / ((options.minSubplotSize ?? 60) + gap),
                 ));
@@ -730,18 +742,14 @@ export function computeChannelBudgets(
         }
     }
 
-    const hasRow = !!channelSemantics.row?.field;
-    const maxFacetColumns = facetGrid?.maxColumnValues ?? Infinity;
-    const maxFacetRows    = facetGrid?.maxRowValues ?? Infinity;
-    const maxFacetTotal   = facetGrid
-        ? maxFacetColumns * (facetGrid.maxRowValues ?? 1)
-        : Infinity;
-
+    // maxColumnValues already carries the correct semantics for both
+    // column+row (per-dimension cap) and column-only wrapping (total
+    // panel count = grid cols × grid rows).  No multiplication needed.
     const maxValues: Record<string, number> = {
         x:      maxXToKeep,
         y:      maxYToKeep,
-        column: hasRow ? maxFacetColumns : maxFacetTotal,
-        row:    maxFacetRows,
+        column: facetGrid?.maxColumnValues ?? Infinity,
+        row:    facetGrid?.maxRowValues ?? Infinity,
         color:  maxColorVal,
     };
 
