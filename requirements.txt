@@ -130,7 +130,7 @@ fastuuid==0.14.0
     # via litellm
 filelock==3.20.3
     # via huggingface-hub
-flask==3.1.2
+flask==3.1.3
     # via
     #   data-formulator
     #   flask-cors
