@@ -634,7 +634,7 @@ websocket-client==1.9.0
     # via jupyter-server
 websockets==16.0
     # via yfinance
-werkzeug==3.1.5
+werkzeug==3.1.6
     # via
     #   flask
     #   flask-cors
