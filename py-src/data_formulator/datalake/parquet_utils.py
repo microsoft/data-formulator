@@ -16,6 +16,7 @@ from typing import Any
 import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
+from werkzeug.utils import secure_filename
 
 from data_formulator.datalake.metadata import ColumnInfo, make_json_safe
 
@@ -40,12 +41,25 @@ def sanitize_table_name(name: str) -> str:
     """
     Sanitize a string to be a valid table/file name.
 
+    Uses ``werkzeug.utils.secure_filename`` as the first pass to strip
+    path separators, leading dots, and other dangerous components (this
+    is the sanitiser recognised by CodeQL / static-analysis tools).
+    Additional rules are then applied to guarantee the result is a valid,
+    lowercase, Python-identifier-style name.
+
     Args:
         name: Original name
 
     Returns:
         Sanitized name
     """
+    # First pass: werkzeug's secure_filename neutralises path-traversal
+    # components ("../", leading dots, etc.) and keeps only ASCII
+    # alphanumerics plus ".", "_", and "-".
+    name = secure_filename(name)
+
+    # Second pass: replace any remaining chars that are not alphanumeric
+    # or underscore (e.g. dots and hyphens kept by secure_filename).
     sanitized = []
     for char in name:
         if char.isalnum() or char == '_':
